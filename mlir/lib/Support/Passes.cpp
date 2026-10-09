@@ -77,6 +77,7 @@ void registerMQTCompilerPasses() {
     qco::registerContextSensitiveSpecialization();
     qco::registerQuantumArgumentPromotion();
     qco::registerAuxiliaryQubitHoisting();
+    qco::registerQuantumFunctionBoundaryCommutation();
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();

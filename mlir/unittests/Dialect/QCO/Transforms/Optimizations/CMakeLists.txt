@@ -11,6 +11,7 @@ add_executable(
   ${target_name}
   test_qco_auxiliary_qubit_hoisting.cpp
   test_qco_context_sensitive_specialization.cpp
+  test_qco_function_boundary_commutation.cpp
   test_qco_hadamard_lifting.cpp
   test_qco_measurement_lifting.cpp
   test_qco_merge_single_qubit_rotation.cpp
