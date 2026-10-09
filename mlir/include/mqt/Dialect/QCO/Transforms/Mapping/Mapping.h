@@ -25,5 +25,12 @@ namespace qco {
 /// Create a deterministic placement pass for a compiler target.
 std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target);
 
+/// Elide terminal SWAPs in prepared straight-line programs before placement.
+///
+/// Accepts owned scalar qubits and flat, static tensor unpack/pack chains.
+/// Run after allocation cleanup; preserve roots until placement consumes the
+/// circuit-wire permutation in `mqt.layout`.
+std::unique_ptr<Pass> createElideTerminalSwapsPass();
+
 } // namespace qco
 } // namespace mlir
