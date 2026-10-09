@@ -40,6 +40,13 @@ SmallVector<unsigned> mlir::qco::getQuantumArgumentIndices(TypeRange types) {
   return arguments;
 }
 
+OperandRange mlir::qco::getYieldedValues(Block& block) {
+  if (auto condition = dyn_cast<scf::ConditionOp>(block.getTerminator())) {
+    return condition.getArgs();
+  }
+  return block.getTerminator()->getOperands();
+}
+
 FailureOr<unsigned> mlir::qco::getCallArgumentForResult(func::CallOp call,
                                                         unsigned result) {
   if (!SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(

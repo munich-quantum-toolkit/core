@@ -151,6 +151,33 @@ def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Elide virtual SWAPs before placement";
+  let description = [{
+    Tracks wire permutations through QCO and structured control flow, removing
+    unconditional SWAPs and retargeting later operations. Materializes
+    permutations where resource identity or region interfaces require them.
+    The default mode preserves physical output order and reconciles
+    permutations before measurements. Fixed physical qubits, regions with
+    nonpositional quantum yields, and unstructured function bodies retain their
+    wiring. Dynamic tensor accesses reconcile pending permutations on that
+    tensor.
+
+    With `track-output-permutation` and source labels from target preparation,
+    terminal output permutations may remain virtual through final observations
+    and disposal. Placement consumes the recorded source permutation into the
+    published qubit layout before the compiled program is returned.
+
+    Run after inlining and cleanup, before fusion and placement.
+  }];
+  let options = [Option<
+      "trackOutputPermutation", "track-output-permutation", "bool", "false",
+      "Record final source permutations for target layout publication.">];
+}
+
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Place and route a program for an explicit target topology";

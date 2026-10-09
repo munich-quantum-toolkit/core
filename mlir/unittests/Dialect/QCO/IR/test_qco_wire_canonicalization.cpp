@@ -8,9 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include "ExactUnitaryTest.h"
 
@@ -42,7 +44,8 @@ protected:
   MLIRContext context_;
 
   void SetUp() override {
-    context_.loadDialect<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context_.loadDialect<QCODialect, mlir::mqt::MQTDialect, arith::ArithDialect,
+                         func::FuncDialect>();
   }
 
   OwningOpRef<ModuleOp> twoQubitFunction() {
@@ -116,6 +119,32 @@ TEST_F(QCOWireCanonicalizationTest, XXPlusYYDoesNotMergeDifferentAxes) {
 
 TEST_F(QCOWireCanonicalizationTest, XXMinusYYDoesNotMergeDifferentAxes) {
   checkMerge<XXMinusYYOp>(true, 0.789, 2);
+}
+
+TEST_F(QCOWireCanonicalizationTest,
+       PreservesSampledWiresWithoutClassicalResults) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %a = qco.alloc : !qco.qubit
+        %b = qco.alloc : !qco.qubit
+        %x = qco.x %a : !qco.qubit -> !qco.qubit
+        %sa, %sb = qco.swap %x, %b : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %qa, %ba = qco.measure %sa : !qco.qubit
+        %qb, %bb = qco.measure %sb : !qco.qubit
+        qco.sink %qa : !qco.qubit
+        qco.sink %qb : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  auto counts = sample(moduleOp->lookupSymbol<func::FuncOp>("main"), 1, 42);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1U);
+  EXPECT_EQ(counts->begin()->first, "10");
 }
 
 } // namespace

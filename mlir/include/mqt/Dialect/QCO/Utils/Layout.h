@@ -52,6 +52,21 @@ public:
   /// Construct an empty layout.
   Layout() = default;
 
+  /// Append a program qubit at a new hardware slot and return its index.
+  ///
+  /// Requires equal program and hardware widths.
+  [[nodiscard]] T appendIdentity() {
+    assert(programToHardware_.size() == hardwareToProgram_.size() &&
+           "appending requires equal program and hardware widths");
+    if (programToHardware_.size() >= UNMAPPED) {
+      llvm::reportFatalUsageError("layout exceeds qubit index capacity");
+    }
+    const auto index = static_cast<T>(programToHardware_.size());
+    programToHardware_.push_back(index);
+    hardwareToProgram_.push_back(index);
+    return index;
+  }
+
   /// Construct and return an identity layout that maps the i-th program qubit
   /// index in `[0, nqubits)` to the i-th hardware index in `[0, nqubits)`.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `nqubits`.

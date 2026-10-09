@@ -1037,7 +1037,8 @@ TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
             std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
+TEST_F(CompilerPipelineTest,
+       BaseProfileLowersCompleteTensorLifetimeAfterCleanup) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() -> i1 attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
@@ -1051,6 +1052,7 @@ TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
     }
   })mlir");
   ASSERT_TRUE(program);
+  ASSERT_TRUE(program->cleanup());
   auto qc = std::move(*program).intoQC();
   ASSERT_TRUE(qc);
   auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
@@ -2256,36 +2258,20 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
 include "stdgates.inc";
 qubit[4] q;
 h q[0]; rx(0.3) q[1]; rz(0.7) q[3];
-cx q[0], q[3]; cx q[1], q[3];
+swap q[0], q[2]; swap q[2], q[1];
+cx q[0], q[3]; cx q[1], q[3]; cx q[2], q[3];
 )qasm";
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      4, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
-      CompilerTarget::NativeOperations::unrestricted()));
   auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
-  auto program = std::move(*qc).intoQCO();
-  ASSERT_TRUE(program);
-  auto package = std::make_unique<dd::Package>(4);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  auto package = std::make_unique<dd::Package>(5);
   const auto expectedDD = qco::buildFunctionality(
-      mlir::mqt::getEntryPoint(program->module()), *package);
+      mlir::mqt::getEntryPoint(input->module()), *package);
   ASSERT_TRUE(succeeded(expectedDD));
   const auto expected = expectedDD->getMatrix(4);
   package->decRef(*expectedDD);
 
-  ASSERT_TRUE(program->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification())));
-  auto layout = mlir::mqt::QubitLayout::fromAttr(
-      program->module()->getAttr("mqt.layout"),
-      [&] { return program->module().emitError(); });
-  ASSERT_TRUE(succeeded(layout));
-  EXPECT_EQ(layout->initial.size(), 4);
-  ASSERT_TRUE(layout->routing);
-  EXPECT_EQ(layout->routing->size(), 4);
-  const auto actualDD = qco::buildFunctionality(
-      mlir::mqt::getEntryPoint(program->module()), *package);
-  ASSERT_TRUE(succeeded(actualDD));
-  const auto actual = actualDD->getMatrix(4);
-  package->decRef(*actualDD);
   const auto physicalIndex = [](size_t basis,
                                 const std::vector<int64_t>& sites) {
     size_t physical = 0;
@@ -2294,19 +2280,60 @@ cx q[0], q[3]; cx q[1], q[3];
     }
     return physical;
   };
-  std::vector<int64_t> final;
-  for (const auto site : layout->initial) {
-    final.push_back((*layout->routing)[site]);
-  }
-  for (size_t row = 0; row < 16; ++row) {
-    for (size_t column = 0; column < 16; ++column) {
-      EXPECT_LE(std::abs(actual[physicalIndex(row, final)]
-                               [physicalIndex(column, layout->initial)] -
-                         expected[row][column]),
-                1e-12);
+  for (StringRef mode : {"sparse", "all-to-all", "indexed"}) {
+    SCOPED_TRACE(mode.str());
+    const bool sparse = mode == "sparse";
+    const bool indexed = mode == "indexed";
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        5,
+        sparse ? CompilerTarget::Connectivity::fromCouplings(
+                     {{0, 1}, {1, 2}, {2, 3}, {3, 4}})
+               : CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::unrestricted()));
+    const auto payload =
+        indexed ? llvm::cantFail(payloadSpecificationForProgramFormat(
+                      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE))
+                : makePayloadSpecification();
+    const TargetEnvironment environment(target, payload);
+    auto program = input->copy();
+    ASSERT_TRUE(indexed ? program.synthesizeForTarget(environment)
+                        : program.compileForTarget(environment));
+    auto layout = mlir::mqt::QubitLayout::fromAttr(
+        program.module()->getAttr("mqt.layout"),
+        [&] { return program.module().emitError(); });
+    ASSERT_TRUE(succeeded(layout));
+    EXPECT_EQ(layout->inputCount, 4);
+    ASSERT_EQ(layout->initial.size(), 5);
+    ASSERT_TRUE(layout->routing);
+    ASSERT_EQ(layout->routing->size(), 5);
+    if (!sparse) {
+      constexpr std::array<int64_t, 5> sourcePermutation{2, 0, 1, 3, 4};
+      for (auto [output, resource] : llvm::enumerate(sourcePermutation)) {
+        EXPECT_EQ((*layout->routing)[layout->initial[output]],
+                  layout->initial[resource]);
+      }
     }
+    const auto actualDD = qco::buildFunctionality(
+        mlir::mqt::getEntryPoint(program.module()), *package);
+    ASSERT_TRUE(succeeded(actualDD));
+    const auto actual = actualDD->getMatrix(5);
+    package->decRef(*actualDD);
+    std::vector<int64_t> final;
+    for (const auto site : layout->initial) {
+      final.push_back((*layout->routing)[site]);
+    }
+    for (size_t row = 0; row < 16; ++row) {
+      for (size_t column = 0; column < 16; ++column) {
+        EXPECT_LE(std::abs(actual[physicalIndex(row, final)]
+                                 [physicalIndex(column, layout->initial)] -
+                           expected[row][column]),
+                  1e-12);
+      }
+    }
+    EXPECT_FALSE(
+        program.module()->hasAttr(mlir::mqt::kSourceOutputPermutationAttr));
+    EXPECT_EQ(program.str().find("source_qubit_"), std::string::npos);
   }
-  EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
 }
 
 TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
@@ -4236,6 +4263,106 @@ TEST_F(CompilerPipelineTest,
   });
   /// Each pair of CX gates cancels; routing must see no interactions.
   EXPECT_EQ(entanglers, 0U);
+}
+
+TEST_F(CompilerPipelineTest, ElidesTensorBackedSwapsBeforeFusionAndRouting) {
+  for (const auto& [gates, expectedTwoQubitGates, expectedBits] : {
+           std::tuple{R"qasm(x q[0];
+             swap q[0], q[1]; swap q[1], q[2]; swap q[0], q[1];)qasm",
+                      0U, "100"},
+           std::tuple{R"qasm(x q[1];
+             cx q[0], q[1]; rz(0.13) q[0];
+             cx q[0], q[1]; rz(0.27) q[0];
+             cx q[0], q[1]; swap q[0], q[1];)qasm",
+                      1U, "001"},
+           std::tuple{R"qasm(h q[0]; swap q[0], q[1];
+             z q[1]; swap q[1], q[2]; h q[2]; cx q[2], q[0];)qasm",
+                      1U, "101"},
+       }) {
+    SCOPED_TRACE(gates);
+    auto qc = QCProgram::fromOpenQASMString(
+        std::string(R"qasm(OPENQASM 3.0; include "stdgates.inc";
+          qubit[3] q; bit[3] c;)qasm") +
+        gates + "c = measure q;");
+    ASSERT_TRUE(qc);
+    auto program = std::move(*qc).intoQCO();
+    ASSERT_TRUE(program);
+    auto cleaned = program->copy();
+    ASSERT_TRUE(cleaned.cleanup());
+    ASSERT_TRUE(cleaned.runPassPipeline("elide-permutations"));
+    const auto cleanedCounts =
+        qco::sample(mlir::mqt::getEntryPoint(cleaned.module()), 1, 42);
+    ASSERT_TRUE(succeeded(cleanedCounts));
+    ASSERT_EQ(cleanedCounts->size(), 1U);
+    EXPECT_EQ(cleanedCounts->begin()->first, expectedBits);
+    auto restored = std::move(cleaned).intoQC();
+    ASSERT_TRUE(restored);
+    EXPECT_TRUE(std::move(*restored).intoQIR(QIRProfile::Base));
+
+    ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+        makeSparseUCZTarget(true), makePayloadSpecification())));
+    size_t twoQubitGates = 0;
+    program->module().walk([&](qco::UnitaryOpInterface unitary) {
+      twoQubitGates += unitary.isTwoQubit();
+    });
+    EXPECT_EQ(twoQubitGates, expectedTwoQubitGates);
+    const auto counts =
+        qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(counts->size(), 1U);
+    EXPECT_EQ(counts->begin()->first, expectedBits);
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       DynamicReinsertionReconcilesPermutationsBeforeMeasurement) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main(%index: index) -> !cbit.reg<2>
+        attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %rest0, %q0 = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %rest1, %q1 = qtensor.extract %rest0[%c1] : tensor<2x!qco.qubit>
+      %x = qco.x %q0 : !qco.qubit -> !qco.qubit
+      %s0, %s1 = qco.swap %x, %q1 : !qco.qubit, !qco.qubit
+          -> !qco.qubit, !qco.qubit
+      %m0, %b0 = qco.measure %s0 : !qco.qubit
+      cbit.store %b0, %bits[%c0] : !cbit.reg<2>
+      %inserted0 = qtensor.insert %m0 into %rest1[%index]
+          : tensor<2x!qco.qubit>
+      %m1, %b1 = qco.measure %s1 : !qco.qubit
+      cbit.store %b1, %bits[%c1] : !cbit.reg<2>
+      %inserted1 = qtensor.insert %m1 into %inserted0[%c1]
+          : tensor<2x!qco.qubit>
+      qtensor.dealloc %inserted1 : tensor<2x!qco.qubit>
+      return %bits : !cbit.reg<2>
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  ASSERT_TRUE(program->synthesizeForTarget(TargetEnvironment(target, payload)));
+  auto entry = mlir::mqt::getEntryPoint(program->module());
+  Builder builder(program->module().getContext());
+  const qco::DDArgumentBindings bindings{
+      {entry.getArgument(0), builder.getIndexAttr(0)},
+  };
+  auto package = std::make_unique<dd::Package>(2);
+  const auto state = qco::simulateStatevector(entry, *package, bindings);
+  ASSERT_TRUE(succeeded(state));
+  package->decRef(*state);
+  const auto counts = qco::sample(entry, 1, 42, bindings);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1U);
+  EXPECT_EQ(counts->begin()->first, "10");
+  EXPECT_FALSE(
+      program->module()->hasAttr(mlir::mqt::kSourceOutputPermutationAttr));
 }
 
 TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {

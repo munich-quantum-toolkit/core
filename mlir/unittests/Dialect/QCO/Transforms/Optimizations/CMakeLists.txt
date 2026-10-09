@@ -9,6 +9,7 @@
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(
   ${target_name}
+  test_qco_elide_permutations.cpp
   test_qco_hadamard_lifting.cpp
   test_qco_measurement_lifting.cpp
   test_qco_merge_single_qubit_rotation.cpp
@@ -23,6 +24,7 @@ target_link_libraries(
   PRIVATE GTest::gtest_main
           MLIRControlFlowDialect
           MLIRQCODDFunctionality
+          MLIRQCOToQC
           MLIRQCOProgramBuilder
           MLIRQCOPrograms
           MLIRQCOTransforms
