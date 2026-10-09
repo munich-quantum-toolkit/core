@@ -241,7 +241,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
-    pm.addPass(qco::createPlacementPass(target));
+    pm.addPass(qco::createPlacementPass());
     break;
   }
   qco::populateTargetNativeSynthesisPipeline(pm);
@@ -260,7 +260,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  pm.addPass(qco::createPlacementPass(target));
+  pm.addPass(qco::createPlacementPass());
   qco::populateTargetNativeSynthesisPipeline(pm);
 }
 
