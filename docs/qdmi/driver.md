@@ -133,9 +133,12 @@ mqt-core-qdmi-check --device mqt.sc.default --timeout 30
 
 The checker selects the named device through `qdmi::Session::openDevice`. It
 accepts `IDLE` and `BUSY` and does not submit a quantum job. It uses the
-existing [QDMI configuration](configuration.md), including
-`MQT_CORE_QDMI_CONFIG_FILE`. This is a readiness check, not an authorization or
-resource reservation.
+[QDMI configuration](configuration.md), including `MQT_CORE_QDMI_CONFIG_FILE`.
+This is a readiness check, not an authorization or resource reservation.
+
+The native checker does not inherit Python entry-point discovery or in-process
+manifest registrations. For external devices using the builtin driver, make
+their catalogue available through `MQT_CORE_QDMI_CONFIG_FILE`.
 
 The timeout defaults to 30 seconds and accepts whole seconds from 1 to 3600. It
 bounds initialization, the status query, and cleanup in a separate worker. The

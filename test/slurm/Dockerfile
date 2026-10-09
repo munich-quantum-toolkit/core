@@ -56,7 +56,7 @@ FROM scratch AS provider-source
 
 COPY --from=workload \
     --exclude=.git --exclude=build --exclude=build-* --exclude=cmake-build-* \
-    --exclude=.cache --exclude=.ccache --exclude=.venv* --exclude=.nox \
+    --exclude=.cache --exclude=.ccache --exclude=.venv* --exclude=.nox --exclude=CMakeUserPresets.json \
     --exclude=**/__pycache__ --exclude=test/slurm/runtime --exclude=test/slurm/dist \
     . /workload
 

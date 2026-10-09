@@ -19,8 +19,9 @@ file(WRITE "${manifest}" "${catalogue}")
 foreach(device installed.only mqt.sc.default)
   execute_process(
     COMMAND
-      "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON --unset=MQT_CORE_QDMI_CONFIG_FILE
-      "${WORK_DIR}/${INSTALL_BINDIR}/mqt-core-qdmi-check" --device "${device}"
+      "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_DRIVER --unset=MQT_CORE_QDMI_CONFIG_JSON
+      --unset=MQT_CORE_QDMI_CONFIG_FILE "${WORK_DIR}/${INSTALL_BINDIR}/mqt-core-qdmi-check" --device
+      "${device}"
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error
