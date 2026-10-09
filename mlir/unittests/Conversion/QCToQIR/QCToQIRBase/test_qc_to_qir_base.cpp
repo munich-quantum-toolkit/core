@@ -163,13 +163,6 @@ TEST(QCToQIRBaseNativeTest, RejectsMeasurementFeedbackDuringConversion) {
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
 }
 
-TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
-  expectFollowingXIsUncontrolled(
-      [](qc::QCProgramBuilder& builder, Value control, Value target) {
-        builder.ctrl(control, target, [](Value) {});
-      });
-}
-
 TEST(QCToQIRBaseNativeTest, CtrlBodyCardinalityIgnoresClassicalOps) {
   for (unsigned numUnitaries : {0U, 1U, 2U}) {
     SCOPED_TRACE(numUnitaries);

@@ -1432,10 +1432,9 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
+    if (!llvm::hasSingleElement(op.getBody()->getOps<UnitaryOpInterface>())) {
       return rewriter.notifyMatchFailure(
-          op,
-          "Control modifiers with multiple body unitaries are not supported.");
+          op, "Control modifiers require exactly one body unitary.");
     }
 
     auto& state = getState();
@@ -1484,10 +1483,9 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   LogicalResult
   matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
-      return rewriter.notifyMatchFailure(op,
-                                         "Inversion modifiers with multiple "
-                                         "body unitaries are not supported.");
+    if (!llvm::hasSingleElement(op.getBody()->getOps<UnitaryOpInterface>())) {
+      return rewriter.notifyMatchFailure(
+          op, "Inversion modifiers require exactly one body unitary.");
     }
 
     auto& state = getState();
@@ -1529,10 +1527,9 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
   LogicalResult
   matchAndRewrite(PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody())) {
-      return rewriter.notifyMatchFailure(op,
-                                         "Power modifiers with multiple body "
-                                         "unitaries are not supported.");
+    if (!llvm::hasSingleElement(op.getBody()->getOps<UnitaryOpInterface>())) {
+      return rewriter.notifyMatchFailure(
+          op, "Power modifiers require exactly one body unitary.");
     }
 
     auto& state = getState();
