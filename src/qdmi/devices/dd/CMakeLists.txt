@@ -22,16 +22,8 @@ if(NOT TARGET ${TARGET_NAME})
   endif()
   target_sources(${TARGET_NAME} PRIVATE Device.cpp Worker.cpp WorkerProtocol.cpp)
 
-  target_sources(
-    ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           ${CMAKE_CURRENT_BINARY_DIR}/include
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
-           ${QDMI_HDRS})
+  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
+                                       ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon LLVMSupport)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
@@ -67,8 +59,10 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(
     ${TARGET_NAME} PRIVATE MQT_DDSIM_WORKER_NAME="${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
   add_dependencies(${TARGET_NAME} ${WORKER_TARGET})
-  install(TARGETS ${WORKER_TARGET} RUNTIME DESTINATION ${WORKER_DIRECTORY}
-                                           COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+  if(MQT_CORE_INSTALL)
+    install(TARGETS ${WORKER_TARGET} RUNTIME DESTINATION ${WORKER_DIRECTORY}
+                                             COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+  endif()
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
   set_property(
     TARGET ${TARGET_NAME}

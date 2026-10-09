@@ -22,6 +22,10 @@
 
 #include "llvm/Support/Threading.h"
 
+#include <string>
+#include <string_view>
+#include <utility>
+
 namespace {
 
 class ErrorHandling : public ::testing::Test {
@@ -334,18 +338,20 @@ TEST_F(ErrorHandling, WorkerCrashesDoNotAffectConcurrentOrLaterJobs) {
     GTEST_SKIP() << "Concurrent crash isolation requires two worker slots";
   }
   const qdmi_test::SessionGuard session{};
-  for (const std::string operation : {"abort", "llvm.trap"}) {
+  for (const auto& [declaration, call] : {
+           std::pair{"declare void @abort()", "call void @abort()"},
+           std::pair{"declare void @llvm.trap()", "call void @llvm.trap()"},
+           std::pair{"declare void @__quantum__rt__qubit_release(ptr)",
+                     "call void @__quantum__rt__qubit_release(ptr null)"},
+       }) {
     const qdmi_test::JobGuard valid{session.session};
     qdmi_test::ControlledJob running{valid.job};
     const qdmi_test::JobGuard crash{session.session};
-    std::string program = "declare void @";
-    program += operation;
-    program += "()\n"
-               "define i64 @main() #0 { call void @";
-    program += operation;
-    program += "() unreachable }\n"
-               "attributes #0 = { \"entry_point\" "
-               "\"qir_profiles\"=\"adaptive_profile\" }\n";
+    const auto program = std::string(declaration) +
+                         "\ndefine i64 @main() #0 { " + call +
+                         " ret i64 0 }\n"
+                         "attributes #0 = { \"entry_point\" "
+                         "\"qir_profiles\"=\"adaptive_profile\" }\n";
     ASSERT_EQ(qdmi_test::setProgram(
                   crash.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
               QDMI_SUCCESS);

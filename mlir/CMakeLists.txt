@@ -10,6 +10,11 @@ if(MSVC)
   add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 endif()
 
+if(NOT MQT_CORE_INSTALL)
+  # Suppress the install rules added by LLVM's library and tool helpers.
+  set(LLVM_INSTALL_TOOLCHAIN_ONLY ON)
+endif()
+
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
   llvm_update_compile_flags(${target_name})

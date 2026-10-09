@@ -12,20 +12,12 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 # Register bundled libraries before importing native extensions on Windows.
 if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] Native imports need the DLL search path.
+    from importlib.metadata import distribution
 
-    def _dll_patch() -> None:
-        """Add bundled libraries to the Windows DLL search path."""
-        import sysconfig  # ruff:ignore[import-outside-top-level] only used in Windows
-
-        bin_dir = Path(sysconfig.get_paths()["purelib"]) / "mqt" / "core" / "bin"
-        os.add_dll_directory(str(bin_dir))
-
-    _dll_patch()
-    del _dll_patch
+    os.add_dll_directory(str(distribution("mqt-core").locate_file("mqt/core/bin")))
 
 
 from ._version import version as __version__

@@ -8,17 +8,6 @@
 
 set(MQT_CORE_TARGETS "")
 
-if(MQT_CORE_INSTALL)
-  set(MQT_CORE_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/mqt-core")
-  set(MQT_CORE_TARGETS_EXPORT_NAME "mqt-core-targets")
-  set(MQT_CORE_CMAKE_CONFIG_TEMPLATE "${PROJECT_SOURCE_DIR}/cmake/mqt-core-config.cmake.in")
-  set(MQT_CORE_CMAKE_CONFIG_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-  set(MQT_CORE_CMAKE_VERSION_CONFIG_FILE
-      "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config-version.cmake")
-  set(MQT_CORE_CMAKE_PROJECT_CONFIG_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config.cmake")
-  set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "mqt-core-targets.cmake")
-endif()
-
 if(NOT TARGET MQT::ProjectWarnings)
   # use the warnings specified in CompilerWarnings.cmake
   add_library(project_warnings INTERFACE)
@@ -29,8 +18,6 @@ if(NOT TARGET MQT::ProjectWarnings)
 
   add_library(MQT::ProjectWarnings ALIAS project_warnings)
   set_target_properties(project_warnings PROPERTIES EXPORT_NAME ProjectWarnings)
-
-  list(APPEND MQT_CORE_TARGETS project_warnings)
 endif()
 
 if(NOT TARGET MQT::ProjectOptions)
@@ -47,8 +34,6 @@ if(NOT TARGET MQT::ProjectOptions)
 
   add_library(MQT::ProjectOptions ALIAS project_options)
   set_target_properties(project_options PROPERTIES EXPORT_NAME ProjectOptions)
-
-  list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
 add_subdirectory(bench)
@@ -57,51 +42,59 @@ add_subdirectory(dd)
 
 add_subdirectory(qdmi)
 
-# Installation instructions for the main library
 if(MQT_CORE_INSTALL)
   include(CMakePackageConfigHelpers)
+  set(config_install_dir "${CMAKE_INSTALL_DATADIR}/cmake/mqt-core")
   configure_package_config_file(
-    ${MQT_CORE_CMAKE_CONFIG_TEMPLATE} ${MQT_CORE_CMAKE_PROJECT_CONFIG_FILE}
-    INSTALL_DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
-    NO_SET_AND_CHECK_MACRO NO_CHECK_REQUIRED_COMPONENTS_MACRO)
+    ${PROJECT_SOURCE_DIR}/cmake/mqt-core-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config.cmake
+    INSTALL_DESTINATION ${config_install_dir}
+    NO_SET_AND_CHECK_MACRO)
   write_basic_package_version_file(
-    ${MQT_CORE_CMAKE_VERSION_CONFIG_FILE}
+    ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config-version.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion)
 
-  install(
-    FILES ${MQT_CORE_CMAKE_PROJECT_CONFIG_FILE} ${MQT_CORE_CMAKE_VERSION_CONFIG_FILE}
-    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  mqt_get_qdmi_device_targets(runtime_targets)
+  list(APPEND runtime_targets ${MQT_CORE_TARGET_NAME}-qdmi-driver)
+  list(REMOVE_ITEM MQT_CORE_TARGETS ${runtime_targets})
+  set_target_properties(${runtime_targets} PROPERTIES INTERFACE_COMPILE_FEATURES "")
 
-  # FILE_SET should be aligned with LIBRARY and ARCHIVE, so we turn cmake-format off
+  # Runtime exports contain only the C ABI and executable tools.
   # cmake-format: off
   install(
-    TARGETS ${MQT_CORE_TARGETS}
-    EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
+    TARGETS ${runtime_targets}
+    EXPORT mqt-core-runtime-targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-            NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-    FILE_SET HEADERS
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+    FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
+                     COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+
+  install(
+    TARGETS ${MQT_CORE_TARGETS}
+    EXPORT mqt-core-development-targets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Development
+    FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
+                     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
   # cmake-format: on
 
   install(
-    EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
-    FILE ${MQT_CORE_CMAKE_PROJECT_TARGETS_FILE}
-    NAMESPACE MQT::
-    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  install(
-    FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config.cmake
+          ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config-version.cmake
           ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/CopyQDMISharedDependencies.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
-    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
+    DESTINATION ${config_install_dir}
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+  install(
+    EXPORT mqt-core-runtime-targets
+    NAMESPACE MQT::
+    DESTINATION ${config_install_dir}
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+  install(
+    EXPORT mqt-core-development-targets
+    NAMESPACE MQT::
+    DESTINATION ${config_install_dir}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 endif()

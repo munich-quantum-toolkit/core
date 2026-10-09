@@ -19,35 +19,19 @@
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
-#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
-#include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
-#include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
-#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
 
-#include "jeff/IR/JeffDialect.h"
 #include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
 
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
-#include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
-#include "mlir/Dialect/Math/IR/Math.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -57,8 +41,6 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -542,32 +524,18 @@ static int runCompiler(int argc, char** argv) {
     compilerTarget.emplace(std::move(*target));
   }
 
-  // Set up MLIR context with all required dialects
-  DialectRegistry registry;
-  registry
-      .insert<arith::ArithDialect, cbit::CBitDialect, cf::ControlFlowDialect,
-              func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
-              memref::MemRefDialect, mlir::mqt::MQTDialect, qc::QCDialect,
-              qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
-              tensor::TensorDialect, mlir::jeff::JeffDialect>();
-  registerBuiltinDialectTranslation(registry);
-  registerLLVMDialectTranslation(registry);
-  func::registerInlinerExtension(registry);
-  LLVM::registerInlinerInterface(registry);
-
   llvm::SourceMgr sourceMgr;
-  MLIRContext context(registry);
-  context.loadAllAvailableDialects();
-  SourceMgrDiagnosticHandler diagnosticHandler(sourceMgr, &context);
+  auto context = createCompilerContext();
+  SourceMgrDiagnosticHandler diagnosticHandler(sourceMgr, context.get());
   PassReproducerOptions reproducerOptions;
-  ParserConfig parserConfig(&context, /*verifyAfterParse=*/!runReproducer);
+  ParserConfig parserConfig(context.get(), /*verifyAfterParse=*/!runReproducer);
   if (runReproducer) {
     reproducerOptions.attachResourceParser(parserConfig);
   }
 
   std::optional<PayloadSpecification> selectedPayload;
   if (!payloadSpecification.empty()) {
-    const auto attribute = parseAttribute(payloadSpecification, &context);
+    const auto attribute = parseAttribute(payloadSpecification, context.get());
     const auto payloadAttr =
         dyn_cast_if_present<mqt::PayloadSpecAttr>(attribute);
     if (!payloadAttr) {
@@ -619,10 +587,10 @@ static int runCompiler(int argc, char** argv) {
     }
     break;
   case InputFormat::OpenQASM:
-    program.mod = loadOpenQASMFile(inputFilename, &context, sourceMgr);
+    program.mod = loadOpenQASMFile(inputFilename, context.get(), sourceMgr);
     break;
   case InputFormat::Jeff:
-    program = loadJeffFile(inputFilename, &context);
+    program = loadJeffFile(inputFilename, context.get());
     break;
   }
   if (!program.mod) {
@@ -642,7 +610,7 @@ static int runCompiler(int argc, char** argv) {
   const auto runPasses =
       [&](const function_ref<LogicalResult(OpPassManager&)> populate,
           bool preservesLayout = false) {
-        PassManager pm(&context);
+        PassManager pm(context.get());
         if (failed(applyPassManagerCLOptions(pm))) {
           return failure();
         }
@@ -654,7 +622,7 @@ static int runCompiler(int argc, char** argv) {
       };
 
   if (isolated) {
-    PassManager pm(&context);
+    PassManager pm(context.get());
     if (runReproducer) {
       if (failed(reproducerOptions.apply(pm))) {
         return 1;

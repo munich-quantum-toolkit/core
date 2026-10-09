@@ -14,6 +14,8 @@ if(NOT MQT_CORE_QDMI_HELPER OR NOT MQT_CORE_QDMI_TEST_SOURCE_DIR)
 endif()
 
 set(QDMI_VERSION "test")
+set(MQT_CORE_INSTALL ON)
+set(MQT_CORE_TARGET_NAME mqt-core)
 include("${MQT_CORE_QDMI_HELPER}")
 
 add_library(mqt-core-qdmi-runtime-file-device SHARED

@@ -234,24 +234,27 @@ A cluster can configure more than one license for a device. For example,
 The count is a Slurm admission limit. It is not an access permission, a device
 availability check, or a device queue length.
 
-## Installed C++ applications
+## Native applications
 
-The MQT Core Python distribution also supplies a CMake package. Use
-`find_package(mqt-core)` to link its C++ QDMI library and copy the driver and
-selected devices beside your application:
+The Python wheel supplies a runtime CMake package for the builtin driver, QDMI
+devices, and tools. Use `MQT::CoreQDMIDriver` to link the QDMI C client
+interface; see {doc}`../cpp_api` for a complete example.
+
+The C++ QDMI wrapper requires a source installation. Request its `Development`
+component and copy the driver and selected devices beside your application:
 
 ```cmake
-find_package(mqt-core CONFIG REQUIRED)
+find_package(mqt-core CONFIG REQUIRED COMPONENTS Development)
 add_executable(my-application main.cpp)
 target_link_libraries(my-application PRIVATE MQT::CoreQDMI)
 mqt_copy_qdmi_runtime(my-application MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device)
 ```
 
-The helper copies shared libraries, device manifests, and configuration files.
-It also copies DLL dependencies on Windows and dependencies shipped beside
-installed libraries on Linux and macOS. Static libraries are linked into the
-application and need no copy. The application uses its build RPATH during the
-build. This also works with a source installation of MQT Core.
+The helper copies each library and its declared bundle files, including
+manifests, configuration files, and the DDSIM worker. Builtin devices statically
+link their implementation dependencies. Keep each bundle together when moving
+it; supported platform runtimes are still required. The application uses its
+build RPATH during the build.
 
 Manifests contain library filenames relative to their own directory. Keep each
 manifest beside its device library when moving an installation. The MQT Core
@@ -272,3 +275,5 @@ configure_qdmi_device_target(TARGET example-device ID example.device PREFIX EXAM
 For such a target, `mqt_copy_qdmi_runtime` generates the manifest. Targets with
 an existing manifest can export `QDMI_MANIFEST_NAME` instead. Additional files
 listed in `QDMI_RUNTIME_FILES` are copied from the device library's directory.
+Providers must declare any companion files their device needs; the helper does
+not discover transitive shared-library dependencies.

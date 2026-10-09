@@ -41,11 +41,6 @@ function(mqt_configure_qdmi_device target)
   foreach(runtime_file IN LISTS ARG_RUNTIME_FILES)
     get_filename_component(runtime_file_name "${runtime_file}" NAME)
     list(APPEND runtime_file_names "${runtime_file_name}")
-    add_custom_command(
-      TARGET ${target}
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${runtime_file}"
-              "$<TARGET_FILE_DIR:${target}>/${runtime_file_name}")
   endforeach()
 
   set(device_entries
@@ -98,11 +93,14 @@ function(mqt_configure_qdmi_device target)
       "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n"
   )
 
-  add_custom_command(
-    TARGET ${target}
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}"
-            "$<TARGET_FILE_DIR:${target}>/${target}.qdmi.json")
+  # Assets can change without relinking the device.
+  add_custom_target(
+    ${target}-qdmi-assets
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}" ${ARG_RUNTIME_FILES}
+            "$<TARGET_FILE_DIR:${target}>"
+    COMMAND_EXPAND_LISTS VERBATIM)
+  add_dependencies(${target} ${target}-qdmi-assets)
   set_target_properties(
     ${target}
     PROPERTIES QDMI_DEVICE_ID "${ARG_ID}"
@@ -122,19 +120,11 @@ function(mqt_configure_qdmi_device target)
   else()
     set(fragment_install_dir ${CMAKE_INSTALL_LIBDIR})
   endif()
-  set(install_arguments)
-  if(MQT_CORE_TARGET_NAME)
-    list(APPEND install_arguments COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
-  endif()
-  install(
-    FILES "${fragment}"
-    DESTINATION ${fragment_install_dir}
-    ${install_arguments})
-  if(ARG_RUNTIME_FILES)
+  if(MQT_CORE_INSTALL)
     install(
-      FILES ${ARG_RUNTIME_FILES}
+      FILES "${fragment}" ${ARG_RUNTIME_FILES}
       DESTINATION ${fragment_install_dir}
-      ${install_arguments})
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
   endif()
 endfunction()
 
@@ -151,7 +141,9 @@ function(mqt_copy_qdmi_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI application target: ${target}")
   endif()
-  set_property(TARGET ${target} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+  if(NOT (APPLE AND SKBUILD))
+    set_property(TARGET ${target} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+  endif()
   set(devices ${ARGN})
   if(NOT devices)
     mqt_get_qdmi_device_targets(devices)
@@ -178,22 +170,15 @@ function(mqt_copy_qdmi_runtime target)
     if(library_target STREQUAL "${target}" OR NOT library_type MATCHES "^(SHARED|MODULE)_LIBRARY$")
       continue()
     endif()
+    string(MAKE_C_IDENTIFIER "${target}-stage-${library_target}" staging_target)
+    if(TARGET ${staging_target})
+      continue()
+    endif()
     get_target_property(imported ${library_target} IMPORTED)
     set(files "$<TARGET_FILE:${library}>")
-    if(WIN32)
-      if(imported)
-        # TARGET_RUNTIME_DLLS needs a local target to traverse imported dependencies.
-        string(MAKE_C_IDENTIFIER "${library_target}-dependencies" dependency_target)
-        if(NOT TARGET ${dependency_target})
-          add_library(${dependency_target} MODULE EXCLUDE_FROM_ALL
-                      "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
-          set_property(TARGET ${dependency_target} PROPERTY LINKER_LANGUAGE CXX)
-          target_link_libraries(${dependency_target} PRIVATE ${library})
-        endif()
-        set(files "$<TARGET_RUNTIME_DLLS:${dependency_target}>")
-      else()
-        list(APPEND files "$<TARGET_RUNTIME_DLLS:${library}>")
-      endif()
+    if(UNIX AND library_type STREQUAL "SHARED_LIBRARY")
+      # Source installations may use a versioned SONAME in linked applications.
+      list(APPEND files "$<TARGET_SONAME_FILE:${library}>")
     endif()
     if(library IN_LIST devices)
       get_target_property(manifest_name ${library_target} QDMI_MANIFEST_NAME)
@@ -228,22 +213,14 @@ function(mqt_copy_qdmi_runtime target)
         endforeach()
       endif()
     endif()
-    if(NOT imported)
-      add_dependencies(${target} ${library_target})
-    endif()
-    add_custom_command(
-      TARGET ${target}
-      POST_BUILD
+    add_custom_target(
+      ${staging_target}
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${files} "$<TARGET_FILE_DIR:${target}>"
-      COMMAND_EXPAND_LISTS)
-    if(NOT WIN32 AND imported)
-      add_custom_command(
-        TARGET ${target}
-        POST_BUILD
-        COMMAND
-          ${CMAKE_COMMAND} "-DLIBRARY=$<TARGET_FILE:${library}>"
-          "-DDESTINATION=$<TARGET_FILE_DIR:${target}>" -P
-          "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CopyQDMISharedDependencies.cmake")
+      COMMAND_EXPAND_LISTS VERBATIM)
+    if(NOT imported)
+      add_dependencies(${staging_target} ${library_target})
     endif()
+    add_dependencies(${target} ${staging_target})
   endforeach()
 endfunction()

@@ -84,7 +84,8 @@ Move between Qiskit, OpenQASM, jeff, and QIR text or bitcode.
 
 Use the C++ libraries or work on the MLIR compiler infrastructure.
 
-- **First example:** [C++ library quickstart](cpp_api.md#use-the-dd-library)
+- **First example:**
+  [Native runtime quickstart](cpp_api.md#use-the-wheels-native-runtime)
 - **Guide:** [C++ compilation](mlir/target_compilation.md#c-source-tree-api) and
   [compiler development](development.md#mlir)
 - **API:** {doc}`C++ reference <cpp_api>` and

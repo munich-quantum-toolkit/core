@@ -10,25 +10,19 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add driver library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver FORCE_SHARED)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver FORCE_SHARED HIDDEN_VISIBILITY)
   set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
-               WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+    ${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
+                              RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 
-  target_sources(
-    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
-                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/DriverExtension.hpp)
-
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreQDMICommon
-    PRIVATE qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>
-            ${CMAKE_DL_LIBS})
+    PUBLIC qdmi::qdmi
+    PRIVATE MQT::CoreQDMICommon qdmi::qdmi_project_warnings
+            $<BUILD_INTERFACE:nlohmann_json::nlohmann_json> ${CMAKE_DL_LIBS})
 
   configure_qdmi_exports(
     TARGET

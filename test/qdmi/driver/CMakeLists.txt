@@ -9,10 +9,13 @@
 set(TARGET_NAME mqt-core-qdmi-driver-test)
 
 if(TARGET MQT::CoreQDMIDriver)
+  # These fixtures use automatic DLL exports, which cannot read MSVC IPO objects.
   add_library(mqt-core-qdmi-metadata-device SHARED metadata_device.cpp)
   set_target_properties(
     mqt-core-qdmi-metadata-device
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
+    PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+               INTERPROCEDURAL_OPTIMIZATION OFF
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                QDMI_DEVICE_ID "test.metadata-only"
                QDMI_DEVICE_PREFIX "TEST_METADATA"
@@ -31,7 +34,9 @@ if(TARGET MQT::CoreQDMIDriver)
   target_link_libraries(mqt-core-qdmi-session-device PRIVATE qdmi::qdmi)
   set_target_properties(
     mqt-core-qdmi-session-device
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
+    PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+               INTERPROCEDURAL_OPTIMIZATION OFF
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device")
 
   package_add_test(${TARGET_NAME} mqt-core-qdmi-driver-testing test_driver.cpp)

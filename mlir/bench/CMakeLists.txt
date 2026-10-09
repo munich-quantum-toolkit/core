@@ -30,6 +30,8 @@ mlir_check_all_link_libraries(mqt-core-bench)
 
 if(MQT_CORE_INSTALL)
   include(GNUInstallDirs)
-  install(TARGETS mqt-core-bench RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-                                         COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+  install(
+    TARGETS mqt-core-bench
+    EXPORT mqt-core-runtime-targets
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
 endif()

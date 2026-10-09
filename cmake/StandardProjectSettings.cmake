@@ -21,8 +21,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Require C++ standard
-set_property(GLOBAL PROPERTY CMAKE_CXX_STANDARD_REQUIRED ON)
-set_property(GLOBAL PROPERTY CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Generate compile_commands.json to make it easier to work with clang based tools
 set(CMAKE_EXPORT_COMPILE_COMMANDS
@@ -49,11 +49,6 @@ if(DEFINED ENV{DEPLOY})
       $ENV{DEPLOY}
       CACHE BOOL "Use deployment configuration from environment" FORCE)
   message(STATUS "Setting deployment configuration to '${DEPLOY}' from environment")
-elseif(DEFINED ENV{CI})
-  set(DEPLOY
-      ON
-      CACHE BOOL "Set deployment configuration to ON for CI" FORCE)
-  message(STATUS "Setting deployment configuration to '${DEPLOY}' for CI")
 endif()
 
 # set deployment specific options
@@ -64,8 +59,10 @@ if(DEPLOY)
       CACHE STRING "" FORCE)
 endif()
 
-# try to enable inter-procedural optimization per default for Release builds outside of deployment
-if(NOT DEPLOY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+# MSVC /GL libraries repeat code generation at every test executable's link.
+if(NOT DEPLOY
+   AND CMAKE_BUILD_TYPE STREQUAL "Release"
+   AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND BUILD_MQT_CORE_TESTS))
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" ON)
 else()
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)
@@ -81,10 +78,5 @@ endif()
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION
     ${ipo_supported}
     CACHE BOOL "Enable Interprocedural Optimization" FORCE)
-
-# export all symbols by default on Windows
-set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS
-    ON
-    CACHE BOOL "Export all symbols on Windows")
 
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

@@ -236,7 +236,7 @@ From a source checkout on a Linux Docker host with cgroup v2, build one wheel
 and run the fixture:
 
 ```console
-uv build --wheel --out-dir test/slurm/dist
+uv build --wheel --out-dir test/slurm/dist -Ccmake.define.DEPLOY=ON
 uv run --no-project --python 3.14 test/slurm/run_integration.py
 ```
 

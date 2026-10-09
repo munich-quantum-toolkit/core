@@ -15,6 +15,8 @@ function(add_mqt_python_binding package_name target_name)
     ${target_name}
     # Enable free-threaded support
     FREE_THREADED
+    # Keep computation in bindings optimized for speed.
+    NOMINSIZE
     # Suppress compiler warnings from the nanobind library
     NB_SUPPRESS_WARNINGS
     # Use nanobind's shared runtime. Split mode enables the Stable ABI internally.
@@ -40,11 +42,11 @@ function(add_mqt_python_binding package_name target_name)
 
   # Keep statically linked dependencies local.
   if(APPLE)
+    # Restore the Python module namespace changed by HandleLLVMOptions, as in AddMLIRPython.
+    target_link_options(${target_name} PRIVATE "LINKER:-twolevel_namespace")
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
   elseif(UNIX)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
-  elseif(WIN32)
-    set_target_properties(${target_name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   endif()
 
   # Add project libraries to the link libraries
@@ -58,8 +60,10 @@ function(add_mqt_python_binding package_name target_name)
   endif()
 
   # Install directive for scikit-build-core
-  install(
-    TARGETS ${target_name}
-    DESTINATION ${ARG_INSTALL_DIR}
-    COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
+  if(MQT_CORE_INSTALL)
+    install(
+      TARGETS ${target_name}
+      DESTINATION ${ARG_INSTALL_DIR}
+      COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
+  endif()
 endfunction()

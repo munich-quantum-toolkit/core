@@ -32,7 +32,7 @@ function(add_mqt_core_library name)
   elseif(BUILD_MQT_CORE_SHARED_LIBS)
     add_library(${name} SHARED ${ARG_UNPARSED_ARGUMENTS})
   else()
-    add_library(${name} ${ARG_UNPARSED_ARGUMENTS})
+    add_library(${name} STATIC ${ARG_UNPARSED_ARGUMENTS})
   endif()
 
   if(NOT ARG_ALIAS_NAME)
@@ -42,9 +42,16 @@ function(add_mqt_core_library name)
   endif()
   add_library(MQT::Core${ARG_ALIAS_NAME} ALIAS ${name})
 
+  get_target_property(target_type ${name} TYPE)
+  if(target_type STREQUAL "STATIC_LIBRARY")
+    string(TOUPPER "MQT_CORE_${ARG_ALIAS_NAME}_STATIC_DEFINE" static_define)
+    target_compile_definitions(${name} PUBLIC ${static_define})
+  endif()
+
   target_compile_features(${name} PUBLIC cxx_std_20)
 
-  target_link_libraries(${name} PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
+  target_link_libraries(${name}
+                        PRIVATE "$<BUILD_LOCAL_INTERFACE:MQT::ProjectWarnings;MQT::ProjectOptions>")
 
   if(ARG_HIDDEN_VISIBILITY)
     set_target_properties(
@@ -53,6 +60,14 @@ function(add_mqt_core_library name)
                  CXX_VISIBILITY_PRESET hidden
                  VISIBILITY_INLINES_HIDDEN 1
                  WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+  elseif(WIN32)
+    if(target_type STREQUAL "SHARED_LIBRARY")
+      set_target_properties(${name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+      if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        # CMake's automatic export scanner cannot read MSVC /GL objects.
+        set_target_properties(${name} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+      endif()
+    endif()
   endif()
 
   # Always compile with position-independent code to enable usage in shared libraries
