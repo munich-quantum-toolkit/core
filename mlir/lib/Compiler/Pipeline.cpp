@@ -262,8 +262,6 @@ JeffProgram::fromMessage(::jeff::Module::Reader module) {
   auto context = createCompilerContext();
   auto mod = deserialize(context.get(), module);
   if (!mod) {
-    emitError(UnknownLoc::get(context.get()),
-              "failed to deserialize jeff message");
     return std::nullopt;
   }
   return JeffProgram({.context = std::move(context), .mod = std::move(mod)});
