@@ -180,8 +180,8 @@ auto Runtime::resolveAddress(const Qubit* qubit) -> dd::Qubit {
 
 auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
                                  const std::span<Qubit* const> additionalQubits)
-    -> llvm::SmallVector<dd::Qubit, 5> {
-  llvm::SmallVector<dd::Qubit, 5> qubitIds;
+    -> llvm::SmallVector<dd::Qubit> {
+  llvm::SmallVector<dd::Qubit> qubitIds;
   qubitIds.reserve(qubits.size() + additionalQubits.size());
   for (const auto* qubit : qubits) {
     qubitIds.push_back(resolveAddress(qubit));

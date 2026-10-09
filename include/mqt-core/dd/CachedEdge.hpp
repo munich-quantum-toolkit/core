@@ -90,44 +90,41 @@ template <typename Node> struct CachedEdge {
   [[nodiscard]] constexpr bool isTerminal() const {
     return Node::isTerminal(p);
   }
-
-  /// Get a normalized vector DD from a fresh node and a list of edges.
-  /// @param p the fresh node
-  /// @param e the list of edges that form the successor nodes
-  /// @param mm a reference to the memory manager (for returning unused nodes)
-  /// @param cn a reference to the complex number manager (for adding new
-  /// complex numbers)
-  /// @return the normalized vector DD
-  static auto normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge
-    requires IsVector<Node>;
-
-  /// Get a normalized matrix DD from a fresh node and a list
-  /// of edges.
-  /// @param p the fresh node
-  /// @param e the list of edges that form the successor nodes
-  /// @param mm a reference to the memory manager (for returning unused nodes)
-  /// @param cn a reference to the complex number manager (for adding new
-  /// complex numbers)
-  /// @return the normalized matrix DD
-  static auto normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge
-    requires IsMatrix<Node>;
-
-  /// Check whether the matrix represented by the DD is the identity.
-  /// @return whether the matrix is the identity
-  [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const
-    requires IsMatrix<Node>
-  {
-    if (!isTerminal()) {
-      return false;
-    }
-    if (upToGlobalPhase) {
-      return !w.exactlyZero();
-    }
-    return w.exactlyOne();
-  }
 };
+
+/// Get a normalized vector DD from a fresh node and a list of edges.
+/// @param p the fresh node
+/// @param e the list of edges that form the successor nodes
+/// @param mm a reference to the memory manager (for returning unused nodes)
+/// @param cn a reference to the complex number manager (for adding new
+/// complex numbers)
+/// @return the normalized vector DD
+auto normalize(vNode* p, const std::array<CachedEdge<vNode>, RADIX>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge<vNode>;
+
+/// Get a normalized matrix DD from a fresh node and a list
+/// of edges.
+/// @param p the fresh node
+/// @param e the list of edges that form the successor nodes
+/// @param mm a reference to the memory manager (for returning unused nodes)
+/// @param cn a reference to the complex number manager (for adding new
+/// complex numbers)
+/// @return the normalized matrix DD
+auto normalize(mNode* p, const std::array<CachedEdge<mNode>, NEDGE>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge<mNode>;
+
+/// Check whether the matrix represented by the DD is the identity.
+/// @return whether the matrix is the identity
+[[nodiscard]] inline bool isIdentity(const CachedEdge<mNode>& edge,
+                                     const bool upToGlobalPhase = true) {
+  if (edge.p != nullptr) {
+    return false;
+  }
+  if (upToGlobalPhase) {
+    return !edge.w.exactlyZero();
+  }
+  return edge.w.exactlyOne();
+}
 
 // Deduction guide for constructor: CachedEdge(Node*, const ComplexValue&)
 template <class Node>

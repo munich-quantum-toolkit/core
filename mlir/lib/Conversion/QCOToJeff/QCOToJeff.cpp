@@ -51,6 +51,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/RegionUtils.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -372,7 +373,7 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 template <typename QCOOpType>
 static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                         LoweringState& state, ValueRange targets,
-                        const SmallVector<int32_t>& pauliGates) {
+                        ArrayRef<int32_t> pauliGates) {
   auto pauliGatesAttr =
       DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
 
@@ -626,15 +627,15 @@ static Value integerConstant(OpBuilder& builder, Location loc, IntegerType type,
       builder.getIntegerAttr(type, value.zextOrTrunc(type.getWidth()));
   switch (type.getWidth()) {
   case 1:
-    return {jeff::IntConst1Op::create(builder, loc, attribute)};
+    return jeff::IntConst1Op::create(builder, loc, attribute).getResult();
   case 8:
-    return {jeff::IntConst8Op::create(builder, loc, attribute)};
+    return jeff::IntConst8Op::create(builder, loc, attribute).getResult();
   case 16:
-    return {jeff::IntConst16Op::create(builder, loc, attribute)};
+    return jeff::IntConst16Op::create(builder, loc, attribute).getResult();
   case 32:
-    return {jeff::IntConst32Op::create(builder, loc, attribute)};
+    return jeff::IntConst32Op::create(builder, loc, attribute).getResult();
   case 64:
-    return {jeff::IntConst64Op::create(builder, loc, attribute)};
+    return jeff::IntConst64Op::create(builder, loc, attribute).getResult();
   default:
     llvm_unreachable("unsupported jeff integer width");
   }
@@ -1070,9 +1071,10 @@ struct LowerRegisterComparison final : OpRewritePattern<arith::CmpIOp> {
         [&](int64_t index) -> Value {
           auto position =
               arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
-          return {cbit::LoadOp::create(rewriter, read.getLoc(),
-                                       rewriter.getI1Type(), read.getReg(),
-                                       position)};
+          return cbit::LoadOp::create(rewriter, read.getLoc(),
+                                      rewriter.getI1Type(), read.getReg(),
+                                      position)
+              .getResult();
         });
     rewriter.replaceOp(op, result);
     if (read->use_empty()) {
@@ -1430,10 +1432,9 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    if (!llvm::hasSingleElement(op.getBody()->getOps<UnitaryOpInterface>())) {
       return rewriter.notifyMatchFailure(
-          op,
-          "Control modifiers with multiple body unitaries are not supported.");
+          op, "Control modifiers require exactly one body unitary.");
     }
 
     auto& state = getState();
@@ -1482,10 +1483,9 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   LogicalResult
   matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
-      return rewriter.notifyMatchFailure(op,
-                                         "Inversion modifiers with multiple "
-                                         "body unitaries are not supported.");
+    if (!llvm::hasSingleElement(op.getBody()->getOps<UnitaryOpInterface>())) {
+      return rewriter.notifyMatchFailure(
+          op, "Inversion modifiers require exactly one body unitary.");
     }
 
     auto& state = getState();
@@ -1527,10 +1527,9 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
   LogicalResult
   matchAndRewrite(PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
-      return rewriter.notifyMatchFailure(op,
-                                         "Power modifiers with multiple body "
-                                         "unitaries are not supported.");
+    if (!llvm::hasSingleElement(op.getBody()->getOps<UnitaryOpInterface>())) {
+      return rewriter.notifyMatchFailure(
+          op, "Power modifiers require exactly one body unitary.");
     }
 
     auto& state = getState();

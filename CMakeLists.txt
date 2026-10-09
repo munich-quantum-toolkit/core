@@ -28,6 +28,7 @@ include(StandardProjectSettings)
 include(PreventInSourceBuilds)
 include(PackageAddTest)
 include(Cache)
+include(GNUInstallDirs)
 include(AddMQTCoreLibrary)
 include(AddMQTQDMIDevice)
 

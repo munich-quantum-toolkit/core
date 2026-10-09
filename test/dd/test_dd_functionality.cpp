@@ -9,6 +9,7 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
@@ -30,7 +31,7 @@ TEST(DDGateConstruction, AppliesGlobalPhase) {
 
   const auto phased = applyGlobalPhase(state, std::numbers::pi / 2., package);
   EXPECT_EQ(state, phased);
-  const auto vector = phased.getVector();
+  const auto vector = dd::getVector(phased);
 
   ASSERT_EQ(vector.size(), 2);
   EXPECT_NEAR(vector[0].real(), 0., RealNumber::eps);
@@ -39,7 +40,7 @@ TEST(DDGateConstruction, AppliesGlobalPhase) {
 
   package.garbageCollect(true);
   state = package.applyOperation(Package::makeIdent(), state);
-  EXPECT_EQ(state.getVector(), vector);
+  EXPECT_EQ(dd::getVector(state), vector);
   package.decRef(state);
   package.garbageCollect(true);
   const auto [vectors, matrices, reals] = package.computeActiveCounts();
@@ -53,7 +54,7 @@ TEST(DDGateConstruction, ScalarGlobalPhaseSurvivesCollection) {
   auto state = vEdge::one();
   applyGlobalPhase(state, 0.3, package);
   package.garbageCollect(true);
-  EXPECT_NEAR(std::abs(state.getVector().front() - std::polar(1., 0.3)), 0.,
+  EXPECT_NEAR(std::abs(dd::getVector(state).front() - std::polar(1., 0.3)), 0.,
               RealNumber::eps);
   package.decRef(state);
   package.garbageCollect(true);

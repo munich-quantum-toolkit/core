@@ -12,6 +12,9 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 
+#include "capnp/message.h"
+#include "jeff.capnp.h"
+
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -392,19 +395,33 @@ class JeffProgram final : public Program {
 public:
   explicit JeffProgram(Storage storage) : Program(std::move(storage)) {}
 
-  /// Deserialize a `jeff` binary file.
+  /// Deserialize an existing jeff message.
+  ///
+  /// Keep the reader's backing storage alive and unchanged until this function
+  /// returns. Return nullopt and emit a diagnostic if deserialization fails.
   [[nodiscard]] static std::optional<JeffProgram>
-  fromFile(const std::filesystem::path& path);
+  fromMessage(::jeff::Module::Reader module);
 
   /// Deserialize a `jeff` binary buffer.
   [[nodiscard]] static std::optional<JeffProgram>
   fromBytes(std::span<const std::byte> bytes);
+
+  /// Deserialize a `jeff` binary file.
+  [[nodiscard]] static std::optional<JeffProgram>
+  fromFile(const std::filesystem::path& path);
 
   /// Create an independent `jeff` program copy.
   [[nodiscard]] JeffProgram copy() const;
 
   /// Run the standard `jeff` cleanup passes in place.
   [[nodiscard]] bool cleanup();
+
+  /// Serialize this program into a fresh caller-owned Cap'n Proto message.
+  ///
+  /// Keep the message alive and unchanged while using its root or the views
+  /// returned by `getSegmentsForOutput()`. Discard the message if encoding
+  /// fails.
+  void toMessage(capnp::MessageBuilder& message) const;
 
   /// Serialize this program to a binary `jeff` buffer.
   /// Return an empty vector and emit a diagnostic if serialization fails.

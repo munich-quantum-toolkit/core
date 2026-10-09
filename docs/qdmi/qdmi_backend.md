@@ -70,7 +70,7 @@ print(f"Results: {counts}")
 ### Using the Provider
 
 The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` discovers
-registered QDMI devices. Use it when an application must enumerate backends.
+client-visible QDMI devices. Use it when an application must enumerate backends.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMIProvider
@@ -95,10 +95,10 @@ print(f"Backend: {backend.name}")
 print(f"Qubits: {backend.target.num_qubits}")
 ```
 
-Optional session keywords apply explicit overrides to this fresh device session.
-Their names and value types are described by
-{py:class}`mqt.core.typing.QDMISessionParameters`; persistent configuration
-remains the default:
+Optional session keywords configure this fresh device session through the MQT
+Core QDMI driver. Their names and value types are described by
+{py:class}`mqt.core.typing.QDMISessionParameters`. The selected Driver defines
+their meaning and precedence:
 
 ```python
 backend = QDMIBackend.from_device_id(
@@ -121,12 +121,13 @@ exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 
 ## Authentication
 
-{py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` does not define a
-generic credential interface. It opens each registered device with its
-persistent definition. Configure credentials through the selected QDMI device
-implementation. For example, a provider can use a credential file, an
-environment variable, or a platform credential-provider chain. See
-[QDMI device configuration](configuration.md) for persistent session settings.
+`QDMIBackend.from_device_id` and `QDMIProvider.get_backend_by_device_id` accept
+the device-session parameters in
+{py:class}`mqt.core.typing.QDMISessionParameters`, including `base_url`,
+`token`, and `auth_file`. The device validates these values and can also use
+environment variables or a platform credential provider.
+`QDMIProvider.backends()` uses a fresh session without explicit authentication
+parameters.
 
 ## Device Capabilities and Target
 
@@ -289,7 +290,13 @@ process.
 ## Multi-Circuit Execution
 
 The backend supports both single-circuit and multi-circuit execution. You can
-submit multiple circuits in a single call:
+submit multiple circuits in a single call. Circuits with the same program format
+and shot count use one native QDMI job when the device supports that program
+list. Otherwise, the backend submits independent jobs before waiting for
+results. Each entry retains its result index and attempt history; recovery
+replaces only confirmed failed circuits and keeps successful siblings.
+
+For example:
 
 ```{code-cell} ipython3
 # Create multiple circuits
@@ -527,8 +534,7 @@ QASM2
 
 Device-native formats take precedence. Among standard formats, those with
 classical control precede restricted profiles; binary encoding wins ties within
-a QIR profile. `BATCH_JOB` does not carry serialized circuits and cannot have a
-program serializer.
+a QIR profile.
 
 ### Device-specific execution options
 

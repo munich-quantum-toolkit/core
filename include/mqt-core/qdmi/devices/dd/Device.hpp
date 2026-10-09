@@ -13,30 +13,23 @@
 /// @file
 /// The MQT QDMI device implementation for its DD-based simulator.
 
-#include "dd/DDDefinitions.hpp"
-#include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
 #include <atomic>
-#include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <future>
 #include <limits>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <random>
 #include <string>
 #include <unordered_map>
-#include <utility>
-#include <variant>
 #include <vector>
 
 namespace qdmi::dd {
+struct Execution;
 class Device final : public Singleton<Device> {
   friend class Singleton;
 
@@ -164,113 +157,20 @@ private:
   /// The unique identifier of the job.
   int id_ = 0;
 
-  /// The status of the job
-  std::atomic<QDMI_Job_Status> status_{QDMI_JOB_STATUS_CREATED};
-
-  /// The program format
-  QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_QASM3;
-
-  /// The quantum program associated with the job.
-  /// Text formats (QASM2/3, QIR Base/Adaptive String) are stored as
-  /// @c std::string; binary formats (QIR Base/Adaptive Module) are stored as
-  /// @c std::vector<std::byte>.
-  std::variant<std::string, std::vector<std::byte>> program_;
-
-  /// The number of shots for the job
-  size_t numShots_ = 1024U;
-
-  /// Optional positive seed for deterministic sampling.
+  QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_MAX;
+  std::vector<std::string> programs_;
+  size_t numShots_ = 1024;
   std::optional<int> seed_;
-
-  /// Opt-in textual QIR records, separate from measurement shots and counts.
   bool captureQIROutput_ = false;
-  std::optional<std::string> qirOutput_;
-
-  /// Handle for the asynchronous job
-  std::future<void> jobHandle_;
-
-  /// The measurement counts for the job
-  std::map<std::string, std::size_t> counts_;
-
-  /// Measurement outcomes in sampling order.
-  std::vector<std::string> shots_;
-
-  /// Owns an extracted state or an uncollapsed terminal-sampling state.
-  /// A null package means that no state result is available.
-  std::unique_ptr<dd::Package> dd_;
-
-  /// The retained state, valid while dd_ owns its nodes.
-  dd::VectorDD stateVecDD_{};
-
-  /// The state vector for the job (only available if no mid-circuit
-  /// measurements are used).
-  dd::CVec stateVec_;
-
-  /// Sparse amplitudes in ascending basis-index order (only available if no
-  /// mid-circuit measurements are used).
-  std::vector<std::pair<size_t, std::complex<dd::fp>>> stateVecSparse_;
-
-  /// One-time flags to lazily materialize vectors in a thread-safe way
-  std::once_flag stateVecOnce_;
-  std::once_flag stateVecSparseOnce_;
-
-  /// Translate counts to QDMI histogram
-  auto getHistogram(QDMI_Job_Result result, size_t size, void* data,
-                    size_t* sizeRet) -> QDMI_STATUS;
-
-  /// Copy ordered outcomes to the QDMI comma-separated shot representation.
-  auto getShots(size_t size, void* data, size_t* sizeRet) const -> QDMI_STATUS;
-
-  /// Translate the state vector DD to a dense state vector for QDMI
-  auto getStateVector(size_t size, void* data, size_t* sizeRet) -> QDMI_STATUS;
-
-  /// Translate the state vector DD to sparse representations for QDMI
-  auto getSparseResults(QDMI_Job_Result result, size_t size, void* data,
-                        size_t* sizeRet) -> QDMI_STATUS;
-
-  /// Translate the state vector DD to a dense vector of probabilities for QDMI
-  auto getProbabilities(size_t size, void* data, size_t* sizeRet)
-      -> QDMI_STATUS;
-
-  /// Run @p body on a worker thread with the standard job lifecycle:
-  /// - increase the running-job count,
-  /// - set status to RUNNING,
-  /// - run @p body,
-  /// - set status to DONE or FAILED, and
-  /// - decrease the running-job count.
-  /// Typically, @p body will:
-  /// - parse the program,
-  /// - run or simulate it, and
-  /// - store the results in the job's output fields.
-  /// @returns @c QDMI_SUCCESS once the worker has been spawned.
-  /// Failures inside @p body are reported through the job status (FAILED),
-  /// not through the return value.
-  auto submitProgramAsync(std::function<bool()> body) -> QDMI_STATUS;
-
-  /// Submit a QASM 2 or QASM 3 program.
-  /// Dispatches to the sampling or the state-extraction helper depending on
-  /// @c numShots_.
-  auto submitQASMProgram() -> QDMI_STATUS;
-  /// Sampling path for a QASM program (@c numShots_ > 0).
-  auto submitQASMProgramSampling() -> QDMI_STATUS;
-  /// State-extraction path for a QASM program (@c numShots_ == 0).
-  auto submitQASMProgramStateExtraction() -> QDMI_STATUS;
-
-  /// Submit a QIR Base/Adaptive Module or String program.
-  /// Dispatches to the sampling or the state-extraction helper depending on
-  /// @c numShots_.
-  auto submitQIRProgram() -> QDMI_STATUS;
-  /// Sampling path for a QIR program (@c numShots_ > 0).
-  auto submitQIRProgramSampling() -> QDMI_STATUS;
-  /// State-extraction path for a QIR Base or Adaptive Profile program (@c
-  /// numShots_ == 0).
-  auto submitQIRProgramStateExtraction() -> QDMI_STATUS;
+  /// Maximum shot workers per program; zero selects automatic allocation.
+  size_t maxWorkers_ = 0;
+  std::shared_ptr<qdmi::dd::Execution> execution_;
 
 public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.
   explicit MQT_DDSIM_QDMI_Device_Job_impl_d(
-      MQT_DDSIM_QDMI_Device_Session_impl_d* session)
-      : session_(session), id_(qdmi::dd::Device::get().generateUniqueID()) {}
+      MQT_DDSIM_QDMI_Device_Session_impl_d* session);
+  ~MQT_DDSIM_QDMI_Device_Job_impl_d();
   /// Frees the device job.
   /// @note This function just forwards to the session's @ref
   /// MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob function. This
@@ -278,19 +178,21 @@ public:
   /// the @ref QDMI_job_free function and the job's session handle is private.
   auto free() -> void;
 
-  /// Sets a parameter for the job.
-  /// @note When setting @c QDMI_DEVICE_JOB_PARAMETER_PROGRAM, the device uses
-  /// the current @c QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT to decide whether
-  /// the payload's wire @p size:
-  /// - includes a trailing @c '\0' (text formats: QASM2, QASM3,
-  ///   QIR Base/Adaptive String) or
-  /// - is the exact byte count (binary formats: QIR Base/Adaptive Module).
-  /// Callers should therefore set @c PROGRAMFORMAT before @c PROGRAM.
-  /// The default of @c QDMI_PROGRAM_FORMAT_QASM3 is assumed if @c PROGRAMFORMAT
-  /// is not set.
-  /// @see MQT_DDSIM_QDMI_device_job_set_parameter
+  /// Sets a common parameter before submission.
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
                     const void* value) -> QDMI_STATUS;
+
+  auto setPrograms(QDMI_Program_Format format, size_t count,
+                   const size_t* sizes, const void* const* programs)
+      -> QDMI_STATUS;
+
+  /// Retrieves a program payload in input order.
+  auto getProgram(size_t programIndex, size_t size, void* data,
+                  size_t* sizeRet) const -> QDMI_STATUS;
+
+  /// Queries one program status.
+  auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
+      -> QDMI_STATUS;
 
   /// Queries a property of the job.
   /// @see MQT_DDSIM_QDMI_device_job_query_property
@@ -315,6 +217,6 @@ public:
 
   /// Gets the results of the job.
   /// @see MQT_DDSIM_QDMI_device_job_get_results
-  auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                  size_t* sizeRet) -> QDMI_STATUS;
+  auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
+                  void* data, size_t* sizeRet) -> QDMI_STATUS;
 };

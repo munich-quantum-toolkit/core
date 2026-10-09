@@ -35,6 +35,7 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -654,7 +655,8 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
     module = original->clone();
     auto funcOp = cast<func::FuncOp>(module->getBody()->front());
     if (symbolic) {
-      funcOp.insertArgument(0, Float64Type::get(&context), {}, funcOp.getLoc());
+      ASSERT_TRUE(succeeded(funcOp.insertArgument(0, Float64Type::get(&context),
+                                                  {}, funcOp.getLoc())));
       module->walk(
           [&](RXOp op) { op.getThetaMutable().assign(funcOp.getArgument(0)); });
     }
@@ -854,10 +856,10 @@ TEST_F(MergeSingleQubitRotationGatesTest,
       auto funcOp = module->lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(funcOp);
       if (dynamic) {
-        funcOp.insertArgument(0, Float64Type::get(&context), {},
-                              funcOp.getLoc());
-        funcOp.insertArgument(1, Float64Type::get(&context), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            0, Float64Type::get(&context), {}, funcOp.getLoc())));
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            1, Float64Type::get(&context), {}, funcOp.getLoc())));
         funcOp.walk([&](RXOp op) {
           op.getThetaMutable().assign(funcOp.getArgument(0));
         });
@@ -913,8 +915,8 @@ TEST_F(MergeSingleQubitRotationGatesTest, largePhasesPreserveControlledMatrix) {
         ASSERT_TRUE(module);
         auto funcOp = module->lookupSymbol<func::FuncOp>("main");
         if (dynamic) {
-          funcOp.insertArgument(0, Float64Type::get(&context), {},
-                                funcOp.getLoc());
+          ASSERT_TRUE(succeeded(funcOp.insertArgument(
+              0, Float64Type::get(&context), {}, funcOp.getLoc())));
           module->walk([&](UnitaryOpInterface op) {
             if (isa<POp, U2Op, UOp>(op.getOperation())) {
               Value parameter = op.getParameter(isa<UOp>(op) ? 1U : 0U);
@@ -1034,8 +1036,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
     module->walk([&](UnitaryOpInterface op) {
       if (isa<RXOp, RYOp, RZOp>(op.getOperation())) {
         const auto index = funcOp.getNumArguments();
-        funcOp.insertArgument(index, Float64Type::get(&context), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            index, Float64Type::get(&context), {}, funcOp.getLoc())));
         op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
       }
     });
@@ -1115,8 +1117,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
         module->walk([&](UnitaryOpInterface op) {
           if (isa<RXOp, RYOp, RZOp>(op.getOperation())) {
             const auto index = funcOp.getNumArguments();
-            funcOp.insertArgument(index, Float64Type::get(&context), {},
-                                  funcOp.getLoc());
+            ASSERT_TRUE(succeeded(funcOp.insertArgument(
+                index, Float64Type::get(&context), {}, funcOp.getLoc())));
             op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
           }
         });
@@ -1194,8 +1196,8 @@ TEST_F(MergeSingleQubitRotationGatesTest, composesHadamardZChainsDirectly) {
         });
         auto funcOp = module->lookupSymbol<func::FuncOp>("main");
         const auto index = funcOp.getNumArguments();
-        funcOp.insertArgument(index, Float64Type::get(&context), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            index, Float64Type::get(&context), {}, funcOp.getLoc())));
         module->walk([&](UnitaryOpInterface op) {
           if (isa<POp, RZOp>(op.getOperation())) {
             op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
@@ -1290,8 +1292,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
   const auto f64 = Float64Type::get(&context);
-  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
-  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, f64, {}, funcOp.getLoc())));
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(1, f64, {}, funcOp.getLoc())));
 
   SmallVector<RZOp> rzs;
   module->walk([&](RZOp op) { rzs.push_back(op); });
@@ -1367,7 +1369,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
   const auto f64 = Float64Type::get(&context);
-  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, f64, {}, funcOp.getLoc())));
 
   RZOp rzOp = nullptr;
   module->walk([&](RZOp op) { rzOp = op; });
@@ -1431,8 +1433,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
   const auto f64 = Float64Type::get(&context);
-  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
-  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, f64, {}, funcOp.getLoc())));
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(1, f64, {}, funcOp.getLoc())));
 
   SmallVector<POp> ps;
   module->walk([&](POp op) { ps.push_back(op); });

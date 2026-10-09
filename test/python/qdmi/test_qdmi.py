@@ -10,14 +10,12 @@
 
 from __future__ import annotations
 
-import json
 import os
 import struct
 import subprocess
 import sys
 from collections import Counter
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from packaging import version
@@ -33,24 +31,30 @@ from mqt.core.qdmi import (
     Device,
     Job,
     ProgramFormat,
+    Session,
+    device_ids,
     is_binary_program_format,
-)
-from mqt.core.qdmi.driver import (
-    DeviceDefinition,
     open_device,
-    registered_device_ids,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CustomValueType = type[str] | type[bool] | type[int] | type[float] | type[bytes]
 
 
 def _get_devices() -> list[Device]:
-    """Open all registered QDMI devices.
+    """Open all devices visible to a fresh Client session.
 
     Returns:
         List of all available QDMI devices.
     """
-    return [open_device(device_id) for device_id in registered_device_ids()]
+    return Session().devices
+
+
+def test_device_ids() -> None:
+    """List the default session's client-visible stable IDs."""
+    assert device_ids() == Session().device_ids
 
 
 @pytest.fixture(params=_get_devices())
@@ -111,6 +115,11 @@ def test_device_name(device: Device) -> None:
     name = device.name()
     assert isinstance(name, str)
     assert len(name) > 0
+
+
+def test_device_id(device: Device) -> None:
+    """Test that each client-visible device has a stable ID."""
+    assert device.id
 
 
 def test_device_version(device: Device) -> None:
@@ -488,15 +497,10 @@ c = measure q;
     # The program format should be preserved
     assert job.program_format == ProgramFormat.QASM3
     # The program should be preserved
-    assert job.program == qasm3_program
-    assert job.program_bytes == qasm3_program.encode() + b"\0"
+    assert job.get_program() == qasm3_program
+    assert job.get_program(bytes) == qasm3_program.encode() + b"\0"
     # Num shots should match request
     assert job.num_shots == 100
-
-
-def test_program_format_includes_batch_job() -> None:
-    """Expose every standard QDMI program format."""
-    assert ProgramFormat.BATCH_JOB.value == 9
 
 
 def test_is_binary_program_format() -> None:
@@ -509,7 +513,7 @@ def test_is_binary_program_format() -> None:
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
-    with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
+    with pytest.raises(ValueError, match=r"(?:Setting programs: Invalid argument|embedded null bytes)"):
         ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
 
 
@@ -517,12 +521,6 @@ def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
     """Require exact byte submission for known binary formats."""
     with pytest.raises(ValueError, match="require exact-byte submission"):
         ddsim_device.submit_job("not bitcode", ProgramFormat.QIR_BASE_MODULE, num_shots=1)
-
-
-def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
-    """State that MQT Core does not support batch jobs."""
-    with pytest.raises(ValueError, match="does not support batch jobs"):
-        ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
@@ -598,9 +596,9 @@ c = measure q;
     assert ProgramFormat.QIR_BASE_MODULE in ddsim_device.supported_program_formats()
 
     job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
-    assert job.program_bytes == program_bytes
+    assert job.get_program(bytes) == program_bytes
     with pytest.raises(ValueError, match="binary program"):
-        _ = job.program
+        _ = job.get_program()
     job.wait()
 
     assert job.check() == Job.Status.DONE
@@ -609,7 +607,9 @@ c = measure q;
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
-    job = ddsim_device.submit_job("OPENQASM 3.0; qubit q; bit c = measure q;", ProgramFormat.QASM3, 1, custom1=7)
+    job = ddsim_device.submit_job(
+        "OPENQASM 3.0; qubit q; bit c = measure q;", ProgramFormat.QASM3, 1, custom1=7, custom3=2
+    )
     job.wait()
     assert job.check() == Job.Status.DONE
 
@@ -617,7 +617,7 @@ def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> No
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
     with pytest.raises(ValueError, match=r"Setting custom parameter: Invalid argument\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
-    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+    with pytest.raises(ValueError, match=r"Setting custom parameter: Invalid argument\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom3="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom4="value")
@@ -803,58 +803,8 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     assert sparse_probabilities == pytest.approx({"00": 0.5, "11": 0.5})
 
 
-def test_device_registration_bindings() -> None:
-    """Exercise registration without leaving invalid devices in the shared registry."""
-    ids_before = registered_device_ids()
-    script = """
-from pathlib import Path
-
-import pytest
-
-from mqt.core.qdmi.driver import (
-    DeviceDefinition,
-    open_device,
-    register_device,
-    register_device_if_absent,
-    registered_device_ids,
-)
-
-ids_before = registered_device_ids()
-library_path = Path("/nonexistent/lib.so")
-definition = DeviceDefinition("python.missing", library_path, "PREFIX")
-assert definition.device_id == "python.missing"
-assert definition.library_path == library_path
-assert definition.prefix == "PREFIX"
-register_device(definition)
-with pytest.raises(RuntimeError):
-    open_device("python.missing")
-
-definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-assert register_device_if_absent(definition) is True
-assert register_device_if_absent(definition) is False
-with pytest.raises(ValueError, match="library must not be empty"):
-    register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
-assert registered_device_ids() == [*ids_before, "python.missing", "python.if-absent"]
-"""
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
-    assert registered_device_ids() == ids_before
-
-
-def test_open_device_rejects_unknown_id() -> None:
-    """Opening requires a stable registered ID."""
-    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
-        open_device("python.unknown")
-
-
-def test_open_device_creates_a_fresh_session() -> None:
-    """Stable-ID opens should return separately owned sessions."""
-    first = open_device("mqt.sc.default")
-    second = open_device("mqt.sc.default")
-    assert first != second
-
-
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX named pipes")
-@pytest.mark.parametrize("entrypoint", ["driver", "slurm", "compiler"])
+@pytest.mark.parametrize("entrypoint", ["driver", "builtin_driver", "slurm", "compiler"])
 def test_device_open_releases_gil(tmp_path: Path, entrypoint: str) -> None:
     """A Python thread can supply configuration while native opening waits."""
     script = """
@@ -865,8 +815,8 @@ from pathlib import Path
 from threading import Thread
 
 from mqt.core.mlir import CompilerTarget
-from mqt.core.qdmi import slurm
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import builtin_driver, slurm
+from mqt.core.qdmi import open_device
 
 fifo = Path(sys.argv[1]) / "device.json"
 os.mkfifo(fifo)
@@ -890,6 +840,8 @@ writer.start()
 entrypoint = sys.argv[2]
 if entrypoint == "driver":
     assert open_device("mqt.sc.default").qubits_num() > 0
+elif entrypoint == "builtin_driver":
+    assert builtin_driver.open_device("mqt.sc.default").qubits_num() > 0
 elif entrypoint == "slurm":
     assert slurm.open_device_from_license().qubits_num() > 0
 else:
@@ -901,57 +853,6 @@ writer.join()
         check=True,
         timeout=15,
     )
-
-
-def test_device_configuration_arguments_are_mutually_exclusive() -> None:
-    """Typed device configuration must select exactly one source."""
-    DeviceDefinition(
-        "python.inline-config",
-        "/nonexistent/device.so",
-        "PREFIX",
-        device_config="{}",
-    )
-    DeviceDefinition(
-        "python.file-config",
-        "/nonexistent/device.so",
-        "PREFIX",
-        device_config_file="device.json",
-    )
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        DeviceDefinition(
-            "python.config-conflict",
-            "/nonexistent/device.so",
-            "PREFIX",
-            device_config="{}",
-            device_config_file="device.json",
-        )
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        open_device(
-            "mqt.sc.default",
-            device_config="{}",
-            device_config_file="device.json",
-        )
-
-
-def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
-    """The built-in SC provider should materialize a per-open file model."""
-    configuration = json.loads(Path("json/sc/mqt-core-qdmi-sc-device.json").read_text(encoding="utf-8"))
-    configuration["name"] = "Python custom SC device"
-    configuration["numQubits"] = 5
-    configuration["couplings"] = [[0, 1], [1, 2], [2, 3], [3, 4]]
-    configuration["qubitProperties"]["overrides"] = []
-    for operation in configuration["operations"]:
-        operation.pop("sites", None)
-        operation["siteOverrides"] = []
-    configuration_file = tmp_path / "sc-device.json"
-    configuration_file.write_text(json.dumps(configuration), encoding="utf-8")
-
-    device = open_device(
-        "mqt.sc.default",
-        device_config_file=configuration_file,
-    )
-    assert device.name() == "Python custom SC device"
-    assert device.qubits_num() == 5
 
 
 def test_site_keeps_fresh_session_alive() -> None:

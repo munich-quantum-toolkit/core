@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include "gmock/gmock-matchers.h"
@@ -21,21 +21,38 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
+#include <map>
 #include <new>
 #include <numbers>
 #include <optional>
 #include <ranges>
 #include <stdexcept>
+#include <stdlib.h> /// NOLINT(modernize-deprecated-headers)
 #include <string>
-#include <thread>
 #include <tuple>
 #include <vector>
 
 namespace qdmi {
 
 namespace {
+
+struct ConfiguredClientEnvironment {
+  ConfiguredClientEnvironment() noexcept {
+#ifdef _WIN32
+    if (_putenv_s("MQT_CORE_QDMI_CONFIG_FILE",
+                  MQT_CORE_QDMI_CLIENT_TEST_CONFIG) != 0) {
+      std::abort();
+    }
+#else
+    if (setenv("MQT_CORE_QDMI_CONFIG_FILE", MQT_CORE_QDMI_CLIENT_TEST_CONFIG,
+               1) != 0) {
+      std::abort();
+    }
+#endif
+  }
+};
+
+const ConfiguredClientEnvironment CONFIGURED_CLIENT_ENVIRONMENT;
 
 auto queryBytes(const std::vector<std::byte>& bytes) {
   return [&bytes](const size_t size, void* value, size_t* sizeRet) {
@@ -429,6 +446,7 @@ TEST(QDMITest, OperationPropertyToString) {
 }
 
 TEST(QDMITest, DevicePropertyToString) {
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_ID), "ID");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_VERSION), "VERSION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_STATUS), "STATUS");
@@ -512,12 +530,12 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
     case QDMI_PROGRAM_FORMAT_CUSTOM2:
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
     case QDMI_PROGRAM_FORMAT_CUSTOM4:
     case QDMI_PROGRAM_FORMAT_CUSTOM5:
+    case QDMI_PROGRAM_FORMAT_MAX:
       return false;
     }
     return false;
@@ -534,7 +552,6 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
       QDMI_PROGRAM_FORMAT_QPY,
       QDMI_PROGRAM_FORMAT_IQMJSON,
-      QDMI_PROGRAM_FORMAT_BATCHJOB,
       QDMI_PROGRAM_FORMAT_CUSTOM1,
       QDMI_PROGRAM_FORMAT_CUSTOM2,
       QDMI_PROGRAM_FORMAT_CUSTOM3,
@@ -906,24 +923,32 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
+TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
+  const std::array<std::string, 2> programs{
+      "OPENQASM 3.0; qubit[1] q; bit[1] c; c[0] = measure q[0];",
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; bit[1] c; x "
+      "q[0]; c[0] = measure q[0];",
+  };
+  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
+
+  ASSERT_TRUE(job.wait());
+  EXPECT_EQ(job.getNumPrograms(), programs.size());
+  EXPECT_EQ(job.getProgram(0), programs[0]);
+  EXPECT_EQ(job.getProgram(1), programs[1]);
+  EXPECT_EQ(job.getProgramStatus(0), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.getProgramStatus(1), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.getCounts(0), (std::map<std::string, size_t>{{"0", 4}}));
+  EXPECT_EQ(job.getCounts(1), (std::map<std::string, size_t>{{"1", 4}}));
+  EXPECT_NE(job.getResults(QDMI_JOB_RESULT_SHOTS, 0),
+            job.getResults(QDMI_JOB_RESULT_SHOTS, 1));
+  EXPECT_THROW(job.getProgramStatus(2), std::out_of_range);
+}
+
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
 
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
-  // A batch job's program is a list of job handles, which the byte-span API
-  // cannot express, so MQT Core states that it does not support them.
-  constexpr std::array bytes{std::byte{0}};
-
-  EXPECT_THROW(std::ignore =
-                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
-                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
                std::invalid_argument);
 }
 
@@ -972,7 +997,13 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
                std::invalid_argument);
   EXPECT_THROW(submitWithCustoms(42, 2), std::invalid_argument);
   EXPECT_THROW(submitWithCustoms(3.14, 2), std::invalid_argument);
-  for (size_t i = 3; i <= 5; ++i) {
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                       10, std::nullopt, std::nullopt, 4));
+  EXPECT_THROW(submitWithCustoms(std::string("custom"), 3),
+               std::invalid_argument);
+  EXPECT_THROW(submitWithCustoms(true, 3), std::invalid_argument);
+  for (size_t i = 4; i <= 5; ++i) {
     submitWithCustoms(std::string("custom"), i);
     submitWithCustoms(42, i);
     submitWithCustoms(3.14, i);
@@ -1234,91 +1265,15 @@ TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
-  // Valid HTTPS URL
-  SessionConfig config1;
-  config1.authUrl = "https://example.com";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Valid HTTP URL with port and path
-  SessionConfig config2;
-  config2.authUrl = "http://auth.server.com:8080/api";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Valid HTTPS URL with query parameters
-  SessionConfig config3;
-  config3.authUrl = "https://auth.example.com/token?param=value";
-  EXPECT_NO_THROW({ const Session session(config3); });
-
-  // Valid localhost URL
-  SessionConfig configLocalhost;
-  configLocalhost.authUrl = "http://localhost";
-  EXPECT_NO_THROW({ const Session session(configLocalhost); });
-
-  // Valid localhost URL with port
-  SessionConfig configLocalhostPort;
-  configLocalhostPort.authUrl = "http://localhost:8080";
-  EXPECT_NO_THROW({ const Session session(configLocalhostPort); });
-
-  // Valid localhost URL with port and path
-  SessionConfig configLocalhostPath;
-  configLocalhostPath.authUrl = "https://localhost:3000/auth/api";
-  EXPECT_NO_THROW({ const Session session(configLocalhostPath); });
-
-  // Valid IPv4 address URL
-  SessionConfig configIPv4;
-  configIPv4.authUrl = "http://127.0.0.1:5000/auth";
-  EXPECT_NO_THROW({ const Session session(configIPv4); });
-
-  // Valid IPv6 address URL
-  SessionConfig configIPv6;
-  configIPv6.authUrl = "https://[::1]:8080/auth";
-  EXPECT_NO_THROW({ const Session session(configIPv6); });
-
-  // Invalid URL - not a URL at all (validation fails before setting parameter)
-  SessionConfig config4;
-  config4.authUrl = "not-a-url";
-  EXPECT_THROW({ const Session session(config4); }, std::runtime_error);
-
-  // Invalid URL - unsupported protocol
-  SessionConfig config5;
-  config5.authUrl = "ftp://invalid.com";
-  EXPECT_THROW({ const Session session(config5); }, std::runtime_error);
-
-  // Invalid URL - missing protocol
-  SessionConfig config6;
-  config6.authUrl = "example.com";
-  EXPECT_THROW({ const Session session(config6); }, std::runtime_error);
-
-  // Invalid URL - empty
-  SessionConfig config7;
-  config7.authUrl = "";
-  EXPECT_THROW({ const Session session(config7); }, std::runtime_error);
+  SessionConfig config;
+  config.authUrl = "driver-specific:authentication-endpoint";
+  EXPECT_NO_THROW({ const Session session(config); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
-  // Non-existent file (validation fails before setting parameter)
-  SessionConfig config1;
-  config1.authFile = "/nonexistent/path/to/file.txt";
-  EXPECT_THROW({ const Session session(config1); }, std::runtime_error);
-
-  // Existing file (should succeed even if parameter is unsupported)
-  const auto tempDir = std::filesystem::temp_directory_path();
-  auto const tmpPath = tempDir / ("qdmi_test_auth_" +
-                                  std::to_string(std::hash<std::thread::id>{}(
-                                      std::this_thread::get_id())) +
-                                  ".txt");
-  {
-    std::ofstream tmpFile(tmpPath);
-    ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
-    tmpFile << "test_token_content";
-  }
-
-  SessionConfig config2;
-  config2.authFile = tmpPath;
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Clean up
-  std::filesystem::remove(tmpPath);
+  SessionConfig config;
+  config.authFile = "/driver-owned/nonexistent/authentication-file";
+  EXPECT_NO_THROW({ const Session session(config); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
@@ -1475,7 +1430,11 @@ TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
 namespace {
 auto getDevices() -> std::vector<Device> {
   Session session;
-  return session.getDevices();
+  auto devices = session.getDevices();
+  std::erase_if(devices, [](const Device& device) {
+    return device.getId().starts_with("test.");
+  });
+  return devices;
 }
 
 /// Device names may contain punctuation or repeat across sessions.

@@ -540,7 +540,7 @@ public:
       p->flags = 0;
     }
 
-    auto e = EdgeType<Node>::normalize(p, edges, memoryManager, cn);
+    auto e = dd::normalize(p, edges, memoryManager, cn);
     if constexpr (IsMatrix<Node>) {
       if (!e.isTerminal()) {
         const auto& es = e.p->e;
@@ -763,7 +763,7 @@ private:
                                             const Qubit var,
                                             const std::size_t index) {
     if constexpr (IsMatrix<Node>) {
-      if (edge.isIdentity() || edge.p->v < var) {
+      if (dd::isIdentity(edge) || edge.p->v < var) {
         return index == 0 || index == 3 ? edge : CachedEdge<Node>{};
       }
     }
@@ -1007,12 +1007,12 @@ private:
     const auto xWeight = static_cast<ComplexValue>(x.w);
     const auto yWeight = static_cast<ComplexValue>(y.w);
     const auto rWeight = xWeight * yWeight;
-    if (x.isIdentity()) {
+    if (dd::isIdentity(x)) {
       return {y.p, rWeight};
     }
 
     if constexpr (std::is_same_v<RightOperandNode, mNode>) {
-      if (y.isIdentity()) {
+      if (dd::isIdentity(y)) {
         return {x.p, rWeight};
       }
     }
@@ -1235,7 +1235,7 @@ private:
     }
 
     if constexpr (IsMatrix<Node>) {
-      if (x.isIdentity()) {
+      if (dd::isIdentity(x)) {
         return {y.p, rWeight};
       }
     } else {

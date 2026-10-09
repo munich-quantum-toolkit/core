@@ -417,10 +417,10 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
       em{};
   fillTerminalMatrix(em, mat);
 
-  std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
-      {{target0, 2}, {target1, 1}, {target2, 0}},
+  std::array<std::pair<Qubit, uint32_t>, 3> ordered{
+      {{target0, 2U}, {target1, 1U}, {target2, 0U}},
   };
-  std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
+  std::ranges::sort(ordered, {}, &std::pair<Qubit, uint32_t>::first);
   const auto qLow = ordered[0].first;
   const auto qMid = ordered[1].first;
   const auto qHigh = ordered[2].first;
@@ -1031,7 +1031,7 @@ mEdge Package::partialTrace(const mEdge& a,
   return cn.lookup(r);
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
-  if (a.isIdentity()) {
+  if (dd::isIdentity(a)) {
     return static_cast<ComplexValue>(a.w);
   }
   std::vector<size_t> eliminatedBelow(numQubits + 1);
@@ -1051,7 +1051,7 @@ mCachedEdge Package::trace(const mEdge& a,
   if (aWeight.exactlyZero()) {
     return mCachedEdge::zero();
   }
-  if (a.isIdentity()) {
+  if (dd::isIdentity(a)) {
     return {a.p, aWeight};
   }
 
@@ -1173,7 +1173,7 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
     return e;
   }
 
-  if (e.isIdentity()) {
+  if (dd::isIdentity(e)) {
     auto g = e;
     for (auto i = 0U; i < ancillary.size(); ++i) {
       if (ancillary[i]) {
@@ -1250,7 +1250,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
     return e;
   }
 
-  if (e.isIdentity()) {
+  if (dd::isIdentity(e)) {
     auto g = e;
     for (auto i = 0U; i < garbage.size(); ++i) {
       if (garbage[i]) {
@@ -1331,7 +1331,7 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
       continue;
     }
 
-    if (p->e[i].isIdentity()) {
+    if (dd::isIdentity(p->e[i])) {
       auto g = mCachedEdge::one();
       for (auto j = lowerbound; j < p->v; ++j) {
         if (ancillary[j]) {
@@ -1460,7 +1460,7 @@ mCachedEdge Package::reduceGarbageRecursion(mNode* p,
       continue;
     }
 
-    if (p->e[i].isIdentity()) {
+    if (dd::isIdentity(p->e[i])) {
       edges[i] = mCachedEdge::one();
       for (auto j = lowerbound; j < p->v; ++j) {
         if (garbage[j]) {

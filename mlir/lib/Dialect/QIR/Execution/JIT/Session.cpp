@@ -383,15 +383,17 @@ JitSession::JitSession(const llvm::StringRef irBytes,
 
 JitSession::~JitSession() { deinitialize(); }
 
-int64_t JitSession::run() {
-  if (runtime_->extractState_ && !initializesRuntime_) {
-    runtime_->reset();
+int64_t JitSession::run() { return runWithRuntime(*runtime_); }
+
+int64_t JitSession::runWithRuntime(Runtime& runtime) {
+  if (runtime.extractState_ && !initializesRuntime_) {
+    runtime.reset();
   }
-  auto* previous = Runtime::bind(runtime_.get());
+  auto* previous = Runtime::bind(&runtime);
   const auto restoreRuntime =
-      llvm::make_scope_exit([previous] { Runtime::bind(previous); });
+      llvm::scope_exit([previous] { Runtime::bind(previous); });
   const auto code = entryPointFn_();
-  if (runtime_->invalidStateExtraction_) {
+  if (runtime.invalidStateExtraction_) {
     throw std::invalid_argument(
         "QIR state extraction cannot reset or operate on a measured qubit");
   }
@@ -399,7 +401,17 @@ int64_t JitSession::run() {
 }
 
 int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
-                           bool* stateAvailable) {
+                           bool* stateAvailable, bool emitHeader) {
+  return sampleWithRuntime(*runtime_, shots, results, emitHeader,
+                           stateAvailable);
+}
+
+int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
+                                      std::vector<std::string>& results,
+                                      bool emitHeader, bool* stateAvailable) {
+  if (&runtime != runtime_.get() && !shareCompiledCode_) {
+    throw std::logic_error("QIR entry point cannot be shared across workers");
+  }
   if (stateAvailable != nullptr) {
     *stateAvailable = false;
   }
@@ -408,24 +420,26 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
   }
   results.clear();
   results.reserve(shots);
-  runtime_->outputProgramHeader();
+  if (emitHeader) {
+    runtime.outputProgramHeader();
+  }
   const auto execute = [&] {
     if (!initializesRuntime_) {
-      runtime_->reset();
+      runtime.reset();
     }
-    runtime_->outputShotStart();
-    const auto code = run();
-    runtime_->outputShotEnd(code);
+    runtime.outputShotStart();
+    const auto code = runWithRuntime(runtime);
+    runtime.outputShotEnd(code);
     return code;
   };
-  if (samplingOutputs_ && !runtime_->hasOutput() && shots != 0) {
-    runtime_->deferMeasurements_ = true;
+  if (samplingOutputs_ && !runtime.hasOutput() && shots != 0) {
+    runtime.deferMeasurements_ = true;
     const auto restore =
-        llvm::make_scope_exit([&] { runtime_->deferMeasurements_ = false; });
+        llvm::scope_exit([&] { runtime.deferMeasurements_ = false; });
     if (const auto code = execute(); code != 0) {
       return code;
     }
-    runtime_->sampleMeasurements(*samplingOutputs_, shots, results);
+    runtime.sampleMeasurements(*samplingOutputs_, shots, results);
     if (stateAvailable != nullptr) {
       *stateAvailable = true;
     }
@@ -435,12 +449,30 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
     if (const auto code = execute(); code != 0) {
       return code;
     }
-    results.push_back(runtime_->getMeasurements());
+    results.push_back(runtime.getMeasurements());
   }
   return 0;
 }
 
 auto JitSession::runtime() -> Runtime& { return *runtime_; }
+
+bool JitSession::canSampleTerminal() const {
+  return samplingOutputs_.has_value() && !runtime_->hasOutput();
+}
+
+bool JitSession::canShareCompiledCode() const { return shareCompiledCode_; }
+
+std::unique_ptr<Runtime> JitSession::makeWorkerRuntime(uint64_t seed) const {
+  if (!shareCompiledCode_ || execution_ != Execution::Sampling) {
+    throw std::logic_error("QIR entry point cannot be shared across workers");
+  }
+  auto worker = std::make_unique<Runtime>(seed);
+  worker->outputSchema = runtime_->outputSchema;
+  worker->metadata = runtime_->metadata;
+  worker->configureStaticResources(runtime_->staticQubits_,
+                                   runtime_->staticResults_);
+  return worker;
+}
 
 void JitSession::initNativeTargets() {
   static std::once_flag flag;
@@ -493,6 +525,32 @@ void JitSession::initialize(
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
   loadedModule.withModuleDo([&](llvm::Module& module) {
+    for (const auto& function : module) {
+      for (const auto& block : function) {
+        for (const auto& instruction : block) {
+          const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+          const auto* callee =
+              call == nullptr ? nullptr : call->getCalledFunction();
+          if (callee != nullptr &&
+              callee->getName().starts_with("__quantum__qis__") &&
+              !callee->getName().starts_with("__quantum__qis__mz")) {
+            ++quantumCallSites_;
+          }
+        }
+      }
+    }
+    shareCompiledCode_ =
+        execution == Execution::Sampling &&
+        llvm::all_of(module.globals(),
+                     [](const auto& global) {
+                       return global.isConstant() && !global.isDeclaration();
+                     }) &&
+        module.aliases().empty() && module.ifuncs().empty() &&
+        llvm::all_of(module, [](const auto& function) {
+          return !function.isDeclaration() || function.use_empty() ||
+                 function.isIntrinsic() ||
+                 function.getName().starts_with("__quantum__");
+        });
     auto& entryPoint = selectEntryPoint(module);
     entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));

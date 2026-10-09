@@ -27,7 +27,7 @@ from qiskit.visualization import plot_distribution
 
 from mqt.core.mlir import OutputFormat, QIRProfile, compile_program
 from mqt.core.qdmi import CustomProperty, ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
 shots = 1024

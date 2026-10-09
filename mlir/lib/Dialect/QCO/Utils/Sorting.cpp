@@ -30,6 +30,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
 
   struct Dependencies {
     size_t pending = 0;
+    // Keep per-operation storage compact.
     SmallVector<Operation*, 2> successors;
   };
   const auto numOperations = llvm::range_size(block);

@@ -155,6 +155,7 @@ class MockQDMIDevice:
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
             self._id = "mock-job-" + "".join(secrets.choice(alphabet) for _ in range(8))
+
             self._status = QDMIJobHandle.Status.DONE
             self._counts: dict[str, int] | None = None
 
@@ -172,10 +173,17 @@ class MockQDMIDevice:
             """Return job status."""
             return self._status
 
-        def wait(self) -> None:
-            """Wait for job completion (no-op for mock)."""
+        @staticmethod
+        def get_program_status(_program_index: int = 0) -> None:
+            """This mock exposes only an aggregate job outcome."""
+            return
 
-        def get_counts(self) -> dict[str, int]:
+        @staticmethod
+        def wait() -> bool:
+            """Return immediately for this completed job."""
+            return True
+
+        def get_counts(self, program_index: int = 0) -> dict[str, int]:  # ruff:ignore[unused-method-argument] Match the indexed result interface.
             """Get measurement counts with uniform random distribution.
 
             Returns:
@@ -204,7 +212,7 @@ class MockQDMIDevice:
         def cancel(self) -> None:
             """Cancel job (no-op for mock)."""
 
-        def get_shots(self) -> list[str]:
+        def get_shots(self, program_index: int = 0) -> list[str]:
             """Raise unless the test device implements ordered shots.
 
             Raises:
@@ -283,11 +291,14 @@ class MockQDMIDevice:
         """Return list of supported program formats."""
         return [ProgramFormat.QASM2, ProgramFormat.QASM3]
 
+    def try_submit_job(self, *_args: object, **_kwargs: object) -> None:
+        """Reject native groups before submission to exercise independent jobs."""
+
     def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
         """Submit a mock job to the device.
 
         Args:
-            program: The program string to parse for classical bit count.
+            program: The program parsed for classical bit count.
             program_format: The program format (unused in mock).
             num_shots: Number of shots to simulate.
 
@@ -313,11 +324,14 @@ class MockQDMIDevice:
         return self.MockJob(num_clbits=num_clbits, shots=num_shots)
 
 
-def _patch_registered_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
+def _patch_client_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
     """Make the driver functions expose the given mock devices."""
     device_ids = [f"test.device.{index}" for index in range(len(devices))]
     devices_by_id = dict(zip(device_ids, devices, strict=True))
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.registered_device_ids", lambda: device_ids)
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.QDMIProvider.device_ids",
+        staticmethod(lambda: device_ids),
+    )
     monkeypatch.setattr(
         "mqt.core.plugins.qiskit.backend.open_device",
         lambda device_id, **_kwargs: devices_by_id[device_id],
@@ -335,8 +349,8 @@ def test_backend_warns_on_unmappable_operation(
         operations=["cz", "custom_unmappable_gate", "measure"],
     )
 
-    # Use helper to patch registered driver devices
-    _patch_registered_devices(monkeypatch, [mock_device])
+    # Use helper to patch client-visible devices
+    _patch_client_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
@@ -364,8 +378,8 @@ def test_backend_warns_on_missing_measurement_operation(
         operations=["cz"],  # No measure operation
     )
 
-    # Use helper to patch registered driver devices
-    _patch_registered_devices(monkeypatch, [mock_device])
+    # Use helper to patch client-visible devices
+    _patch_client_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:
@@ -760,7 +774,7 @@ def test_qasm_preflight_maps_control_flow_operands(monkeypatch: pytest.MonkeyPat
 
 
 def test_backend_rejects_device_without_program_payload() -> None:
-    """A device that only accepts BATCH_JOB has no format a circuit can go into."""
+    """A device without an available serializer cannot accept a circuit."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
@@ -769,7 +783,7 @@ def test_backend_rejects_device_without_program_payload() -> None:
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
-        backend._serialize_circuit(qc, [ProgramFormat.BATCH_JOB])  # ruff:ignore[private-member-access]
+        backend._serialize_circuit(qc, [ProgramFormat.CUSTOM1])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(
@@ -875,8 +889,8 @@ def test_backend_validation_uses_inverse_mapping(
         operations=["prx", "cz", "measure"],  # Uses 'prx' instead of 'r'
     )
 
-    # Use helper to patch registered driver devices
-    _patch_registered_devices(monkeypatch, [mock_device])
+    # Use helper to patch client-visible devices
+    _patch_client_devices(monkeypatch, [mock_device])
 
     provider = QDMIProvider()
     backend = provider.get_backend("Test Device with PRX")
@@ -1059,7 +1073,7 @@ def test_primitives_forward_backend_execution_options(monkeypatch: pytest.Monkey
     backend = ExecutionOptionsBackend(device)  # ty: ignore[invalid-argument-type]
     backend.set_options(execution_mode="selected")
     job = device.MockJob(num_clbits=1, shots=4)
-    monkeypatch.setattr(job, "get_shots", lambda: ["0"] * 4)
+    monkeypatch.setattr(job, "get_shots", lambda _program_index=0: ["0"] * 4)
     submit = Mock(return_value=job)
     monkeypatch.setattr(device, "submit_job", submit)
     circuit = QuantumCircuit(1)

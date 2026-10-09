@@ -2147,7 +2147,7 @@ protected:
         function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
       }
     }
-    auto unitaryGuard = llvm::make_scope_exit([&] {
+    auto unitaryGuard = llvm::scope_exit([&] {
       for (auto function : unitaryFunctions) {
         mqt::setUnitaryFunction(function);
       }

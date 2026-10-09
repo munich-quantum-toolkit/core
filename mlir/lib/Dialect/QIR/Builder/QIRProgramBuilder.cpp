@@ -30,6 +30,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -478,9 +479,9 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-void QIRProgramBuilder::createCallOp(
-    const SmallVector<mqt::FloatParameter>& parameters, ValueRange controls,
-    const SmallVector<Value>& targets, StringRef fnName) {
+void QIRProgramBuilder::createCallOp(ArrayRef<mqt::FloatParameter> parameters,
+                                     ValueRange controls, ValueRange targets,
+                                     StringRef fnName) {
   checkFinalized();
 
   InsertionGuard guard(*this);

@@ -22,7 +22,9 @@ class OpPassManager;
 class PassManager;
 } // namespace mlir
 
-/// Populate the pass manager and run it on the module.
+/// Run a pass pipeline on valid IR and verify its output.
+///
+/// Also verify after each pass when assertions are enabled.
 /// Clear layout metadata unless the pipeline preserves resource
 /// identity and order and the caller sets preservesLayout.
 mlir::LogicalResult runWithPassManager(

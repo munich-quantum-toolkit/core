@@ -66,7 +66,7 @@ Inspect `program.ir` when debugging the MLIR representation. To control each
 stage explicitly, use `qco.to_jeff(copy=True)` on an existing
 {py:class}`~mqt.core.mlir.QCOProgram`. Omitting `copy=True` consumes it.
 
-## Load a buffer or file
+## Load a buffer, file, or message
 
 Deserialize bytes with `JeffProgram.from_bytes`. The returned program can enter
 the compiler pipeline again:
@@ -97,6 +97,36 @@ with TemporaryDirectory() as directory:
 Raw byte buffers go through `from_bytes` before compilation. `compile_program`
 uses strings for source text; a `Path` makes file input explicit.
 
+Use `to_segment_views` and `from_segments` to exchange Cap'n Proto segments
+without flattening them into bytes:
+
+```{code-cell} ipython3
+segments = program.to_segment_views()
+received = JeffProgram.from_segments(segments)
+assert sample(received, shots=64, seed=17) == sample(program, shots=64, seed=17)
+```
+
+`to_segment_views` returns read-only `memoryview` objects that keep their
+message storage alive independently of the program. `from_segments` accepts
+contiguous one-dimensional byte buffers whose sizes are multiples of eight. It
+borrows aligned buffers and copies unaligned buffers into aligned storage. Keep
+input buffers unchanged until the call returns; the returned program owns its
+data. These segments can also be passed to pycapnp's `Module.from_segments`.
+
+In C++, use `mlir::JeffProgram::toMessage` and `fromMessage` to exchange an
+existing Cap'n Proto message without flattening it into bytes:
+
+```cpp
+capnp::MallocMessageBuilder message;
+program.toMessage(message);
+capnp::SegmentArrayMessageReader reader(message.getSegmentsForOutput());
+auto received = mlir::JeffProgram::fromMessage(reader.getRoot<::jeff::Module>());
+```
+
+The caller owns the message and must keep its storage alive and unchanged until
+`fromMessage` returns. The returned program can then enter the compiler
+pipeline.
+
 ## Continue to a device or another output format
 
 A received jeff program is a compiler input. Select a device to obtain a
@@ -104,7 +134,7 @@ compatible payload, then submit it:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import submit_program
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
 compiled = compile_program(received, target=device)

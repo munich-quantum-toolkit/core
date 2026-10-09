@@ -14,6 +14,7 @@ import os
 import re
 import sys
 from functools import partial
+from gc import collect
 from pathlib import Path
 from threading import Event, Thread
 
@@ -45,8 +46,7 @@ from mqt.core.mlir import (
     compile_program,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not (
@@ -269,6 +269,78 @@ def test_jeff_program_round_trip(tmp_path: Path) -> None:
     restored = compile_program(loaded, output=OutputFormat.QC)
     assert isinstance(restored, QCProgram)
     _assert_bell_program(restored, measured=True)
+
+
+@pytest.mark.parametrize("buffer_type", ["view", "bytes", "bytearray", "unaligned"])
+def test_jeff_segment_round_trip(buffer_type: str) -> None:
+    """Import segment buffers and release them before using the program."""
+    program = compile_program(QASM_STRING, output=OutputFormat.JEFF)
+    segments = program.to_segment_views()
+    assert all(isinstance(segment, memoryview) and segment.readonly for segment in segments)
+    with pytest.raises(TypeError):
+        segments[0][0] = 0
+
+    buffers: list[bytes | bytearray | memoryview]
+    if buffer_type == "bytes":
+        buffers = [bytes(segment) for segment in segments]
+    elif buffer_type == "bytearray":
+        buffers = [bytearray(segment) for segment in segments]
+    elif buffer_type == "unaligned":
+        buffers = [memoryview(bytearray(b"\0" + bytes(segment)))[1:] for segment in segments]
+    else:
+        buffers = [memoryview(segment) for segment in segments]
+    del program, segments
+    collect()
+
+    restored = JeffProgram.from_segments(buffers)
+    for buffer in buffers:
+        if isinstance(buffer, bytearray) or (isinstance(buffer, memoryview) and not buffer.readonly):
+            buffer[:] = b"\0" * len(buffer)
+    del buffers
+    collect()
+    _assert_bell_program(restored.to_qco().to_qc(), measured=True)
+
+
+def test_jeff_multiple_segments() -> None:
+    """Preserve a program whose encoding spans multiple segments."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q;\n' + "x q;\n" * 1200
+    program = QCProgram.from_openqasm_str(source).to_qco().to_jeff()
+    segments = program.to_segment_views()
+    assert len(segments) > 1
+    restored = JeffProgram.from_segments(segments).to_qco().to_qc()
+    assert restored.num_gates() == program.to_qco().to_qc().num_gates()
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        [],
+        [b"short"],
+        [memoryview(b"\0" * 16)[::2]],
+        [memoryview(np.zeros(8, dtype=np.uint64))],
+        [memoryview(np.zeros((2, 4), dtype=np.uint8))],
+    ],
+)
+def test_jeff_rejects_invalid_segments(segments: list[bytes | memoryview]) -> None:
+    """Reject empty segment lists, partial words, and invalid buffer layouts."""
+    with pytest.raises((TypeError, ValueError)):
+        JeffProgram.from_segments(segments)
+
+
+@pytest.mark.parametrize("segment", [b"\xff" * 8, b"\0" * 8])
+def test_jeff_rejects_invalid_segment_message(segment: bytes) -> None:
+    """Translate an invalid Cap'n Proto root into a Python exception."""
+    with pytest.raises(RuntimeError):
+        JeffProgram.from_segments([segment])
+
+
+@pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
+def test_consumed_jeff_serialization_raises(method: str) -> None:
+    """Reject serialization after consuming the program."""
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco().to_jeff()
+    program.to_qco()
+    with pytest.raises(RuntimeError, match="already been consumed"):
+        getattr(program, method)()
 
 
 def test_compile_program_jeff_input_runs_from_qco(tmp_path: Path) -> None:
@@ -1703,16 +1775,10 @@ def test_compiler_target_from_device_id_matches_opened_device() -> None:
     assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
 
 
-def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -> None:
-    """Stable-ID construction retains registry and target compatibility errors."""
-    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
+def test_compiler_target_from_device_id_preserves_open_errors() -> None:
+    """Stable-ID construction retains Client lookup errors."""
+    with pytest.raises(IndexError, match="has no device with ID"):
         CompilerTarget.from_device_id("unknown.device")
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        CompilerTarget.from_device_id(
-            "mqt.ddsim.default",
-            device_config="{}",
-            device_config_file=Path("device.json"),
-        )
 
 
 def test_qco_program_runs_textual_pipeline() -> None:

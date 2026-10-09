@@ -1054,7 +1054,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
   ASSERT_TRUE(owned);
   auto funcOp = owned->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(funcOp);
-  funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {},
+                                              funcOp.getLoc())));
   auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
   powOp->setOperand(0, funcOp.getArgument(0));
   ASSERT_TRUE(succeeded(verify(*owned)));
@@ -1077,8 +1078,10 @@ TEST(FuseSingleQubitUnitaryRunsTest, MergesUnboundedShortSameAxisRun) {
 
   auto funcOp = owned->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(funcOp);
-  funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
-  funcOp.insertArgument(1, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {},
+                                              funcOp.getLoc())));
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(1, Float64Type::get(fx.ctx()), {},
+                                              funcOp.getLoc())));
   SmallVector<RZOp> rotations;
   funcOp.walk([&](RZOp op) { rotations.push_back(op); });
   ASSERT_EQ(rotations.size(), 2U);
@@ -1139,8 +1142,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
       auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(funcOp);
       for (size_t i = 0; i < gateCase.numParameters; ++i) {
-        funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            i, Float64Type::get(fx.ctx()), {}, funcOp.getLoc())));
       }
 
       SmallVector<UnitaryOpInterface> parameterizedGates;
@@ -1235,8 +1238,8 @@ TEST(FuseSingleQubitUnitaryRunsTest,
       auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(funcOp);
       for (size_t i = 0; i < gateCase.numParameters; ++i) {
-        funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            i, Float64Type::get(fx.ctx()), {}, funcOp.getLoc())));
       }
 
       UnitaryOpInterface parameterizedGate;
@@ -1295,7 +1298,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, DirectlySynthesizesCardinalAxesInRBasis) {
     ASSERT_TRUE(owned);
     auto funcOp = owned->lookupSymbol<func::FuncOp>("main");
     ASSERT_TRUE(funcOp);
-    funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+    ASSERT_TRUE(succeeded(funcOp.insertArgument(0, Float64Type::get(fx.ctx()),
+                                                {}, funcOp.getLoc())));
     UnitaryOpInterface gate;
     funcOp.walk([&](UnitaryOpInterface op) {
       if (op.getBaseSymbol() == gateCase.name) {
@@ -1375,7 +1379,8 @@ TEST(FuseSingleQubitUnitaryRunsTest,
     auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
     ASSERT_TRUE(funcOp);
     for (size_t i = 0; i < numParameters; ++i) {
-      funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+      ASSERT_TRUE(succeeded(funcOp.insertArgument(i, Float64Type::get(fx.ctx()),
+                                                  {}, funcOp.getLoc())));
     }
 
     UOp uOp = nullptr;

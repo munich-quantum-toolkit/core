@@ -10,6 +10,7 @@
 
 #include "bench/Shor.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Compiler/Programs.h"
@@ -89,6 +90,11 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
     distance += std::abs(reference[phase] - observed) / 2.;
   }
   EXPECT_LT(distance, 0.4);
+  auto shared =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17,
+                  qco::DDArgumentBindings{}, nullptr, nullptr, {}, 1);
+  ASSERT_TRUE(succeeded(shared));
+  EXPECT_TRUE(benchmark.evaluate(*shared).factors);
 }
 
 static std::optional<QCOProgram>
@@ -167,7 +173,7 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
           input[(value << 1U) | control] = 1.;
           auto state = package.applyOperation(
               *functionality, dd::makeStateFromVector(input, package));
-          auto output = state.getVector();
+          auto output = dd::getVector(state);
           package.decRef(state);
           const auto product =
               control != 0 ? multiplier * value % number : value;
@@ -206,7 +212,7 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
       ASSERT_TRUE(succeeded(functionality));
       auto state = package.applyOperation(
           *functionality, dd::makeStateFromVector(input, package));
-      auto output = state.getVector();
+      auto output = dd::getVector(state);
       package.decRef(state);
       package.decRef(*functionality);
       ASSERT_EQ(output.size(), expected.size());
