@@ -10,6 +10,7 @@
 
 #include "bench/ModularMultiplier.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/bench/Generate.h"
 
@@ -51,7 +52,7 @@ static void expectCoherentModularMultiplier(const size_t bits,
   auto state = qco::simulateStatevector(
       mlir::mqt::getEntryPoint(program->module()), package);
   ASSERT_TRUE(succeeded(state));
-  const auto actual = state->getVector();
+  const auto actual = dd::getVector(*state);
   package.decRef(*state);
 
   dd::CVec expected(size_t{1} << ((2U * bits) + 3U));

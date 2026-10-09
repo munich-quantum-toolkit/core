@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
@@ -45,8 +46,8 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
   ASSERT_TRUE(mlir::succeeded(expected));
   ASSERT_TRUE(mlir::succeeded(actual));
 
-  const auto expectedMatrix = expected->getMatrix(numQubits);
-  const auto actualMatrix = actual->getMatrix(numQubits);
+  const auto expectedMatrix = dd::getMatrix(*expected, numQubits);
+  const auto actualMatrix = dd::getMatrix(*actual, numQubits);
   ASSERT_EQ(expectedMatrix.size(), actualMatrix.size());
   for (std::size_t row = 0; row < expectedMatrix.size(); ++row) {
     ASSERT_EQ(expectedMatrix[row].size(), actualMatrix[row].size());

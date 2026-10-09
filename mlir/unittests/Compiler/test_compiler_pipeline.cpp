@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
@@ -2269,7 +2270,7 @@ cx q[0], q[3]; cx q[1], q[3];
   const auto expectedDD = qco::buildFunctionality(
       mlir::mqt::getEntryPoint(program->module()), *package);
   ASSERT_TRUE(succeeded(expectedDD));
-  const auto expected = expectedDD->getMatrix(4);
+  const auto expected = dd::getMatrix(*expectedDD, 4);
   package->decRef(*expectedDD);
 
   ASSERT_TRUE(program->compileForTarget(
@@ -2284,7 +2285,7 @@ cx q[0], q[3]; cx q[1], q[3];
   const auto actualDD = qco::buildFunctionality(
       mlir::mqt::getEntryPoint(program->module()), *package);
   ASSERT_TRUE(succeeded(actualDD));
-  const auto actual = actualDD->getMatrix(4);
+  const auto actual = dd::getMatrix(*actualDD, 4);
   package->decRef(*actualDD);
   const auto physicalIndex = [](size_t basis,
                                 const std::vector<int64_t>& sites) {

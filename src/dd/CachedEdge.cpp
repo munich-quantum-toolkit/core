@@ -28,17 +28,12 @@
 
 namespace dd {
 
-///-----------------------------------------------------------------------------
-///                      \n Methods for vector DDs \n
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//                      \n Methods for vector DDs \n
+//-----------------------------------------------------------------------------
 
-template <class Node>
-auto CachedEdge<Node>::normalize(Node* p,
-                                 const std::array<CachedEdge, RADIX>& e,
-                                 MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge
-  requires IsVector<Node>
-{
+auto normalize(vNode* p, const std::array<CachedEdge<vNode>, RADIX>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge<vNode> {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero =
       std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero()};
@@ -46,32 +41,32 @@ auto CachedEdge<Node>::normalize(Node* p,
   if (zero[0]) {
     if (zero[1]) {
       mm.returnEntry(*p);
-      return CachedEdge::zero();
+      return vCachedEdge::zero();
     }
-    p->e = {vEdge::zero(), {e[1].p, Complex::one()}};
+    p->e = {vEdge::zero(), {.p = e[1].p, .w = Complex::one()}};
     return {p, e[1].w};
   }
 
   if (zero[1]) {
-    p->e = {vEdge{e[0].p, Complex::one()}, vEdge::zero()};
+    p->e = {vEdge{.p = e[0].p, .w = Complex::one()}, vEdge::zero()};
     return {p, e[0].w};
   }
 
-  /// Project nearly equal or opposite coefficients before normalization can
-  /// amplify their difference. For unit-norm children, the local Euclidean
-  /// error is at most eps before roundoff.
+  // Project nearly equal or opposite coefficients before normalization can
+  // amplify their difference. For unit-norm children, the local Euclidean
+  // error is at most eps before roundoff.
   for (const fp sign : {1., -1.}) {
     const auto other = e[1].w * sign;
     if (e[0].w.approximatelyEquals(other)) {
-      p->e[0] = {e[0].p, cn.lookup(SQRT2_2)};
-      p->e[1] = {e[1].p, cn.lookup(sign * SQRT2_2)};
+      p->e[0] = {.p = e[0].p, .w = cn.lookup(SQRT2_2)};
+      p->e[1] = {.p = e[1].p, .w = cn.lookup(sign * SQRT2_2)};
       return {p, (e[0].w + other) * SQRT2_2};
     }
   }
 
   const auto mag2 = std::array{e[0].w.mag2(), e[1].w.mag2()};
 
-  /// Keep the dominant phase independent of the incoming scale.
+  // Keep the dominant phase independent of the incoming scale.
   const auto argMax =
       mag2[1] - mag2[0] > RealNumber::eps * std::max(mag2[0], mag2[1]) ? 1U
                                                                        : 0U;
@@ -83,8 +78,8 @@ auto CachedEdge<Node>::normalize(Node* p,
   const auto norm = std::sqrt(maxMag2 + minMag2);
   const auto maxMag = std::sqrt(maxMag2);
   const auto maxWeight = maxMag / norm;
-  p->e[argMax] = {e[argMax].p, cn.lookup(maxWeight)};
-  /// Preserve the dominant coefficient after interning its normalized weight.
+  p->e[argMax] = {.p = e[argMax].p, .w = cn.lookup(maxWeight)};
+  // Preserve the dominant coefficient after interning its normalized weight.
   const auto topWeight = e[argMax].w / RealNumber::val(p->e[argMax].w.r);
   const auto minWeight = e[argMin].w / topWeight;
   assert(!p->e[argMax].w.exactlyZero() &&
@@ -96,23 +91,18 @@ auto CachedEdge<Node>::normalize(Node* p,
            "Edge weight should be one when minWeight is zero.");
     p->e[argMin] = vEdge::zero();
   } else {
-    p->e[argMin] = {e[argMin].p, minW};
+    p->e[argMin] = {.p = e[argMin].p, .w = minW};
   }
 
   return {p, topWeight};
 }
 
-///-----------------------------------------------------------------------------
-///                      \n Methods for matrix DDs \n
-///-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//                      \n Methods for matrix DDs \n
+//-----------------------------------------------------------------------------
 
-template <class Node>
-auto CachedEdge<Node>::normalize(Node* p,
-                                 const std::array<CachedEdge, NEDGE>& e,
-                                 MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge
-  requires IsMatrix<Node>
-{
+auto normalize(mNode* p, const std::array<CachedEdge<mNode>, NEDGE>& e,
+               MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge<mNode> {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{
       e[0].w.approximatelyZero(),
@@ -121,13 +111,13 @@ auto CachedEdge<Node>::normalize(Node* p,
       e[3].w.approximatelyZero(),
   };
 
-  if (std::all_of(zero.begin(), zero.end(), [](auto b) { return b; })) {
+  if (std::ranges::all_of(zero, [](auto b) { return b; })) {
     mm.returnEntry(*p);
-    return CachedEdge::zero();
+    return mCachedEdge::zero();
   }
 
-  /// The incoming scale does not affect normalized coefficients. Remove it
-  /// before squared magnitudes and complex division can overflow or underflow.
+  // The incoming scale does not affect normalized coefficients. Remove it
+  // before squared magnitudes and complex division can overflow or underflow.
   const auto maxComponent = std::max({
       std::abs(e[0].w.r),
       std::abs(e[0].w.i),
@@ -146,7 +136,7 @@ auto CachedEdge<Node>::normalize(Node* p,
     }
   }
 
-  std::optional<std::size_t> argMax = std::nullopt;
+  std::optional<size_t> argMax = std::nullopt;
   fp maxMag2 = 0.;
   ComplexValue maxVal = 1.;
   // determine max amplitude
@@ -172,30 +162,23 @@ auto CachedEdge<Node>::normalize(Node* p,
 
   const auto argMaxValue = *argMax;
   for (auto i = 0U; i < NEDGE; ++i) {
-    /// Treat weights within tolerance as zero before normalization amplifies
-    /// them.
+    // Treat weights within tolerance as zero before normalization amplifies
+    // them.
     if (zero[i]) {
-      p->e[i] = Edge<Node>::zero();
+      p->e[i] = Edge<mNode>::zero();
       continue;
     }
     if (i == argMaxValue) {
-      p->e[i] = {e[i].p, Complex::one()};
+      p->e[i] = {.p = e[i].p, .w = Complex::one()};
       continue;
     }
-    p->e[i] = {e[i].p, cn.lookup(weights[i] / weights[argMaxValue])};
+    p->e[i] = {.p = e[i].p, .w = cn.lookup(weights[i] / weights[argMaxValue])};
     if (p->e[i].w.exactlyZero()) {
-      p->e[i].p = Node::getTerminal();
+      p->e[i].p = mNode::getTerminal();
     }
   }
-  return CachedEdge{p, maxVal};
+  return mCachedEdge{p, maxVal};
 }
-
-///-----------------------------------------------------------------------------
-///                      \n Explicit instantiations \n
-///-----------------------------------------------------------------------------
-
-template struct CachedEdge<vNode>;
-template struct CachedEdge<mNode>;
 
 } // namespace dd
 

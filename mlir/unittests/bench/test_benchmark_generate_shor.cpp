@@ -10,6 +10,7 @@
 
 #include "bench/Shor.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Compiler/Programs.h"
@@ -167,7 +168,7 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
           input[(value << 1U) | control] = 1.;
           auto state = package.applyOperation(
               *functionality, dd::makeStateFromVector(input, package));
-          auto output = state.getVector();
+          auto output = dd::getVector(state);
           package.decRef(state);
           const auto product =
               control != 0 ? multiplier * value % number : value;
@@ -206,7 +207,7 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
       ASSERT_TRUE(succeeded(functionality));
       auto state = package.applyOperation(
           *functionality, dd::makeStateFromVector(input, package));
-      auto output = state.getVector();
+      auto output = dd::getVector(state);
       package.decRef(state);
       package.decRef(*functionality);
       ASSERT_EQ(output.size(), expected.size());
