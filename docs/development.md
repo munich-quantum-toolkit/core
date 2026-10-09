@@ -71,11 +71,24 @@ includes belong to the private project header group.
 
 ### C++ documentation comments
 
-Use `///` for Doxygen documentation comments. The first sentence is the summary;
-separate additional paragraphs with a blank `///` line instead of using `\brief`
-or `\details`. Document parameters and return values only when the explanation
-adds information that the name and signature do not already provide. Preserve
-existing documentation when changing comment style.
+Use `//` for ordinary code comments. Never use `///` for them.
+
+Use `///` for Doxygen documentation. Keep public API documentation at the
+declaration; do not duplicate it in the implementation.
+
+Start descriptions with a short sentence stating the entity's purpose or
+observable behavior, on one source line where practical. Separate any further
+content, including `\param` and `\returns`, with a blank `///` line. Add details
+only when they explain something the summary and signature leave unclear.
+Separate further paragraphs with blank `///` lines. Do not use `\brief` or
+`\details` outside the macro exception below.
+
+Structural commands such as `@defgroup` and `@name` remain valid; marker-only
+blocks such as `@{` and `@}` need no summary.
+
+Preserve existing documentation when changing comment style. Inline `/* ... */`
+comments remain valid, including unused parameter names
+(`OpAdaptor /*adaptor*/`) and argument labels (`/*isSigned=*/false`).
 
 Prefer Unicode for simple mathematical notation in comments, such as `π`,
 `R(θ, φ)`, `U†`, and `|0⟩`. Put spaces around arrows in prose and rewrite
@@ -117,14 +130,6 @@ without `@brief`:
 Operation apply(llvm::ArrayRef<Qubit> qubits);
 ```
 
-Keep public API documentation in the declaration and do not duplicate it in the
-implementation. Use ordinary implementation comments for details that do not
-belong to the API contract.
-
-Use `//` for ordinary implementation and namespace closing comments. Inline
-`/* ... */` comments remain valid, including unused parameter names such as
-`OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
-
 ### Reproduce C++ lint locally
 
 Before pushing a C++ change, run:
@@ -152,6 +157,29 @@ uvx nox -s cpp-lint -- --all
 Changed-line `clang-tidy` commands remain useful for quick iteration, but they
 do not reproduce CI's whole-changed-file scope. Update this session when the
 reusable C++ lint workflow changes its action version or inputs.
+
+## Python docstrings
+
+Use [Google-style docstrings][google-python-docstrings], consistent with
+[PEP 257][pep-257], including in nanobind binding strings and generated stubs.
+Start with a short sentence on one line stating the Python API's purpose or
+observable behavior. Separate any further content, including `Args:`,
+`Returns:`, and `Raises:`, with a blank line. Add input, output, side-effect,
+and failure details only when the summary and signature leave them unclear.
+Separate further paragraphs and sections with blank lines.
+
+```python
+"""Applies an operation to the selected qubits.
+
+Qubit indices follow application order. Duplicate indices raise ValueError.
+"""
+```
+
+Change binding docstrings in the C++ source and regenerate stubs with
+`uvx nox -s stubs`; never edit generated `.pyi` files manually.
+
+[google-python-docstrings]: https://google.github.io/styleguide/pyguide.html#381-docstrings
+[pep-257]: https://peps.python.org/pep-0257/#multi-line-docstrings
 
 ## Commit messages
 
