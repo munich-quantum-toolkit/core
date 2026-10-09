@@ -1096,9 +1096,9 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   size_t mchCount = 0;
   size_t controlledDcx = 0;
   moduleOp->walk([&](CtrlOp op) {
+    auto inner =
+        mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (op.getNumTargets() == 2) {
-      auto inner =
-          mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
       if (inner && isa<DCXOp>(inner.getOperation())) {
         ++controlledDcx;
       }
@@ -1106,8 +1106,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
     if (op.getNumControls() < 2) {
       return;
     }
-    if (op.getNumBodyUnitaries() == 1 &&
-        isa<HOp>(op.getBodyUnitary(0).getOperation())) {
+    if (inner && isa<HOp>(inner.getOperation())) {
       ++mchCount;
     }
   });

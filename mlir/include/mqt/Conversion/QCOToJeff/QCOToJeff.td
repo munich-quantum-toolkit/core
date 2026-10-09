@@ -22,10 +22,8 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     in order. Canonicalize or unroll modifiers outside this normal form before
     conversion.
 
-    Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
-
-    `qco.static` is currently converted to `jeff.qubit_alloc` because `jeff` does not yet represent static (index-based) qubits.
-    As the index is not preserved in `jeff`, it is not possible to round-tripping static qubits.
+    `qco.static` exports as `jeff.qubit_alloc`; static site indices are not
+    preserved. Exchange logical programs before device mapping.
   }];
 
   let dependentDialects = ["mlir::func::FuncDialect", "mlir::jeff::JeffDialect",
