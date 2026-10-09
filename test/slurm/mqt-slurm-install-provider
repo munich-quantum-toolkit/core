@@ -25,7 +25,9 @@ for provider_wheel in /tmp/provider/wheels/*.whl; do
         exit 1
     fi
     for core_wheel in /tmp/dist/mqt_core-*.whl; do
-        uv pip install --system --break-system-packages \
+        # Test this wheel even when the provider pins another Core source revision.
+        printf 'mqt-core[qiskit,pennylane] @ file://%s\n' "$core_wheel" | \
+        uv pip install --system --break-system-packages --overrides - \
             "$provider_wheel[qiskit]" "$core_wheel[qiskit,pennylane]"
     done
 done

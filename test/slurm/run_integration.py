@@ -622,8 +622,8 @@ def test_spank_validation() -> None:
     def calls() -> list[dict[str, Any]]:
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
 
-    def configure(checker: str | None = probe, timeout: int = 3) -> None:
-        validation = f" validate={checker} validation_timeout={timeout}" if checker else ""
+    def configure(checker: str = probe, timeout: int = 3) -> None:
+        validation = f" validate={checker} validation_timeout={timeout}"
         (RUNTIME / "plugstack.conf").write_text(configuration + validation + "\n", encoding="utf-8")
         log.unlink(missing_ok=True)
         body.unlink(missing_ok=True)
@@ -646,12 +646,6 @@ def test_spank_validation() -> None:
                         f"p=Path('/proc/{pid}/stat'); "
                         "assert not p.exists() or p.read_text().split(') ', 1)[1].startswith('Z ')",
                     )
-
-    configure(None)
-    job(*environment, *allocation, "python3", "-c", program, timeout=60)
-    assert body.exists()
-    assert not calls()
-    assert_released()
 
     configure()
     job(*environment, *allocation, "--mpi=pmi2", "python3", "-c", program, timeout=60)

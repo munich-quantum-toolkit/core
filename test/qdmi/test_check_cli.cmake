@@ -23,7 +23,7 @@ endif()
 
 function(check_exit expected)
   execute_process(
-    COMMAND "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON
+    COMMAND "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_DRIVER --unset=MQT_CORE_QDMI_CONFIG_JSON
             "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" "${CHECKER}" ${ARGN}
     RESULT_VARIABLE actual
     OUTPUT_VARIABLE output
@@ -96,7 +96,7 @@ foreach(
         file(REMOVE "${marker}")
         execute_process(
           COMMAND
-            "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_CONFIG_JSON
+            "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_DRIVER --unset=MQT_CORE_QDMI_CONFIG_JSON
             "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" /bin/sh -c [=[
             "$1" --device test.check & checker=$!
             attempt=0

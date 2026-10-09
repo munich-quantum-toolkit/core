@@ -104,7 +104,7 @@ constexpr std::string_view USAGE =
     if (sink > STDERR_FILENO) {
       close(sink);
     }
-    // Normal exit includes driver and provider teardown within the deadline.
+    // Run process-exit handlers within the worker deadline.
     std::exit(check(id)); // NOLINT(concurrency-mt-unsafe)
   }
 
