@@ -117,6 +117,31 @@ public:
       layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
       valid_ = count.getInt() >= 0 &&
                std::cmp_less_equal(count.getInt(), target.numSites());
+      if (auto attr = module_->getAttr("mqt.layout")) {
+        auto circuit = mqt::QubitLayout::fromAttr(
+            attr, [&] { return module_.emitError(); });
+        if (failed(circuit) || circuit->sites || !circuit->routing) {
+          valid_ = false;
+          return;
+        }
+        circuitRouting_ = std::move(*circuit->routing);
+        // Layout positions are compact; source labels can have gaps after
+        // cleanup removes idle qubits.
+        for (Operation& operation : function.getBody().front()) {
+          if (auto indices = operation.getAttrOfType<DenseI64ArrayAttr>(
+                  mqt::kSourceQubitIndicesAttr)) {
+            llvm::append_range(circuitSources_, indices.asArrayRef());
+          }
+        }
+        valid_ &= circuitSources_.size() == circuitRouting_.size() &&
+                  llvm::all_of(llvm::enumerate(circuit->initial),
+                               [](auto entry) {
+                                 return entry.index() == entry.value();
+                               }) &&
+                  llvm::all_of(circuitSources_, [&](int64_t source) {
+                    return source >= 0 && source < layout_->inputCount;
+                  });
+      }
     }
   }
 
@@ -168,6 +193,17 @@ public:
         used[next] = true;
       }
     }
+    if (!circuitRouting_.empty()) {
+      // Translate the circuit permutation into placed device positions.
+      layout_->routing.emplace(layout_->initial.size());
+      for (size_t site = 0; site < layout_->initial.size(); ++site) {
+        (*layout_->routing)[site] = static_cast<int64_t>(site);
+      }
+      for (auto [wire, source] : llvm::enumerate(circuitSources_)) {
+        (*layout_->routing)[layout_->initial[source]] =
+            layout_->initial[circuitSources_[circuitRouting_[wire]]];
+      }
+    }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
     return success();
   }
@@ -175,6 +211,8 @@ public:
 private:
   ModuleOp module_;
   std::optional<mqt::QubitLayout> layout_;
+  SmallVector<int64_t> circuitSources_;
+  std::vector<int64_t> circuitRouting_;
   bool valid_ = true;
 };
 
@@ -929,8 +967,17 @@ protected:
 
     if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
       const auto permutation = sitePermutation(layout, state.layout);
-      const SmallVector<int64_t> routing(permutation.begin(),
-                                         permutation.end());
+      SmallVector<int64_t> routing(permutation.begin(), permutation.end());
+      if (auto previous = attr.getAs<DenseI64ArrayAttr>("routing")) {
+        if (std::cmp_not_equal(previous.size(), routing.size())) {
+          moduleOp.emitError("routing layout width does not match the target");
+          signalPassFailure();
+          return;
+        }
+        for (auto [site, position] : llvm::enumerate(previous.asArrayRef())) {
+          routing[site] = permutation[position];
+        }
+      }
       NamedAttrList fields(attr);
       fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
       moduleOp->setAttr("mqt.layout", fields.getDictionary(&getContext()));
