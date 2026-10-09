@@ -221,6 +221,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createSymbolDCEPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
+  pm.addPass(qco::createElideTerminalSwapsPass());
   pm.addPass(qco::createFuseTwoQubitGates(target));
   /// U fusion shrinks runs before routing. Other bases can expand symbolic
   /// runs, so emit them once during native synthesis, after cleanup.
@@ -259,6 +260,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
+  pm.addPass(qco::createElideTerminalSwapsPass());
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
   qco::populateTargetNativeSynthesisPipeline(pm);

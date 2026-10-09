@@ -164,8 +164,8 @@ This build requires Linux, Slurm 25.11 or newer development headers, CMake, and
 a C++20 compiler. It does not configure Core, LLVM, or provider SDKs. Build
 against the cluster's Slurm headers and rebuild when changing Slurm major
 versions. `MQT_CORE_SPANK_INSTALL_DIR` overrides the default `lib/slurm`
-installation directory. The component retains its GPL-3.0-or-later license and
-is distributed through Core's source checkout, separately from the MIT runtime,
+installation directory. The component is licensed under GPL-3.0-or-later and is
+distributed through Core's source checkout, separately from the MIT runtime,
 wheels, and sdists.
 
 Install the module and matching `plugstack.conf` on submission/login and compute
@@ -392,8 +392,8 @@ failure-path tests can run before building a wheel:
 uv run --no-project --with 'pytest>=9.0.1' --python 3.14 pytest -o addopts= -q test/python/test_slurm_integration.py
 ```
 
-CI enables the existing sccache compiler integration and reports cache counters.
-Compare compiler requests, hits, and wall time before attributing a build-time
-change to caching. The fixture's bounded polling targets its private controller;
-do not copy these loops into production monitoring. See the
+CI enables the sccache compiler integration and reports cache counters. Compare
+compiler requests, hits, and wall time before attributing a build-time change to
+caching. The fixture's bounded polling targets its private controller; do not
+copy these loops into production monitoring. See the
 [Slurm RPC performance guidance](https://slurm.schedmd.com/squeue.html#SECTION_PERFORMANCE).

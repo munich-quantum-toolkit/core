@@ -58,6 +58,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <algorithm>
@@ -70,6 +71,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <random>
 #include <ranges>
@@ -110,19 +112,42 @@ class LayoutRecorder {
 public:
   LayoutRecorder(func::FuncOp function, const CompilerTarget& target)
       : module_(function->getParentOfType<ModuleOp>()) {
-    if (auto count =
-            module_->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr)) {
-      layout_.emplace();
-      layout_->initial.assign(target.numSites(), -1);
-      layout_->inputCount = count.getInt();
-      layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
-      valid_ = count.getInt() >= 0 &&
-               std::cmp_less_equal(count.getInt(), target.numSites());
+    auto count =
+        module_->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
+    if (!count) {
+      return;
     }
+    layout_.emplace();
+    layout_->initial.assign(target.numSites(), -1);
+    layout_->inputCount = count.getInt();
+    layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
+    valid_ = count.getInt() >= 0 &&
+             std::cmp_less_equal(count.getInt(), target.numSites());
+
+    auto circuit = module_->getAttrOfType<DictionaryAttr>("mqt.layout");
+    if (!circuit) {
+      return;
+    }
+    auto initial = circuit.getAs<DenseI64ArrayAttr>("initial");
+    circuitRouting_ = circuit.getAs<DenseI64ArrayAttr>("routing");
+    // Layout positions are compact; source labels can have gaps after cleanup.
+    for (Operation& operation : function.getBody().front()) {
+      if (auto indices = operation.getAttrOfType<DenseI64ArrayAttr>(
+              mqt::kSourceQubitIndicesAttr)) {
+        llvm::append_range(circuitSources_, indices.asArrayRef());
+      }
+    }
+    valid_ &= !circuit.contains("sites") && circuitRouting_ &&
+              llvm::equal(initial.asArrayRef(),
+                          llvm::seq<int64_t>(0, static_cast<int64_t>(
+                                                    circuitSources_.size()))) &&
+              llvm::all_of(circuitSources_, [&](int64_t source) {
+                return source >= 0 && source < layout_->inputCount;
+              });
   }
 
   void record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
-    if (!layout_) {
+    if (!layout_ || !valid_) {
       return;
     }
     auto indices =
@@ -150,7 +175,7 @@ public:
     if (!layout_) {
       return success();
     }
-    std::vector<bool> used(layout_->initial.size(), false);
+    llvm::SmallBitVector used(layout_->initial.size());
     for (const auto vertex : layout_->initial) {
       if (vertex >= 0) {
         if (used[vertex]) {
@@ -169,6 +194,15 @@ public:
         used[next] = true;
       }
     }
+    if (circuitRouting_) {
+      // Translate the circuit permutation into placed device positions.
+      auto& routing = layout_->routing.emplace(layout_->initial.size());
+      std::iota(routing.begin(), routing.end(), int64_t{0});
+      for (auto [wire, source] : llvm::enumerate(circuitSources_)) {
+        const auto destination = circuitSources_[circuitRouting_[wire]];
+        routing[layout_->initial[source]] = layout_->initial[destination];
+      }
+    }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
     return success();
   }
@@ -176,6 +210,8 @@ public:
 private:
   ModuleOp module_;
   std::optional<mqt::QubitLayout> layout_;
+  SmallVector<int64_t> circuitSources_;
+  DenseI64ArrayAttr circuitRouting_;
   bool valid_ = true;
 };
 
@@ -932,8 +968,17 @@ protected:
 
     if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
       const auto permutation = sitePermutation(layout, state.layout);
-      const SmallVector<int64_t> routing(permutation.begin(),
-                                         permutation.end());
+      auto previous = attr.getAs<DenseI64ArrayAttr>("routing");
+      if (previous && std::cmp_not_equal(previous.size(), permutation.size())) {
+        moduleOp.emitError("routing layout width does not match the target");
+        signalPassFailure();
+        return;
+      }
+      const auto routing =
+          map_to_vector(llvm::seq<size_t>(0, permutation.size()),
+                        [&](size_t site) -> int64_t {
+                          return permutation[previous ? previous[site] : site];
+                        });
       NamedAttrList fields(attr);
       fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
       moduleOp->setAttr("mqt.layout", fields.getDictionary(&getContext()));
