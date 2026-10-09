@@ -147,7 +147,7 @@ def build(output: Path, capture: Path = HERE / "captures/demo.json.gz", source: 
         script = source.joinpath("visuals.js").read_text(encoding="utf-8") + "\n" + script
     assets = {
         path.stem: "data:image/svg+xml;base64," + base64.b64encode(path.read_bytes()).decode()
-        for path in source.glob("assets/*.svg")
+        for path in sorted(source.glob("assets/*.svg"))
     }
     font = source / "assets/inter-latin.woff2"
     if font.exists():

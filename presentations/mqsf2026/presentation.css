@@ -897,3 +897,12 @@ dialog p {
   background: transparent;
   color: inherit;
 }
+/* Hosted preview controls obscure the slides and require mouse interaction. */
+readthedocs-flyout,
+readthedocs-notification,
+readthedocs-search,
+readthedocs-hotkeys,
+readthedocs-filetreediff,
+readthedocs-docdiff {
+  display: none !important;
+}
