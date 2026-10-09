@@ -118,7 +118,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
   auto savedQubits = std::move(validQubits);
   auto savedTensors = std::move(validTensors);
   const auto savedTensorCounter = tensorCounter;
-  auto stateGuard = llvm::make_scope_exit([&] {
+  auto stateGuard = llvm::scope_exit([&] {
     validQubits = std::move(savedQubits);
     validTensors = std::move(savedTensors);
     tensorCounter = savedTensorCounter;

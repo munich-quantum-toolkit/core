@@ -4764,6 +4764,7 @@ private:
       }
       break;
     }
+    case Expr::Kind::Slice:
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:

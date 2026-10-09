@@ -24,6 +24,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace dd {
@@ -66,17 +67,19 @@ TEST(VectorFunctionality, WideIndices) {
   const auto zero = makeZeroState(digits + 1U, *dd);
   EXPECT_EQ(dd::getValueByIndex(zero, 0), 1.);
   EXPECT_EQ(dd::getValueByIndex(zero, std::numeric_limits<size_t>::max()), 0.);
-  EXPECT_THROW(dd::getValueByIndex(vEdge::one(), 1), std::out_of_range);
-  EXPECT_THROW(dd::getValueByIndex(makeZeroState(3, *dd), 8),
+  EXPECT_THROW(std::ignore = dd::getValueByIndex(vEdge::one(), 1),
+               std::out_of_range);
+  EXPECT_THROW(std::ignore = dd::getValueByIndex(makeZeroState(3, *dd), 8),
                std::out_of_range);
 }
 
 TEST(VectorFunctionality, InvalidPaths) {
   auto dd = std::make_unique<Package>(2);
   const auto zero = makeZeroState(2, *dd);
-  EXPECT_THROW(zero.getValueByPath(2, "2"), std::out_of_range);
+  EXPECT_THROW(std::ignore = zero.getValueByPath(2, "2"), std::out_of_range);
   for (const auto* path : {"20", "91", "/0", "x0"}) {
-    EXPECT_THROW(zero.getValueByPath(2, path), std::invalid_argument);
+    EXPECT_THROW(std::ignore = zero.getValueByPath(2, path),
+                 std::invalid_argument);
   }
   EXPECT_EQ(zero.getValueByPath(2, "00ignored"), 1.);
 }
@@ -97,14 +100,18 @@ TEST(MatrixFunctionality, WideIndices) {
                                 std::numeric_limits<size_t>::max(),
                                 std::numeric_limits<size_t>::max()),
             1.);
-  EXPECT_THROW(dd::getValueByIndex(gate, 1, 2, 0), std::out_of_range);
-  EXPECT_THROW(dd::getValueByIndex(mEdge::one(), 1, 0, 2), std::out_of_range);
+  EXPECT_THROW(std::ignore = dd::getValueByIndex(gate, 1, 2, 0),
+               std::out_of_range);
+  EXPECT_THROW(std::ignore = dd::getValueByIndex(mEdge::one(), 1, 0, 2),
+               std::out_of_range);
 }
 
 TEST(MatrixFunctionality, InvalidPaths) {
-  EXPECT_THROW(mEdge::one().getValueByPath(1, ""), std::out_of_range);
+  EXPECT_THROW(std::ignore = mEdge::one().getValueByPath(1, ""),
+               std::out_of_range);
   for (const auto* path : {"4", "9", "/", "x"}) {
-    EXPECT_THROW(mEdge::one().getValueByPath(1, path), std::invalid_argument);
+    EXPECT_THROW(std::ignore = mEdge::one().getValueByPath(1, path),
+                 std::invalid_argument);
   }
   EXPECT_EQ(mEdge::one().getValueByPath(1, "3ignored"), 1.);
 }

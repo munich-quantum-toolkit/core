@@ -421,8 +421,9 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
             if (parameterIndex) {
               /// Keep theta fixed when phi is symbolic to exercise the
               /// zero, quarter-turn, and half-turn shortcuts at runtime.
-              function.insertArgument(0, mlir::Float64Type::get(context.get()),
-                                      {}, function.getLoc());
+              ASSERT_TRUE(mlir::succeeded(function.insertArgument(
+                  0, mlir::Float64Type::get(context.get()), {},
+                  function.getLoc())));
               auto gate = *function.getOps<UOp>().begin();
               auto originalParameter = gate.getParameter(*parameterIndex);
               originalParameter.replaceAllUsesWith(function.getArgument(0));

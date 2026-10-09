@@ -21,6 +21,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace mqt::bench {
@@ -70,14 +71,17 @@ TEST(Shor, HandlesMaximalFractionsWithoutWideIntegers) {
 
 TEST(Shor, RejectsInvalidCounts) {
   const Shor benchmark({.number = 21});
-  EXPECT_THROW(benchmark.evaluate({}), std::invalid_argument);
-  EXPECT_THROW(benchmark.evaluate({{"0000000000", 0}}), std::invalid_argument);
-  EXPECT_THROW(benchmark.evaluate({{"000000000", 1}}), std::invalid_argument);
-  EXPECT_THROW(benchmark.evaluate({{"000000000x", 1}}), std::invalid_argument);
-  EXPECT_THROW(
-      benchmark.evaluate({{"0000000000", std::numeric_limits<size_t>::max()},
-                          {"0010101011", 1}}),
-      std::overflow_error);
+  EXPECT_THROW(std::ignore = benchmark.evaluate({}), std::invalid_argument);
+  EXPECT_THROW(std::ignore = benchmark.evaluate({{"0000000000", 0}}),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = benchmark.evaluate({{"000000000", 1}}),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = benchmark.evaluate({{"000000000x", 1}}),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = benchmark.evaluate(
+                   {{"0000000000", std::numeric_limits<size_t>::max()},
+                    {"0010101011", 1}}),
+               std::overflow_error);
 }
 
 TEST(Shor, PerformsClassicalPrechecksWithoutQuantumRuns) {
@@ -154,13 +158,15 @@ TEST(Shor, PropagatesCallbackFailuresAndRejectsInvalidDriverInputs) {
   const auto run = [](const Shor&) -> Counts {
     throw std::runtime_error("device failed");
   };
-  EXPECT_THROW(factor(21, run), std::runtime_error);
-  EXPECT_THROW(factor(21, [](const Shor&) { return Counts{}; }),
+  EXPECT_THROW(std::ignore = factor(21, run), std::runtime_error);
+  EXPECT_THROW(std::ignore = factor(21, [](const Shor&) { return Counts{}; }),
                std::invalid_argument);
-  EXPECT_THROW(factor(1, run), std::invalid_argument);
-  EXPECT_THROW(factor(ShorOptions::MAX_NUMBER + 1, run), std::invalid_argument);
-  EXPECT_THROW(factor(21, run, {.maxAttempts = 0}), std::invalid_argument);
-  EXPECT_THROW(factor(21, {}), std::invalid_argument);
+  EXPECT_THROW(std::ignore = factor(1, run), std::invalid_argument);
+  EXPECT_THROW(std::ignore = factor(ShorOptions::MAX_NUMBER + 1, run),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = factor(21, run, {.maxAttempts = 0}),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore = factor(21, {}), std::invalid_argument);
 }
 
 TEST(Shor, RoundTripsJSON) {
@@ -195,7 +201,7 @@ TEST(Shor, RejectsInvalidJSONParameters) {
            R"({})",
        }) {
     EXPECT_THROW(
-        shorFromInstanceSpecificationJSON(
+        std::ignore = shorFromInstanceSpecificationJSON(
             std::string(
                 R"({"schema_version":1,"benchmark":"shor","parameters":)") +
             parameters + "}"),
