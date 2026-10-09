@@ -84,7 +84,8 @@ Separate further paragraphs with blank `///` lines. Do not use `\brief` or
 `\details` outside the macro exception below.
 
 Structural commands such as `@defgroup` and `@name` remain valid; marker-only
-blocks such as `@{` and `@}` need no summary.
+blocks such as `@{` and `@}` need no summary. Do not add a summary solely to
+precede an `@see` cross-reference.
 
 Preserve existing documentation when changing comment style. Inline `/* ... */`
 comments remain valid, including unused parameter names

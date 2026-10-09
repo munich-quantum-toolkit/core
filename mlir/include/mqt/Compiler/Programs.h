@@ -343,8 +343,8 @@ public:
 
   /// Compile for a target and attach layout metadata when possible.
   ///
-  /// Reject a program with attached layout metadata.
-  /// Do not rely on the program contents if compilation fails.
+  /// Reject a program with attached layout metadata. Do not rely on the program
+  /// contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       const CompilationOptions& options = {});
 

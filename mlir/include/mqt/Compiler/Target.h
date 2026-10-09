@@ -228,10 +228,9 @@ public:
 
     /// Fixed parameter values; nullopt accepts any value.
     ///
-    /// Empty is
-    /// unrestricted. Nonempty lists contain numParameters() entries. Constants
-    /// match with absolute tolerance 1e-15, without reducing angles modulo a
-    /// period.
+    /// Empty is unrestricted. Nonempty lists contain numParameters() entries.
+    /// Constants match with absolute tolerance 1e-15, without reducing angles
+    /// modulo a period.
     [[nodiscard]] llvm::ArrayRef<std::optional<double>>
     fixedParameters() const noexcept;
 
@@ -436,16 +435,16 @@ public:
   /// Return the cached minimum number of couplings between valid dense
   /// vertices.
   ///
-  /// Explicit topologies cache breadth-first searches because every
-  /// coupling has unit cost.
+  /// Explicit topologies cache breadth-first searches because every coupling
+  /// has unit cost.
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
 
   /// Return a shortest path of dense vertices, including both endpoints.
   ///
   /// Uses the distance cache shared by target copies. Among equally short
   /// paths, choose the smallest next vertex at each step. Equal endpoints
-  /// return a one-vertex path. Both endpoints must be valid dense vertices;
-  /// use siteForVertex() to convert path entries to target site IDs.
+  /// return a one-vertex path. Both endpoints must be valid dense vertices; use
+  /// siteForVertex() to convert path entries to target site IDs.
   [[nodiscard]] llvm::SmallVector<size_t>
   shortestPathBetween(size_t source, size_t target) const;
 

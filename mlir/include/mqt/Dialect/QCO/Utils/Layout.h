@@ -30,12 +30,12 @@ namespace mlir::qco {
 /// A qubit layout that maps program qubit indices to hardware qubit indices
 /// without storing Values.
 ///
-/// Program and hardware qubit indices form a dense range, respectively
-/// `[0, nProgramQubits)` and `[0, nHardwareQubits)`, with `nProgramQubits <=
+/// Program and hardware qubit indices form a dense range, respectively `[0,
+/// nProgramQubits)` and `[0, nHardwareQubits)`, with `nProgramQubits <=
 /// nHardwareQubits`, and every program qubit is mapped to a distinct hardware
-/// qubit. Unmapped hardware slots carry a sentinel value.
-/// The site count must not exceed `std::numeric_limits<T>::max()` so that
-/// the sentinel cannot also denote a qubit.
+/// qubit. Unmapped hardware slots carry a sentinel value. The site count must
+/// not exceed `std::numeric_limits<T>::max()` so that the sentinel cannot also
+/// denote a qubit.
 ///
 /// Note that we use the terminology "hardware" and "program" qubits here,
 /// because "virtual" (opposed to physical) and "static" (opposed to dynamic)
@@ -92,8 +92,8 @@ public:
     return layout;
   }
 
-  /// Construct a layout from a bijective program-to-hardware mapping,
-  /// where mapping[prog] = hw.
+  /// Construct a layout from a bijective program-to-hardware mapping, where
+  /// mapping[prog] = hw.
   ///
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout<T> fromMapping(ArrayRef<T> mapping) {
@@ -112,8 +112,8 @@ public:
 
   /// Insert a program:hardware index mapping.
   ///
-  /// Requires `prog < nProgramQubits`, `hw < nHardwareQubits`, and that
-  /// neither `prog` nor `hw` has been mapped previously.
+  /// Requires `prog < nProgramQubits`, `hw < nHardwareQubits`, and that neither
+  /// `prog` nor `hw` has been mapped previously.
   void add(size_t prog, size_t hw) {
     assert(prog < programToHardware_.size() && "program index out of bounds");
     assert(hw < hardwareToProgram_.size() && "hardware index out of bounds");

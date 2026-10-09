@@ -77,8 +77,7 @@ struct LoweringState {
 
   /// Metadata for returned scalar measurement results.
   ///
-  /// Each entry is a defining
-  /// `qc::MeasureOp`
+  /// Each entry is a defining `qc::MeasureOp`
   DenseSet<Operation*> returnedScalarResults;
 
   /// Converted controls associated with their specific body unitary.
@@ -173,19 +172,19 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 ///
 /// For measurement-only returned registers, the store and measurement must
 /// share a block. The index must be available at measurement or become
-/// available by moving pure, speculatable operations without regions from
-/// that block before it. Removes fused stores so QIR measurements write
-/// directly to their destinations. Intervening operations must be effect-free,
-/// affect only quantum resources, or store to a provably distinct constant
-/// index of the same register.
+/// available by moving pure, speculatable operations without regions from that
+/// block before it. Removes fused stores so QIR measurements write directly to
+/// their destinations. Intervening operations must be effect-free, affect only
+/// quantum resources, or store to a provably distinct constant index of the
+/// same register.
 ///
-/// With \p allowComputedOutputs, returned registers that contain computed
-/// bits use boolean storage and keep ordinary stores. Otherwise these stores
-/// fail. Local CBit stores retain ordinary semantics.
+/// With \p allowComputedOutputs, returned registers that contain computed bits
+/// use boolean storage and keep ordinary stores. Otherwise these stores fail.
+/// Local CBit stores retain ordinary semantics.
 ///
-/// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain
-/// in the IR. Adaptive lowering defers fused store removal until SCF and
-/// function conversion have rewritten their index operands.
+/// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain in
+/// the IR. Adaptive lowering defers fused store removal until SCF and function
+/// conversion have rewritten their index operands.
 [[nodiscard]] LogicalResult
 prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                         bool allowComputedOutputs = false,

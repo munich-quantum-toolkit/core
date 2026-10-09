@@ -184,8 +184,7 @@ void printVector(const Edge<vNode>& edge);
 /// @param amplitudes the vector to add to
 void addToVector(const Edge<vNode>& edge, CVec& amplitudes);
 
-/// Get a normalized matrix DD from a fresh node and a list
-/// of edges
+/// Get a normalized matrix DD from a fresh node and a list of edges
 ///
 /// @param p the fresh node
 /// @param e the list of edges that form the successor nodes

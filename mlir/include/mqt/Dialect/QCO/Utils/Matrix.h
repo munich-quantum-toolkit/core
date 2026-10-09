@@ -823,8 +823,7 @@ concept SupportedMatrix =
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`).
 ///
-/// Provided so generic code can scale a matrix from
-/// either side.
+/// Provided so generic code can scale a matrix from either side.
 [[nodiscard]] Matrix2x2 operator*(const Complex& scalar,
                                   const Matrix2x2& matrix);
 /// @copydoc operator*(const Complex&, const Matrix2x2&)

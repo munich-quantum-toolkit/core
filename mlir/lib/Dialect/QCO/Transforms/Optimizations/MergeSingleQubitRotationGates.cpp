@@ -214,9 +214,8 @@ static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,
 
 /// Constant gates share the matrix contract.
 ///
-/// Only runtime gates need symbolic
-/// formulas; return their phase with the quaternion so each parameter is read
-/// once.
+/// Only runtime gates need symbolic formulas; return their phase with the
+/// quaternion so each parameter is read once.
 static std::pair<Quat, Val> quaternionFromGate(UnitaryOpInterface op,
                                                const ScalarConsts& c,
                                                RewriterBase& rewriter) {
@@ -580,9 +579,9 @@ struct MergeSingleQubitRotationGatesPattern final
 
   /// Reuse Euler angles when the chain and output share their outer axis.
   ///
-  /// Either outer rotation may be absent. H/Z pairs use H RZ = RX H to
-  /// align the rotation with the output basis. Normalize gate operands before
-  /// adding Euler offsets or computing the U phase correction.
+  /// Either outer rotation may be absent. H/Z pairs use H RZ = RX H to align
+  /// the rotation with the output basis. Normalize gate operands before adding
+  /// Euler offsets or computing the U phase correction.
   static LogicalResult
   tryMergeDirectChain(MutableArrayRef<UnitaryOpInterface> chain,
                       RewriterBase& rewriter,
@@ -779,8 +778,8 @@ struct MergeSingleQubitRotationGatesPattern final
   /// Matches the full chain, folds its quaternions with Hamilton products, and
   /// emits one U operation or the requested fusion basis.
   ///
-  /// Constant chains use
-  /// numerical Euler synthesis; runtime chains use quaternion composition.
+  /// Constant chains use numerical Euler synthesis; runtime chains use
+  /// quaternion composition.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     auto control = op->getParentOfType<CtrlOp>();

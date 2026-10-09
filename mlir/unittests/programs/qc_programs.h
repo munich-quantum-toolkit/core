@@ -314,8 +314,7 @@ Value powHalfZ(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(1.5) wrapping a Z gate.
 ///
-/// Exercises normalizeAngle
-/// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
+/// Exercises normalizeAngle `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
@@ -1175,22 +1174,20 @@ Value powHFracNeg(QCProgramBuilder& b);
 
 /// Creates inv wrapping pow(2){H}.
 ///
-/// The even power folds to the identity inside
-/// the modifier, leaving the inv body empty so it is erased (reference:
-/// emptyQC).
+/// The even power folds to the identity inside the modifier, leaving the inv
+/// body empty so it is erased (reference: emptyQC).
 Value invPowEvenH(QCProgramBuilder& b);
 
 /// Creates inv wrapping pow(2){SWAP}.
 ///
-/// The even power folds to the identity
-/// inside the modifier, leaving the inv body empty so it is erased (reference:
-/// emptyQC).
+/// The even power folds to the identity inside the modifier, leaving the inv
+/// body empty so it is erased (reference: emptyQC).
 Value invPowEvenSwap(QCProgramBuilder& b);
 
 /// Creates inv wrapping pow(2){Z}.
 ///
-/// Z^2 folds to the identity inside the
-/// modifier, leaving the inv body empty so it is erased (reference: emptyQC).
+/// Z^2 folds to the identity inside the modifier, leaving the inv body empty so
+/// it is erased (reference: emptyQC).
 Value invPowSquaredZ(QCProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
@@ -1232,8 +1229,7 @@ Value negPowInvIswapRef(QCProgramBuilder& b);
 
 /// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX.
 ///
-/// Canonicalization
-/// expands pow(p){SX} to gphase+rx inside ctrl.
+/// Canonicalization expands pow(p){SX} to gphase+rx inside ctrl.
 Value ctrlPowSx(QCProgramBuilder& b);
 
 /// Creates the reference for ctrlPowSx: controlled gphase(π/12) and RX(π/6).
@@ -1241,8 +1237,8 @@ Value ctrlPowSxRef(QCProgramBuilder& b);
 
 /// pow(2) with a two-unitary body (x; rxx).
 ///
-/// The optimizer leaves multi-unitary
-/// pow bodies untouched; checks verification and the QC ↔ QCO round-trip.
+/// The optimizer leaves multi-unitary pow bodies untouched; checks verification
+/// and the QC ↔ QCO round-trip.
 Value powTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with a power modifier applied to two gates that act on

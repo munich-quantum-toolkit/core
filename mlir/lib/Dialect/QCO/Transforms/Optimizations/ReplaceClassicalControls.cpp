@@ -36,8 +36,8 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_REPLACECLASSICALCONTROLS
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
-/// Retrieves the measurement outcome that directly precedes the given
-/// qubit, if it exists.
+/// Retrieves the measurement outcome that directly precedes the given qubit, if
+/// it exists.
 ///
 /// @param qubit The qubit for which to find the predecessor measurement outcome
 /// @return The measurement outcome if a predecessor measurement exists, nullptr
@@ -50,8 +50,8 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
   return nullptr;
 }
 
-/// Checks if the given operation applies a phase only to the target's
-/// one state.
+/// Checks if the given operation applies a phase only to the target's one
+/// state.
 ///
 /// @param op The operation to check
 /// @return true if the operation is a phase gate, false otherwise
@@ -107,8 +107,8 @@ applyControlledRZ(PatternRewriter& rewriter, Location loc, ValueRange controls,
   return {SmallVector<Value>(rz.getOutputControls()), rz.getOutputTarget(0)};
 }
 
-/// Apply a phase to the conjunction of @p controls, using the last
-/// control as the phase target.
+/// Apply a phase to the conjunction of @p controls, using the last control as
+/// the phase target.
 ///
 /// @return The updated controls in their input order.
 static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,

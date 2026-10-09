@@ -129,8 +129,8 @@ private:
 
   /// Raw byte storage and its size.
   ///
-  /// Entries are zeroed when first acquired.
-  /// Slab capacity is chosen at runtime.
+  /// Entries are zeroed when first acquired. Slab capacity is chosen at
+  /// runtime.
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
   using Storage = std::byte[];
   using Chunk = std::pair<std::unique_ptr<Storage>, size_t>;

@@ -18,8 +18,7 @@
 // NOLINTBEGIN(readability-identifier-naming)
 
 extern "C" {
-/// Register a device manifest before the builtin driver reads its
-/// catalogue.
+/// Register a device manifest before the builtin driver reads its catalogue.
 ///
 /// @param path Path to a manifest file; must not be null or empty.
 /// @return QDMI_SUCCESS on registration, QDMI_ERROR_INVALIDARGUMENT for an
@@ -27,8 +26,8 @@ extern "C" {
 QDMI_DRIVER_EXPORT int MQT_CORE_QDMI_driver_add_manifest_v1(const char* path);
 /// Return enabled stable IDs without loading device libraries.
 ///
-/// The buffer contains consecutive NUL-terminated IDs. An empty
-/// catalogue requires zero bytes.
+/// The buffer contains consecutive NUL-terminated IDs. An empty catalogue
+/// requires zero bytes.
 ///
 /// @param size Capacity of @p ids in bytes; ignored if @p ids is null.
 /// @param ids Output buffer, or null to query the required size.

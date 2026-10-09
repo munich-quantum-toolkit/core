@@ -370,8 +370,8 @@ static bool isConstantParameter(const RotationParameter& value,
 
 /// A finite rotation angle has an exact additive identity.
 ///
-/// Keep this policy
-/// outside scalar arithmetic, where signed zero and nonfinite values matter.
+/// Keep this policy outside scalar arithmetic, where signed zero and nonfinite
+/// values matter.
 static RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
                                                const RotationParameter& lhs,
                                                const RotationParameter& rhs) {

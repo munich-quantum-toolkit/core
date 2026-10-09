@@ -63,8 +63,8 @@ enum class AllocationMode : std::uint8_t {
 
 /// Track function argument positions and the module's allocation mode.
 ///
-/// Dynamic qubits require deallocation at sinks;
-/// static qubits do not. Mixed allocation modes are rejected before conversion.
+/// Dynamic qubits require deallocation at sinks; static qubits do not. Mixed
+/// allocation modes are rejected before conversion.
 struct LoweringState {
   /// Function symbols remain in place while their signatures are converted.
   SymbolTableCollection symbolTables;

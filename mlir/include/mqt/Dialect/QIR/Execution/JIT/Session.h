@@ -81,12 +81,11 @@ public:
   /// Execute a batch, preserving recorded-result order and returning the first
   /// nonzero exit code.
   ///
-  /// With textual output disabled, eligible static Base
-  /// or Adaptive programs are executed once with deferred measurements, then
-  /// sampled. Other programs execute normally for every shot. State-extraction
-  /// sessions cannot be sampled. The supplied vector is replaced, including for
-  /// zero shots.
-  /// If supplied, stateAvailable is set only when successful terminal sampling
+  /// With textual output disabled, eligible static Base or Adaptive programs
+  /// are executed once with deferred measurements, then sampled. Other programs
+  /// execute normally for every shot. State-extraction sessions cannot be
+  /// sampled. The supplied vector is replaced, including for zero shots. If
+  /// supplied, stateAvailable is set only when successful terminal sampling
   /// leaves an uncollapsed state. The caller may then use runtime().takeState()
   /// before executing the session again.
   int64_t sample(size_t shots, std::vector<std::string>& results,
@@ -94,9 +93,8 @@ public:
 
   /// Whether sampling may share the compiled entry point.
   ///
-  /// Eligible modules
-  /// have only constant globals and calls to the QIR runtime or LLVM
-  /// intrinsics.
+  /// Eligible modules have only constant globals and calls to the QIR runtime
+  /// or LLVM intrinsics.
   [[nodiscard]] bool canShareCompiledCode() const;
 
   /// Number of direct quantum instruction calls in the loaded module.
@@ -104,9 +102,9 @@ public:
 
   /// Create a seeded runtime for one worker.
   ///
-  /// Keep this session alive until all
-  /// workers finish; each runtime and its output stream belong to one worker.
-  /// Throws std::logic_error when the module is not eligible.
+  /// Keep this session alive until all workers finish; each runtime and its
+  /// output stream belong to one worker. Throws std::logic_error when the
+  /// module is not eligible.
   [[nodiscard]] std::unique_ptr<Runtime> makeWorkerRuntime(uint64_t seed) const;
 
   /// Sample with a worker runtime without changing this session's runtime.

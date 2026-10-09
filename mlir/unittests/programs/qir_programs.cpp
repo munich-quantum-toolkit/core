@@ -21,8 +21,8 @@
 
 namespace mlir::qir {
 
-/// Measures the given qubits, records the outcomes and returns
-/// a single `i64` exit code with the value 0.
+/// Measures the given qubits, records the outcomes and returns a single `i64`
+/// exit code with the value 0.
 ///
 /// @param b The QIRProgramBuilder used to perform the measurements and create
 /// the struct.

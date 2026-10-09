@@ -107,11 +107,11 @@ struct LoweringState {
   /// Per-region map from original QC qubit reference to its latest QCO SSA
   /// value.
   ///
-  /// Consumed qubits retain a null entry to avoid linear-time erasure
-  /// from the ordered map; the entries are discarded with the region.
+  /// Consumed qubits retain a null entry to avoid linear-time erasure from the
+  /// ordered map; the entries are discarded with the region.
   ///
-  /// Keys are `Operation::getParentRegion()` for ops being converted
-  /// (typically a `func.func` body or a modifier region).
+  /// Keys are `Operation::getParentRegion()` for ops being converted (typically
+  /// a `func.func` body or a modifier region).
   DenseMap<Region*, llvm::MapVector<Value, Value>> qubitMap;
 
   /// Per-region map from stable register identifiers to their latest QTensor
@@ -2110,8 +2110,8 @@ struct ConvertSCFConditionOp final
 /// Convert QC references to QCO values, threading quantum state through
 /// functions and structured control flow.
 ///
-/// Lower terminators after their regions
-/// so they yield the final mapped values independently of rewrite order.
+/// Lower terminators after their regions so they yield the final mapped values
+/// independently of rewrite order.
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;
 

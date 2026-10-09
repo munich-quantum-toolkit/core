@@ -89,8 +89,8 @@ struct TensorMapping {
 
   /// Return true if the given lhs value takes part in the equivalence tracking.
   ///
-  /// Only tensors reachable from a `qtensor` allocation are tracked;
-  /// builtin tensors of qubits are compared through the regular SSA mapping.
+  /// Only tensors reachable from a `qtensor` allocation are tracked; builtin
+  /// tensors of qubits are compared through the regular SSA mapping.
   [[nodiscard]] bool tracksLhs(Value lhs) const {
     return lhsEquivGroups.contains(lhs);
   }
@@ -192,8 +192,8 @@ static DenseMap<Value, size_t> getEquivGroup(ModuleOp mod) {
 
 /// Map all results from one op to another using the given permutation.
 ///
-/// Assumes that `lhs->getNumResults() == rhs->getNumResults()`.
-/// Assumes that the two operations are equivalent to each other.
+/// Assumes that `lhs->getNumResults() == rhs->getNumResults()`. Assumes that
+/// the two operations are equivalent to each other.
 static void mapResults(Operation* lhs, Operation* rhs,
                        ArrayRef<size_t> permutation, IRMapping& m) {
   for (const auto& [i, lhsResult] : llvm::enumerate(lhs->getResults())) {
@@ -219,8 +219,8 @@ static void mapSegmentedResults(ValueRange lhsClassical,
 
 /// Map arguments from one block to another using the given permutation.
 ///
-/// Assumes that `lhs.getNumArguments() == rhs.getNumArguments()`.
-/// Assumes that `permutation.size() == lhs.getNumArguments()`.
+/// Assumes that `lhs.getNumArguments() == rhs.getNumArguments()`. Assumes that
+/// `permutation.size() == lhs.getNumArguments()`.
 static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
                          IRMapping& m) {
   for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {

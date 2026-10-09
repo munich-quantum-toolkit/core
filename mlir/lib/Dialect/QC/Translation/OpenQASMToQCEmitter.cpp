@@ -2060,8 +2060,8 @@ private:
 
   /// The unsigned distance fits in 64 bits even across zero.
   ///
-  /// A wrapping final
-  /// increment is unused when the remaining distance is smaller than the step.
+  /// A wrapping final increment is unused when the remaining distance is
+  /// smaller than the step.
   [[nodiscard]] std::array<Value, 2> advanceRange(Value current, Value step,
                                                   Value stop, Value ascending) {
     auto forward = arith::SubIOp::create(builder, stop, current);

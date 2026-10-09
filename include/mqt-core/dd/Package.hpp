@@ -200,8 +200,8 @@ public:
     }
   }
 
-  /// Decrease the DD's reference count and remove it from the tracking
-  /// hashset if the count hits zero.
+  /// Decrease the DD's reference count and remove it from the tracking hashset
+  /// if the count hits zero.
   ///
   /// @tparam Node The node type of the edge.
   /// @param e The edge to decrease the reference count of.
@@ -692,8 +692,8 @@ public:
   static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
 
-  /// Measures the qubit with the given index in the given state vector
-  /// decision diagram.
+  /// Measures the qubit with the given index in the given state vector decision
+  /// diagram.
   ///
   /// Collapses the state according to the measurement result.
   ///

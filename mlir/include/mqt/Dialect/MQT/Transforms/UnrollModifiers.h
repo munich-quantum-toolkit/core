@@ -30,16 +30,15 @@ namespace mlir::mqt {
 
 /// Unroll an inverse body in reverse order.
 ///
-/// Requires verified linear QCO IR.
-/// Fail without changing IR if it has fewer than two unitaries.
+/// Requires verified linear QCO IR. Fail without changing IR if it has fewer
+/// than two unitaries.
 [[nodiscard]] LogicalResult unrollModifier(qco::InvOp op,
                                            RewriterBase& rewriter);
 
 /// Distribute a power in verified linear QCO IR over disjoint body operations
 /// for a constant integer exponent.
 ///
-/// Fail without changing IR for other or
-/// noncomposite bodies.
+/// Fail without changing IR for other or noncomposite bodies.
 [[nodiscard]] LogicalResult unrollModifier(qco::PowOp op,
                                            RewriterBase& rewriter);
 

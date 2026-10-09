@@ -30,9 +30,8 @@ class UnitaryOpInterface;
 
 /// Immutable numerical costs prepared once before routing trials.
 ///
-/// Construction
-/// requires linear QCO IR. No IR handles survive construction; target support
-/// and operand direction remain the caller's responsibility.
+/// Construction requires linear QCO IR. No IR handles survive construction;
+/// target support and operand direction remain the caller's responsibility.
 class NativeCostTable {
 public:
   static std::unique_ptr<const NativeCostTable>
@@ -58,18 +57,18 @@ private:
 
 /// Read-only native synthesis decisions with bounded numerical caches.
 ///
-/// Keep instances local to a routing state or synthesis invocation.
-/// They retain no IR handles or target state.
-/// Supplied sites follow operand order and match the operation's arity.
-/// Unavailable results cover unsupported lowering and numerical failure.
+/// Keep instances local to a routing state or synthesis invocation. They retain
+/// no IR handles or target state. Supplied sites follow operand order and match
+/// the operation's arity. Unavailable results cover unsupported lowering and
+/// numerical failure.
 class NativeCostAnalysis {
 public:
   using Sites = std::optional<ArrayRef<CompilerTarget::SiteId>>;
 
   /// The optional shared table must outlive this analysis.
   ///
-  /// Routing uses compact
-  /// counts with a local fallback; emission caches full decompositions.
+  /// Routing uses compact counts with a local fallback; emission caches full
+  /// decompositions.
   explicit NativeCostAnalysis(uint64_t seed,
                               const NativeCostTable* shared = nullptr)
       : seed_(seed), shared_(shared) {}
@@ -129,9 +128,9 @@ private:
 
 /// Estimate a routed block without building IR.
 ///
-/// Vertices use the target's dense
-/// numbering. Pending runs occupy disjoint physical pairs; state is O(sites).
-/// Depth counts qubit dependencies only, without classical scheduling.
+/// Vertices use the target's dense numbering. Pending runs occupy disjoint
+/// physical pairs; state is O(sites). Depth counts qubit dependencies only,
+/// without classical scheduling.
 class NativeCostTracker {
 public:
   NativeCostTracker(const CompilerTarget& target, uint64_t seed,
@@ -157,9 +156,8 @@ public:
   /// Signed first-SWAP adjustment: extended run minus current and standalone
   /// costs.
   ///
-  /// Append in forward traversal; prepend in backward traversal.
-  /// May be positive. Does not consume the pending run.
-  /// Assumes first < second.
+  /// Append in forward traversal; prepend in backward traversal. May be
+  /// positive. Does not consume the pending run. Assumes first < second.
   int64_t swapCostAdjustment(size_t first, size_t second,
                              size_t standaloneCost);
 

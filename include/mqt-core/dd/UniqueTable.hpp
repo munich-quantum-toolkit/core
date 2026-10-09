@@ -63,8 +63,8 @@ public:
   /// @param manager The memory manager to use
   /// @param config The configuration for the unique table
   ///
-  /// The MemoryManager shall be constructed from the same type that the
-  /// unique table is then used for in the lookup method.
+  /// The MemoryManager shall be constructed from the same type that the unique
+  /// table is then used for in the lookup method.
   UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
 
   void resize(std::size_t nVars);

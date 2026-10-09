@@ -85,13 +85,9 @@ public:
   /// @return The found or added complex number.
   [[nodiscard]] Complex lookup(const Complex& c);
 
-  /// Returns the interned complex number for this value.
-  ///
   /// @see lookup(fp r, fp i)
   [[nodiscard]] Complex lookup(const std::complex<fp>& c);
 
-  /// Returns the interned complex number for this value.
-  ///
   /// @see lookup(fp r, fp i)
   [[nodiscard]] Complex lookup(const ComplexValue& c);
 

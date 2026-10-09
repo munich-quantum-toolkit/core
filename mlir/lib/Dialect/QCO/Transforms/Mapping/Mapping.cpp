@@ -800,8 +800,8 @@ private:
 
     /// Resets the arena for a new search.
     ///
-    /// Retains allocated storage. Only the
-    /// logical size (index) is reset to zero.
+    /// Retains allocated storage. Only the logical size (index) is reset to
+    /// zero.
     void reset() { index = 0; }
 
   private:
@@ -840,11 +840,10 @@ private:
 
     /// Try to find a directed cycle in the F graph.
     ///
-    /// If there is one,
-    /// we can apply a happy swap chain. Note that this happy swap chain
-    /// does not include the final back edge closing the cycle because the
-    /// first SWAP changes the token (the qubit) on the target, invalidating
-    /// the edge in F.
+    /// If there is one, we can apply a happy swap chain. Note that this happy
+    /// swap chain does not include the final back edge closing the cycle
+    /// because the first SWAP changes the token (the qubit) on the target,
+    /// invalidating the edge in F.
     [[nodiscard]] std::optional<SmallVector<QubitIndexPair>>
     findHappySWAPChain() const {
       const auto optCycle = f_.findCycle();
@@ -862,9 +861,9 @@ private:
 
     /// Find an unhappy SWAP.
     ///
-    /// That is, find an edge (u, v), where exchanging u
-    /// and v, reduces u's distance to its target location (by one) and
-    /// increases v's distance from 0 (already at the correct location) to one.
+    /// That is, find an edge (u, v), where exchanging u and v, reduces u's
+    /// distance to its target location (by one) and increases v's distance from
+    /// 0 (already at the correct location) to one.
     [[nodiscard]] std::optional<QubitIndexPair> findUnhappySWAP() const {
       for (const auto u : f_.getNodes()) {
         for (const auto v : f_.getNeighbours(u)) {
@@ -1015,8 +1014,7 @@ private:
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values.
   ///
-  /// Replaces the existing operation and returns the
-  /// newly created one.
+  /// Replaces the existing operation and returns the newly created one.
   static scf::ForOp extend(scf::ForOp forOp, ValueRange addons,
                            IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
@@ -1037,8 +1035,7 @@ private:
   /// Extend the qubit arguments of an `IfOp` by adding a given range of
   /// additional SSA values.
   ///
-  /// Replaces the existing operation and returns the
-  /// newly created one.
+  /// Replaces the existing operation and returns the newly created one.
   static IfOp extend(IfOp ifOp, ValueRange addons, IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(ifOp);
@@ -1056,8 +1053,7 @@ private:
   /// Extend the target arguments of an `IndexSwitchOp` by adding a given range
   /// of additional SSA values.
   ///
-  /// Replaces the existing operation and returns the
-  /// newly created one.
+  /// Replaces the existing operation and returns the newly created one.
   static IndexSwitchOp extend(IndexSwitchOp switchOp, ValueRange addons,
                               IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
@@ -1074,8 +1070,7 @@ private:
   /// Extend the arguments of an `scf::WhileOp` by adding a given range of
   /// additional SSA values.
   ///
-  /// Replaces the existing operation and returns the
-  /// newly created one.
+  /// Replaces the existing operation and returns the newly created one.
   static scf::WhileOp extend(scf::WhileOp whileOp, ValueRange addons,
                              IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
@@ -1824,8 +1819,8 @@ private:
 
   /// Advance past executable gates and return the first ready composite.
   ///
-  /// Leave wires at non-executable gates, composites, terminal measurements,
-  /// or sink-like operations. Backward traversal can exhaust block arguments.
+  /// Leave wires at non-executable gates, composites, terminal measurements, or
+  /// sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   std::optional<CompositeUnitary>
   advance(RoutingState& state, Operation* boundary, const Environment& env) {
@@ -1942,8 +1937,7 @@ private:
   /// Extends the composite unitary's operation to cover all target qubits by
   /// adding operands for sites outside the composite.
   ///
-  /// Keeps the parent cursors
-  /// at the corresponding physical results.
+  /// Keeps the parent cursors at the corresponding physical results.
   void place(CompositeUnitary& composite, RoutingState& parent,
              IRRewriter& rewriter) {
     SmallVector<unsigned> resultNumbers(parent.wires.size());

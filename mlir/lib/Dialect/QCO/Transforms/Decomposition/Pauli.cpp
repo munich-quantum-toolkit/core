@@ -225,8 +225,8 @@ static CliffordPaulis conjugatedPaulis(CompilerTarget::GateKind gate) {
 
 /// Emit C E^dagger (R_A(a) tensor R_B(b)) E C^dagger.
 ///
-/// Either angle
-/// may be absent. The same sandwich handles one or two commuting generators.
+/// Either angle may be absent. The same sandwich handles one or two commuting
+/// generators.
 static SmallVector<Value, 2>
 emitCliffordSandwich(RewriterBase& rewriter, Location loc, Value wire0,
                      Value wire1, std::array<Matrix2x2, 2> frames,

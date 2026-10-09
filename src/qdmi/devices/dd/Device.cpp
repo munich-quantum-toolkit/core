@@ -62,8 +62,8 @@
 namespace {
 /// Result reconstruction never performs DD arithmetic.
 ///
-/// Keep unused matrix
-/// storage and compute caches minimal while retaining normal vector storage.
+/// Keep unused matrix storage and compute caches minimal while retaining normal
+/// vector storage.
 constexpr dd::DDPackageConfig RESULT_PACKAGE_CONFIG{
     .utMatNumBucket = 1,
     .utMatInitialAllocationSize = 1,

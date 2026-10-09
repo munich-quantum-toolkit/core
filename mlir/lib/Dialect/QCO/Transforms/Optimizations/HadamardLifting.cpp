@@ -119,8 +119,8 @@ struct LiftHadamardsAbovePauliGatesPattern final
 /// classically-controlled Pauli-X.
 ///
 /// The procedure also works if there are additional controls. Only the target
-/// and control involved in the transformation get Hadamard gates assigned.
-/// The involved ctrl to be flipped with the target is chosen randomly.
+/// and control involved in the transformation get Hadamard gates assigned. The
+/// involved ctrl to be flipped with the target is chosen randomly.
 struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
   explicit LiftHadamardAboveCNOTPattern(MLIRContext* context)

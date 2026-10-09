@@ -45,8 +45,6 @@ struct ComplexValue {
   /// @returns True if the complex numbers are exactly equal, false otherwise.
   [[nodiscard]] bool operator==(const ComplexValue& other) const noexcept;
 
-  /// Checks whether two complex values differ.
-  ///
   /// @see operator==
   [[nodiscard]] bool operator!=(const ComplexValue& other) const noexcept;
 
@@ -62,8 +60,8 @@ struct ComplexValue {
   /// otherwise.
   [[nodiscard]] bool exactlyOne() const noexcept { return r == 1. && i == 0.; }
 
-  /// Check whether the complex number is approximately equal to the
-  /// given complex number.
+  /// Check whether the complex number is approximately equal to the given
+  /// complex number.
   ///
   /// @param c The complex number to compare to.
   /// @returns True if the complex number is approximately equal to the given
@@ -78,14 +76,14 @@ struct ComplexValue {
   /// @see RealNumber::approximatelyZero
   [[nodiscard]] bool approximatelyZero() const noexcept;
 
-  /// Write a binary representation of the complex number to the given
-  /// output stream.
+  /// Write a binary representation of the complex number to the given output
+  /// stream.
   ///
   /// @param os The output stream to write to.
   void writeBinary(std::ostream& os) const;
 
-  /// Read a binary representation of the complex number from the given
-  /// input stream.
+  /// Read a binary representation of the complex number from the given input
+  /// stream.
   ///
   /// @param is The input stream to read from.
   void readBinary(std::istream& is);

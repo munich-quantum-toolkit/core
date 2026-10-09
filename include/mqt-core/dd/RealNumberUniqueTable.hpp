@@ -62,8 +62,7 @@ public:
   /// Ordinary absolute-tolerance bucket heads; growth and tolerance changes
   /// invalidate bucket iterators and reorder chains.
   ///
-  /// Entry addresses survive
-  /// until collection or reset.
+  /// Entry addresses survive until collection or reset.
   [[nodiscard]] const auto& getTable() const noexcept { return table; }
 
   /// Get combined entry, lookup, and bucket statistics for both indexes.

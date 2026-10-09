@@ -111,8 +111,7 @@ public:
 /// Preserve an existing SSA value, or materialize the scalar with the caller's
 /// dialect-specific constant builder.
 ///
-/// Existing values do not invoke
-/// materialize.
+/// Existing values do not invoke materialize.
 template <typename T, typename Materialize>
 [[nodiscard]] Value variantToValue(const std::variant<T, Value>& parameter,
                                    Materialize materialize) {

@@ -70,8 +70,8 @@ struct Complex {
     return RealNumber::exactlyOne(r) && RealNumber::exactlyZero(i);
   }
 
-  /// Check whether the complex number is approximately equal to the
-  /// given complex number.
+  /// Check whether the complex number is approximately equal to the given
+  /// complex number.
   ///
   /// @param c The complex number to compare to.
   /// @returns True if the complex number is approximately equal to the given

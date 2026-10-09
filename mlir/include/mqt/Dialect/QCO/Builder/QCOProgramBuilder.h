@@ -94,8 +94,8 @@ public:
   /// called before adding operations.
   void initialize();
 
-  /// Initialize the builder and prepare for program construction
-  /// with specified return types.
+  /// Initialize the builder and prepare for program construction with specified
+  /// return types.
   ///
   /// @param returnTypes The return types for the main function
   ///
@@ -206,8 +206,7 @@ public:
     // NOLINTNEXTLINE(misc-explicit-constructor)
     Tensor(Value value, int64_t regId = -1) : value(value), regId(regId) {}
 
-    /// Implicitly convert this tracked tensor to its underlying SSA
-    /// value.
+    /// Implicitly convert this tracked tensor to its underlying SSA value.
     ///
     /// @return The underlying `Value`
     // NOLINTNEXTLINE(misc-explicit-constructor)
@@ -252,7 +251,8 @@ public:
     explicit operator Value() const { return value; }
   };
 
-  /// Allocate a single qubit initialized to |0⟩
+  /// Allocate a single qubit initialized to |0⟩.
+  ///
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// @return A tracked qubit handle (convertible to `Value`)
@@ -280,7 +280,8 @@ public:
   /// ```
   Qubit staticQubit(uint64_t index);
 
-  /// Allocate a qubit tensor and eagerly extract every element
+  /// Allocate a qubit tensor and eagerly extract every element.
+  ///
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// @param size Number of qubits (must be positive)
@@ -1801,8 +1802,8 @@ public:
   ///
   /// Automatically deallocates all remaining valid qubits and tensors of
   /// qubits, adds a return statement with the given return values, and
-  /// transfers ownership of the module to the caller. The builder should not
-  /// be used after calling this method.
+  /// transfers ownership of the module to the caller. The builder should not be
+  /// used after calling this method.
   ///
   /// The return values must have the types indicated by the function signature
   /// of the main function, which returns an `i64` by default and can be
@@ -1824,8 +1825,7 @@ public:
   build(MLIRContext* context,
         const function_ref<SmallVector<Value>(QCOProgramBuilder&)>& buildFunc);
 
-  /// Convenience method for building quantum programs with one return
-  /// value.
+  /// Convenience method for building quantum programs with one return value.
   ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QCOProgramBuilder
@@ -1877,9 +1877,8 @@ private:
 
   /// Validate that a tensor value is valid and unconsumed.
   ///
-  /// This also
-  /// checks if the tensor is one-dimensional and contains !qco.qubit as its
-  /// values
+  /// This also checks if the tensor is one-dimensional and contains !qco.qubit
+  /// as its values
   ///
   /// @param tensor Tensor value to validate
   /// Terminates with a usage error if the tensor is consumed or untracked.

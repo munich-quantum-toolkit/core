@@ -218,8 +218,7 @@ private:
   std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs_;
 
 public:
-  /// Constructs a top-level QDMI device from an exclusively owned
-  /// library.
+  /// Constructs a top-level QDMI device from an exclusively owned library.
   ///
   /// @param lib is the device library to take ownership of.
   /// @param config is the configuration for device session parameters.
@@ -365,8 +364,7 @@ public:
   /// @see QDMI_job_check
   auto check(QDMI_Job_Status* status) const -> int;
 
-  /// Waits for the job to complete but at most for the specified
-  /// timeout.
+  /// Waits for the job to complete but at most for the specified timeout.
   ///
   /// @see QDMI_job_wait
   [[nodiscard]] auto wait(size_t timeout) const -> int;
@@ -397,9 +395,8 @@ private:
   /// A targeted private allocation creates one device outside the shared
   /// registry.
   ///
-  /// Keep that device alive for the lifetime of this session;
-  /// ordinary sessions instead hold a snapshot of registry-owned devices in
-  /// devices_.
+  /// Keep that device alive for the lifetime of this session; ordinary sessions
+  /// instead hold a snapshot of registry-owned devices in devices_.
   std::shared_ptr<QDMI_Device_impl_d> ownedDevice_;
 
 public:
@@ -506,8 +503,8 @@ public:
   /// @returns Whether the definition was inserted.
   /// @throws std::invalid_argument If the definition is incomplete.
   ///
-  /// Existing and explicitly disabled IDs are not inserted. The
-  /// complete definition is validated before checking for either condition.
+  /// Existing and explicitly disabled IDs are not inserted. The complete
+  /// definition is validated before checking for either condition.
   auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
 
   /// Lists the stable IDs of all registered devices.

@@ -90,8 +90,8 @@ public:
   /// `__quantum__rt__initialize`. Must be called before adding operations.
   void initialize();
 
-  /// Initialize the builder and prepare for program construction
-  /// with specified return types.
+  /// Initialize the builder and prepare for program construction with specified
+  /// return types.
   ///
   /// @param returnType The return type for the main function
   ///
@@ -1047,9 +1047,9 @@ public:
   /// ownership of the module to the caller. The builder should not be used
   /// after calling this method.
   ///
-  /// The return value must have the type indicated by the function signature
-  /// of the main function, which returns an `i64` by default and can be
-  /// modified by passing different arguments to the `initialize()` method.
+  /// The return value must have the type indicated by the function signature of
+  /// the main function, which returns an `i64` by default and can be modified
+  /// by passing different arguments to the `initialize()` method.
   ///
   /// @return OwningOpRef containing the constructed quantum program module
   OwningOpRef<ModuleOp> finalize(Value returnValue);

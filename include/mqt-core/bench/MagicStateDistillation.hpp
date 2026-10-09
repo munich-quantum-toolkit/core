@@ -22,8 +22,8 @@ namespace mqt::bench {
 struct MagicStateDistillationOptions {
   /// Positive number of concatenated levels.
   ///
-  /// The qubit count (five per level)
-  /// must fit signed 64-bit circuit dimensions.
+  /// The qubit count (five per level) must fit signed 64-bit circuit
+  /// dimensions.
   size_t levels = 1;
 };
 

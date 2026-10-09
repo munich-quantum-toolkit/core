@@ -296,8 +296,7 @@ belongsToStdGates(const GateAvailability availability) {
 /// Qiskit emits untyped integer literals in otherwise typed bitwise
 /// expressions.
 ///
-/// Accept a nonnegative constant when its value fits the chosen
-/// unsigned width.
+/// Accept a nonnegative constant when its value fits the chosen unsigned width.
 static bool coerceUnsignedConstant(Constant& constant, unsigned width) {
   if (constant.type != ScalarType::Uint && constant.type != ScalarType::Int) {
     return false;
@@ -3149,9 +3148,8 @@ private:
 
   /// Expand a bounded affine selection with a known length.
   ///
-  /// Bounds and
-  /// distinctness remain frontend proof obligations, including nonconstant
-  /// indices.
+  /// Bounds and distinctness remain frontend proof obligations, including
+  /// nonconstant indices.
   [[nodiscard]] FailureOr<std::vector<ExpressionId>>
   resolveSliceIndices(const Slice& slice, uint64_t width, SMLoc location) {
     bool positive = true;

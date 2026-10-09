@@ -56,8 +56,8 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
                                              CompilerTarget::GateKind gate,
                                              std::variant<double, Value> angle);
 
-/// R_P(theta) = exp(i*phase) P^product C R_P(angle) C, where C
-/// anticommutes with P when negate is true.
+/// R_P(theta) = exp(i*phase) P^product C R_P(angle) C, where C anticommutes
+/// with P when negate is true.
 ///
 /// The angle lies in [0, pi/2].
 struct FoldedPauliAngle {
@@ -90,8 +90,8 @@ getPauliRotations(Operation* operation);
 
 /// Cost of direct Pauli synthesis.
 ///
-/// Constants within the Weyl fidelity bound
-/// of a Clifford angle use the matrix planner to shorten their entangling part.
+/// Constants within the Weyl fidelity bound of a Clifford angle use the matrix
+/// planner to shorten their entangling part.
 [[nodiscard]] std::optional<size_t>
 pauliRotationEntanglerCount(const PauliRotationSequence& sequence,
                             CompilerTarget::Entangler entangler);
@@ -108,8 +108,7 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
 /// Compose adjacent commuting Pauli operations with runtime parameters when
 /// their native two-qubit count decreases.
 ///
-/// A successful rewrite erases the
-/// complete matched run.
+/// A successful rewrite erases the complete matched run.
 LogicalResult
 fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
                      const CompilerTarget::SynthesisBasis& basis, bool reverse,

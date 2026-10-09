@@ -35,9 +35,8 @@ void populateRotationCompositionPatterns(
 
 /// Fuse one wire at a time during an existing reverse-order traversal.
 ///
-/// Reuse within one MLIR context.
-/// The caller must visit users before producers: fusion can erase successors.
-/// A supplied target must have a synthesis basis.
+/// Reuse within one MLIR context. The caller must visit users before producers:
+/// fusion can erase successors. A supplied target must have a synthesis basis.
 class SingleQubitRunFusion {
 public:
   SingleQubitRunFusion(const CompilerTarget::SynthesisBasis& basis,

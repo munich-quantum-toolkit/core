@@ -60,10 +60,10 @@ using PhaseInstruction = std::variant<double, Value, Add, Negate, Scale>;
 
 /// A postfix phase expression.
 ///
-/// Keeping modifier transformations symbolic avoids
-/// repeatedly walking and moving an ever-growing SSA arithmetic chain through
-/// nested modifiers. The expression is materialized exactly once at the scope
-/// where the phase stops bubbling.
+/// Keeping modifier transformations symbolic avoids repeatedly walking and
+/// moving an ever-growing SSA arithmetic chain through nested modifiers. The
+/// expression is materialized exactly once at the scope where the phase stops
+/// bubbling.
 class PhaseExpression final {
 public:
   explicit PhaseExpression(Value angle) {

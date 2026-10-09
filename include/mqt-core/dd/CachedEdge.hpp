@@ -108,8 +108,7 @@ template <typename Node> struct CachedEdge {
 auto normalize(vNode* p, const std::array<CachedEdge<vNode>, RADIX>& e,
                MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge<vNode>;
 
-/// Get a normalized matrix DD from a fresh node and a list
-/// of edges.
+/// Get a normalized matrix DD from a fresh node and a list of edges.
 ///
 /// @param p the fresh node
 /// @param e the list of edges that form the successor nodes

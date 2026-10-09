@@ -330,8 +330,7 @@ Value powHalfZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(1.5) wrapping a Z gate.
 ///
-/// Exercises normalizeAngle
-/// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
+/// Exercises normalizeAngle `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
@@ -1371,22 +1370,20 @@ Value powHFracNeg(QCOProgramBuilder& b);
 
 /// Creates inv wrapping pow(2){H}.
 ///
-/// The even power folds to the identity inside
-/// the modifier, leaving the inv body empty so it is erased (reference:
-/// emptyQCO).
+/// The even power folds to the identity inside the modifier, leaving the inv
+/// body empty so it is erased (reference: emptyQCO).
 Value invPowEvenH(QCOProgramBuilder& b);
 
 /// Creates inv wrapping pow(2){SWAP}.
 ///
-/// The even power folds to the identity
-/// inside the modifier, leaving the inv body empty so it is erased (reference:
-/// emptyQCO).
+/// The even power folds to the identity inside the modifier, leaving the inv
+/// body empty so it is erased (reference: emptyQCO).
 Value invPowEvenSwap(QCOProgramBuilder& b);
 
 /// Creates inv wrapping pow(2){Z}.
 ///
-/// Z^2 folds to the identity inside the
-/// modifier, leaving the inv body empty so it is erased (reference: emptyQCO).
+/// Z^2 folds to the identity inside the modifier, leaving the inv body empty so
+/// it is erased (reference: emptyQCO).
 Value invPowSquaredZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
@@ -1428,9 +1425,8 @@ Value negPowInvIswapRef(QCOProgramBuilder& b);
 
 /// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX.
 ///
-/// The fold
-/// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
-/// so the pow survives canonicalization and reaches ConvertQCOPowOp.
+/// The fold pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two
+/// ops), so the pow survives canonicalization and reaches ConvertQCOPowOp.
 Value ctrlPowSx(QCOProgramBuilder& b);
 
 // --- IfOp ---------------------------------------------------------------- //

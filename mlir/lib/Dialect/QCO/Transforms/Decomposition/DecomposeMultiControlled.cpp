@@ -924,8 +924,8 @@ static constexpr size_t K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS = 4;
 /// Vale24 Fig. 7 shell (arXiv:2302.06377): alternate half-MCX with target
 /// `p(±θ/4)`.
 ///
-/// Controls then target. Caller appends the residual.
-/// Only three or four controls reach this shell, so each half uses CX or CCX.
+/// Controls then target. Caller appends the residual. Only three or four
+/// controls reach this shell, so each half uses CX or CCX.
 static void appendValeFig7Shell(CircuitPlan& plan, double theta,
                                 size_t numControls) {
   const size_t target = numControls;

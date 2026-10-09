@@ -108,8 +108,8 @@ public:
   /// called before adding operations.
   void initialize();
 
-  /// Initialize the builder and prepare for program construction
-  /// with specified return types.
+  /// Initialize the builder and prepare for program construction with specified
+  /// return types.
   ///
   /// @param returnTypes The return types for the main function
   ///
@@ -180,7 +180,8 @@ public:
     explicit operator Value() const { return value; }
   };
 
-  /// Allocate a single qubit initialized to |0⟩
+  /// Allocate a single qubit initialized to |0⟩.
+  ///
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// @return A qubit reference
@@ -1332,8 +1333,8 @@ public:
   ///
   /// Automatically deallocates all remaining valid qubits and tensors of
   /// qubits, adds a return statement with the given return values, and
-  /// transfers ownership of the module to the caller. The builder should not
-  /// be used after calling this method.
+  /// transfers ownership of the module to the caller. The builder should not be
+  /// used after calling this method.
   ///
   /// The return values must have the types indicated by the function signature
   /// of the main function, which returns an `i64` by default and can be
@@ -1355,8 +1356,7 @@ public:
   build(MLIRContext* context,
         const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc);
 
-  /// Convenience method for building quantum programs with one return
-  /// value.
+  /// Convenience method for building quantum programs with one return value.
   ///
   /// @param context The MLIR context to use for building the program
   /// @param buildFunc A function that takes a reference to a QCProgramBuilder

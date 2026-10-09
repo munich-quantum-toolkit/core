@@ -97,8 +97,8 @@ struct FusableTwoQubitRun {
 
 /// Whether `op` is nested under a modifier body.
 ///
-/// Such unitaries are handled
-/// through their shell op, so the top-level walk skips them.
+/// Such unitaries are handled through their shell op, so the top-level walk
+/// skips them.
 static bool isExcludedFromTopLevelUnitaryWalk(Operation* op) {
   return op->getParentOfType<CtrlOp>() || op->getParentOfType<InvOp>() ||
          op->getParentOfType<PowOp>();
@@ -204,9 +204,8 @@ static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
 
 /// Appends a two-qubit gate to `run`, composing its matrix.
 ///
-/// No-op unless both
-/// of `op`'s inputs are the run's current tail wires (in either order), keeping
-/// the run confined to a single pair of wires.
+/// No-op unless both of `op`'s inputs are the run's current tail wires (in
+/// either order), keeping the run confined to a single pair of wires.
 static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
                                   const Matrix4x4& opMatrix) {
@@ -243,9 +242,8 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
 
 /// Walks forward from `head`, composing the run's matrix and metadata.
 ///
-/// Absorbs
-/// a following two-qubit gate when it keeps both run wires together, otherwise
-/// single-qubit gates on either wire; stops at the first boundary
+/// Absorbs a following two-qubit gate when it keeps both run wires together,
+/// otherwise single-qubit gates on either wire; stops at the first boundary
 /// that would split the run's two wires.
 static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
                                                  const Matrix4x4& headMatrix) {
@@ -355,8 +353,8 @@ static LogicalResult propagateSites(ValueRange inputs, ValueRange outputs,
 
 /// Visit each region once.
 ///
-/// Branches must agree and loop backedges must retain
-/// the entry sites; neither rule is implied by all-to-all placement.
+/// Branches must agree and loop backedges must retain the entry sites; neither
+/// rule is implied by all-to-all placement.
 static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
   SiteMap sites;
   auto result = root->walk([&](Operation* operation, const WalkStage& stage) {
@@ -564,8 +562,8 @@ NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
 
 /// Hashes only accelerate lookup.
 ///
-/// Bitwise equality below keeps collisions,
-/// signed zeros, and non-finite numerical failures from producing false hits.
+/// Bitwise equality below keeps collisions, signed zeros, and non-finite
+/// numerical failures from producing false hits.
 static uint64_t matrixHash(const Matrix4x4& matrix,
                            CompilerTarget::Entangler entangler) {
   return llvm::xxh3_64bits(reinterpret_cast<const uint8_t*>(matrix.data.data()),

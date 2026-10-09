@@ -238,8 +238,8 @@ public:
                   std::optional<std::uint8_t> numBasisGateUses = std::nullopt,
                   uint64_t seed = 2023) const;
 
-  /// Emit RXX(x) RYY(y) RZZ(z), conjugated by local Clifford frames,
-  /// with three applications of a super-controlled fixed basis gate.
+  /// Emit RXX(x) RYY(y) RZZ(z), conjugated by local Clifford frames, with three
+  /// applications of a super-controlled fixed basis gate.
   ///
   /// Pauli rotation bases use their pi/2 interaction.
   [[nodiscard]] SmallVector<Value, 2>
@@ -338,10 +338,10 @@ cachedNativeBasisDecomposer(CompilerTarget::GateKind entangler);
 
 /// Decomposes a target two-qubit unitary using the given basis gate.
 ///
-/// Builds a fresh basis decomposer per call.
-/// For a fixed basis gate decomposed many times, prefer caching
-/// `TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity)` and calling
-/// `TwoQubitBasisDecomposer::decomposeTarget` for each target.
+/// Builds a fresh basis decomposer per call. For a fixed basis gate decomposed
+/// many times, prefer caching `TwoQubitBasisDecomposer::create(basisMatrix,
+/// basisFidelity)` and calling `TwoQubitBasisDecomposer::decomposeTarget` for
+/// each target.
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeTwoQubitWithBasis(
     const Matrix4x4& target, const Matrix4x4& basisMatrix,
@@ -361,9 +361,9 @@ struct SynthesizedUnitary2Q {
 /// All entanglers use
 /// @ref WEYL_DEFAULT_FIDELITY for the target's Weyl specialization.
 ///
-/// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
-/// up to WEYL_TOLERANCE in the interaction coefficients.
-/// Unrestricted RXX/RYY/RZX/RZZ use one rotation per nonzero Cartan coordinate.
+/// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3), up to
+/// WEYL_TOLERANCE in the interaction coefficients. Unrestricted RXX/RYY/RZX/RZZ
+/// use one rotation per nonzero Cartan coordinate.
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
                        CompilerTarget::Entangler entangler,

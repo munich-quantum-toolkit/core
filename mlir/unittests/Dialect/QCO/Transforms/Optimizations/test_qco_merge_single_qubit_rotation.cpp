@@ -131,11 +131,10 @@ protected:
     }
   }
 
-  /// Find the first occurrence of a u-gate in the current module and get
-  /// the numeric value of its parameters.
+  /// Find the first occurrence of a u-gate in the current module and get the
+  /// numeric value of its parameters.
   ///
-  /// This assumes that parameters are
-  /// constant and can be extracted.
+  /// This assumes that parameters are constant and can be extracted.
   std::optional<std::tuple<double, double, double>> getUGateParams() {
     UOp uOp = nullptr;
     module->walk([&](UOp op) {

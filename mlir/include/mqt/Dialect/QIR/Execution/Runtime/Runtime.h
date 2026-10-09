@@ -91,8 +91,8 @@ public:
     ///
     /// If @c dd is currently populated, the existing package's `decRef` plus
     /// `garbageCollect` path is used so the package (and its internal caches)
-    /// is kept warm.
-    /// A moved-out package is recreated on the next quantum operation.
+    /// is kept warm. A moved-out package is recreated on the next quantum
+    /// operation.
     auto reset() -> void {
       if (dd) {
         dd->decRef(edge);
@@ -172,8 +172,8 @@ public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
   /// Return the runtime bound to this thread.
   ///
-  /// When no session is executing, a
-  /// thread-local fallback keeps direct calls to the public C ABI convenient.
+  /// When no session is executing, a thread-local fallback keeps direct calls
+  /// to the public C ABI convenient.
   static Runtime& getInstance();
 
   Runtime(const Runtime&) = delete;
@@ -226,9 +226,9 @@ public:
 
   /// Move the quantum state out of the runtime.
   ///
-  /// Then reset the runtime to a clean state ready for the next job.
-  /// Intended for use after state extraction or successful terminal sampling
-  /// that reported an available uncollapsed state.
+  /// Then reset the runtime to a clean state ready for the next job. Intended
+  /// for use after state extraction or successful terminal sampling that
+  /// reported an available uncollapsed state.
   ///
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;

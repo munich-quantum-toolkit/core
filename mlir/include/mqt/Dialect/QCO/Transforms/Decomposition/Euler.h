@@ -53,8 +53,8 @@ struct RotationAngleTerm {
 
 /// Cancel opposite SSA terms without creating IR.
 ///
-/// Dyadic input scaling is
-/// recognized; different surviving coefficients remain separate for accuracy.
+/// Dyadic input scaling is recognized; different surviving coefficients remain
+/// separate for accuracy.
 void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles);
 
 /// Emit a simplified angle sum, normalizing before balanced addition.
@@ -132,8 +132,7 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
 
 /// Emit basis Euler angles `(theta, phi, lambda, phase)`.
 ///
-/// For the U basis,
-/// phase is the correction multiplying U(theta, phi, lambda).
+/// For the U basis, phase is the correction multiplying U(theta, phi, lambda).
 [[nodiscard]] Value
 emitParameterizedEulerAngles(OpBuilder& builder, Location loc, Value qubit,
                              const std::array<RotationParameter, 4>& angles,
