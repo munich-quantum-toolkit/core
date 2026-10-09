@@ -12,6 +12,8 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+
 #include <cstdint>
 #include <string_view>
 
@@ -34,6 +36,20 @@ void phaseRotationLoop(
     mlir::qc::QCProgramBuilder& builder, mlir::Value lower, mlir::Value upper,
     mlir::Value step, mlir::Value initialAngle, mlir::Value scale,
     const mlir::function_ref<void(mlir::Value angle, mlir::Value index)>& body);
+
+/// Emit addition or subtraction phases from low to high bits in [-2π, 2π].
+void phaseAdditionLoop(
+    mlir::qc::QCProgramBuilder& builder, int64_t width,
+    const mlir::function_ref<mlir::Value(mlir::Value target)>& bit,
+    const mlir::function_ref<void(mlir::Value angle, mlir::Value target)>& body,
+    bool inverse = false);
+
+/// Advance a semiclassical QFT correction: correction/2 + firstAngle*bit.
+/// half = 0.5 and firstAngle = +/-pi/2 keep it bounded by pi.
+mlir::Value advancePhaseCorrection(mlir::qc::QCProgramBuilder& builder,
+                                   mlir::Value correction,
+                                   mlir::Value measuredBit, mlir::Value half,
+                                   mlir::Value firstAngle);
 
 /// Apply the exact no-swap QFT.
 void forwardQFT(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,

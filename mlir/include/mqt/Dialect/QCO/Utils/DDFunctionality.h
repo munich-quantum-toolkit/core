@@ -52,7 +52,7 @@ struct DDSamplingState {
 ///
 /// The function must have one block. The interpreter supports concrete QCO and
 /// SCF structured control, non-recursive calls, common
-/// scalar math, one-dimensional memrefs, dense rank-one f64 tensor constants
+/// scalar math, one-dimensional memrefs, dense rank-one integer or f64 tensors
 /// and element extraction, and QTensor bookkeeping. `qco.static` values, or
 /// qubit arguments when no static values exist, set the wire map. Entry-block
 /// `qco.alloc` and statically sized `qtensor.alloc` operations add subsequent
@@ -120,8 +120,9 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// Returned CBit registers use conventional count-string order: the last
 /// returned register comes first, and each register is MSB-first. Without CBit
 /// results, the function samples all DD wires. Terminal measurements use one
-/// simulation for all shots. Programs that use a measured value or wire, or
-/// reset a qubit, run once per shot.
+/// simulation for all shots. Adaptive programs share shot prefixes when their
+/// measurements and resets are in the top-level stream or counted loops.
+/// Other adaptive programs run once per shot across independent workers.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
@@ -134,11 +135,15 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// On failure, it may contain an incomplete sequence.
 /// @param retainedState Optional output, cleared before sampling and populated
 /// only after successful terminal sampling. It owns the uncollapsed state.
+/// @param workers Maximum workers for adaptive sampling. Zero selects up to
+/// eight workers from the shot count and host budget; one uses one worker.
+/// Independent shots with one worker retain the serial seed sequence.
+/// Terminal sampling uses one simulation for all shots.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
        std::vector<std::string>* shotResults = nullptr,
        DDSamplingState* retainedState = nullptr,
-       const DDExecutionOptions& options = {});
+       const DDExecutionOptions& options = {}, size_t workers = 0);
 } // namespace mlir::qco

@@ -743,11 +743,12 @@ private:
     auto type = extract.getTensor().getType();
     auto table = constant ? dyn_cast<DenseElementsAttr>(constant.getValue())
                           : DenseElementsAttr{};
-    if (!table || type.getRank() != 1 || !type.getElementType().isF64() ||
+    if (!table || type.getRank() != 1 ||
+        (!type.getElementType().isF64() &&
+         !isa<IntegerType>(type.getElementType())) ||
         table.empty()) {
-      return fail(
-          extract,
-          "table lookup requires a non-empty constant rank-one f64 tensor");
+      return fail(extract, "table lookup requires a non-empty constant "
+                           "rank-one integer or f64 tensor");
     }
     const auto index = getConstantInteger(extract.getIndices().front());
     if (index && (*index < 0 || *index >= type.getDimSize(0))) {
@@ -1717,8 +1718,7 @@ private:
                                                      ValueRange operands) {
     auto callee = resolveGateCallee(operation);
     if (callee == nullptr) {
-      fail(operation, "call does not match an exportable gate function");
-      return failure();
+      return fail(operation, "call does not match an exportable gate function");
     }
 
     GateCall call;

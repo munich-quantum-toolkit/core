@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 
 namespace qdmi::slurm {
 

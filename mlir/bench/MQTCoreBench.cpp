@@ -241,7 +241,7 @@ programExtension(const std::string_view format) {
 
   std::optional<std::filesystem::path> temporaryProgram;
   std::optional<std::filesystem::path> temporaryManifest;
-  const auto removeTemporaryFiles = llvm::make_scope_exit([&] {
+  const auto removeTemporaryFiles = llvm::scope_exit([&] {
     removeIfPresent(temporaryProgram);
     removeIfPresent(temporaryManifest);
   });

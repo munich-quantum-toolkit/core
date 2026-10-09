@@ -294,7 +294,7 @@ static CompilerTarget withNativeBasis(const CompilerTarget& topology,
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
 /// straight-line programming.
-static void flatGHZ(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+static void flatGHZ(QCOProgramBuilder& builder, MutableArrayRef<Value> qubits) {
   qubits[0] = builder.h(qubits[0]);
   for (size_t i = 1; i < qubits.size(); ++i) {
     std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
@@ -334,7 +334,7 @@ static void loopGHZ(QCOProgramBuilder& builder, Value& tensor,
 }
 
 /// Creates an N-qubit CX/CZ circuit.
-static void cxcz(QCOProgramBuilder& builder, SmallVector<Value>& qubits) {
+static void cxcz(QCOProgramBuilder& builder, MutableArrayRef<Value> qubits) {
   for (size_t i = 0; i + 1 < qubits.size(); ++i) {
     std::tie(qubits[i], qubits[i + 1]) = builder.cx(qubits[i], qubits[i + 1]);
   }
@@ -2670,25 +2670,28 @@ TEST_F(MappingPassFixture, EmbedShuffledInteractionPathWithoutSwaps) {
     builder.sink(qubit);
   }
   auto input = builder.finalize();
-  for (const auto& target : {lineTarget, getSquareGridTarget(8)}) {
-    std::string expected;
-    for (bool multithreading : {false, true}) {
-      context->enableMultithreading(multithreading);
-      OwningOpRef<ModuleOp> moduleOp = input->clone();
-      ASSERT_TRUE(succeeded(runPass(
-          *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
-      ASSERT_TRUE(succeeded(verify(*moduleOp)));
-      EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-      EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
-      size_t swaps = 0;
-      moduleOp->walk([&](SWAPOp) { ++swaps; });
-      /// The interaction path fits both targets without routing overhead.
-      EXPECT_EQ(swaps, 0);
-      const auto output = printModule(*moduleOp);
-      if (!multithreading) {
-        expected = output;
-      } else {
-        EXPECT_EQ(output, expected);
+  for (const auto& topology : {lineTarget, getSquareGridTarget(8)}) {
+    for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
+      std::string expected;
+      for (const size_t trials : {size_t{1}, size_t{4}}) {
+        SCOPED_TRACE(trials);
+        OwningOpRef<ModuleOp> moduleOp = input->clone();
+        ASSERT_TRUE(succeeded(
+            runPass(*moduleOp, target,
+                    MappingPassOptions{.ntrials = trials, .seed = 42})));
+        ASSERT_TRUE(succeeded(verify(*moduleOp)));
+        EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+        EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+        size_t swaps = 0;
+        moduleOp->walk([&](SWAPOp) { ++swaps; });
+        // A complete path placement must survive all trial options.
+        EXPECT_EQ(swaps, 0);
+        const auto output = printModule(*moduleOp);
+        if (expected.empty()) {
+          expected = output;
+        } else {
+          EXPECT_EQ(output, expected);
+        }
       }
     }
   }

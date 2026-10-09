@@ -12,6 +12,7 @@
 #include "bench/JSON.hpp"
 #include "bench/QFTAdder.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/bench/Generate.h"
@@ -20,21 +21,20 @@
 
 #include "gtest/gtest.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/DenseMap.h"
 
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <numbers>
 #include <numeric>
@@ -45,165 +45,96 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-static void expectConstantIndex(Value value, int64_t expected) {
-  auto constant = value.getDefiningOp<arith::ConstantIndexOp>();
-  ASSERT_TRUE(constant);
-  EXPECT_EQ(constant.value(), expected);
-}
-
-static void expectConstantFloat(Value value, double expected) {
-  auto constant = value.getDefiningOp<arith::ConstantOp>();
-  ASSERT_TRUE(constant);
-  auto attribute = dyn_cast<FloatAttr>(constant.getValue());
-  ASSERT_TRUE(attribute);
-  EXPECT_DOUBLE_EQ(attribute.getValueAsDouble(), expected);
-}
-
-TEST(GenerateProgramTest, EmitsQuantumQFTAdderCircuit) {
-  constexpr int64_t qubits = 3;
-  auto program = generate(QFTAdder{{.addend = "+++", .accumulator = "001"}});
-  ASSERT_TRUE(program);
-  auto moduleOp = program->module();
-
-  /// Unlike the QFT phases, the addition phase connects the two registers.
-  qc::CtrlOp addition;
-  moduleOp.walk([&](qc::CtrlOp op) {
-    auto control = op.getControl(0).getDefiningOp<memref::LoadOp>();
-    auto target = op.getTarget(0).getDefiningOp<memref::LoadOp>();
-    if (control && target && control.getMemref() != target.getMemref()) {
-      EXPECT_FALSE(addition);
-      addition = op;
-    }
-  });
-  ASSERT_TRUE(addition);
-
-  auto sourceLoad = addition.getControl(0).getDefiningOp<memref::LoadOp>();
-  auto targetLoad = addition.getTarget(0).getDefiningOp<memref::LoadOp>();
-  ASSERT_TRUE(sourceLoad);
-  ASSERT_TRUE(targetLoad);
-
-  auto inner = addition->getParentOfType<scf::ForOp>();
-  ASSERT_TRUE(inner);
-  auto outer = inner->getParentOfType<scf::ForOp>();
-  ASSERT_TRUE(outer);
-
-  auto target = targetLoad.getIndices().front();
-  auto targetIndex = target.getDefiningOp<arith::SubIOp>();
-  ASSERT_TRUE(targetIndex);
-  expectConstantIndex(targetIndex.getLhs(), qubits - 1);
-  EXPECT_EQ(targetIndex.getRhs(), outer.getInductionVar());
-
-  auto sourceIndex =
-      sourceLoad.getIndices().front().getDefiningOp<arith::SubIOp>();
-  ASSERT_TRUE(sourceIndex);
-  EXPECT_EQ(sourceIndex.getLhs(), target);
-  EXPECT_EQ(sourceIndex.getRhs(), inner.getInductionVar());
-
-  auto upper = inner.getUpperBound().getDefiningOp<arith::SubIOp>();
-  ASSERT_TRUE(upper);
-  expectConstantIndex(upper.getLhs(), qubits);
-  EXPECT_EQ(upper.getRhs(), outer.getInductionVar());
-  expectConstantIndex(inner.getLowerBound(), 0);
-  expectConstantIndex(inner.getStep(), 1);
-
-  ASSERT_EQ(inner.getInitArgs().size(), 1U);
-  expectConstantFloat(inner.getInitArgs().front(), std::numbers::pi);
-  qc::POp phase;
-  addition.walk([&](qc::POp op) { phase = op; });
-  ASSERT_TRUE(phase);
-  EXPECT_EQ(phase.getTheta(), inner.getRegionIterArg(0));
-
-  auto yield = dyn_cast<scf::YieldOp>(inner.getBody()->getTerminator());
-  ASSERT_TRUE(yield);
-  ASSERT_EQ(yield.getNumOperands(), 1U);
-  auto nextAngle = yield.getOperand(0).getDefiningOp<arith::MulFOp>();
-  ASSERT_TRUE(nextAngle);
-  EXPECT_EQ(nextAngle.getLhs(), inner.getRegionIterArg(0));
-  expectConstantFloat(nextAngle.getRhs(), 0.5);
-}
-
-TEST(GenerateProgramTest, KeepsLargestQuantumQFTAdderFiniteAndStructured) {
+TEST(GenerateProgramTest, BoundsLargestQuantumQFTAdderPayload) {
   auto program = generate(QFTAdder{{
       .addend = std::string(QFTAdderOptions::MAX_QUBITS, '+'),
       .accumulator = std::string(QFTAdderOptions::MAX_QUBITS - 1, '0') + "1",
   }});
   ASSERT_TRUE(program);
-  auto moduleOp = program->module();
-
-  EXPECT_LT(test::countOperations(moduleOp), 200U);
-  moduleOp.walk([&](arith::ConstantOp op) {
-    if (auto value = dyn_cast<FloatAttr>(op.getValue())) {
-      EXPECT_TRUE(std::isfinite(value.getValueAsDouble()));
-    }
-  });
+  EXPECT_LT(program->str().size(), 8192U);
 }
 
-TEST(GenerateProgramTest, UsesConfiguredClassicalQFTAdderPhases) {
-  auto program = generate(QFTAdder{{
-      .addend = "101",
-      .accumulator = "001",
-      .method = QFTAdderMethod::Constant,
-      .overflow = QFTAdderOverflow::Carry,
-  }});
-  ASSERT_TRUE(program);
-  auto moduleOp = program->module();
-
-  auto table = test::angleTable(moduleOp);
-  ASSERT_TRUE(table);
-  const auto angles = llvm::to_vector(table.getValues<double>());
-  ASSERT_EQ(angles.size(), 4U);
-  EXPECT_DOUBLE_EQ(angles[0], std::numbers::pi);
-  EXPECT_DOUBLE_EQ(angles[1], std::numbers::pi / 2.);
-  EXPECT_DOUBLE_EQ(angles[2], 5. * std::numbers::pi / 4.);
-  EXPECT_DOUBLE_EQ(angles[3], 5. * std::numbers::pi / 8.);
-
-  tensor::ExtractOp extract;
-  moduleOp.walk([&](tensor::ExtractOp op) {
-    EXPECT_FALSE(extract);
-    extract = op;
-  });
-  ASSERT_TRUE(extract);
-  auto loop = extract->getParentOfType<scf::ForOp>();
-  ASSERT_TRUE(loop);
-  expectConstantIndex(loop.getLowerBound(), 0);
-  expectConstantIndex(loop.getUpperBound(), 4);
-  expectConstantIndex(loop.getStep(), 1);
-  EXPECT_EQ(extract.getIndices().front(), loop.getInductionVar());
-
-  qc::POp phase;
-  moduleOp.walk([&](qc::POp op) {
-    if (!op->getParentOfType<qc::CtrlOp>()) {
-      EXPECT_FALSE(phase);
-      phase = op;
+TEST(GenerateProgramTest, ComputesWideClassicalQFTAdderPhasesAccurately) {
+  for (const auto overflow :
+       {QFTAdderOverflow::Wrap, QFTAdderOverflow::Carry}) {
+    const auto carry = overflow == QFTAdderOverflow::Carry;
+    const auto width = QFTAdderOptions::MAX_QUBITS - (carry ? 1U : 0U);
+    for (const bool allOnes : {false, true}) {
+      SCOPED_TRACE(static_cast<int>(overflow));
+      SCOPED_TRACE(allOnes);
+      auto addend = std::string(width, allOnes ? '1' : '0');
+      if (!allOnes) {
+        for (const auto bit :
+             std::array<size_t, 5>{0, 63, 64, 511, width - 2}) {
+          addend[width - 1 - bit] = '1';
+        }
+      }
+      auto program = generate(QFTAdder{{
+          .addend = addend,
+          .accumulator = std::string(width, '0'),
+          .method = QFTAdderMethod::Constant,
+          .overflow = overflow,
+      }});
+      ASSERT_TRUE(program);
+      EXPECT_LT(program->str().size(), 8192U);
+      qc::POp phase;
+      program->module().walk([&](qc::POp op) {
+        if (!op->getParentOfType<qc::CtrlOp>()) {
+          phase = op;
+        }
+      });
+      ASSERT_TRUE(phase);
+      auto loop = phase->getParentOfType<scf::ForOp>();
+      ASSERT_TRUE(loop);
+      auto targetLoad = phase.getQubit(0).getDefiningOp<memref::LoadOp>();
+      ASSERT_TRUE(targetLoad);
+      DenseMap<Value, Attribute> arguments;
+      auto lower = dyn_cast_or_null<IntegerAttr>(
+          test::evaluateArithmetic(loop.getLowerBound(), arguments));
+      auto upper = dyn_cast_or_null<IntegerAttr>(
+          test::evaluateArithmetic(loop.getUpperBound(), arguments));
+      auto step = dyn_cast_or_null<IntegerAttr>(
+          test::evaluateArithmetic(loop.getStep(), arguments));
+      ASSERT_TRUE(lower);
+      ASSERT_TRUE(upper);
+      ASSERT_TRUE(step);
+      ASSERT_GT(step.getInt(), 0);
+      auto carried =
+          test::evaluateArithmetic(loop.getInitArgs().front(), arguments);
+      ASSERT_TRUE(carried);
+      size_t phases = 0;
+      for (auto index = lower.getInt(); index < upper.getInt();
+           index += step.getInt()) {
+        arguments[loop.getInductionVar()] =
+            IntegerAttr::get(loop.getInductionVar().getType(), index);
+        arguments[loop.getRegionIterArg(0)] = carried;
+        auto target = dyn_cast_or_null<IntegerAttr>(test::evaluateArithmetic(
+            targetLoad.getIndices().front(), arguments));
+        auto angle = dyn_cast_or_null<FloatAttr>(
+            test::evaluateArithmetic(phase.getTheta(), arguments));
+        ASSERT_TRUE(target);
+        ASSERT_TRUE(angle);
+        ASSERT_GE(target.getInt(), 0);
+        ASSERT_LT(target.getInt(), QFTAdderOptions::MAX_QUBITS);
+        const auto targetIndex = static_cast<size_t>(target.getInt());
+        long double expected = 0.L;
+        for (size_t bit = 0; bit < width && bit <= targetIndex; ++bit) {
+          if (addend[width - 1 - bit] == '1') {
+            expected += std::numbers::pi_v<long double> *
+                        std::ldexp(1.L, -static_cast<int>(targetIndex - bit));
+          }
+        }
+        const auto actual = angle.getValueAsDouble();
+        EXPECT_NEAR(actual, static_cast<double>(expected), 3e-15)
+            << targetIndex;
+        carried = test::evaluateArithmetic(
+            loop.getBody()->getTerminator()->getOperand(0), arguments);
+        ASSERT_TRUE(carried);
+        ++phases;
+      }
+      EXPECT_EQ(phases, QFTAdderOptions::MAX_QUBITS);
     }
-  });
-  ASSERT_TRUE(phase);
-  EXPECT_EQ(phase->getParentOfType<scf::ForOp>(), loop);
-  EXPECT_EQ(phase.getTheta(), extract.getResult());
-  auto target = phase.getQubit(0).getDefiningOp<memref::LoadOp>();
-  ASSERT_TRUE(target);
-  EXPECT_EQ(target.getIndices().front(), loop.getInductionVar());
-}
-
-TEST(GenerateProgramTest, KeepsLargestClassicalQFTAdderFiniteAndStructured) {
-  auto addend = std::string((QFTAdderOptions::MAX_QUBITS - 1U), '1');
-  auto program = generate(QFTAdder{{
-      .addend = std::move(addend),
-      .accumulator = std::string(QFTAdderOptions::MAX_QUBITS - 2, '0') + "1",
-      .method = QFTAdderMethod::Constant,
-      .overflow = QFTAdderOverflow::Carry,
-  }});
-  ASSERT_TRUE(program);
-  auto moduleOp = program->module();
-
-  auto table = test::angleTable(moduleOp);
-  ASSERT_TRUE(table);
-  EXPECT_EQ(table.getNumElements(), (QFTAdderOptions::MAX_QUBITS - 1U) + 1U);
-  for (const auto angle : table.getValues<double>()) {
-    EXPECT_TRUE(std::isfinite(angle));
   }
-
-  EXPECT_LT(test::countOperations(moduleOp), 100U);
 }
 
 TEST(GenerateProgramTest, SamplesEverySmallQFTAdderOperandPair) {
@@ -263,7 +194,7 @@ TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
         auto state = qco::simulateStatevector(
             mlir::mqt::getEntryPoint(program->module()), package);
         ASSERT_TRUE(succeeded(state));
-        const auto actual = state->getVector();
+        const auto actual = dd::getVector(*state);
         package.decRef(*state);
         dd::CVec expected(size_t{1} << (width + sumWidth));
         for (size_t addend = 0; addend < (size_t{1} << width); ++addend) {

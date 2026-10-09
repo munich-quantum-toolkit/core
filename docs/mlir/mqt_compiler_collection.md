@@ -70,22 +70,65 @@ For versionless OpenQASM text, use
 detection uses the `OPENQASM` header; see {doc}`OpenQASM` for the import
 contract.
 
-## Inspect a QC program
+## Inspect a quantum program
 
-Use the inspection methods of a {py:class}`~mqt.core.mlir.QCProgram` to count
-gates without parsing the textual IR:
+Use `inspect()` on a {py:class}`~mqt.core.mlir.QCProgram` or
+{py:class}`~mqt.core.mlir.QCOProgram` to obtain a snapshot of resource
+information and static operation counts:
 
 ```{code-cell} ipython3
-print("Gates:", compiled.num_gates())
-print("Single-qubit gates:", compiled.num_single_qubit_gates())
-print("Two-qubit gates:", compiled.num_two_qubit_gates())
+info = compiled.inspect()
+print("Qubits:", info.num_qubits)
+print("Control flow:", info.has_control_flow)
+print("Static device sites:", info.static_qubits)
+print("Gates:", info.num_gates)
+print("Single-qubit gates:", info.num_single_qubit_gates)
+print("Two-qubit gates:", info.num_two_qubit_gates)
+print("Gates by operation:", info.gate_counts)
+print("Entry-point control flow:", info.control_flow_counts)
+print("All MLIR operations:", info.operation_counts)
+
+qco = compiled.to_qco(copy=True)
+print("QCO two-qubit gates:", qco.inspect().num_two_qubit_gates)
 ```
 
-These are static gate counts of the entry-point IR. A gate in each structured
-control-flow region counts once, regardless of the runtime path or loop
-iteration count. Barriers do not count, and operations inside gate modifiers do
-not count again. The counts do not expand function calls or estimate the gates
-executed at runtime.
+For an individual count, use `num_gates()`, `num_single_qubit_gates()`,
+`num_two_qubit_gates()`, `gate_counts()`, `control_flow_counts()`, or
+`operation_counts()` directly on the program. These methods compute only the
+requested count. `operation_counts()` is available on every MLIR program type.
+
+Gate counts describe the static entry-point IR. Each gate in a structured
+control-flow region counts once, regardless of runtime paths or loop iterations.
+Unitary operations, measurements, and resets count as gates. Measurements and
+resets count as single-qubit gates. Barriers are excluded from gate counts and
+appear in `operation_counts`. Each modifier or unitary call counts as one gate.
+Controls on a single primitive gate add a `c` per control: `cx`, `cz`, `crx`,
+`cswap`, or `ccx`. Other single-gate modifiers retain their structure: `inv(h)`,
+`pow(rx)`, `ctrl(inv(x))`, or `ctrl(2,inv(x))` for two controls. Parameters,
+including power exponents, do not split histogram buckets. Modifiers with
+multiple body gates or unused target operands use `ctrl`, `inv`, or `pow`. Calls
+use the callee name. Explicit global-phase operations count under `gphase`.
+
+`control_flow_counts` counts entry-point branch and region-control operations by
+their full MLIR names, such as `scf.for`, `scf.while`, `scf.if`, or `qco.if`.
+Every region counts once; callees are not expanded and region terminators such
+as `scf.yield` are excluded.
+
+`operation_counts` gives a full structural overview by MLIR operation name. It
+includes the root module, helper functions, modifier bodies, terminators, and
+nested modules. A controlled X therefore contributes both `qc.ctrl` and `qc.x`
+to this histogram, while contributing one `cx` to `gate_counts`. Its scope
+matches MLIR's
+[`print-op-stats` pass](https://mlir.llvm.org/docs/Passes/#-print-op-stats).
+
+`num_qubits` counts allocated qubits, or distinct static device site IDs. It is
+`None` when there is no entry point, the width is unknown, or a size calculation
+overflows. Runtime-sized allocations and quantum entry-point inputs have unknown
+width. Site IDs need not be contiguous: a program using only site 5 has one
+qubit and `static_qubits == [5]`. Resource inspection and `has_control_flow`
+include helper functions and exclude nested modules. These resource counts
+describe declared capacity rather than peak live width or the original layout
+width.
 
 ## Bind program parameters
 

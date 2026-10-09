@@ -9,51 +9,25 @@
  */
 
 #include "qdmi/TestUtils.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include "DeviceRegistry.hpp"
+#include "Driver.hpp"
 
 #include "gtest/gtest.h"
+#include "qdmi/constants.h"
 
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <variant>
 #include <vector>
 
 namespace {
 
-class TemporaryDirectory {
-public:
-  TemporaryDirectory() {
-    path_ = std::filesystem::temp_directory_path() /
-            ("mqt-core-qdmi-registry-test-" +
-             std::to_string(std::random_device{}()));
-    std::filesystem::remove_all(path_);
-    std::filesystem::create_directories(path_);
-  }
-
-  ~TemporaryDirectory() { std::filesystem::remove_all(path_); }
-
-  [[nodiscard]] const std::filesystem::path& path() const { return path_; }
-
-  [[nodiscard]] std::filesystem::path
-  write(const std::filesystem::path& relative,
-        const std::string& contents) const {
-    const auto path = path_ / relative;
-    std::filesystem::create_directories(path.parent_path());
-    std::ofstream output(path);
-    output << contents;
-    return path;
-  }
-
-private:
-  std::filesystem::path path_;
-};
+using mqt::test::TemporaryDirectory;
 
 using mqt::test::ScopedEnvironmentVariable;
 
@@ -137,6 +111,48 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
     EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
                  std::invalid_argument);
   }
+}
+
+TEST(DeviceRegistry, RejectsInvalidCStringAndPathFields) {
+  const TemporaryDirectory directory;
+  const auto configFile = emptyConfig(directory);
+  for (
+      const auto* document : {
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.alias\u0000hidden","library":"device","prefix":"TEST"}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.library","library":"device\u0000alias","prefix":"TEST"}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.prefix","library":"device","prefix":"TEST\u0000ALIAS"}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.auth","library":"device","prefix":"TEST","session":{"auth-file":"auth\u0000alias"}}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.config","library":"device","prefix":"TEST","session":{"device-config":{"file":"config\u0000alias"}}}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.empty-library","library":"","prefix":"TEST"}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.empty-auth","library":"device","prefix":"TEST","session":{"auth-file":""}}]}})",
+          R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.conflict","library":"device","prefix":"TEST","session":{"device-config":{"inline":{}},"custom1":"raw"}}]}})",
+      }) {
+    SCOPED_TRACE(document);
+    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                               document);
+    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+                 std::invalid_argument);
+  }
+}
+
+TEST(DeviceRegistry, PreservesEmbeddedNullInLengthDelimitedSessionValues) {
+  constexpr std::string_view json = R"({"custom3":"x\u0000y"})";
+  qdmi::DeviceSessionConfig config;
+
+  ASSERT_EQ(
+      qdmi::detail::parseDeviceSessionJson(json.data(), json.size(), config),
+      QDMI_SUCCESS);
+  ASSERT_TRUE(config.custom3.has_value());
+  EXPECT_EQ(*config.custom3, std::string("x\0y", 3));
+
+  constexpr std::string_view malformed = "{";
+  EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(malformed.data(),
+                                                 malformed.size(), config),
+            QDMI_ERROR_INVALIDARGUMENT);
+  constexpr std::string_view wrongShape = "[]";
+  EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(wrongShape.data(),
+                                                 wrongShape.size(), config),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistry, MergesEnvironmentJsonOverExplicitFile) {
@@ -310,7 +326,7 @@ TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
 
 TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
   const TemporaryDirectory directory;
-  directory.write("config/device.json", R"({
+  std::ignore = directory.write("config/device.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "relative", "library": "libdevice.so", "prefix": "RELATIVE",
@@ -383,7 +399,7 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
   const TemporaryDirectory directory;
-  directory.write("qdmi.json", R"({
+  std::ignore = directory.write("qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [
       {"id": "json", "library": "device.so", "prefix": "JSON"}
@@ -402,14 +418,14 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
 
 TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
   const TemporaryDirectory directory;
-  directory.write("user/mqt-core/qdmi.json", R"({
+  std::ignore = directory.write("user/mqt-core/qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{
       "id": "layered", "library": "user.so", "prefix": "USER",
       "session": {"custom1": "user-default"}
     }]}
   })");
-  directory.write("project/qdmi.json", R"({
+  std::ignore = directory.write("project/qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [{"id": "layered", "prefix": "PROJECT"}]}
   })");
@@ -447,6 +463,7 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "invalid", "library": "device", "prefix": "P", "enabled": "yes"}]}})",
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "invalid", "library": "device", "prefix": "P", "session": {"token": 42}}]}})",
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "missing", "prefix": "P"}]}})",
+          R"({"schema-version": 1, "qdmi": {"devices": [{"id": "missing-prefix", "library": "device"}]}})",
           R"({"schema-version": 1, "qdmi": {"devices": [{"id": "unknown", "library": "device", "prefix": "P", "unexpected": true}]}})",
       }) {
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",

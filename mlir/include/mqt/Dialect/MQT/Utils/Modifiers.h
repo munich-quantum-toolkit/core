@@ -93,33 +93,30 @@ void printTargetAliasing(OpAsmPrinter& printer, Region& region,
 /// getSoleBodyUnitary().
 template <typename UnitaryInterface>
 [[nodiscard]] size_t getNumBodyUnitaries(Block& block) {
-  return static_cast<size_t>(llvm::count_if(
-      block, [](Operation& op) { return isa<UnitaryInterface>(op); }));
+  return llvm::range_size(block.getOps<UnitaryInterface>());
 }
 
 /// Return the indexed body unitary or report an invalid API use.
 template <typename UnitaryInterface>
 [[nodiscard]] UnitaryInterface getBodyUnitary(Block& block,
                                               const size_t index) {
-  auto unitaries = llvm::make_filter_range(
-      block, [](Operation& op) { return isa<UnitaryInterface>(op); });
+  auto unitaries = block.getOps<UnitaryInterface>();
   auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(index));
   if (it == unitaries.end()) {
     llvm::reportFatalUsageError("Unitary index out of bounds");
   }
-  return cast<UnitaryInterface>(*it);
+  return *it;
 }
 
 /// Return the sole body unitary, or a null interface if there is not one.
 template <typename UnitaryInterface>
 [[nodiscard]] UnitaryInterface getSoleBodyUnitary(Block& block) {
-  auto unitaries = llvm::make_filter_range(
-      block, [](Operation& op) { return isa<UnitaryInterface>(op); });
+  auto unitaries = block.getOps<UnitaryInterface>();
   auto it = unitaries.begin();
   if (it == unitaries.end()) {
     return {};
   }
-  auto unitary = cast<UnitaryInterface>(*it);
+  auto unitary = *it;
   if (++it != unitaries.end()) {
     return {};
   }

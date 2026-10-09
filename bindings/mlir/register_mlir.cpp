@@ -20,11 +20,15 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/bench/Generate.h"
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/SessionConfig.hpp"
+#include "qdmi/QDMI.hpp"
 
 #include "qiskit/Qiskit.h"
 
+#include "capnp/common.h"
+#include "capnp/message.h"
+#include "capnp/serialize.h"
+#include "kj/array.h"
+#include "kj/exception.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
 #include "nanobind/stl/filesystem.h"
@@ -49,6 +53,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <limits>
@@ -91,6 +96,8 @@ static void translateRuntimeError(const std::exception_ptr& error,
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
+                                nb::c_contig, nb::device::cpu>;
+using JeffSegment = nb::ndarray<nb::memview, const uint8_t, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 
 using PythonCustomJobParameter =
@@ -262,6 +269,102 @@ Partial binding preserves unbound parameters and their source identities.
 Unknown names, non-finite values, and references to the entry point raise
 ValueError without changing the program. Call ``copy()`` first to preserve
 the input, and ``cleanup()`` afterwards if constant folding is needed.)pb");
+}
+
+template <class T>
+static void registerInspection(nb::class_<T, mlir::Program>& binding) {
+  binding
+      .def(
+          "inspect",
+          [](const T& program) {
+            requireValid(program);
+            return program.inspect();
+          },
+          R"pb(Inspect quantum resources and static IR statistics.
+
+Returns a :class:`QuantumProgramInfo` snapshot with gate, control-flow, and
+full operation counts.)pb")
+      .def(
+          "num_gates",
+          [](const T& program) {
+            requireValid(program);
+            return program.numGates();
+          },
+          R"pb(Return the static gate count of the entry-point IR.
+
+Unitary operations, measurements, and resets each count once. Barriers are
+excluded. Modifiers and calls count atomically. Gates in every control-flow
+region count once, regardless of runtime paths or loop iterations.)pb")
+      .def(
+          "num_single_qubit_gates",
+          [](const T& program) {
+            requireValid(program);
+            return program.numSingleQubitGates();
+          },
+          R"pb(Count gates acting on exactly one qubit.
+
+Uses the counting rules of :meth:`num_gates`, including measurements and resets.)pb")
+      .def(
+          "num_two_qubit_gates",
+          [](const T& program) {
+            requireValid(program);
+            return program.numTwoQubitGates();
+          },
+          R"pb(Count gates acting on exactly two qubits.
+
+Uses the counting rules of :meth:`num_gates`.)pb")
+      .def(
+          "gate_counts",
+          [](const T& program) {
+            requireValid(program);
+            return program.gateCounts();
+          },
+          R"pb(Count entry-point gates by name.
+
+Uses the counting rules of :meth:`num_gates`. Controls on a single primitive
+gate add a ``c`` per control: ``cx``, ``ccx``.
+Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
+multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
+Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
+``pow``. Calls use the callee name; explicit phases use ``gphase``.)pb")
+      .def(
+          "control_flow_counts",
+          [](const T& program) {
+            requireValid(program);
+            return program.controlFlowCounts();
+          },
+          R"pb(Count entry-point control-flow operations.
+
+Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
+visited once, without expanding calls. Region terminators
+such as ``scf.yield`` are excluded.)pb");
+}
+
+[[nodiscard]] static qdmi::Device openQDMIDevice(
+    const std::string& deviceId,
+    std::optional<std::filesystem::path> driverPath,
+    std::optional<std::string> token,
+    std::optional<std::filesystem::path> authFile,
+    std::optional<std::string> authUrl, std::optional<std::string> username,
+    std::optional<std::string> password, std::optional<std::string> projectId,
+    std::optional<std::string> custom1, std::optional<std::string> custom2,
+    std::optional<std::string> custom3, std::optional<std::string> custom4,
+    std::optional<std::string> custom5) {
+  return qdmi::Session::openDevice(deviceId,
+                                   {
+                                       .driverPath = std::move(driverPath),
+                                       .token = std::move(token),
+                                       .authFile = std::move(authFile),
+                                       .authUrl = std::move(authUrl),
+                                       .username = std::move(username),
+                                       .password = std::move(password),
+                                       .projectId = std::move(projectId),
+                                       .custom1 = std::move(custom1),
+                                       .custom2 = std::move(custom2),
+                                       .custom3 = std::move(custom3),
+                                       .custom4 = std::move(custom4),
+                                       .custom5 = std::move(custom5),
+                                   });
 }
 
 template <class ProgramType>
@@ -570,7 +673,7 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
           "dense statevector dimensions exceed addressable memory");
     }
   }
-  auto dataPtr = std::make_unique<dd::CVec>(state.getVector());
+  auto dataPtr = std::make_unique<dd::CVec>(dd::getVector(state));
   auto* const data = dataPtr->data();
   const auto size = dataPtr->size();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
@@ -593,8 +696,8 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
   }
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
   auto* const data = dataPtr->data();
-  matrix.traverseMatrix(
-      std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
+  dd::traverseMatrix(
+      matrix, std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [data, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
         data[i * dim + j] = value;
       },
@@ -1214,48 +1317,39 @@ Raises:
     ValueError: If the selected operations or connectivity cannot be represented.)pb")
       .def_static(
           "from_device_id",
-          [](const std::string& deviceId, std::optional<std::string> baseUrl,
+          [](const std::string& deviceId,
+             std::optional<std::filesystem::path> driverPath,
              std::optional<std::string> token,
              std::optional<std::filesystem::path> authFile,
              std::optional<std::string> authUrl,
              std::optional<std::string> username,
              std::optional<std::string> password,
-             std::optional<std::string> deviceConfig,
-             std::optional<std::filesystem::path> deviceConfigFile,
+             std::optional<std::string> projectId,
              std::optional<std::string> custom1,
              std::optional<std::string> custom2,
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            // Keep this preflight at the Python boundary so the public
-            // ValueError does not depend on cross-extension exception
-            // translation.
-            if (deviceConfig && deviceConfigFile) {
-              throw nb::value_error(
-                  "device_config and device_config_file are mutually "
-                  "exclusive");
-            }
-            const auto overrides = qdmi::makeDeviceSessionConfig(
-                std::move(baseUrl), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(deviceConfig), std::move(deviceConfigFile),
-                std::move(custom1), std::move(custom2), std::move(custom3),
-                std::move(custom4), std::move(custom5));
             auto target = [&] {
               const nb::gil_scoped_release release;
-              auto device = qdmi::Session::openDevice(deviceId, overrides);
+              auto device = openQDMIDevice(
+                  deviceId, std::move(driverPath), std::move(token),
+                  std::move(authFile), std::move(authUrl), std::move(username),
+                  std::move(password), std::move(projectId), std::move(custom1),
+                  std::move(custom2), std::move(custom3), std::move(custom4),
+                  std::move(custom5));
               return mlir::compilerTargetFromDevice(device);
             }();
             return takeResult(std::move(target));
           },
-          "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
+          "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
           "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-          "password"_a = std::nullopt, "device_config"_a = std::nullopt,
-          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
-          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
-          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
-          "Open a registered device and snapshot its compiler target.")
+          "password"_a = std::nullopt, "project_id"_a = std::nullopt,
+          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+          "custom5"_a = std::nullopt,
+          "Open a client-visible device and snapshot its compiler target.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {
@@ -1351,6 +1445,16 @@ Programs own their MLIR module. Conversions can consume a program; use
   program
       .def_prop_ro("is_valid", &mlir::Program::isValid,
                    "Whether this program still owns its module.")
+      .def(
+          "operation_counts",
+          [](const mlir::Program& value) {
+            requireValid(value);
+            return value.operationCounts();
+          },
+          R"pb(Count every operation by its full MLIR name.
+
+Includes the root module, helper functions, modifier bodies, terminators,
+and nested modules.)pb")
       .def_prop_ro(
           "ir",
           [](const mlir::Program& value) {
@@ -1399,6 +1503,47 @@ Programs own their MLIR module. Conversions can consume a program; use
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
       .def_rw("mapping", &mlir::CompilationOptions::mapping);
+
+  nb::class_<mlir::QuantumProgramInfo>(
+      m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
+
+Use :meth:`QCProgram.inspect` or :meth:`QCOProgram.inspect` to collect a snapshot.)pb")
+      .def_ro("num_qubits", &mlir::QuantumProgramInfo::numQubits,
+              R"pb(Declared quantum capacity.
+
+Counts allocated qubits or distinct static site IDs. ``None`` means the width
+is unknown. Resource inspection includes helper functions and excludes nested
+modules; it describes declared capacity rather than peak live width.)pb")
+      .def_ro("static_qubits", &mlir::QuantumProgramInfo::staticQubits,
+              R"pb(Sorted distinct physical site IDs.
+
+Includes declarations in helper functions and excludes nested modules.)pb")
+      .def_ro("has_control_flow", &mlir::QuantumProgramInfo::hasControlFlow,
+              R"pb(Whether the module contains control flow.
+
+Includes branches and region-control operations in helper functions, but
+excludes nested modules.)pb")
+      .def_ro(
+          "num_gates", &mlir::QuantumProgramInfo::numGates,
+          "Static entry-point gate count.\n\nSee :meth:`QCProgram.num_gates`.")
+      .def_ro("num_single_qubit_gates",
+              &mlir::QuantumProgramInfo::numSingleQubitGates,
+              "Static single-qubit gate count.\n\n"
+              "See :meth:`QCProgram.num_single_qubit_gates`.")
+      .def_ro("num_two_qubit_gates",
+              &mlir::QuantumProgramInfo::numTwoQubitGates,
+              "Static two-qubit gate count.\n\n"
+              "See :meth:`QCProgram.num_two_qubit_gates`.")
+      .def_ro(
+          "gate_counts", &mlir::QuantumProgramInfo::gateCounts,
+          "Entry-point gate histogram.\n\nSee :meth:`QCProgram.gate_counts`.")
+      .def_ro("control_flow_counts",
+              &mlir::QuantumProgramInfo::controlFlowCounts,
+              "Entry-point control-flow histogram.\n\n"
+              "See :meth:`QCProgram.control_flow_counts`.")
+      .def_ro("operation_counts", &mlir::QuantumProgramInfo::operationCounts,
+              "Full module operation histogram.\n\n"
+              "See :meth:`Program.operation_counts`.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
@@ -1503,43 +1648,7 @@ Set ``copy=True`` to preserve it.)pb")
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
 
-Set ``copy=True`` to preserve it.)pb")
-      .def(
-          "num_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numGates();
-          },
-          R"pb(Return the static gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
-in every structured control-flow region are counted once, regardless of how
-often the region executes. Operations within modifiers are not counted
-recursively, and barriers are skipped.)pb")
-      .def(
-          "num_single_qubit_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numSingleQubitGates();
-          },
-          R"pb(Return the static single-qubit gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-is counted. Operations in every structured control-flow region are counted
-once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb")
-      .def(
-          "num_two_qubit_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numTwoQubitGates();
-          },
-          R"pb(Return the static two-qubit gate count of the entry-point IR.
-
-Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-is counted. Operations in every structured control-flow region are counted
-once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb");
+Set ``copy=True`` to preserve it.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
@@ -1687,6 +1796,8 @@ Set ``copy=True`` to preserve it.)pb")
 
 Set ``copy=True`` to preserve it.)pb");
 
+  registerInspection(qcProgram);
+  registerInspection(qcoProgram);
   registerParameterBinding(qcProgram);
   registerParameterBinding(qcoProgram);
 
@@ -1697,9 +1808,51 @@ Set ``copy=True`` to preserve it.)pb");
 ``jeff`` programs can be stored as bytes or files and converted back to QCO for
 further compilation.)pb");
   jeffProgram
-      .def_static("from_file",
-                  &OptionalFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
-                  "path"_a, "Read a ``jeff`` program from a file.")
+      .def_static(
+          "from_segments",
+          [](const std::vector<JeffSegment>& segments) {
+            if (segments.empty()) {
+              throw nb::value_error("at least one jeff segment is required");
+            }
+            std::vector<kj::ArrayPtr<const capnp::word>> views;
+            std::vector<kj::Array<capnp::word>> aligned;
+            views.reserve(segments.size());
+            for (const auto& segment : segments) {
+              if (segment.size() % sizeof(capnp::word) != 0U) {
+                throw nb::value_error("jeff segment size must be a multiple of "
+                                      "the Cap'n Proto word size");
+              }
+              const auto size = segment.size() / sizeof(capnp::word);
+              const auto* data =
+                  reinterpret_cast<const capnp::word*>(segment.data());
+              if (reinterpret_cast<uintptr_t>(data) % alignof(capnp::word) !=
+                  0U) {
+                auto words = kj::heapArray<capnp::word>(size);
+                std::memcpy(words.begin(), segment.data(), segment.size());
+                data = words.begin();
+                aligned.push_back(std::move(words));
+              }
+              views.emplace_back(data, size);
+            }
+            std::optional<mlir::JeffProgram> program;
+            auto exception = kj::runCatchingExceptions([&] {
+              capnp::SegmentArrayMessageReader reader(
+                  kj::arrayPtr(views.data(), views.size()));
+              program = mlir::JeffProgram::fromMessage(
+                  reader.getRoot<::jeff::Module>());
+            });
+            KJ_IF_MAYBE (error, exception) {
+              throw std::runtime_error(error->getDescription().cStr());
+            }
+            return takeResult(std::move(program));
+          },
+          "segments"_a.noconvert(),
+          R"pb(Deserialize a ``jeff`` program from Cap'n Proto segments.
+
+Each segment must be a contiguous one-dimensional byte buffer whose size is a
+multiple of eight. Keep the buffers unchanged until this call returns. Aligned
+buffers are borrowed; unaligned buffers are copied into aligned storage. The
+returned program does not retain the buffers.)pb")
       .def_static(
           "from_bytes",
           [](const nb::bytes& bytes) {
@@ -1709,19 +1862,45 @@ further compilation.)pb");
             return takeResult(mlir::JeffProgram::fromBytes(view));
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
+      .def_static("from_file",
+                  &OptionalFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
+                  "path"_a, "Read a ``jeff`` program from a file.")
       .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call,
            "Run the standard ``jeff`` cleanup pipeline in place.")
       .def(
+          "to_segment_views",
+          [](const mlir::JeffProgram& value) {
+            requireValid(value);
+            auto message = std::make_unique<capnp::MallocMessageBuilder>();
+            value.toMessage(*message);
+            const nb::capsule owner(message.get(), [](void* pointer) noexcept {
+              delete static_cast<capnp::MallocMessageBuilder*>(pointer);
+            });
+            auto* builder = message.release();
+            std::vector<JeffSegment> result;
+            for (auto segment : builder->getSegmentsForOutput()) {
+              const auto bytes = segment.asBytes();
+              result.push_back(
+                  JeffSegment(reinterpret_cast<const uint8_t*>(bytes.begin()),
+                              {bytes.size()}, owner));
+            }
+            return result;
+          },
+          R"pb(Serialize this program into read-only Cap'n Proto segment views.
+
+The views keep their message storage alive independently of this program. No
+segment data is copied or flattened.)pb")
+      .def(
           "to_bytes",
           [](const mlir::JeffProgram& value) {
             requireValid(value);
-            const auto bytes = value.toBytes();
-            if (bytes.empty()) {
-              throw std::runtime_error("failed to serialize jeff program");
-            }
-            return nb::bytes(bytes.data(), bytes.size());
+            capnp::MallocMessageBuilder message;
+            value.toMessage(message);
+            const auto serialized = capnp::messageToFlatArray(message);
+            const auto bytes = serialized.asBytes();
+            return nb::bytes(bytes.begin(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")
       .def("write", &BooleanMemberAdapter<&mlir::JeffProgram::write>::call,

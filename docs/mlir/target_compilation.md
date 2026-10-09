@@ -22,7 +22,7 @@ Compile and submit a Bell circuit to the bundled DDSIM device:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import compile_program, submit_program
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 bell_qasm = """OPENQASM 3.1;
 include "stdgates.inc";
@@ -488,7 +488,7 @@ Compile a file and submit it to DDSIM:
 
 ```cpp
 #include "mqt/Compiler/QDMIAdapter.h"
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 

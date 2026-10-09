@@ -26,7 +26,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-    GIT_TAG v0.4.0
+    GIT_TAG 89866ea924214f3961adbd31c4c582593dcac221
     EXCLUDE_FROM_ALL)
   block()
   # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
@@ -38,6 +38,10 @@ if(BUILD_MQT_CORE_MLIR)
   set(CMAKE_UNITY_BUILD OFF)
   FetchContent_MakeAvailable(jeff-mlir)
   endblock()
+  if(MSVC AND TARGET capnp)
+    # shortcut: Cap'n Proto has GCC-only pragmas; remove when guarded upstream.
+    target_compile_options(capnp PRIVATE /wd4068)
+  endif()
 endif()
 
 set(JSON_VERSION
@@ -68,7 +72,7 @@ set(QDMI_MINIMUM_VERSION 1.4.0
         CACHE STRING "Minimum QDMI version")
 set(QDMI_VERSION 1.4.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "691226d44394cdda28036be2045eeba948111986"
+set(QDMI_REV "73899b7f7e74da748d58529e5fb96e78191252fa" # QDMI develop, merged #509
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")

@@ -205,7 +205,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter parameter, const size_t size,
     const void* value) noexcept {
   if (parameter == QDMI_DEVICE_SESSION_PARAMETER_MAX ||
-      IS_INVALID_ARGUMENT(parameter, QDMI_DEVICE_SESSION_PARAMETER)) {
+      QDMI_IS_INVALID_ENUM_VALUE(parameter, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status != Status::ALLOCATED) {
@@ -250,7 +250,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
     return QDMI_ERROR_BADSTATE;
   }
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(property, QDMI_DEVICE_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(property, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name.c_str(), property, size,
@@ -326,7 +326,7 @@ int MQT_SC_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property property,
                                            const size_t size, void* value,
                                            size_t* sizeRet) const {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(property, QDMI_SITE_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(property, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, id, property,
@@ -363,7 +363,7 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
   if ((sites == nullptr) != (numSites == 0) ||
       (params == nullptr) != (numParams == 0) ||
       (value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(property, QDMI_OPERATION_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(property, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const std::span tuple{sites, numSites};
@@ -427,7 +427,17 @@ int MQT_SC_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter parameter, const size_t size,
     const void* value) {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(parameter, QDMI_DEVICE_JOB_PARAMETER)) {
+      QDMI_IS_INVALID_ENUM_VALUE(parameter, QDMI_DEVICE_JOB_PARAMETER)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+int MQT_SC_QDMI_Device_Job_impl_d::setPrograms(
+    const QDMI_Program_Format format, const size_t count,
+    [[maybe_unused]] const size_t* const sizes,
+    [[maybe_unused]] const void* const* const programs) {
+  if (count == 0U || QDMI_IS_INVALID_ENUM_VALUE(format, QDMI_PROGRAM_FORMAT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -437,7 +447,7 @@ int MQT_SC_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property property, const size_t size, void* value,
     size_t* /*sizeRet*/) {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(property, QDMI_DEVICE_JOB_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(property, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -456,11 +466,12 @@ int MQT_SC_QDMI_Device_Job_impl_d::wait(size_t /*timeout*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-int MQT_SC_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
+int MQT_SC_QDMI_Device_Job_impl_d::getResults(const size_t /*programIndex*/,
+                                              const QDMI_Job_Result result,
                                               const size_t size, void* data,
                                               size_t* /*sizeRet*/) {
   if ((data != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
+      QDMI_IS_INVALID_ENUM_VALUE(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -512,6 +523,24 @@ int MQT_SC_QDMI_device_job_set_parameter(
   return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
                         : job->setParameter(parameter, size, value);
 }
+int MQT_SC_QDMI_device_job_set_programs(MQT_SC_QDMI_Device_Job job,
+                                        const QDMI_Program_Format format,
+                                        const size_t count, const size_t* sizes,
+                                        const void* const* programs) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
+                        : job->setPrograms(format, count, sizes, programs);
+}
+int MQT_SC_QDMI_device_job_get_program(MQT_SC_QDMI_Device_Job job,
+                                       size_t /*programIndex*/, size_t /*size*/,
+                                       void* /*data*/, size_t* /*sizeRet*/) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_ERROR_NOTSUPPORTED;
+}
+int MQT_SC_QDMI_device_job_get_program_status(MQT_SC_QDMI_Device_Job job,
+                                              size_t /*programIndex*/,
+                                              QDMI_Job_Status* /*status*/) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_ERROR_NOTSUPPORTED;
+}
+
 int MQT_SC_QDMI_device_job_query_property(
     MQT_SC_QDMI_Device_Job job, const QDMI_Device_Job_Property property,
     const size_t size, void* value, size_t* sizeRet) {
@@ -533,11 +562,13 @@ int MQT_SC_QDMI_device_job_wait(MQT_SC_QDMI_Device_Job job,
   return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : job->wait(timeout);
 }
 int MQT_SC_QDMI_device_job_get_results(MQT_SC_QDMI_Device_Job job,
+                                       const size_t programIndex,
                                        const QDMI_Job_Result result,
                                        const size_t size, void* data,
                                        size_t* sizeRet) {
-  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
-                        : job->getResults(result, size, data, sizeRet);
+  return job == nullptr
+             ? QDMI_ERROR_INVALIDARGUMENT
+             : job->getResults(programIndex, result, size, data, sizeRet);
 }
 int MQT_SC_QDMI_device_session_query_device_property(
     MQT_SC_QDMI_Device_Session session, const QDMI_Device_Property property,

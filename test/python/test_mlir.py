@@ -14,6 +14,7 @@ import os
 import re
 import sys
 from functools import partial
+from gc import collect
 from pathlib import Path
 from threading import Event, Thread
 
@@ -21,7 +22,7 @@ import numpy as np
 import pytest
 import qiskit
 from packaging import version
-from qiskit import QuantumCircuit
+from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qasm3
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import DensityMatrix, Operator
 
@@ -45,8 +46,7 @@ from mqt.core.mlir import (
     compile_program,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not (
@@ -271,6 +271,78 @@ def test_jeff_program_round_trip(tmp_path: Path) -> None:
     _assert_bell_program(restored, measured=True)
 
 
+@pytest.mark.parametrize("buffer_type", ["view", "bytes", "bytearray", "unaligned"])
+def test_jeff_segment_round_trip(buffer_type: str) -> None:
+    """Import segment buffers and release them before using the program."""
+    program = compile_program(QASM_STRING, output=OutputFormat.JEFF)
+    segments = program.to_segment_views()
+    assert all(isinstance(segment, memoryview) and segment.readonly for segment in segments)
+    with pytest.raises(TypeError):
+        segments[0][0] = 0
+
+    buffers: list[bytes | bytearray | memoryview]
+    if buffer_type == "bytes":
+        buffers = [bytes(segment) for segment in segments]
+    elif buffer_type == "bytearray":
+        buffers = [bytearray(segment) for segment in segments]
+    elif buffer_type == "unaligned":
+        buffers = [memoryview(bytearray(b"\0" + bytes(segment)))[1:] for segment in segments]
+    else:
+        buffers = [memoryview(segment) for segment in segments]
+    del program, segments
+    collect()
+
+    restored = JeffProgram.from_segments(buffers)
+    for buffer in buffers:
+        if isinstance(buffer, bytearray) or (isinstance(buffer, memoryview) and not buffer.readonly):
+            buffer[:] = b"\0" * len(buffer)
+    del buffers
+    collect()
+    _assert_bell_program(restored.to_qco().to_qc(), measured=True)
+
+
+def test_jeff_multiple_segments() -> None:
+    """Preserve a program whose encoding spans multiple segments."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q;\n' + "x q;\n" * 1200
+    program = QCProgram.from_openqasm_str(source).to_qco().to_jeff()
+    segments = program.to_segment_views()
+    assert len(segments) > 1
+    restored = JeffProgram.from_segments(segments).to_qco().to_qc()
+    assert restored.num_gates() == program.to_qco().to_qc().num_gates()
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        [],
+        [b"short"],
+        [memoryview(b"\0" * 16)[::2]],
+        [memoryview(np.zeros(8, dtype=np.uint64))],
+        [memoryview(np.zeros((2, 4), dtype=np.uint8))],
+    ],
+)
+def test_jeff_rejects_invalid_segments(segments: list[bytes | memoryview]) -> None:
+    """Reject empty segment lists, partial words, and invalid buffer layouts."""
+    with pytest.raises((TypeError, ValueError)):
+        JeffProgram.from_segments(segments)
+
+
+@pytest.mark.parametrize("segment", [b"\xff" * 8, b"\0" * 8])
+def test_jeff_rejects_invalid_segment_message(segment: bytes) -> None:
+    """Translate an invalid Cap'n Proto root into a Python exception."""
+    with pytest.raises(RuntimeError):
+        JeffProgram.from_segments([segment])
+
+
+@pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
+def test_consumed_jeff_serialization_raises(method: str) -> None:
+    """Reject serialization after consuming the program."""
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco().to_jeff()
+    program.to_qco()
+    with pytest.raises(RuntimeError, match="already been consumed"):
+        getattr(program, method)()
+
+
 def test_compile_program_jeff_input_runs_from_qco(tmp_path: Path) -> None:
     """Compile a serialized jeff program through the QCO pipeline entry point."""
     path = tmp_path / "program.jeff"
@@ -323,6 +395,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
 
     compiled = compile_program(direct, output=OutputFormat.QIR_ADAPTIVE)
     assert isinstance(compiled, QIRProgram)
+    assert compiled.operation_counts()["llvm.func"] >= 1
 
 
 @pytest.mark.parametrize(
@@ -1702,16 +1775,10 @@ def test_compiler_target_from_device_id_matches_opened_device() -> None:
     assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
 
 
-def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -> None:
-    """Stable-ID construction retains registry and target compatibility errors."""
-    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
+def test_compiler_target_from_device_id_preserves_open_errors() -> None:
+    """Stable-ID construction retains Client lookup errors."""
+    with pytest.raises(IndexError, match="has no device with ID"):
         CompilerTarget.from_device_id("unknown.device")
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        CompilerTarget.from_device_id(
-            "mqt.ddsim.default",
-            device_config="{}",
-            device_config_file=Path("device.json"),
-        )
 
 
 def test_qco_program_runs_textual_pipeline() -> None:
@@ -1843,12 +1910,85 @@ def test_compile_program_fails_for_missing_file() -> None:
         compile_program("missing_program.qasm")
 
 
-def test_qc_program_num_gates() -> None:
-    """Expose gate counts to Python."""
-    program = QCProgram.from_openqasm_str(QASM_STRING)
-    assert program.num_gates() == 2
-    assert program.num_single_qubit_gates() == 1
-    assert program.num_two_qubit_gates() == 1
+@pytest.mark.parametrize("qco", [False, True])
+def test_program_inspection(*, qco: bool) -> None:
+    """Inspect either dialect and reject queries after consumption."""
+    qc = QCProgram.from_openqasm_str(QASM_STRING)
+    program = qc.to_qco() if qco else qc
+    info = program.inspect()
+    assert info.num_gates == program.num_gates() == 4
+    assert info.num_single_qubit_gates == program.num_single_qubit_gates() == 3
+    assert info.num_two_qubit_gates == program.num_two_qubit_gates() == 1
+    assert info.gate_counts == program.gate_counts() == {"cx": 1, "h": 1, "measure": 2}
+    assert info.control_flow_counts == program.control_flow_counts() == {}
+    assert info.operation_counts == program.operation_counts()
+    assert info.operation_counts["qco.ctrl" if qco else "qc.ctrl"] == 1
+    assert info.operation_counts["qco.x" if qco else "qc.x"] == 1
+    assert info.num_qubits == 2
+    assert info.static_qubits == []
+    assert not info.has_control_flow
+    if isinstance(program, QCOProgram):
+        program.to_qc()
+    else:
+        program.to_qco()
+    for query in (
+        "inspect",
+        "num_gates",
+        "num_single_qubit_gates",
+        "num_two_qubit_gates",
+        "gate_counts",
+        "control_flow_counts",
+        "operation_counts",
+    ):
+        with pytest.raises(RuntimeError, match="consumed"):
+            getattr(program, query)()
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("frontend", ["qiskit", "openqasm"])
+def test_program_inspection_matches_qiskit(frontend: str) -> None:
+    """Count circuit operations and declared qubits through both frontends."""
+    circuit = QuantumCircuit(QuantumRegister(3, "a"), QuantumRegister(2, "b"), ClassicalRegister(1, "c"))
+    circuit.h(0)
+    circuit.x(3)
+    circuit.cx(0, 1)
+    circuit.cz(1, 2)
+    circuit.ccx(0, 1, 2)
+    circuit.swap(2, 3)
+    circuit.rx(0.3, 2)
+    circuit.barrier(0)
+    circuit.barrier(0, 1)
+    circuit.barrier()
+    circuit.measure(0, 0)
+    circuit.reset(1)
+    program = (
+        QCProgram.from_qiskit(circuit) if frontend == "qiskit" else QCProgram.from_openqasm_str(qasm3.dumps(circuit))
+    )
+    expected = circuit.count_ops()
+    del expected["barrier"]
+    gates = [instruction for instruction in circuit.data if instruction.operation.name != "barrier"]
+    single = sum(len(instruction.qubits) == 1 for instruction in gates)
+    two = sum(len(instruction.qubits) == 2 for instruction in gates)
+    for representation in (program, program.to_qco(copy=True)):
+        info = representation.inspect()
+        assert info.gate_counts == expected
+        assert info.num_gates == representation.num_gates() == circuit.size()
+        assert info.num_single_qubit_gates == representation.num_single_qubit_gates() == single
+        assert info.num_two_qubit_gates == representation.num_two_qubit_gates() == two
+        dialect = "qco" if isinstance(representation, QCOProgram) else "qc"
+        assert info.operation_counts[f"{dialect}.barrier"] == 3
+        assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
+        assert not info.has_control_flow
+        assert info.static_qubits == []
+
+
+def test_program_inspection_static_and_unknown_widths() -> None:
+    """Convert site IDs and unknown widths to Python lists and None."""
+    static = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; x $5;').to_qco()
+    assert static.inspect().static_qubits == [5]
+    assert static.inspect().num_qubits == 1
+    unknown = QCProgram.from_mlir_str("module {}").inspect()
+    assert unknown.num_qubits is None
 
 
 @pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])

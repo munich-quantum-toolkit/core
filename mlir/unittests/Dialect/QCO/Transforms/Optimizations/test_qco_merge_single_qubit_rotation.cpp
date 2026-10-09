@@ -35,6 +35,7 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -654,7 +655,8 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
     module = original->clone();
     auto funcOp = cast<func::FuncOp>(module->getBody()->front());
     if (symbolic) {
-      funcOp.insertArgument(0, Float64Type::get(&context), {}, funcOp.getLoc());
+      ASSERT_TRUE(succeeded(funcOp.insertArgument(0, Float64Type::get(&context),
+                                                  {}, funcOp.getLoc())));
       module->walk(
           [&](RXOp op) { op.getThetaMutable().assign(funcOp.getArgument(0)); });
     }
@@ -854,10 +856,10 @@ TEST_F(MergeSingleQubitRotationGatesTest,
       auto funcOp = module->lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(funcOp);
       if (dynamic) {
-        funcOp.insertArgument(0, Float64Type::get(&context), {},
-                              funcOp.getLoc());
-        funcOp.insertArgument(1, Float64Type::get(&context), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            0, Float64Type::get(&context), {}, funcOp.getLoc())));
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            1, Float64Type::get(&context), {}, funcOp.getLoc())));
         funcOp.walk([&](RXOp op) {
           op.getThetaMutable().assign(funcOp.getArgument(0));
         });
@@ -913,8 +915,8 @@ TEST_F(MergeSingleQubitRotationGatesTest, largePhasesPreserveControlledMatrix) {
         ASSERT_TRUE(module);
         auto funcOp = module->lookupSymbol<func::FuncOp>("main");
         if (dynamic) {
-          funcOp.insertArgument(0, Float64Type::get(&context), {},
-                                funcOp.getLoc());
+          ASSERT_TRUE(succeeded(funcOp.insertArgument(
+              0, Float64Type::get(&context), {}, funcOp.getLoc())));
           module->walk([&](UnitaryOpInterface op) {
             if (isa<POp, U2Op, UOp>(op.getOperation())) {
               Value parameter = op.getParameter(isa<UOp>(op) ? 1U : 0U);
@@ -1034,8 +1036,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
     module->walk([&](UnitaryOpInterface op) {
       if (isa<RXOp, RYOp, RZOp>(op.getOperation())) {
         const auto index = funcOp.getNumArguments();
-        funcOp.insertArgument(index, Float64Type::get(&context), {},
-                              funcOp.getLoc());
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            index, Float64Type::get(&context), {}, funcOp.getLoc())));
         op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
       }
     });
@@ -1115,8 +1117,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
         module->walk([&](UnitaryOpInterface op) {
           if (isa<RXOp, RYOp, RZOp>(op.getOperation())) {
             const auto index = funcOp.getNumArguments();
-            funcOp.insertArgument(index, Float64Type::get(&context), {},
-                                  funcOp.getLoc());
+            ASSERT_TRUE(succeeded(funcOp.insertArgument(
+                index, Float64Type::get(&context), {}, funcOp.getLoc())));
             op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
           }
         });
@@ -1167,6 +1169,61 @@ TEST_F(MergeSingleQubitRotationGatesTest,
           ASSERT_TRUE(succeeded(canonicalizer.run(*after)));
           ASSERT_TRUE(succeeded(verify(*after)));
           ASSERT_TRUE(succeeded(verifyLinearity(*after)));
+          ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest, composesHadamardZChainsDirectly) {
+  for (const auto* basisName : {"u", "zyz", "zxz", "zsxx", "xzx", "xyx", "r"}) {
+    SCOPED_TRACE(basisName);
+    for (const bool phaseGate : {false, true}) {
+      SCOPED_TRACE(phaseGate);
+      for (const unsigned hadamards : {1U, 2U, 3U}) {
+        SCOPED_TRACE(hadamards);
+        module = QCOProgramBuilder::build(&context, [&](auto& b) {
+          auto [control, target] =
+              b.ctrl(b.staticQubit(0), b.staticQubit(1), [&](Value qubit) {
+                if ((hadamards & 1U) != 0) {
+                  qubit = b.h(qubit);
+                }
+                qubit = phaseGate ? b.p(0.2, qubit) : b.rz(0.2, qubit);
+                return (hadamards & 2U) != 0 ? b.h(qubit) : qubit;
+              });
+          return SmallVector<Value>{control, target};
+        });
+        auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+        const auto index = funcOp.getNumArguments();
+        ASSERT_TRUE(succeeded(funcOp.insertArgument(
+            index, Float64Type::get(&context), {}, funcOp.getLoc())));
+        module->walk([&](UnitaryOpInterface op) {
+          if (isa<POp, RZOp>(op.getOperation())) {
+            op.getParameter(0).replaceAllUsesWith(funcOp.getArgument(index));
+          }
+        });
+        OwningOpRef<ModuleOp> original = module->clone();
+        FuseSingleQubitUnitaryRunsOptions options;
+        options.basis = basisName;
+        PassManager pm(&context);
+        pm.addPass(createFuseSingleQubitUnitaryRuns(options));
+        ASSERT_TRUE(succeeded(pm.run(*module)));
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        /// Direct identities avoid the classical cost of quaternion extraction.
+        EXPECT_EQ(countOps<math::Atan2Op>(), 0);
+        EXPECT_EQ(countOps<math::SinOp>(), 0);
+        EXPECT_EQ(countOps<math::CosOp>(), 0);
+        for (const double angle : {0., 0.37, PI, -2 * PI, 37 * PI, 1.e5}) {
+          SCOPED_TRACE(angle);
+          OwningOpRef<ModuleOp> before = original->clone();
+          OwningOpRef<ModuleOp> after = module->clone();
+          bindLeadingArgs(before->lookupSymbol<func::FuncOp>("main"), {angle});
+          bindLeadingArgs(after->lookupSymbol<func::FuncOp>("main"), {angle});
+          PassManager canonicalizer(&context);
+          canonicalizer.addPass(createCanonicalizerPass());
+          ASSERT_TRUE(succeeded(canonicalizer.run(*after)));
           ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
         }
       }
@@ -1235,8 +1292,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
   const auto f64 = Float64Type::get(&context);
-  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
-  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, f64, {}, funcOp.getLoc())));
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(1, f64, {}, funcOp.getLoc())));
 
   SmallVector<RZOp> rzs;
   module->walk([&](RZOp op) { rzs.push_back(op); });
@@ -1312,7 +1369,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
   const auto f64 = Float64Type::get(&context);
-  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, f64, {}, funcOp.getLoc())));
 
   RZOp rzOp = nullptr;
   module->walk([&](RZOp op) { rzOp = op; });
@@ -1376,8 +1433,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto funcOp = cast<func::FuncOp>(module->getBody()->front());
   const auto f64 = Float64Type::get(&context);
-  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
-  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(0, f64, {}, funcOp.getLoc())));
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(1, f64, {}, funcOp.getLoc())));
 
   SmallVector<POp> ps;
   module->walk([&](POp op) { ps.push_back(op); });

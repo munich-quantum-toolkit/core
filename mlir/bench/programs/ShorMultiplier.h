@@ -11,7 +11,6 @@
 #pragma once
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/IR/BuiltinTypes.h"
 
 #include <cstdint>
 
@@ -21,13 +20,12 @@ class QCProgramBuilder;
 
 namespace mqt::bench::detail {
 
-/// Build Shor's controlled in-place multiplier from consecutive phase-table
-/// rows for a multiplier and its modular inverse.
+/// Build Shor's controlled in-place multiplier from scalar unsigned i64
+/// multiplier, modular inverse, and modulus arguments.
 ///
 /// The multiplier is coprime to the modulus, the value is below the modulus,
 /// and the accumulator and work qubit start and end at zero.
 mlir::func::FuncOp createInPlaceMultiplier(mlir::qc::QCProgramBuilder& builder,
-                                           int64_t bits,
-                                           mlir::RankedTensorType anglesType);
+                                           int64_t bits);
 
 } // namespace mqt::bench::detail

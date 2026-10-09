@@ -397,6 +397,23 @@ LLVM data structure such as `SmallVector`, `DenseMap`, or `MapVector` when its
 storage, lookup, ordering, or API behavior provides a concrete benefit. Keep a
 standard-library type when it already expresses the required contract.
 
+Follow [LLVM's `SmallVector` guidance][llvm-smallvector]: use `SmallVector<T>`
+without an explicit inline capacity by default. Retain `SmallVector<T, N>` when
+a known bound or measured storage need justifies `N`, such as synthesis results
+containing one or two qubits. `N` sets inline storage, not a size limit. Keep
+explicit capacities required by LLVM for large element types. Comment only on
+reasons that are not clear from the type, contract, or nearby code. Keep the
+rationale near the owning type or declaration; do not repeat it at each use or
+restate how inline capacity works. Consider `std::array` for exactly fixed-size
+data; do not change unrelated APIs merely to use it.
+
+For parameters that borrow a sequence, use `ArrayRef<T>` or a suitable MLIR
+range when only reading elements, `MutableArrayRef<T>` when changing elements in
+place, and `SmallVectorImpl<T>&` when resizing or appending. These interfaces do
+not depend on inline capacity. A function that transfers ownership may use a
+concrete container type. Audit unexplained capacity choices individually; do not
+replace explicit capacities in bulk or claim performance gains without evidence.
+
 When code in the `mlir` namespace or one of its nested namespaces uses an LLVM
 name that `mlir/Support/LLVM.h` imports, include that header and use the
 unqualified name, such as `SmallVector`, `StringRef`, or `function_ref`. Do not
@@ -549,3 +566,4 @@ platform and are unsuitable regression assertions.
 [mlir-developer-guide]: https://mlir.llvm.org/getting_started/DeveloperGuide/
 [mlir-faq]: https://mlir.llvm.org/getting_started/Faq/
 [mlir-testing]: https://mlir.llvm.org/getting_started/TestingGuide/
+[llvm-smallvector]: https://llvm.org/docs/ProgrammersManual.html#llvm-adt-smallvector-h

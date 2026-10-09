@@ -12,8 +12,7 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
+#include "qdmi/QDMI.hpp"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"
@@ -552,9 +551,9 @@ compilerTargetFromDeviceId(const std::string_view deviceId) {
 
 llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
   try {
-    return qdmi::Driver::get().registeredDeviceIds();
+    return qdmi::Session{}.getDeviceIds();
   } catch (...) {
-    return qdmiError("Failed to discover registered QDMI devices",
+    return qdmiError("Failed to discover QDMI devices",
                      std::current_exception());
   }
 }
@@ -909,12 +908,13 @@ submitPayload(const qdmi::Device& device, const CompiledProgram& program,
               const std::optional<qdmi::CustomJobParameter>& custom5) {
   try {
     if (qdmi::isBinaryProgramFormat(program.programFormat())) {
-      return device.submitJob(std::as_bytes(std::span(program.payload())),
-                              program.programFormat(),
+      const auto payload = std::as_bytes(std::span(program.payload()));
+      return device.submitJob(payload, program.programFormat(),
                               static_cast<size_t>(numShots), custom1, custom2,
                               custom3, custom4, custom5);
     }
-    return device.submitJob(program.payload(), program.programFormat(),
+    const auto& payload = program.payload();
+    return device.submitJob(payload, program.programFormat(),
                             static_cast<size_t>(numShots), custom1, custom2,
                             custom3, custom4, custom5);
   } catch (...) {

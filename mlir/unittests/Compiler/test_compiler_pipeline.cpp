@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Edge.hpp"
 #include "dd/Package.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
@@ -71,8 +72,10 @@
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/APFloat.h"
@@ -1957,6 +1960,7 @@ TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
 TEST_F(CompilerPipelineTest, RejectsJeffModuleWithoutFunctions) {
   capnp::MallocMessageBuilder message;
   message.initRoot<::jeff::Module>().setVersionMinor(3);
+  EXPECT_FALSE(JeffProgram::fromMessage(message.getRoot<::jeff::Module>()));
   auto words = capnp::messageToFlatArray(message);
   EXPECT_FALSE(JeffProgram::fromBytes(
       std::as_bytes(std::span(words.begin(), words.size()))));
@@ -2003,6 +2007,40 @@ x q;
   EXPECT_FALSE(
       JeffProgram::fromFile(path.parent_path() / "missing" / "input.jeff"));
   EXPECT_FALSE(jeff.write(path.parent_path() / "missing" / "output.jeff"));
+}
+
+TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughSegmentedMessages) {
+  auto qco = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %r = qco.h %q : !qco.qubit -> !qco.qubit
+      qco.sink %r : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(qco);
+  auto program = std::move(*qco).intoJeff();
+  ASSERT_TRUE(program);
+  const auto bytes = program->toBytes();
+  std::optional<JeffProgram> fromRoot;
+  std::optional<JeffProgram> fromSegments;
+  {
+    capnp::MallocMessageBuilder message(1,
+                                        capnp::AllocationStrategy::FIXED_SIZE);
+    program->toMessage(message);
+    const auto segments = message.getSegmentsForOutput();
+    ASSERT_GT(segments.size(), 1U);
+    fromRoot = JeffProgram::fromMessage(message.getRoot<::jeff::Module>());
+    capnp::SegmentArrayMessageReader reader(segments);
+    fromSegments = JeffProgram::fromMessage(reader.getRoot<::jeff::Module>());
+  }
+  ASSERT_TRUE(fromRoot);
+  ASSERT_TRUE(fromSegments);
+  EXPECT_EQ(fromRoot->toBytes(), bytes);
+  EXPECT_EQ(fromSegments->toBytes(), bytes);
+  auto roundTrip = std::move(*fromSegments).intoQCO();
+  ASSERT_TRUE(roundTrip);
+  EXPECT_TRUE(succeeded(verify(roundTrip->module())));
 }
 
 // Test: QCO and QIR typed programs retain their respective semantics
@@ -2117,6 +2155,49 @@ TEST_F(CompilerPipelineTest,
       (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
 }
 
+namespace {
+class ToggleFunctionResultPass
+    : public PassWrapper<ToggleFunctionResultPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ToggleFunctionResultPass)
+
+protected:
+  void runOnOperation() override {
+    auto function = *getOperation().getOps<func::FuncOp>().begin();
+    Builder builder(&getContext());
+    function.setType(function.getNumResults() == 0
+                         ? builder.getFunctionType({}, {builder.getI1Type()})
+                         : builder.getFunctionType({}, {}));
+  }
+};
+} // namespace
+
+TEST_F(CompilerPipelineTest, PipelineVerificationFollowsAssertionMode) {
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  for (const bool repair : {false, true}) {
+    SCOPED_TRACE(repair);
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "module { func.func @main() { return } }", context.get());
+    ASSERT_TRUE(moduleOp);
+    const auto result = runWithPassManager(
+        *moduleOp,
+        [&](OpPassManager& pm) {
+          // One pass invalidates the return type; a second restores it.
+          pm.addPass(std::make_unique<ToggleFunctionResultPass>());
+          if (repair) {
+            pm.addPass(std::make_unique<ToggleFunctionResultPass>());
+          }
+        },
+        "invalid pipeline IR");
+#ifdef NDEBUG
+    EXPECT_EQ(succeeded(result), repair);
+#else
+    EXPECT_TRUE(failed(result));
+#endif
+  }
+}
+
 TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   const TargetEnvironment environment(makeSparseUCZTarget(true),
                                       makePayloadSpecification());
@@ -2224,7 +2305,7 @@ cx q[0], q[3]; cx q[1], q[3];
   const auto expectedDD = qco::buildFunctionality(
       mlir::mqt::getEntryPoint(program->module()), *package);
   ASSERT_TRUE(succeeded(expectedDD));
-  const auto expected = expectedDD->getMatrix(4);
+  const auto expected = dd::getMatrix(*expectedDD, 4);
   package->decRef(*expectedDD);
 
   ASSERT_TRUE(program->compileForTarget(
@@ -2239,7 +2320,7 @@ cx q[0], q[3]; cx q[1], q[3];
   const auto actualDD = qco::buildFunctionality(
       mlir::mqt::getEntryPoint(program->module()), *package);
   ASSERT_TRUE(succeeded(actualDD));
-  const auto actual = actualDD->getMatrix(4);
+  const auto actual = dd::getMatrix(*actualDD, 4);
   package->decRef(*actualDD);
   const auto physicalIndex = [](size_t basis,
                                 const std::vector<int64_t>& sites) {
@@ -5152,74 +5233,5 @@ INSTANTIATE_TEST_SUITE_P(
             nullptr,
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXOnIndividualQubits),
             true, "reuse-qubits,mqt-qco-default"}));
-
-// Test: gate counting respects modifiers and skips barriers.
-TEST_F(CompilerPipelineTest, QCProgramCountGates) {
-  const std::string qasm = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-h q[0];
-cx q[0], q[1];
-barrier q[0];
-swap q[0], q[1];
-ccx q[0], q[1], q[2];
-ctrl @ swap q[0], q[1], q[2];
-inv @ cx q[0], q[1];
-barrier q[0], q[1];
-)";
-  auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->numGates(), 6);
-  EXPECT_EQ(qc->numSingleQubitGates(), 1);
-  EXPECT_EQ(qc->numTwoQubitGates(), 3);
-}
-
-TEST_F(CompilerPipelineTest, QCProgramCountGatesWithoutEntryPoint) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @helper(%qubit: !qc.qubit) {
-      qc.h %qubit : !qc.qubit
-      return
-    }
-  })mlir";
-  auto qc = QCProgram::fromMLIRString(source);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->numGates(), 0);
-  EXPECT_EQ(qc->numSingleQubitGates(), 0);
-  EXPECT_EQ(qc->numTwoQubitGates(), 0);
-}
-
-// Test: gate counting includes each structured control-flow region
-// once.
-TEST_F(CompilerPipelineTest, QCProgramCountGatesInStructuredControlFlow) {
-  const std::string qasm = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-bit condition = measure q[0];
-int selector = 1;
-if (condition) {
-  for int i in [0:2] {
-    x q[i];
-  }
-} else {
-  cx q[0], q[1];
-}
-while (condition) {
-  ctrl @ x q[0], q[1];
-}
-switch (selector) {
-  case 1 {
-    swap q[0], q[1];
-  }
-  default {
-    z q[2];
-  }
-}
-)";
-  auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->numGates(), 5);
-  EXPECT_EQ(qc->numSingleQubitGates(), 2);
-  EXPECT_EQ(qc->numTwoQubitGates(), 3);
-}
 
 } // namespace mqt::test::compiler

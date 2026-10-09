@@ -61,9 +61,9 @@ std::string sha256Hex(const std::string_view input) {
   for (const auto character : input) {
     message.emplace_back(static_cast<uint8_t>(character));
   }
-  message.emplace_back(0x80U);
+  message.emplace_back(uint8_t{0x80});
   while (message.size() % 64U != 56U) {
-    message.emplace_back(0U);
+    message.emplace_back(uint8_t{0});
   }
   const auto bitLength = static_cast<uint64_t>(input.size()) * 8U;
   for (auto shift = 56; shift >= 0; shift -= 8) {

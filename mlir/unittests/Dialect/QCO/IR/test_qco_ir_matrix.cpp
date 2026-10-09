@@ -36,6 +36,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -79,15 +80,15 @@ using namespace qco;
 
 static void makePowExponentDynamic(ModuleOp module) {
   auto funcOp = cast<func::FuncOp>(module.getBody()->front());
-  funcOp.insertArgument(0, Float64Type::get(module.getContext()), {},
-                        funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(
+      0, Float64Type::get(module.getContext()), {}, funcOp.getLoc())));
   firstPowOp(module)->setOperand(0, funcOp.getArgument(0));
 }
 
 static void makePowBodyParameterDynamic(ModuleOp module) {
   auto funcOp = cast<func::FuncOp>(module.getBody()->front());
-  funcOp.insertArgument(0, Float64Type::get(module.getContext()), {},
-                        funcOp.getLoc());
+  ASSERT_TRUE(succeeded(funcOp.insertArgument(
+      0, Float64Type::get(module.getContext()), {}, funcOp.getLoc())));
   firstPowOp(module).getBodyUnitary(0)->setOperand(1, funcOp.getArgument(0));
 }
 

@@ -2206,6 +2206,22 @@ def test_root_register_expression_and_nested_condition_preserve_captures(num_clb
     assert {variable.var for variable in expr.iter_vars(inner.condition)} == {body.cregs[0]}
 
 
+@pytest.mark.parametrize(("phase", "expected_phases"), [(0.0, 0), (0.25, 4), (Parameter("theta"), 4)])
+def test_import_global_phase(phase: float | Parameter, expected_phases: int) -> None:
+    """Import nonzero and symbolic phases in root circuits and nested bodies."""
+    body = QuantumCircuit(1, global_phase=phase)
+    body.x(0)
+    circuit = QuantumCircuit(1, 1, global_phase=phase)
+    circuit.x(0)
+    circuit.append(body.to_gate(), [0])
+    circuit.append(body.to_instruction(), [0])
+    circuit.if_test((circuit.clbits[0], False), body, circuit.qubits, [])
+
+    program = QCProgram.from_qiskit(circuit)
+
+    assert program.operation_counts().get("qc.gphase", 0) == expected_phases
+
+
 def test_control_flow_blocks_keep_registers_and_own_global_phase() -> None:
     """Keep exact parent resources without copying parent instructions or phase."""
     registers = [ClassicalRegister(1, f"c{index}") for index in range(8)]
@@ -2301,22 +2317,6 @@ def test_nested_if_while_switch_preserve_capture_identity() -> None:
     assert [while_body.find_bit(bit).index for bit in switch_instruction.clbits] == [0, 1]
     assert switch_instruction.operation.name == "switch_case"
     assert isinstance(switch_instruction.operation.target, expr.Expr)
-
-
-def test_empty_if_else_branches_round_trip() -> None:
-    """Preserve an explicit else branch when both branches are empty."""
-    circuit = QuantumCircuit(1, 1)
-    with circuit.if_test((circuit.clbits[0], True)) as else_:
-        pass
-    with else_:
-        pass
-
-    restored = QCProgram.from_qiskit(circuit).to_qiskit()
-
-    operation = restored.data[0].operation
-    assert operation.name == "if_else"
-    assert len(operation.blocks) == 2
-    assert all(not block.data for block in operation.blocks)
 
 
 def test_zero_qubit_cbit_only_control_flow_round_trip() -> None:

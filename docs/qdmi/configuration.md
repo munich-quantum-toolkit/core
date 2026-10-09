@@ -1,9 +1,21 @@
-# QDMI device configuration
+# Configuring the builtin MQT Core QDMI driver
 
-MQT Core discovers QDMI device definitions from versioned JSON configuration.
-Discovery only parses definitions. When the QDMI driver initializes a client
-session, it opens the configured native libraries. The stable-ID API opens only
-the requested device.
+The configuration format on this page belongs to the
+**builtin MQT Core QDMI driver**. Other QDMI drivers may use different
+configuration and discovery mechanisms. MQT Core's C++ and Python `Session` and
+`open_device` APIs use the standard QDMI Client Interface with any compatible
+driver library; they do not require this manifest format or the MQT Core
+driver's private extensions.
+
+The builtin driver discovers device manifests: versioned JSON files that map
+stable IDs to device libraries and session settings. The driver uses a manifest
+to find a device when an application opens it by ID. Discovery only parses
+metadata. When a session initializes, the driver opens the configured native
+libraries. `builtin_driver.open_device` opens only the requested device.
+
+This lets applications list installed devices without loading device libraries
+or contacting services. They can then open one device by stable ID. Distinct IDs
+can select independently configured instances of the same library.
 
 :::{warning}
 QDMI configuration is a native-code loading trust boundary. Use configuration
@@ -43,12 +55,17 @@ The following `qdmi.json` registers one device:
 }
 ```
 
+The driver returns the configured `id` through `QDMI_DEVICE_PROPERTY_ID`,
+overriding any device-reported default. Child-device IDs remain optional; the
+driver forwards a reported ID or `QDMI_ERROR_NOTSUPPORTED` without generating
+child IDs.
+
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through
 `custom5`.
 
-`device-config` selects exactly one provider configuration source:
+`device-config` selects exactly one device configuration source:
 
 ```json
 {"device-config": {"inline": {"schema-version": 1}}}
@@ -63,10 +80,10 @@ or:
 The inline value must be a JSON object. A relative file path is resolved against
 the registry file that declares it. The complete source is one merge field:
 changing from `inline` to `file` at a higher-precedence layer replaces the
-inherited inline JSON. The Driver adapts inline JSON to QDMI v1 CUSTOM1 and a
-file path to CUSTOM2 when opening the native session. Consequently,
+inherited inline JSON. The MQT Core driver adapts inline JSON to QDMI v1 CUSTOM1
+and a file path to CUSTOM2 when opening the native session. Consequently,
 `device-config` cannot be combined with raw `custom1` or `custom2`; CUSTOM3
-through CUSTOM5 remain available to providers.
+through CUSTOM5 remain available to device implementations.
 
 Relative library and authentication-file paths are resolved against the file
 that declared them. For `MQT_CORE_QDMI_CONFIG_JSON`, they resolve against the
@@ -81,7 +98,8 @@ included in Driver warnings.
 
 Definitions are merged field by field by ID, from lowest to highest precedence:
 
-1. generated `*.qdmi.json` fragments packaged beside the MQT Core Driver;
+1. generated `*.qdmi.json` fragments packaged beside the MQT Core Driver and
+   trusted manifests staged by installed packages;
 2. the system `qdmi.json`;
 3. the user or XDG `qdmi.json`;
 4. the nearest project `qdmi.json`;
@@ -101,69 +119,73 @@ a device that an administrator disabled.
 `MQT_CORE_QDMI_CONFIG_FILE` replaces the system, user, and project levels while
 retaining packaged built-ins.
 
+## Installed device manifests
+
+Python distributions advertise the module containing their device manifests:
+
+```toml
+[project.entry-points]
+"mqt.core.qdmi.manifests".vendor = "vendor.qdmi"
+```
+
+The entry-point name identifies the device implementation. Its value is a module
+path, not a function to import. MQT Core reads the distribution's installed file
+list and registers the `*.qdmi.json` files below that module. Discovery imports
+no device modules and loads no device libraries. Invalid entries emit a warning
+and are skipped. Installed manifests form the lowest-precedence configuration
+layer.
+
+Applications can register a manifest explicitly when a missing or invalid file
+must stop startup:
+
+```python
+from mqt.core.qdmi import builtin_driver
+
+builtin_driver.add_manifest("vendor/device/example.qdmi.json")
+```
+
+Register manifests before listing or opening devices with the MQT Core QDMI
+driver. Registering the same file again is harmless; conflicting IDs in distinct
+manifests are errors. Configuration becomes immutable when the driver first
+reads the catalogue, either for enumeration or for opening a device.
+
+`builtin_driver` always uses the builtin MQT Core QDMI driver, independently of
+`MQT_CORE_QDMI_DRIVER`. Standard `Session` and `open_device` calls honor that
+environment variable.
+
 ## Using configured devices
 
-When the QDMI driver initializes a client session, it opens the configured
-definitions. A failure to load one definition does not hide the remaining
-devices. Stable-ID registration does not initialize device libraries.
+List enabled stable IDs without loading device libraries or contacting devices:
 
 ```python
-from mqt.core.qdmi.driver import open_device, registered_device_ids
+from mqt.core.qdmi import builtin_driver
 
-for device_id in registered_device_ids():
-    print(open_device(device_id).name())
+print(builtin_driver.registered_device_ids())
 ```
+
+The list includes configured devices that are unavailable or need credentials.
+Use `builtin_driver.open_device(device_id, ...)` to open only the selected
+device. Core supplies `mqt.ddsim.default` for local execution. Other configured
+IDs may refer to simulator or compilation-only devices, including the models
+described in {doc}`sc_device`.
+
+With the MQT Core driver, standard `Session` enumeration initializes configured
+devices and skips those that fail to open. Another driver may present a
+different device list and configuration behavior.
 
 Set `MQT_CORE_QDMI_CONFIG_FILE` or `MQT_CORE_QDMI_CONFIG_JSON` before the first
-driver call. Applications can also register a definition without loading its
-library and open it later by stable ID:
-
-```python
-from mqt.core.qdmi.driver import DeviceDefinition, open_device, register_device
-
-register_device(
-    DeviceDefinition(
-        "example.device",
-        "/path/to/libexample-device.so",
-        "EXAMPLE",
-        base_url="https://device.example",
-        device_config_file="/path/to/device.json",
-    )
-)
-device = open_device("example.device")
-```
-
-{py:class}`~mqt.core.qdmi.driver.DeviceDefinition` and
-{py:func}`~mqt.core.qdmi.driver.open_device` also accept
-`device_config="<json>"` for inline configuration. `device_config` and
-`device_config_file` are mutually exclusive.
-
-Every {py:func}`~mqt.core.qdmi.driver.open_device` call creates a fresh device
-session while preserving the registered defaults and stable ID. The returned
-{py:class}`~mqt.core.qdmi.Device` and any
+driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh
+driver session and finds the stable ID in the session’s device list. The
+returned {py:class}`~mqt.core.qdmi.Device` and any
 {py:class}`~mqt.core.qdmi.Device.Site`,
 {py:class}`~mqt.core.qdmi.Device.Operation`, or {py:class}`~mqt.core.qdmi.Job`
-wrapper derived from it keeps that fresh device session alive. The session is
-released after the last such wrapper is destroyed.
+wrapper derived from it keeps that driver session alive. The session is released
+after the last such wrapper is destroyed.
 
-Code paths that may be imported more than once can use
-{py:func}`~mqt.core.qdmi.driver.register_device_if_absent`. It returns whether
-the definition was inserted and ignores an existing or explicitly disabled
-stable ID; malformed definitions still raise an error.
-
-Use {py:func}`~mqt.core.qdmi.driver.registered_device_ids` to inspect the
-enabled stable IDs in deterministic registration order. This includes runtime
-registrations without loading native device libraries or exposing their paths,
-prefixes, or session configuration.
-
-The equivalent C++ registration operation is
-{cpp-api:func}`qdmi::Driver::registerDevice`. Duplicate IDs are rejected unless
-`replace` is true, and an opened definition cannot be replaced.
-{cpp-api:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
-enumeration, and {cpp-api:func}`qdmi::Driver::open` returns the cached device.
-{cpp-api:func}`qdmi::Session::openDevice` returns a fresh device session and
-does not add it to the QDMI client catalog. Runtime registrations and explicit
-opens are not added to that catalog.
+The equivalent C++ API is {cpp-api:class}`qdmi::Session`. `getDevices()`
+enumerates the devices of one authenticated session.
+{cpp-api:func}`qdmi::Session::openDevice` creates a fresh session and opens one
+enumerated ID.
 
 Multiple definitions may refer to the same library and prefix. MQT Core reuses
 the initialized library while creating a fresh QDMI device session, with its own
@@ -172,9 +194,9 @@ session parameters, for every definition.
 ## Selecting a device from a Slurm license environment
 
 MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
-licenses for cluster-wide admission. The license name must equal one registered
-QDMI device ID. Register one definition per separately licensed machine. Each
-job must request one license. For example:
+licenses for cluster-wide admission. The license name must equal one stable ID
+reported by the selected QDMI driver. Each job must request one license. For
+example:
 
 ```bash
 sbatch --licenses=mqt.ddsim.default:1 simulation.sh
@@ -190,46 +212,33 @@ device = slurm.open_device_from_license()
 
 The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
 `qdmi/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
-`<registered-device-id>` or `<registered-device-id>:1`. They reject remote,
-compound, and non-unit license values.
+`<device-id>` or `<device-id>:1`. They reject remote, compound, and non-unit
+license values.
 
 The adapter opens a fresh device session from the persistent definition. It does
-not replace configuration or inject credentials. Each provider defines its own
-credential sources. The adapter accepts QDMI device status `IDLE` and `BUSY`. It
-rejects all other device states.
+not replace configuration or inject credentials. Each device implementation
+defines its own credential sources. The adapter accepts QDMI device status
+`IDLE` and `BUSY`. It rejects all other device states.
 
 `SLURM_JOB_LICENSES` is process-mutable. The adapter uses this value only for
 device selection. It does not verify that Slurm allocated the license. It does
 not authenticate the caller or authorize access to the device. Provider
 credentials must authorize remote devices. The operating system must isolate a
 local device when access requires enforcement. A caller can also bypass this
-adapter and call {py:func}`~mqt.core.qdmi.driver.open_device` with a stable
-device ID. A different Slurm lookup would therefore not make MQT Core an access
-control boundary.
+adapter and call {py:func}`~mqt.core.qdmi.open_device` with a stable device ID.
+A different Slurm lookup would therefore not make MQT Core an access control
+boundary.
 
 A cluster can configure more than one license for a device. For example,
 `mqt.ddsim.default:2` permits two independent jobs to request one license each.
-The count is a Slurm admission limit. It is not an access permission, a provider
-availability check, or a provider queue length.
+The count is a Slurm admission limit. It is not an access permission, a device
+availability check, or a device queue length.
 
-## Relocatable packages and static consumers
+## Installed C++ applications
 
-Built-in targets generate manifests beside their runtime libraries in both build
-and install trees. Library paths in those fragments contain only the target
-filename, so moving an installed tree or Python wheel preserves discovery.
-Automatic discovery searches relative to the MQT Core Driver, not every library
-loaded by the process. An application using a separately installed device
-implementation therefore copies its manifest beside the Driver or registers its
-definition by stable ID.
-
-A fully static executable has no portable shared-module location. Place the
-fragments beside the executable, point `MQT_CORE_QDMI_CONFIG_FILE` at a complete
-configuration, or use {cpp-api:func}`qdmi::Driver::registerDevice` and
-{cpp-api:func}`qdmi::Driver::open`. No install prefix is compiled into the
-manifests.
-
-An installed MQT Core CMake package provides a helper that colocates selected
-device libraries and manifests with an executable:
+The MQT Core Python distribution also supplies a CMake package. Use
+`find_package(mqt-core)` to link its C++ QDMI library and copy the driver and
+selected devices beside your application:
 
 ```cmake
 find_package(mqt-core CONFIG REQUIRED)
@@ -238,26 +247,28 @@ target_link_libraries(my-application PRIVATE MQT::CoreQDMI)
 mqt_copy_qdmi_runtime(my-application MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device)
 ```
 
-Inside an MQT Core build, omitting the device list copies every device
-registered through `mqt_configure_qdmi_device`. Installed consumers select the
-exported device targets they need, as shown above.
+The helper copies shared libraries, device manifests, and configuration files.
+It also copies DLL dependencies on Windows and dependencies shipped beside
+installed libraries on Linux and macOS. Static libraries are linked into the
+application and need no copy. The application uses its build RPATH during the
+build. This also works with a source installation of MQT Core.
 
-An external device implementation does not need MQT Core as a build dependency.
-It can export its stable ID and prefix as target metadata:
+Manifests contain library filenames relative to their own directory. Keep each
+manifest beside its device library when moving an installation. The MQT Core
+QDMI driver discovers manifests beside itself; an explicit
+`MQT_CORE_QDMI_CONFIG_FILE` can instead select devices installed elsewhere.
+
+Inside a Core build, omitting the device list copies all devices registered
+through `mqt_configure_qdmi_device`. An installed consumer selects the exported
+targets it needs, as above.
+
+An external device implementation needs no Core build dependency. QDMI's CMake
+helper exports the stable ID and symbol prefix as target metadata:
 
 ```cmake
-set_target_properties(
-  example-device
-  PROPERTIES QDMI_DEVICE_ID "example.device"
-             QDMI_DEVICE_PREFIX "EXAMPLE")
-set_property(
-  TARGET example-device
-  APPEND
-  PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX)
+configure_qdmi_device_target(TARGET example-device ID example.device PREFIX EXAMPLE)
 ```
 
-When `mqt_copy_qdmi_runtime` receives that built or imported target, it
-generates the relocatable manifest while copying the device. Device targets may
-also declare `RUNTIME_FILES` through `mqt_configure_qdmi_device`; their exported
-`QDMI_RUNTIME_FILES` basenames are copied beside the provider as part of the
-same operation.
+For such a target, `mqt_copy_qdmi_runtime` generates the manifest. Targets with
+an existing manifest can export `QDMI_MANIFEST_NAME` instead. Additional files
+listed in `QDMI_RUNTIME_FILES` are copied from the device library's directory.

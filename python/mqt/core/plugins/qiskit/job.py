@@ -17,7 +17,7 @@ import datetime
 from collections import Counter
 from copy import deepcopy
 from numbers import Integral
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
@@ -25,12 +25,11 @@ from qiskit.result.models import ExperimentResult
 
 from mqt.core.qdmi import Job as QDMIJobHandle
 
-from ..qdmi_batch import Batch, BatchEntry, JobAttempt
+from ..qdmi_batch import Batch, BatchEntry
 from .exceptions import JobExecutionError, JobSubmissionError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import Self
 
     from qiskit.circuit import QuantumCircuit
 
@@ -65,13 +64,11 @@ class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
-    aggregating results from multiple QDMI jobs when needed. Use
-    :meth:`from_circuits` to prepare an unsubmitted batch. Wrapping already
-    submitted jobs supports collection and cancellation, without replacements.
+    using native program lists where supported and independent jobs otherwise.
+    Construction prepares an unsubmitted batch.
 
     Args:
         backend: The backend this job runs on.
-        jobs: Submitted QDMI jobs in circuit order, or None to prepare a new batch.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
         memory: Whether to collect genuine ordered shots.
@@ -83,7 +80,6 @@ class QDMIJob(JobV1):
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: Sequence[QDMIJobHandle] | None,
         circuits: Sequence[QuantumCircuit],
         *,
         shots: int,
@@ -91,13 +87,13 @@ class QDMIJob(JobV1):
         max_retries: int = 0,
         job_parameters: QDMIJobParameters | None = None,
     ) -> None:
-        """Initialize without querying remote job IDs.
+        """Prepare all circuits without submitting or querying remote jobs.
 
         Raises:
-            ValueError: If circuits are empty or the supplied jobs differ in length.
+            ValueError: If circuits are empty.
         """
-        if not circuits or (jobs is not None and len(jobs) != len(circuits)):
-            msg = "QDMIJob requires at least one circuit and one submitted job per circuit when jobs are supplied."
+        if not circuits:
+            msg = "QDMIJob requires at least one circuit."
             raise ValueError(msg)
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
@@ -114,47 +110,22 @@ class QDMIJob(JobV1):
         self._memory = memory
         self._job_parameters = job_parameters or {}
         self._result: Result | None = None
-        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] | None = None
-        if jobs is None:
-            formats = backend.device.supported_program_formats()
-            self._programs = tuple(
-                backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
-                for circuit in circuits
-            )
+        formats = backend.device.supported_program_formats()
+        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] = tuple(
+            backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
+            for circuit in circuits
+        )
         self._batch: Batch[ExperimentResult] = Batch(
-            [
-                BatchEntry(i, attempts=(JobAttempt(handle=jobs[i]),) if jobs is not None else ())
-                for i in range(len(circuits))
-            ],
-            submit=self._submit_entry if self._programs is not None else None,
-            decode=lambda index, handle: self._collect_result(handle, self._headers[index]),
+            [BatchEntry(i) for i in range(len(circuits))],
+            submit=self._submit_entry,
+            decode=lambda index, handle, program_index: self._collect_result(
+                handle, self._headers[index], program_index
+            ),
+            submit_programs=self._submit_programs,
+            group_by=[program_format for _, program_format in self._programs],
             submission_error=lambda msg: JobSubmissionError(msg, job=self),
             execution_error=lambda msg: JobExecutionError(msg, job=self),
             max_retries=max_retries,
-        )
-
-    @classmethod
-    def from_circuits(
-        cls,
-        backend: QDMIBackend,
-        circuits: Sequence[QuantumCircuit],
-        *,
-        shots: int,
-        memory: bool,
-        max_retries: int = 0,
-        job_parameters: QDMIJobParameters | None = None,
-    ) -> Self:
-        """Prepare an unsubmitted batch from bound, backend-ready circuits.
-
-        All circuits are serialized before this method returns. Use
-        :meth:`~mqt.core.plugins.qiskit.backend.QDMIBackend.run` for normal execution, including circuit validation
-        and parameter binding.
-
-        Returns:
-            A batch ready for :meth:`submit`, with programs retained for recovery.
-        """
-        return cls(
-            backend, None, circuits, shots=shots, memory=memory, max_retries=max_retries, job_parameters=job_parameters
         )
 
     @property
@@ -163,10 +134,16 @@ class QDMIJob(JobV1):
         return self._batch.entries
 
     def _submit_entry(self, index: int) -> QDMIJobHandle:
-        assert self._programs is not None
         program, program_format = self._programs[index]
-        return self._backend.device.submit_job(
-            program=program, program_format=program_format, num_shots=self._shots, **self._job_parameters
+        return self._backend.device.submit_job(program, program_format, self._shots, **self._job_parameters)
+
+    def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
+        return self._backend.device.try_submit_job(
+            # A format fixes the payload type for the whole group.
+            cast("Sequence[str] | Sequence[bytes]", [self._programs[index][0] for index in indices]),
+            self._programs[indices[0]][1],
+            self._shots,
+            **self._job_parameters,
         )
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
@@ -247,7 +224,7 @@ class QDMIJob(JobV1):
             raise JobExecutionError(msg, job=self) from exc
         return self._result
 
-    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any]) -> ExperimentResult:
+    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any], program_index: int = 0) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
@@ -259,7 +236,7 @@ class QDMIJob(JobV1):
         width = header["memory_slots"]
         if self._memory:
             try:
-                shots = job.get_shots()
+                shots = job.get_shots(program_index)
             except Exception as exc:
                 exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
                 raise
@@ -271,7 +248,7 @@ class QDMIJob(JobV1):
         elif not width:
             data = {"counts": {}}
         else:
-            counts = job.get_counts()
+            counts = job.get_counts(program_index)
             if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
                 msg = "Invalid QDMI histogram: counts must be nonnegative integers."
                 raise JobError(msg)
@@ -313,15 +290,13 @@ class QDMIJob(JobV1):
         }
 
         statuses = []
-        for entry in self.entries:
+        for entry, qdmi_status in zip(self.entries, self._batch.statuses(), strict=True):
             if not entry.attempts:
                 statuses.append(JobStatus.INITIALIZING)
                 continue
-            handle = entry.attempts[-1].handle
-            if handle is None:
+            if qdmi_status is None:
                 statuses.append(JobStatus.ERROR)
                 continue
-            qdmi_status = handle.check()
             if qdmi_status not in status_map:
                 msg = f"Unknown job status: {qdmi_status}"
                 raise ValueError(msg)
