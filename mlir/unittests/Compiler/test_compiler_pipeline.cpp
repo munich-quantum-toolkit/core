@@ -71,8 +71,10 @@
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/APFloat.h"
@@ -2115,6 +2117,49 @@ TEST_F(CompilerPipelineTest,
   ASSERT_TRUE(reproducer);
   EXPECT_TRUE(
       (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
+}
+
+namespace {
+class ToggleFunctionResultPass
+    : public PassWrapper<ToggleFunctionResultPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ToggleFunctionResultPass)
+
+protected:
+  void runOnOperation() override {
+    auto function = *getOperation().getOps<func::FuncOp>().begin();
+    Builder builder(&getContext());
+    function.setType(function.getNumResults() == 0
+                         ? builder.getFunctionType({}, {builder.getI1Type()})
+                         : builder.getFunctionType({}, {}));
+  }
+};
+} // namespace
+
+TEST_F(CompilerPipelineTest, PipelineVerificationFollowsAssertionMode) {
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  for (const bool repair : {false, true}) {
+    SCOPED_TRACE(repair);
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "module { func.func @main() { return } }", context.get());
+    ASSERT_TRUE(moduleOp);
+    const auto result = runWithPassManager(
+        *moduleOp,
+        [&](OpPassManager& pm) {
+          // One pass invalidates the return type; a second restores it.
+          pm.addPass(std::make_unique<ToggleFunctionResultPass>());
+          if (repair) {
+            pm.addPass(std::make_unique<ToggleFunctionResultPass>());
+          }
+        },
+        "invalid pipeline IR");
+#ifdef NDEBUG
+    EXPECT_EQ(succeeded(result), repair);
+#else
+    EXPECT_TRUE(failed(result));
+#endif
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
