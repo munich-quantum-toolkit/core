@@ -92,7 +92,7 @@ bitcode = base.to_bitcode()
 assert isinstance(bitcode, bytes)
 binary_job = device.submit_job(bitcode, ProgramFormat.QIR_BASE_MODULE, num_shots=256, custom1=7)
 assert binary_job.wait()
-assert binary_job.program_bytes == bitcode
+assert binary_job.get_program(bytes) == bitcode
 assert binary_job.get_counts() == counts
 print(f"Bitcode: {len(bitcode)} bytes")
 print(binary_job.get_counts())
@@ -278,23 +278,23 @@ The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR
 Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
 String (LLVM assembly).
 
-QDMI C++ applications submit textual programs through the
-`Device::submitJob(const std::string&, ...)` overload, which includes the
-terminating null byte required by QDMI. Binary module payloads use the
-`Device::submitJob(std::span<const std::byte>, ...)` overload instead. It
-preserves embedded null bytes and submits exactly the span's size without
-appending a terminator. `Job::getProgramBytes()` retrieves such a payload
+QDMI C++ applications pass a `std::string` to `Device::submitJob` for a text
+program, or a `std::span<const std::byte>` for a binary module. The same method
+accepts a span of text or binary programs for a multi-program job. Text includes
+the required terminator once; binary payloads preserve their exact bytes,
+including embedded nulls. `Job::getProgramBytes()` retrieves such a payload
 without interpreting its format or removing terminal null bytes; the existing
 `Job::getProgram()` remains the textual, null-terminated accessor. It rejects
 known binary and non-text formats based on their QDMI format identifier, even if
 their payload happens to end in a null byte.
 
-The Python API follows the same distinction: pass `str` to `Device.submit_job`
-for a textual program and `bytes` for an exact binary payload.
-`Job.program_bytes` always returns the unmodified payload, while `Job.program`
-expects a null-terminated UTF-8 text payload and rejects known binary or
-non-text formats. The `num_shots` argument is optional for device-defined
-formats that encode their repetition count in the program payload.
+The Python API follows the same distinction: pass `str` or `bytes` to
+`Device.submit_job` for one program, or a sequence of either type for multiple
+programs. `Job.get_program(bytes)` returns the exact payload. By default,
+`Job.get_program()` decodes a null-terminated text payload and rejects known
+binary or non-text formats. The `num_shots` argument is optional for
+device-defined formats that encode their repetition count in the program
+payload.
 
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
@@ -349,7 +349,3 @@ records are suppressed, and unsupported operations produce a failed QDMI job.
 Both profiles preserve global phase and logical wire order, including SWAPs.
 LLVM target triples must match the host architecture and operating system
 because the JIT executes in process.
-
-The generic submission APIs reject the QDMI batch-job format. Batch jobs contain
-job handles rather than serialized program bytes and require a separate typed
-API.

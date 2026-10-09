@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <new>
 #include <numbers>
 #include <optional>
@@ -529,7 +530,6 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
     case QDMI_PROGRAM_FORMAT_CUSTOM2:
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
@@ -552,7 +552,6 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
       QDMI_PROGRAM_FORMAT_QPY,
       QDMI_PROGRAM_FORMAT_IQMJSON,
-      QDMI_PROGRAM_FORMAT_BATCHJOB,
       QDMI_PROGRAM_FORMAT_CUSTOM1,
       QDMI_PROGRAM_FORMAT_CUSTOM2,
       QDMI_PROGRAM_FORMAT_CUSTOM3,
@@ -924,24 +923,32 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
+TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
+  const std::array<std::string, 2> programs{
+      "OPENQASM 3.0; qubit[1] q; bit[1] c; c[0] = measure q[0];",
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; bit[1] c; x "
+      "q[0]; c[0] = measure q[0];",
+  };
+  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
+
+  ASSERT_TRUE(job.wait());
+  EXPECT_EQ(job.getNumPrograms(), programs.size());
+  EXPECT_EQ(job.getProgram(0), programs[0]);
+  EXPECT_EQ(job.getProgram(1), programs[1]);
+  EXPECT_EQ(job.getProgramStatus(0), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.getProgramStatus(1), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(job.getCounts(0), (std::map<std::string, size_t>{{"0", 4}}));
+  EXPECT_EQ(job.getCounts(1), (std::map<std::string, size_t>{{"1", 4}}));
+  EXPECT_NE(job.getResults(QDMI_JOB_RESULT_SHOTS, 0),
+            job.getResults(QDMI_JOB_RESULT_SHOTS, 1));
+  EXPECT_THROW(job.getProgramStatus(2), std::out_of_range);
+}
+
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
 
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
-  // A batch job's program is a list of job handles, which the byte-span API
-  // cannot express, so MQT Core states that it does not support them.
-  constexpr std::array bytes{std::byte{0}};
-
-  EXPECT_THROW(std::ignore =
-                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
-                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
                std::invalid_argument);
 }
 
@@ -952,26 +959,24 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     try {
       switch (which) {
       case 1:
-        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
-                                       10, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
         break;
       case 2:
-        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
-                                       10, std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, custom);
         break;
       case 3:
-        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
-                                       10, std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, custom);
         break;
       case 4:
-        std::ignore =
-            device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                             std::nullopt, std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
         break;
       case 5:
-        std::ignore = device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
-                                       10, std::nullopt, std::nullopt,
-                                       std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                         custom);
         break;
       default:
         throw std::invalid_argument("Invalid 'which' value");
@@ -983,12 +988,10 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     }
   };
   submitWithCustoms(7, 1);
-  EXPECT_NO_THROW(std::ignore =
-                      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
-                                       10, std::nullopt, false));
-  EXPECT_THROW(std::ignore =
-                   device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                    std::nullopt, true),
+  EXPECT_NO_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                   std::nullopt, false));
+  EXPECT_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                std::nullopt, true),
                std::runtime_error);
   EXPECT_THROW(submitWithCustoms(std::string("custom"), 2),
                std::invalid_argument);

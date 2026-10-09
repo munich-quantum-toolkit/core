@@ -79,6 +79,24 @@ and `open_device` APIs use only the standard Client Interface. The driver's C++
 implementation is internal; only the Client Interface and these three C
 extensions are exported from its shared library.
 
+## Multi-program jobs
+
+`Device.submit_job` accepts one program or an ordered program list with one
+format and common job parameters. `num_shots` applies to each program. Text
+programs carry one terminating null byte; binary programs retain their exact
+bytes. `try_submit_job` returns `None` only when the device reports that it
+cannot accept the format or program count before submission. Device
+unavailability and submission errors propagate, since retrying an uncertain
+submission could duplicate execution.
+
+Use `job.num_programs` and the optional `program_index` argument on result
+methods to retrieve results in input order. Use `job.get_program(index)` for
+text or `job.get_program(bytes, index)` for exact bytes; a retrieved historical
+job may not expose it. `job.get_program_status(index)` reports one outcome when
+supported, or `None` otherwise. A successful program's results remain available
+if another program fails or is cancelled. Cancelling uses the shared native job
+handle.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device

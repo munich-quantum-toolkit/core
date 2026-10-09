@@ -873,7 +873,7 @@ class QDMIBackend(BackendV2):
 
             prepared_circuits.append(bound_circuit)
 
-        job = QDMIJob.from_circuits(
+        job = QDMIJob(
             self,
             prepared_circuits,
             shots=shots,

@@ -86,22 +86,22 @@ class Job:
     def cancel(self) -> None:
         """Cancels the job."""
 
-    def get_shots(self) -> list[str]:
+    def get_shots(self, program_index: int = 0) -> list[str]:
         """Returns the raw shot results from the job."""
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self) -> list[complex]:
+    def get_dense_statevector(self, program_index: int = 0) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
 
-    def get_dense_probabilities(self) -> list[float]:
+    def get_dense_probabilities(self, program_index: int = 0) -> list[float]:
         """Returns the dense probabilities from the job (typically only available from simulator devices)."""
 
-    def get_sparse_statevector(self) -> dict[str, complex]:
+    def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:
         """Returns the sparse statevector from the job (typically only available from simulator devices)."""
 
-    def get_sparse_probabilities(self) -> dict[str, float]:
+    def get_sparse_probabilities(self, program_index: int = 0) -> dict[str, float]:
         """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
 
     @overload
@@ -154,13 +154,23 @@ class Job:
     def program_format(self) -> ProgramFormat:
         """The format of the submitted program."""
 
-    @property
-    def program(self) -> str:
-        """The submitted program."""
+    @overload
+    def get_program(self, program_index: int = 0) -> str:
+        """Return one submitted text program by input index."""
+
+    @overload
+    def get_program(self, value_type: type[bytes], program_index: int = 0) -> bytes:
+        """Return one submitted program's exact bytes by input index."""
 
     @property
-    def program_bytes(self) -> bytes:
-        """The exact bytes of the submitted program."""
+    def num_programs(self) -> int:
+        """The number of programs in input order."""
+
+    def get_program_status(self, program_index: int = 0) -> Job.Status | None:
+        """Return one program outcome, or None when unsupported."""
+
+    def get_results(self, result: int, program_index: int = 0) -> bytes:
+        """Returns an indexed result as exact bytes."""
 
     @property
     def num_shots(self) -> int:
@@ -208,8 +218,6 @@ class ProgramFormat(enum.Enum):
     QPY = 7
 
     IQM_JSON = 8
-
-    BATCH_JOB = 9
 
     CUSTOM1 = 999999995
 
@@ -353,10 +361,9 @@ class Device:
         when the custom slot is unsupported.
         """
 
-    @overload
     def submit_job(
         self,
-        program: str,
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -366,12 +373,11 @@ class Device:
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
     ) -> Job:
-        """Submits a text job to the device."""
+        """Submit one program or an ordered list with common parameters."""
 
-    @overload
-    def submit_job(
+    def try_submit_job(
         self,
-        program: bytes,
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -380,8 +386,8 @@ class Device:
         custom3: str | bool | float | bytes | None = None,
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
-    ) -> Job:
-        """Submits an exact byte payload to the device."""
+    ) -> Job | None:
+        """Return no job only when the device rejects the program before submission."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

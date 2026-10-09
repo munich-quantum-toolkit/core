@@ -497,15 +497,10 @@ c = measure q;
     # The program format should be preserved
     assert job.program_format == ProgramFormat.QASM3
     # The program should be preserved
-    assert job.program == qasm3_program
-    assert job.program_bytes == qasm3_program.encode() + b"\0"
+    assert job.get_program() == qasm3_program
+    assert job.get_program(bytes) == qasm3_program.encode() + b"\0"
     # Num shots should match request
     assert job.num_shots == 100
-
-
-def test_program_format_includes_batch_job() -> None:
-    """Expose every standard QDMI program format."""
-    assert ProgramFormat.BATCH_JOB.value == 9
 
 
 def test_is_binary_program_format() -> None:
@@ -518,7 +513,7 @@ def test_is_binary_program_format() -> None:
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
-    with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
+    with pytest.raises(ValueError, match=r"(?:Setting programs: Invalid argument|embedded null bytes)"):
         ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
 
 
@@ -526,12 +521,6 @@ def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
     """Require exact byte submission for known binary formats."""
     with pytest.raises(ValueError, match="require exact-byte submission"):
         ddsim_device.submit_job("not bitcode", ProgramFormat.QIR_BASE_MODULE, num_shots=1)
-
-
-def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
-    """State that MQT Core does not support batch jobs."""
-    with pytest.raises(ValueError, match="does not support batch jobs"):
-        ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
@@ -607,9 +596,9 @@ c = measure q;
     assert ProgramFormat.QIR_BASE_MODULE in ddsim_device.supported_program_formats()
 
     job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
-    assert job.program_bytes == program_bytes
+    assert job.get_program(bytes) == program_bytes
     with pytest.raises(ValueError, match="binary program"):
-        _ = job.program
+        _ = job.get_program()
     job.wait()
 
     assert job.check() == Job.Status.DONE
