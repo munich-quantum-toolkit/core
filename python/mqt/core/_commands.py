@@ -27,6 +27,13 @@ def benchmark() -> NoReturn:
     run_tool("mqt-core-bench")
 
 
+def qdmi_check() -> NoReturn:
+    """Probe whether a QDMI device is operational."""
+    if sys.platform == "win32":
+        sys.exit("The QDMI availability check requires Linux or macOS.")
+    run_tool("mqt-core-qdmi-check")
+
+
 def run_tool(name: str) -> NoReturn:
     """Replace this process with a bundled native tool."""
     suffix = ".exe" if sys.platform == "win32" else ""

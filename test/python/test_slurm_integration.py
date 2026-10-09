@@ -44,6 +44,25 @@ def load_runner() -> ModuleType:
 runner = load_runner()
 
 
+def test_runner_accepts_scaled_nodes() -> None:
+    """Run the same cluster with more compute nodes without a new Compose file."""
+    assert runner.parse_arguments(("--nodes", "3")).nodes == 3
+
+
+def test_prepare_keeps_private_key_and_preserves_existing_cluster(tmp_path: Path) -> None:
+    """Create usable shared files without overwriting a cluster's authentication."""
+    runtime = tmp_path / "cluster"
+    command = ("sh", str(runner.CLUSTER / "prepare.sh"), str(runtime))
+    runner.run(command)
+    key = runtime / "munge.key"
+    assert len(key.read_bytes()) == 1024
+    assert key.stat().st_mode & 0o777 == 0o600
+    assert (runtime / "slurm.conf").stat().st_mode & 0o777 == 0o644
+    original = key.read_bytes()
+    assert runner.run(command, check=False).returncode != 0
+    assert key.read_bytes() == original
+
+
 def test_timeout_kills_children_holding_output_pipes(tmp_path: Path) -> None:
     """A Compose-like grandchild must not defeat the command deadline."""
     marker = tmp_path / "started"
@@ -111,7 +130,7 @@ def test_preflight_does_not_touch_runtime(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_diagnostic_failure_still_tears_down(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An unavailable diagnostic service must not orphan a failed cluster."""
-    (tmp_path / "core.whl").touch()
+    (tmp_path / "mqt_core-0.whl").touch()
     monkeypatch.setattr(runner, "DIST", tmp_path)
     monkeypatch.setattr(runner, "RUNTIME", tmp_path / "runtime")
     monkeypatch.setattr(runner, "run", lambda *args: subprocess.CompletedProcess(args, 0, "2", ""))
@@ -150,3 +169,54 @@ def test_invocations_use_distinct_projects_and_artifacts(monkeypatch: pytest.Mon
     assert first.RUNTIME != second.RUNTIME
     assert calls[0][0] != calls[1][0]
     assert calls[0][1] != calls[1][1]
+
+
+def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
+    """Keep workload arguments separate from fixture and reference options."""
+    setup = tmp_path / "setup.sh"
+    setup.touch()
+    options = runner.parse_arguments((
+        "--workload",
+        str(tmp_path),
+        "--setup-script",
+        "setup.sh",
+        "--device-license",
+        "provider.device",
+        "--reference",
+        "PROVIDER_PROFILE=profile=value",
+        "--",
+        "python3",
+        "probe.py",
+        "--label",
+        "one argument",
+    ))
+    assert options.workload == tmp_path
+    assert options.reference == ["PROVIDER_PROFILE=profile=value"]
+    assert options.command == ["python3", "probe.py", "--label", "one argument"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--device-license", "provider.device"),
+        ("--", "python3", "probe.py"),
+        ("--device-license", "provider.device:2", "--", "/bin/true"),
+        ("--reference", "PROVIDER_PROFILE"),
+        ("--reference", "PROVIDER_PROFILE=two words"),
+    ],
+)
+def test_invalid_provider_inputs_fail_before_docker(arguments: tuple[str, ...]) -> None:
+    """Reject incomplete or unrepresentable fixture inputs at the CLI."""
+    with pytest.raises(SystemExit) as error:
+        runner.parse_arguments(arguments)
+    assert error.value.code == 2
+
+
+def test_setup_script_must_stay_inside_workload(tmp_path: Path) -> None:
+    """Do not accept a setup script that the workload build context cannot supply."""
+    workload = tmp_path / "workload"
+    workload.mkdir()
+    (tmp_path / "outside.sh").touch()
+    with pytest.raises(SystemExit) as error:
+        runner.parse_arguments(("--workload", str(workload), "--setup-script", "../outside.sh"))
+    assert error.value.code == 2

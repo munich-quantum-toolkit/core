@@ -215,10 +215,10 @@ The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
 `<device-id>` or `<device-id>:1`. They reject remote, compound, and non-unit
 license values.
 
-The adapter opens a fresh device session from the persistent definition. It does
-not replace configuration or inject credentials. Each device implementation
-defines its own credential sources. The adapter accepts QDMI device status
-`IDLE` and `BUSY`. It rejects all other device states.
+The adapter creates a fresh driver session and selects the device with the
+licensed ID. It does not replace configuration or inject credentials. Each
+device implementation defines its own credential sources. The adapter accepts
+QDMI device status `IDLE` and `BUSY`. It rejects all other device states.
 
 `SLURM_JOB_LICENSES` is process-mutable. The adapter uses this value only for
 device selection. It does not verify that Slurm allocated the license. It does

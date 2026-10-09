@@ -13,6 +13,8 @@ on:
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
+      - "spank/**"
+      - "docker/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -28,6 +30,8 @@ on:
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
+      - "spank/**"
+      - "docker/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -44,7 +48,7 @@ permissions:
 
 jobs:
   slurm:
-    name: Slurm 25.11 and QDMI devices
+    name: Slurm 25.11, QDMI devices, and SPANK
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
@@ -78,10 +82,19 @@ jobs:
         with:
           version: v0.16.0
 
+      - name: Lint the standalone SPANK component
+        run: |
+          sudo apt-get update
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm-install.sh"
+          sudo bash "$RUNNER_TEMP/llvm-install.sh" 23
+          sudo apt-get install --no-install-recommends -y clang-tidy-23 libslurm-dev
+          cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          clang-tidy-23 -p build/spank spank/spank.cpp --header-filter='(^|/)spank/' --warnings-as-errors='*'
+
       - name: Build the MQT Core wheel
         timeout-minutes: 15
-        run: uv build --wheel --out-dir test/slurm/dist -Ccmake.define.DEPLOY=ON
+        run: uv build --wheel --out-dir dist -Ccmake.define.DEPLOY=ON
 
       - name: Test Slurm admission and QDMI execution
         timeout-minutes: 15
-        run: uv run --no-project --python 3.14 test/slurm/run_integration.py
+        run: uv run --no-project --python 3.14 test/slurm/run_integration.py --nodes 3

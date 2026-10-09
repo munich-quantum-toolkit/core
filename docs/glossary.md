@@ -152,6 +152,12 @@ C++ QDMI library
   the QDMI Client Interface. The driver manages device libraries and their
   configuration; the C++ library is independent of that implementation.
 
+SPANK
+  **Preferred term:** SPANK. **Accepted expansion:** Slurm Plug-in Architecture
+  for Node and job Kontrol. Slurm's plugin interface for job launch hooks.
+  MQT Core's optional SPANK module supplies license-specific defaults for job
+  environments.
+
 QIR
 Quantum Intermediate Representation
   **Preferred term:** Quantum Intermediate Representation. **Accepted

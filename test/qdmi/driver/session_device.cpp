@@ -12,6 +12,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -291,6 +293,16 @@ TEST_SESSION_QDMI_device_session_init(QDMI_Device_Session session) {
   }
   if (session->initialized) {
     return QDMI_ERROR_BADSTATE;
+  }
+  if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) ==
+      "hang-exit") {
+    if (std::atexit(
+            [] { std::this_thread::sleep_for(std::chrono::hours(1)); }) != 0) {
+      return QDMI_ERROR_FATAL;
+    }
+  }
+  if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) == "hang") {
+    std::this_thread::sleep_for(std::chrono::hours(1));
   }
   session->initialized = true;
   return QDMI_SUCCESS;

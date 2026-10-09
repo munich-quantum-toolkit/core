@@ -122,6 +122,29 @@ builtin MQT Core QDMI driver can load external device libraries through
 [QDMI device configuration](configuration.md). C++ test builds require both
 bundled devices.
 
+## Probe device availability
+
+The availability command probes whether a configured QDMI device is operational.
+It opens the device, accepts an `IDLE` or `BUSY` status, and exits without
+submitting a quantum job:
+
+```console
+mqt-core-qdmi-check --device mqt.sc.default --timeout 10
+```
+
+Run it in the workload environment with the required credentials. For an
+external device, set `MQT_CORE_QDMI_CONFIG_FILE` to its catalogue; the native
+command uses [QDMI configuration](configuration.md), independently of Python's
+entry-point discovery and in-process registrations.
+
+The timeout covers device initialization, the status query, and worker exit. It
+defaults to 30 seconds and accepts whole seconds from 1 to 3600. Exit codes are
+0 for availability, 1 for failure, 2 for invalid arguments, and 124 for a
+timeout. Success is silent. Device output is suppressed to protect credentials.
+
+The command is included in Linux and macOS builds and wheels. Availability is a
+snapshot; it does not authorize access or reserve device capacity.
+
 ## Python Bindings
 
 The C++ QDMI library adds owning wrappers for driver sessions, devices, sites,

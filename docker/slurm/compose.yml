@@ -1,0 +1,58 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+x-cluster: &cluster
+  privileged: true
+  cgroup: host
+  tmpfs:
+    - /run
+    - /run/lock
+  volumes:
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+    - ${MQT_CORE_SLURM_WORKLOAD:-../..}:/workload:ro
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}:/runtime
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/jobs:/jobs
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/slurm.conf:/etc/slurm/slurm.conf:ro
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/plugstack.conf:/etc/slurm/plugstack.conf:ro
+    - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
+
+x-healthcheck: &healthcheck
+  interval: 2s
+  timeout: 2s
+  retries: 30
+  start_period: 5s
+
+services:
+  controller:
+    <<: *cluster
+    build:
+      context: .
+      additional_contexts:
+        core: ${MQT_CORE_SLURM_CORE:-../..}
+        workload: ${MQT_CORE_SLURM_WORKLOAD:-../..}
+        dist: ${MQT_CORE_SLURM_DIST:-../../dist}
+      args:
+        SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
+    hostname: controller
+    command: [/usr/local/sbin/mqt-slurm-start, controller]
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [CMD, systemctl, is-active, --quiet, munge.service, slurmctld.service]
+
+  node:
+    <<: *cluster
+    image: ${COMPOSE_PROJECT_NAME:-slurm}-controller
+    pull_policy: never
+    depends_on:
+      controller:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, systemctl, is-active, --quiet, munge.service, slurmd.service]

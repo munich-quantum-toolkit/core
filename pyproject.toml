@@ -114,6 +114,7 @@ PyPI = "https://pypi.org/project/mqt-core/"
 mqt-cc = "mqt.core._commands:compiler"
 mqt-core-bench = "mqt.core._commands:benchmark"
 mqt-core-cli = "mqt.core.__main__:main"
+mqt-core-qdmi-check = "mqt.core._commands:qdmi_check"
 
 [project.entry-points."pennylane.plugins"]
 "mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
@@ -202,6 +203,7 @@ version = ">=1.10"
 
 include = [ "python/mqt/core/_version.py" ]
 exclude = [
+  "spank/**",
   "**/.github",
   "**/doc",
   "**/docs",
@@ -376,6 +378,7 @@ PC170 = "We do not use rST files anymore"
 [tool.check-sdist]
 sdist-only = [ "python/mqt/core/_version.py" ]
 git-only = [
+  "spank/*",
   "docs/*",
   "test/*",
   "mlir/*",
