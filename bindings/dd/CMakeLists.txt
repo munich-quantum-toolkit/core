@@ -18,7 +18,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
     INSTALL_DIR
     .
     LINK_LIBS
-    MQT::CoreDD)
+    MQT::CoreDDPython)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")

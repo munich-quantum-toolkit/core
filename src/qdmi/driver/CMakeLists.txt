@@ -18,15 +18,11 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 
-  target_sources(
-    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
-                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/DriverExtension.hpp)
-
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreQDMICommon
-    PRIVATE qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>
-            ${CMAKE_DL_LIBS})
+    PUBLIC qdmi::qdmi
+    PRIVATE MQT::CoreQDMICommon qdmi::qdmi_project_warnings
+            $<BUILD_INTERFACE:nlohmann_json::nlohmann_json> ${CMAKE_DL_LIBS})
 
   configure_qdmi_exports(
     TARGET

@@ -44,7 +44,8 @@ function(add_mqt_core_library name)
 
   target_compile_features(${name} PUBLIC cxx_std_20)
 
-  target_link_libraries(${name} PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
+  target_link_libraries(${name}
+                        PRIVATE "$<BUILD_LOCAL_INTERFACE:MQT::ProjectWarnings;MQT::ProjectOptions>")
 
   if(ARG_HIDDEN_VISIBILITY)
     set_target_properties(

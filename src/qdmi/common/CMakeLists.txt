@@ -9,7 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-common)
 
 if(NOT TARGET ${TARGET_NAME})
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon FORCE_STATIC HIDDEN_VISIBILITY)
 
   target_sources(${TARGET_NAME} PRIVATE Common.cpp DeviceConfiguration.cpp)
 
@@ -27,7 +27,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE qdmi::qdmi_project_warnings ${CMAKE_DL_LIBS})
+    PRIVATE $<BUILD_LOCAL_INTERFACE:qdmi::qdmi_project_warnings> ${CMAKE_DL_LIBS})
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()

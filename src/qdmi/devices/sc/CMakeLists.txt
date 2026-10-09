@@ -10,7 +10,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-config)
 
 if(NOT TARGET ${TARGET_NAME})
 
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig FORCE_STATIC HIDDEN_VISIBILITY)
 
   target_sources(${TARGET_NAME} PRIVATE Configuration.cpp)
 
@@ -43,16 +43,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
 
-  target_sources(
-    ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           ${CMAKE_CURRENT_BINARY_DIR}/include
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp
-           ${QDMI_HDRS})
+  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
+                                       ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
 
