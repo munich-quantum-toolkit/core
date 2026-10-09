@@ -92,9 +92,10 @@ protected:
   JeffRoundTripTest() {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect,
-                    cbit::CBitDialect, func::FuncDialect, jeff::JeffDialect,
-                    memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
+    registry
+        .insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
+                func::FuncDialect, mlir::jeff::JeffDialect,
+                memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -419,7 +420,7 @@ TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
 TEST(JeffRoundTripRegressionTest, PreservesPhaseOfControlledFunctionCall) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, func::FuncDialect,
-                  qco::QCODialect, jeff::JeffDialect>();
+                  qco::QCODialect, mlir::jeff::JeffDialect>();
   MLIRContext context(registry);
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     func.func private @phased_x(%q: !qco.qubit) -> !qco.qubit
@@ -453,15 +454,15 @@ TEST(JeffRoundTripRegressionTest, PreservesPhaseOfControlledFunctionCall) {
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
-  auto phases = llvm::to_vector(main.getOps<jeff::R1Op>());
+  auto phases = llvm::to_vector(main.getOps<mlir::jeff::R1Op>());
   ASSERT_EQ(phases.size(), 1);
   auto angle =
-      phases.front().getRotation().getDefiningOp<jeff::FloatConst64Op>();
+      phases.front().getRotation().getDefiningOp<mlir::jeff::FloatConst64Op>();
   ASSERT_TRUE(angle);
   EXPECT_DOUBLE_EQ(angle.getVal().convertToDouble(), 0.25);
   EXPECT_EQ(phases.front().getNumCtrls(), 0);
   EXPECT_FALSE(phases.front().getIsAdjoint());
-  auto gates = llvm::to_vector(main.getOps<jeff::XOp>());
+  auto gates = llvm::to_vector(main.getOps<mlir::jeff::XOp>());
   ASSERT_EQ(gates.size(), 1);
   EXPECT_EQ(gates.front().getNumCtrls(), 1);
   EXPECT_TRUE(main.getOps<func::CallOp>().empty());
@@ -472,8 +473,8 @@ TEST(JeffRoundTripRegressionTest, PreservesPhaseOfControlledFunctionCall) {
 
 TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
   DialectRegistry registry;
-  registry.insert<mlir::mqt::MQTDialect, func::FuncDialect, jeff::JeffDialect,
-                  qco::QCODialect>();
+  registry.insert<mlir::mqt::MQTDialect, func::FuncDialect,
+                  mlir::jeff::JeffDialect, qco::QCODialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   OpBuilder builder(&context);
@@ -516,7 +517,7 @@ TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
 TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
-                  func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  func::FuncDialect, mlir::jeff::JeffDialect, qco::QCODialect,
                   scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -549,8 +550,8 @@ TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
 TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
-                  func::FuncDialect, jeff::JeffDialect, memref::MemRefDialect,
-                  qco::QCODialect, scf::SCFDialect>();
+                  func::FuncDialect, mlir::jeff::JeffDialect,
+                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto program = ::mqt::test::buildMLIRProgram(
@@ -563,7 +564,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
       cast<func::ReturnOp>(jeffMain.getBody().front().getTerminator());
   ASSERT_EQ(jeffReturn.getNumOperands(), 1);
   EXPECT_TRUE(
-      jeffReturn.getOperand(0).getDefiningOp<jeff::IntArraySetIndexOp>());
+      jeffReturn.getOperand(0).getDefiningOp<mlir::jeff::IntArraySetIndexOp>());
 
   ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
   auto main = program->lookupSymbol<func::FuncOp>("main");
@@ -580,7 +581,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
 TEST(JeffRoundTripRegressionTest, ConvertsJeffBitArraysDirectlyToCBit) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
-                  func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  func::FuncDialect, mlir::jeff::JeffDialect, qco::QCODialect,
                   scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -618,7 +619,7 @@ TEST(JeffRoundTripRegressionTest, ConvertsJeffBitArraysDirectlyToCBit) {
 TEST(JeffRoundTripRegressionTest, ConvertsBitArrayCreationAndLength) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
-                      func::FuncDialect, jeff::JeffDialect>();
+                      func::FuncDialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main() -> tensor<3xi1> {
@@ -656,7 +657,7 @@ TEST(JeffRoundTripRegressionTest, ConvertsBitArrayCreationAndLength) {
 
 TEST(JeffRoundTripRegressionTest, RejectsInvalidBitArrayCreation) {
   MLIRContext context;
-  context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
+  context.loadDialect<func::FuncDialect, mlir::jeff::JeffDialect>();
   for (const auto& [expression, expectedDiagnostic] : {
            std::pair{"jeff.int_array_const1([true, false]) : tensor<3xi1>",
                      "element count must match"},
@@ -703,7 +704,7 @@ TEST(JeffRoundTripRegressionTest, RejectsInvalidBitArrayCreation) {
 
 TEST(JeffRoundTripRegressionTest, KeepsWiderIntegerArraysAsTensors) {
   MLIRContext context;
-  context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
+  context.loadDialect<func::FuncDialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main() -> tensor<3xi8> {
@@ -731,7 +732,7 @@ TEST(JeffRoundTripRegressionTest, KeepsWiderIntegerArraysAsTensors) {
 TEST(JeffRoundTripRegressionTest, PreservesLiveOldArrayValues) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
-                      func::FuncDialect, jeff::JeffDialect>();
+                      func::FuncDialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
       %q = qco.alloc : !qco.qubit
@@ -748,7 +749,7 @@ TEST(JeffRoundTripRegressionTest, PreservesLiveOldArrayValues) {
   ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
   auto main = program->lookupSymbol<func::FuncOp>("main");
   auto returned = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  auto original = *main.getOps<jeff::IntArrayZeroOp>().begin();
+  auto original = *main.getOps<mlir::jeff::IntArrayZeroOp>().begin();
   auto updated = returned.getOperand(0);
   returned->setOperands({original.getResult(), updated});
   main.setFunctionType(
@@ -768,7 +769,8 @@ TEST(JeffRoundTripRegressionTest,
      ReadsAndWritesRegistersInsideConvertedRegions) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
-                      scf::SCFDialect, func::FuncDialect, jeff::JeffDialect>();
+                      scf::SCFDialect, func::FuncDialect,
+                      mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
       %q = qco.alloc : !qco.qubit
@@ -807,8 +809,8 @@ TEST(JeffRoundTripRegressionTest,
 TEST(JeffRoundTripRegressionTest, PreservesConstantBitArrayInLoop) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
-                      func::FuncDialect, jeff::JeffDialect, scf::SCFDialect,
-                      tensor::TensorDialect>();
+                      func::FuncDialect, mlir::jeff::JeffDialect,
+                      scf::SCFDialect, tensor::TensorDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {
       %q = qco.alloc : !qco.qubit
@@ -847,7 +849,7 @@ TEST(JeffRoundTripRegressionTest, PreservesConstantBitArrayInLoop) {
 TEST(JeffRoundTripRegressionTest, CapturesHelperArgumentsInLoop) {
   MLIRContext context;
   context.loadDialect<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                      jeff::JeffDialect, qco::QCODialect, scf::SCFDialect,
+                      mlir::jeff::JeffDialect, qco::QCODialect, scf::SCFDialect,
                       tensor::TensorDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(module {
     func.func private @rotate(%angles: tensor<2xf64>, %q: !qco.qubit) -> !qco.qubit {
@@ -896,7 +898,7 @@ TEST(JeffRoundTripRegressionTest, CapturesHelperArgumentsInLoop) {
 TEST(JeffRoundTripRegressionTest, ConvertsSignedIndexComparison) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
-                      jeff::JeffDialect>();
+                      mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main(%lhs: index, %rhs: index) -> i1 attributes {mqt.entry_point} {
       %q = qco.alloc : !qco.qubit
@@ -914,7 +916,7 @@ TEST(JeffRoundTripRegressionTest, ConvertsSignedIndexComparison) {
 TEST(JeffRoundTripRegressionTest, PreservesPromotedSignedMinMax) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
-                      func::FuncDialect, jeff::JeffDialect>();
+                      func::FuncDialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main() -> (!cbit.reg<3>, !cbit.reg<3>) attributes {mqt.entry_point} {
       %q = qco.alloc : !qco.qubit
@@ -949,7 +951,8 @@ TEST(JeffRoundTripRegressionTest, PreservesPromotedSignedMinMax) {
 TEST(JeffRoundTripRegressionTest, PreservesIntegerWidthsInIndexCasts) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
-                      func::FuncDialect, scf::SCFDialect, jeff::JeffDialect>();
+                      func::FuncDialect, scf::SCFDialect,
+                      mlir::jeff::JeffDialect>();
   for (const auto* cast : {"index_cast", "index_castui"}) {
     const auto source = std::string(R"mlir(module {
       func.func @main() -> !cbit.reg<64> attributes {mqt.entry_point} {
@@ -987,8 +990,8 @@ TEST(JeffRoundTripRegressionTest, PreservesIntegerWidthsInIndexCasts) {
 
 TEST(JeffRoundTripRegressionTest, RejectsUnsupportedIndexCasts) {
   MLIRContext context;
-  context
-      .loadDialect<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect>();
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      mlir::jeff::JeffDialect>();
   for (
       const auto* source : {
           R"mlir(module { func.func @main(%value: index) -> i64 attributes {mqt.entry_point} {
@@ -1011,7 +1014,7 @@ TEST(JeffRoundTripRegressionTest, RejectsUnsupportedIndexCasts) {
 TEST(JeffRoundTripRegressionTest, RejectsPromotedUnsupportedMath) {
   MLIRContext context;
   context.loadDialect<arith::ArithDialect, func::FuncDialect, math::MathDialect,
-                      jeff::JeffDialect>();
+                      mlir::jeff::JeffDialect>();
   for (const auto* const expression :
        {"math.absi %value", "math.ipowi %value, %value"}) {
     auto program = parseSourceString<ModuleOp>(
@@ -1027,7 +1030,7 @@ TEST(JeffRoundTripRegressionTest, RejectsPromotedUnsupportedMath) {
 TEST(JeffRoundTripRegressionTest, RejectsEffectsInIntegerSelection) {
   MLIRContext context;
   context.loadDialect<arith::ArithDialect, func::FuncDialect, qco::QCODialect,
-                      jeff::JeffDialect>();
+                      mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main(%select: i1, %value: i8) -> i8 {
@@ -1056,7 +1059,7 @@ TEST(JeffRoundTripRegressionTest, RejectsEffectsInIntegerSelection) {
 TEST(JeffRoundTripRegressionTest, RejectsLiveOldArrayAcrossSwitchRegions) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, arith::ArithDialect, func::FuncDialect,
-                      qco::QCODialect, jeff::JeffDialect>();
+                      qco::QCODialect, mlir::jeff::JeffDialect>();
   constexpr llvm::StringLiteral source = R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main(%select: i1) -> (tensor<1xi1>, tensor<1xi1>) {
@@ -1088,7 +1091,7 @@ TEST(JeffRoundTripRegressionTest, RejectsLiveOldArrayAcrossSwitchRegions) {
       auto returned =
           cast<func::ReturnOp>(main.getBody().front().getTerminator());
       returned->setOperand(0, returned.getOperand(1));
-      auto selection = *main.getOps<jeff::SwitchOp>().begin();
+      auto selection = *main.getOps<mlir::jeff::SwitchOp>().begin();
       auto& branch = selection.getBranches()[1].front();
       branch.getTerminator()->setOperand(0, branch.getArgument(0));
     }
@@ -1100,7 +1103,7 @@ TEST(JeffRoundTripRegressionTest, RejectsLiveOldArrayAcrossSwitchRegions) {
 TEST(JeffRoundTripRegressionTest, AcceptsArrayLengthAfterSwitchUpdate) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, arith::ArithDialect, func::FuncDialect,
-                      qco::QCODialect, jeff::JeffDialect>();
+                      qco::QCODialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main(%select: i1) -> (tensor<1xi1>, i32) {
@@ -1143,7 +1146,7 @@ TEST(JeffRoundTripRegressionTest, AcceptsArrayLengthAfterSwitchUpdate) {
 TEST(JeffRoundTripRegressionTest, PreservesClassicalIfResults) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
-                  func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  func::FuncDialect, mlir::jeff::JeffDialect, qco::QCODialect,
                   scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -1182,8 +1185,8 @@ module {
 TEST(JeffRoundTripRegressionTest, RejectsLegacyClassicalMemref) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
-                  func::FuncDialect, jeff::JeffDialect, memref::MemRefDialect,
-                  qco::QCODialect, scf::SCFDialect>();
+                  func::FuncDialect, mlir::jeff::JeffDialect,
+                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
