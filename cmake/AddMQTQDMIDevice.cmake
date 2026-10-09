@@ -41,11 +41,6 @@ function(mqt_configure_qdmi_device target)
   foreach(runtime_file IN LISTS ARG_RUNTIME_FILES)
     get_filename_component(runtime_file_name "${runtime_file}" NAME)
     list(APPEND runtime_file_names "${runtime_file_name}")
-    add_custom_command(
-      TARGET ${target}
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${runtime_file}"
-              "$<TARGET_FILE_DIR:${target}>/${runtime_file_name}")
   endforeach()
 
   set(device_entries
@@ -98,11 +93,14 @@ function(mqt_configure_qdmi_device target)
       "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n"
   )
 
-  add_custom_command(
-    TARGET ${target}
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}"
-            "$<TARGET_FILE_DIR:${target}>/${target}.qdmi.json")
+  # Assets can change without relinking the device.
+  add_custom_target(
+    ${target}-qdmi-assets
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}" ${ARG_RUNTIME_FILES}
+            "$<TARGET_FILE_DIR:${target}>"
+    COMMAND_EXPAND_LISTS VERBATIM)
+  add_dependencies(${target} ${target}-qdmi-assets)
   set_target_properties(
     ${target}
     PROPERTIES QDMI_DEVICE_ID "${ARG_ID}"
@@ -122,19 +120,11 @@ function(mqt_configure_qdmi_device target)
   else()
     set(fragment_install_dir ${CMAKE_INSTALL_LIBDIR})
   endif()
-  set(install_arguments)
-  if(MQT_CORE_TARGET_NAME)
-    list(APPEND install_arguments COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
-  endif()
-  install(
-    FILES "${fragment}"
-    DESTINATION ${fragment_install_dir}
-    ${install_arguments})
-  if(ARG_RUNTIME_FILES)
+  if(MQT_CORE_INSTALL)
     install(
-      FILES ${ARG_RUNTIME_FILES}
+      FILES "${fragment}" ${ARG_RUNTIME_FILES}
       DESTINATION ${fragment_install_dir}
-      ${install_arguments})
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
   endif()
 endfunction()
 
@@ -180,6 +170,10 @@ function(mqt_copy_qdmi_runtime target)
     if(library_target STREQUAL "${target}" OR NOT library_type MATCHES "^(SHARED|MODULE)_LIBRARY$")
       continue()
     endif()
+    string(MAKE_C_IDENTIFIER "${target}-stage-${library_target}" staging_target)
+    if(TARGET ${staging_target})
+      continue()
+    endif()
     get_target_property(imported ${library_target} IMPORTED)
     set(files "$<TARGET_FILE:${library}>")
     if(UNIX AND library_type STREQUAL "SHARED_LIBRARY")
@@ -219,13 +213,14 @@ function(mqt_copy_qdmi_runtime target)
         endforeach()
       endif()
     endif()
-    if(NOT imported)
-      add_dependencies(${target} ${library_target})
-    endif()
-    add_custom_command(
-      TARGET ${target}
-      POST_BUILD
+    add_custom_target(
+      ${staging_target}
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${files} "$<TARGET_FILE_DIR:${target}>"
-      COMMAND_EXPAND_LISTS)
+      COMMAND_EXPAND_LISTS VERBATIM)
+    if(NOT imported)
+      add_dependencies(${staging_target} ${library_target})
+    endif()
+    add_dependencies(${target} ${staging_target})
   endforeach()
 endfunction()

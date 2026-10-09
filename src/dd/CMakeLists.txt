@@ -20,11 +20,13 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
     list(APPEND dd_targets ${MQT_CORE_TARGET_NAME}-dd-python)
     set(dd_export_target ${MQT_CORE_TARGET_NAME}-dd-python)
     set_target_properties(${dd_export_target} PROPERTIES DEFINE_SYMBOL mqt_core_dd_python_EXPORTS)
-    install(
-      TARGETS ${dd_export_target}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Python
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Python
-      ARCHIVE EXCLUDE_FROM_ALL)
+    if(MQT_CORE_INSTALL)
+      install(
+        TARGETS ${dd_export_target}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Python
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Python
+        ARCHIVE EXCLUDE_FROM_ALL)
+    endif()
   endif()
 
   include(GenerateExportHeader)

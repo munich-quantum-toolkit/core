@@ -242,7 +242,21 @@ required-version = ">=0.5.20"
 cache-keys = [
   { file = "pyproject.toml" },
   { git = { commit = true, tags = true } },
-  { file = "bindings/**/*.cpp" },
+  { file = "CMakeLists.txt" },
+  { file = "cmake/**/*" },
+  { file = "bindings/**/*" },
+  { file = "include/**/*" },
+  { file = "src/**/*" },
+  { file = "mlir/CMakeLists.txt" },
+  { file = "mlir/include/**/*" },
+  { file = "mlir/lib/**/*" },
+  { file = "mlir/bench/**/*" },
+  { file = "mlir/tools/**/*" },
+  { file = "vendor/**/*" },
+  { file = "json/**/*" },
+  { env = "SKBUILD_CMAKE_ARGS" },
+  { env = "SKBUILD_CMAKE_BUILD_TYPE" },
+  { env = "DEPLOY" },
 ]
 
 [tool.uv.sources]

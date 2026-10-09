@@ -36,6 +36,8 @@ if(BUILD_MQT_CORE_MLIR)
   # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
   # translation unit. Keep the complete dependency subtree out of unity builds.
   set(CMAKE_UNITY_BUILD OFF)
+  # Cap'n Proto requires compiler extensions.
+  set(CMAKE_CXX_EXTENSIONS ON)
   FetchContent_MakeAvailable(jeff-mlir)
   endblock()
   if(MSVC AND TARGET capnp)

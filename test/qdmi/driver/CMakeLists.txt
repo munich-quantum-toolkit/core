@@ -184,6 +184,11 @@ if(TARGET MQT::CoreQDMIDriver)
                mqt-core-qdmi-runtime-file-install)
   set_tests_properties(mqt-core-qdmi-runtime-file-install-verify
                        PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
+  add_test(NAME mqt-core-qdmi-runtime-file-incremental
+           COMMAND ${CMAKE_COMMAND} -P
+                   "${runtime_file_device_build_dir}/check-incremental-$<CONFIG>.cmake")
+  set_tests_properties(mqt-core-qdmi-runtime-file-incremental
+                       PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
 
   function(add_qdmi_configuration_rejection_test name invalid_configuration)
     set(build_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime-file-device-invalid-${name}")

@@ -36,7 +36,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
     MQT::CoreBench)
 
   # install the Python stub files in editable mode for better IDE support
-  if(SKBUILD_STATE STREQUAL "editable")
+  if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
     file(GLOB_RECURSE BENCH_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/bench/*.pyi)
     install(
       FILES ${BENCH_PYI_FILES}

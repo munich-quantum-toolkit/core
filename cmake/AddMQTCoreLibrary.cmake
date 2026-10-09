@@ -32,7 +32,7 @@ function(add_mqt_core_library name)
   elseif(BUILD_MQT_CORE_SHARED_LIBS)
     add_library(${name} SHARED ${ARG_UNPARSED_ARGUMENTS})
   else()
-    add_library(${name} ${ARG_UNPARSED_ARGUMENTS})
+    add_library(${name} STATIC ${ARG_UNPARSED_ARGUMENTS})
   endif()
 
   if(NOT ARG_ALIAS_NAME)

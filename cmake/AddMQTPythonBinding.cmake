@@ -60,8 +60,10 @@ function(add_mqt_python_binding package_name target_name)
   endif()
 
   # Install directive for scikit-build-core
-  install(
-    TARGETS ${target_name}
-    DESTINATION ${ARG_INSTALL_DIR}
-    COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
+  if(MQT_CORE_INSTALL)
+    install(
+      TARGETS ${target_name}
+      DESTINATION ${ARG_INSTALL_DIR}
+      COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
+  endif()
 endfunction()

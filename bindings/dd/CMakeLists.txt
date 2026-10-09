@@ -21,7 +21,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
     MQT::CoreDDPython)
 
   # install the Python stub file in editable mode for better IDE support
-  if(SKBUILD_STATE STREQUAL "editable")
+  if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
     install(
       FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/dd.pyi
       DESTINATION .
