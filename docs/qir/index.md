@@ -301,6 +301,12 @@ random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
 result bits directly and formats textual records only when capture is enabled.
 
+QIR runtime functions do not propagate C++ exceptions. Allocations report
+invalid resource requests and runtime limits through the QIR error-output
+pointer when one is supplied. Other failures, including host-memory exhaustion,
+stop the isolated DDSIM worker and fail its assigned program; concurrent and
+later jobs remain usable.
+
 ### Sampling and state extraction
 
 Sampling supports Base and Adaptive formats. With output capture disabled, for

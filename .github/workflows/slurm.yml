@@ -80,7 +80,7 @@ jobs:
 
       - name: Build the MQT Core wheel
         timeout-minutes: 15
-        run: uv build --wheel --out-dir test/slurm/dist
+        run: uv build --wheel --out-dir test/slurm/dist -Ccmake.define.DEPLOY=ON
 
       - name: Test Slurm admission and QDMI execution
         timeout-minutes: 15

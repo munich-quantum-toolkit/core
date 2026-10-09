@@ -28,20 +28,9 @@ those defaults before any helper call.
 
 ## Validation
 
-`test/cmake/installed_consumer/CMakeLists.txt` is one standalone regression. Run
-it against an installed prefix, then build its device target:
-
-```console
-cmake -S test/cmake/installed_consumer -B build/installed-consumer -DCMAKE_PREFIX_PATH=<prefix>
-cmake --build build/installed-consumer
-```
-
-It checks that package discovery preserves consumer settings and their cache
-entries, including unset defaults, and builds a QDMI device with its colocated
-manifest through the installed helper. The regression failed against the prior
-installed config and passed after the change with QDMI 1.4.0.
-
-Local validation passed: the `release-no-mlir` shared build and installation
-with GCC 13, configuration with `MQT_CORE_INSTALL=OFF`, the installed consumer's
-configuration and build, and repository lint. Full compiler and wheel
-qualification belongs to the separate release validation work.
+Historical validation passed with GCC 13 and QDMI 1.4.0: the `release-no-mlir`
+shared build and installation, configuration with `MQT_CORE_INSTALL=OFF`, and
+repository lint. A separate installed-consumer probe checked that package
+discovery preserved consumer settings and cache entries and that the installed
+helper built a QDMI device with its colocated manifest. That probe is not part
+of the repository test suite.

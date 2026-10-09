@@ -53,6 +53,15 @@ function(add_mqt_core_library name)
                  CXX_VISIBILITY_PRESET hidden
                  VISIBILITY_INLINES_HIDDEN 1
                  WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+  elseif(WIN32)
+    get_target_property(target_type ${name} TYPE)
+    if(target_type STREQUAL "SHARED_LIBRARY")
+      set_target_properties(${name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+      if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        # CMake's automatic export scanner cannot read MSVC /GL objects.
+        set_target_properties(${name} PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+      endif()
+    endif()
   endif()
 
   # Always compile with position-independent code to enable usage in shared libraries
