@@ -239,3 +239,27 @@ TEST(JobParameters, SamplingSeed) {
                 &wrongType),
             QDMI_ERROR_INVALIDARGUMENT);
 }
+
+TEST(JobParameters, SamplingWorkers) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  const size_t automatic = 0;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(automatic),
+                &automatic),
+            QDMI_SUCCESS);
+  const int highLevelWorkers = 4;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3,
+                sizeof(highLevelWorkers), &highLevelWorkers),
+            QDMI_SUCCESS);
+  const int invalidWorkers = -1;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3,
+                sizeof(invalidWorkers), &invalidWorkers),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(bool), &automatic),
+      QDMI_ERROR_INVALIDARGUMENT);
+}

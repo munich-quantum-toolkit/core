@@ -31,10 +31,10 @@ namespace qdmi::dd {
 namespace {
 using namespace llvm::orc::shared;
 constexpr uint32_t MAGIC = 0x4d515444;
-constexpr uint32_t VERSION = 1;
+constexpr uint32_t VERSION = 2;
 using Header = SPSArgList<uint32_t, uint32_t, uint64_t>;
-using Request =
-    SPSArgList<int32_t, SPSString, uint64_t, SPSOptional<uint64_t>, uint8_t>;
+using Request = SPSArgList<int32_t, SPSString, uint64_t, SPSOptional<uint64_t>,
+                           uint8_t, uint64_t, uint8_t>;
 using Response = SPSArgList<uint8_t, SPSOptional<SPSString>, uint32_t,
                             SPSOptional<SPSString>>;
 
@@ -141,13 +141,17 @@ bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes) {
 }
 
 std::string encode(const WorkerRequest& request) {
-  std::string bytes(Request::size(request.format, request.program,
-                                  request.shots, request.seed,
-                                  static_cast<uint8_t>(request.captureOutput)),
-                    '\0');
+  std::string bytes(
+      Request::size(request.format, request.program, request.shots,
+                    request.seed, static_cast<uint8_t>(request.captureOutput),
+                    request.workerSlots,
+                    static_cast<uint8_t>(request.automaticWorkers)),
+      '\0');
   SPSOutputBuffer buffer(bytes.data(), bytes.size());
   Request::serialize(buffer, request.format, request.program, request.shots,
-                     request.seed, static_cast<uint8_t>(request.captureOutput));
+                     request.seed, static_cast<uint8_t>(request.captureOutput),
+                     request.workerSlots,
+                     static_cast<uint8_t>(request.automaticWorkers));
   return bytes;
 }
 
@@ -155,14 +159,18 @@ bool decode(llvm::StringRef bytes, WorkerRequest& request) {
   SPSInputBuffer buffer(bytes.data(), bytes.size());
   llvm::StringRef program;
   uint8_t capture = 0;
+  uint8_t automatic = 0;
   if (!SPSArgList<int32_t, SPSString, uint64_t>::deserialize(
           buffer, request.format, program, request.shots) ||
       !readOptional<uint64_t>(buffer, request.seed) ||
-      !SPSArgList<uint8_t>::deserialize(buffer, capture) || capture > 1 ||
+      !SPSArgList<uint8_t, uint64_t, uint8_t>::deserialize(
+          buffer, capture, request.workerSlots, automatic) ||
+      capture > 1 || automatic > 1 || request.workerSlots == 0 ||
       buffer.data() != bytes.end()) {
     return false;
   }
   request.captureOutput = capture != 0;
+  request.automaticWorkers = automatic != 0;
   request.program = program.str();
   return true;
 }
