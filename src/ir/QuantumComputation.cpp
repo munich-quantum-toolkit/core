@@ -18,6 +18,7 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "ir/operations/SymbolicOperation.hpp"
 #include "qasm3/Serializer.hpp"
@@ -1064,43 +1065,38 @@ void QuantumComputation::reorderOperations() {
 }
 
 namespace {
-bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
-                      std::vector<bool>& measured) {
-  assert(op != nullptr);
-  const auto& it = *op;
-  // whenever a classic-controlled or a reset operation are encountered
-  // the circuit has to be dynamic.
-  if (it->getType() == Reset || it->isIfElseOperation()) {
+bool isDynamicCircuit(const Operation& op, std::vector<bool>& measured) {
+  if (op.getType() == Reset || op.isIfElseOperation()) {
     return true;
   }
 
-  if (it->isStandardOperation()) {
-    // Whenever a qubit has already been measured, the circuit is dynamic
-    const auto& usedQubits = it->getUsedQubits();
-    return std::ranges::any_of(
-        usedQubits, [&measured](const auto& q) { return measured[q]; });
+  if (op.isCompoundOperation()) {
+    const auto& compound = dynamic_cast<const CompoundOperation&>(op);
+    return std::ranges::any_of(compound, [&measured](const auto& child) {
+      return isDynamicCircuit(*child, measured);
+    });
   }
 
-  if (it->getType() == Measure) {
-    for (const auto& b : it->getTargets()) {
-      measured[b] = true;
+  if (op.getType() == Measure) {
+    for (const auto target : op.getTargets()) {
+      measured.at(target) = true;
     }
     return false;
   }
 
-  assert(it->isCompoundOperation());
-  const auto& compOp = dynamic_cast<const CompoundOperation&>(*it);
-  return std::ranges::any_of(compOp, [&measured](const auto& g) {
-    return isDynamicCircuit(&g, measured);
-  });
+  if (op.getType() == Barrier) {
+    return false;
+  }
+
+  return std::ranges::any_of(
+      op.getUsedQubits(), [&measured](const auto q) { return measured.at(q); });
 }
 } // namespace
 
 bool QuantumComputation::isDynamic() const {
-  // marks whether a qubit in the DAG has been measured
-  std::vector<bool> measured(getHighestPhysicalQubitIndex() + 1, false);
+  std::vector<bool> measured(getHighestPhysicalQubitIndex() + 1U, false);
   return std::ranges::any_of(ops, [&measured](const auto& op) {
-    return ::qc::isDynamicCircuit(&op, measured);
+    return isDynamicCircuit(*op, measured);
   });
 }
 
