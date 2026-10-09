@@ -100,6 +100,7 @@ if(MQT_CORE_INSTALL)
   install(
     FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
           ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
+          ${PROJECT_SOURCE_DIR}/cmake/CopyQDMISharedDependencies.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)

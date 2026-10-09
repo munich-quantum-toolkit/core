@@ -10,7 +10,7 @@
 
 #include "qdmi/Slurm.hpp"
 
-#include "qdmi/Client.hpp"
+#include "qdmi/QDMI.hpp"
 
 #include "qdmi/constants.h"
 

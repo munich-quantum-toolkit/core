@@ -16,8 +16,7 @@ import pytest
 
 from mqt.core.bench import magic_state_distillation
 from mqt.core.mlir import compile_program, sample, submit_program
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 from .utils import assert_generates
 

@@ -235,7 +235,7 @@ auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
 auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                            void* value, size_t* sizeRet) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
@@ -306,7 +306,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter param, const size_t size,
     const void* value) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
+      QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::ALLOCATED) {
@@ -350,7 +350,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     return QDMI_ERROR_BADSTATE;
   }
   if (site == nullptr || (value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto id = reinterpret_cast<uintptr_t>(site) - OFFSET;
@@ -370,7 +370,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
   if (operation == nullptr || (sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto& [operationName, operationNumSites, operationNumParams, isVariadic,
@@ -407,7 +407,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
     -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_JOB_PARAMETER)) {
+      QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_DEVICE_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
@@ -417,7 +417,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT:
     if (value != nullptr) {
       const auto format = *static_cast<const QDMI_Program_Format*>(value);
-      if (IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
+      if (QDMI_IS_INVALID_ENUM_VALUE(format, QDMI_PROGRAM_FORMAT)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
       if (std::ranges::find(SUPPORTED_PROGRAM_FORMATS, format) ==
@@ -485,7 +485,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
     size_t* sizeRet) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_JOB_PROPERTY)) {
+      QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto str = std::to_string(id_);
@@ -940,7 +940,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if (IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
+  if (QDMI_IS_INVALID_ENUM_VALUE(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {
