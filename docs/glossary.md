@@ -216,6 +216,13 @@ import
 export
   A translation from MQT Core or MLIR into an external representation.
 
+release
+  **Preferred term:** release. **Accepted alias:** deallocation. Ending the
+  lifetime of a dynamically allocated qubit or register: `qc.dealloc` or
+  `memref.dealloc` in QC, and `qco.sink` or `qtensor.dealloc` in QCO. An
+  allocation outside the entry block of the program entry point must be
+  released in the block that allocates it.
+
 serialization
   **Preferred term:** serialization. **Accepted aliases:** none. Encoding a
   program as bytes or writing that encoding to a file. Deserialization reads

@@ -188,6 +188,13 @@ void QCProgramBuilder::retype(TypeRange returnTypes) {
 func::FuncOp QCProgramBuilder::createFunction(
     const StringRef name, const TypeRange argumentTypes,
     const function_ref<SmallVector<Value>(ValueRange)> body) {
+  return buildFunction(name, argumentTypes, body, /*unitary=*/false);
+}
+
+func::FuncOp QCProgramBuilder::buildFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body,
+    const bool unitary) {
   checkFinalized();
   auto moduleOp = cast<ModuleOp>(moduleOp_);
   auto mainFunc = mqt::getEntryPoint(moduleOp);
@@ -216,6 +223,11 @@ func::FuncOp QCProgramBuilder::createFunction(
   auto function = func::FuncOp::create(
       *this, name, getFunctionType(argumentTypes, TypeRange{}));
   function.setPrivate();
+  // Mark the function first so that the body is built under the unitary
+  // restrictions.
+  if (unitary) {
+    mqt::setUnitaryFunction(function);
+  }
   auto* block = function.addEntryBlock();
   setInsertionPointToStart(block);
 
@@ -245,13 +257,13 @@ func::FuncOp QCProgramBuilder::createFunction(
 func::FuncOp QCProgramBuilder::createUnitaryFunction(
     const StringRef name, const TypeRange argumentTypes,
     const function_ref<void(ValueRange)> body) {
-  auto function =
-      createFunction(name, argumentTypes, [&](ValueRange arguments) {
+  return buildFunction(
+      name, argumentTypes,
+      [&](ValueRange arguments) {
         body(arguments);
         return SmallVector<Value>{};
-      });
-  mqt::setUnitaryFunction(function);
-  return function;
+      },
+      /*unitary=*/true);
 }
 
 SmallVector<Value> QCProgramBuilder::call(func::FuncOp callee,
@@ -947,16 +959,25 @@ void QCProgramBuilder::checkFinalized() const {
   }
 }
 
+/// Return whether the builder may allocate qubits dynamically in @p block.
+///
+/// The entry block of a non-unitary function qualifies: the entry point keeps
+/// such allocations until the program ends, and the builder releases what is
+/// left in any other function when it completes that function.
+static bool allowsDynamicAllocation(Block* block) {
+  auto function = dyn_cast_or_null<func::FuncOp>(
+      block != nullptr ? block->getParentOp() : nullptr);
+  return function && block == &function.getBody().front() &&
+         !mqt::isUnitaryFunction(function);
+}
+
 void QCProgramBuilder::ensureAllocationMode(
     const AllocationMode requestedMode) {
-  if (requestedMode == AllocationMode::Dynamic) {
-    auto entryPoint = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
-    if (!entryPoint || entryPoint.getBody().empty() ||
-        getInsertionBlock() != &entryPoint.getBody().front()) {
-      llvm::reportFatalUsageError(
-          "Dynamic qubit allocation requires the entry block of the "
-          "mqt.entry_point function");
-    }
+  if (requestedMode == AllocationMode::Dynamic &&
+      !allowsDynamicAllocation(getInsertionBlock())) {
+    llvm::reportFatalUsageError(
+        "Dynamic qubit allocation requires the entry block of a non-unitary "
+        "function");
   }
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;

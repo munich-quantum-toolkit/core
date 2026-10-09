@@ -11,19 +11,17 @@
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
-#include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
-#include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/SymbolTable.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
-
-#include <iterator>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -61,19 +59,75 @@ FailureOr<unsigned> mlir::qco::getCallArgumentForResult(func::CallOp call,
   return argument;
 }
 
-FailureOr<unsigned> mlir::qco::traceQubitArgument(Block& block, Value value) {
+FailureOr<unsigned> mlir::qco::getCallResultForArgument(func::CallOp call,
+                                                        unsigned argument) {
+  if (!SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+          call, call.getCalleeAttr())) {
+    return failure();
+  }
+  auto arguments = getQuantumArgumentIndices(call.getOperandTypes());
+  const auto* position = llvm::find(arguments, argument);
+  if (position == arguments.end() || call.getNumResults() < arguments.size()) {
+    return failure();
+  }
+  const auto result = call.getNumResults() - arguments.size() +
+                      static_cast<unsigned>(position - arguments.begin());
+  if (call.getResult(result).getType() != call.getOperand(argument).getType()) {
+    return failure();
+  }
+  return result;
+}
+
+/// Return the terminator of @p block, or null if it has none.
+///
+/// Verifiers trace values through functions that operation verification may
+/// not have reached yet, so a missing terminator must not abort.
+[[nodiscard]] static Operation* getTerminatorOrNull(Block& block) {
+  return block.mightHaveTerminator() ? block.getTerminator() : nullptr;
+}
+
+/// Return whether every block of @p op yields its linear result @p result from
+/// the block argument tied to it.
+///
+/// `qco.if` and `qco.index_switch` tie linear operand `i` to block argument
+/// `i` of each region and to linear result `i`; their yields list classical
+/// values first, like the results. Tying a result to its operand is only sound
+/// when no branch exchanges the values it yields.
+[[nodiscard]] static bool yieldsPositionally(Operation* op, OpResult result,
+                                             unsigned linearIndex) {
+  return llvm::all_of(op->getRegions(), [&](Region& region) {
+    if (!region.hasOneBlock()) {
+      return false;
+    }
+    Block& block = region.front();
+    auto* terminator = getTerminatorOrNull(block);
+    if (terminator == nullptr ||
+        result.getResultNumber() >= terminator->getNumOperands()) {
+      return false;
+    }
+    auto argument = traceQubitArgument(
+        block, terminator->getOperand(result.getResultNumber()));
+    return succeeded(argument) && *argument == linearIndex;
+  });
+}
+
+FailureOr<Value> mlir::qco::traceQuantumOrigin(Value value) {
+  // Unverified IR can contain an SSA cycle, in a graph region or in a block
+  // whose dominance has not been checked yet. Every step has a single
+  // predecessor, so a repeated value means the trace would never end.
+  DenseSet<Value> visited;
   while (true) {
-    if (auto argument = dyn_cast<BlockArgument>(value)) {
-      if (argument.getOwner() == &block &&
-          !getQuantumArgumentIndices(TypeRange{argument.getType()}).empty()) {
-        return argument.getArgNumber();
-      }
+    if (!visited.insert(value).second) {
       return failure();
     }
+    auto result = dyn_cast<OpResult>(value);
+    if (!result) {
+      return value;
+    }
+    auto* op = result.getOwner();
 
-    if (auto call = value.getDefiningOp<func::CallOp>()) {
-      auto argument = getCallArgumentForResult(
-          call, cast<OpResult>(value).getResultNumber());
+    if (auto call = dyn_cast<func::CallOp>(op)) {
+      auto argument = getCallArgumentForResult(call, result.getResultNumber());
       if (failed(argument)) {
         return failure();
       }
@@ -81,33 +135,126 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(Block& block, Value value) {
       continue;
     }
 
-    if (auto loop = value.getDefiningOp<scf::WhileOp>()) {
-      auto result = cast<OpResult>(value).getResultNumber();
-      auto argument = traceQubitArgument(
-          *loop.getBeforeBody(), loop.getConditionOp().getArgs()[result]);
-      if (failed(argument)) {
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+      value = unitary.getInputForOutput(value);
+      if (!value) {
         return failure();
       }
-      value = loop.getInits()[*argument];
       continue;
     }
 
-    if (auto tensor = dyn_cast<TypedValue<RankedTensorType>>(value)) {
-      qtensor::TensorIterator iterator(tensor);
-      --iterator;
-      if (iterator == std::default_sentinel || iterator.tensor() == value) {
+    if (auto measure = dyn_cast<MeasureOp>(op)) {
+      if (value != measure.getQubitOut()) {
         return failure();
       }
-      value = iterator.tensor();
-    } else {
-      WireIterator iterator(value);
-      --iterator;
-      if (iterator == std::default_sentinel) {
-        return failure();
-      }
-      value = iterator.qubit();
+      value = measure.getQubitIn();
+      continue;
     }
+
+    if (auto reset = dyn_cast<ResetOp>(op)) {
+      value = reset.getQubitIn();
+      continue;
+    }
+
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+      // An extracted element starts a wire of its own.
+      if (value != extract.getOutTensor()) {
+        return value;
+      }
+      value = extract.getTensor();
+      continue;
+    }
+
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      value = insert.getDest();
+      continue;
+    }
+
+    if (auto loop = dyn_cast<scf::ForOp>(op)) {
+      auto* body = loop.getBody();
+      auto* yield = getTerminatorOrNull(*body);
+      const auto index = result.getResultNumber();
+      auto iterArguments = loop.getRegionIterArgs();
+      if (yield == nullptr || index >= yield->getNumOperands() ||
+          index >= iterArguments.size() || index >= loop.getInitArgs().size()) {
+        return failure();
+      }
+      auto argument = traceQubitArgument(*body, yield->getOperand(index));
+      if (failed(argument) ||
+          *argument != iterArguments[index].getArgNumber()) {
+        return failure();
+      }
+      value = loop.getInitArgs()[index];
+      continue;
+    }
+
+    if (auto loop = dyn_cast<scf::WhileOp>(op)) {
+      // The result leaves through the condition from some before-argument,
+      // and the after-region has to hand it back to that same argument, or
+      // the correspondence would change from one iteration to the next.
+      const auto index = result.getResultNumber();
+      auto condition = dyn_cast_or_null<scf::ConditionOp>(
+          getTerminatorOrNull(*loop.getBeforeBody()));
+      auto yield = dyn_cast_or_null<scf::YieldOp>(
+          getTerminatorOrNull(*loop.getAfterBody()));
+      if (!condition || !yield || index >= condition.getArgs().size()) {
+        return failure();
+      }
+      auto before =
+          traceQubitArgument(*loop.getBeforeBody(), condition.getArgs()[index]);
+      if (failed(before) || *before >= yield.getResults().size() ||
+          *before >= loop.getInits().size()) {
+        return failure();
+      }
+      auto after =
+          traceQubitArgument(*loop.getAfterBody(), yield.getResults()[*before]);
+      if (failed(after) || *after != index) {
+        return failure();
+      }
+      value = loop.getInits()[*before];
+      continue;
+    }
+
+    if (auto ifOp = dyn_cast<IfOp>(op)) {
+      auto* qubit = ifOp.getTiedQubit(result);
+      if (qubit == nullptr ||
+          !yieldsPositionally(op, result, qubit->getOperandNumber() - 1)) {
+        return failure();
+      }
+      value = qubit->get();
+      continue;
+    }
+
+    if (auto switchOp = dyn_cast<IndexSwitchOp>(op)) {
+      auto* target = switchOp.getTiedTarget(result);
+      if (target == nullptr ||
+          !yieldsPositionally(op, result, target->getOperandNumber() - 1)) {
+        return failure();
+      }
+      value = target->get();
+      continue;
+    }
+
+    if (isa<AllocOp, StaticOp, qtensor::AllocOp, qtensor::FromElementsOp>(op)) {
+      return value;
+    }
+
+    // Any other operation is not known to continue a quantum value.
+    return failure();
   }
+}
+
+FailureOr<unsigned> mlir::qco::traceQubitArgument(Block& block, Value value) {
+  auto origin = traceQuantumOrigin(value);
+  if (failed(origin)) {
+    return failure();
+  }
+  auto argument = dyn_cast<BlockArgument>(*origin);
+  if (!argument || argument.getOwner() != &block ||
+      getQuantumArgumentIndices(TypeRange{argument.getType()}).empty()) {
+    return failure();
+  }
+  return argument.getArgNumber();
 }
 
 FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,

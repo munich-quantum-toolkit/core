@@ -24,6 +24,7 @@ add_mlir_dialect_library(
   MLIRMemRefDialect
   MLIRQCDialect
   MLIRQCODialect
+  MLIRQCOUtils
   MLIRSCFDialect
   MLIRQTensorDialect)
 

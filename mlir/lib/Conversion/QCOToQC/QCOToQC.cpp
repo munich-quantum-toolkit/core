@@ -45,6 +45,8 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -248,15 +250,11 @@ public:
 
 } // namespace
 
-/// Proves the positional wire correspondence required by reference semantics.
-/// Region arguments are local roots; a region result is tied to its input only
-/// after both the region body and its terminator have been checked.
-[[nodiscard]] static LogicalResult
-collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
-  const auto origin = [&](Value value) {
-    auto known = origins.lookup(value);
-    return known ? known : value;
-  };
+/// Return whether the quantum values a block yields continue its quantum
+/// arguments in order.
+[[nodiscard]] static bool yieldsQuantumArgumentsInOrder(Block& block,
+                                                        ValueRange arguments,
+                                                        ValueRange yielded) {
   const auto quantum = [](ValueRange values) {
     SmallVector<Value> result;
     llvm::copy_if(values, std::back_inserter(result), [](Value value) {
@@ -264,91 +262,74 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
     });
     return result;
   };
-  const auto corresponds = [&](ValueRange inputs, ValueRange outputs) {
-    auto quantumInputs = quantum(inputs);
-    auto quantumOutputs = quantum(outputs);
-    if (quantumInputs.size() != quantumOutputs.size()) {
-      return false;
-    }
-    return llvm::all_of(llvm::zip_equal(quantumInputs, quantumOutputs),
-                        [&](auto pair) {
-                          auto [input, output] = pair;
-                          return input.getType() == output.getType() &&
-                                 origin(input) == origin(output);
-                        });
-  };
-  const auto tie = [&](ValueRange inputs, ValueRange outputs) {
-    auto quantumInputs = quantum(inputs);
-    auto quantumOutputs = quantum(outputs);
-    if (quantumInputs.size() != quantumOutputs.size()) {
-      return;
-    }
-    for (auto [input, output] :
-         llvm::zip_equal(quantumInputs, quantumOutputs)) {
-      origins[output] = origin(input);
-    }
-  };
-  auto result = moduleOp.walk([&](Operation* op, const WalkStage& stage) {
-    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      tie(unitary.getInputQubits(), unitary.getOutputQubits());
-      return WalkResult::skip();
-    }
-    if (!stage.isAfterAllRegions()) {
-      return WalkResult::advance();
-    }
+  auto quantumArguments = quantum(arguments);
+  auto quantumYielded = quantum(yielded);
+  if (quantumArguments.size() != quantumYielded.size()) {
+    return false;
+  }
+  return llvm::all_of(
+      llvm::zip_equal(quantumArguments, quantumYielded), [&](auto pair) {
+        auto [argument, value] = pair;
+        auto traced = qco::traceQubitArgument(block, value);
+        return argument.getType() == value.getType() && succeeded(traced) &&
+               *traced == cast<BlockArgument>(argument).getArgNumber();
+      });
+}
+
+/// Check the positional quantum-state correspondence that reference semantics
+/// requires beyond the function boundary.
+///
+/// QC references cannot be exchanged, so every region has to hand its quantum
+/// arguments back in order, not only on the paths that reach a function
+/// result, and every extracted qubit has to return to its own register slot.
+/// The function boundary itself is covered by
+/// `mqt::verifyQuantumArgumentReturns`.
+[[nodiscard]] static LogicalResult
+verifyPositionalQuantumState(ModuleOp moduleOp) {
+  auto result = moduleOp.walk([&](Operation* op) {
     bool positional = true;
     if (auto loop = dyn_cast<scf::ForOp>(op)) {
-      positional = corresponds(loop.getRegionIterArgs(),
-                               loop.getBody()->getTerminator()->getOperands());
-      tie(loop.getInitArgs(), loop.getResults());
+      positional = yieldsQuantumArgumentsInOrder(
+          *loop.getBody(), loop.getRegionIterArgs(),
+          loop.getBody()->getTerminator()->getOperands());
     } else if (auto loop = dyn_cast<scf::WhileOp>(op)) {
-      auto before = quantum(loop.getBeforeArguments());
-      auto after = quantum(loop.getAfterArguments());
       positional =
-          before.size() == after.size() &&
-          llvm::equal(ValueRange(before).getTypes(),
-                      ValueRange(after).getTypes()) &&
-          corresponds(loop.getBeforeArguments(),
-                      loop.getConditionOp().getArgs()) &&
-          corresponds(loop.getAfterArguments(), loop.getYieldOp().getResults());
-      tie(loop.getInits(), loop.getResults());
+          llvm::equal(llvm::make_filter_range(
+                          ValueRange(loop.getBeforeArguments()).getTypes(),
+                          isQuantumStateType),
+                      llvm::make_filter_range(
+                          ValueRange(loop.getAfterArguments()).getTypes(),
+                          isQuantumStateType)) &&
+          yieldsQuantumArgumentsInOrder(*loop.getBeforeBody(),
+                                        loop.getBeforeArguments(),
+                                        loop.getConditionOp().getArgs()) &&
+          yieldsQuantumArgumentsInOrder(*loop.getAfterBody(),
+                                        loop.getAfterArguments(),
+                                        loop.getYieldOp().getResults());
     } else if (isa<qco::IfOp, qco::IndexSwitchOp>(op)) {
       for (auto& region : op->getRegions()) {
-        positional &=
-            region.hasOneBlock() &&
-            corresponds(region.front().getArguments(),
-                        region.front().getTerminator()->getOperands());
+        positional &= region.hasOneBlock() &&
+                      yieldsQuantumArgumentsInOrder(
+                          region.front(), region.front().getArguments(),
+                          region.front().getTerminator()->getOperands());
       }
-      tie(op->getOperands(), op->getResults());
-    } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
-      tie(ValueRange{measure.getQubitIn()}, ValueRange{measure.getQubitOut()});
-    } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
-      tie(ValueRange{reset.getQubitIn()}, ValueRange{reset.getQubitOut()});
-    } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-      origins[extract->getResult(0)] = origin(extract.getTensor());
     } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-      auto extract =
-          origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
-      if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
+      auto scalar = qco::traceQuantumOrigin(insert.getScalar());
+      auto extract = succeeded(scalar)
+                         ? scalar->getDefiningOp<qtensor::ExtractOp>()
+                         : qtensor::ExtractOp{};
+      auto source = extract ? qco::traceQuantumOrigin(extract.getTensor())
+                            : FailureOr<Value>(failure());
+      auto dest = qco::traceQuantumOrigin(insert.getDest());
+      const auto sourceIndex =
+          extract ? getConstantIntValue(extract.getIndex()) : std::nullopt;
+      const auto destIndex = getConstantIntValue(insert.getIndex());
+      // Equality of dynamic slot indices is a program precondition.
+      if (failed(source) || failed(dest) || *source != *dest ||
+          (sourceIndex && destIndex && *sourceIndex != *destIndex)) {
         insert.emitOpError(
             "must restore the extracted qubit to its original register slot");
         return WalkResult::interrupt();
-      }
-      const auto source = getConstantIntValue(extract.getIndex());
-      const auto dest = getConstantIntValue(insert.getIndex());
-      if (source && dest && *source != *dest) {
-        insert.emitOpError(
-            "must restore the extracted qubit to its original register slot");
-        return WalkResult::interrupt();
-      }
-      /// Equality of dynamic slot indices is a program precondition.
-      origins[insert.getResult()] = origin(insert.getDest());
-    } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      for (auto [index, result] : llvm::enumerate(call.getResults())) {
-        if (auto argument = qco::getCallArgumentForResult(call, index);
-            succeeded(argument)) {
-          origins[result] = origin(call.getOperand(*argument));
-        }
       }
     }
     if (!positional) {
@@ -362,25 +343,18 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
 }
 
 [[nodiscard]] static LogicalResult
-collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
-                              const DenseMap<Value, Value>& origins) {
+collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
+  // A module converted outside a program has not met the entry-point
+  // verifier, so check the quantum argument ABI here.
+  if (failed(mqt::verifyQuantumArgumentReturns(moduleOp))) {
+    return failure();
+  }
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
     auto& qubitArguments = state.qubitArguments[function];
     qubitArguments =
         qco::getQuantumArgumentIndices(function.getArgumentTypes());
-    if (function.getNumResults() < qubitArguments.size()) {
-      return function.emitOpError(
-          "must return one trailing quantum value for each quantum argument");
-    }
-    auto returnedTypes =
-        function.getResultTypes().take_back(qubitArguments.size());
-    for (auto [argument, result] :
-         llvm::zip_equal(qubitArguments, returnedTypes)) {
+    for (auto argument : qubitArguments) {
       const auto type = function.getArgumentTypes()[argument];
-      if (type != result) {
-        return function.emitOpError(
-            "must return one trailing quantum value for each quantum argument");
-      }
       if (auto tensor = dyn_cast<RankedTensorType>(type)) {
         if (!function.isPrivate() || tensor.getRank() != 1 ||
             !tensor.hasStaticShape() || tensor.getEncoding()) {
@@ -414,27 +388,6 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
           attrs && !attrs.empty()) {
         return function.emitOpError(
             "cannot preserve attributes on pass-through qubit results in QC");
-      }
-    }
-    if (function.isDeclaration()) {
-      continue;
-    }
-    if (!function.getBody().hasOneBlock()) {
-      return function.emitOpError()
-             << "with qubit arguments must have one outer block";
-    }
-    auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
-    if (!returnOp) {
-      return function.emitOpError("must terminate with func.return");
-    }
-    auto returnedQubits =
-        returnOp.getOperands().take_back(qubitArguments.size());
-    for (auto [argument, value] :
-         llvm::zip_equal(qubitArguments, returnedQubits)) {
-      auto origin = origins.lookup(value);
-      if ((origin ? origin : value) != function.getArgument(argument)) {
-        return function.emitOpError()
-               << "must return its qubit arguments positionally";
       }
     }
   }
@@ -1379,13 +1332,10 @@ protected:
       return;
     }
     LoweringState state(*allocationMode);
-    {
-      DenseMap<Value, Value> origins;
-      if (failed(collectWireOrigins(moduleOp, origins)) ||
-          failed(collectFunctionQubitArguments(moduleOp, state, origins))) {
-        signalPassFailure();
-        return;
-      }
+    if (failed(verifyPositionalQuantumState(moduleOp)) ||
+        failed(collectFunctionQubitArguments(moduleOp, state))) {
+      signalPassFailure();
+      return;
     }
     const auto tensors = moduleOp.walk([&](Operation* op) {
       if (isa<qtensor::FromElementsOp>(op) &&

@@ -52,6 +52,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 
@@ -584,12 +585,69 @@ module {
   bool sawExpectedDiagnostic = false;
   ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
     sawExpectedDiagnostic |= StringRef(diagnostic.str())
-                                 .contains("must return its qubit arguments "
-                                           "positionally");
+                                 .contains("must return its quantum arguments "
+                                           "in argument order");
     return success();
   });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCOToQCRegressionTest, RejectsExchangesThatReferencesCannotExpress) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  for (const auto& [source, expected] : {
+           // Exchanged in one branch only, away from any function result.
+           std::pair{R"mlir(
+module {
+  func.func @main(%condition: i1) {
+    %a = qco.alloc : !qco.qubit
+    %b = qco.alloc : !qco.qubit
+    %x, %y = qco.if %condition args(%u = %a, %v = %b)
+        -> (!qco.qubit, !qco.qubit) {
+      qco.yield %v, %u : !qco.qubit, !qco.qubit
+    } else args(%u = %a, %v = %b) {
+      qco.yield %u, %v : !qco.qubit, !qco.qubit
+    }
+    qco.sink %x : !qco.qubit
+    qco.sink %y : !qco.qubit
+    return
+  }
+}
+)mlir",
+                     StringRef("correspondence through region terminators")},
+           // Restored to a different register slot.
+           std::pair{R"mlir(
+module {
+  func.func @main() {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c2 = arith.constant 2 : index
+    %t = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+    %rest, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+    %moved = qtensor.insert %q into %rest[%c1] : tensor<2x!qco.qubit>
+    qtensor.dealloc %moved : tensor<2x!qco.qubit>
+    return
+  }
+}
+)mlir",
+                     StringRef("to its original register slot")},
+       }) {
+    SCOPED_TRACE(source);
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+    EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+  }
 }
 
 TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {

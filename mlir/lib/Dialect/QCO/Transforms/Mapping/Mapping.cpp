@@ -501,7 +501,7 @@ struct PlacementPass final
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+    if (failed(mqt::verifyEntryBlockQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
     }
@@ -899,7 +899,7 @@ protected:
       return;
     }
 
-    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+    if (failed(mqt::verifyEntryBlockQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
     }

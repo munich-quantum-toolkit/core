@@ -505,30 +505,30 @@ TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
   struct Placement {
     StringRef prefix;
     StringRef suffix;
-    bool allowed;
+    StringRef error;
   };
   const std::array<Placement, 4> placements{
       {
           {
               .prefix = "module { func.func @main() {\n",
               .suffix = "return } }",
-              .allowed = true,
+              .error = "",
           },
           {
               .prefix = "module { func.func @main(%condition: i1) {\n"
                         "scf.if %condition {\n",
               .suffix = "} return } }",
-              .allowed = false,
+              .error = "",
           },
           {
               .prefix = "module { func.func private @helper() {\n",
               .suffix = "return } func.func @main() { return } }",
-              .allowed = false,
+              .error = "",
           },
           {
               .prefix = "module {\n",
               .suffix = "func.func @main() { return } }",
-              .allowed = false,
+              .error = "dynamic quantum allocations must be inside a function",
           },
       },
   };
@@ -551,18 +551,308 @@ TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
       ASSERT_TRUE(main);
       mqt::setEntryPoint(main);
 
-      bool sawPlacementError = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
-            sawPlacementError |=
-                StringRef(diagnostic.str())
-                    .contains("dynamic quantum allocations must be in the "
-                              "entry block of the "
-                              "'mqt.entry_point' function");
-            return success();
-          });
-      EXPECT_EQ(succeeded(verify(*moduleOp)), placement.allowed);
-      EXPECT_EQ(sawPlacementError, !placement.allowed);
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(context.get(),
+                                      [&](Diagnostic& diagnostic) {
+                                        diagnostics += diagnostic.str();
+                                        return success();
+                                      });
+      EXPECT_EQ(succeeded(verify(*moduleOp)), placement.error.empty());
+      EXPECT_EQ(StringRef(diagnostics).contains(placement.error),
+                !placement.error.empty() || diagnostics.empty());
+    }
+  }
+}
+
+TEST_F(MQTIRTest, RequiresReleaseInTheAllocatingBlock) {
+  for (StringRef helper : {
+           // Returned to the caller.
+           R"mlir(
+      func.func private @helper() -> !qco.qubit {
+        %q = qco.alloc : !qco.qubit
+        return %q : !qco.qubit
+      })mlir",
+           // Never released.
+           R"mlir(
+      func.func private @helper() {
+        %q = qco.alloc : !qco.qubit
+        return
+      })mlir",
+           // Released in a nested block.
+           R"mlir(
+      func.func private @helper(%condition: i1) {
+        %q = qco.alloc : !qco.qubit
+        scf.if %condition {
+          qco.sink %q : !qco.qubit
+        }
+        return
+      })mlir",
+           // Handed off into a borrowed register.
+           R"mlir(
+      func.func private @helper(%t: tensor<1x!qco.qubit>)
+          -> tensor<1x!qco.qubit> {
+        %c0 = arith.constant 0 : index
+        %rest, %old = qtensor.extract %t[%c0] : tensor<1x!qco.qubit>
+        qco.sink %old : !qco.qubit
+        %new = qco.alloc : !qco.qubit
+        %back = qtensor.insert %new into %rest[%c0] : tensor<1x!qco.qubit>
+        return %back : tensor<1x!qco.qubit>
+      })mlir",
+           // Exchanged with a borrowed qubit in one branch, so the sink
+           // releases the borrowed qubit whenever that branch runs.
+           R"mlir(
+      func.func private @helper(%condition: i1, %a: !qco.qubit)
+          -> !qco.qubit {
+        %n = qco.alloc : !qco.qubit
+        %x, %y = qco.if %condition args(%u = %a, %v = %n)
+            -> (!qco.qubit, !qco.qubit) {
+          qco.yield %v, %u : !qco.qubit, !qco.qubit
+        } else args(%u = %a, %v = %n) {
+          qco.yield %u, %v : !qco.qubit, !qco.qubit
+        }
+        qco.sink %y : !qco.qubit
+        return %x : !qco.qubit
+      })mlir",
+       }) {
+    const auto source = "module {\n" + helper.str() +
+                        "\nfunc.func @main() attributes {mqt.entry_point} "
+                        "{ return }\n}";
+    SCOPED_TRACE(source);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(StringRef(diagnostics)
+                    .contains("must be released in the block that allocates "
+                              "them"));
+  }
+}
+
+TEST_F(MQTIRTest, FollowsReleasesThroughCallsRegionsAndRegisters) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func private @inner(%q: !qco.qubit) -> !qco.qubit {
+        %h = qco.h %q : !qco.qubit -> !qco.qubit
+        return %h : !qco.qubit
+      }
+      func.func private @helper(%condition: i1) -> i1 {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = func.call @inner(%q0) : (!qco.qubit) -> !qco.qubit
+        %q2 = scf.for %i = %c0 to %c1 step %c1 iter_args(%a = %q1)
+            -> (!qco.qubit) {
+          %b = qco.h %a : !qco.qubit -> !qco.qubit
+          scf.yield %b : !qco.qubit
+        }
+        %q3 = qco.if %condition args(%a = %q2) -> (!qco.qubit) {
+          %b = qco.x %a : !qco.qubit -> !qco.qubit
+          qco.yield %b : !qco.qubit
+        } else args(%a = %q2) {
+          qco.yield %a : !qco.qubit
+        }
+        %q4, %bit = qco.measure %q3 : !qco.qubit
+        qco.sink %q4 : !qco.qubit
+        %t0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %t1, %e = qtensor.extract %t0[%c0] : tensor<1x!qco.qubit>
+        %f = qco.h %e : !qco.qubit -> !qco.qubit
+        %t2 = qtensor.insert %f into %t1[%c0] : tensor<1x!qco.qubit>
+        qtensor.dealloc %t2 : tensor<1x!qco.qubit>
+        return %bit : i1
+      }
+      func.func @main() attributes {mqt.entry_point} { return }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, EntryBlockCheckRejectsScopedAllocations) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func private @helper() {
+        %q = qco.alloc : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(mqt::verifyQuantumAllocations(*moduleOp)));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(mqt::verifyEntryBlockQuantumAllocations(*moduleOp)));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("dynamic quantum allocations must be in the entry "
+                            "block of the 'mqt.entry_point' function"));
+}
+
+TEST_F(MQTIRTest, RejectsCyclicQuantumFlowWithoutLooping) {
+  // The entry point comes first so that its attribute verifier traces the
+  // helper before dominance verification reaches the helper's body.
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} { return }
+      func.func private @helper(%q: !qco.qubit) -> !qco.qubit {
+        %a = qco.h %b : !qco.qubit -> !qco.qubit
+        %b = qco.h %a : !qco.qubit -> !qco.qubit
+        return %a : !qco.qubit
+      }
+    }
+  )mlir"));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("must return its quantum arguments in argument "
+                            "order"))
+      << diagnostics;
+}
+
+TEST_F(MQTIRTest, ChecksQuantumArgumentReturnOrder) {
+  struct Case {
+    StringRef helper;
+    StringRef error;
+  };
+  const std::array<Case, 8> cases{
+      {
+          {
+              // Exchanged results.
+              .helper = R"mlir(
+      func.func private @helper(%a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+        return %b, %a : !qco.qubit, !qco.qubit
+      })mlir",
+              .error = "must return its quantum arguments in argument order",
+          },
+          {
+              // A consumed argument.
+              .helper = R"mlir(
+      func.func private @helper(%a: !qco.qubit) {
+        qco.sink %a : !qco.qubit
+        return
+      })mlir",
+              .error = "must return one trailing quantum value for each "
+                       "quantum argument",
+          },
+          {
+              // An ordinary result after the quantum result.
+              .helper = R"mlir(
+      func.func private @helper(%a: !qco.qubit) -> (!qco.qubit, i1) {
+        %b, %bit = qco.measure %a : !qco.qubit
+        return %b, %bit : !qco.qubit, i1
+      })mlir",
+              .error = "must return one trailing quantum value for each "
+                       "quantum argument",
+          },
+          {
+              // Exchanged in one branch only.
+              .helper = R"mlir(
+      func.func private @helper(%condition: i1, %a: !qco.qubit,
+                                %b: !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+        %x, %y = qco.if %condition args(%u = %a, %v = %b)
+            -> (!qco.qubit, !qco.qubit) {
+          qco.yield %v, %u : !qco.qubit, !qco.qubit
+        } else args(%u = %a, %v = %b) {
+          qco.yield %u, %v : !qco.qubit, !qco.qubit
+        }
+        return %x, %y : !qco.qubit, !qco.qubit
+      })mlir",
+              .error = "must return its quantum arguments in argument order",
+          },
+          {
+              // Exchanged on every loop iteration.
+              .helper = R"mlir(
+      func.func private @helper(%a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %x, %y = scf.for %i = %c0 to %c1 step %c1
+            iter_args(%u = %a, %v = %b) -> (!qco.qubit, !qco.qubit) {
+          scf.yield %v, %u : !qco.qubit, !qco.qubit
+        }
+        return %x, %y : !qco.qubit, !qco.qubit
+      })mlir",
+              .error = "must return its quantum arguments in argument order",
+          },
+          {
+              // Ordinary results come first.
+              .helper = R"mlir(
+      func.func private @helper(%a: !qco.qubit) -> (i1, !qco.qubit) {
+        %b, %bit = qco.measure %a : !qco.qubit
+        return %bit, %b : i1, !qco.qubit
+      })mlir",
+              .error = "",
+          },
+          {
+              // Continued through a register slot, a call, a loop, and a
+              // branch.
+              .helper = R"mlir(
+      func.func private @inner(%q: !qco.qubit) -> !qco.qubit {
+        return %q : !qco.qubit
+      }
+      func.func private @helper(%condition: i1, %a: !qco.qubit,
+                                %t: tensor<2x!qco.qubit>)
+          -> (!qco.qubit, tensor<2x!qco.qubit>) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %rest, %e = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+        %f = qco.h %e : !qco.qubit -> !qco.qubit
+        %back = qtensor.insert %f into %rest[%c0] : tensor<2x!qco.qubit>
+        %a1 = func.call @inner(%a) : (!qco.qubit) -> !qco.qubit
+        %a2 = scf.for %i = %c0 to %c1 step %c1 iter_args(%u = %a1)
+            -> (!qco.qubit) {
+          %v = qco.h %u : !qco.qubit -> !qco.qubit
+          scf.yield %v : !qco.qubit
+        }
+        %a3 = qco.if %condition args(%u = %a2) -> (!qco.qubit) {
+          %v = qco.x %u : !qco.qubit -> !qco.qubit
+          qco.yield %v : !qco.qubit
+        } else args(%u = %a2) {
+          qco.yield %u : !qco.qubit
+        }
+        return %a3, %back : !qco.qubit, tensor<2x!qco.qubit>
+      })mlir",
+              .error = "",
+          },
+          {
+              // A swap gate exchanges states, not wires, so the wires stay in
+              // order.
+              .helper = R"mlir(
+      func.func private @helper(%a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+        %x, %y = qco.swap %a, %b : !qco.qubit, !qco.qubit
+            -> !qco.qubit, !qco.qubit
+        return %x, %y : !qco.qubit, !qco.qubit
+      })mlir",
+              .error = "",
+          },
+      },
+  };
+  for (const auto& testCase : cases) {
+    const auto source = "module {\n" + testCase.helper.str() +
+                        "\nfunc.func @main() attributes {mqt.entry_point} "
+                        "{ return }\n}";
+    SCOPED_TRACE(source);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_EQ(static_cast<bool>(parse(source)), testCase.error.empty());
+    if (!testCase.error.empty()) {
+      EXPECT_TRUE(StringRef(diagnostics).contains(testCase.error));
     }
   }
 }
