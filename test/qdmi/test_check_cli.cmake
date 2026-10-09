@@ -34,3 +34,17 @@ foreach(status idle busy offline hang hang-exit)
         "Availability check for ${status}: expected ${expected}, got ${result}: ${output}${error}")
   endif()
 endforeach()
+
+foreach(arguments IN
+        ITEMS "0;--help" "2;--device" "2;--timeout;1" "2;--device;test.check;--timeout;0"
+              "2;--unknown;value" "1;--device;unknown")
+  list(POP_FRONT arguments expected)
+  execute_process(
+    COMMAND "${CHECKER}" ${arguments}
+    RESULT_VARIABLE result
+    OUTPUT_QUIET ERROR_QUIET
+    TIMEOUT 5)
+  if(NOT result STREQUAL "${expected}")
+    message(FATAL_ERROR "Availability command ${arguments}: expected ${expected}, got ${result}")
+  endif()
+endforeach()
