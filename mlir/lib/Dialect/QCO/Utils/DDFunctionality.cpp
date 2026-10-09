@@ -2296,7 +2296,7 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
   return outcome;
 }
 
-static bool canBranchStructured(func::FuncOp func, bool& hasCountedLoop) {
+static bool canBranchStructured(func::FuncOp func) {
   bool found = false;
   bool unsupported = false;
   SymbolTableCollection symbols;
@@ -2310,7 +2310,6 @@ static bool canBranchStructured(func::FuncOp func, bool& hasCountedLoop) {
           unsupported = true;
           break;
         }
-        hasCountedLoop = true;
       }
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
       auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
@@ -2683,7 +2682,6 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     return failure();
   }
   std::optional<dd::VectorDD> state;
-  const bool automaticWorkers = workers == 0;
   if (workers == 0) {
     /// Keep small jobs serial and bound repeated prefix work per package.
     workers = std::clamp(shots / 256, size_t{1}, size_t{8});
@@ -2713,9 +2711,10 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
       }
     }
     if (adaptive) {
-      bool hasCountedLoop = false;
-      const bool branch = canBranchStructured(func, hasCountedLoop);
-      if (branch && !hasCountedLoop && automaticWorkers) {
+      const bool branch = canBranchStructured(func);
+      if (branch) {
+        // shortcut: Shared structured-branch evaluation corrupts concurrent
+        // shot groups; isolate its IR before enabling multiple workers.
         workers = 1;
       }
       if (workers > 1) {
@@ -2773,11 +2772,6 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
           auto& worker = work[i];
           std::mt19937_64 workerRng(workerSeeds[i]);
           const size_t count = (shots / workers) + (i < shots % workers);
-          if (branch) {
-            return sampleBranches(func, *worker.dd, count, workerRng,
-                                  worker.prepared, *plan, worker.shots,
-                                  options);
-          }
           return sampleImpl(
               func,
               dd::makeZeroState(worker.prepared.qubits.numQubits, *worker.dd),
