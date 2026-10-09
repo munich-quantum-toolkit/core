@@ -479,11 +479,13 @@ public:
   void reorderOperations();
 
   /**
-   * @brief Check whether the quantum computation contains dynamic circuit
+   * @brief Checks whether the quantum computation contains dynamic circuit
    * primitives
-   * @details Dynamic circuit primitives are mid-circuit measurements, resets,
-   * or classical control flow operations. This method traverses the whole
-   * circuit once until it finds a dynamic operation.
+   * @details Detects resets, classical control flow, and gates that use a
+   * previously measured qubit as a target or control, including symbolic gates.
+   * Traverses compound operations in execution order and stops at the first
+   * dynamic operation. Barriers and repeated measurements alone do not make a
+   * circuit dynamic.
    * @return Whether the quantum computation contains dynamic circuit primitives
    */
   [[nodiscard]] bool isDynamic() const;

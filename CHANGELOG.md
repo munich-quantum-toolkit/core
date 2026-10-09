@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🐛 Fix dynamic circuit detection for symbolic gates and barriers ([#2722])
+  ([**@denialhaag**])
+
 ## [3.11.0] - 2026-10-08
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3110)._
@@ -902,6 +907,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2722]: https://github.com/munich-quantum-toolkit/core/pull/2722
 [#2714]: https://github.com/munich-quantum-toolkit/core/pull/2714
 [#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710
 [#2709]: https://github.com/munich-quantum-toolkit/core/pull/2709

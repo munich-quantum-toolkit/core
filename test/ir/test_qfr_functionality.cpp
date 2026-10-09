@@ -1164,6 +1164,72 @@ TEST_F(QFRFunctionality, isDynamicCompoundOperation) {
   EXPECT_TRUE(qc.isDynamic());
 }
 
+TEST_F(QFRFunctionality, isDynamicSymbolicGates) {
+  const auto angle = Symbolic{sym::Term<fp>{sym::Variable("theta")}};
+  QuantumComputation qc(2, 1);
+  qc.rx(angle, 0);
+  EXPECT_FALSE(qc.isDynamic());
+  qc.measure(0, 0);
+  qc.ry(angle, 1);
+  EXPECT_FALSE(qc.isDynamic());
+  qc.rz(angle, 0);
+  EXPECT_TRUE(qc.isDynamic());
+}
+
+TEST_F(QFRFunctionality, isDynamicSymbolicControl) {
+  QuantumComputation qc(2, 1);
+  qc.measure(0, 0);
+  qc.crx(Symbolic{sym::Term<fp>{sym::Variable("theta")}}, Control{0}, 1);
+  EXPECT_TRUE(qc.isDynamic());
+}
+
+TEST_F(QFRFunctionality, isDynamicSymbolicCompoundOperation) {
+  const auto angle = Symbolic{sym::Term<fp>{sym::Variable("theta")}};
+  QuantumComputation body(2, 1);
+  body.rx(angle, 0);
+  body.measure(0, 0);
+  QuantumComputation nested(2, 1);
+  nested.emplace_back(body.asCompoundOperation());
+  QuantumComputation qc(2, 1);
+  qc.emplace_back(nested.asCompoundOperation());
+  qc.ry(angle, 1);
+  EXPECT_FALSE(qc.isDynamic());
+  qc.rz(angle, 0);
+  EXPECT_TRUE(qc.isDynamic());
+
+  QuantumComputation wrapper(2, 1);
+  wrapper.emplace_back(qc.asCompoundOperation());
+  EXPECT_TRUE(wrapper.isDynamic());
+}
+
+TEST_F(QFRFunctionality, isDynamicBarriers) {
+  QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.barrier(0);
+  EXPECT_FALSE(qc.isDynamic());
+
+  QuantumComputation compound(1, 1);
+  compound.emplace_back(qc.asCompoundOperation());
+  EXPECT_FALSE(compound.isDynamic());
+  compound.x(0);
+  EXPECT_TRUE(compound.isDynamic());
+}
+
+TEST_F(QFRFunctionality, isDynamicRepeatedMeasurements) {
+  QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.measure(0, 0);
+  EXPECT_FALSE(qc.isDynamic());
+}
+
+TEST_F(QFRFunctionality, isDynamicSparsePhysicalIndices) {
+  QuantumComputation qc(3, 1);
+  qc.measure(2, 0);
+  qc.rx(Symbolic{sym::Term<fp>{sym::Variable("theta")}}, 2);
+  qc.removeQubit(1);
+  EXPECT_TRUE(qc.isDynamic());
+}
+
 TEST_F(QFRFunctionality, emptyPermutation) {
   const Permutation perm{};
 
