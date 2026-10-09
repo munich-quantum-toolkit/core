@@ -11,13 +11,43 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
+from importlib.metadata import distribution
 from pathlib import Path
 
 import pytest
 
 from mqt.core.qdmi import builtin_driver
+
+
+@pytest.mark.parametrize("device", ["ddsim", "sc"])
+def test_relocated_device_library(device: str, tmp_path: Path) -> None:
+    """Load a device without the wheel's private C++ libraries or Python imports."""
+    package = distribution("mqt-core")
+    manifest_name = f"mqt-core-qdmi-{device}-device.qdmi.json"
+    assert package.files is not None
+    manifest = next(package.locate_file(file) for file in package.files if file.name == manifest_name)
+    entry = json.loads(manifest.read_text())["qdmi"]["devices"][0]
+    library = tmp_path / entry["library"]
+    shutil.copy2(manifest.parent / entry["library"], library)
+    script = """
+import ctypes
+import sys
+
+library = ctypes.CDLL(sys.argv[1])
+assert getattr(library, sys.argv[2] + "_QDMI_device_initialize")() == 0
+assert getattr(library, sys.argv[2] + "_QDMI_device_finalize")() == 0
+"""
+    result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [sys.executable, "-c", script, str(library), entry["prefix"]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_manifest_registration_and_offline_enumeration(tmp_path: Path) -> None:
