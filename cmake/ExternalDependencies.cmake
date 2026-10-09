@@ -26,7 +26,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-    GIT_TAG v0.4.0
+    GIT_TAG 50473fefc2ba3f54568b57bc6a413367edffcc00
     EXCLUDE_FROM_ALL)
   block()
   # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
