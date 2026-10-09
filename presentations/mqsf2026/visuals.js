@@ -346,7 +346,7 @@
           step,
           3,
           `${icon("server", 1395, 340, 145)}${text(1465, 543, "HPC", 34)}
-        ${text(800, 626, "Schematic workflow · numerical results follow", 28)}`,
+        ${text(800, 626, "Schematic workflow · measured results shown separately", 28)}`,
         ),
     );
   }

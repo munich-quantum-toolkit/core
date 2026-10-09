@@ -108,7 +108,7 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
   --source /path/to/Quantum_Monte_Carlo_Chemistry
 
 python presentations/mqsf2026/capture_execution.py \
-  --library build/release-clang-ipo/src/qdmi/libmqt-core-qdmi-ddsim-device.so \
+  --library build/release-clang-ipo/lib/libmqt-core-qdmi-ddsim-device.so \
   --application presentations/mqsf2026/captures/afqmc.json
 ```
 

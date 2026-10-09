@@ -103,6 +103,8 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             assert page.locator("#slide-number").inner_text().startswith(f"{index + 1:02d} / {len(slides)}")
             assert page.locator("#section-label").inner_text().strip()
             assert page.locator("#mqsc-logo").is_visible()
+            if index == 9 and step == slides[index]["builds"]:
+                assert page.locator(".mapping-legend span").all_text_contents() == ["q[0] → 4", "q[1] → 1", "q[2] → 0"]
             if step != slides[index]["builds"]:
                 return
             page.wait_for_function(

@@ -76,9 +76,10 @@ evidence, not something the audience must read.
 
 **10. Give every qubit a physical home.** Show the captured placement on the
 Emerald coupling graph. Each next press highlights the same operands in the
-circuit and graph. Explain why locality matters. This small placement may not
-require an inserted SWAP; do not narrate a routing operation that is absent. The
-graph's positions are a readable layout, not physical chip coordinates.
+circuit and graph. Explain why locality matters. The placement legend follows
+the recorded SWAPs in the first loop iteration: q[2] moves through sites 3 and
+4, then exchanges sites with q[0]. The graph's positions are a readable layout,
+not physical chip coordinates.
 
 **11. Speak the device's gate language.** The same circuit now uses native R/CZ
 operations. Explain decomposition with one selected operation and keep its

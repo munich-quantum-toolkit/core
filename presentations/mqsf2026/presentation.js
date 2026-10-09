@@ -69,7 +69,7 @@
     if (!a?.code)
       return `<div class="code-frame"><p class="small">Capture unavailable</p></div>`;
     const lines = a.code.split("\n");
-    start = Math.max(0, Math.min(start, Math.max(0, lines.length - count)));
+    start = Math.max(0, Math.min(start, Math.max(0, lines.length - 1)));
     const shown = lines.slice(start, start + count);
     return `<div class="code-frame ${compact ? "compact" : ""}"><div class="code-title">${esc(title || a.label || a.language || "Actual source")}</div><pre class="highlight">${shown.map((l, i) => `<span class="code-line ${hot.includes(start + i) ? "hot" : ""}"><span class="line-no">${start + i + (a.excerpt_start_line || 1)}</span><span class="code-text">${a.lines_html?.[start + i] ?? esc(l)}</span></span>`).join("")}</pre></div>`;
   }
@@ -295,9 +295,20 @@
     const label = op
       ? `${op.name.toUpperCase()} · physical sites ${sites.join(" ↔ ")}`
       : "Logical qubits receive physical homes";
-    return `<div class="architecture-grid"><div>${circuit(c, { active: step ? idx : -1, limit: 8, start: Math.max(0, idx - 3) })}<p class="operation-caption">${esc(label)}</p><p class="note">${native ? "Only the target’s R / CZ operations, measurement and reset remain." : "The circuit and topology highlight the same captured operands."}</p><p class="note">Initial placement</p><div class="mapping-legend">${(
-      variant().layout?.initial || []
-    )
+    let placement = [...(variant().layout?.initial || [])];
+    if (!native && step) {
+      // This walkthrough stops in the first loop iteration, before its conditional.
+      for (const operation of ops.slice(0, idx + 1)) {
+        if (operation.name !== "swap") continue;
+        const [left, right] = operation.qubits.map(
+          (q) => c.qubits.find((w) => w.id === q).site,
+        );
+        placement = placement.map((site) =>
+          site === left ? right : site === right ? left : site,
+        );
+      }
+    }
+    return `<div class="architecture-grid"><div>${circuit(c, { active: step ? idx : -1, limit: 8, start: Math.max(0, idx - 3) })}<p class="operation-caption">${esc(label)}</p><p class="note">${native ? "Only the target’s R / CZ operations, measurement and reset remain." : "The circuit and topology highlight the same captured operands."}</p><p class="note">${!native && step ? "Current placement · first loop iteration" : "Initial placement"}</p><div class="mapping-legend">${placement
       .slice(0, 3)
       .map((p, i) => `<span>q[${i}] → ${p}</span>`)
       .join(
@@ -630,7 +641,7 @@
     5,
     (s) =>
       heading("Follow the same three wires.") +
-      `<div style="margin-top:90px">${circuit(artifact("source")?.circuit, { limit: 10, active: s < 5 ? s + 2 : -1 })}</div><p class="statement blue">${["Reset the ancilla.", "Write the first data qubit’s parity.", "Combine the second data qubit.", "Measure the ancilla.", "Apply the conditional correction.", "Keep the loop around the whole operation."][s]}</p>` +
+      `<div class="circuit-large" style="margin-top:45px">${circuit(artifact("source")?.circuit, { limit: 10, active: s < 5 ? s + 2 : -1 })}</div><p class="statement blue">${["Reset the ancilla.", "Write the first data qubit’s parity.", "Combine the second data qubit.", "Measure the ancilla.", "Apply the conditional correction.", "Keep the loop around the whole operation."][s]}</p>` +
       sourceNote(
         "Circuit drawn from the actual imported program · loop bodies are shown once",
       ),
@@ -696,12 +707,12 @@
     1,
     (s) => {
       const a = artifact(s ? "qir-adaptive" : "openqasm3"),
-        needle = s ? "br i1" : "if (";
+        needle = s ? "__quantum__rt__read_result" : "if (";
       return (
         heading(
           "One compiled program.<span class='blue'> Two payload formats.</span>",
         ) +
-        `<div class="split code-focus"><div>${code(a, { start: focus(a, needle, 1), count: s ? 7 : 9, title: s ? "Actual Adaptive QIR" : "Actual native OpenQASM 3", compact: true })}</div><div><p class="huge blue">${s ? "QIR" : "QASM 3"}</p><p class="statement">${s ? "Classical LLVM control.<br>Quantum runtime calls." : "A structured program.<br>Device-native operations."}</p><p class="note">Switching formats is one click.<br>The payload itself is captured compiler output.</p></div></div>`
+        `<div class="split code-focus"><div>${code(a, { start: focus(a, needle, s ? 0 : 1), count: s ? 6 : 9, title: s ? "Actual Adaptive QIR" : "Actual native OpenQASM 3", compact: true })}</div><div><p class="huge blue">${s ? "QIR" : "QASM 3"}</p><p class="statement">${s ? "Classical LLVM control.<br>Quantum runtime calls." : "A structured program.<br>Device-native operations."}</p><p class="note">Switching formats is one click.<br>The payload itself is captured compiler output.</p></div></div>`
       );
     },
     "Show the exact branch in each emitted format. No dropdown: the next press changes format. Qiskit is available as a backup reference if needed.",
@@ -885,7 +896,7 @@
     2,
     (s) =>
       heading("Built in the open.<span class='blue'> Built together.</span>") +
-      `<div class="logos">${logo("mqt")}${logo("qdmi")}${logo("mqss")}</div>${reveal(s, 1, `<div class="logos">${logo("tum-cda")}${logo("mqv")}</div><p class="statement">Research, open interfaces, and engineering—across the ecosystem.</p>`)}${reveal(s, 2, `<div style="margin-top:55px">${qr("core", "mqt.readthedocs.io", "Explore the compiler, interfaces, examples and documentation")}</div>`)}`,
+      `<div class="logos">${logo("mqt")}${logo("qdmi")}${logo("mqss")}</div>${reveal(s, 1, `<div class="logos">${logo("tum-cda")}${logo("mqv")}</div><p class="statement">Research, open interfaces, and engineering—across the ecosystem.</p>`)}${reveal(s, 2, `<div class="final-resources" style="margin-top:45px">${qr("core", "mqt.readthedocs.io", "Compiler, interfaces and documentation")}${qr("afqmc", "github.com/amazon-braket", "Public quantum Monte Carlo tutorial")}</div>`)}`,
     "Credit the TUM Chair for Design Automation, MQT contributors, QDMI and MQSS partners, and Munich Quantum Valley. MQSC is the primary speaking affiliation; research and community contributions are visible and explicit.",
   );
   add(

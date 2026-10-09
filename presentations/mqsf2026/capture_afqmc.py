@@ -202,11 +202,11 @@ def capture_h2_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed:
             new_states, new_weights = [], []
             for index, (walker, weight) in enumerate(zip(states, weights, strict=True)):
                 if label == "Quantum shadow trial":
-                    energy, state, new_weight = quantum_qmc.cqa_imag_time_propagator(
+                    energy, state, new_weight = quantum_qmc.cqa_imag_time_propogator(  # spellchecker:disable-line
                         dtau, trial, walker, weight, float(hf.e_tot)
                     )
                 else:
-                    energy, state, new_weight = classical_qmc.imag_time_propagator(
+                    energy, state, new_weight = classical_qmc.imag_time_propogator(  # spellchecker:disable-line
                         dtau, trial, walker, weight, prop, float(hf.e_tot)
                     )
                 energies[index] = energy
@@ -331,6 +331,11 @@ def main() -> None:
 
     matchgate = importlib.import_module("afqmc.utils.matchgate")
     shadow = importlib.import_module("afqmc.utils.shadow")
+    # Check the pinned external API before collecting any quantum data.
+    quantum_qmc = importlib.import_module("afqmc.qmc.quantum_shadow")
+    classical_qmc = importlib.import_module("afqmc.qmc.classical")
+    assert callable(quantum_qmc.cqa_imag_time_propogator)  # spellchecker:disable-line
+    assert callable(classical_qmc.imag_time_propogator)  # spellchecker:disable-line
     apply_gaussian_givens = matchgate.apply_gaussian_givens
     apply_pauli_layer = matchgate.apply_pauli_layer
 

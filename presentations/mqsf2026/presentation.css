@@ -888,3 +888,12 @@ dialog p {
     transform: translateX(12px);
   }
 }
+
+.circuit-large .circuit {
+  height: 440px;
+}
+.highlight .err {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}

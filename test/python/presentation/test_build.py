@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import tempfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -152,7 +153,9 @@ def test_bundle_is_self_contained_and_keeps_exact_source() -> None:
         assert "<script src=" not in html
         assert "window.MQSF_DATA=" in html
         assert "window.ready = true;" in html
-        assert (result.parent / "mqsf-2026.zip").is_file()
+        with zipfile.ZipFile(result.parent / "mqsf-2026.zip") as archive:
+            assert archive.read("index.html").decode() == html
+            assert json.loads(gzip.decompress(archive.read("evidence.json.gz"))) == sample_capture()
 
 
 def test_large_artifacts_keep_exact_source_in_compressed_download() -> None:
