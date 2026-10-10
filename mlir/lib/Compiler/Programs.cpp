@@ -43,12 +43,12 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
-#include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -56,7 +56,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -138,12 +137,11 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
 }
 
 template <class ProgramType, class Parse>
-[[nodiscard]] static std::optional<ProgramType>
-parseTypedProgram(Parse&& parse) {
+[[nodiscard]] static FailureOr<ProgramType> parseTypedProgram(Parse&& parse) {
   auto context = createCompilerContext();
   auto mod = std::forward<Parse>(parse)(context.get());
   if (failed(mod)) {
-    return std::nullopt;
+    return failure();
   }
   return ProgramType::fromModule(std::move(context), std::move(*mod));
 }
@@ -206,116 +204,114 @@ const std::string& OpenQASMProgram::source() const noexcept { return source_; }
 
 const std::string& OpenQASMProgram::str() const noexcept { return source_; }
 
-bool OpenQASMProgram::write(const std::filesystem::path& path) const {
+LogicalResult OpenQASMProgram::write(const std::filesystem::path& path) const {
   std::error_code error;
   llvm::raw_fd_ostream stream(path.string(), error, llvm::sys::fs::OF_Text);
   if (error) {
     llvm::errs() << "failed to open OpenQASM output file '" << path.string()
                  << "': " << error.message() << '\n';
-    return false;
+    return failure();
   }
   stream << source_;
   stream.flush();
   if (stream.has_error()) {
     stream.clear_error();
     llvm::errs() << "failed to write OpenQASM file '" << path.string() << "'\n";
-    return false;
+    return failure();
   }
-  return true;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
 // QCProgram
 //===----------------------------------------------------------------------===//
 
-std::optional<QCProgram>
-QCProgram::fromMLIRString(const std::string_view source) {
+FailureOr<QCProgram> QCProgram::fromMLIRString(const std::string_view source) {
   return parseTypedProgram<QCProgram>([source](MLIRContext* context) {
     return parseMLIRString(context, source);
   });
 }
 
-std::optional<QCProgram>
+FailureOr<QCProgram>
 QCProgram::fromMLIRFile(const std::filesystem::path& path) {
   return parseTypedProgram<QCProgram>(
       [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
 }
 
-std::optional<QCProgram>
+FailureOr<QCProgram>
 QCProgram::fromOpenQASMString(const std::string_view source) {
   auto context = createCompilerContext();
   auto mod = qc::translateOpenQASMToQC(source, context.get());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()),
               "failed to translate OpenQASM source to QC");
-    return std::nullopt;
+    return failure();
   }
   return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
-std::optional<QCProgram>
+FailureOr<QCProgram>
 QCProgram::fromOpenQASMFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
   llvm::SourceMgr sourceMgr;
   if (failed(openSourceMgr(path, context.get(), sourceMgr))) {
-    return std::nullopt;
+    return failure();
   }
   auto mod = qc::translateOpenQASMToQC(sourceMgr, context.get());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()))
         << "failed to translate OpenQASM file '" << path.string() << "' to QC";
-    return std::nullopt;
+    return failure();
   }
   return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
-std::optional<QCProgram>
-QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
-                      OwningOpRef<ModuleOp> moduleOp) {
+FailureOr<QCProgram> QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
+                                           OwningOpRef<ModuleOp> moduleOp) {
   Storage storage{.context = std::move(context), .mod = std::move(moduleOp)};
   if (!storage.mod) {
     if (storage.context) {
       emitError(UnknownLoc::get(storage.context.get()),
                 "cannot construct a QC program from a null module");
     }
-    return std::nullopt;
+    return failure();
   }
   if (!storage.context) {
     storage.mod->emitError(
         "cannot construct a QC program without its owning context");
-    return std::nullopt;
+    return failure();
   }
   if (storage.mod->getContext() != storage.context.get()) {
     storage.mod->emitError(
         "cannot construct a QC program with a different MLIR context");
-    return std::nullopt;
+    return failure();
   }
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
   if (failed(verify(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
-    return std::nullopt;
+    return failure();
   }
   if (moduleUsesDialect(*storage.mod, "qco") ||
       moduleUsesDialect(*storage.mod, "qtensor")) {
     storage.mod->emitError(
         "QC programs must not contain QCO or QTensor operations");
-    return std::nullopt;
+    return failure();
   }
   return QCProgram(std::move(storage));
 }
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
 
-std::optional<QCOProgram> QCProgram::intoQCO() && {
+FailureOr<QCOProgram> QCProgram::intoQCO() && {
   PassManager pm(mod().getContext());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(mod()))) {
     mod().emitError("failed to convert QC to QCO");
-    return std::nullopt;
+    return failure();
   }
   if (failed(qco::verifyLinearity(mod()))) {
-    return std::nullopt;
+    return failure();
   }
   return QCOProgram(std::move(*this).releaseStorage());
 }
@@ -324,20 +320,20 @@ std::optional<QCOProgram> QCProgram::intoQCO() && {
 // QCOProgram
 //===----------------------------------------------------------------------===//
 
-std::optional<QCOProgram>
+FailureOr<QCOProgram>
 QCOProgram::fromMLIRString(const std::string_view source) {
   return parseTypedProgram<QCOProgram>([source](MLIRContext* context) {
     return parseMLIRString(context, source);
   });
 }
 
-std::optional<QCOProgram>
+FailureOr<QCOProgram>
 QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
   return parseTypedProgram<QCOProgram>(
       [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
 }
 
-std::optional<QCOProgram>
+FailureOr<QCOProgram>
 QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
                        OwningOpRef<ModuleOp> moduleOp) {
   Storage storage{.context = std::move(context), .mod = std::move(moduleOp)};
@@ -346,38 +342,34 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
       emitError(UnknownLoc::get(storage.context.get()),
                 "cannot construct a QCO program from a null module");
     }
-    return std::nullopt;
+    return failure();
   }
   if (!storage.context) {
     storage.mod->emitError(
         "cannot construct a QCO program without its owning context");
-    return std::nullopt;
+    return failure();
   }
   if (storage.mod->getContext() != storage.context.get()) {
     storage.mod->emitError(
         "cannot construct a QCO program with a different MLIR context");
-    return std::nullopt;
+    return failure();
   }
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
   if (failed(verify(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
-    return std::nullopt;
+    return failure();
   }
   if (moduleUsesDialect(*storage.mod, "qc")) {
     storage.mod->emitError("QCO programs must not contain QC operations");
-    return std::nullopt;
+    return failure();
   }
   if (failed(qco::verifyLinearity(*storage.mod))) {
-    return std::nullopt;
+    return failure();
   }
   return QCOProgram(std::move(storage));
 }
 
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
-
-bool QCOProgram::hasValidLinearity() const {
-  return succeeded(qco::verifyLinearity(mod()));
-}
 
 } // namespace mlir

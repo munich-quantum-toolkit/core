@@ -21,7 +21,8 @@
 #include "gtest/gtest.h"
 
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <complex>
@@ -50,20 +51,20 @@ static std::string getProgram(const std::string_view file) {
 static void expectOpenQASMSampling(std::string_view source,
                                    std::string_view expected) {
   auto qc = mlir::QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   auto sampled =
       mlir::qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42);
   ASSERT_TRUE(mlir::succeeded(sampled));
   ASSERT_EQ(sampled->size(), 1);
   EXPECT_EQ(sampled->begin()->first, expected);
   auto restored = std::move(*qco).intoQC();
-  ASSERT_TRUE(restored);
+  ASSERT_TRUE(mlir::succeeded(restored));
   auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
+  ASSERT_TRUE(mlir::succeeded(qir));
   const auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
+  ASSERT_TRUE(mlir::succeeded(ir));
   qir::JitSession session(*ir, "openqasm-slices", qir::Execution::Sampling, 42);
   session.runtime().disableOutput();
   std::vector<std::string> shots;

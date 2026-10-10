@@ -12,6 +12,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -62,7 +64,7 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
     c = measure q[0];
     reset q[1];
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const std::map<std::string, size_t> expected{
       {"foo", 1},     {"ctrl(foo)", 1}, {"ctrl(inv(x))", 1},
       {"inv(h)", 1},  {"pow(h)", 1},    {"ctrl(2,inv(x))", 1},
@@ -75,7 +77,7 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
   EXPECT_EQ(qc->operationCounts().at("qc.barrier"), 2);
   EXPECT_FALSE(qc->inspect().hasControlFlow);
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   expectCounts(*qco, 6, 8, expected);
   EXPECT_EQ(qco->operationCounts().at("qco.barrier"), 2);
 }
@@ -114,7 +116,7 @@ TEST(ProgramInspection, CompositeAndUnusedTargetModifiersStayAtomic) {
       }
     }
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const std::map<std::string, size_t> expected{
       {"ctrl", 2},
       {"inv", 1},
@@ -122,7 +124,7 @@ TEST(ProgramInspection, CompositeAndUnusedTargetModifiersStayAtomic) {
   };
   expectCounts(*qc, 2, 1, expected);
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   expectCounts(*qco, 2, 1, expected);
 }
 
@@ -141,7 +143,7 @@ TEST(ProgramInspection, QCOCountsNativeThreeQubitGates) {
       }
     }
   )");
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   expectCounts(*qco, 0, 0, {{"rccx", 1}});
 }
 
@@ -150,7 +152,7 @@ TEST(ProgramInspection, InspectSortedDistinctStaticSites) {
     OPENQASM 3.0; include "stdgates.inc";
     x $5; h $2; z $5;
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const std::vector<uint64_t> sites{2, 5};
   EXPECT_EQ(qc->inspect().numQubits, 2);
   EXPECT_EQ(qc->inspect().staticQubits, sites);
@@ -177,16 +179,16 @@ TEST(ProgramInspection, UnknownAndEmptyWidthsDiffer) {
       }
     }
   )");
-  ASSERT_TRUE(empty);
-  ASSERT_TRUE(library);
-  ASSERT_TRUE(dynamic);
+  ASSERT_TRUE(mlir::succeeded(empty));
+  ASSERT_TRUE(mlir::succeeded(library));
+  ASSERT_TRUE(mlir::succeeded(dynamic));
   EXPECT_EQ(empty->inspect().numQubits, 0);
   EXPECT_TRUE(empty->gateCounts().empty());
   EXPECT_FALSE(library->inspect().numQubits);
   expectCounts(*library, 0, 0, {});
   EXPECT_FALSE(dynamic->inspect().numQubits);
   auto qco = std::move(*dynamic).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   EXPECT_FALSE(qco->inspect().numQubits);
 }
 
@@ -208,7 +210,7 @@ TEST(ProgramInspection, AllocationsAddWidthButStoredReferencesDoNot) {
       }
     }
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   EXPECT_EQ(qc->inspect().numQubits, 3);
 }
 
@@ -226,7 +228,7 @@ TEST(ProgramInspection, AllocationWidthOverflowIsUnknown) {
     auto qc = mlir::QCProgram::fromMLIRString(
         "module { func.func @main() attributes {mqt.entry_point} { " +
         allocations + " return } }");
-    ASSERT_TRUE(qc);
+    ASSERT_TRUE(mlir::succeeded(qc));
     EXPECT_FALSE(qc->inspect().numQubits);
   }
 }
@@ -240,7 +242,7 @@ TEST(ProgramInspection, QuantumInputsHaveUnknownWidthAndBranchesAreDetected) {
       }
     }
   )");
-  ASSERT_TRUE(input);
+  ASSERT_TRUE(mlir::succeeded(input));
   EXPECT_FALSE(input->inspect().numQubits);
   auto branches = mlir::QCProgram::fromMLIRString(R"(
     module {
@@ -251,7 +253,7 @@ TEST(ProgramInspection, QuantumInputsHaveUnknownWidthAndBranchesAreDetected) {
       }
     }
   )");
-  ASSERT_TRUE(branches);
+  ASSERT_TRUE(mlir::succeeded(branches));
   EXPECT_TRUE(branches->inspect().hasControlFlow);
   EXPECT_EQ(branches->controlFlowCounts(),
             (std::map<std::string, size_t>{{"cf.br", 1}}));
@@ -275,7 +277,7 @@ TEST(ProgramInspection, InspectionIncludesHelpersButNotNestedModules) {
       }
     }
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const auto info = qc->inspect();
   EXPECT_EQ(info.staticQubits, (std::vector<uint64_t>{5}));
   EXPECT_EQ(info.numQubits, 1);
@@ -320,7 +322,7 @@ switch (selector) {
 }
 )";
   auto qc = mlir::QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const std::map<std::string, size_t> expectedCounts{
       {"cx", 2}, {"measure", 1}, {"swap", 1}, {"x", 1}, {"z", 1},
   };
@@ -335,7 +337,7 @@ switch (selector) {
                                            {"scf.while", 1},
                                            {"scf.index_switch", 1}}));
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   expectCounts(*qco, 3, 3, expectedCounts);
   const auto qcoInfo = qco->inspect();
   EXPECT_EQ(qcoInfo.numQubits, 3);

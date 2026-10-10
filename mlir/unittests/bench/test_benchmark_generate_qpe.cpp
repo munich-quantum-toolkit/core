@@ -28,6 +28,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -93,15 +94,15 @@ TEST(GenerateProgramTest, BoundsQPEPayloadAtMaximumPrecision) {
         .method = method,
     });
     auto program = generate(benchmark);
-    ASSERT_TRUE(program);
+    ASSERT_TRUE(mlir::succeeded(program));
     EXPECT_LT(program->str().size(), 4096U);
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::Jeff);
-    ASSERT_TRUE(compiled);
+    ASSERT_TRUE(mlir::succeeded(compiled));
     const auto bytes = std::get<JeffProgram>(*compiled).toBytes();
     EXPECT_LT(bytes.size(), 16'384U);
     auto restored = JeffProgram::fromBytes(bytes);
-    ASSERT_TRUE(restored);
+    ASSERT_TRUE(mlir::succeeded(restored));
     EXPECT_EQ(restored->toBytes(), bytes);
   }
 }
@@ -121,7 +122,7 @@ TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
       SCOPED_TRACE(phase.denominator());
       auto program = generate(
           QPE{{.precision = precision, .phase = phase, .method = method}});
-      ASSERT_TRUE(program);
+      ASSERT_TRUE(mlir::succeeded(program));
       DenseMap<Value, Attribute> arguments;
       std::vector<uint64_t> residues;
       std::vector<double> angles;

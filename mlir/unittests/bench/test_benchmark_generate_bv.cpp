@@ -28,8 +28,8 @@ TEST(GenerateProgramTest, EmitsStructuredBVWithMethodSpecificResources) {
       {.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
   auto staticProgram = generate(staticBenchmark);
   auto dynamicProgram = generate(dynamicBenchmark);
-  ASSERT_TRUE(staticProgram);
-  ASSERT_TRUE(dynamicProgram);
+  ASSERT_TRUE(mlir::succeeded(staticProgram));
+  ASSERT_TRUE(mlir::succeeded(dynamicProgram));
 
   EXPECT_EQ(test::countOps<qc::AllocOp>(staticProgram->module()), 1U);
   EXPECT_EQ(test::countOps<memref::AllocOp>(staticProgram->module()), 1U);

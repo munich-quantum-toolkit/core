@@ -25,6 +25,8 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -37,12 +39,12 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
   for (const size_t qubits : {1U, 3U, 16U}) {
     const WState benchmark{{.qubits = qubits}};
     auto qc = generate(benchmark);
-    ASSERT_TRUE(qc);
+    ASSERT_TRUE(mlir::succeeded(qc));
     if (qubits > 1) {
       EXPECT_GT(test::countOps<mlir::scf::ForOp>(qc->module()), 0U);
     }
     auto qco = qc->copy().intoQCO();
-    ASSERT_TRUE(qco);
+    ASSERT_TRUE(mlir::succeeded(qco));
     const auto before = qco->str();
     dd::Package package(0);
     const auto root = mlir::qco::simulateStatevector(
@@ -69,16 +71,16 @@ TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   constexpr size_t qubits = 1024;
   const WState benchmark{{.qubits = qubits}};
   auto qc = generate(benchmark);
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   EXPECT_LT(test::countOperations(qc->module()), 100U);
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   auto jeff = std::move(*qco).intoJeff();
-  ASSERT_TRUE(jeff);
+  ASSERT_TRUE(mlir::succeeded(jeff));
   auto restored = mlir::JeffProgram::fromBytes(jeff->toBytes());
-  ASSERT_TRUE(restored);
+  ASSERT_TRUE(mlir::succeeded(restored));
   qco = std::move(*restored).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   dd::Package package(0);
   const auto root = mlir::qco::simulateStatevector(
       mlir::mqt::getEntryPoint(qco->module()), package);

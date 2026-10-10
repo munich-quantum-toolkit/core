@@ -21,6 +21,7 @@
 
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
 #include <map>
@@ -48,19 +49,19 @@ static std::vector<std::string> parameterNames(ModuleOp moduleOp) {
   return names;
 }
 
-static bool bind(ModuleOp moduleOp,
-                 const std::map<std::string, double>& values) {
+static LogicalResult bind(ModuleOp moduleOp,
+                          const std::map<std::string, double>& values) {
   if (values.empty()) {
-    return true;
+    return success();
   }
   auto entry = mqt::getEntryPoint(moduleOp);
   if (!entry) {
     moduleOp.emitError("parameter binding requires an entry point");
-    return false;
+    return failure();
   }
   if (!SymbolTable::symbolKnownUseEmpty(entry, moduleOp)) {
     entry.emitError("cannot bind parameters of a referenced entry point");
-    return false;
+    return failure();
   }
   llvm::StringMap<unsigned> indices;
   for (unsigned index = 0; index < entry.getNumArguments(); ++index) {
@@ -71,11 +72,11 @@ static bool bind(ModuleOp moduleOp,
   for (const auto& [name, value] : values) {
     if (!indices.contains(name)) {
       entry.emitError() << "unknown f64 parameter '" << name << "'";
-      return false;
+      return failure();
     }
     if (!std::isfinite(value)) {
       entry.emitError() << "parameter '" << name << "' must be finite";
-      return false;
+      return failure();
     }
   }
   OpBuilder builder(&entry.getBody().front(), entry.getBody().front().begin());
@@ -87,7 +88,7 @@ static bool bind(ModuleOp moduleOp,
     entry.getArgument(index).replaceAllUsesWith(constant);
     erased.set(index);
   }
-  return succeeded(entry.eraseArguments(erased));
+  return entry.eraseArguments(erased);
 }
 std::vector<std::string> QCProgram::parameters() const {
   return parameterNames(mod());
@@ -95,10 +96,12 @@ std::vector<std::string> QCProgram::parameters() const {
 std::vector<std::string> QCOProgram::parameters() const {
   return parameterNames(mod());
 }
-bool QCProgram::bindParameters(const std::map<std::string, double>& values) {
+LogicalResult
+QCProgram::bindParameters(const std::map<std::string, double>& values) {
   return bind(mod(), values);
 }
-bool QCOProgram::bindParameters(const std::map<std::string, double>& values) {
+LogicalResult
+QCOProgram::bindParameters(const std::map<std::string, double>& values) {
   return bind(mod(), values);
 }
 } // namespace mlir

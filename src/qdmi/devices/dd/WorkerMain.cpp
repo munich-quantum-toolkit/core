@@ -22,11 +22,10 @@
 
 #include "qdmi/constants.h"
 
-#include "mlir/Support/LogicalResult.h"
-
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_socket_stream.h"
 
@@ -48,16 +47,16 @@
 
 namespace {
 [[nodiscard]] auto parseQASMToQCO(const std::string_view source)
-    -> std::optional<mlir::QCOProgram> {
+    -> llvm::FailureOr<mlir::QCOProgram> {
   auto context = mlir::createCompilerContext();
   auto moduleOp = mlir::qc::translateOpenQASMToQC(source, context.get());
   if (!moduleOp) {
-    return std::nullopt;
+    return llvm::failure();
   }
   auto qcProgram =
       mlir::QCProgram::fromModule(std::move(context), std::move(moduleOp));
-  if (!qcProgram) {
-    return std::nullopt;
+  if (llvm::failed(qcProgram)) {
+    return llvm::failure();
   }
   return std::move(*qcProgram).intoQCO();
 }
@@ -75,7 +74,7 @@ struct Execution {
   dd::VectorDD stateVecDD_{};
   bool qasmProgram() {
     auto qcoProgram = parseQASMToQCO(program_);
-    if (!qcoProgram) {
+    if (llvm::failed(qcoProgram)) {
       return false;
     }
     // NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
@@ -86,7 +85,7 @@ struct Execution {
     }
     if (numShots_ != 0) {
       mlir::qco::DDSamplingState retainedState;
-      if (mlir::failed(
+      if (llvm::failed(
               mlir::qco::sample(entryPoint, numShots_, seed_.value_or(0),
                                 mlir::qco::DDArgumentBindings{}, &shots_,
                                 &retainedState, {}, workerSlots_))) {
@@ -98,7 +97,7 @@ struct Execution {
     }
     dd_ = std::make_unique<dd::Package>();
     auto state = mlir::qco::simulateStatevector(entryPoint, *dd_);
-    if (mlir::failed(state)) {
+    if (llvm::failed(state)) {
       return false;
     }
     stateVecDD_ = *state;

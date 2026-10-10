@@ -34,7 +34,7 @@ TEST(GenerateProgramTest, KeepsLargestGHZStructured) {
         .qubits = GHZOptions::MAX_QUBITS,
         .topology = topology,
     }});
-    ASSERT_TRUE(program);
+    ASSERT_TRUE(mlir::succeeded(program));
     EXPECT_LT(test::countOperations(program->module()), 100U);
   }
 }

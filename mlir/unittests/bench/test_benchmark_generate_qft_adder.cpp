@@ -30,6 +30,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <cmath>
@@ -50,7 +51,7 @@ TEST(GenerateProgramTest, BoundsLargestQuantumQFTAdderPayload) {
       .addend = std::string(QFTAdderOptions::MAX_QUBITS, '+'),
       .accumulator = std::string(QFTAdderOptions::MAX_QUBITS - 1, '0') + "1",
   }});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(program->str().size(), 8192U);
 }
 
@@ -75,7 +76,7 @@ TEST(GenerateProgramTest, ComputesWideClassicalQFTAdderPhasesAccurately) {
           .method = QFTAdderMethod::Constant,
           .overflow = overflow,
       }});
-      ASSERT_TRUE(program);
+      ASSERT_TRUE(mlir::succeeded(program));
       EXPECT_LT(program->str().size(), 8192U);
       qc::POp phase;
       program->module().walk([&](qc::POp op) {
@@ -162,7 +163,7 @@ TEST(GenerateProgramTest, SamplesEverySmallQFTAdderOperandPair) {
                 dd::intToBinaryString(total, sumWidth);
             EXPECT_EQ(benchmark.expectedResult(), expected);
             auto program = test::generateQCO(benchmark);
-            ASSERT_TRUE(program);
+            ASSERT_TRUE(mlir::succeeded(program));
             auto counts = qco::sample(
                 mlir::mqt::getEntryPoint(program->module()), 32, 17);
             ASSERT_TRUE(succeeded(counts));
@@ -189,7 +190,7 @@ TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
         }};
         SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
         auto program = test::generateQCO(benchmark);
-        ASSERT_TRUE(program);
+        ASSERT_TRUE(mlir::succeeded(program));
         dd::Package package(0);
         auto state = qco::simulateStatevector(
             mlir::mqt::getEntryPoint(program->module()), package);
