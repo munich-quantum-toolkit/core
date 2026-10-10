@@ -220,8 +220,7 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
   const dd::Controls mappedControls(mappedAddresses.begin(),
                                     mappedTargets.begin());
   qState.edge = qState.dd->applyOperation(
-      mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, mappedTargets,
-                            mappedControls),
+      mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls),
       qState.edge);
 }
 
@@ -292,9 +291,7 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
     if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
       const std::array targetArray{target};
       qState.edge = qState.dd->applyOperation(
-          mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits,
-                                targetArray),
-          qState.edge);
+          mlir::qco::makeGateDD(*qState.dd, matrix, targetArray), qState.edge);
     }
   }
 }
@@ -414,8 +411,7 @@ auto Runtime::takeState() -> QState {
       const auto other = qubitPermutation[q];
       const std::array targets{other, qubitPermutation[other]};
       qState.edge = qState.dd->applyOperation(
-          mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, targets),
-          qState.edge);
+          mlir::qco::makeGateDD(*qState.dd, matrix, targets), qState.edge);
       std::swap(qubitPermutation[q], qubitPermutation[other]);
     }
   }

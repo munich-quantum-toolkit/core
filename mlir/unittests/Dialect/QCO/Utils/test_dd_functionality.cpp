@@ -152,8 +152,7 @@ referenceGate(dd::Targets targets,
 template <typename GateOp>
 [[nodiscard]] static dd::MatrixDD
 referenceGateDD(dd::Package& package, llvm::ArrayRef<dd::Qubit> targets) {
-  return makeGateDD(package, GateOp::getUnitaryMatrix(), package.qubits(),
-                    targets);
+  return makeGateDD(package, GateOp::getUnitaryMatrix(), targets);
 }
 
 namespace {
@@ -196,7 +195,7 @@ protected:
     auto referenceSim = dd::makeZeroState(numQubits, *dd);
     for (const auto& gate : gates) {
       const auto operation =
-          makeGateDD(*dd, gate.matrix, numQubits, gate.targets, gate.controls);
+          makeGateDD(*dd, gate.matrix, gate.targets, gate.controls);
       referenceFn = dd->applyOperation(operation, referenceFn);
       referenceSim = dd->applyOperation(operation, referenceSim);
     }
@@ -257,9 +256,8 @@ TEST(DDAdapterTest, MatchesRawSingleQubitConstructor) {
   const dd::Controls controls{{0, dd::Control::Type::Neg}, {3}};
   dd::Package package(numQubits);
 
-  EXPECT_EQ(
-      makeGateDD(package, toDynamicMatrix(literal), numQubits, {2}, controls),
-      package.makeGateDD(raw, controls, 2));
+  EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), {2}, controls),
+            package.makeGateDD(raw, controls, 2));
 }
 
 TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
@@ -272,8 +270,7 @@ TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
   for (const std::array<dd::Qubit, 2> targets :
        {std::array<dd::Qubit, 2>{3, 1}, {1, 3}}) {
     EXPECT_EQ(
-        makeGateDD(package, toDynamicMatrix(literal), numQubits, targets,
-                   controls),
+        makeGateDD(package, toDynamicMatrix(literal), targets, controls),
         package.makeTwoQubitGateDD(literal, controls, targets[0], targets[1]));
   }
 }
@@ -287,8 +284,7 @@ TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
 
   for (const std::array<dd::Qubit, 3> targets :
        {std::array<dd::Qubit, 3>{4, 1, 3}, {1, 3, 4}}) {
-    EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), numQubits, targets,
-                         controls),
+    EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), targets, controls),
               package.makeThreeQubitGateDD(literal, controls, targets[0],
                                            targets[1], targets[2]));
   }
@@ -303,7 +299,7 @@ TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
   constexpr std::array<dd::Qubit, 4> targets{4, 1, 5, 2};
   dd::Package package(numQubits);
 
-  EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), numQubits, targets),
+  EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), targets),
             package.makeDDFromMatrix(
                 embedPermutation(numQubits, targets, rowForColumn)));
 }
@@ -323,8 +319,7 @@ TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
            std::array<dd::Qubit, 4>{4, 1, 5, 2},
        }) {
     const auto matrix = dd::getMatrix(
-        makeGateDD(package, toDynamicMatrix(local), numQubits, targets),
-        numQubits);
+        makeGateDD(package, toDynamicMatrix(local), targets), numQubits);
     size_t targetMask = 0;
     for (const auto wire : targets) {
       targetMask |= size_t{1} << wire;
@@ -348,15 +343,15 @@ TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
 }
 
 TEST(DDAdapterTest, PreservesScalarMatricesWithAndWithoutIdleWires) {
-  dd::Package package(4);
   for (const size_t numQubits : {0U, 4U}) {
+    dd::Package package(numQubits);
     for (const auto scalar : {
              std::complex<double>{},
              std::polar(1., 0.37),
              std::complex<double>{1e-15, 0.},
          }) {
       const std::array matrix{scalar};
-      EXPECT_EQ(makeGateDD(package, std::span{matrix}, numQubits, {}),
+      EXPECT_EQ(makeGateDD(package, std::span{matrix}, {}),
                 dd::mEdge::terminal(package.cn.lookup(scalar)));
     }
   }

@@ -359,7 +359,7 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
 }
 
 using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
-                                             size_t, ArrayRef<dd::Qubit>,
+                                             ArrayRef<dd::Qubit>,
                                              const dd::Controls&);
 
 namespace {
@@ -371,14 +371,14 @@ struct DecodedStandardGate {
 
 template <typename GateOp, size_t NumParams>
 static auto buildStandardGateDD(dd::Package& package,
-                                ArrayRef<double> parameters, size_t numQubits,
+                                ArrayRef<double> parameters,
                                 ArrayRef<dd::Qubit> targets,
                                 const dd::Controls& controls) -> dd::MatrixDD {
   assert(parameters.size() == NumParams);
   std::array<double, NumParams> values{};
   std::copy_n(parameters.begin(), NumParams, values.begin());
-  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), numQubits,
-                    targets, controls);
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), targets,
+                    controls);
 }
 
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
@@ -462,8 +462,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  state = walk.dd->applyOperation(
-      makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires), state);
+  state = walk.dd->applyOperation(makeGateDD(*walk.dd, local, wires), state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -493,8 +492,7 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
       if (found != variants.end()) {
         matrix = found->matrix;
       } else {
-        matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                            *targets, controls);
+        matrix = gate.build(*walk.dd, gate.parameters, *targets, controls);
         // Bound gate-cache storage to eight matrices per operation.
         if (variants.size() < 8) {
           walk.dd->incRef(matrix);
@@ -510,12 +508,10 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
         }
       }
     } else {
-      matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                          *targets, controls);
+      matrix = gate.build(*walk.dd, gate.parameters, *targets, controls);
     }
   } else {
-    matrix = gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                        *targets, controls);
+    matrix = gate.build(*walk.dd, gate.parameters, *targets, controls);
   }
   state = walk.dd->applyOperation(matrix, state);
   return walk.qubits->remapUnitary(unitary);
@@ -1702,9 +1698,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
           if (bit == '1') {
             state = walk.dd->applyOperation(
-                makeGateDD(*walk.dd, XOp::getUnitaryMatrix(),
-                           walk.qubits->numQubits, {*q}),
-                state);
+                makeGateDD(*walk.dd, XOp::getUnitaryMatrix(), {*q}), state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
           return success();
@@ -2467,10 +2461,8 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           branch.qubits.bind(measure.getQubitOut(), *q);
         } else {
           if (!measuredZero) {
-            branch.state =
-                dd.applyOperation(makeGateDD(dd, XOp::getUnitaryMatrix(),
-                                             branch.qubits.numQubits, {*q}),
-                                  branch.state);
+            branch.state = dd.applyOperation(
+                makeGateDD(dd, XOp::getUnitaryMatrix(), {*q}), branch.state);
           }
           branch.qubits.bind(reset.getQubitOut(), *q);
         }
