@@ -203,7 +203,6 @@ version = ">=1.10"
 
 include = [ "python/mqt/core/_version.py" ]
 exclude = [
-  "spank/**",
   "**/.github",
   "**/doc",
   "**/docs",
@@ -378,7 +377,6 @@ PC170 = "We do not use rST files anymore"
 [tool.check-sdist]
 sdist-only = [ "python/mqt/core/_version.py" ]
 git-only = [
-  "spank/*",
   "docs/*",
   "test/*",
   "mlir/*",

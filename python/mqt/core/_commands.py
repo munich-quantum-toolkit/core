@@ -16,6 +16,8 @@ from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 from typing import NoReturn
 
+from ._qdmi_discovery import discover_qdmi_manifests
+
 
 def compiler() -> NoReturn:
     """Launch the bundled MQT compiler."""
@@ -29,16 +31,17 @@ def benchmark() -> NoReturn:
 
 def qdmi_check() -> NoReturn:
     """Probe whether a QDMI device is operational."""
-    if sys.platform == "win32":
-        sys.exit("The QDMI availability check requires Linux or macOS.")
-    run_tool("mqt-core-qdmi-check")
+    arguments: list[str] = []
+    if sys.argv[1:] != ["--help"]:
+        discover_qdmi_manifests(lambda path: arguments.extend(("--manifest", str(path))))
+    run_tool("mqt-core-qdmi-check", *arguments)
 
 
-def run_tool(name: str) -> NoReturn:
+def run_tool(name: str, *extra_arguments: str) -> NoReturn:
     """Replace this process with a bundled native tool."""
     suffix = ".exe" if sys.platform == "win32" else ""
     executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/{name}{suffix}")))
-    os.execv(executable, [str(executable), *sys.argv[1:]])  # ruff: ignore[start-process-with-no-shell]
+    os.execv(executable, [str(executable), *sys.argv[1:], *extra_arguments])  # ruff: ignore[start-process-with-no-shell]
 
 
 def include_dir() -> Path:

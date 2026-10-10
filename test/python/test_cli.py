@@ -20,7 +20,6 @@ from unittest.mock import patch
 import pytest
 
 from mqt.core import __version__ as mqt_core_version
-from mqt.core import _commands  # ruff: ignore[import-private-name]
 
 if TYPE_CHECKING:
     from pytest_console_scripts import ScriptRunner
@@ -144,7 +143,7 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     [
         "mqt-cc",
         "mqt-core-bench",
-        pytest.param("mqt-core-qdmi-check", marks=pytest.mark.skipif(sys.platform == "win32", reason="POSIX checker")),
+        "mqt-core-qdmi-check",
     ],
 )
 def test_native_tool_entry_point(script_runner: ScriptRunner, tool: str) -> None:
@@ -158,15 +157,8 @@ def test_native_tool_entry_point(script_runner: ScriptRunner, tool: str) -> None
 
 
 @pytest.mark.script_launch_mode("subprocess")
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX checker")
 def test_qdmi_availability(script_runner: ScriptRunner) -> None:
     """Probe a device through the installed command and catalogue."""
     result = script_runner.run(["mqt-core-qdmi-check", "--device", "mqt.sc.default"])
     assert result.success
     assert not result.stdout
-
-
-def test_qdmi_availability_windows() -> None:
-    """Explain the availability command's platform requirement."""
-    with patch.object(_commands.sys, "platform", "win32"), pytest.raises(SystemExit, match="Linux or macOS"):
-        _commands.qdmi_check()

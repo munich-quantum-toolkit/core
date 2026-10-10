@@ -14,8 +14,8 @@ on:
       - "python/mqt/core/_commands.py"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
-      - "spank/**"
       - "docker/slurm/**"
+      - "examples/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -32,8 +32,8 @@ on:
       - "python/mqt/core/_commands.py"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
-      - "spank/**"
       - "docker/slurm/**"
+      - "examples/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -50,7 +50,7 @@ permissions:
 
 jobs:
   slurm:
-    name: Slurm 25.11, QDMI devices, and SPANK
+    name: Slurm scheduling and QDMI execution
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
@@ -72,7 +72,7 @@ jobs:
       - name: Check the Slurm test runner
         run: >-
           uv run --no-project --with 'pytest>=9.0.1' --python 3.14
-          pytest -o addopts= -q test/python/test_slurm_integration.py
+          pytest -o addopts= -q test/python/test_slurm_integration.py test/python/test_slurm_availability.py
 
       - name: Set up MLIR
         uses: munich-quantum-software/setup-mlir@8d3eae73d0f0196fd30c787d91ebd2018cb6c709 # v1.5.0
@@ -83,15 +83,6 @@ jobs:
         uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           version: v0.16.0
-
-      - name: Lint the standalone SPANK component
-        run: |
-          sudo apt-get update
-          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm-install.sh"
-          sudo bash "$RUNNER_TEMP/llvm-install.sh" 23
-          sudo apt-get install --no-install-recommends -y clang-tidy-23 libslurm-dev
-          cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          clang-tidy-23 -p build/spank spank/spank.cpp --header-filter='(^|/)spank/' --warnings-as-errors='*'
 
       - name: Build the MQT Core wheel
         timeout-minutes: 15

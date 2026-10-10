@@ -172,7 +172,7 @@ def test_invocations_use_distinct_projects_and_artifacts(monkeypatch: pytest.Mon
 
 
 def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
-    """Keep workload arguments separate from fixture and reference options."""
+    """Keep workload arguments separate from fixture options."""
     setup = tmp_path / "setup.sh"
     setup.touch()
     options = runner.parse_arguments((
@@ -182,8 +182,6 @@ def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
         "setup.sh",
         "--device-license",
         "provider.device",
-        "--reference",
-        "PROVIDER_PROFILE=profile=value",
         "--",
         "python3",
         "probe.py",
@@ -191,7 +189,6 @@ def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
         "one argument",
     ))
     assert options.workload == tmp_path
-    assert options.reference == ["PROVIDER_PROFILE=profile=value"]
     assert options.command == ["python3", "probe.py", "--label", "one argument"]
 
 
@@ -201,8 +198,6 @@ def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
         ("--device-license", "provider.device"),
         ("--", "python3", "probe.py"),
         ("--device-license", "provider.device:2", "--", "/bin/true"),
-        ("--reference", "PROVIDER_PROFILE"),
-        ("--reference", "PROVIDER_PROFILE=two words"),
     ],
 )
 def test_invalid_provider_inputs_fail_before_docker(arguments: tuple[str, ...]) -> None:

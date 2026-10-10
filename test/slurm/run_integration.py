@@ -406,37 +406,50 @@ def test_core() -> None:
         msg = "The SC job did not complete while both DDSIM licenses remained held"
         raise AssertionError(msg)
 
-    (RUNTIME / "jobs" / f"release-{first}").touch()
-    wait_for("the released first DDSIM job to finish", lambda: job_finished(first))
-    wait_for_result("ddsim", third, "the pending third DDSIM job to execute")
-    wait_for("the third DDSIM job to finish", lambda: job_finished(third))
+    configuration = RUNTIME / "jobs" / "availability.json"
+    configuration.write_text(
+        json.dumps({"schema-version": 1, "qdmi": {"devices": [{"id": "mqt.ddsim.default", "enabled": False}]}}),
+        encoding="utf-8",
+    )
+    monitor = ("python3", "/workspace/examples/slurm/update_availability.py", "--license", "mqt.ddsim.default:2")
+    assert controller("env", "MQT_CORE_QDMI_CONFIG_FILE=/jobs/availability.json", *monitor, check=False).returncode == 1
+    assert license_record("mqt.ddsim.default")["Reserved"] == "2"
+    assert job_matches(first, "RUNNING")
+    assert job_matches(second, "RUNNING")
+    for job_id in (first, second):
+        (RUNTIME / "jobs" / f"release-{job_id}").touch()
+        wait_for(f"the released DDSIM job {job_id} to finish", lambda job_id=job_id: job_finished(job_id))
+    assert_license("mqt.ddsim.default", total=2, used=0, free=2)
+    controller(*monitor, "--block-only")
+    job("srun", "--immediate=5", "--time=1", "--licenses=mqt.sc.default", "/bin/true", timeout=60)
+    assert job_matches(third, "PENDING", node="", reason="Licenses")
+    assert job("scontrol", "delete", "ReservationName=qdmi-unavailable-mqt.ddsim.default", check=False).returncode != 0
 
+    controller(*monitor)
+    wait_for_result("ddsim", third, "the pending DDSIM job to execute after recovery")
+    wait_for("the third DDSIM job to finish", lambda: job_finished(third))
     assert_bell_result(first, NODES[0])
     assert_bell_result(second, NODES[1])
     assert_bell_result(third)
-    assert_license("mqt.ddsim.default", total=2, used=1, free=1)
-
-    (RUNTIME / "jobs" / f"release-{second}").touch()
-    wait_for("the released second DDSIM job to finish", lambda: job_finished(second))
     assert_license("mqt.ddsim.default", total=2, used=0, free=2)
+    assert license_record("mqt.ddsim.default")["Reserved"] == "0"
 
     LOGGER.info(
-        "Slurm 25.11+ admitted two held DDSIM jobs, blocked the third for Licenses, "
-        "ran the SC job on a free CPU, and executed the third Bell job after release."
+        "Slurm enforced license capacity, kept unavailable-device jobs pending without allocating nodes, "
+        "and resumed the pending Bell job after a successful health check."
     )
 
 
 def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     """Read the provider build inputs and the command to run in an allocation."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workload", type=Path, default=ROOT)
+    parser.add_argument("--workload", type=Path, default=CLUSTER)
     parser.add_argument("--dist", type=Path, default=DIST)
     parser.add_argument("--nodes", type=int, default=2)
     parser.add_argument("--setup-script", default="")
     parser.add_argument("--compose-file", type=Path)
     parser.add_argument("--device-license")
     parser.add_argument("--qdmi-config-file")
-    parser.add_argument("--reference", action="append", default=[])
     parser.add_argument("command", nargs=argparse.REMAINDER)
     options = parser.parse_args(arguments)
     if options.nodes < 2:
@@ -451,119 +464,45 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         setup = (options.workload / options.setup_script).resolve()
         if not setup.is_relative_to(options.workload.resolve()) or not setup.is_file():
             parser.error("--setup-script must name a file inside --workload")
-    for reference in options.reference:
-        name, separator, value = reference.partition("=")
-        if not separator or re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name) is None or any(c.isspace() for c in value):
-            parser.error("--reference must use ENV=value without whitespace")
-    if options.qdmi_config_file and any(c.isspace() for c in options.qdmi_config_file):
-        parser.error("--qdmi-config-file must not contain whitespace")
     return options
 
 
 def test_provider(options: argparse.Namespace) -> None:
-    """Run a provider workload with job configuration and site defaults."""
-    environment = list(options.reference)
-    if options.qdmi_config_file:
-        environment.append(f"MQT_CORE_QDMI_CONFIG_FILE={options.qdmi_config_file}")
+    """Execute a device workload with its submission environment."""
+    environment = [f"MQT_CORE_QDMI_CONFIG_FILE={options.qdmi_config_file}"] if options.qdmi_config_file else []
     allocation = ("srun", "--immediate=5", "--time=5", "--ntasks=1", f"--licenses={options.device_license}:1")
     job("env", *environment, *allocation, *options.command, timeout=300)
 
-    configuration = [
-        "required /usr/local/lib/slurm/mqt-core-qdmi-spank.so",
-        f"licenses={options.device_license}",
-    ]
-    if options.qdmi_config_file:
-        configuration.append(f"qdmi_config_file={options.qdmi_config_file}")
-    for reference in options.reference:
-        name, _, value = reference.partition("=")
-        configuration.append(f"reference={name}:{options.device_license}:{value}")
-    (RUNTIME / "plugstack.conf").write_text(" ".join(configuration) + "\n", encoding="utf-8")
-    job(*allocation, *options.command, timeout=300)
-    (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
 
-
-def test_spank_transport() -> None:
-    """Check license-aware defaults and native overrides through srun and sbatch."""
-    selected = "mqt.ddsim.default"
-    other = "mqt.sc.default"
-    reference = "MQT_SLURM_TEST_REFERENCE"
-    catalogue = "/runtime/site.qdmi.json"
-    (RUNTIME / "plugstack.conf").write_text(
-        "required /usr/local/lib/slurm/mqt-core-qdmi-spank.so "
-        f"licenses={selected},{other} qdmi_config_file={catalogue} "
-        f"reference={reference}:{selected}:site-default\n",
-        encoding="utf-8",
-    )
+def test_job_environment() -> None:
+    """Export job settings through srun and sbatch independently of daemon settings."""
     program = (
-        "import json, os; assert os.geteuid() == 10000, os.geteuid(); "
-        f"print(json.dumps([os.environ.get('{reference}'), os.environ.get('MQT_CORE_QDMI_CONFIG_FILE')]), flush=True)"
+        "import os; assert os.geteuid() == 10000; "
+        "assert os.environ['MQT_CORE_QDMI_CONFIG_FILE'] == '/jobs/devices.json'; "
+        "assert os.environ['MQT_SLURM_TEST_REFERENCE'] == 'job-value'"
     )
-    allocation = ("srun", "--immediate=5", "--time=1", "--ntasks=1")
-
-    def values(*arguments: str) -> list[str | None]:
-        return json.loads(job(*arguments, "python3", "-c", program, timeout=60).stdout)
-
-    assert values(*allocation, f"--licenses={selected}") == ["site-default", catalogue]
-    assert values(*allocation, f"--licenses={selected}:1") == ["site-default", catalogue]
-    assert values(*allocation, f"--licenses={selected}:2") == [None, None]
-    assert values(*allocation, f"--licenses={selected},{other}") == [None, None]
-    assert values("env", f"{reference}=job-value", *allocation, f"--licenses={selected}") == ["job-value", catalogue]
-    assert values("env", "MQT_CORE_QDMI_CONFIG_FILE=/runtime/job.qdmi.json", *allocation, f"--licenses={selected}") == [
-        "site-default",
-        "/runtime/job.qdmi.json",
-    ]
-    assert values(*allocation, f"--licenses={other}") == [None, catalogue]
-    assert values(*allocation) == [None, None]
-
-    # Slurm allocation metadata is not subject to the QDMI reference size limit.
-    unrelated = ",".join(f"unrelated-{index:03d}-{'x' * 49}:1" for index in range(65))
-    slurm_config = RUNTIME / "slurm.conf"
-    original_config = slurm_config.read_text(encoding="utf-8")
-    slurm_config.write_text(original_config.replace("Licenses=", f"Licenses={unrelated},", 1), encoding="utf-8")
-    controller("scontrol", "reconfigure")
-    try:
-        assert values(*allocation, f"--licenses={unrelated}") == [None, None]
-    finally:
-        slurm_config.write_text(original_config, encoding="utf-8")
-        controller("scontrol", "reconfigure")
-
-    for value in ("", "multiline\nvalue", "x" * 4096):
-        result = job(
-            "env", f"{reference}={value}", *allocation, f"--licenses={selected}", "/bin/true", check=False, timeout=60
-        )
-        assert result.returncode != 0, "Malformed reference unexpectedly reached the task"
-    for node in NODES:
-        wait_for(f"{node} to return to IDLE after rejected tasks", lambda node=node: node_is_idle(node))
-        assert "DRAIN" not in node_record(node)
-
-    # A submitted environment value must not turn an unlicensed allocation into
-    # a matching job in the remote SPANK hook.
-    assert values("env", f"SLURM_JOB_LICENSES={selected}", *allocation) == [None, None]
-
-    output = RUNTIME / "jobs" / "spank-batch.out"
+    environment = ("env", "MQT_CORE_QDMI_CONFIG_FILE=/jobs/devices.json", "MQT_SLURM_TEST_REFERENCE=job-value")
+    job(*environment, "srun", "--immediate=5", "--time=1", "python3", "-c", program, timeout=60)
     job(
-        "env",
-        f"{reference}=batch-value",
+        *environment,
         "sbatch",
         "--wait",
         "--time=1",
-        "--ntasks=1",
-        f"--nodelist={NODES[0]}",
-        f"--licenses={selected}",
-        "--output=/jobs/spank-batch.out",
+        "--output=/jobs/environment.out",
         "--wrap",
         shlex.join(("python3", "-c", program)),
         timeout=120,
     )
-    assert json.loads(output.read_text(encoding="utf-8")) == ["batch-value", catalogue]
-    (RUNTIME / "plugstack.conf").write_text(
-        f"required /usr/local/lib/slurm/mqt-core-qdmi-spank.so licenses={selected} reference={reference}:{selected}:\n",
-        encoding="utf-8",
+    job(
+        "srun",
+        "--immediate=5",
+        "--time=1",
+        "python3",
+        "-c",
+        "import os; assert 'MQT_SLURM_TEST_REFERENCE' not in os.environ; "
+        "assert 'MQT_CORE_QDMI_CONFIG_FILE' not in os.environ",
+        timeout=60,
     )
-    assert job(*allocation, f"--licenses={selected}", "/bin/true", check=False).returncode != 0
-    (RUNTIME / "plugstack.conf").write_text("", encoding="utf-8")
-    for node in NODES:
-        wait_for(f"{node} to return to IDLE", lambda node=node: node_is_idle(node))
 
 
 def test_explicit_check() -> None:
@@ -666,17 +605,6 @@ def main(arguments: Sequence[str] = ()) -> None:
             if delegate != "yes":
                 msg = f"The packaged slurmd.service on {node} must set Delegate=yes, got {delegate!r}"
                 raise RuntimeError(msg)
-            compute(
-                node,
-                "python3",
-                "-c",
-                "from pathlib import Path; import subprocess; "
-                "pid = subprocess.check_output(['systemctl', 'show', 'slurmd.service', "
-                "'--property=MainPID', '--value'], text=True).strip(); "
-                "environment = Path('/proc/' + pid + '/environ').read_bytes().split(b'\\0'); "
-                "assert b'MQT_SLURM_TEST_REFERENCE=daemon-only' in environment; "
-                "assert b'MQT_CORE_QDMI_CONFIG_FILE=/daemon-only/qdmi.json' in environment",
-            )
             wait_for(f"{node} to become IDLE with two processors", lambda node=node: node_is_idle(node))
 
         registered = set(controller("sinfo", "--Node", "--noheader", "--format=%N").stdout.split())
@@ -685,7 +613,7 @@ def main(arguments: Sequence[str] = ()) -> None:
             test_provider(options)
         else:
             test_core()
-            test_spank_transport()
+            test_job_environment()
             test_explicit_check()
 
         success = True

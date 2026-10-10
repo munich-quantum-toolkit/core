@@ -132,18 +132,22 @@ submitting a quantum job:
 mqt-core-qdmi-check --device mqt.sc.default --timeout 10
 ```
 
-Run it in the workload environment with the required credentials. For an
-external device, set `MQT_CORE_QDMI_CONFIG_FILE` to its catalogue; the native
-command uses [QDMI configuration](configuration.md), independently of Python's
-entry-point discovery and in-process registrations.
+Run it in the workload environment with the required credentials. The Python
+console script discovers
+[installed device manifests](configuration.md#installed-device-manifests). The
+native executable accepts additional manifests through repeated
+`--manifest PATH` arguments. Invalid manifests are skipped. These manifests
+retain the lowest precedence in [QDMI configuration](configuration.md);
+`MQT_CORE_QDMI_CONFIG_FILE` selects an explicit catalogue.
 
 The timeout covers device initialization, the status query, and worker exit. It
 defaults to 30 seconds and accepts whole seconds from 1 to 3600. Exit codes are
 0 for availability, 1 for failure, 2 for invalid arguments, and 124 for a
-timeout. Success is silent. Device output is suppressed to protect credentials.
+timeout. Device output is suppressed to protect credentials.
 
-The command is included in Linux and macOS builds and wheels. Availability is a
-snapshot; it does not authorize access or reserve device capacity.
+The command is included in Linux, macOS, and Windows builds and wheels (Windows
+10 or Windows Server 2016 and newer). Availability is a snapshot; it does not
+authorize access or reserve device capacity.
 
 ## Python Bindings
 

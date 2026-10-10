@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Common assertions for provider workloads in the shared Slurm fixture."""
+"""Common assertions for QDMI device workloads in the shared Slurm fixture."""
 
 from __future__ import annotations
 

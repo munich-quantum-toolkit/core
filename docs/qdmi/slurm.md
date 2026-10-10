@@ -61,6 +61,40 @@ Slurm exports the submission environment by default. Use ordinary environment
 variables or Slurm's `--export` option for job-specific settings. Variables set
 inside a batch script are inherited by its subsequent `srun` steps.
 
+## Hold jobs while a device is unavailable
+
+A check inside a job runs after Slurm has allocated resources. To leave jobs
+pending while a device is unavailable, an administrator must update scheduler
+state independently of the jobs.
+
+Slurm supports
+[license-only reservations](https://slurm.schedmd.com/reservations.html) for
+unavailable shared resources. Reserve the device's entire configured license
+count for an administrative account. New jobs requiring it remain pending with
+reason `Licenses`; running jobs continue, and other devices remain usable.
+Remove the reservation after a successful health check.
+
+The
+[availability monitor example](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm)
+performs one such update. It blocks the licenses before invoking the bounded
+QDMI checker and removes the block only on success. Run it periodically from a
+trusted administrative host with Slurm clients, MQT Core, the device
+implementation, and site-owned credentials. Initialize the blocks before
+admitting workloads. The controller does not need device libraries.
+
+Use a site account that can assess the shared device's operational state. One
+user's expired credentials must not determine availability for every user.
+Conversely, a successful site check does not verify each user's authorization.
+The monitor is a snapshot: device status can change between checks, and a
+stopped monitor leaves its last scheduler state in place. Supervise it and alert
+on stale updates. Keep the optional job check for the user's environment.
+
+This integration uses licenses and Slurm's environment export. Device libraries
+run in application or checker processes; no Slurm plugin is needed. The
+[QRMI integration paper](https://arxiv.org/abs/2607.19591) describes a separate
+acquire/execute/release lifecycle for services that issue allocation tokens. The
+QDMI device implementations used here do not require that lifecycle.
+
 ## Configure the cluster
 
 Use matching Slurm versions across the cluster. This integration requires Slurm
@@ -107,47 +141,6 @@ and [cgroup configuration](https://slurm.schedmd.com/cgroup.conf.html).
 `SLURM_JOB_LICENSES` is mutable within a process. MQT Core uses it for device
 selection, not as proof of allocation or authorization. Device services and
 operating-system permissions must enforce access independently.
-
-## Optional site defaults with SPANK
-
-Use MQT Core's SPANK module when a device license should select default
-catalogue paths or credential references. Jobs can override these defaults
-through their environment. No plugin is needed when jobs already supply their
-configuration.
-
-Build the standalone module against the cluster's Slurm development headers:
-
-```console
-cmake -S spank -B build/spank -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
-cmake --build build/spank
-cmake --install build/spank
-```
-
-The build requires Linux, CMake, and a C++20 compiler. It does not need LLVM or
-device SDKs. Install the module and its `plugstack.conf` entry on compute nodes.
-If login or submission hosts use the same plugstack configuration, install the
-module there too. Rebuild it when changing Slurm major versions.
-`MQT_CORE_SPANK_INSTALL_DIR` selects the module installation directory.
-
-Load the module once, with the permitted device IDs and non-secret defaults:
-
-```ini
-required /usr/local/lib/slurm/mqt-core-qdmi-spank.so licenses=amazon.braket.sv1,iqm.emerald qdmi_config_file=/etc/mqt-core/qdmi.json reference=AWS_PROFILE:amazon.braket.sv1:quantum reference=IQM_TOKENS_FILE:iqm.emerald:/shared/iqm/tokens.json
-```
-
-`qdmi_config_file=PATH` supplies `MQT_CORE_QDMI_CONFIG_FILE`. Each
-`reference=ENV:ID,ID:DEFAULT` supplies an environment variable for the listed
-device IDs. Use paths, profile names, and other non-secret references; keep
-tokens and passwords out of `plugstack.conf`.
-
-Defaults apply only to an exact configured `ID` or `ID:1` license expression.
-Other jobs pass through unchanged. Values already present in the job environment
-take precedence. The module never reads credential files or loads a device
-implementation, and it does not copy credentials from Slurm daemons. Invalid
-settings fail the job without draining the compute node.
-
-The module is GPL-3.0-or-later and distributed in the source checkout,
-separately from MQT Core's MIT-licensed runtime, wheels, and source packages.
 
 ## Try the Docker cluster
 

@@ -304,6 +304,13 @@ TEST_SESSION_QDMI_device_session_init(QDMI_Device_Session session) {
   if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) == "hang") {
     std::this_thread::sleep_for(std::chrono::hours(1));
   }
+  if (parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4) ==
+          "hang-child" &&
+      std::system(
+          parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5).c_str()) !=
+          0) {
+    return QDMI_ERROR_FATAL;
+  }
   session->initialized = true;
   return QDMI_SUCCESS;
 }

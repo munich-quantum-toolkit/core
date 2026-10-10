@@ -10,16 +10,6 @@
 
 FROM ghcr.io/astral-sh/uv:0.12.1 AS uv
 
-FROM ubuntu:26.04 AS spank
-
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-        cmake g++ make libslurm-dev
-COPY --from=core spank /src/spank
-RUN cmake -S /src/spank -B /build -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build /build --parallel 2 \
-    && cmake --install /build --prefix /usr/local
-
 FROM ubuntu:26.04 AS base
 
 ENV container=docker
@@ -37,8 +27,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /uvx /bin/
-COPY --from=spank /usr/local/lib/slurm/mqt-core-qdmi-spank.so /usr/local/lib/slurm/
-COPY --from=spank /usr/local/share/licenses/mqt-core-qdmi-spank /usr/local/share/licenses/mqt-core-qdmi-spank
 COPY --chmod=755 start.sh /usr/local/sbin/mqt-slurm-start
 COPY node.conf /etc/systemd/system/slurmd.service.d/mqt-node.conf
 

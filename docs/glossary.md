@@ -133,14 +133,14 @@ Quantum Device Management Interface
 
 QDMI Client interface
   **Preferred term:** QDMI Client interface. The standard C interface consumed by
-  applications to open sessions, query devices, and manage jobs. Core's C++ and
+  applications to open sessions, query devices, and manage jobs. MQT Core's C++ and
   Python Client wrappers consume this interface; they are not a driver.
 
 QDMI driver
   **Preferred term:** QDMI driver. An implementation of the QDMI Client interface.
   The builtin MQT Core QDMI driver loads QDMI device libraries. A replacement driver owns
   its own discovery, configuration, and device access; applications must not
-  assume it provides Core's private driver extension.
+  assume it provides MQT Core's private driver extension.
 
 QDMI session
   **Preferred term:** QDMI session. A connection to a QDMI driver, represented
@@ -151,12 +151,6 @@ C++ QDMI library
   **Preferred term:** C++ QDMI library. MQT Core's owning C++ wrappers around
   the QDMI Client Interface. The driver manages device libraries and their
   configuration; the C++ library is independent of that implementation.
-
-SPANK
-  **Preferred term:** SPANK. **Accepted expansion:** Slurm Plug-in Architecture
-  for Node and job Kontrol. Slurm's plugin interface for job launch hooks.
-  MQT Core's optional SPANK module supplies license-specific defaults for job
-  environments.
 
 QIR
 Quantum Intermediate Representation

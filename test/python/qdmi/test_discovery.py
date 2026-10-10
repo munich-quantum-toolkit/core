@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+from importlib.metadata import distribution
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
@@ -21,6 +23,8 @@ from mqt.core import _qdmi_discovery  # ruff: ignore[import-private-name]
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from pytest_console_scripts import ScriptRunner
 
 
 class _Distribution:
@@ -97,3 +101,37 @@ def test_skips_invalid_manifest_metadata(
     with pytest.warns(RuntimeWarning, match="Skipping QDMI manifest") as warnings:
         _qdmi_discovery.discover_qdmi_manifests(lambda _: pytest.fail("must skip"))
     assert len(warnings) == 1
+
+
+@pytest.mark.script_launch_mode("subprocess")
+def test_availability_discovers_installed_provider(
+    script_runner: ScriptRunner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Discover installed manifests in the native checker without importing providers."""
+    core = distribution("mqt-core")
+    packaged = next(file for file in core.files or () if file.name == "mqt-core-qdmi-sc-device.qdmi.json")
+    packaged_path = Path(str(core.locate_file(packaged)))
+    definition = json.loads(packaged_path.read_text(encoding="utf-8"))["qdmi"]["devices"][0]
+    definition.update(id="test.installed", library=str(packaged_path.parent / definition["library"]))
+
+    provider = tmp_path / "test_qdmi_provider"
+    provider.mkdir()
+    (provider / "__init__.py").write_text("raise RuntimeError('provider must not be imported')\n")
+    (provider / "device.qdmi.json").write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": [definition]}}))
+    (provider / "invalid.qdmi.json").write_text("{")
+    metadata = tmp_path / "test_qdmi_provider-0.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Name: test-qdmi-provider\nVersion: 0.0\n")
+    (metadata / "entry_points.txt").write_text("[mqt.core.qdmi.manifests]\nprobe = test_qdmi_provider\n")
+    (metadata / "RECORD").write_text("test_qdmi_provider/device.qdmi.json,,\ntest_qdmi_provider/invalid.qdmi.json,,\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+
+    result = script_runner.run(["mqt-core-qdmi-check", "--device", "test.installed"])
+    assert result.success
+    assert not result.stdout
+
+    monkeypatch.setenv(
+        "MQT_CORE_QDMI_CONFIG_JSON",
+        json.dumps({"schema-version": 1, "qdmi": {"devices": [{"id": "test.installed", "enabled": False}]}}),
+    )
+    assert not script_runner.run(["mqt-core-qdmi-check", "--device", "test.installed"]).success

@@ -1,42 +1,35 @@
 # QDMI workloads on Slurm
 
-Status: implemented; publication and hosted checks pending.
+Status: implemented and published; hosted checks pending.
 
-## Goal and scope
+## Scope and decisions
 
-Provide one Slurm integration above MQT Core's QDMI client interface. Device
-implementations supply their runtime, credentials, and a small smoke test. The
-Docker cluster in `docker/slurm/` supports tests and local demonstrations.
-
-## Decisions
-
-- Slurm license names identify QDMI devices; admission and device authorization
-  remain separate. The selector accepts one ID with an optional `:1` count.
-- Use Slurm's environment export for job settings. The optional source-only
-  SPANK module supplies license-specific site defaults without loading devices.
-- Run the availability command after selecting the workload environment. Keep
-  its bounded native worker; remove automatic SPANK validation and per-step
-  state.
-- Use the shared native command launcher and runtime installation helpers.
-- Use one scalable Compose compute service, with disposable rootful Linux
-  cgroup-v2 hosts as the supported deployment boundary.
-- Consolidate the unreleased Core stack so these contracts are reviewed
-  together.
-
-## Progress
-
-- [x] Simplify the plugin, checker, documentation, and test coverage.
-- [x] Separate reusable cluster setup from test assertions and validate scaling.
-- [x] Refresh device integrations on upstream main, simplify smoke tests, and
-      make ordinary IQM CI work without live service credentials.
-- [x] Validate focused native/Python checks, standalone SPANK, and cluster
-      scaling.
-- [x] Pass IQM and Braket smoke tests in both native and wheel modes.
-- [ ] Publish the revised PRs and inspect hosted checks.
+- Slurm licenses identify devices and limit allocations. Use ordinary job
+  environments for catalogue and credential configuration; no SPANK module is
+  needed by MQT Core, IQM, or Braket.
+- A privileged site monitor reserves all licenses for an unavailable device.
+  Block before probing; only a successful bounded check reopens scheduling.
+  Running jobs continue. Polling needs supervision and is not a reservation at
+  the remote device service.
+- The checker uses installed Python catalogue metadata when launched through
+  Python and bounded process-tree cleanup on POSIX and Windows.
+- The scalable Docker cluster is shared by tests and demonstrations. Credentials
+  enter at runtime. IQM Emerald mock and Braket SV1 execute small workloads in
+  native and wheel modes; no quantum hardware is in scope.
+- Keep the unreleased Core work consolidated in #2599 and update the two device
+  PRs against upstream main. Preserve credentialed ordinary CI lanes.
 
 ## Validation
 
-Run the focused checker tests, native command tests, standalone SPANK lint,
-cluster admission/environment tests, and IQM/Braket native/wheel smoke tests.
-Run each repository's required lint. Check final-head CI separately from local
-results. Real quantum hardware is outside this task.
+Run checker CLI/discovery and descendant-cleanup tests, the focused runner
+suite, and a real Slurm availability block/recovery scenario. Exercise both
+credentialed device workloads in native and wheel modes. Run repository lint and
+full-file C++ lint. Record local and hosted results separately; publishing is
+not a request to monitor CI.
+
+Local validation: 48 focused Python cases and seven native tests pass. The
+three-node cluster proves license capacity, outage blocking, and recovery.
+Credentialed Emerald mock and SV1 tests pass in both installation modes.
+Executable documentation and lint pass. Windows execution awaits hosted CI. The
+upstream #2726 portable-CI condition is mirrored until it merges; the
+Cache.cmake workaround is removed.

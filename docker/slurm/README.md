@@ -18,11 +18,6 @@ sh docker/slurm/prepare.sh
 docker compose -f docker/slurm/compose.yml up --build -d --wait --scale node=2
 ```
 
-The image builds the optional GPL SPANK plugin from `spank/` separately from the
-MIT MQT Core wheel. `build/slurm/plugstack.conf` is initially empty. Site
-defaults can be enabled there using the configuration in the
-[Slurm guide](../../docs/qdmi/slurm.md).
-
 Submit jobs as the unprivileged user shared by all nodes:
 
 ```console
@@ -58,6 +53,7 @@ a different cluster size. `MQT_CORE_SLURM_DIST` selects an existing directory
 containing one MQT Core wheel. Device implementation tests can extend the image
 with `MQT_CORE_SLURM_WORKLOAD`, `MQT_CORE_SLURM_SETUP_SCRIPT`, and the build
 arguments `PROVIDER_RUNTIME_COMPONENT` and `PROVIDER_INSTALL_MODE` (`native` or
-`wheel`). Set build arguments on `controller`; `node` reuses that image.
-Provider Compose overlays add their mock endpoint and its startup dependency to
-both Slurm services.
+`wheel`). Set build arguments on `controller`; `node` reuses that image. Device
+implementation overlays supply credentials to the submission container at
+runtime. Slurm exports these settings to the workload; credentials are never
+part of the image build.
