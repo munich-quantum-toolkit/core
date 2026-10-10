@@ -1143,6 +1143,8 @@ public:
   /// @param probs A map of probabilities for each measurement outcome.
   /// @param permutation Optional permutation matching the measurement order.
   /// @return The fidelity of the measurement outcomes.
+  /// @throws std::out_of_range If outcomes do not fit size_t or a
+  /// permutation index is out of range.
   static fp fidelityOfMeasurementOutcomes(const vEdge& e,
                                           const SparsePVec& probs,
                                           const Permutation& permutation = {});

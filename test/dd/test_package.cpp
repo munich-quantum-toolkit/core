@@ -2244,6 +2244,31 @@ TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
   EXPECT_NEAR(fidelity, 1.0, RealNumber::eps);
 }
 
+TEST(DDPackageTest, MeasurementFidelityValidatesWidthAndPermutation) {
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(vEdge::one(), {{0, 1.}}),
+            1.);
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(vEdge::zero(), {{0, 1.}}),
+            0.);
+  constexpr size_t width = std::numeric_limits<size_t>::digits;
+  Package package(width + 1);
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(
+                makeZeroState(width, package), {{0, 1.}}),
+            1.);
+  EXPECT_THROW(Package::fidelityOfMeasurementOutcomes(
+                   makeZeroState(width + 1, package), {{0, 1.}}),
+               std::out_of_range);
+  const auto state = makeBasisState(2, std::vector<bool>{true, false}, package);
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(state, {{2, 1.}},
+                                                   Permutation{{0, 1}, {1, 0}}),
+            1.);
+  for (const auto& permutation : {Permutation{{2, 0}}, Permutation{{0, 1}}}) {
+    EXPECT_THROW(
+        Package::fidelityOfMeasurementOutcomes(state, {{0, 1.}}, permutation),
+        std::out_of_range);
+  }
+}
+
+
 TEST(DDPackageTest, CloseToIdentity) {
   auto dd = std::make_unique<Package>(3);
   auto const id = Package::makeIdent();
