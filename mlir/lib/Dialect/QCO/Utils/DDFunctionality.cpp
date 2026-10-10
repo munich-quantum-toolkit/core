@@ -369,13 +369,16 @@ struct DecodedStandardGate {
 };
 } // namespace
 
-template <typename GateOp>
+template <typename GateOp, size_t NumParams>
 static auto buildStandardGateDD(dd::Package& package,
                                 ArrayRef<double> parameters, size_t numQubits,
                                 ArrayRef<dd::Qubit> targets,
                                 const dd::Controls& controls) -> dd::MatrixDD {
-  return makeGateDD(package, getStandardGateMatrix<GateOp>(parameters),
-                    numQubits, targets, controls);
+  assert(parameters.size() == NumParams);
+  std::array<double, NumParams> values{};
+  std::copy_n(parameters.begin(), NumParams, values.begin());
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), numQubits,
+                    targets, controls);
 }
 
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
@@ -385,7 +388,8 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
   TypeSwitch<Operation*, StandardGateFactory> typeSwitch(op);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
-  typeSwitch.Case<KEY##Op>([](auto) { return &buildStandardGateDD<KEY##Op>; });
+  typeSwitch.Case<KEY##Op>(                                                    \
+      [](auto) { return &buildStandardGateDD<KEY##Op, PARAMS>; });
 #include "mqt/Conversion/GateTable.def"
   const auto factory = typeSwitch.Default(nullptr);
   if (factory == nullptr) {
@@ -1698,7 +1702,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
           if (bit == '1') {
             state = walk.dd->applyOperation(
-                makeGateDD(*walk.dd, getStandardGateMatrix<XOp>({}),
+                makeGateDD(*walk.dd, XOp::getUnitaryMatrix(),
                            walk.qubits->numQubits, {*q}),
                 state);
           }
@@ -2464,7 +2468,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         } else {
           if (!measuredZero) {
             branch.state =
-                dd.applyOperation(makeGateDD(dd, getStandardGateMatrix<XOp>({}),
+                dd.applyOperation(makeGateDD(dd, XOp::getUnitaryMatrix(),
                                              branch.qubits.numQubits, {*q}),
                                   branch.state);
           }

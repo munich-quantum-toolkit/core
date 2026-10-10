@@ -287,7 +287,7 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
   std::ranges::transform(targets, targets.begin(), [&](const auto target) {
     return qubitPermutation[target];
   });
-  const auto matrix = mlir::qco::getStandardGateMatrix<mlir::qco::XOp>({});
+  const auto matrix = mlir::qco::XOp::getUnitaryMatrix();
   for (const auto target : targets) {
     if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
       const std::array targetArray{target};
@@ -407,7 +407,7 @@ auto Runtime::takeState() -> QState {
   if (staticQubits_ && *staticQubits_ != 0) {
     enlargeState(*staticQubits_ - 1);
   }
-  const auto matrix = mlir::qco::getStandardGateMatrix<mlir::qco::SWAPOp>({});
+  const auto matrix = mlir::qco::SWAPOp::getUnitaryMatrix();
   for (size_t q = 0; q < qubitPermutation.size(); ++q) {
     // Each transposition places at least one logical wire at its own index.
     while (qubitPermutation[q] != q) {

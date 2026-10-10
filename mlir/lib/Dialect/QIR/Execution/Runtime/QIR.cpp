@@ -14,7 +14,6 @@
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <algorithm>
@@ -84,8 +83,8 @@ static auto controlsFromArray(Array* array) -> llvm::SmallVector<Qubit*> {
   return controls;
 }
 
-template <typename GateOp>
-static auto applyGateMatrix(llvm::ArrayRef<double> parameters,
+template <typename GateOp, size_t NumParams>
+static auto applyGateMatrix(const std::array<double, NumParams>& parameters,
                             std::span<Qubit* const> controls,
                             std::span<Qubit* const> targets) -> void {
   runtimeCall([&] {
@@ -119,7 +118,7 @@ template <typename GateOp>
 static auto applyControlled(Array* controlArray, Qubit* target) -> void {
   const auto controls = controlsFromArray(controlArray);
   const std::array targets{target};
-  applyGateMatrix<GateOp>({}, controls, targets);
+  applyGateMatrix<GateOp>(std::array<double, 0>{}, controls, targets);
 }
 
 template <typename GateOp, size_t NumParams, size_t NumTargets>
@@ -142,7 +141,7 @@ static auto applyControlledTuple(Array* controls, Tuple* tuple) -> void {
     Args args;
     std::memcpy(&args, tuple, sizeof(Args));
     const auto controlList = controlsFromArray(controls);
-    applyGateMatrix<GateOp>({}, controlList, args.targets);
+    applyGateMatrix<GateOp>(std::array<double, 0>{}, controlList, args.targets);
   } else {
     struct Args {
       std::array<double, NumParams> parameters{};
