@@ -7,14 +7,18 @@
 # Licensed under the MIT License
 
 [Unit]
-Description=Prepare the MQT Core Slurm test node
-RequiresMountsFor=/runtime
-Before=munge.service slurmctld.service slurmd.service
+Description=Initialize Slurm accounting associations
+Requires=slurmdbd.service
+PartOf=slurmdbd.service
+After=slurmdbd.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/mqt-slurm-prepare
+ExecStart=/usr/local/sbin/mqt-slurm-accounting
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=60
 
 [Install]
 WantedBy=multi-user.target

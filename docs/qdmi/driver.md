@@ -122,6 +122,33 @@ builtin MQT Core QDMI driver can load external device libraries through
 [QDMI device configuration](configuration.md). C++ test builds require both
 bundled devices.
 
+## Probe device availability
+
+The availability command probes whether a configured QDMI device is operational.
+It opens the device, accepts an `IDLE` or `BUSY` status, and exits without
+submitting a quantum job:
+
+```console
+mqt-core-qdmi-check --device mqt.ddsim.default
+```
+
+Run it in the workload environment with the required credentials. The Python
+console script discovers
+[installed device manifests](configuration.md#installed-device-manifests). The
+native executable accepts additional manifests through repeated
+`--manifest PATH` arguments. Invalid manifests are skipped. These manifests
+retain the lowest precedence in [QDMI configuration](configuration.md);
+`MQT_CORE_QDMI_CONFIG_FILE` selects an explicit catalogue.
+
+The command opens only the requested device through MQT Core's built-in QDMI
+driver. Other devices in the environment need not be reachable or authenticated.
+Exit codes are 0 for availability, 1 for failure, and 2 for invalid arguments.
+Device output is suppressed to protect credentials. The caller supplies any
+deadline; the [Slurm availability monitor](slurm.md) bounds each probe and
+supervises device processes.
+
+Availability is a snapshot; it does not authorize access or reserve capacity.
+
 ## Python Bindings
 
 The C++ QDMI library adds owning wrappers for driver sessions, devices, sites,

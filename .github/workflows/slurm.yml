@@ -11,8 +11,10 @@ on:
       - "cmake/**"
       - "include/mqt-core/qdmi/**"
       - "pyproject.toml"
+      - "python/mqt/core/_commands.py"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
+      - "examples/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -26,8 +28,10 @@ on:
       - "cmake/**"
       - "include/mqt-core/qdmi/**"
       - "pyproject.toml"
+      - "python/mqt/core/_commands.py"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
+      - "examples/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
       - "test/python/qdmi/**"
@@ -44,7 +48,7 @@ permissions:
 
 jobs:
   slurm:
-    name: Slurm 25.11 and QDMI devices
+    name: Slurm scheduling and QDMI execution
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     env:
@@ -61,12 +65,12 @@ jobs:
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Check the Slurm test runner
         run: >-
-          uv run --no-project --with 'pytest>=9.0.1' --python 3.14
-          pytest -o addopts= -q test/python/test_slurm_integration.py
+          uv run --no-project --with 'pytest>=9.0.1' --python 3.15
+          pytest -o addopts= -q test/python/test_slurm_integration.py test/python/test_slurm_availability.py
 
       - name: Set up MLIR
         uses: munich-quantum-software/setup-mlir@8d3eae73d0f0196fd30c787d91ebd2018cb6c709 # v1.5.0
@@ -80,8 +84,8 @@ jobs:
 
       - name: Build the MQT Core wheel
         timeout-minutes: 15
-        run: uv build --wheel --out-dir test/slurm/dist -Ccmake.define.DEPLOY=ON
+        run: uv build --wheel --out-dir dist -Ccmake.define.DEPLOY=ON
 
       - name: Test Slurm admission and QDMI execution
         timeout-minutes: 15
-        run: uv run --no-project --python 3.14 test/slurm/run_integration.py
+        run: uv run --no-project --python 3.15 test/slurm/run_integration.py --nodes 3

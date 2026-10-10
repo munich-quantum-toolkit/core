@@ -10,16 +10,17 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import json
 import logging
 import os
 import re
-import secrets
 import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -30,20 +31,25 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "test" / "slurm"
-DIST = FIXTURE / "dist"
-RUNTIME = FIXTURE / "runtime" / uuid.uuid4().hex
+CLUSTER = ROOT / "examples" / "slurm"
+DIST = ROOT / "dist"
+RUNTIME = ROOT / "build" / "slurm-tests" / uuid.uuid4().hex
+NODES: list[str] = []
 COMPOSE = (
     "docker",
     "compose",
     "--project-name",
     f"mqt-core-slurm-{RUNTIME.name}",
     "--file",
+    str(CLUSTER / "compose.yml"),
+    "--file",
     str(FIXTURE / "compose.yml"),
 )
 TIMEOUT = 120.0
 COMMAND_TIMEOUT = 30.0
-RESULT_VISIBILITY_GRACE_PERIOD = 5.0
 LOGGER = logging.getLogger(__name__)
+COMPOSE_FILES: list[str] = []
+COMPOSE_ENV: dict[str, str] = {}
 
 
 def _communicate(process: subprocess.Popen[str], timeout: float) -> tuple[str, str]:
@@ -107,22 +113,37 @@ def compose(
 ) -> subprocess.CompletedProcess[str]:
     """Run Docker Compose for this invocation's isolated project and artifacts."""
     return run(
-        (*COMPOSE, *arguments),
+        (*COMPOSE, *COMPOSE_FILES, *arguments),
         check=check,
         timeout=timeout,
         capture_output=capture_output,
-        env={**os.environ, "MQT_CORE_SLURM_RUNTIME": str(RUNTIME)},
+        env={**os.environ, **COMPOSE_ENV, "MQT_CORE_SLURM_RUNTIME": str(RUNTIME)},
     )
 
 
 def controller(*command: str, check: bool = True, timeout: float = COMMAND_TIMEOUT) -> subprocess.CompletedProcess[str]:
-    """Run a Slurm client command in the controller container."""
+    """Run an administrative command on the controller."""
     return compose("exec", "-T", "controller", *command, check=check, timeout=timeout)
 
 
 def compute(node: str, *command: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a diagnostic command in one compute container."""
-    return compose("exec", "-T", node, *command, check=check)
+    return compose("exec", "-T", "--index", str(NODES.index(node) + 1), "node", *command, check=check)
+
+
+def job(*command: str, check: bool = True, timeout: float = COMMAND_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    """Submit workloads from the login node as an ordinary cluster user."""
+    return compose(
+        "exec",
+        "-T",
+        "--user",
+        "10000:10000",
+        "login",
+        "env",
+        *command,
+        check=check,
+        timeout=timeout,
+    )
 
 
 def wait_for(description: str, predicate: Callable[[], bool], timeout: float = TIMEOUT) -> None:
@@ -170,16 +191,16 @@ def job_matches(job_id: str, state: str, *, node: str | None = None, reason: str
     )
 
 
-def job_finished(job_id: str, *, expected_state: str = "COMPLETED") -> bool:
-    """Require the terminal state and exit code, without an accounting daemon."""
-    output = controller("scontrol", "show", "job", job_id, "--oneliner").stdout
-    record = dict(field.split("=", maxsplit=1) for field in output.split() if "=" in field)
-    state = record["JobState"]
+def job_finished(job_id: str) -> bool:
+    """Require successful completion recorded by Slurm accounting."""
+    output = job("sacct", "-X", "--noheader", "--parsable2", "--jobs", job_id, "--format=State,ExitCode").stdout.strip()
+    if not output:
+        return False
+    state, exit_code = output.split("|")
     if state in {"PENDING", "CONFIGURING", "RUNNING", "COMPLETING", "SUSPENDED"}:
         return False
-    exit_code = tuple(map(int, record["ExitCode"].split(":")))
-    if state != expected_state or len(exit_code) != 2 or ((exit_code == (0, 0)) != (expected_state == "COMPLETED")):
-        msg = f"Slurm job {job_id} ended with {state}, ExitCode={record['ExitCode']}; expected {expected_state}"
+    if (state, exit_code) != ("COMPLETED", "0:0"):
+        msg = f"Slurm job {job_id} ended with {state}, ExitCode={exit_code}"
         raise AssertionError(msg)
     return True
 
@@ -195,14 +216,15 @@ def submit(script: str, license_expression: str, *, node: str | None = None, hol
         "--time=5",
         f"--licenses={license_expression}",
         "--chdir=/workspace",
-        "--output=/runtime/slurm-%j.out",
+        "--output=/jobs/slurm-%j.out",
     ]
     if node is not None:
         command.append(f"--nodelist={node}")
-    command.append(f"/workspace/test/slurm/{script}")
+    payload = ["python3", f"/workspace/test/slurm/{script}"]
     if hold:
-        command.append("--hold")
-    job_id = controller(*command).stdout.strip().split(";", maxsplit=1)[0]
+        payload.append("--hold")
+    command.extend(("--wrap", shlex.join(payload)))
+    job_id = job(*command).stdout.strip().split(";", maxsplit=1)[0]
     if not job_id.isdecimal():
         msg = f"sbatch returned an invalid job ID: {job_id!r}"
         raise RuntimeError(msg)
@@ -226,61 +248,30 @@ def assert_license(name: str, *, total: int, used: int, free: int) -> None:
 
 def load_result(kind: str, job_id: str) -> dict[str, Any]:
     """Load one batch-job result from the shared runtime directory."""
-    return json.loads((RUNTIME / f"{kind}-{job_id}.json").read_text(encoding="utf-8"))
+    return json.loads((RUNTIME / "jobs" / f"{kind}-{job_id}.json").read_text(encoding="utf-8"))
 
 
 def wait_for_result(kind: str, job_id: str, description: str) -> None:
-    """Wait for a result and allow bounded shared-file visibility delay."""
-    result_path = RUNTIME / f"{kind}-{job_id}.json"
-    left_queue_at: float | None = None
+    """Wait for a workload result, reporting a completed job's missing output."""
+    result_path = RUNTIME / "jobs" / f"{kind}-{job_id}.json"
 
     def result_exists_or_raise() -> bool:
-        nonlocal left_queue_at
+        finished = job_finished(job_id)
         if result_path.exists():
             return True
-        if job_record(job_id) is not None:
-            left_queue_at = None
+        if not finished:
             return False
-
-        now = time.monotonic()
-        if left_queue_at is None:
-            left_queue_at = now
-            return False
-        if now - left_queue_at < RESULT_VISIBILITY_GRACE_PERIOD:
-            return False
-
-        output_path = RUNTIME / f"slurm-{job_id}.out"
+        output_path = RUNTIME / "jobs" / f"slurm-{job_id}.out"
         output = output_path.read_text(encoding="utf-8") if output_path.exists() else "<no batch output>"
-        msg = f"Slurm job {job_id} exited before producing {result_path.name}:\n{output.rstrip()}"
+        msg = f"Slurm job {job_id} completed without {result_path.name}:\n{output.rstrip()}"
         raise RuntimeError(msg)
 
     wait_for(description, result_exists_or_raise)
 
 
-def wait_for_failed_adapter(job_id: str, diagnostic: str) -> None:
-    """Require an adapter diagnostic and a failed batch job without a result."""
-    output_path = RUNTIME / f"slurm-{job_id}.out"
-
-    def failed_with_diagnostic() -> bool:
-        if not job_finished(job_id, expected_state="FAILED") or not output_path.exists():
-            return False
-        return diagnostic in output_path.read_text(encoding="utf-8")
-
-    wait_for(f"Slurm job {job_id} to fail with {diagnostic!r}", failed_with_diagnostic)
-    if (RUNTIME / f"ddsim-{job_id}.json").exists():
-        msg = f"Rejected Slurm job {job_id} unexpectedly produced a DDSIM result"
-        raise AssertionError(msg)
-
-
-def assert_bell_result(job_id: str, expected_node: str | None = None) -> None:
-    """Recheck the Bell result outside the batch job."""
+def assert_allocation(job_id: str, expected_node: str | None = None) -> None:
+    """Check placement and the license received by a successful DDSIM workload."""
     result = load_result("ddsim", job_id)
-    if result["shots"] != 256 or sum(result["counts"].values()) != 256:
-        msg = f"Slurm job {job_id} did not return 256 Bell samples: {result}"
-        raise AssertionError(msg)
-    if set(result["counts"]) != {"00", "11"}:
-        msg = f"Slurm job {job_id} returned non-Bell outcomes: {result}"
-        raise AssertionError(msg)
     if expected_node is not None and result["node"] != expected_node:
         msg = f"Slurm job {job_id} ran on {result['node']}, expected {expected_node}"
         raise AssertionError(msg)
@@ -291,10 +282,7 @@ def assert_bell_result(job_id: str, expected_node: str | None = None) -> None:
 
 def clean_runtime() -> None:
     """Create private artifacts and a Munge key for this invocation only."""
-    RUNTIME.mkdir(mode=0o700, parents=True, exist_ok=False)
-    key = RUNTIME / "munge.key"
-    key.write_bytes(secrets.token_bytes(1024))
-    key.chmod(0o600)
+    run(("sh", str(CLUSTER / "prepare.sh"), str(RUNTIME)))
 
 
 def print_diagnostics() -> None:
@@ -310,22 +298,22 @@ def print_diagnostics() -> None:
     )
     controller("scontrol", "show", "node", check=False, timeout=5)
     controller("scontrol", "show", "lic", check=False, timeout=5)
-    for output in sorted(RUNTIME.glob("slurm-*.out")):
+    for output in sorted((RUNTIME / "jobs").glob("slurm-*.out")):
         LOGGER.info("=== %s ===", output.name)
         try:
             LOGGER.info("%s", output.read_text(encoding="utf-8").rstrip())
         except OSError as error:
             LOGGER.info("Could not read %s: %s", output, error)
-    for service, units in (
-        ("controller", ("munge.service", "slurmctld.service")),
-        ("node1", ("munge.service", "slurmd.service")),
-        ("node2", ("munge.service", "slurmd.service")),
-    ):
-        compose("exec", "-T", service, "systemctl", "status", "--no-pager", *units, check=False, timeout=5)
+    for service, index, units in [
+        ("controller", 1, ("munge.service", "slurmctld.service")),
+        ("accounting", 1, ("slurmdbd.service", "slurm-accounting.service")),
+        *((f"qan-{device}", 1, ("slurmd.service",)) for device in ("iqm", "braket")),
+        *(("node", index, ("munge.service", "slurmd.service")) for index in range(1, len(NODES) + 1)),
+    ]:
+        prefix = ("exec", "-T", "--index", str(index), service)
+        compose(*prefix, "systemctl", "status", "--no-pager", *units, check=False, timeout=5)
         compose(
-            "exec",
-            "-T",
-            service,
+            *prefix,
             "journalctl",
             "--no-pager",
             "--lines=100",
@@ -336,12 +324,185 @@ def print_diagnostics() -> None:
     compose("logs", "--no-color", check=False, timeout=5)
 
 
-def main() -> None:
-    """Build the cluster and verify Slurm admission and DDSIM execution."""
-    wheels = tuple(DIST.glob("*.whl"))
+def test_core() -> None:
+    """Verify admission and execution with the bundled DDSIM and SC devices."""
+    assert_license("mqt.ddsim.default", total=2, used=0, free=2)
+    assert_license("mqt.sc.default", total=1, used=0, free=1)
+
+    first = submit("bell_job.py", "mqt.ddsim.default:1", node=NODES[0], hold=True)
+    second = submit("bell_job.py", "mqt.ddsim.default:1", node=NODES[1], hold=True)
+    wait_for_result("ddsim", first, "the first DDSIM Bell result")
+    wait_for_result("ddsim", second, "the second DDSIM Bell result")
+    wait_for("the first DDSIM job to hold on its node", lambda: job_matches(first, "RUNNING", node=NODES[0]))
+    wait_for("the second DDSIM job to hold on its node", lambda: job_matches(second, "RUNNING", node=NODES[1]))
+    if "CPUAlloc=1" not in node_record(NODES[0]) or "CPUAlloc=1" not in node_record(NODES[1]):
+        msg = "Each held DDSIM job must leave one processor free on its compute node"
+        raise AssertionError(msg)
+
+    third = submit("bell_job.py", "mqt.ddsim.default:1")
+    wait_for(
+        "the third DDSIM job to wait for its license",
+        lambda: job_matches(third, "PENDING", reason="Licenses"),
+    )
+    assert_license("mqt.ddsim.default", total=2, used=2, free=0)
+
+    sc_job = submit("sc_job.py", "mqt.sc.default:1")
+    wait_for_result("sc", sc_job, "the SC job to execute on a free CPU")
+    wait_for("the SC job to complete", lambda: job_finished(sc_job))
+    sc_result = load_result("sc", sc_job)
+    if sc_result["node"] not in NODES or sc_result["qubits"] <= 0:
+        msg = f"Unexpected SC job result: {sc_result}"
+        raise AssertionError(msg)
+    if not job_matches(first, "RUNNING", node=NODES[0]) or not job_matches(second, "RUNNING", node=NODES[1]):
+        msg = "The SC job did not complete while both DDSIM licenses remained held"
+        raise AssertionError(msg)
+
+    monitor_service = "qdmi-availability@mqt.ddsim.default:2.service"
+    controller("systemctl", "stop", monitor_service)
+    configuration = RUNTIME / "jobs" / "availability.json"
+    configuration.write_text(
+        json.dumps({"schema-version": 1, "qdmi": {"devices": [{"id": "mqt.ddsim.default", "enabled": False}]}}),
+        encoding="utf-8",
+    )
+    monitor = ("python3", "/workspace/examples/slurm/update_availability.py", "--license", "mqt.ddsim.default:2")
+    assert controller("env", "MQT_CORE_QDMI_CONFIG_FILE=/jobs/availability.json", *monitor, check=False).returncode == 1
+    assert license_record("mqt.ddsim.default")["Reserved"] == "2"
+    assert job_matches(first, "RUNNING")
+    assert job_matches(second, "RUNNING")
+    for job_id in (first, second):
+        (RUNTIME / "jobs" / f"release-{job_id}").touch()
+        wait_for(f"the released DDSIM job {job_id} to finish", lambda job_id=job_id: job_finished(job_id))
+    assert_license("mqt.ddsim.default", total=2, used=0, free=2)
+    controller(*monitor, "--block-only")
+    job("srun", "--immediate=5", "--time=1", "--licenses=mqt.sc.default", "/bin/true", timeout=60)
+    assert job_matches(third, "PENDING", node="", reason="Licenses")
+    assert job("scontrol", "delete", "ReservationName=qdmi-unavailable-mqt.ddsim.default", check=False).returncode != 0
+
+    controller("systemctl", "start", monitor_service)
+    wait_for_result("ddsim", third, "the pending DDSIM job to execute after recovery")
+    wait_for("the third DDSIM job to finish", lambda: job_finished(third))
+    assert_allocation(first, NODES[0])
+    assert_allocation(second, NODES[1])
+    assert_allocation(third)
+    compose("up", "--detach", "--no-deps", "--force-recreate", "--wait", "accounting", timeout=120)
+    accounting = job(
+        "sacct",
+        "-X",
+        "--noheader",
+        "--parsable2",
+        "--jobs",
+        third,
+        "--format=User,Account,Partition,AllocTRES%200",
+    ).stdout.strip()
+    assert accounting.startswith("mqt-test|research|compute|"), accounting
+    assert "license/mqt.ddsim.default=1" in accounting, accounting
+    assert_license("mqt.ddsim.default", total=2, used=0, free=2)
+    assert license_record("mqt.ddsim.default")["Reserved"] == "0"
+
+    LOGGER.info(
+        "Slurm enforced license capacity, kept unavailable-device jobs pending without allocating nodes, "
+        "and resumed the pending Bell job after a successful health check."
+    )
+
+
+def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
+    """Read the device build inputs and the command to run in an allocation."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workload", type=Path, default=CLUSTER)
+    parser.add_argument("--dist", type=Path, default=DIST)
+    parser.add_argument("--nodes", type=int, default=2)
+    parser.add_argument("--setup-script", default="")
+    parser.add_argument("--compose-file", type=Path)
+    parser.add_argument("--device-license")
+    parser.add_argument("--partition", default="compute")
+    parser.add_argument("--qdmi-config-file")
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    options = parser.parse_args(arguments)
+    if options.nodes < 2:
+        parser.error("--nodes must be at least two for the admission tests")
+    if options.command[:1] == ["--"]:
+        options.command = options.command[1:]
+    if bool(options.command) != bool(options.device_license):
+        parser.error("--device-license and a command after -- must be supplied together")
+    if options.device_license and re.search(r"[\s,:|@]", options.device_license):
+        parser.error("--device-license must be one local device ID without a count")
+    if options.setup_script:
+        setup = (options.workload / options.setup_script).resolve()
+        if not setup.is_relative_to(options.workload.resolve()) or not setup.is_file():
+            parser.error("--setup-script must name a file inside --workload")
+    return options
+
+
+def test_provider(options: argparse.Namespace) -> None:
+    """Execute a device workload with its submission environment."""
+    environment = [f"MQT_CORE_QDMI_CONFIG_FILE={options.qdmi_config_file}"] if options.qdmi_config_file else []
+    allocation = (
+        "srun",
+        "--immediate=5",
+        "--time=5",
+        "--ntasks=1",
+        f"--partition={options.partition}",
+        f"--licenses={options.device_license}:1",
+    )
+    job("env", *environment, *allocation, *options.command, timeout=300)
+
+
+def test_partitions() -> None:
+    """Route each quantum allocation to its QAN and classical work to compute."""
+    executable = job("bash", "--login", "-c", "command -v python").stdout.strip()
+    assert executable == "/opt/venv/bin/python", executable
+    for partition in ("iqm", "braket"):
+        hostname = job("srun", "--immediate=5", "--time=1", f"--partition={partition}", "hostname").stdout.strip()
+        assert hostname == f"qan-{partition}", hostname
+    hostname = job("srun", "--immediate=5", "--time=1", "hostname").stdout.strip()
+    assert hostname in NODES, hostname
+
+
+def test_job_environment() -> None:
+    """Export job settings through srun and sbatch independently of daemon settings."""
+    program = (
+        "import os; assert os.geteuid() == 10000; "
+        "assert os.environ['MQT_CORE_QDMI_CONFIG_FILE'] == '/jobs/devices.json'; "
+        "assert os.environ['MQT_SLURM_TEST_REFERENCE'] == 'job-value'"
+    )
+    environment = ("env", "MQT_CORE_QDMI_CONFIG_FILE=/jobs/devices.json", "MQT_SLURM_TEST_REFERENCE=job-value")
+    job(*environment, "srun", "--immediate=5", "--time=1", "python3", "-c", program, timeout=60)
+    job(
+        *environment,
+        "sbatch",
+        "--wait",
+        "--time=1",
+        "--output=/jobs/environment.out",
+        "--wrap",
+        shlex.join(("python3", "-c", program)),
+        timeout=120,
+    )
+    job(
+        "srun",
+        "--immediate=5",
+        "--time=1",
+        "python3",
+        "-c",
+        "import os; assert 'MQT_SLURM_TEST_REFERENCE' not in os.environ; "
+        "assert 'MQT_CORE_QDMI_CONFIG_FILE' not in os.environ",
+        timeout=60,
+    )
+
+
+def main(arguments: Sequence[str] = ()) -> None:
+    """Build the shared cluster and run its MQT Core or external device workload."""
+    options = parse_arguments(arguments)
+    wheels = tuple(options.dist.glob("mqt_core-*.whl"))
     if len(wheels) != 1:
-        msg = f"Build exactly one MQT Core wheel in {DIST}, found {len(wheels)}"
+        msg = f"Build exactly one MQT Core wheel in {options.dist}, found {len(wheels)}"
         raise RuntimeError(msg)
+    COMPOSE_ENV.update({
+        "MQT_CORE_SLURM_CORE": str(ROOT),
+        "MQT_CORE_SLURM_WORKLOAD": str(options.workload.resolve()),
+        "MQT_CORE_SLURM_DIST": str(options.dist.resolve()),
+        "MQT_CORE_SLURM_SETUP_SCRIPT": options.setup_script,
+    })
+    COMPOSE_FILES[:] = ("--file", str(options.compose_file.resolve())) if options.compose_file else ()
 
     started_at = time.monotonic()
 
@@ -354,9 +515,38 @@ def main() -> None:
             raise RuntimeError(msg)
 
         clean_runtime()
+        if options.device_license:
+            configuration = (RUNTIME / "slurm.conf").read_text(encoding="utf-8")
+            configuration = re.sub(
+                r"^Licenses=(.*)$", rf"Licenses=\1,{options.device_license}:2", configuration, flags=re.MULTILINE
+            )
+            configuration = re.sub(
+                r"^AccountingStorageTRES=(.*)$",
+                rf"AccountingStorageTRES=\1,license/{options.device_license}",
+                configuration,
+                flags=re.MULTILINE,
+            )
+            (RUNTIME / "slurm.conf").write_text(configuration, encoding="utf-8")
+        if options.qdmi_config_file:
+            (RUNTIME / "qdmi.env").write_text(f"MQT_CORE_QDMI_CONFIG_FILE={options.qdmi_config_file}\n")
         LOGGER.info("Slurm runtime directory: %s", RUNTIME)
         started = True
-        compose("up", "--build", "--detach", "--wait", "--wait-timeout", "120", timeout=600, capture_output=False)
+        compose(
+            "up",
+            "--build",
+            "--detach",
+            "--scale",
+            f"node={options.nodes}",
+            "--wait",
+            "--wait-timeout",
+            "120",
+            timeout=1800,
+            capture_output=False,
+        )
+        NODES[:] = [
+            compose("exec", "-T", "--index", str(index), "node", "hostname").stdout.strip()
+            for index in range(1, options.nodes + 1)
+        ]
         LOGGER.info("Slurm image build and startup: %.2fs", time.monotonic() - started_at)
         testing_at = time.monotonic()
 
@@ -366,7 +556,7 @@ def main() -> None:
             msg = f"The fixture requires Slurm 25.11 or newer, got {version_output!r}"
             raise RuntimeError(msg)
 
-        for node in ("node1", "node2"):
+        for node in NODES:
             compute(node, "test", "-r", "/sys/fs/cgroup/cgroup.controllers")
             delegate = compute(
                 node,
@@ -381,74 +571,27 @@ def main() -> None:
                 raise RuntimeError(msg)
             wait_for(f"{node} to become IDLE with two processors", lambda node=node: node_is_idle(node))
 
-        registry_check = (
-            "from pathlib import Path; "
-            "import mqt.core; "
-            "from mqt.core.qdmi import device_ids; "
-            "module_path = Path(mqt.core.__file__).resolve(); "
-            "assert not any(module_path.is_relative_to(root) for root in ('/workspace', '/runtime')), module_path; "
-            "ids = set(device_ids()); "
-            "assert 'mqt.ddsim.default' in ids and 'mqt.sc.default' in ids, ids"
+        registered = set(
+            controller("sinfo", "--partition=compute", "--Node", "--noheader", "--format=%N").stdout.split()
         )
-        controller("python3", "-c", registry_check)
-        assert_license("mqt.ddsim.default", total=2, used=0, free=2)
-        assert_license("mqt.sc.default", total=1, used=0, free=1)
-
-        non_unit = submit("ddsim-job.sh", "mqt.ddsim.default:2")
-        wait_for_failed_adapter(non_unit, "must request exactly one Slurm license")
-        compound = submit("ddsim-job.sh", "mqt.ddsim.default:1,mqt.sc.default:1")
-        wait_for_failed_adapter(compound, "uses a compound AND expression")
-        alternative = submit("ddsim-job.sh", "mqt.ddsim.default:1|mqt.sc.default:1")
-        wait_for_failed_adapter(alternative, "uses a compound OR expression")
-        assert_license("mqt.ddsim.default", total=2, used=0, free=2)
-        assert_license("mqt.sc.default", total=1, used=0, free=1)
-
-        first = submit("ddsim-job.sh", "mqt.ddsim.default:1", node="node1", hold=True)
-        second = submit("ddsim-job.sh", "mqt.ddsim.default:1", node="node2", hold=True)
-        wait_for_result("ddsim", first, "the first DDSIM Bell result")
-        wait_for_result("ddsim", second, "the second DDSIM Bell result")
-        wait_for("the first DDSIM job to hold on node1", lambda: job_matches(first, "RUNNING", node="node1"))
-        wait_for("the second DDSIM job to hold on node2", lambda: job_matches(second, "RUNNING", node="node2"))
-        if "CPUAlloc=1" not in node_record("node1") or "CPUAlloc=1" not in node_record("node2"):
-            msg = "Each held DDSIM job must leave one processor free on its compute node"
-            raise AssertionError(msg)
-
-        third = submit("ddsim-job.sh", "mqt.ddsim.default:1")
-        wait_for(
-            "the third DDSIM job to wait for its license",
-            lambda: job_matches(third, "PENDING", reason="Licenses"),
+        assert registered == set(NODES), registered
+        healthy_licenses = (
+            "mqt.ddsim.default",
+            "mqt.sc.default",
+            *([options.device_license] if options.device_license else []),
         )
-        assert_license("mqt.ddsim.default", total=2, used=2, free=0)
+        for license_name in healthy_licenses:
+            wait_for(
+                f"{license_name} to become available",
+                lambda license_name=license_name: license_record(license_name)["Reserved"] == "0",
+            )
+        test_partitions()
+        if options.command:
+            test_provider(options)
+        else:
+            test_core()
+            test_job_environment()
 
-        sc_job = submit("sc-job.sh", "mqt.sc.default:1")
-        wait_for_result("sc", sc_job, "the SC job to execute on a free CPU")
-        wait_for("the SC job to complete", lambda: job_finished(sc_job))
-        sc_result = load_result("sc", sc_job)
-        if sc_result["node"] not in {"node1", "node2"} or sc_result["qubits"] <= 0:
-            msg = f"Unexpected SC job result: {sc_result}"
-            raise AssertionError(msg)
-        if not job_matches(first, "RUNNING", node="node1") or not job_matches(second, "RUNNING", node="node2"):
-            msg = "The SC job did not complete while both DDSIM licenses remained held"
-            raise AssertionError(msg)
-
-        (RUNTIME / f"release-{first}").touch()
-        wait_for("the released first DDSIM job to finish", lambda: job_finished(first))
-        wait_for_result("ddsim", third, "the pending third DDSIM job to execute")
-        wait_for("the third DDSIM job to finish", lambda: job_finished(third))
-
-        assert_bell_result(first, "node1")
-        assert_bell_result(second, "node2")
-        assert_bell_result(third)
-        assert_license("mqt.ddsim.default", total=2, used=1, free=1)
-
-        (RUNTIME / f"release-{second}").touch()
-        wait_for("the released second DDSIM job to finish", lambda: job_finished(second))
-        assert_license("mqt.ddsim.default", total=2, used=0, free=2)
-
-        LOGGER.info(
-            "Slurm 25.11+ admitted two held DDSIM jobs, blocked the third for Licenses, "
-            "ran the SC job on a free CPU, and executed the third Bell job after release."
-        )
         success = True
         LOGGER.info("Slurm admission and execution checks: %.2fs", time.monotonic() - testing_at)
     finally:
@@ -471,4 +614,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    main()
+    main(sys.argv[1:])

@@ -1,0 +1,25 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+[Unit]
+Description=Initialize QDMI license admission
+Requires=slurmctld.service
+PartOf=slurmctld.service
+After=slurmctld.service
+
+[Service]
+Type=oneshot
+Environment=VIRTUAL_ENV=/opt/venv
+ExecStart=/usr/local/sbin/mqt-qdmi-admission
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

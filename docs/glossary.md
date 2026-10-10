@@ -123,6 +123,13 @@ quantum assembly language
   QASM. A generic category of assembly-like languages for quantum programs. Do
   not use QASM as an alias for a specific OpenQASM version.
 
+QAN
+quantum access node
+  **Preferred term:** quantum access node. **Accepted abbreviation:** QAN. A
+  cluster node from which jobs can reach a quantum device service. Its Slurm
+  partition determines job placement; device credentials and site network
+  policies determine access.
+
 QDMI
 Quantum Device Management Interface
   **Preferred term:** Quantum Device Management Interface. **Accepted
@@ -133,14 +140,14 @@ Quantum Device Management Interface
 
 QDMI Client interface
   **Preferred term:** QDMI Client interface. The standard C interface consumed by
-  applications to open sessions, query devices, and manage jobs. Core's C++ and
+  applications to open sessions, query devices, and manage jobs. MQT Core's C++ and
   Python Client wrappers consume this interface; they are not a driver.
 
 QDMI driver
   **Preferred term:** QDMI driver. An implementation of the QDMI Client interface.
   The builtin MQT Core QDMI driver loads QDMI device libraries. A replacement driver owns
   its own discovery, configuration, and device access; applications must not
-  assume it provides Core's private driver extension.
+  assume it provides MQT Core's private driver extension.
 
 QDMI session
   **Preferred term:** QDMI session. A connection to a QDMI driver, represented
