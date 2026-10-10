@@ -65,7 +65,7 @@ EQUATIONS = {
 
 
 def main() -> None:
-    """Write path-only equation assets and the Core repository QR code."""
+    """Write path-only equation assets and source-linked QR codes."""
     mpl.rcParams.update({
         "svg.fonttype": "path",
         "svg.hashsalt": "mqsf2026-equations",
@@ -112,6 +112,9 @@ def main() -> None:
     for name, url in {
         "qr-core-repo": "https://github.com/munich-quantum-toolkit/core",
         "qr-braket": "https://amazon-braket-qdmi-device.readthedocs.io/en/stable/",
+        "qr-qdmi-repo": "https://github.com/Munich-Quantum-Software-Stack/QDMI",
+        "qr-qdmi": "https://munich-quantum-software-stack.github.io/QDMI/",
+        "qr-linkedin": "https://www.linkedin.com/in/lukas-burgholzer-7a1741a7/",
     }.items():
         target = ASSETS / f"{name}.svg"
         segno.make(url, error="m", micro=False).save(

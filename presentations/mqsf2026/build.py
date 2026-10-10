@@ -265,6 +265,9 @@ def build(output: Path, capture: Path = HERE / "captures/demo.json.gz", source: 
         archive.writestr(
             "evidence.json.gz", gzip.compress(gzip.decompress(raw) if capture.suffix == ".gz" else raw, mtime=0)
         )
+        for asset in sorted(source.joinpath("assets").glob("*")):
+            if asset.is_file():
+                archive.write(asset, f"assets/{asset.name}")
         for name in ("presenter-notes.md", "README.md"):
             if source.joinpath(name).exists():
                 archive.write(source / name, name)

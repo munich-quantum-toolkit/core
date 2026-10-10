@@ -21,8 +21,15 @@ TITLE = "System Software for Quantum Computing: From the Metal to the User"
 DEFAULT_HTML = Path(__file__).resolve().parents[2] / "build/mqsf2026/index.html"
 LAYOUT_CHECK = """() => {
     const slide = document.getElementById('slide'), bounds = slide.getBoundingClientRect(), issues = [];
-    const visible = node => !node.closest('[hidden], [aria-hidden="true"], .reveal.off') &&
-        getComputedStyle(node).visibility !== 'hidden' && node.getBoundingClientRect().width > 0;
+    const visible = node => {
+        if (node.closest('[hidden], [aria-hidden="true"], .reveal.off')) return false;
+        for (let parent = node; parent && parent !== document.documentElement; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) < 0.05)
+                return false;
+        }
+        return node.getBoundingClientRect().width > 0;
+    };
     for (const node of slide.querySelectorAll('h1, h2, h3, p, pre, img, svg, .metric, .code-frame')) {
         if (!visible(node) || node.parentElement.closest('svg')) continue;
         const rect = node.getBoundingClientRect();
@@ -47,6 +54,45 @@ LAYOUT_CHECK = """() => {
                     frame.top - rect.top, rect.bottom - frame.bottom);
         }
         if (overflow > 3) issues.push(`code: ${Math.round(overflow)}px text clipped by its frame`);
+    }
+    const textRects = [], walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT);
+    const addText = (element, text, rect) => {
+        let {left, right, top, bottom} = rect;
+        for (let parent = element.parentElement; parent && parent !== slide; parent = parent.parentElement) {
+            const style = getComputedStyle(parent), clip = parent.getBoundingClientRect();
+            if (style.overflowX !== 'visible') {
+                left = Math.max(left, clip.left); right = Math.min(right, clip.right);
+            }
+            if (style.overflowY !== 'visible') {
+                top = Math.max(top, clip.top); bottom = Math.min(bottom, clip.bottom);
+            }
+        }
+        if (text.trim() && right - left > 1 && bottom - top > 1)
+            textRects.push({element, text:text.trim().slice(0, 65), rect:{left, right, top, bottom}});
+    };
+    let node;
+    while ((node = walker.nextNode())) {
+        if (node.parentElement.closest('svg, script, style') || !visible(node.parentElement)) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) addText(node.parentElement, node.textContent, rect);
+    }
+    for (const text of slide.querySelectorAll('svg text'))
+        if (visible(text)) addText(text, text.textContent, text.getBoundingClientRect());
+    for (const {text, rect} of textRects) {
+        const overflow = Math.max(bounds.left - rect.left, rect.right - bounds.right,
+            bounds.top - rect.top, rect.bottom - bounds.bottom);
+        if (overflow > 3) issues.push(`text: outside slide by ${Math.round(overflow)}px: ${text}`);
+    }
+    for (let i = 0; i < textRects.length; i++) {
+        for (let j = i + 1; j < textRects.length; j++) {
+            const a = textRects[i], b = textRects[j];
+            if (a.element === b.element) continue;
+            const width = Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left);
+            const height = Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top);
+            if (width > 3 && height > 3)
+                issues.push(`text overlap (${Math.round(width)}x${Math.round(height)}px): ${a.text} / ${b.text}`);
+        }
     }
     return issues;
 }"""
@@ -308,6 +354,22 @@ def check(
         ids = {slide["id"]: index for index, slide in enumerate(slides)}
         expected_mapping = page.evaluate("MQSF_DATA.targets[0].compilation.layout.final.slice(0,6)")
         expected_swaps = page.evaluate("MQSF_DATA.targets[0].compilation.layout.swaps.length")
+        opening = page.evaluate("""() => {
+            const holder = document.createElement('div');
+            const routes = p => {
+                holder.innerHTML = MQSF_VIZ.architecture('problem', p);
+                return [...holder.querySelectorAll('path[data-from]')]
+                    .filter(n => Number(n.getAttribute('opacity')) > 0)
+                    .map(n => [n.dataset.from, n.dataset.to]);
+            };
+            return {start:routes(0), first:routes(.38), complete:routes(1)};
+        }""")
+        assert not opening["start"], "Future deployment paths must not flash on entry"
+        assert opening["first"] == [["user-0", "compute-0"], ["compute-0", "qpu-0"]]
+        assert {tuple(edge) for edge in opening["complete"]} == {
+            *((f"user-{u}", f"compute-{c}") for u in range(4) for c in range(3)),
+            *((f"compute-{c}", f"qpu-{q}") for c in range(3) for q in range(6)),
+        }, "Every deployment route must pass through classical compute"
         probe = page.evaluate(CIRCUIT_CHECK)
         assert not probe["failures"], probe["failures"]
         assert probe["dependencies"]
@@ -357,6 +419,12 @@ def check(
             if slides[index]["id"] == "routing" and step == 2 and not assert_state((index, step))["animating"]:
                 expected = [f"q{i} → {site}" for i, site in enumerate(expected_mapping)]
                 assert page.locator(".mapping-legend span").all_text_contents() == expected
+                for i, site in enumerate(expected_mapping):
+                    marker = page.locator(f'[data-morph="logical-qubit-{i}"]')
+                    physical = page.locator(f'[data-morph="device-node-{site}"]')
+                    assert marker.get_attribute("transform") == physical.get_attribute("transform"), (
+                        "Visual movement must finish at the captured physical placement"
+                    )
             if slides[index]["id"] == "routing" and step in {0, 2} and not assert_state((index, step))["animating"]:
                 swaps = int(page.locator(".telemetry strong").inner_text().split()[0])
                 assert swaps == (0 if step == 0 else expected_swaps), "SWAP telemetry must follow the routing stage"
@@ -468,6 +536,20 @@ def check(
             page.keyboard.press(key)
             assert page.locator(selector).is_hidden()
 
+        motion_layout_samples = 0
+        for index, slide in enumerate(slides):
+            for step, playback in slide["playbacks"].items():
+                page.evaluate("([i,s]) => MQSF_DECK.go(i,s,true)", [index, int(step)])
+                page.clock.run_for(playback.get("transition", 0) + 32)
+                previous_fraction = 0
+                for fraction in (0.1, 0.25, 0.5, 0.75, 0.9, 0.95):
+                    page.clock.fast_forward(round(playback["duration"] * (fraction - previous_fraction)))
+                    for issue in page.evaluate(LAYOUT_CHECK):
+                        geometry.setdefault((index, issue), int(step))
+                    inspect_evidence()
+                    motion_layout_samples += 1
+                    previous_fraction = fraction
+
         page.evaluate("dispatchEvent(new Event('beforeprint'))")
         page.emulate_media(media="print")
         assert page.locator("#print-deck .print-slide").count() == len(slides)
@@ -559,7 +641,7 @@ def check(
         )
         print(
             f"Evidence: {probe['dependencies']} feedback dependencies, {probe['windows']} circuit windows, "
-            f"exact result progress, {len(slides)} print pages."
+            f"exact result progress, {len(slides)} print pages, {motion_layout_samples} animation layout samples."
         )
         print(
             f"Real RAF: {len(real_motion['samples'])} playback builds, {real_motion['frames']} sampled frames, "

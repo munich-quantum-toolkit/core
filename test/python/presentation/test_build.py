@@ -245,6 +245,8 @@ def test_bundle_is_self_contained_and_keeps_exact_source() -> None:
         (root / "assets").mkdir()
         (root / "assets/equation.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
         (root / "assets/inter-latin.woff2").write_bytes(b"font test bytes")
+        (root / "assets/sources.json").write_text('{"logo": "upstream attribution"}', encoding="utf-8")
+        (root / "assets/logo-LICENSE.txt").write_text("Upstream license", encoding="utf-8")
         source = root / "capture.json"
         data = sample_target_capture()
         source.write_text(json.dumps(data), encoding="utf-8")
@@ -266,6 +268,8 @@ def test_bundle_is_self_contained_and_keeps_exact_source() -> None:
             assert target["compilation"]["stages"][0]["lines_html"]
         with zipfile.ZipFile(result.parent / "mqsf-2026.zip") as archive:
             assert archive.read("index.html") == result.read_bytes()
+            for asset in (root / "assets").iterdir():
+                assert archive.read(f"assets/{asset.name}") == asset.read_bytes()
             assert json.loads(gzip.decompress(archive.read("evidence.json.gz"))) == data
 
 

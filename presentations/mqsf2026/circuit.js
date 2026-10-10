@@ -95,7 +95,7 @@ window.MQSF_CIRCUIT = (() => {
       dy = 60;
     const height = Math.max(
       260,
-      top + (c.qubits.length - 1) * dy + (structured ? 120 : 70),
+      top + (c.qubits.length - 1) * dy + (structured ? 140 : 70),
     );
     const row = new Map(c.qubits.map((q, i) => [q.id, i]));
     const y = (q) => top + row.get(q) * dy;

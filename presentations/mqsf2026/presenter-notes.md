@@ -19,20 +19,41 @@ file separate for private rehearsal.
 
 ## 1–2 · The shared stack · 4 minutes
 
-**1. Title.** Introduce MQSC, with TUM as the secondary affiliation. The opening
-world connects users, classical resources and different QPU technologies. The
-promise is system software from the metal to the user.
+**1. Title.** Keep the opening still. Introduce yourself as CTO and co-founder
+of MQSC, with your Senior Researcher role at the Chair for Design Automation,
+TUM, as the secondary affiliation. The official MQSF mark establishes the event;
+the company QR and social links remain visible.
 
-**2. Hardware scales. Software breaks.** Start with the integration problem. The
-same people and machines stay in place as their bespoke connections gather
-around the shared stack. Advance once to see that stack, and again to reveal its
-responsibilities: programming models, resource management and scheduling,
-compiler infrastructure, and device interfaces. Resource orchestration belongs
-to the larger architecture; it is not all implemented inside MQT Core.
+**2:1. Hardware scales. Software breaks.** Let the 22-second sequence unfold.
+Introduce the user groups, then their classical resources: personal workstation,
+cloud and HPC. Quantum systems may be cloud-hosted or on-premise. Follow one
+researcher from a workstation to one quantum provider, another provider, then
+several. More demanding workloads move to cloud or HPC classical resources, with
+access to cloud and on-premise quantum systems. End with the many possible
+paths. Every quantum access goes through classical compute. Bespoke software for
+every path cannot keep up as the ecosystem and machines scale.
 
-Use the published MQSS paper as the architectural reference, without reading its
-URL. Transition: “Let's follow a practical application through these layers,
-then open up the compiler that connects them.”
+**2:2. A shared software stack.** The same objects morph into shared interfaces.
+The published MQSS architecture is modular, efficient and extensible. Separate
+program representations from runtime APIs. The compiler combines a program with
+device capabilities; the orchestrator manages resources, requests compilation,
+submits the executable and returns results through the backend interface.
+Workstations, cloud and HPC host this software. The MQSS paper and its citation
+belong here, not on the preceding problem view.
+
+**2:3. From the Metal to the User.** Reveal QDMI first, then the MQT Compiler
+Collection, then the MQSC Orchestrator. The compiler and orchestrator live in
+MQT Core. OpenQASM 3, Qiskit and jeff are supported compiler inputs; Qiskit and
+PennyLane have runtime integrations. CUDA-Q work is marked as in progress.
+Distinguish language formats from host runtime APIs. The implementation cards
+show IQM, Amazon Braket, DDSIM and IBM; MQSC develops and maintains these
+implementations, including the IQM implementation for IQM.
+
+MQT originated at TUM CDA and is developed by MQSC, TUM CDA and its community.
+QDMI was created by TUM CDA, TUM CAPS and LRZ within MQV, and is maintained by
+MQV gGmbH and MQSC with the wider community. Do not equate download counts with
+users or claim an unverified QDMI download metric. Transition: “Let's follow a
+practical application through these layers, then open up the compiler.”
 
 ## 3–5 · A practical hybrid application · 10 minutes
 
@@ -149,9 +170,9 @@ integrations, quantum IR, decision diagrams, ZX, compiler infrastructure, QDMI
 and execution. Stars and cumulative downloads are recorded snapshots, not a
 count of unique users. Source and documentation QR codes are already visible.
 
-**12. From the metal to the user.** Let the same Core diagram morph into the
-larger architecture. Users, classical infrastructure and QPUs return around it.
-Recap practical hybrid computation, portable device access, device-aware
-compilation and preserved quantum program structure. Credit MQT, QDMI, MQSS,
-Munich Quantum Valley and the TUM Chair for Design Automation. Leave mq.sc
-visible for discussion.
+**12. From the Metal to the User.** Return from Core to the same product
+architecture as F2:3. Connect the demonstrated workflow to QDMI, compilation and
+orchestration, spanning users, classical infrastructure and quantum systems. The
+full stack reappears in a single continuous transition. Credit the MQT and QDMI
+communities and their originating institutions, alongside MQSC's ongoing
+engineering. Leave the mq.sc QR visible for discussion.

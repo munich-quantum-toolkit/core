@@ -3,10 +3,11 @@
 ## System Software for Quantum Computing: From the Metal to the User
 
 A 12-slide, 35-minute keynote for a 1920 × 1080 projector. The white and blue
-MQSC presentation opens with the shared software stack, follows a LiH
-quantum-classical application, compiles one of its measurement programs for
-three device models, and then shows structured programs and adaptive execution.
-See [presenter-notes.md](presenter-notes.md) for the rehearsal narrative.
+MQSC presentation opens with a static event title and a staged deployment story
+that becomes the shared software stack. It follows a LiH quantum-classical
+application, compiles one of its measurement programs for three device models,
+and then shows structured programs and adaptive execution. See
+[presenter-notes.md](presenter-notes.md) for the rehearsal narrative.
 
 Every slide and progressive build works with a Logitech Spotlight configured to
 send standard forward/back keys. The browser renders saved evidence and replays
@@ -25,9 +26,10 @@ Open `build/mqsf2026/index.html` directly in a browser. Use full screen at 1920
 × 1080 and rehearse with the actual clicker. The layout scales with the window
 while retaining its 16:9 canvas. The build also creates
 `build/mqsf2026/mqsf-2026.zip`, containing the self-contained HTML, the full
-capture as `evidence.json.gz`, this README, and the presenter notes. Code
-highlighting, data, SVG illustrations, logos, and fonts are embedded. External
-links and QR destinations are optional audience resources.
+capture as `evidence.json.gz`, this README, the presenter notes, and editable
+assets with their source attributions and licenses. Code highlighting, data, SVG
+illustrations, logos, and fonts are embedded. External links and QR destinations
+are optional audience resources.
 
 | Action                              | Keys                                                 |
 | ----------------------------------- | ---------------------------------------------------- |
@@ -49,14 +51,16 @@ forward finishes the current replay; the next press advances. During a looping
 replay, forward stops it and advances immediately. Back cancels playback and
 restores the previous build. Playback never changes slides automatically.
 
-| Slide | Playback                                                                            |
-| ----- | ----------------------------------------------------------------------------------- |
-| 3     | AFQMC workflow unfolds over 6.5 seconds; one further build shows source             |
-| 4     | QDMI submission window over 8.5 seconds; parallel CPU/walker replay over 11 seconds |
-| 5     | Energy and walker weights evolve over a 12-second loop                              |
-| 6     | Placement refinement, routing and synthesis: 10 / 10 / 8 seconds                    |
-| 7     | Each device selection replays query, placement, routing and synthesis               |
-| 10    | One QPE replay over 9.5 seconds, with API calls and shots on one clock              |
+| Slide | Playback                                                                             |
+| ----- | ------------------------------------------------------------------------------------ |
+| 2     | Deployment paths: 22 seconds; shared architecture: 8.5 seconds; products: 10 seconds |
+| 3     | AFQMC workflow unfolds over 6.5 seconds; one further build shows source              |
+| 4     | QDMI submission window over 8.5 seconds; parallel CPU/walker replay over 11 seconds  |
+| 5     | Energy and walker weights evolve over a 12-second loop                               |
+| 6     | Placement refinement, routing and synthesis: 10 / 10 / 8 seconds                     |
+| 7     | Each device selection replays query, placement, routing and synthesis                |
+| 10    | One QPE replay over 9.5 seconds, with API calls and shots on one clock               |
+| 12    | Return to the complete product architecture over 9.5 seconds                         |
 
 Forward entry starts a build-zero replay automatically. Direct jumps, backward
 navigation, printing, and reduced-motion mode show settled final states. Looping
@@ -249,12 +253,21 @@ uv run --no-project --with playwright presentations/mqsf2026/check_browser.py --
 
 Run the full presentation suite in the native environment; AFQMC tests need
 NumPy and PennyLane. The offline browser check accepts `--html`, `--browser`,
-`--screenshot`, `--screenshots-dir`, and `--engine chromium|firefox`. The last
-option saves every final slide at FullHD. Repository lint and native checks are
-separate; local success does not establish hosted CI or Read the Docs status.
+`--screenshot`, `--screenshots-dir`, and `--engine chromium|firefox`. The
+screenshot directory option saves every final slide at FullHD. The check covers
+text overlap and bounds at every build endpoint and six points in each timed
+animation. Repository lint and native checks are separate; local success does
+not establish hosted CI or Read the Docs status.
 
 Asset and reference provenance is recorded in `assets/sources.json` and
 `captures/references.json`. The QDMI wordmark is the official MQSC website SVG,
 adapted to the white background. Regenerate tightly cropped equation paths and
 the repository/device QR codes with
 `uv run presentations/mqsf2026/render_equations.py`.
+
+The opening credits distinguish project origins, community development and
+current maintenance. Its frontend ports distinguish compiler input formats from
+runtime SDK APIs; CUDA-Q integration is explicitly work in progress. MQSS and
+structured-program citations use the same author/year style. Public source
+metadata and logo provenance are bundled; the QDMI card shows verified GitHub
+stars without inventing a package-download count.

@@ -261,31 +261,11 @@ h3 {
   font-size: 22px;
   color: var(--muted);
 }
-.title-layout .byline {
-  margin-top: 42px;
-  font-size: 35px;
-  font-weight: 600;
-}
-.title-layout .affiliation {
-  margin-top: 12px;
-  font-size: 27px;
-  color: var(--muted);
-}
-.title-mark {
-  width: 510px;
-  opacity: 0.1;
-  transform: rotate(-12deg);
-}
 .title-layout .talk-date {
-  font-size: 26px;
-  letter-spacing: 2px;
-  margin-bottom: 26px;
+  font-size: 25px;
+  letter-spacing: 1px;
+  margin-bottom: 22px;
   color: var(--blue);
-}
-.title-layout .slogan {
-  font-size: 32px;
-  color: var(--blue);
-  margin-top: 35px;
 }
 .reveal {
   transition:
@@ -788,11 +768,6 @@ dialog p {
 }
 /* Hosted preview controls obscure the slides and require mouse interaction. */
 /* Fixed scene geometry keeps the clicker narrative spatially continuous. */
-.title-animation svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
 .ecosystem-scene {
   height: 650px;
   margin-top: 16px;
@@ -1129,12 +1104,6 @@ dialog p {
   height: 510px;
   margin-top: 5px;
 }
-.closing-resources .qr-block .url {
-  font-size: 28px;
-}
-.closing-resources .qr-block .caption {
-  font-size: 24px;
-}
 @media (prefers-reduced-motion: reduce) {
   .flow-particles {
     animation: none;
@@ -1290,9 +1259,22 @@ readthedocs-docdiff {
   margin-top: 10px;
   font-size: 18px;
 }
-.world-scene {
-  height: 575px;
-  margin-top: 18px;
+.world-scene,
+.core-world {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 118px;
+  height: 560px;
+  margin: 0;
+}
+#slide:has(.world-scene, .core-world) > h2 {
+  font-size: 56px;
+}
+#slide:has(.world-scene, .core-world) > .subtitle {
+  margin-top: 10px;
+  font-size: 27px;
+  line-height: 1.3;
 }
 .reference-strip {
   position: absolute;
@@ -1314,46 +1296,181 @@ readthedocs-docdiff {
   font-size: 20px;
 }
 .title-layout {
-  align-items: center;
-  gap: 18px;
-  grid-template-columns: 1fr;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 570px;
+  align-items: stretch;
+  gap: 60px;
   height: 794px;
   position: relative;
 }
+.title-main {
+  padding-top: 12px;
+}
 .title-layout h1 {
-  letter-spacing: -2.8px;
+  letter-spacing: -3px;
   max-width: none;
-  width: 1750px;
-  font-size: 66px;
-  line-height: 1.12;
+  font-size: 76px;
+  line-height: 1.23;
 }
-.title-byline {
-  color: var(--muted);
-  margin-top: 25px;
-  position: absolute;
-  left: 0;
-  gap: 12px;
-  font-size: 27px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  top: 210px;
-  width: 340px;
-  line-height: 1.4;
+.speaker {
+  margin-top: 64px;
 }
-.title-byline b {
+.speaker > b {
   color: var(--navy);
-  font-size: 36px;
+  font-size: 43px;
+  font-weight: 650;
 }
-.title-animation {
+.speaker-primary {
+  font-size: 35px;
+  color: var(--blue);
+  margin-top: 10px;
+}
+.speaker-research {
   display: flex;
   align-items: center;
+  gap: 24px;
+  margin-top: 32px;
+}
+.speaker-research .logo {
+  width: 180px;
+  height: 85px;
+  object-fit: contain;
+}
+.speaker-research p {
+  font-size: 26px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.speaker-social {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 32px;
+  font-size: 24px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.speaker-social a {
+  text-decoration: none;
+}
+.title-event {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px 40px 38px;
+  background: #f2f7fc;
+  border-left: 6px solid var(--blue);
+}
+.title-event .event-logo {
+  width: 100%;
+  height: 215px;
+  object-fit: contain;
+}
+.title-company {
+  padding: 32px 0;
+  border-top: 2px solid #dbe7f2;
+  border-bottom: 2px solid #dbe7f2;
+}
+.title-company .logo {
+  width: 390px;
+  height: 140px;
+  object-fit: contain;
+}
+.title-company p {
+  margin-top: 12px;
+  font-size: 25px;
+  color: var(--blue);
+}
+.title-event .qr-block {
+  gap: 22px;
+}
+.title-event .qr-block img {
+  width: 150px;
+  height: 150px;
+}
+.title-event .qr-block .url {
+  font-size: 43px;
+}
+.title-event .qr-block .caption {
+  font-size: 23px;
+  line-height: 1.35;
+}
+.project-resources,
+.architecture-reference {
   position: absolute;
-  top: 185px;
-  left: 360px;
-  width: 1390px;
-  height: 590px;
+  top: 688px;
+  left: 0;
+  right: 0;
+  height: 104px;
+  display: flex;
+  align-items: center;
+  gap: 44px;
+}
+.project-resource {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 18px;
+  flex: 1;
+  align-items: center;
+}
+.project-qr {
+  width: 84px;
+  height: 84px;
+}
+.project-title {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 25px;
+  line-height: 1.1;
+  font-weight: 650;
+}
+.project-title a {
+  text-decoration: none;
+}
+.project-credit-logos {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.project-credit-logos .logo {
+  width: 60px;
+  height: 27px;
+  object-fit: contain;
+}
+.project-stats {
+  font-size: 23px;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+.project-credit {
+  font-size: 21px;
+  line-height: 1.12;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.architecture-reference {
+  justify-content: center;
+}
+.architecture-reference > .logo {
+  width: 180px;
+  height: 85px;
+  object-fit: contain;
+}
+.architecture-reference .qr-block {
+  gap: 24px;
+}
+.architecture-reference .qr-block img {
+  width: 104px;
+  height: 104px;
+}
+.architecture-reference .url {
+  font-size: 23px;
+}
+.architecture-reference .caption {
+  font-size: 21px;
+  max-width: none;
+  margin-top: 8px;
 }
 .application-scene {
   height: 530px;
@@ -1653,6 +1770,20 @@ readthedocs-docdiff {
   bottom: 18px;
   right: 0;
 }
+#slide:has(.routing-ref) .architecture-grid {
+  margin-top: 18px;
+}
+#slide:has(.routing-ref) .phase-labels {
+  margin: 0 0 10px;
+}
+#slide:has(.routing-ref) .telemetry {
+  margin-top: 10px;
+  padding: 10px 20px;
+}
+#slide:has(.routing-ref) .program-metrics b {
+  font-size: 36px;
+  line-height: 1.1;
+}
 .routing-ref .qr-block img {
   width: 105px;
   height: 105px;
@@ -1813,6 +1944,10 @@ readthedocs-docdiff {
   padding: 15px 19px;
   height: 365px;
 }
+.execution-grid:has(.histogram) .code-frame {
+  margin-bottom: 0;
+  height: 380px;
+}
 .execution-grid .code-frame pre {
   line-height: 1.25;
   font-size: 23px;
@@ -1823,24 +1958,15 @@ readthedocs-docdiff {
 .execution-grid .histogram {
   height: 460px;
 }
-.core-world {
-  margin-top: 22px;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 145px;
-  height: 500px;
-  margin: 0;
-}
 .core-impact-row {
   display: flex;
   align-items: center;
-  margin-top: 12px;
   position: absolute;
-  top: 665px;
+  top: 688px;
   left: 0;
   right: 0;
   margin: 0;
+  height: 104px;
   gap: 40px;
 }
 .core-impact-row .metric-row {
@@ -1857,8 +1983,8 @@ readthedocs-docdiff {
   gap: 18px;
 }
 .core-impact-row .qr-block img {
-  width: 115px;
-  height: 115px;
+  width: 104px;
+  height: 104px;
 }
 .core-impact-row .url {
   font-size: 20px;
@@ -1866,35 +1992,46 @@ readthedocs-docdiff {
 .core-impact-row .caption {
   font-size: 20px;
 }
-.closing-world {
-  height: 500px;
-}
 .closing-resources {
   display: flex;
   align-items: center;
-  margin-top: 15px;
   justify-content: space-between;
   position: absolute;
-  top: 665px;
+  top: 688px;
   left: 0;
   right: 0;
-  height: 115px;
+  height: 104px;
   margin: 0;
 }
 .closing-logos {
   display: flex;
   align-items: center;
-  gap: 30px;
+  gap: 22px;
 }
 .closing-logos .logo {
-  width: 235px;
+  width: 120px;
   object-fit: contain;
-  max-width: 175px;
-  height: 95px;
+  height: 60px;
+}
+.closing-credit {
+  font-size: 21px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.closing-resources .qr-block {
+  gap: 22px;
+}
+.closing-resources .qr-block .url {
+  font-size: 40px;
+}
+.closing-resources .qr-block .caption {
+  font-size: 22px;
+  max-width: 385px;
+  margin-top: 5px;
 }
 .closing-resources .qr-block img {
-  width: 115px;
-  height: 115px;
+  width: 104px;
+  height: 104px;
 }
 .application-code > div:first-child {
   display: contents;

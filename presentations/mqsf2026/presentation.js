@@ -210,7 +210,7 @@
     const srcLine = (e?.source_line || 1) - 1;
     return code(a, {
       start: python ? 0 : Math.max(0, srcLine - 3),
-      count: python ? 8 : 9,
+      count: python ? 8 : 6,
       hot: [srcLine],
       compact: true,
       title: python
@@ -529,21 +529,58 @@
       "#526d88",
     );
     const r = sites.length > 80 ? 12 : sites.length > 40 ? 17 : 20;
+    const tokens = (layout || [])
+      .slice(0, 6)
+      .map((site, i) => {
+        const destination = points.get(site),
+          origin = points.get(blend?.before?.[i]) || destination;
+        if (!destination) return null;
+        const t = blend?.fraction ?? 1,
+          dx = destination.x - origin.x,
+          dy = destination.y - origin.y,
+          distance = Math.hypot(dx, dy),
+          // Opposing exchanges take opposite arcs; recorded endpoints stay exact.
+          arc = distance
+            ? (Math.min(45, distance / 4) * Math.sin(Math.PI * t)) / distance
+            : 0;
+        return {
+          x: origin.x + dx * t - dy * arc,
+          y: origin.y + dy * t + dx * arc,
+          i,
+        };
+      })
+      .filter(Boolean);
+    // Keep labels apart during schematic movement, never change recorded placements.
+    if (blend?.fraction > 0 && blend.fraction < 1)
+      for (let pass = 0; pass < 12; pass++)
+        for (let i = 0; i < tokens.length; i++)
+          for (let j = i + 1; j < tokens.length; j++) {
+            const a = tokens[i],
+              b = tokens[j],
+              dx = b.x - a.x || 0.001,
+              dy = b.y - a.y,
+              distance = Math.hypot(dx, dy),
+              shift = Math.max(
+                0,
+                (2 * (r + 5) + 4 - distance) / (2 * distance),
+              );
+            a.x -= dx * shift;
+            a.y -= dy * shift;
+            b.x += dx * shift;
+            b.y += dy * shift;
+          }
     body += sites
       .map((s) => {
         const p = points.get(s.id),
           hot = active.has(s.id);
-        return `<g data-morph="device-node-${s.id}" transform="translate(${p.x} ${p.y})"><circle r="${r}" fill="${hot ? "#d4e9fa" : "#ecf3fa"}" stroke="${hot ? "#087d92" : "#92b2d0"}" stroke-width="${hot ? 4 : 1.5}"/>${text(0, 6, s.id, r > 15 ? 17 : 12, "#58718b")}</g>`;
+        const covered = tokens.some(
+          (t) => Math.hypot(t.x - p.x, t.y - p.y) < r + 18,
+        );
+        return `<g data-morph="device-node-${s.id}" transform="translate(${p.x} ${p.y})"><circle r="${r}" fill="${hot ? "#d4e9fa" : "#ecf3fa"}" stroke="${hot ? "#087d92" : "#92b2d0"}" stroke-width="${hot ? 4 : 1.5}"/>${covered ? "" : text(0, 6, s.id, r > 15 ? 17 : 12, "#58718b")}</g>`;
       })
       .join("");
-    (layout || []).slice(0, 6).forEach((site, i) => {
-      const destination = points.get(site),
-        origin = points.get(blend?.before?.[i]) || destination;
-      if (!destination) return;
-      const t = blend?.fraction ?? 1,
-        px = origin.x + (destination.x - origin.x) * t,
-        py = origin.y + (destination.y - origin.y) * t;
-      body += `<g data-morph="logical-qubit-${i}" transform="translate(${px} ${py})"><circle r="${r + 5}" fill="${colors[i]}" stroke="white" stroke-width="3"/>${text(0, 7, `q${i}`, 17, "white")}</g>`;
+    tokens.forEach(({ x, y, i }) => {
+      body += `<g data-morph="logical-qubit-${i}" transform="translate(${x} ${y})"><circle r="${r + 5}" fill="${colors[i]}" stroke="white" stroke-width="3"/>${text(0, 7, `q${i}`, 17, "white")}</g>`;
     });
     return `<div class="target-map" data-morph="target-map">${svg(body, "0 0 820 630", `${target?.label || "Emerald"} captured coupling graph`)}</div>`;
   }
@@ -667,10 +704,10 @@
     const x = (ms) => 180 + ((ms - start) / (end - start)) * 1310;
     let body = "";
     pids.forEach((pid, row) => {
-      const yy = 50 + row * 66;
+      const yy = 24 + row * 32;
       body +=
-        `<rect x="177" y="${yy}" width="1315" height="42" rx="6" fill="#edf3fa"/>` +
-        text(157, yy + 28, `Process ${row + 1}`, 23, "#526d88", "end");
+        `<rect x="177" y="${yy}" width="1315" height="24" rx="4" fill="#edf3fa"/>` +
+        text(157, yy + 20, `Process ${row + 1}`, 23, "#526d88", "end");
       tasks
         .filter(
           (t) =>
@@ -681,23 +718,23 @@
         .forEach((task) => {
           const left = x(Math.max(start, task.started_ms)),
             right = x(Math.min(now, task.finished_ms));
-          body += `<rect x="${left}" y="${yy + 3}" width="${Math.max(0, right - left)}" height="36" fill="${task.label === "quantum" ? "#2f70b8" : "#6c91a2"}"><title>PID ${pid}, ${task.label} walker ${task.walker_id}; ${fmt(task.started_ms, 2)}–${fmt(task.finished_ms, 2)} ms</title></rect>`;
+          body += `<rect x="${left}" y="${yy + 3}" width="${Math.max(0, right - left)}" height="18" fill="${task.label === "quantum" ? "#2f70b8" : "#6c91a2"}"><title>PID ${pid}, ${task.label} walker ${task.walker_id}; ${fmt(task.started_ms, 2)}–${fmt(task.finished_ms, 2)} ms</title></rect>`;
         });
     });
     for (let i = 0; i <= 4; i++)
       body += text(
         x(start + (i / 4) * (end - start)),
-        355,
+        176,
         fmt((start + (i / 4) * (end - start)) / 1000, 2) + " s",
         23,
         "#526d88",
       );
-    body += line(x(now), 37, x(now), 317, "#087d92", 3);
+    body += line(x(now), 15, x(now), 155, "#087d92", 3);
     const src = {
       code: app.classical_source || "",
       lines_html: app.classical_source_lines_html,
     };
-    return `<div class="hpc-lanes">${svg(body, "0 0 1550 385", "Actual four-process AFQMC task intervals on a measured wall clock")}</div><div class="hpc-details"><div>${code(src, { start: focus(src, "for label in", 0), count: 3, compact: true, title: "Actual walker-task submission loop" })}</div><div><div class="metric-row">${metric(p.processes || 0, "CPU processes")}${metric(tasks.length, "walker tasks")}</div><p class="note">Each bar: one complete ${p.steps}-step walker.<br>Blue: shadow trial · grey: Hartree–Fock trial.<br>Measured steady-phase zoom; whole pool: ${fmt((p.duration_ms || 0) / 1000, 2)} s, including startup.</p></div></div>`;
+    return `<div class="hpc-lanes">${svg(body, "0 0 1550 190", "Actual four-process AFQMC task intervals on a measured wall clock")}</div><div class="hpc-details"><div>${code(src, { start: focus(src, "for label in", 0), count: 3, compact: true, title: "Actual walker-task submission loop" })}</div><div><div class="metric-row">${metric(p.processes || 0, "CPU processes")}${metric(tasks.length, "walker tasks")}</div><p class="note">Each bar: one complete ${p.steps}-step walker.<br>Blue: shadow trial · grey: Hartree–Fock trial.<br>Measured steady-phase zoom; whole pool: ${fmt((p.duration_ms || 0) / 1000, 2)} s, including startup.</p></div></div>`;
   }
   function programMetrics(target, id) {
     const m = target?.compilation?.metrics?.[id] || {},
@@ -789,30 +826,63 @@
   function add(id, section, title, builds, render, notes = "", playbacks = {}) {
     slides.push({ id, section, title, builds, render, notes, playbacks });
   }
+  function projectResources(progress = 1) {
+    const stars = references.qdmi_stats?.github?.stargazers_count ?? "—";
+    const reveal = (at) => Math.max(0, Math.min(1, (progress - at) / 0.15));
+    return `<div class="project-resources">
+      <div class="project-resource" style="opacity:${reveal(0.42)}">
+        <a href="https://github.com/munich-quantum-toolkit/core"><img class="project-qr" src="${assets["qr-core-repo"]}" alt="MQT Core on GitHub"/></a>
+        <div><div class="project-title"><a href="https://github.com/munich-quantum-toolkit/core">MQT Core · GitHub</a><span class="project-credit-logos">${logo("mqsc")}${logo("tum-cda")}</span></div>
+        <p class="project-stats">${fmt(references.core_stats?.github?.stargazers_count ?? 0, 0)} stars · ${esc(references.core_stats?.dashboard_snapshot?.total_downloads ?? "—")} PyPI downloads</p>
+        <p class="project-credit">Developed by MQSC &amp; TUM CDA<br>with the MQT community · MQSS / MQV ecosystem</p></div>
+      </div>
+      <div class="project-resource" style="opacity:${reveal(0.08)}">
+        <a href="https://github.com/munich-quantum-software-stack/QDMI"><img class="project-qr" src="${assets["qr-qdmi-repo"]}" alt="QDMI on GitHub"/></a>
+        <div><div class="project-title"><a href="https://github.com/munich-quantum-software-stack/QDMI">QDMI · GitHub</a><span class="project-credit-logos">${logo("tum")}${logo("lrz")}${logo("mqv")}${logo("mqsc")}</span></div>
+        <p class="project-stats">${esc(stars)} stars · an open, vendor-neutral interface</p>
+        <p class="project-credit">Created by TUM CDA, TUM CAPS &amp; LRZ<br>Maintained by MQV gGmbH &amp; MQSC, with the community</p></div>
+      </div>
+    </div>`;
+  }
   add(
     "title",
     "Munich Quantum Software Forum · October 2026",
     "System Software for Quantum Computing",
     0,
     () =>
-      `<div class="title-layout"><h1>System Software for Quantum Computing:<br><span class="blue">From the Metal to the User</span></h1><div class="title-byline"><b>Lukas Burgholzer</b><span>CTO &amp; Co-founder · MQSC</span><span>Technical University of Munich</span></div><div class="title-animation" data-morph="world">${viz.architecture("title")}</div></div>`,
-    "Introduce MQSC: system software connects users, classical computing infrastructure and heterogeneous quantum systems.",
+      `<div class="title-layout"><div class="title-main"><p class="talk-date">MQSF 2026 · Munich · 14–15 October</p><h1>System Software<br>for Quantum Computing:<br><span class="blue">From the Metal to the User</span></h1><div class="speaker"><b>Lukas Burgholzer</b><p class="speaker-primary">CTO &amp; Co-founder · MQSC</p><div class="speaker-research">${logo("tum-cda")}<p>Senior Researcher<br>Chair for Design Automation · TUM</p></div><p class="speaker-social"><a href="https://github.com/burgholzer">GitHub · @burgholzer</a><span>·</span><a href="https://www.linkedin.com/in/lukas-burgholzer-7a1741a7/">LinkedIn · Lukas Burgholzer</a></p></div></div><aside class="title-event">${logo("mqsf", "event-logo")}<div class="title-company">${logo("mqsc")}<p>From the Metal to the User</p></div>${qr("company", "mq.sc", "Munich Quantum Software Company")}</aside></div>`,
+    "Introduce yourself as CTO and co-founder of MQSC and Senior Researcher at the Chair for Design Automation, TUM. Keep the title still; the deployment story begins on the next slide.",
   );
   add(
     "integration",
     "01 · System software",
     "Hardware scales. Software breaks.",
     2,
-    (s) =>
-      heading(
-        [
-          'Hardware scales.<span class="blue"> Software breaks.</span>',
-          "A shared software stack",
-          "From the metal to the user",
-        ][s],
-      ) +
-      `<div class="scene world-scene" data-morph="world">${viz.architecture(["problem", "stack", "detail"][s])}</div><div class="reference-strip">${qr("mqss", "doi.org/10.1145/3773656.3773669", "Munich Quantum Software Stack · published architecture")}</div>`,
-    "Build the common stack in the same world. Users and devices remain in place while bespoke connections become shared interfaces. The second build reveals resource management, compiler infrastructure and QDMI. Resource orchestration belongs to the surrounding system, not to Core alone.",
+    (s, t = null) => {
+      const progress = t ?? 1;
+      return (
+        heading(
+          [
+            'Hardware scales.<span class="blue"> Software breaks.</span>',
+            "A shared software stack",
+            "From the Metal to the User",
+          ][s],
+          [
+            "Users, classical resources and quantum systems scale independently.",
+            "Modular · Efficient · Extensible",
+            "Device interfaces. Compilation. Orchestration.",
+          ][s],
+        ) +
+        `<div class="scene world-scene" data-morph="world">${viz.architecture(["problem", "stack", "detail"][s], progress)}</div>` +
+        (s === 1
+          ? `<div class="architecture-reference">${logo("mqss")}${qr("mqss", "doi.org/10.1145/3773656.3773669", "Burgholzer, Echavarria, et al., 2026 · SCA/HPCAsia")}</div>`
+          : s === 2
+            ? projectResources(progress)
+            : "")
+      );
+    },
+    "F2:1 follows a researcher from a workstation to cloud quantum providers, then to cloud and HPC classical resources, before exposing all users and deployments. Every quantum path passes through classical compute. F2:2 turns these paths into a modular, efficient, extensible architecture: program representations, runtime APIs, device-aware compilation, orchestration and a shared backend interface. F2:3 builds from QDMI through the MQT Compiler Collection to the MQSC Orchestrator; both upper components live in MQT Core. Distinguish supported compiler inputs, runtime integrations and CUDA-Q work in progress. Credit the originating institutions and wider communities alongside MQSC's continuing development.",
+    { 0: { duration: 22000 }, 1: { duration: 8500 }, 2: { duration: 10000 } },
   );
   add(
     "hybrid-algorithm",
@@ -927,7 +997,7 @@
       return (
         heading("Inside the compiler") +
         stageFlow(labels, s) +
-        `<div class="compiler-caption"><h3>${labels[s]}</h3><p>${descriptions[s]}</p></div><div class="compiler-source">${code(a, { start, count: 17, compact: true, title: `Actual ${a?.label || labels[s]} · consecutive source lines` })}</div><div class="compiler-underlay">${programMetrics(targets[0], ids[s])}<p><b>MLIR</b> reusable infrastructure<br><b>QC / QCO</b> quantum semantics<br><b>arith · scf · func</b> classical semantics</p></div>`
+        `<div class="compiler-caption"><h3>${labels[s]}</h3><p>${descriptions[s]}</p></div><div class="compiler-source">${code(a, { start, count: 17, compact: true, title: `Actual ${(a?.label || labels[s]).replace(/^Actual /, "")} · consecutive source lines` })}</div><div class="compiler-underlay">${programMetrics(targets[0], ids[s])}<p><b>MLIR</b> reusable infrastructure<br><b>QC / QCO</b> quantum semantics<br><b>arith · scf · func</b> classical semantics</p></div>`
       );
     },
     "The same LiH circuit is shown in a wider consecutive source window. Long generated programs are not represented as complete snippets. Original line numbers identify the view and full artifacts are bundled. Highlight the quantum references becoming SSA values, then the actual optimization changes.",
@@ -967,7 +1037,7 @@
         heading("Preserving quantum program structure") +
         stageFlow(labels, s) +
         body +
-        `<div class="reference-strip">${qr("unrolling", "arxiv.org/abs/2609.16171", "Why are we unrolling? · structured quantum compilation")}</div>`
+        `<div class="reference-strip">${qr("unrolling", "arxiv.org/abs/2609.16171", "Rovara, Haag, et al., 2026 · Why Are We Unrolling?")}</div>`
       );
     },
     "A small recognizable syndrome-extraction pattern replaces the large static chemistry circuit. Read its complete source. Then retain all loop, reset, measurement and feedback boundaries in native output. Display folds are labelled and do not modify source. Adaptive QIR retains the control-flow graph. Bounded unrolling cannot remove genuine measurement-dependent feedback. Repeat-until-success illustrates why runtime structure matters.",
@@ -1007,10 +1077,14 @@
     "05 · From the metal to the user",
     "System software for quantum computing",
     0,
-    () =>
-      heading("System software for quantum computing") +
-      `<div class="scene core-world closing-world" data-morph="world">${viz.architecture("ecosystem")}</div><div class="closing-resources"><div class="closing-logos">${logo("mqt")}${logo("qdmi")}${logo("mqss")}${logo("mqv")}${logo("tum-cda")}</div>${qr("company", "mq.sc", "From the Metal to the User")}</div>`,
-    "Let Core morph into the larger system. Users, classical infrastructure and quantum devices connect through a shared stack. End with practical hybrid computation, device-aware compilation and preserved quantum program structure. Credit the participating projects and TUM colleagues.",
+    (s, t = null) =>
+      heading(
+        "From the Metal to the User",
+        "Device interfaces. Compilation. Orchestration.",
+      ) +
+      `<div class="scene world-scene closing-world" data-morph="world">${viz.architecture("ecosystem", t ?? 1)}</div><div class="closing-resources"><div><div class="closing-logos">${logo("mqt")}${logo("qdmi")}${logo("mqss")}${logo("mqv")}${logo("tum-cda")}${logo("lrz")}</div><p class="closing-credit">Built with the MQT and QDMI communities · driven into practice by MQSC</p></div>${qr("company", "mq.sc", "System Software for Quantum Computing")}</div>`,
+    "Return to the same product architecture: QDMI, the MQT Compiler Collection and the MQSC Orchestrator. The shared interfaces serve different users, deployment models and devices. Credit the MQT and QDMI communities and their originating institutions, alongside MQSC's continued development and maintenance. Close on mq.sc.",
+    { 0: { duration: 9500, transition: 700 } },
   );
 
   function resize() {
