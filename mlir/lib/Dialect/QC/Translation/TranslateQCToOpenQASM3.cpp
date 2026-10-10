@@ -136,8 +136,8 @@ public:
     raw_indented_ostream bodyOutput(bodyStream);
     output = &bodyOutput;
 
-    if (failed(emitDeclarations()) ||
-        failed(emitBlock(function.getBody().front()))) {
+    emitDeclarations();
+    if (failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
     if (outputs.empty()) {
@@ -507,7 +507,7 @@ private:
     return {};
   }
 
-  [[nodiscard]] LogicalResult emitDeclarations() {
+  void emitDeclarations() {
     for (auto argument : function.getArguments()) {
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
     }
@@ -544,7 +544,6 @@ private:
       }
     }
     *output << '\n';
-    return success();
   }
 
   [[nodiscard]] LogicalResult emitGateDefinition(func::FuncOp gate) {
