@@ -95,6 +95,10 @@ TEST(GHZ, ValidatesOutcomesAndShotCounts) {
   EXPECT_THROW(static_cast<void>(ghz.evaluate({})), std::invalid_argument);
   EXPECT_THROW(static_cast<void>(ghz.evaluate({{"00", 0}})),
                std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(ghz.evaluate({{"00", 1}, {"0", 0}})),
+               std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(ghz.evaluate({{"00", 1}, {"0x", 0}})),
+               std::invalid_argument);
   EXPECT_THROW(static_cast<void>(ghz.evaluate(
                    {{"00", std::numeric_limits<size_t>::max()}, {"11", 1}})),
                std::overflow_error);

@@ -199,6 +199,12 @@ TEST(ModularMultiplier, ScoresTheArithmeticRelationByShotCount) {
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(benchmark.evaluate({{"00000000", 0}})),
                std::invalid_argument);
+  EXPECT_THROW(
+      static_cast<void>(benchmark.evaluate({{"10010011", 1}, {"1001001", 0}})),
+      std::invalid_argument);
+  EXPECT_THROW(
+      static_cast<void>(benchmark.evaluate({{"10010011", 1}, {"100100x1", 0}})),
+      std::invalid_argument);
 }
 
 TEST(ModularMultiplier, SeparatesRelationSuccessFromDistributionFit) {
