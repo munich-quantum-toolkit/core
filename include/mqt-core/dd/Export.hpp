@@ -354,6 +354,10 @@ static void serialize(const Edge<Node>& basic,
   }
 
   serialize(basic, ofs, writeBinary);
+  ofs.close();
+  if (!ofs) {
+    throw std::runtime_error("Cannot write file: " + outputFilename);
+  }
 }
 
 template <typename Node>

@@ -169,16 +169,12 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
         for (size_t control = 0; control < 2; ++control) {
           SCOPED_TRACE(testing::PrintToString(
               std::vector<uint64_t>{number, multiplier, value, control}));
-          dd::CVec input(size_t{1} << qubits);
-          input[(value << 1U) | control] = 1.;
-          auto state = package.applyOperation(
-              *functionality, dd::makeStateFromVector(input, package));
-          auto output = dd::getVector(state);
-          package.decRef(state);
           const auto product =
               control != 0 ? multiplier * value % number : value;
           const auto expected = (product << 1U) | control;
-          EXPECT_NEAR(std::norm(output[expected]), 1., 1e-11);
+          const auto amplitude = dd::getValueByIndex(
+              *functionality, qubits, expected, (value << 1U) | control);
+          EXPECT_NEAR(std::norm(amplitude), 1., 1e-11);
         }
       }
       package.decRef(*functionality);

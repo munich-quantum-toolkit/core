@@ -20,6 +20,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace mqt::bench {
 
@@ -75,6 +76,21 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   const auto manifest = toManifestJSON(ghz);
   EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
+  const auto reject = [](const std::string& invalid,
+                         const std::string_view diagnostic) {
+    expectInvalidJSON(
+        [&] {
+          static_cast<void>(ghzFromManifestJSON(invalid, "manifest.json"));
+        },
+        diagnostic);
+    expectInvalidJSON(
+        [&] {
+          static_cast<void>(evaluateJSON(
+              invalid, R"({"schema_version":1,"counts":{"000":1}})",
+              "manifest.json", "counts.json"));
+        },
+        diagnostic);
+  };
 
   auto changedDefinition = manifest;
   const auto version = changedDefinition.find(R"("definition_version":1)");
@@ -82,41 +98,54 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   changedDefinition.replace(version,
                             std::string(R"("definition_version":1)").size(),
                             R"("definition_version":0)");
-  expectInvalidJSON(
-      [&] { static_cast<void>(ghzFromManifestJSON(changedDefinition)); },
-      "$/definition_version must be 1");
+  reject(changedDefinition, "$/definition_version must be 1");
 
   auto changedOutput = manifest;
   const auto width = changedOutput.find("\"width\":3");
   ASSERT_NE(width, std::string::npos);
   changedOutput.replace(width, std::string("\"width\":3").size(),
                         "\"width\":2");
-  expectInvalidJSON(
-      [&] { static_cast<void>(ghzFromManifestJSON(changedOutput)); },
-      "does not match");
+  reject(changedOutput, "does not match");
 
   auto changedNumericKind = manifest;
   const auto integerWidth = changedNumericKind.find(R"("width":3)");
   ASSERT_NE(integerWidth, std::string::npos);
   changedNumericKind.replace(integerWidth, std::string(R"("width":3)").size(),
                              R"("width":3.0)");
-  expectInvalidJSON(
-      [&] { static_cast<void>(ghzFromManifestJSON(changedNumericKind)); },
-      "does not match");
+  reject(changedNumericKind, "does not match");
 
   auto changedId = manifest;
   const auto digest = changedId.find("sha256-");
   ASSERT_NE(digest, std::string::npos);
   changedId[digest + 7U] = changedId[digest + 7U] == '0' ? '1' : '0';
-  expectInvalidJSON([&] { static_cast<void>(ghzFromManifestJSON(changedId)); },
-                    "case ID");
+  reject(changedId, "case ID");
 
   auto unresolved = manifest;
   const auto basis = unresolved.find(R"("basis":"z",)");
   ASSERT_NE(basis, std::string::npos);
   unresolved.erase(basis, std::string(R"("basis":"z",)").size());
-  expectInvalidJSON([&] { static_cast<void>(ghzFromManifestJSON(unresolved)); },
-                    "resolved benchmark instance");
+  reject(unresolved, "resolved benchmark instance");
+
+  auto invalidParameters = manifest;
+  const auto qubits = invalidParameters.find(R"("qubits":3)");
+  ASSERT_NE(qubits, std::string::npos);
+  invalidParameters.replace(qubits, std::string(R"("qubits":3)").size(),
+                            R"("qubits":0)");
+  reject(invalidParameters, "manifest.json:$/parameters GHZ qubits");
+  expectInvalidJSON(
+      [&] {
+        static_cast<void>(evaluateJSON(invalidParameters, "{}", "manifest.json",
+                                       "counts.json"));
+      },
+      "counts.json:$/schema_version");
+}
+
+TEST(BenchmarkJSON, EvaluatesAResolvedManifest) {
+  const GHZ ghz{{.qubits = 2}};
+  const Counts counts{{"00", 5}, {"11", 3}};
+  EXPECT_EQ(evaluateJSON(toManifestJSON(ghz),
+                         R"({"schema_version":1,"counts":{"00":5,"11":3}})"),
+            evaluationToJSON(caseId(ghz), 8, ghz.evaluate(counts)));
 }
 
 TEST(BenchmarkJSON, ListsBenchmarksAndRejectsUnknownSchemas) {

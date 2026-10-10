@@ -762,6 +762,9 @@ void JitSession::initialize(
   }
 
   // Run any static constructors.
+  auto* previous = Runtime::bind(runtime_.get());
+  const auto restore =
+      llvm::scope_exit([previous] { Runtime::bind(previous); });
   if (auto err = jit_->initialize(jit_->getMainJITDylib())) {
     throw std::runtime_error(llvm::toString(std::move(err)));
   }
@@ -778,6 +781,9 @@ void JitSession::deinitialize() const {
   if (!jit_) {
     return;
   }
+  auto* previous = Runtime::bind(runtime_.get());
+  const auto restore =
+      llvm::scope_exit([previous] { Runtime::bind(previous); });
   if (auto err = jit_->deinitialize(jit_->getMainJITDylib())) {
     llvm::errs() << "JitSession deinitialize failed: "
                  << llvm::toString(std::move(err)) << "\n";

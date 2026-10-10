@@ -72,9 +72,12 @@ void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
   r = realStr.empty() ? 0. : parse(realStr);
 
   std::erase(imagStr, ' ');
+  const auto hasImaginaryPart = !imagStr.empty();
   std::erase(imagStr, 'i');
-  if (imagStr == "+" || imagStr == "-") {
-    imagStr = imagStr + "1";
+  std::erase(imagStr, 'I');
+  if ((hasImaginaryPart && imagStr.empty()) || imagStr == "+" ||
+      imagStr == "-") {
+    imagStr += '1';
   }
   i = imagStr.empty() ? 0. : parse(imagStr);
 }

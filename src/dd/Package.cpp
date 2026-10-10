@@ -921,11 +921,21 @@ fp Package::fidelity(const vEdge& x, const vEdge& y) {
 fp Package::fidelityOfMeasurementOutcomes(const vEdge& e,
                                           const SparsePVec& probs,
                                           const Permutation& permutation) {
+  const auto numQubits =
+      e.isTerminal() ? size_t{0} : static_cast<size_t>(e.p->v) + 1U;
+  if (numQubits > std::numeric_limits<size_t>::digits) {
+    throw std::out_of_range("Measurement outcomes must fit size_t.");
+  }
+  for (const auto& [physical, logical] : permutation) {
+    if (physical >= numQubits || logical >= permutation.size()) {
+      throw std::out_of_range("Measurement permutation index is out of range.");
+    }
+  }
   if (e.w.approximatelyZero()) {
     return 0.;
   }
   return fidelityOfMeasurementOutcomesRecursive(e, probs, 0, permutation,
-                                                e.p->v + 1U);
+                                                numQubits);
 }
 ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y,
                                    const Qubit var) {

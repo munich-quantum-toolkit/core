@@ -16,12 +16,16 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 
 namespace dd {
 
 MemoryManager::MemoryManager(size_t entrySize,
                              const std::size_t initialAllocationSize)
     : entrySize_(entrySize), chunks(1), stats(entrySize) {
+  if (initialAllocationSize == 0) {
+    throw std::invalid_argument("Initial DD allocation size must be positive.");
+  }
   chunks[0] = {std::make_unique_for_overwrite<Storage>(initialAllocationSize *
                                                        entrySize),
                initialAllocationSize * entrySize};

@@ -238,8 +238,8 @@ target_link_libraries(my-benchmark PRIVATE MQT::CoreBench)
 
 The source build also provides `MQT::CoreBenchGenerate`. It exposes typed
 `mqt::bench::generate(...)` overloads from `mqt/bench/Generate.h` and returns a
-`mlir::QCProgram`. This target is not installed until MQT Core installs the
-wider MLIR compiler API.
+`llvm::FailureOr<mlir::QCProgram>`. This target is only available in source
+builds.
 
 ## Add a benchmark
 

@@ -220,8 +220,7 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
   const dd::Controls mappedControls(mappedAddresses.begin(),
                                     mappedTargets.begin());
   qState.edge = qState.dd->applyOperation(
-      mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, mappedTargets,
-                            mappedControls),
+      mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls),
       qState.edge);
 }
 
@@ -287,14 +286,12 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
   std::ranges::transform(targets, targets.begin(), [&](const auto target) {
     return qubitPermutation[target];
   });
-  const auto matrix = mlir::qco::getStandardGateMatrix<mlir::qco::XOp>({});
+  const auto matrix = mlir::qco::XOp::getUnitaryMatrix();
   for (const auto target : targets) {
     if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
       const std::array targetArray{target};
       qState.edge = qState.dd->applyOperation(
-          mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits,
-                                targetArray),
-          qState.edge);
+          mlir::qco::makeGateDD(*qState.dd, matrix, targetArray), qState.edge);
     }
   }
 }
@@ -407,15 +404,14 @@ auto Runtime::takeState() -> QState {
   if (staticQubits_ && *staticQubits_ != 0) {
     enlargeState(*staticQubits_ - 1);
   }
-  const auto matrix = mlir::qco::getStandardGateMatrix<mlir::qco::SWAPOp>({});
+  const auto matrix = mlir::qco::SWAPOp::getUnitaryMatrix();
   for (size_t q = 0; q < qubitPermutation.size(); ++q) {
     // Each transposition places at least one logical wire at its own index.
     while (qubitPermutation[q] != q) {
       const auto other = qubitPermutation[q];
       const std::array targets{other, qubitPermutation[other]};
       qState.edge = qState.dd->applyOperation(
-          mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, targets),
-          qState.edge);
+          mlir::qco::makeGateDD(*qState.dd, matrix, targets), qState.edge);
       std::swap(qubitPermutation[q], qubitPermutation[other]);
     }
   }

@@ -22,6 +22,7 @@
 
 #include "qdmi/constants.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
@@ -107,6 +108,11 @@ struct Execution {
     const llvm::StringRef irBytes(program_.data(), program_.size());
     const bool sampling = numShots_ != 0;
     std::optional<std::ostringstream> output;
+    const auto captureOutput = llvm::scope_exit([&] {
+      if (output) {
+        qirOutput_ = std::move(*output).str();
+      }
+    });
     auto jitSession = qir::JitSession(
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
@@ -149,6 +155,7 @@ struct Execution {
       const bool shareCode = jitSession.canShareCompiledCode();
       for (size_t i = 0; i < workers; ++i) {
         tasks.push_back(std::async(std::launch::async, [&, i] {
+          std::ostringstream localOutput;
           std::unique_ptr<qir::JitSession> peer;
           std::unique_ptr<qir::Runtime> workerRuntime;
           if (i != 0 && shareCode) {
@@ -163,7 +170,6 @@ struct Execution {
           } else if (peer) {
             worker = &peer->runtime();
           }
-          std::ostringstream localOutput;
           if (i != 0) {
             if (captureQIROutput_) {
               worker->setOstream(localOutput);
@@ -178,6 +184,7 @@ struct Execution {
                                                                parts[i], false)
                                 : (i == 0 ? jitSession : *peer)
                                       .sample(count, parts[i], nullptr, i == 0);
+          peer.reset();
           if (i != 0 && captureQIROutput_) {
             records[i] = std::move(localOutput).str();
           }
@@ -201,9 +208,6 @@ struct Execution {
           *output << records[i];
         }
       }
-    }
-    if (output) {
-      qirOutput_ = std::move(*output).str();
     }
     for (auto& shot : shots_) {
       // QDMI spells the highest-index output bit first.

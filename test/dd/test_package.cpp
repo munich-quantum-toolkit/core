@@ -771,6 +771,30 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
   }
 }
 
+TEST(DDPackageTest, SerializationReportsWriteFailures) {
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "Requires /dev/full to reject writes after opening";
+  }
+  for (const bool binary : {false, true}) {
+    EXPECT_THROW(serialize(vEdge::one(), "/dev/full", binary),
+                 std::runtime_error);
+    EXPECT_THROW(serialize(mEdge::one(), "/dev/full", binary),
+                 std::runtime_error);
+  }
+}
+
+TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
+  Package package(1);
+  for (const auto* unit : {"i", "I", "+i", "+I", "-i", "-I"}) {
+    SCOPED_TRACE(unit);
+    const std::complex<fp> phase{0., *unit == '-' ? -1. : 1.};
+    std::istringstream root(std::string("1\n") + unit + "\n");
+    EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(root), 0), phase);
+    std::istringstream edge(std::string("1\n1\n0 0 (-1 ") + unit + ") ()\n");
+    EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(edge), 0), phase);
+  }
+}
+
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
   Package package(2);
   for (const auto* text : {
@@ -2229,6 +2253,30 @@ TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
   probs[7] = 0.5;
   const auto fidelity = Package::fidelityOfMeasurementOutcomes(ghzState, probs);
   EXPECT_NEAR(fidelity, 1.0, RealNumber::eps);
+}
+
+TEST(DDPackageTest, MeasurementFidelityValidatesWidthAndPermutation) {
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(vEdge::one(), {{0, 1.}}),
+            1.);
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(vEdge::zero(), {{0, 1.}}),
+            0.);
+  constexpr size_t width = std::numeric_limits<size_t>::digits;
+  Package package(width + 1);
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(
+                makeZeroState(width, package), {{0, 1.}}),
+            1.);
+  EXPECT_THROW(Package::fidelityOfMeasurementOutcomes(
+                   makeZeroState(width + 1, package), {{0, 1.}}),
+               std::out_of_range);
+  const auto state = makeBasisState(2, std::vector<bool>{true, false}, package);
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(state, {{2, 1.}},
+                                                   Permutation{{0, 1}, {1, 0}}),
+            1.);
+  for (const auto& permutation : {Permutation{{2, 0}}, Permutation{{0, 1}}}) {
+    EXPECT_THROW(
+        Package::fidelityOfMeasurementOutcomes(state, {{0, 1.}}, permutation),
+        std::out_of_range);
+  }
 }
 
 TEST(DDPackageTest, CloseToIdentity) {
