@@ -30,9 +30,11 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <bit>
 #include <cstdint>
+#include <string>
 
 using namespace mlir;
 
@@ -128,9 +130,11 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
                               const CompilationOptions& options) {
   registerMQTCompilerPasses();
   PassManager pm(mod.getContext());
-  if (failed(parsePassPipeline(pipeline, pm))) {
+  std::string diagnostics;
+  llvm::raw_string_ostream errorStream(diagnostics);
+  if (failed(parsePassPipeline(pipeline, pm, errorStream))) {
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
-                           << "'";
+                           << "': " << diagnostics;
   }
   return runWithCompilationOptions(pm, mod, options);
 }

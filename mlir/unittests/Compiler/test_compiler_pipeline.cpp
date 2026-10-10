@@ -1491,6 +1491,21 @@ TEST_F(CompilerPipelineTest, BitcodeWriteReportsDeviceFailure) {
   EXPECT_FALSE(program->writeBitcode("/dev/full"));
 }
 
+TEST_F(CompilerPipelineTest, InvalidPipelineIncludesParserDiagnostic) {
+  auto program = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q;");
+  ASSERT_TRUE(program);
+  std::string message;
+  ScopedDiagnosticHandler handler(program->module().getContext(),
+                                  [&](Diagnostic& diagnostic) {
+                                    message += diagnostic.str();
+                                    return success();
+                                  });
+  EXPECT_TRUE(failed(runPassPipeline(program->module(), "not-a-pass")));
+  EXPECT_NE(message.find("does not refer to a registered pass"),
+            std::string::npos)
+      << message;
+}
+
 // Test: typed programs emit OpenQASM directly and through the pipeline.
 TEST_F(CompilerPipelineTest, TypedProgramsEmitOpenQASM) {
   const std::string qasm = R"(OPENQASM 3.1;
