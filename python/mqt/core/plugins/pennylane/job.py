@@ -20,7 +20,7 @@ from ..qdmi_batch import Batch, BatchEntry
 from .exceptions import PennyLaneExecutionError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Generator, Sequence
 
     from pennylane.typing import Result, ResultBatch
 
@@ -154,7 +154,7 @@ class PennyLaneJob:
             self._device.tracker.record()
 
     @contextmanager
-    def _record_time(self) -> Iterator[None]:
+    def _record_time(self) -> Generator[None, None, None]:
         started = monotonic()
         try:
             yield
