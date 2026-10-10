@@ -20,6 +20,7 @@
 #include <ios>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
@@ -77,7 +78,7 @@ Notes:
          const bool memory = false, const bool formatAsPolar = true) {
         std::ostringstream os;
         dd::toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
-        return os.str();
+        return std::move(os).str();
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
       "memory"_a = false, "format_as_polar"_a = true,
