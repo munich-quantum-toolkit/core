@@ -518,6 +518,7 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
                 &capture),
             QDMI_SUCCESS);
   const size_t workers = 4;
+  constexpr size_t shots = 4;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(workers),
                 &workers),
@@ -526,20 +527,38 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
                 job.job, 0, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
   auto program = qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll");
+  // Account for every shot at teardown, regardless of the granted worker count.
+  const auto returnPos = program.find("  ret i64 0");
+  ASSERT_NE(returnPos, std::string::npos);
+  program.insert(returnPos, R"(
+  %completed = load i64, ptr @completed_shots
+  %next = add i64 %completed, 1
+  store i64 %next, ptr @completed_shots
+)");
   program += R"(
-@destructor_value = global i64 99
+@completed_shots = global i64 0
 @llvm.global_dtors = appending global [1 x { i32, ptr, ptr }]
     [{ i32, ptr, ptr } { i32 65535, ptr @record_teardown, ptr null }]
 define void @record_teardown() {
-  %value = load i64, ptr @destructor_value
-  call void @__quantum__rt__int_record_output(i64 %value, ptr null)
+entry:
+  %shots = load i64, ptr @completed_shots
+  br label %loop
+loop:
+  %remaining = phi i64 [ %shots, %entry ], [ %next, %record ]
+  %done = icmp eq i64 %remaining, 0
+  br i1 %done, label %exit, label %record
+record:
+  call void @__quantum__rt__int_record_output(i64 99, ptr null)
+  %next = sub i64 %remaining, 1
+  br label %loop
+exit:
   ret void
 }
 )";
   ASSERT_EQ(qdmi_test::setProgram(
                 job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(job.job, 4), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, shots), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
   const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_CUSTOM1);
   ASSERT_GT(size, 1U);
@@ -566,7 +585,7 @@ define void @record_teardown() {
          pos += record.size()) {
       ++count;
     }
-    EXPECT_EQ(count, workers) << record;
+    EXPECT_EQ(count, shots) << record;
   }
   EXPECT_EQ(output.find("HEADER\tschema_id\t", 1), std::string::npos);
   for (const auto* type :
