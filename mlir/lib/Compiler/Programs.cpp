@@ -217,6 +217,7 @@ bool OpenQASMProgram::write(const std::filesystem::path& path) const {
   stream << source_;
   stream.flush();
   if (stream.has_error()) {
+    stream.clear_error();
     llvm::errs() << "failed to write OpenQASM file '" << path.string() << "'\n";
     return false;
   }

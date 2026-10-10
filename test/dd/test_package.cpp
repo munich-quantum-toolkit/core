@@ -35,6 +35,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -742,6 +743,141 @@ TEST(DDPackageTest, SerializationErrors) {
   ss << "1.0\n";
   ss << "no_node_here\n";
   EXPECT_THROW(dd->deserialize<mNode>(ss), std::runtime_error);
+}
+
+TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
+  Package package(2);
+  const auto state = makeZeroState(2, package);
+  std::ostringstream binary;
+  serialize(state, binary, true);
+  const auto bytes = binary.str();
+  constexpr auto rootOffset = sizeof(SERIALIZATION_VERSION);
+  constexpr auto nodeOffset = rootOffset + (2 * sizeof(fp));
+  for (const auto length : {
+           size_t{0},
+           size_t{1},
+           rootOffset + 1,
+           nodeOffset + 1,
+           nodeOffset + sizeof(int64_t) + 1,
+           bytes.size() - 1,
+       }) {
+    SCOPED_TRACE(length);
+    std::istringstream input(bytes.substr(0, length));
+    EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
+  }
+  for (const auto* text : {"", "\n", "1\n"}) {
+    std::istringstream input(text);
+    EXPECT_ANY_THROW(package.deserialize<vNode>(input));
+  }
+}
+
+TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
+  Package package(2);
+  for (const auto* text : {
+           "1x\n1\n",
+           "1\n\n",
+           "1\n1\nx\n",
+           "1\n1\n0 0\n",
+           "1\n1\n0 0 (\n",
+           "1\n1\n0 0 (x 1) ()\n",
+           "1\n1\n0 0 (-1 ) ()\n",
+           "1\n1\n0 0 (-1 nan) ()\n",
+           "1\n1\n0 0 (-1 1) () trailing\n",
+           "1\n1\n0 0 (-1 1) ()\n0 0 (-1 1) ()\n",
+           "1\n1\n0 0 (99 1) ()\n",
+           "1\n1\n0 0 (0 1) ()\n",
+           "1\n1\n0 0 (-3 1) ()\n",
+           "1\n1\n0 0 (-1 1) ()\n1 0 (0 1) ()\n",
+           "1\n1\n0 2 (-1 1) ()\n",
+           "1\n1\n0 65536 (-1 1) ()\n",
+           "1\n1e9999\n",
+           "1\n1\n999999999999999999999999999 0 (-1 1) ()\n",
+       }) {
+    SCOPED_TRACE(text);
+    std::istringstream input(text);
+    EXPECT_ANY_THROW(package.deserialize<vNode>(input));
+  }
+  std::istringstream valid("1\n1\n2147483648 0 (-1 1) ()\n9223372036854775807 "
+                           "1 (2147483648 1) ()\n");
+  EXPECT_EQ(package.deserialize<vNode>(valid), makeZeroState(2, package));
+}
+
+TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
+  Package package(2);
+  const auto state = makeZeroState(2, package);
+  std::ostringstream binary;
+  serialize(state, binary, true);
+  const auto bytes = binary.str();
+  constexpr auto rootOffset = sizeof(SERIALIZATION_VERSION);
+  constexpr auto nodeOffset = rootOffset + (2 * sizeof(fp));
+  constexpr auto qubitOffset = nodeOffset + sizeof(int64_t);
+  constexpr auto edgeOffset = qubitOffset + sizeof(Qubit);
+  constexpr auto weightOffset = edgeOffset + sizeof(int64_t);
+  constexpr auto nodeSize = sizeof(int64_t) + sizeof(Qubit) +
+                            (RADIX * (sizeof(int64_t) + (2 * sizeof(fp))));
+  const auto reject = [&](const size_t offset, const auto value) {
+    SCOPED_TRACE(::testing::Message() << offset << ": " << value);
+    auto invalid = bytes;
+    std::memcpy(&invalid.at(offset), &value, sizeof(value));
+    std::istringstream input(invalid);
+    EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
+  };
+  reject(nodeOffset, int64_t{-1});
+  reject(nodeOffset, int64_t{-2});
+  reject(nodeOffset + nodeSize, int64_t{0});
+  reject(qubitOffset, Qubit{2});
+  reject(qubitOffset + nodeSize, Qubit{0});
+  for (const int64_t target : {-3, 0, 99}) {
+    reject(edgeOffset, target);
+  }
+  for (const auto offset : {
+           rootOffset,
+           rootOffset + sizeof(fp),
+           weightOffset,
+           weightOffset + sizeof(fp),
+       }) {
+    for (const auto weight : {
+             std::numeric_limits<fp>::infinity(),
+             std::numeric_limits<fp>::quiet_NaN(),
+         }) {
+      reject(offset, weight);
+    }
+  }
+  for (const bool isBinary : {false, true}) {
+    std::stringstream stream;
+    serialize(state, stream, isBinary);
+    EXPECT_EQ(package.deserialize<vNode>(stream, isBinary), state);
+  }
+}
+
+TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
+  Package package(3);
+  const auto oneQubit = makeZeroState(1, package);
+  for (const bool binary : {false, true}) {
+    for (const auto& child : {vEdge::one(), oneQubit}) {
+      SCOPED_TRACE(::testing::Message() << binary << child.isTerminal());
+      vNode node{};
+      node.v = 2;
+      node.e = {child, vEdge::zero()};
+      std::stringstream stream;
+      serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
+      EXPECT_THROW(package.deserialize<vNode>(stream, binary),
+                   std::runtime_error);
+    }
+  }
+}
+
+TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
+  Package package(3);
+  const auto high = package.makeGateDD(X_MAT, 2);
+  const auto low = package.makeGateDD(X_MAT, 0);
+  for (const auto& matrix : {high, package.multiply(high, low)}) {
+    for (const bool binary : {false, true}) {
+      std::stringstream stream;
+      serialize(matrix, stream, binary);
+      EXPECT_EQ(package.deserialize<mNode>(stream, binary), matrix);
+    }
+  }
 }
 
 TEST(DDPackageTest, Ancillaries) {

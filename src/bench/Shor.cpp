@@ -151,10 +151,11 @@ const ShorOptions& Shor::options() const noexcept { return options_; }
 const Output& Shor::output() const noexcept { return output_; }
 
 ShorEvaluation Shor::evaluate(const Counts& counts) const {
-  const auto total = detail::validateCounts(output_, counts);
+  const auto total = detail::countShots(counts);
   size_t successes = 0;
   ShorEvaluation result;
   for (const auto& [outcome, count] : counts) {
+    detail::validateOutcome(outcome, output_.width);
     if (count == 0) {
       continue;
     }

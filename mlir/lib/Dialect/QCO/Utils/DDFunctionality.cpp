@@ -660,20 +660,15 @@ lookupInteger(Value value, const ClassicalEnv& classical, Operation* op) {
   return integer.getValue();
 }
 
-static LogicalResult bindInteger(Value dest, const llvm::APInt& value,
-                                 ClassicalEnv& classical) {
+static void bindInteger(Value dest, const llvm::APInt& value,
+                        ClassicalEnv& classical) {
   const Type type = dest.getType();
-  if (!isa<IntegerType, IndexType>(type)) {
-    return failure();
-  }
   const unsigned width =
       isa<IndexType>(type) ? 64U : cast<IntegerType>(type).getWidth();
   classical.values[dest] = IntegerAttr::get(type, value.zextOrTrunc(width));
-  return success();
 }
 
-static LogicalResult allocateRegister(cbit::AllocOp alloc,
-                                      ClassicalEnv& classical) {
+static void allocateRegister(cbit::AllocOp alloc, ClassicalEnv& classical) {
   const auto width =
       static_cast<size_t>(alloc.getResult().getType().getWidth());
   ClassicalEnv::RegisterBit initialValue;
@@ -682,7 +677,6 @@ static LogicalResult allocateRegister(cbit::AllocOp alloc,
   }
   classical.registers[alloc.getResult()] =
       std::make_shared<ClassicalEnv::RegisterState>(width, initialValue);
-  return success();
 }
 
 static FailureOr<size_t> resolveRegisterIndex(Value index,
@@ -748,9 +742,9 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
   if (!cell.value) {
     return load.emitError() << "read from an undefined CBit register element";
   }
-  return bindInteger(load.getResult(),
-                     llvm::APInt(1, static_cast<uint64_t>(*cell.value)),
-                     classical);
+  bindInteger(load.getResult(),
+              llvm::APInt(1, static_cast<uint64_t>(*cell.value)), classical);
+  return success();
 }
 
 static LogicalResult readRegister(cbit::ReadOp read, ClassicalEnv& classical) {
@@ -770,7 +764,8 @@ static LogicalResult readRegister(cbit::ReadOp read, ClassicalEnv& classical) {
     }
     value.setBitVal(static_cast<unsigned>(index), *cell.value);
   }
-  return bindInteger(read.getResult(), value, classical);
+  bindInteger(read.getResult(), value, classical);
+  return success();
 }
 
 static LogicalResult writeRegister(cbit::WriteOp write,
@@ -891,7 +886,8 @@ static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
   if (failed(lhs)) {
     return failure();
   }
-  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  return success();
 }
 
 static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
@@ -908,7 +904,8 @@ static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
   } else if (width < value->getBitWidth()) {
     *value = value->trunc(width);
   }
-  return bindInteger(out, *value, classical);
+  bindInteger(out, *value, classical);
+  return success();
 }
 
 static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
@@ -985,7 +982,8 @@ static LogicalResult applyIntegerBinaryOp(OpTy op, ClassicalEnv& classical,
       return foldClassicalOp(*op, classical);
     }
   }
-  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+  return success();
 }
 
 static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
@@ -1017,11 +1015,11 @@ static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
     return foldClassicalOp(op, classical);
   }
   if (auto cmp = dyn_cast<arith::CmpFOp>(op)) {
-    return bindInteger(
-        cmp.getResult(),
-        llvm::APInt(1, static_cast<uint64_t>(arith::applyCmpPredicate(
-                           cmp.getPredicate(), lhs, operands[1]))),
-        classical);
+    bindInteger(cmp.getResult(),
+                llvm::APInt(1, static_cast<uint64_t>(arith::applyCmpPredicate(
+                                   cmp.getPredicate(), lhs, operands[1]))),
+                classical);
+    return success();
   }
   const llvm::APFloat result =
       TypeSwitch<Operation*, llvm::APFloat>(&op)
@@ -1155,9 +1153,10 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         if (failed(value)) {
           return failure();
         }
-        return bindInteger(count.getResult(),
-                           llvm::APInt(value->getBitWidth(), value->popcount()),
-                           classical);
+        bindInteger(count.getResult(),
+                    llvm::APInt(value->getBitWidth(), value->popcount()),
+                    classical);
+        return success();
       })
       .Case<arith::AddFOp, arith::SubFOp, arith::MulFOp, arith::DivFOp,
             arith::RemFOp, arith::NegFOp, arith::CmpFOp, arith::MaximumFOp,
@@ -1185,7 +1184,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
                          ? (left ? *lhs : *rhs)
                          : lhs->shl(left ? amount : width - amount) |
                                rhs->lshr(left ? width - amount : amount);
-        return bindInteger(shift->getResult(0), value, classical);
+        bindInteger(shift->getResult(0), value, classical);
+        return success();
       })
       .Case([&](arith::DivUIOp value) {
         return applyDivision(
@@ -1269,7 +1269,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
                      << "floating-point value is outside the destination "
                         "integer range during QCO DD simulation";
             }
-            return bindInteger(out, result, classical);
+            bindInteger(out, result, classical);
+            return success();
           })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
@@ -1386,19 +1387,6 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
   return success();
 }
 
-static LogicalResult bindYieldResults(YieldOp yield,
-                                      ValueRange classicalResults,
-                                      ValueRange linearResults,
-                                      WalkState& walk) {
-  const size_t numClassical = classicalResults.size();
-  if (failed(bindValuePairs(yield.getOperands().take_front(numClassical),
-                            classicalResults, walk, yield))) {
-    return failure();
-  }
-  return bindValuePairs(yield.getOperands().drop_front(numClassical),
-                        linearResults, walk, yield);
-}
-
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state);
 
@@ -1417,10 +1405,9 @@ static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
 }
 
 template <typename StateDD>
-static LogicalResult
-applyRegionBranch(ValueRange linearOperands, Block& block,
-                  ValueRange classicalResults, ValueRange linearResults,
-                  WalkState& walk, StateDD& state, Operation* parent) {
+static LogicalResult applyRegionBranch(ValueRange linearOperands, Block& block,
+                                       WalkState& walk, StateDD& state,
+                                       Operation* parent) {
   if (failed(
           bindValuePairs(linearOperands, block.getArguments(), walk, parent))) {
     return failure();
@@ -1428,8 +1415,8 @@ applyRegionBranch(ValueRange linearOperands, Block& block,
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
-  return bindYieldResults(cast<YieldOp>(block.getTerminator()),
-                          classicalResults, linearResults, walk);
+  auto yield = cast<YieldOp>(block.getTerminator());
+  return bindValuePairs(yield.getOperands(), parent->getResults(), walk, yield);
 }
 
 template <typename StateDD>
@@ -1647,7 +1634,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return applyMemRefLoad(load, *walk.classical);
       })
       .Case([&](cbit::AllocOp alloc) {
-        return allocateRegister(alloc, *walk.classical);
+        allocateRegister(alloc, *walk.classical);
+        return success();
       })
       .Case([&](cbit::LoadOp load) {
         return loadRegister(load, *walk.classical);
@@ -1724,9 +1712,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
         Block* block = *condition ? ifOp.thenBlock() : ifOp.elseBlock();
-        return applyRegionBranch(ifOp.getQubits(), *block,
-                                 ifOp.getClassicalResults(),
-                                 ifOp.getLinearResults(), walk, state, ifOp);
+        return applyRegionBranch(ifOp.getQubits(), *block, walk, state, ifOp);
       })
       .Case([&](IndexSwitchOp switchOp) -> LogicalResult {
         auto selector =
@@ -1741,9 +1727,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             break;
           }
         }
-        return applyRegionBranch(
-            switchOp.getTargets(), *block, switchOp.getClassicalResults(),
-            switchOp.getLinearResults(), walk, state, switchOp);
+        return applyRegionBranch(switchOp.getTargets(), *block, walk, state,
+                                 switchOp);
       })
       .Case([&](scf::IfOp ifOp) -> LogicalResult {
         auto condition = lookupBool(ifOp.getCondition(), *walk.classical, ifOp);
@@ -1792,12 +1777,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
             return failure();
           }
-          if (failed(bindInteger(
-                  body.getArgument(0),
-                  range->induction.trunc(range->induction.getBitWidth() - 1),
-                  *walk.classical))) {
-            return failure();
-          }
+          bindInteger(
+              body.getArgument(0),
+              range->induction.trunc(range->induction.getBitWidth() - 1),
+              *walk.classical);
           if (failed(walkBlock(body, walk, state))) {
             return failure();
           }
@@ -2083,9 +2066,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
 
   dd::MatrixDD state = dd::MatrixDD::one();
   if (failed(walkFunction(func, walkState, state))) {
-    if (qubits.numQubits != 0) {
-      dd.decRef(state);
-    }
+    dd.decRef(state);
     return failure();
   }
   return state;
@@ -2392,13 +2373,12 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           if (failed(bindValuePairs(
                   yield.getOperands(),
                   frame.op.getBody()->getArguments().drop_front(), walk,
-                  frame.op)) ||
-              failed(bindInteger(
-                  frame.op.getBody()->getArgument(0),
-                  frame.induction.trunc(frame.induction.getBitWidth() - 1),
-                  group.classical))) {
+                  frame.op))) {
             return failure();
           }
+          bindInteger(frame.op.getBody()->getArgument(0),
+                      frame.induction.trunc(frame.induction.getBitWidth() - 1),
+                      group.classical);
           current = frame.op.getBody()->begin();
         } else {
           if (failed(bindValuePairs(yield.getOperands(), frame.op.getResults(),
@@ -2427,13 +2407,12 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         }
         if (failed(bindValuePairs(forOp.getInits(),
                                   forOp.getBody()->getArguments().drop_front(),
-                                  walk, forOp)) ||
-            failed(bindInteger(
-                forOp.getBody()->getArgument(0),
-                range->induction.trunc(range->induction.getBitWidth() - 1),
-                group.classical))) {
+                                  walk, forOp))) {
           return failure();
         }
+        bindInteger(forOp.getBody()->getArgument(0),
+                    range->induction.trunc(range->induction.getBitWidth() - 1),
+                    group.classical);
         group.loops.push_back({
             .op = forOp,
             .continuation = std::next(current),

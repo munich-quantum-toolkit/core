@@ -35,7 +35,10 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
-#ifdef __APPLE__
+#ifdef __linux__
+#include <elf.h>
+#include <sys/auxv.h>
+#elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <vector>
 #endif
@@ -71,19 +74,26 @@ namespace qdmi::detail {
   auto path = std::filesystem::path(info.dli_fname);
   if (!path.is_absolute()) {
 #ifdef __linux__
-    std::error_code error;
-    path = std::filesystem::read_symlink("/proc/self/exe", error);
-    if (error) {
-      return {};
+    Dl_info executable{};
+    const auto* headers = reinterpret_cast<const void*>(getauxval(AT_PHDR));
+    if (dladdr(headers, &executable) != 0 &&
+        info.dli_fbase == executable.dli_fbase) {
+      std::error_code error;
+      path = std::filesystem::read_symlink("/proc/self/exe", error);
+      if (error) {
+        return {};
+      }
     }
 #elif defined(__APPLE__)
-    uint32_t size = 0;
-    static_cast<void>(_NSGetExecutablePath(nullptr, &size));
-    std::vector<char> buffer(size);
-    if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
-      return {};
+    if (info.dli_fbase == _dyld_get_image_header(0)) {
+      uint32_t size = 0;
+      static_cast<void>(_NSGetExecutablePath(nullptr, &size));
+      std::vector<char> buffer(size);
+      if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
+        return {};
+      }
+      path = buffer.data();
     }
-    path = buffer.data();
 #endif
   }
   return std::filesystem::weakly_canonical(path).parent_path();

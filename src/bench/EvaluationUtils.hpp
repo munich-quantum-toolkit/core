@@ -34,15 +34,13 @@ inline void validateOutcome(const std::string_view outcome,
   }
 }
 
-[[nodiscard]] inline size_t validateCounts(const Output& output,
-                                           const Counts& counts) {
+[[nodiscard]] inline size_t countShots(const Counts& counts) {
   if (counts.empty()) {
     throw std::invalid_argument("counts must not be empty");
   }
 
   size_t totalShots = 0;
   for (const auto& [outcome, count] : counts) {
-    validateOutcome(outcome, output.width);
     if (count > std::numeric_limits<size_t>::max() - totalShots) {
       throw std::overflow_error("total shot count exceeds size_t");
     }
@@ -57,10 +55,9 @@ inline void validateOutcome(const std::string_view outcome,
 
 template <class Probability>
 [[nodiscard]] Evaluation
-evaluate(const Output& output, const Counts& counts,
-         const Probability& probability,
+evaluate(const Counts& counts, const Probability& probability,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
-  const auto totalShots = validateCounts(output, counts);
+  const auto totalShots = countShots(counts);
   size_t successShots = 0;
 
   // Extended precision prevents avoidable loss while summing distributions.
@@ -72,7 +69,7 @@ evaluate(const Output& output, const Counts& counts,
     if (successOutcome && outcome == *successOutcome) {
       successShots = count;
     }
-    const auto ideal = static_cast<long double>(probability(outcome));
+    const auto ideal = static_cast<long double>(probability(outcome, count));
     const auto observed =
         static_cast<long double>(count) / static_cast<long double>(totalShots);
     observedDistance += std::abs(observed - ideal);
@@ -101,8 +98,8 @@ template <class Benchmark>
 evaluate(const Benchmark& benchmark, const Counts& counts,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   return evaluate(
-      benchmark.output(), counts,
-      [&benchmark](const std::string_view outcome) {
+      counts,
+      [&benchmark](const std::string_view outcome, size_t) {
         return benchmark.probability(outcome);
       },
       successOutcome);

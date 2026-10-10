@@ -63,6 +63,8 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
+  [[nodiscard]] ParsedBenchmark parse##TYPE##Instance(                         \
+      const Json& parameters, std::string_view source);                        \
   [[nodiscard]] std::string evaluate##TYPE(std::string_view manifest,          \
                                            std::string_view source,            \
                                            const Counts& counts);
@@ -76,6 +78,7 @@ struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
+  ParsedBenchmark (*parse)(const Json&, std::string_view);
   EvaluationFunction evaluate;
 };
 constexpr std::array REGISTRY{
@@ -84,6 +87,7 @@ constexpr std::array REGISTRY{
                 .definitionVersion = (DEFINITION_VERSION),                     \
                 .instanceSpecificationSchema =                                 \
                     STEM##InstanceSpecificationSchema,                         \
+                .parse = parse##TYPE##Instance,                                \
                 .evaluate = evaluate##TYPE},
 #include "bench/BenchmarkFamilies.inc"
 };
@@ -1418,6 +1422,17 @@ template <class Benchmark>
 }
 
 template <class Benchmark>
+[[nodiscard]] ParsedBenchmark resolveInstance(Benchmark benchmark) {
+  const Json manifest = manifestJSON(benchmark);
+  return {
+      .instance = std::move(benchmark),
+      .benchmarkId = std::string(BenchmarkMetadata<Benchmark>::id),
+      .caseId = manifest.at("case_id").template get<std::string>(),
+      .manifestJSON = manifest.dump(),
+  };
+}
+
+template <class Benchmark>
 [[nodiscard]] std::string evaluateBenchmark(const Benchmark& benchmark,
                                             const Counts& counts) {
   const auto shots = std::accumulate(
@@ -1427,6 +1442,10 @@ template <class Benchmark>
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  ParsedBenchmark parse##TYPE##Instance(const Json& parameters,                \
+                                        const std::string_view source) {       \
+    return resolveInstance(parse##TYPE##Parameters(parameters, source));       \
+  }                                                                            \
   std::string evaluate##TYPE(const std::string_view manifest,                  \
                              const std::string_view source,                    \
                              const Counts& counts) {                           \
@@ -1446,6 +1465,13 @@ template <class Benchmark>
 }
 
 } // namespace
+
+ParsedBenchmark parseInstanceSpecificationJSON(const std::string_view json,
+                                               const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
+  const auto& id = root.at("benchmark").get_ref<const std::string&>();
+  return findBenchmark(id)->parse(root.at("parameters"), source);
+}
 
 std::string
 benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,

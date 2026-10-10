@@ -11,6 +11,7 @@
 #include "bench/BV.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/JSON.hpp"
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
@@ -40,6 +41,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -48,6 +50,30 @@
 namespace mqt::bench {
 
 using namespace mlir;
+
+TEST(GenerateProgramTest, ResolvesInstanceMetadata) {
+  const GHZ benchmark{{.qubits = 3}};
+  auto generated = generate(
+      R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":3}})");
+  ASSERT_TRUE(generated);
+  EXPECT_EQ(generated->benchmarkId, "ghz");
+  EXPECT_EQ(generated->caseId, caseId(benchmark));
+  EXPECT_EQ(generated->manifestJSON, toManifestJSON(benchmark));
+  EXPECT_EQ(ghzFromManifestJSON(generated->manifestJSON).output(),
+            benchmark.output());
+}
+
+TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
+  for (
+      const auto* specification : {
+          R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":0}})",
+          R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})",
+          R"({"schema_version":1,"benchmark":"unknown","parameters":{}})",
+      }) {
+    EXPECT_THROW(static_cast<void>(generate(specification)),
+                 std::invalid_argument);
+  }
+}
 
 template <class Benchmark>
 static void expectQCAndJeff(const Benchmark& benchmark) {

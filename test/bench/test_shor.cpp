@@ -78,6 +78,12 @@ TEST(Shor, RejectsInvalidCounts) {
                std::invalid_argument);
   EXPECT_THROW(std::ignore = benchmark.evaluate({{"000000000x", 1}}),
                std::invalid_argument);
+  EXPECT_THROW(std::ignore =
+                   benchmark.evaluate({{"0000000000", 1}, {"000000000", 0}}),
+               std::invalid_argument);
+  EXPECT_THROW(std::ignore =
+                   benchmark.evaluate({{"0000000000", 1}, {"000000000x", 0}}),
+               std::invalid_argument);
   EXPECT_THROW(std::ignore = benchmark.evaluate(
                    {{"0000000000", std::numeric_limits<size_t>::max()},
                     {"0010101011", 1}}),

@@ -728,6 +728,25 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
       simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd, rng)));
 }
 
+TEST_F(QCODDFunctionalityTest, FailedScalarConstructionReleasesPhase) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %phase = arith.constant 0.5 : f64
+        qco.gphase(%phase)
+        %false = arith.constant false
+        cf.assert %false, "unsupported"
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto dd = std::make_unique<dd::Package>(0);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(dd->getRootSet<dd::mNode>().empty());
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {

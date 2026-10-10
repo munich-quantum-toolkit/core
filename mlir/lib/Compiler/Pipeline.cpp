@@ -420,6 +420,7 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::WriteBitcodeToFile(*llvmModule, stream);
   stream.flush();
   if (stream.has_error()) {
+    stream.clear_error();
     mod().emitError() << "failed to write bitcode file '" << path.string()
                       << "'";
     return false;
