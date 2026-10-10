@@ -147,21 +147,22 @@ Edge Package::deserialize(std::istream& is, const bool readBinary) {
         R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
     const std::string edgeRegex =
         " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-    const std::regex complexWeightRegex(complexRealRegex + complexImagRegex);
+    static const std::regex COMPLEX_WEIGHT_REGEX(complexRealRegex +
+                                                 complexImagRegex);
 
     std::string lineConstruct = "(\\d+) (\\d+)";
     for (std::size_t i = 0U; i < N; ++i) {
       lineConstruct += "(?:" + edgeRegex + ")";
     }
     lineConstruct += " *(?:#.*)?";
-    const std::regex lineRegex(lineConstruct);
+    static const std::regex LINE_REGEX(lineConstruct);
     std::smatch m;
 
     std::string line;
     if (!std::getline(is, line) || line.empty()) {
       throw std::runtime_error("Missing serialized DD root weight.");
     }
-    if (!std::regex_match(line, m, complexWeightRegex)) {
+    if (!std::regex_match(line, m, COMPLEX_WEIGHT_REGEX)) {
       throw std::runtime_error("Regex did not match second line: " + line);
     }
     rootweight.fromString(m.str(1), m.str(2));
@@ -171,7 +172,7 @@ Edge Package::deserialize(std::istream& is, const bool readBinary) {
         continue;
       }
 
-      if (!std::regex_match(line, m, lineRegex)) {
+      if (!std::regex_match(line, m, LINE_REGEX)) {
         throw std::runtime_error("Regex did not match line: " + line);
       }
 

@@ -19,6 +19,7 @@
 
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -38,6 +39,19 @@ TEST(ResultsProbabilities, DenseSumToOneAndBufferTooSmall) {
     sum += v;
   }
   EXPECT_NEAR(sum, 1.0, 1e-6);
+
+  std::vector<double> reused(4, -1.);
+  for (size_t query = 0; query < 2; ++query) {
+    std::ranges::fill(reused, -1.);
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                  j.job, 0U, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                  reused.size() * sizeof(double), reused.data(), nullptr),
+              QDMI_SUCCESS);
+    EXPECT_NEAR(reused[0], 0.5, 1e-12);
+    EXPECT_EQ(reused[1], 0.);
+    EXPECT_EQ(reused[2], 0.);
+    EXPECT_NEAR(reused[3], 0.5, 1e-12);
+  }
 
   const size_t sz =
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_PROBABILITIES_DENSE);

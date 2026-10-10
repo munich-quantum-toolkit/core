@@ -2984,10 +2984,24 @@ TEST_F(QCODDFunctionalityTest,
                                          context.get());
   ASSERT_TRUE(mod);
 
-  const auto histogram = sample(mainFunc(*mod), 128, 9);
-  ASSERT_TRUE(succeeded(histogram));
-  ASSERT_EQ(histogram->size(), 2U);
-  EXPECT_EQ(histogram->at("0") + histogram->at("1"), 128U);
+  for (const size_t workers : {1U, 4U}) {
+    const auto histogram = sample(mainFunc(*mod), 128, 9, DDArgumentBindings{},
+                                  nullptr, nullptr, {}, workers);
+    ASSERT_TRUE(succeeded(histogram));
+    ASSERT_EQ(histogram->size(), 2U);
+    EXPECT_EQ(histogram->at("0") + histogram->at("1"), 128U);
+
+    std::vector<std::string> shots;
+    const auto withShots = sample(mainFunc(*mod), 128, 9, DDArgumentBindings{},
+                                  &shots, nullptr, {}, workers);
+    ASSERT_TRUE(succeeded(withShots));
+    EXPECT_EQ(*withShots, *histogram);
+    std::map<std::string, size_t> counts;
+    for (const auto& shot : shots) {
+      ++counts[shot];
+    }
+    EXPECT_EQ(counts, *histogram);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {

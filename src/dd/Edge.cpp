@@ -40,10 +40,10 @@
 namespace dd {
 namespace {
 
-void traverseVector(const vEdge& edge, const std::complex<fp>& amp,
-                    const size_t i,
-                    llvm::function_ref<void(size_t, const std::complex<fp>&)> f,
-                    const fp threshold) {
+void traverseVectorImpl(
+    const vEdge& edge, const std::complex<fp>& amp, const size_t i,
+    llvm::function_ref<void(size_t, const std::complex<fp>&)> f,
+    const fp threshold) {
   const auto c = amp * static_cast<std::complex<fp>>(edge.w);
 
   if (threshold > 0. && std::abs(c) < threshold) {
@@ -57,10 +57,10 @@ void traverseVector(const vEdge& edge, const std::complex<fp>& amp,
 
   // recursive case
   if (const auto& e = edge.p->e[0]; !e.w.exactlyZero()) {
-    traverseVector(e, c, i, f, threshold);
+    traverseVectorImpl(e, c, i, f, threshold);
   }
   if (const auto& e = edge.p->e[1]; !e.w.exactlyZero()) {
-    traverseVector(e, c, i | (1ULL << edge.p->v), f, threshold);
+    traverseVectorImpl(e, c, i | (size_t{1} << edge.p->v), f, threshold);
   }
 }
 
@@ -291,7 +291,7 @@ auto getVector(const vEdge& edge, const fp threshold) -> CVec {
 
   const size_t dim = 2ULL << edge.p->v;
   auto vec = CVec(dim, 0.);
-  traverseVector(
+  traverseVectorImpl(
       edge, 1., 0,
       [&vec](const size_t i, const std::complex<fp>& c) { vec.at(i) = c; },
       threshold);
@@ -304,11 +304,19 @@ auto getSparseVector(const vEdge& edge, const fp threshold) -> SparseCVec {
   }
 
   auto vec = SparseCVec{};
-  traverseVector(
+  traverseVectorImpl(
       edge, 1., 0,
       [&vec](const size_t i, const std::complex<fp>& c) { vec[i] = c; },
       threshold);
   return vec;
+}
+
+void traverseVector(const vEdge& edge, const AmplitudeFunc& f,
+                    const fp threshold) {
+  if (!edge.isTerminal() && edge.p->v >= std::numeric_limits<size_t>::digits) {
+    throw std::out_of_range("Vector basis indices do not fit in size_t.");
+  }
+  traverseVectorImpl(edge, 1., 0, f, threshold);
 }
 
 auto printVector(const vEdge& edge) -> void {
@@ -340,7 +348,7 @@ auto addToVector(const vEdge& edge, CVec& amplitudes) -> void {
     return;
   }
 
-  traverseVector(
+  traverseVectorImpl(
       edge, 1., 0,
       [&amplitudes](const size_t i, const std::complex<fp>& c) {
         amplitudes[i] += c;

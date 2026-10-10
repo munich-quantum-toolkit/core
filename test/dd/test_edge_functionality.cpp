@@ -72,6 +72,8 @@ TEST(VectorFunctionality, WideIndices) {
                std::out_of_range);
   EXPECT_THROW(std::ignore = dd::getValueByIndex(makeZeroState(3, *dd), 8),
                std::out_of_range);
+  EXPECT_THROW(dd::traverseVector(zero, [](size_t, const std::complex<fp>&) {}),
+               std::out_of_range);
 }
 
 TEST(VectorFunctionality, InvalidPaths) {
@@ -172,6 +174,28 @@ TEST(VectorFunctionality, GetSparseVectorTerminal) {
   EXPECT_EQ(dd::getSparseVector(vEdge::zero()), zero);
   const auto one = SparseCVec{{0, 1}};
   EXPECT_EQ(dd::getSparseVector(vEdge::one()), one);
+}
+
+TEST(VectorFunctionality, TraversalPreservesBasisOrderAndThreshold) {
+  Package package(2);
+  const auto state =
+      makeStateFromVector({0.5, 0., {0., -0.5}, std::sqrt(0.5)}, package);
+  std::vector<size_t> indices;
+  CVec amplitudes;
+  const auto collect = [&](const size_t index, const std::complex<fp>& value) {
+    indices.push_back(index);
+    amplitudes.push_back(value);
+  };
+  dd::traverseVector(state, collect);
+  EXPECT_EQ(indices, (std::vector<size_t>{0, 2, 3}));
+  ASSERT_EQ(amplitudes.size(), 3U);
+  EXPECT_NEAR(std::abs(amplitudes[0] - 0.5), 0., 1e-12);
+  EXPECT_NEAR(std::abs(amplitudes[1] - std::complex<fp>(0., -0.5)), 0., 1e-12);
+  EXPECT_NEAR(std::abs(amplitudes[2] - std::sqrt(0.5)), 0., 1e-12);
+
+  indices.clear();
+  dd::traverseVector(state, collect, 0.6);
+  EXPECT_EQ(indices, (std::vector<size_t>{3}));
 }
 
 TEST(VectorFunctionality, GetSparseVectorConsistency) {

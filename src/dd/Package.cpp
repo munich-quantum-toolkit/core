@@ -37,6 +37,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <memory_resource>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -710,11 +711,17 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
             one.approximatelyZero() ? 0. : probability * one.mag2()};
   }
 
+#ifdef __cpp_lib_memory_resource
+  std::pmr::monotonic_buffer_resource memory;
+  std::pmr::unordered_map<const vNode*, fp> measurementProbabilities{&memory};
+#else
+  // macOS deployment targets before 14 do not provide memory resources.
   std::unordered_map<const vNode*, fp> measurementProbabilities;
+#endif
   std::queue<const vNode*> q;
 
-  measurementProbabilities.emplace(rootEdge.p,
-                                   ComplexNumbers::mag2(rootEdge.w));
+  measurementProbabilities.try_emplace(rootEdge.p,
+                                       ComplexNumbers::mag2(rootEdge.w));
   q.push(rootEdge.p);
 
   while (q.front()->v != index) {
