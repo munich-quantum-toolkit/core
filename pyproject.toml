@@ -452,6 +452,7 @@ disable_warnings = [
   "no-sysmon",
 ]
 core = "sysmon"
+patch = [ "subprocess", "${MQT_CORE_COVERAGE_PROCESS_PATCH-subprocess}" ]
 
 [tool.coverage.report]
 exclude_also = [

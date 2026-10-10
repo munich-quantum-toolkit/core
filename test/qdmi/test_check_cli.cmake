@@ -21,8 +21,8 @@ foreach(status idle busy offline hang hang-exit)
   execute_process(
     COMMAND
       "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_DRIVER --unset=MQT_CORE_QDMI_CONFIG_JSON
-      "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" "${CHECKER}" --manifest "${manifest}" --device
-      test.check --timeout 1
+      "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" "${CHECKER}" --manifest
+      "${WORK_DIR}/missing.qdmi.json" --manifest "${manifest}" --device test.check --timeout 1
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error
