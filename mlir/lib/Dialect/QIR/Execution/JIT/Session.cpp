@@ -17,6 +17,7 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
@@ -28,12 +29,18 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -69,6 +76,41 @@ static auto isEntryPoint(const llvm::Function& function) -> bool {
   return function.hasFnAttribute(ENTRY_POINT_ATTR);
 }
 
+static void validateNativeABI(llvm::CallingConv::ID convention,
+                              llvm::AttributeList attributes,
+                              const llvm::Twine& description) {
+  if (convention != llvm::CallingConv::C) {
+    throw std::runtime_error(
+        (description + " must use the C calling convention").str());
+  }
+  for (const auto index : attributes.indexes()) {
+    if (index == llvm::AttributeList::FunctionIndex) {
+      continue;
+    }
+    const auto attributeSet = attributes.getAttributes(index);
+    for (const auto kind : {
+             llvm::Attribute::StructRet,
+             llvm::Attribute::ByVal,
+             llvm::Attribute::InAlloca,
+             llvm::Attribute::InReg,
+             llvm::Attribute::StackAlignment,
+             llvm::Attribute::SwiftSelf,
+             llvm::Attribute::SwiftAsync,
+             llvm::Attribute::SwiftError,
+             llvm::Attribute::Preallocated,
+             llvm::Attribute::ByRef,
+             llvm::Attribute::Nest,
+         }) {
+      if (attributeSet.hasAttribute(kind)) {
+        throw std::runtime_error((description +
+                                  " has unsupported ABI attribute " +
+                                  attributeSet.getAttribute(kind).getAsString())
+                                     .str());
+      }
+    }
+  }
+}
+
 static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
   llvm::Function* selected = nullptr;
   for (auto& function : module) {
@@ -83,6 +125,8 @@ static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
     throw std::runtime_error("No QIR entry point was found");
   }
   auto& entryPoint = *selected;
+  validateNativeABI(entryPoint.getCallingConv(), entryPoint.getAttributes(),
+                    "QIR entry point '" + entryPoint.getName() + "'");
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
@@ -334,6 +378,8 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
       throw std::runtime_error("Unsupported QIR runtime declaration '" +
                                function.getName().str() + "'");
     }
+    validateNativeABI(function.getCallingConv(), function.getAttributes(),
+                      "QIR runtime declaration '" + function.getName() + "'");
     const auto& symbol = it->second;
     if (!matches(*function.getFunctionType(), symbol)) {
       std::string actual;
@@ -346,6 +392,27 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
       throw std::runtime_error(message.str());
     }
     selected.emplace_back(function.getName().str(), symbol.address);
+  }
+  for (const auto& function : module) {
+    for (const auto& instruction : llvm::instructions(function)) {
+      const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+      if (call == nullptr) {
+        continue;
+      }
+      const auto* callee = llvm::dyn_cast<llvm::Function>(
+          call->getCalledOperand()->stripPointerCastsAndAliases());
+      if (callee == nullptr || !callee->isDeclaration() ||
+          !callee->getName().starts_with("__quantum__")) {
+        continue;
+      }
+      validateNativeABI(call->getCallingConv(), call->getAttributes(),
+                        "QIR runtime call to '" + callee->getName() + "'");
+      if (call->getFunctionType() != callee->getFunctionType()) {
+        throw std::runtime_error("QIR runtime call to '" +
+                                 callee->getName().str() +
+                                 "' must match its declaration");
+      }
+    }
   }
   return selected;
 }
@@ -525,6 +592,11 @@ void JitSession::initialize(
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
   loadedModule.withModuleDo([&](llvm::Module& module) {
+    std::string verification;
+    llvm::raw_string_ostream diagnostics(verification);
+    if (llvm::verifyModule(module, &diagnostics)) {
+      throw std::runtime_error("Invalid QIR module: " + verification);
+    }
     for (const auto& function : module) {
       for (const auto& block : function) {
         for (const auto& instruction : block) {

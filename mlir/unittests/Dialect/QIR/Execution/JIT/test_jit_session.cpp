@@ -479,6 +479,121 @@ attributes #0 = { "entry_point" }
   EXPECT_THROW(qir::JitSession(ir, "BadEntrySignature.ll"), std::runtime_error);
 }
 
+TEST(JitSessionErrors, RejectsNonCEntryPointCallingConvention) {
+  constexpr std::string_view ir = R"(
+define preserve_allcc i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" }
+)";
+  EXPECT_THAT([&] { qir::JitSession(ir, "entry-convention"); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("C calling convention")));
+}
+
+TEST(JitSessionErrors, RejectsEntryPointABIAttributes) {
+  constexpr std::string_view ir = R"(
+define inreg i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" }
+)";
+  EXPECT_THAT([&] { qir::JitSession(ir, "entry-attribute"); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("unsupported ABI attribute inreg")));
+}
+
+TEST(JitSessionErrors, RejectsNonCRuntimeCallingConventions) {
+  for (const auto& [declaration, call] :
+       std::array<std::pair<std::string_view, std::string_view>, 3>{
+           {
+               {"preserve_allcc ", "preserve_allcc "},
+               {"preserve_allcc ", ""},
+               {"", "preserve_allcc "},
+           },
+       }) {
+    const auto ir = std::string("declare ") + std::string(declaration) +
+                    "void @__quantum__qis__h__body(ptr)\n"
+                    "define i64 @main() #0 { call " +
+                    std::string(call) +
+                    "void @__quantum__qis__h__body(ptr null)\nret i64 0 }\n"
+                    "attributes #0 = { \"entry_point\" }";
+    SCOPED_TRACE(ir);
+    EXPECT_THAT([&] { qir::JitSession(ir, "runtime-convention"); },
+                testing::ThrowsMessage<std::runtime_error>(
+                    testing::HasSubstr("C calling convention")));
+  }
+}
+
+TEST(JitSessionErrors, RejectsRuntimeABIAttributes) {
+  for (const auto* attribute : {
+           "byval(i8)",
+           "byref(i8)",
+           "sret(i8)",
+           "inreg",
+           "nest",
+           "swiftself",
+           "swiftasync",
+       }) {
+    for (const bool onDeclaration : {false, true}) {
+      const auto ir =
+          std::string("declare void @__quantum__qis__h__body(ptr ") +
+          (onDeclaration ? attribute : "") +
+          ")\ndefine i64 @main() #0 { %q = alloca i8\n"
+          "call void @__quantum__qis__h__body(ptr " +
+          (onDeclaration ? "" : attribute) +
+          " %q)\nret i64 0 }\n"
+          "attributes #0 = { \"entry_point\" }";
+      SCOPED_TRACE(ir);
+      EXPECT_THAT([&] { qir::JitSession(ir, "runtime-attribute"); },
+                  testing::ThrowsMessage<std::runtime_error>(
+                      testing::HasSubstr("unsupported ABI attribute")));
+    }
+  }
+}
+
+TEST(JitSessionErrors, RejectsMismatchedRuntimeCallType) {
+  constexpr std::string_view ir = R"(
+declare void @__quantum__qis__h__body(ptr)
+define i64 @main() #0 {
+  call void @__quantum__qis__h__body(double 0.0)
+  ret i64 0
+}
+attributes #0 = { "entry_point" }
+)";
+  EXPECT_THAT([&] { qir::JitSession(ir, "runtime-call-type"); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("must match its declaration")));
+}
+
+TEST(JitSessionErrors, RejectsInvalidModulesBeforeExecution) {
+  constexpr std::string_view ir = R"(
+define i64 @main() #0 {
+entry:
+  br label %exit
+exit:
+  %x = phi i64 [0, %exit]
+  ret i64 %x
+}
+attributes #0 = { "entry_point" }
+)";
+  EXPECT_THAT([&] { qir::JitSession(ir, "invalid-module"); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("Invalid QIR module")));
+}
+
+TEST(QIRJIT, AcceptsInternalCallingConventionsAndSemanticAttributes) {
+  constexpr std::string_view ir = R"(
+declare void @__quantum__rt__initialize(ptr noundef) nounwind
+declare preserve_allcc void @__quantum__qis__h__body(ptr byval(i8))
+define noundef i64 @main() #0 {
+  call void @__quantum__rt__initialize(ptr noundef null)
+  %code = call fastcc i64 @helper()
+  ret i64 %code
+}
+define internal fastcc i64 @helper() { ret i64 7 }
+attributes #0 = { nounwind alignstack=16 "entry_point" }
+)";
+  qir::JitSession session(ir, "internal-convention");
+  EXPECT_EQ(session.run(), 7);
+}
+
 TEST(JitSessionErrors, RejectsMultipleEntryPoints) {
   constexpr std::string_view ir = R"(
 define i64 @first() #0 { ret i64 0 }
