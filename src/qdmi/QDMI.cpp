@@ -17,6 +17,10 @@
 
 #include "qdmi/client.h"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Process.h"
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
@@ -189,7 +193,8 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   if (config.driverPath) {
     return normalizePath(*config.driverPath);
   }
-  if (const auto environment = detail::environment("MQT_CORE_QDMI_DRIVER")) {
+  if (const auto environment =
+          llvm::sys::Process::GetEnv("MQT_CORE_QDMI_DRIVER")) {
     return normalizePath(detail::pathFromString(*environment));
   }
   const auto packaged = packagedDriverPath();
@@ -939,7 +944,7 @@ bool Job::wait(const size_t timeout) const {
     return false;
   }
   qdmi::throwIfError(ret, "Waiting for job");
-  qdmi::unreachable();
+  llvm_unreachable("Unexpected return after checking a QDMI error");
 }
 
 void Job::cancel() const {

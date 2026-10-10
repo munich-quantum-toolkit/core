@@ -437,10 +437,11 @@ Before building the package, install LLVM/MLIR as described in
 
 ## Setting Up MLIR
 
-MQT Core requires [MLIR](https://mlir.llvm.org/), which is part of the
-[LLVM](https://llvm.org/) project, to be available when building from source. To
-successfully build MQT Core, you must make an installation of MLIR available to
-the C++ builds on your platform.
+All MQT Core source builds require
+[LLVM](https://llvm.org/)/[MLIR](https://mlir.llvm.org/) 23.1 or newer,
+including embedded builds using `FetchContent` or `add_subdirectory`. Make the
+SDK available to CMake as described below. The wheel's
+[Runtime component](cpp_api.md#use-the-wheels-native-runtime) needs no SDK.
 
 We highly recommend using the prebuilt MLIR distribution provided by the
 [`portable-mlir-toolchain`] project. These can be conveniently installed with

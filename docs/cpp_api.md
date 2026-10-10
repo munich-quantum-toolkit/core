@@ -94,6 +94,9 @@ with TemporaryDirectory() as directory:
 Build and install MQT Core from source, then request the `Development`
 component. It provides `MQT::CoreDD`, `MQT::CoreQDMI`, and `MQT::CoreBench`. The
 DD library is static; compile consumers with a compatible C++ toolchain.
+Development consumers require an LLVM SDK matching the major and minor version
+used to build MQT Core. CMake finds LLVM and propagates its headers and
+libraries through the imported targets.
 
 ```cmake
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Development)

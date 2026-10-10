@@ -20,6 +20,9 @@
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Process.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
@@ -374,7 +377,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   appendFragments(files, root / "qdmi");
 
   std::optional<std::filesystem::path> explicitFile;
-  if (auto value = environment("MQT_CORE_QDMI_CONFIG_FILE")) {
+  if (auto value = llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_FILE")) {
     explicitFile = pathFromString(*value);
   }
   if (explicitFile) {
@@ -390,18 +393,18 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   }
 
 #ifdef _WIN32
-  if (auto programData = environment("PROGRAMDATA")) {
+  if (auto programData = llvm::sys::Process::GetEnv("PROGRAMDATA")) {
     appendIfFile(files,
                  pathFromString(*programData) / "mqt-core" / "qdmi.json");
   }
-  if (auto appData = environment("APPDATA")) {
+  if (auto appData = llvm::sys::Process::GetEnv("APPDATA")) {
     appendIfFile(files, pathFromString(*appData) / "mqt-core" / "qdmi.json");
   }
 #else
   appendIfFile(files, "/etc/mqt-core/qdmi.json");
-  if (auto xdg = environment("XDG_CONFIG_HOME")) {
+  if (auto xdg = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME")) {
     appendIfFile(files, pathFromString(*xdg) / "mqt-core" / "qdmi.json");
-  } else if (auto home = environment("HOME")) {
+  } else if (auto home = llvm::sys::Process::GetEnv("HOME")) {
     appendIfFile(files,
                  pathFromString(*home) / ".config" / "mqt-core" / "qdmi.json");
   }
@@ -557,7 +560,8 @@ DeviceRegistry::DeviceRegistry() {
     mergePatches(parseConfiguration(readJson(file), file, file.parent_path()));
   }
   const auto inlineBase = std::filesystem::current_path();
-  if (auto inlineJson = environment("MQT_CORE_QDMI_CONFIG_JSON")) {
+  if (auto inlineJson =
+          llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_JSON")) {
     try {
       mergePatches(parseConfiguration(
           Json::parse(*inlineJson), "<MQT_CORE_QDMI_CONFIG_JSON>", inlineBase));

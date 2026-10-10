@@ -10,10 +10,12 @@
 
 #include "qdmi/common/DeviceConfiguration.hpp"
 
-#include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
 
 #include "qdmi/device.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Process.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -224,8 +226,8 @@ loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
   if (file) {
     return readFile(*file, false, status);
   }
-  const auto environmentJson = environment(inlineEnvironment);
-  const auto environmentFile = environment(fileEnvironment);
+  const auto environmentJson = llvm::sys::Process::GetEnv(inlineEnvironment);
+  const auto environmentFile = llvm::sys::Process::GetEnv(fileEnvironment);
   if (environmentJson && environmentFile) {
     qdmi::diagnostics::error("Both {} and {} are set", inlineEnvironment,
                              fileEnvironment);

@@ -26,10 +26,12 @@
 #include "bench/WState.hpp"
 #include "bench/WeakMeasurementGrover.hpp"
 
-#include "SHA256.hpp"
-
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
+
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/SHA256.h"
 
 #include <algorithm>
 #include <array>
@@ -848,7 +850,9 @@ template <class Benchmark>
   auto input = std::string(CASE_DOMAIN);
   input.push_back('\0');
   input += semantic.dump();
-  return "sha256-" + detail::sha256Hex(input);
+  return "sha256-" +
+         llvm::toHex(llvm::SHA256::hash(llvm::arrayRefFromStringRef(input)),
+                     true);
 }
 
 template <class Benchmark>
