@@ -446,6 +446,12 @@ programFromInput(const nb::object& program, const bool inplace) {
                            " is not supported.");
 }
 
+[[noreturn]] static void
+raiseCompilerError(const ::mqt::Diagnostic& diagnostic) {
+  const nb::gil_scoped_acquire acquire;
+  throw nb::value_error(diagnostic.message.c_str());
+}
+
 /// Run the coordinated default pipeline and return a typed program.
 [[nodiscard]] static mlir::CompilerProgram
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
@@ -535,7 +541,7 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
   const auto device = resolveDevice(target);
   auto environment = [&] {
     const nb::gil_scoped_release release;
-    return ::mqt::bindings::invoke([&] {
+    return ::mqt::bindings::invoke<raiseCompilerError>([&] {
       return mlir::targetEnvironmentFromDevice(device, programFormat);
     });
   }();
@@ -581,14 +587,14 @@ submitProgram(const nb::object& program, const nb::object& target,
           "program_format conflicts with the compiled payload");
     }
     const nb::gil_scoped_release release;
-    return ::mqt::bindings::invoke([&] {
+    return ::mqt::bindings::invoke<raiseCompilerError>([&] {
       return mlir::submitProgram(device, compiled, numShots, params[0],
                                  params[1], params[2], params[3], params[4]);
     });
   }
   auto input = programFromInput(program, false);
   const nb::gil_scoped_release release;
-  return ::mqt::bindings::invoke([&] {
+  return ::mqt::bindings::invoke<raiseCompilerError>([&] {
     return mlir::submitProgram(device, std::move(input), numShots,
                                programFormat, params[0], params[1], params[2],
                                params[3], params[4],
@@ -1267,7 +1273,7 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
-            return bindings::invoke([&device] {
+            return bindings::invoke<raiseCompilerError>([&device] {
               const nb::gil_scoped_release release;
               return mlir::compilerTargetFromDevice(device);
             });
@@ -1313,7 +1319,7 @@ Raises:
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            return bindings::invoke([&] {
+            return bindings::invoke<raiseCompilerError>([&] {
               const nb::gil_scoped_release release;
               auto device = openQDMIDevice(
                   deviceId, std::move(driverPath), std::move(token),

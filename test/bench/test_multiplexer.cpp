@@ -125,14 +125,14 @@ TEST(Multiplexer, DescribesJSONSchema) {
 TEST(Multiplexer, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})"));
+        return multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})");
       },
       "between 2 and 1024");
   expectInvalidJSON(
       [] {
-        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
+        return multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})");
       },
       "unknown key 'angles'");
 }

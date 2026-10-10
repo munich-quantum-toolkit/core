@@ -1270,9 +1270,21 @@ TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
       .library = "/nonexistent/device-library",
       .prefix = "MISSING",
   }));
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return driver.open("test.missing-library");
-              }).has_value());
+  EXPECT_EQ(::mqt::test::errorStatus(
+                [&] { return driver.open("test.missing-library"); }),
+            QDMI_ERROR_LIBNOTFOUND);
+  ::mqt::test::value(driver.registerDevice(
+      {
+          .id = "test.missing-library",
+          .library = MQT_CORE_QDMI_SESSION_DEVICE,
+          .prefix = "MISSING",
+      },
+      true));
+  QDMI_Session session = nullptr;
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
+                "test.missing-library", 0, nullptr, &session),
+            QDMI_ERROR_FATAL);
+  EXPECT_EQ(session, nullptr);
 }
 
 TEST(DeviceRegistrationTest,

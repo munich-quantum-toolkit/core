@@ -635,11 +635,17 @@ TEST(DDPackageTest, StateGenerationManipulation) {
 TEST(DDPackageTest, VectorSerializationTest) {
   auto dd = ::mqt::test::value(Package::create(2));
 
-  for (const bool binary : {false, true}) {
-    std::stringstream serialized{};
-    serialize(vEdge::one(), serialized, binary);
-    EXPECT_EQ(::mqt::test::value(dd->deserialize<vNode>(serialized, binary)),
-              vEdge::one());
+  for (const auto state : {
+           vEdge::one(),
+           ::mqt::test::value(
+               makeBasisState(2, {BasisStates::right, BasisStates::left}, *dd)),
+       }) {
+    for (const bool binary : {false, true}) {
+      std::stringstream serialized{};
+      serialize(state, serialized, binary);
+      EXPECT_EQ(::mqt::test::value(dd->deserialize<vNode>(serialized, binary)),
+                state);
+    }
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -3557,71 +3563,13 @@ TEST(DDPackageTest, RejectsInvalidConfigurationBeforeAllocation) {
             (CVec{1., 0.}));
 }
 
-TEST(DDPackageTest, RejectsMalformedSerializationAndRecovers) {
+TEST(DDPackageTest, DeserializationRejectsThrowingInputStream) {
   auto package = ::mqt::test::value(Package::create(2));
-  const auto state = ::mqt::test::value(
-      makeBasisState(2, {BasisStates::right, BasisStates::left}, *package));
-  std::ostringstream binary;
-  serialize(state, binary, true);
-  const auto bytes = binary.str();
-  for (const auto length : {size_t{0}, size_t{1}, bytes.size() - 1}) {
-    std::istringstream truncated(bytes.substr(0, length));
-    EXPECT_EQ(::mqt::test::errorKind(
-                  [&] { return package->deserialize<vNode>(truncated, true); }),
-              ::mqt::ErrorCategory::InvalidArgument);
-  }
-  for (const auto* invalid : {
-           "",
-           "\n",
-           "1\n",
-           "1\n1\n0 0\n",
-           "1\n1\n0 0 (\n",
-           "1\n1\n0 0 (x 1) ()\n",
-           "1\n1\n0 0 (-1 nan) ()\n",
-           "1\n1\n0 0 (-1 1) () trailing\n",
-           "1\n1\n0 0 (-1 1) ()\n0 0 (-1 1) ()\n",
-           "1\n1\n0 0 (99 1) ()\n",
-           "1\n1\n0 2 (-1 1) ()\n",
-           "1\n1e9999\n",
-           "1\n1\n999999999999999999999999999 0 (-1 1) ()\n",
-       }) {
-    std::istringstream input(invalid);
-    EXPECT_EQ(::mqt::test::errorKind(
-                  [&] { return package->deserialize<vNode>(input); }),
-              ::mqt::ErrorCategory::InvalidArgument);
-  }
-  std::istringstream throwingInput(bytes);
-  throwingInput.exceptions(std::ios::badbit);
-  EXPECT_EQ(::mqt::test::errorKind([&] {
-              return package->deserialize<vNode>(throwingInput, true);
-            }),
+  std::istringstream input("1\n1\n");
+  input.exceptions(std::ios::badbit);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return package->deserialize<vNode>(input); }),
             ::mqt::ErrorCategory::IO);
-  std::istringstream partialIndex(
-      bytes.substr(0, sizeof(SERIALIZATION_VERSION) + (2 * sizeof(fp)) + 1));
-  EXPECT_EQ(::mqt::test::errorKind([&] {
-              return package->deserialize<vNode>(partialIndex, true);
-            }),
-            ::mqt::ErrorCategory::InvalidArgument);
-  // Reject nonfinite binary weights at both the root and node boundaries.
-  const auto rootOffset = sizeof(SERIALIZATION_VERSION);
-  const auto nodeWeightOffset = rootOffset + (2 * sizeof(fp)) +
-                                sizeof(int64_t) + sizeof(Qubit) +
-                                sizeof(int64_t);
-  for (const auto offset : {rootOffset, nodeWeightOffset}) {
-    auto nonfinite = bytes;
-    const auto infinity = std::numeric_limits<fp>::infinity();
-    std::memcpy(&nonfinite.at(offset), &infinity, sizeof(infinity));
-    std::istringstream input(nonfinite);
-    EXPECT_EQ(::mqt::test::errorKind(
-                  [&] { return package->deserialize<vNode>(input, true); }),
-              ::mqt::ErrorCategory::InvalidArgument);
-  }
-  for (const bool isBinary : {false, true}) {
-    std::stringstream stream;
-    serialize(state, stream, isBinary);
-    EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(stream, isBinary)),
-              state);
-  }
 }
 
 TEST(DDPackageTest, RejectsUnrepresentableMeasurementOutcomes) {

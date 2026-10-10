@@ -832,6 +832,9 @@ JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
   }
 
   // Run any static constructors.
+  auto* previous = Runtime::bind(runtime_.get());
+  const llvm::scope_exit restoreRuntime(
+      [previous] { Runtime::bind(previous); });
   if (auto err = jit_->initialize(jit_->getMainJITDylib())) {
     return ::mqt::emitError(std::move(err));
   }
@@ -849,6 +852,9 @@ void JitSession::deinitialize() const {
   if (!jit_) {
     return;
   }
+  auto* previous = Runtime::bind(runtime_.get());
+  const llvm::scope_exit restoreRuntime(
+      [previous] { Runtime::bind(previous); });
   if (auto err = jit_->deinitialize(jit_->getMainJITDylib())) {
     std::ignore = ::mqt::emitError(std::move(err));
   }

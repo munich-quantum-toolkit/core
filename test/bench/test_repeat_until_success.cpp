@@ -131,8 +131,8 @@ TEST(RepeatUntilSuccess, RejectsInvalidJSONParameters) {
   }
   expectInvalidJSON(
       [] {
-        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})"));
+        return repeatUntilSuccessFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})");
       },
       "unknown key 'attempts'");
 }

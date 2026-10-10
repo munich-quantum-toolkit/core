@@ -55,7 +55,7 @@ materializeTuple(const std::vector<uint64_t>& indices,
   std::vector<MQT_SC_QDMI_Site> tuple;
   tuple.reserve(indices.size());
   for (const auto index : indices) {
-    /// readJSON validates the tuple before materialization.
+    // readJSON validates the tuple before materialization.
     assert(index < sites.size());
     tuple.emplace_back(sites[index]);
   }

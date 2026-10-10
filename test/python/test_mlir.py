@@ -666,6 +666,28 @@ while (result) {
     assert not capfd.readouterr().err
 
 
+@pytest.mark.parametrize("shots", [1, 512])
+def test_qco_sampling_preserves_worker_diagnostics(shots: int, capfd: pytest.CaptureFixture[str]) -> None:
+    """Sampling failures retain their category and detail across workers."""
+    program = QCOProgram.from_mlir_str("""module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.static 0 : !qco.qubit
+        %r = func.call @helper(%q) : (!qco.qubit) -> !qco.qubit
+        qco.sink %r : !qco.qubit
+        return
+      }
+      func.func private @helper(%q: !qco.qubit) -> !qco.qubit {
+        %r = qco.reset %q : !qco.qubit -> !qco.qubit
+        %zero = arith.constant 0 : i8
+        %invalid = arith.divui %zero, %zero : i8
+        return %r : !qco.qubit
+      }
+    }""")
+    with pytest.raises(ValueError, match="division by zero"):
+        program.sample(shots=shots, seed=1)
+    assert not capfd.readouterr().err
+
+
 @requires_qiskit_translation
 def test_empty_compiled_program_round_trips_through_mlir() -> None:
     """Reload empty compiled IR through both typed program APIs."""

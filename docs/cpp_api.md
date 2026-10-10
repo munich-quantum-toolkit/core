@@ -114,10 +114,11 @@ Infallible operations return ordinary values or `void`. An `optional<T>` can
 represent successful absence, such as an unsupported optional QDMI property.
 Borrowed results use pointers; keep their owner alive.
 
-When migrating from throwing native APIs, replace `try`/`catch` with a result
-check and use `create(...)` for fallible construction. Python retains its
-exception categories: `ValueError` for invalid arguments, `IndexError` for range
-errors, and `RuntimeError` for unsupported QDMI operations.
+Use `create(...)` for fallible construction. Python reports invalid arguments as
+`ValueError`, range errors as `IndexError`, and unsupported direct QDMI
+operations as `RuntimeError`. Compiler target queries and submission failures
+raise `ValueError`; device lookup and source parsing use their respective
+exception categories.
 
 Diagnostics carry the message, severity, error category, and original QDMI
 status when applicable. Install a handler **before** calling the operation:
@@ -150,9 +151,10 @@ interfaces transfer status codes; provider messages remain in local logging.
 Client-side wrappers translate statuses to diagnostics and Python exceptions.
 Builds that enable shared Core libraries retain their shared dependencies.
 
-Allocation exhaustion and unexpected dependency exceptions are not recoverable
-native API errors. See [QIR runtime failures](qir/index.md#runtime-failures) for
-the direct-execution contract.
+Native algorithms do not recover from allocation exhaustion or unexpected
+dependency exceptions. QDMI session allocation reports memory exhaustion through
+its C status. See [QIR runtime failures](qir/index.md#runtime-failures) for the
+direct-execution contract.
 
 ## Extend the compiler or QIR runtime
 

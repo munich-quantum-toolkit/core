@@ -855,6 +855,38 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
   EXPECT_EQ(results.size(), 2);
 }
 
+TEST(QIRBatchSampling, RetainsClassicalObjectsAcrossShots) {
+  constexpr llvm::StringRef ir = R"(
+@saved = internal global ptr null
+define i64 @main() #0 {
+  %saved = load ptr, ptr @saved
+  %empty = icmp eq ptr %saved, null
+  br i1 %empty, label %create, label %use
+create:
+  %tuple = call ptr @__quantum__rt__tuple_create(i64 8)
+  store i64 42, ptr %tuple
+  store ptr %tuple, ptr @saved
+  ret i64 0
+use:
+  %value = load i64, ptr %saved
+  %wrong = icmp ne i64 %value, 42
+  %code = zext i1 %wrong to i64
+  call void @__quantum__rt__tuple_update_reference_count(ptr %saved, i32 -1)
+  store ptr null, ptr @saved
+  ret i64 %code
+}
+declare ptr @__quantum__rt__tuple_create(i64)
+declare void @__quantum__rt__tuple_update_reference_count(ptr, i32)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)";
+  auto session =
+      ::mqt::test::value(qir::JitSession::create(ir, "classical-state"));
+  session->runtime().disableOutput();
+  std::vector<std::string> shots;
+  EXPECT_EQ(::mqt::test::value(session->sample(2, shots)), 0);
+  EXPECT_EQ(shots.size(), 2);
+}
+
 TEST(QIRBatchSampling, SharesCompiledCodeWithPrivateConcurrentRuntimes) {
   const auto ir = getProgram("BellPairAdaptive.ll");
   auto shared = ::mqt::test::value(
@@ -1376,15 +1408,48 @@ define i64 @main() #0 {
 define i64 @helper() { ret i64 0 }
 attributes #0 = { "entry_point" }
 )",
-           R"(
-@llvm.global_ctors = appending global [1 x {i32, ptr, ptr}] [{i32, ptr, ptr} {i32 0, ptr @initialize, ptr null}]
-define void @initialize() { ret void }
-define i64 @main() #0 { ret i64 0 }
-attributes #0 = { "entry_point" }
-)",
        }) {
     SCOPED_TRACE(ir);
     auto session = ::mqt::test::value(qir::JitSession::create(ir, "calls"));
     EXPECT_EQ(session->run(), 0);
   }
+}
+
+TEST(QIRJIT, KeepsConstructorAllocationsUntilSessionDestruction) {
+  constexpr llvm::StringRef ir = R"(
+@array = global ptr null
+@llvm.global_ctors = appending global [1 x {i32, ptr, ptr}] [{i32, ptr, ptr} {i32 0, ptr @initialize, ptr null}]
+@llvm.global_dtors = appending global [1 x {i32, ptr, ptr}] [{i32, ptr, ptr} {i32 0, ptr @finalize, ptr null}]
+define void @initialize() {
+  %array = call ptr @__quantum__rt__array_create_1d(i32 1, i64 3)
+  store ptr %array, ptr @array
+  ret void
+}
+define void @finalize() {
+  %array = load ptr, ptr @array
+  %size = call i64 @__quantum__rt__array_get_size_1d(ptr %array)
+  call void @__quantum__rt__int_record_output(i64 %size, ptr null)
+  call void @__quantum__rt__array_update_reference_count(ptr %array, i32 -1)
+  ret void
+}
+define i64 @main() #0 {
+  %array = load ptr, ptr @array
+  %size = call i64 @__quantum__rt__array_get_size_1d(ptr %array)
+  ret i64 %size
+}
+declare ptr @__quantum__rt__array_create_1d(i32, i64)
+declare i64 @__quantum__rt__array_get_size_1d(ptr)
+declare void @__quantum__rt__array_update_reference_count(ptr, i32)
+declare void @__quantum__rt__int_record_output(i64, ptr)
+attributes #0 = { "entry_point" }
+)";
+  std::ostringstream output;
+  auto created = std::async(std::launch::async, [ir] {
+    return qir::JitSession::create(ir, "lifecycle");
+  });
+  auto session = ::mqt::test::value(created.get());
+  session->runtime().setOstream(output);
+  EXPECT_EQ(session->run(), 3);
+  session.reset();
+  EXPECT_EQ(output.str(), "OUTPUT\tINT\t3\n");
 }

@@ -1583,13 +1583,4 @@ private:
                   std::unordered_map<int64_t, Node*>& nodes);
 };
 
-extern template llvm::FailureOr<vEdge>
-Package::deserialize<vNode>(std::istream&, bool);
-extern template llvm::FailureOr<mEdge>
-Package::deserialize<mNode>(std::istream&, bool);
-extern template llvm::FailureOr<vEdge>
-Package::deserialize<vNode>(const std::string&, bool);
-extern template llvm::FailureOr<mEdge>
-Package::deserialize<mNode>(const std::string&, bool);
-
 } // namespace dd

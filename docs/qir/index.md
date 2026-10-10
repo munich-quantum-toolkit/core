@@ -31,14 +31,15 @@ with the {doc}`QIR tutorial <../tutorials/qir_execution>`.
 
 Under the
 [QIR allocation contract](https://github.com/qir-alliance/qir-spec/blob/main/specification/Memory_Management.md),
-allocation failures set the supplied error-output flag and release partial
-allocations. Without that pointer, allocation failure emits a diagnostic and
-terminates execution. Other unhandled runtime failures also terminate; C++ and
-Python exceptions cannot catch them. Setup and compilation errors remain
-recoverable.
+qubit and result allocations report invalid requests and runtime resource limits
+through the supplied error-output pointer, releasing partial allocations.
+Without that pointer, these failures emit a diagnostic and terminate execution.
+Host-memory exhaustion and other unhandled runtime failures also terminate, even
+with an error-output pointer; C++ and Python exceptions cannot catch them. Setup
+and compilation errors remain recoverable.
 
-Use [DDSIM through QDMI](../qdmi/ddsim_device.md#job-isolation) to contain
-execution failures in a worker process and keep the host usable.
+Use [DDSIM through QDMI](../qdmi/ddsim_device.md#multi-program-execution) to
+contain execution failures in a worker process and keep the host usable.
 
 ## Compile a Base Profile program
 
@@ -322,12 +323,6 @@ Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
 result bits directly and formats textual records only when capture is enabled.
-
-QIR runtime functions do not propagate C++ exceptions. Allocations report
-invalid resource requests and runtime limits through the QIR error-output
-pointer when one is supplied. Other failures, including host-memory exhaustion,
-stop the isolated DDSIM worker and fail its assigned program; concurrent and
-later jobs remain usable.
 
 ### Sampling and state extraction
 

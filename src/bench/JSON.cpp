@@ -69,23 +69,16 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
-  [[nodiscard]] llvm::FailureOr<std::string> evaluate##TYPE(                   \
-      std::string_view manifest, std::string_view source,                      \
-      const Counts& counts);                                                   \
   [[nodiscard]] llvm::FailureOr<TYPE> parse##TYPE##Parameters(                 \
       const Json& parameters, std::string_view source);
 #include "bench/BenchmarkFamilies.inc"
 
 using InstanceSpecificationSchemaFunction = Json (*)();
-using EvaluationFunction = llvm::FailureOr<std::string> (*)(std::string_view,
-                                                            std::string_view,
-                                                            const Counts&);
 
 struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
-  EvaluationFunction evaluate;
   llvm::FailureOr<BenchmarkInstance> (*parse)(const Json&, std::string_view);
 };
 constexpr std::array REGISTRY{
@@ -94,7 +87,6 @@ constexpr std::array REGISTRY{
                 .definitionVersion = (DEFINITION_VERSION),                     \
                 .instanceSpecificationSchema =                                 \
                     STEM##InstanceSpecificationSchema,                         \
-                .evaluate = evaluate##TYPE,                                    \
                 .parse = +[](const Json& parameters, std::string_view source)  \
                     -> llvm::FailureOr<BenchmarkInstance> {                    \
                   auto result = parse##TYPE##Parameters(parameters, source);   \
@@ -1175,6 +1167,17 @@ template <class Benchmark>
   };
 }
 
+template <class Benchmark>
+[[nodiscard]] llvm::LogicalResult
+requireManifest(const Json& root, const Benchmark& benchmark,
+                const std::string_view source) {
+  if (root.dump() != manifestJSON(benchmark).dump()) {
+    return fail(source, "$",
+                "does not match its resolved benchmark instance and case ID");
+  }
+  return llvm::success();
+}
+
 template <class Benchmark, class ParseParameters>
 [[nodiscard]] llvm::FailureOr<Benchmark>
 parseBenchmark(const std::string_view text, const std::string_view source,
@@ -1192,12 +1195,8 @@ parseBenchmark(const std::string_view text, const std::string_view source,
   if (llvm::failed(benchmark)) {
     return llvm::failure();
   }
-  if (manifest) {
-    const auto expected = manifestJSON((*benchmark));
-    if (root.dump() != expected.dump()) {
-      return fail(source, "$",
-                  "does not match its resolved benchmark instance and case ID");
-    }
+  if (manifest && llvm::failed(requireManifest(root, *benchmark, source))) {
+    return llvm::failure();
   }
   return benchmark;
 }
@@ -1731,33 +1730,6 @@ template <class Benchmark>
   });
 }
 
-template <class Benchmark>
-[[nodiscard]] llvm::FailureOr<std::string>
-evaluateBenchmark(const Benchmark& benchmark, const Counts& counts) {
-  auto evaluation = benchmark.evaluate(counts);
-  if (llvm::failed(evaluation)) {
-    return llvm::failure();
-  }
-  const auto id = caseId(benchmark);
-  /// Evaluation validates the total before this sum.
-  const auto shots = std::accumulate(
-      counts.begin(), counts.end(), size_t{0},
-      [](const size_t sum, const auto& item) { return sum + item.second; });
-  return evaluationToJSON(id, shots, (*evaluation));
-}
-
-#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  llvm::FailureOr<std::string> evaluate##TYPE(const std::string_view manifest, \
-                                              const std::string_view source,   \
-                                              const Counts& counts) {          \
-    auto result = STEM##FromManifestJSON(manifest, source);                    \
-    if (llvm::failed(result)) {                                                \
-      return llvm::failure();                                                  \
-    }                                                                          \
-    return evaluateBenchmark((*result), counts);                               \
-  }
-#include "bench/BenchmarkFamilies.inc"
-
 [[nodiscard]] bool validCaseId(const std::string_view value) {
   constexpr std::string_view prefix = "sha256-";
   if (!value.starts_with(prefix) || value.size() != prefix.size() + 64U) {
@@ -1894,16 +1866,39 @@ llvm::FailureOr<std::string> evaluateJSON(const std::string_view manifest,
                                           const std::string_view counts,
                                           const std::string_view manifestSource,
                                           const std::string_view countsSource) {
-  auto id = benchmarkIdFromManifestJSON(manifest, manifestSource);
-  if (llvm::failed(id)) {
+  auto parsed = envelope(manifest, manifestSource, true);
+  if (llvm::failed(parsed)) {
     return llvm::failure();
   }
   auto parsedCounts = countsFromJSON(counts, countsSource);
   if (llvm::failed(parsedCounts)) {
     return llvm::failure();
   }
-  return findBenchmark((*id))->evaluate(manifest, manifestSource,
-                                        (*parsedCounts));
+  const auto& root = *parsed;
+  const auto& id = root["benchmark"].get_ref<const std::string&>();
+  auto instance = findBenchmark(id)->parse(root["parameters"], manifestSource);
+  if (llvm::failed(instance)) {
+    return llvm::failure();
+  }
+  return std::visit(
+      [&](const auto& benchmark) -> llvm::FailureOr<std::string> {
+        if (llvm::failed(requireManifest(root, benchmark, manifestSource))) {
+          return llvm::failure();
+        }
+        auto evaluation = benchmark.evaluate(*parsedCounts);
+        if (llvm::failed(evaluation)) {
+          return llvm::failure();
+        }
+        // Evaluation validates the total before this sum.
+        const auto shots =
+            std::accumulate(parsedCounts->begin(), parsedCounts->end(),
+                            size_t{0}, [](const size_t sum, const auto& item) {
+                              return sum + item.second;
+                            });
+        return evaluationToJSON(root["case_id"].get_ref<const std::string&>(),
+                                shots, *evaluation);
+      },
+      *instance);
 }
 
 llvm::FailureOr<std::string>

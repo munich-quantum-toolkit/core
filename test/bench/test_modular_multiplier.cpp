@@ -393,26 +393,26 @@ TEST(ModularMultiplier, RejectsInvalidJSONParameters) {
       ::mqt::ErrorCategory::InvalidArgument);
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})");
       },
       "unknown key 'extra'");
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
       },
       "equal widths");
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
       },
       "canonical");
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})");
       },
       "0 < a < N");
 }

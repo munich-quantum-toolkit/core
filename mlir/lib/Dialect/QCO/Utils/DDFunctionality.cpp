@@ -28,6 +28,8 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Diagnostics.h"
 
+#include "support/Diagnostics.hpp"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -2778,6 +2780,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
         std::unique_ptr<dd::Package> dd;
         PreparedState prepared;
         std::vector<std::string> shots;
+        std::vector<::mqt::Diagnostic> diagnostics;
       };
       std::vector<Worker> work;
       work.reserve(workers);
@@ -2785,6 +2788,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
           .dd = std::move(dd),
           .prepared = std::move(*prepared),
           .shots = {},
+          .diagnostics = {},
       });
       for (size_t i = 1; i < workers; ++i) {
         auto package = std::move(*dd::Package::create(0));
@@ -2796,6 +2800,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
             .dd = std::move(package),
             .prepared = std::move(*next),
             .shots = {},
+            .diagnostics = {},
         });
       }
       std::vector<std::future<FailureOr<std::map<std::string, size_t>>>> tasks;
@@ -2807,6 +2812,11 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
       for (size_t i = 0; i < workers; ++i) {
         tasks.push_back(std::async(std::launch::async, [&, i] {
           auto& worker = work[i];
+          const ::mqt::ScopedDiagnosticHandler handler(
+              [&](const ::mqt::Diagnostic& diagnostic) {
+                worker.diagnostics.push_back(diagnostic);
+                return success();
+              });
           std::mt19937_64 workerRng(workerSeeds[i]);
           const size_t count = (shots / workers) + (i < shots % workers);
           return sampleImpl(
@@ -2820,6 +2830,9 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
       bool allSucceeded = true;
       for (size_t i = 0; i < workers; ++i) {
         auto part = tasks[i].get();
+        for (const auto& diagnostic : work[i].diagnostics) {
+          ::mqt::emitDiagnostic(diagnostic);
+        }
         if (failed(part)) {
           allSucceeded = false;
           continue;

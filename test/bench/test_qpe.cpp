@@ -167,20 +167,20 @@ TEST(QPE, DescribesJSONSchema) {
 TEST(QPE, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(qpeFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})"));
+        return qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})");
       },
       "encoded as an integer");
   expectInvalidJSON(
       [] {
-        static_cast<void>(qpeFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})"));
+        return qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})");
       },
       "between 1 and 1000000");
   expectInvalidJSON(
       [] {
-        static_cast<void>(qpeFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})"));
+        return qpeFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})");
       },
       "denominator must not be zero");
 }

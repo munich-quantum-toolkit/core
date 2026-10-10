@@ -164,11 +164,7 @@ struct DeviceAPI {
   virtual ~DeviceAPI() = default;
 };
 
-/// Definition of the dynamic device library.
-///
-/// This class is used to load the QDMI device interface functions
-/// from a dynamic library at runtime. It inherits from DeviceAPI and
-/// overrides the constructor and destructor to open and close the library.
+/// Owns a dynamic provider library and its QDMI function table.
 class LoadedDeviceAPI final : public DeviceAPI {
   void* libHandle_;
   bool initialized_ = false;
@@ -179,14 +175,7 @@ class LoadedDeviceAPI final : public DeviceAPI {
       -> llvm::FailureOr<std::shared_ptr<LoadedDeviceAPI>>;
 
 public:
-  /// Load and initialize a provider, releasing partial resources on failure.
-  [[nodiscard]] static llvm::FailureOr<std::shared_ptr<LoadedDeviceAPI>>
-  create(const std::string& libName, const std::string& prefix);
-
-  /// Destructor for the LoadedDeviceAPI.
-  ///
-  /// This destructor calls the @ref QDMI_device_finalize function if it
-  /// is not null and closes the dynamic library.
+  /// Finalize a successfully initialized provider and close the library.
   ~LoadedDeviceAPI() override;
 };
 

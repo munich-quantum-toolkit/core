@@ -81,8 +81,8 @@ TEST(Teleportation, DescribesJSONSchema) {
 TEST(Teleportation, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(teleportationFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})"));
+        return teleportationFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})");
       },
       "unknown key 'qubits'");
 }

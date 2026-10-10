@@ -54,7 +54,7 @@ namespace mqt::bindings {
 /// Invoke a result-returning function, unwrapping success or raising its error.
 /// Capture diagnostics before invocation, including functions that release the
 /// GIL. Warnings retain the surrounding handler or stderr behavior.
-template <class Function, class... Args>
+template <auto Raise = raiseDiagnostic, class Function, class... Args>
 auto invoke(Function&& function, Args&&... args) {
   std::optional<Diagnostic> error;
   ScopedDiagnosticHandler handler([&](const Diagnostic& diagnostic) {
@@ -70,9 +70,9 @@ auto invoke(Function&& function, Args&&... args) {
                             std::forward<Args>(args)...);
   if (llvm::failed(result)) {
     if (error) {
-      raiseDiagnostic(*error);
+      Raise(*error);
     }
-    raiseDiagnostic({
+    Raise({
         .message = "Compiler action failed; see diagnostics for details.",
     });
   }

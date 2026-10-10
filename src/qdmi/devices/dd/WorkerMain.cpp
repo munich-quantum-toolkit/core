@@ -180,6 +180,7 @@ struct Execution {
         tasks.push_back(std::async(
             std::launch::async, [&, i]() -> llvm::FailureOr<int64_t> {
               const mqt::ScopedDiagnosticHandler capture(diagnosticHandler_);
+              std::ostringstream localOutput;
               std::unique_ptr<qir::JitSession> peer;
               std::unique_ptr<qir::Runtime> workerRuntime;
               if (i != 0 && shareCode) {
@@ -203,7 +204,6 @@ struct Execution {
               } else if (peer) {
                 worker = &peer->runtime();
               }
-              std::ostringstream localOutput;
               if (i != 0) {
                 if (captureQIROutput_) {
                   worker->setOstream(localOutput);

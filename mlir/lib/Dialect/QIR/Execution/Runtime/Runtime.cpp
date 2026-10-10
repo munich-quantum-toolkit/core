@@ -101,7 +101,6 @@ auto Runtime::reset() -> void {
   std::ranges::fill(resultValues_, ResultStruct{});
   measurements.clear();
   measuredQubits_.clear();
-  allocations_.clear();
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
   currentMaxQubitId = 0;
   currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;

@@ -158,20 +158,20 @@ TEST(GHZ, DescribesJSONSchema) {
 TEST(GHZ, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})");
       },
       "unknown key 'extra'");
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})");
       },
       "encoded as an integer");
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})");
       },
       "between 1 and 1075");
 }

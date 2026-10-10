@@ -159,7 +159,7 @@ public:
   explicit Runtime(uint64_t randomSeed);
   ~Runtime() = default;
 
-  /// Track allocations owned by this execution until explicit release or reset.
+  /// Track classical allocations until explicit release or runtime destruction.
   void ownAllocation(void* pointer, void (*destroy)(void*));
   void releaseAllocation(void* pointer);
 
