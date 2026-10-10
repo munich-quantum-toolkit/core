@@ -316,3 +316,15 @@ TEST(DDTableTest, MemoryManagerGrowthReuseAndResetStatistics) {
   check.operator()<mNode>();
   check.operator()<RealNumber>();
 }
+
+TEST(DDTableTest, RejectsZeroInitialAllocation) {
+  EXPECT_THROW(MemoryManager::create<vNode>(0), std::invalid_argument);
+  for (const auto member : {
+           &DDPackageConfig::utVecInitialAllocationSize,
+           &DDPackageConfig::utMatInitialAllocationSize,
+       }) {
+    DDPackageConfig config;
+    config.*member = 0;
+    EXPECT_THROW(Package(1, config), std::invalid_argument);
+  }
+}

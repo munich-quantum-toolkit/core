@@ -50,8 +50,9 @@ public:
 
   /// Construct a new MemoryManager object for objects of type T.
   ///
-  /// @param initialAllocationSize The initial number of entries to allocate
+  /// @param initialAllocationSize The positive initial number of entries
   /// @tparam T The type of the entries
+  /// @throws std::invalid_argument If initialAllocationSize is zero.
   template <class T>
   static MemoryManager
   create(const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE) {
