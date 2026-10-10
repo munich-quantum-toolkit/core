@@ -11,7 +11,6 @@
 #include "Driver.hpp"
 
 #include "qdmi/common/Common.hpp"
-#include "qdmi/driver/DriverExtension.hpp"
 
 #include "DeviceRegistry.hpp"
 #include "SessionConfig.hpp"

@@ -162,8 +162,10 @@ TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
 
 TEST(GenerateProgramTest, SamplesQPEAgainstReference) {
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
-    for (const auto phase : {::mqt::test::value(Phase::create(3, 8)),
-                             ::mqt::test::value(Phase::create(1, 3))}) {
+    for (const auto phase : {
+             ::mqt::test::value(Phase::create(3, 8)),
+             ::mqt::test::value(Phase::create(1, 3)),
+         }) {
       SCOPED_TRACE(static_cast<int>(method));
       test::expectSamplingMatchesReference(::mqt::test::value(
           QPE::create({.precision = 8, .phase = phase, .method = method})));

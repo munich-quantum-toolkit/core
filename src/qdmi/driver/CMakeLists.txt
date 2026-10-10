@@ -39,7 +39,9 @@ if(NOT TARGET ${TARGET_NAME})
     MQT_CORE_QDMI_driver_session_alloc_for_device_v1)
 
   if(BUILD_MQT_CORE_TESTS)
-    add_library(mqt-core-qdmi-driver-testing STATIC DeviceRegistry.cpp Driver.cpp)
+    add_library(mqt-core-qdmi-driver-testing STATIC CAPI.cpp DeviceRegistry.cpp Driver.cpp)
+    target_include_directories(mqt-core-qdmi-driver-testing
+                               PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
     target_compile_features(mqt-core-qdmi-driver-testing PUBLIC cxx_std_20)
     target_compile_definitions(mqt-core-qdmi-driver-testing PUBLIC QDMI_STATIC_DEFINE)
     target_link_libraries(

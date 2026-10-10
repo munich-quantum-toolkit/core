@@ -114,10 +114,11 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
       QFTAdder::create({.addend = "+++", .accumulator = "001"})));
   expectQCAndJeff(::mqt::test::value(QPE::create(
       {.precision = 3, .phase = ::mqt::test::value(Phase::create(3, 8))})));
-  expectQCAndJeff(::mqt::test::value(
-      QPE::create({.precision = 3,
-                   .phase = ::mqt::test::value(Phase::create(3, 8)),
-                   .method = QPEMethod::Iterative})));
+  expectQCAndJeff(::mqt::test::value(QPE::create({
+      .precision = 3,
+      .phase = ::mqt::test::value(Phase::create(3, 8)),
+      .method = QPEMethod::Iterative,
+  })));
   expectQCAndJeff(::mqt::test::value(RepeatUntilSuccess::create()));
   expectQCAndJeff(::mqt::test::value(Shor::create({.number = 15})));
   expectQCAndJeff(Teleportation{});

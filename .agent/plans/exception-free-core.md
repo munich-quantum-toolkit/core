@@ -1,7 +1,8 @@
 # Exception-free Core APIs
 
-Status: implemented and locally validated. Hosted checks for the diagnostic
-boundary update remain pending.
+Status: in progress. Native and Python integration is validated against main
+`81c570c68`. The [audit recommendations](../audits/exception-free-rebase.md)
+remain unapplied; platform and performance acceptance remain open.
 
 ## Contract
 
@@ -14,19 +15,13 @@ implementation. See
 [native error handling](../../docs/cpp_api.md#handle-native-errors).
 
 Standalone driver and device builds embed diagnostic support. QDMI C interfaces
-carry status codes and use local logging; they gain no diagnostic extensions.
-Exposed C++ driver methods retain `FailureOr`/`LogicalResult` and accept an
-optional caller-owned `Diagnostic` output. The handler runs inside the emitting
-library, so capturing the first error does not depend on shared thread-local
-state. Successful calls leave the output unchanged; warnings keep normal local
-handling. Internal helpers retain their existing diagnostic propagation.
-
-Do not replace this boundary with `llvm::Error` solely to carry messages. A
-producer and consumer linked to separate, hidden LLVM support archives have
-different error class identities: consuming the producer's `StringError` with
-`llvm::toString` aborts. The explicit output uses the existing diagnostic value
-and avoids both shared LLVM state and a new result hierarchy. Direct C++ callers
-still require the matching C++ ABI; QDMI C consumers do not receive C++ objects.
+carry status codes and use local logging. Main now keeps the driver
+implementation private. Its optional diagnostic-output parameters remain for
+tests; the [rebase audit](../audits/exception-free-rebase.md) recommends
+removing that plumbing. Keep C-status conversion at each runtime boundary. Do
+not pass `llvm::Error` between independently embedded, hidden LLVM support
+archives: their error class identities differ, and consuming such an error can
+abort.
 
 Preserve C++20, Python APIs, QDMI statuses, and result semantics. Private JSON
 translation units catch dependency exceptions and parse valid input once,
@@ -71,19 +66,22 @@ SIGALRM handler and may reap another child on timeout.
 
 ## Validation
 
-The standalone-runtime revision passes 3,975 native tests with one expected SC
-query skip and 934 affected Python tests. All 432 Python QDMI tests pass again
-after restricting provider exports. The installed C++ consumer builds and runs.
-The driver and both devices have no support-library dependency or exported
-support handlers in the default static build. Existing native tests verify
-status codes and configuration diagnostics; two focused checks cover explicit
-error outputs and handler forwarding. Windows command generation handles both
-DLL-dependent and fully static executables.
+On Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
 
-Repository lint passes. Local C++ lint cannot run without clang-tidy 23; hosted
-lint and platform builds must validate that gate. Earlier validation of the
-parent change covers installed dual-driver consumers, relocation, and controlled
-worker concurrency; no new packaging test framework is introduced here.
+- `cmake --build --preset release` and `ctest --preset release`: 4,020 native
+  tests pass; `ScQDMIJobSpecificationTest.QueryJobId` is the one expected skip.
+- `uv run --no-sync pytest -n 0 test/python`: all 1,966 tests pass, including
+  QDMI, Qiskit, MLIR, and QIR-runner integration.
+- `uvx nox -s stubs`: passes with no generated stub changes.
+- `uvx nox -s cpp-lint`: all 178 changed C++ files pass whole-file checks with
+  clang-tidy 23.1.2.
+- Installed Development consumers build and run with GCC and Clang, exercising
+  DD state extraction and diagnostic capture.
+- `uvx nox -s lint` and `uvx nox --non-interactive -s docs`: pass, including
+  executable examples and internal documentation links.
+
+Windows/macOS packaging and hosted checks for the published revision remain
+unverified. No new packaging test framework is introduced here.
 
 Performance acceptance requires matched upstream and revised builds using the
 external harness. Report successful workloads separately, including cold and

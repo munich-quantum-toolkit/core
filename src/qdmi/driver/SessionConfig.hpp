@@ -13,7 +13,13 @@
 
 #pragma once
 
+#include "qdmi/common/Common.hpp"
+
 #include "Driver.hpp"
+
+#include "qdmi/constants.h"
+
+#include "mlir/Support/LogicalResult.h"
 
 #include <filesystem>
 #include <optional>

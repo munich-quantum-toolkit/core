@@ -28,6 +28,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
@@ -57,7 +58,7 @@
 namespace {
 [[nodiscard]] auto
 parseQASMToQCO(const std::string_view source,
-               const std::function<mlir::LogicalResult(const mqt::Diagnostic&)>&
+               llvm::function_ref<mlir::LogicalResult(const mqt::Diagnostic&)>
                    diagnosticHandler) -> std::optional<mlir::QCOProgram> {
   auto context = mlir::createCompilerContext();
   context->getDiagEngine().registerHandler(
@@ -84,7 +85,7 @@ struct Execution {
   bool captureQIROutput_;
   size_t workerSlots_;
   bool automaticWorkers_;
-  const std::function<mlir::LogicalResult(const mqt::Diagnostic&)>&
+  llvm::function_ref<mlir::LogicalResult(const mqt::Diagnostic&)>
       diagnosticHandler_;
   std::optional<std::string> qirOutput_;
   std::vector<std::string> shots_;
@@ -179,7 +180,7 @@ struct Execution {
       for (size_t i = 0; i < workers; ++i) {
         tasks.push_back(std::async(
             std::launch::async, [&, i]() -> mlir::FailureOr<int64_t> {
-              mqt::ScopedDiagnosticHandler capture(diagnosticHandler_);
+              const mqt::ScopedDiagnosticHandler capture(diagnosticHandler_);
               std::unique_ptr<qir::JitSession> peer;
               std::unique_ptr<qir::Runtime> workerRuntime;
               if (i != 0 && shareCode) {

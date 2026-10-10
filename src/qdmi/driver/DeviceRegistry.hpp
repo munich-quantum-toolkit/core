@@ -11,7 +11,6 @@
 #pragma once
 
 #include "Driver.hpp"
-
 #include "support/Diagnostics.hpp"
 
 #include "mlir/Support/LogicalResult.h"

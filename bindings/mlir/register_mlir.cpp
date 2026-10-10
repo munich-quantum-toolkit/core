@@ -1857,7 +1857,7 @@ returned program does not retain the buffers.)pb")
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
       .def_static("from_file",
-                  &FallibleFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
+                  ::mqt::bindings::bindResult(&mlir::JeffProgram::fromFile),
                   "path"_a, "Read a ``jeff`` program from a file.")
       .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")

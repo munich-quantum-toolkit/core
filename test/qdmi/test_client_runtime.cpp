@@ -164,8 +164,10 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
   missingLibrary["library"] = (directory.path() / "missing-device").string();
   const auto unavailable =
       directory.write("unavailable.qdmi.json",
-                      nlohmann::json{{"schema-version", 1},
-                                     {"qdmi", {{"devices", {missingLibrary}}}}}
+                      nlohmann::json{
+                          {"schema-version", 1},
+                          {"qdmi", {{"devices", {missingLibrary}}}},
+                      }
                           .dump());
   EXPECT_EQ(::mqt::test::errorStatus(
                 [&] { return builtin_driver::addManifest(unavailable); }),

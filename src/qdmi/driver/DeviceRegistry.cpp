@@ -14,9 +14,8 @@
 #include "qdmi/common/DeviceConfiguration.hpp"
 
 #include "Driver.hpp"
-#include "SessionConfig.hpp"
-
 #include "JSON.hpp"
+#include "SessionConfig.hpp"
 #include "support/Diagnostics.hpp"
 
 #include "nlohmann/json.hpp"

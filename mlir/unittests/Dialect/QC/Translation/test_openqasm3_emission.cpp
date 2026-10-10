@@ -999,11 +999,11 @@ U(0.4, -0.2, 0.7) q;
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
   ASSERT_TRUE(succeeded(manager.run(*roundTrip)));
-  dd::Package package(1);
+  auto package = ::mqt::test::value(dd::Package::create(1));
   auto before =
-      qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), package);
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), *package);
   auto after =
-      qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), *package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
   const auto expected = dd::getMatrix(*before, 1);
@@ -1100,9 +1100,9 @@ wrapper(0.25) q;
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
     checkGateStructure(moduleOp);
-    dd::Package package(1);
+    auto package = ::mqt::test::value(dd::Package::create(1));
     auto functionality =
-        qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
+        qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), *package);
     ASSERT_TRUE(succeeded(functionality));
     const auto matrix = dd::getMatrix(*functionality, 1);
     // The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).

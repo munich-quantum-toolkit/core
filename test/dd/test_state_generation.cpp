@@ -416,9 +416,9 @@ TEST(StateGenerationTest, BasisConstructionUsesRequestedPrefix) {
         ::mqt::test::value(makeBasisState(width, basis, package));
     const auto zero = ::mqt::test::value(makeZeroState(width, package));
     EXPECT_EQ(binary, product);
-    EXPECT_EQ(
-        ::mqt::test::value(dd::getValueByIndex(binary, 13U & ((1U << width) - 1U))),
-        1.);
+    EXPECT_EQ(::mqt::test::value(
+                  dd::getValueByIndex(binary, 13U & ((1U << width) - 1U))),
+              1.);
     EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(zero, 0)), 1.);
     package.decRef(binary);
     package.decRef(product);

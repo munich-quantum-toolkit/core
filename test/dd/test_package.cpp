@@ -353,7 +353,8 @@ TEST(DDPackageTest, QFTState) {
   for (size_t qubit = 0; qubit < 7; ++qubit) {
     ASSERT_NEAR(::mqt::test::value(dd::getValueByIndex(qftState, qubit)).real(),
                 0.5 * SQRT2_2, RealNumber::eps);
-    ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(qftState, qubit)).imag(), 0);
+    ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(qftState, qubit)).imag(),
+              0);
   }
 
   checkDotOptions(qftState);
@@ -666,41 +667,57 @@ TEST(DDPackageTest, BellMatrix) {
   ASSERT_EQ(::mqt::test::value(bellMatrix.getValueByPath(dd->qubits(), "22")),
             SQRT2_2);
 
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 0)),
-            SQRT2_2);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 0)),
-            0.);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 0)),
-            0.);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 0)),
-            SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 0)),
+      SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 0)),
+      0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 0)),
+      0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 0)),
+      SQRT2_2);
 
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 1)),
-            0.);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 1)),
-            SQRT2_2);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 1)),
-            SQRT2_2);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 1)),
-            0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 1)),
+      0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 1)),
+      SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 1)),
+      SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 1)),
+      0.);
 
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 2)),
-            SQRT2_2);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 2)),
-            0.);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 2)),
-            0.);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 2)),
-            -SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 2)),
+      SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 2)),
+      0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 2)),
+      0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 2)),
+      -SQRT2_2);
 
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 3)),
-            0.);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 3)),
-            SQRT2_2);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 3)),
-            -SQRT2_2);
-  ASSERT_EQ(::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 3)),
-            0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 3)),
+      0.);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 3)),
+      SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 3)),
+      -SQRT2_2);
+  ASSERT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 3)),
+      0.);
 
   auto const goalRow0 = CVec{{SQRT2_2, 0.}, {0., 0.}, {SQRT2_2, 0.}, {0., 0.}};
   auto const goalRow1 = CVec{{0., 0.}, {SQRT2_2, 0.}, {0., 0.}, {SQRT2_2, 0.}};
@@ -1664,8 +1681,9 @@ TEST(DDPackageTest, EmbedsDenseMatricesInOperandOrder) {
       if (count > 3 && !controls.empty()) {
         continue;
       }
-      const auto actual =
-          dd::getMatrix(::mqt::test::value(package.makeGateDD(entries, targets, controls)), 6);
+      const auto actual = dd::getMatrix(
+          ::mqt::test::value(package.makeGateDD(entries, targets, controls)),
+          6);
       const auto localIndex = [targets](const size_t index) {
         size_t result = 0;
         for (const auto target : targets) {
@@ -3477,8 +3495,8 @@ TEST(DDPackageTest, KroneckerRestoresNormalizationAfterInterningChanges) {
   for (size_t repetition = 0; repetition < 2; ++repetition) {
     const auto result = package->kronecker(x, y, 1);
     EXPECT_NEAR(
-        std::abs(::mqt::test::value(dd::getValueByIndex(result, 0)) - expected), 0.,
-        1e-13);
+        std::abs(::mqt::test::value(dd::getValueByIndex(result, 0)) - expected),
+        0., 1e-13);
   }
 }
 

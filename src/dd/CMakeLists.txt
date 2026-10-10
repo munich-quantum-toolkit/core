@@ -29,10 +29,10 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
     endif()
   endif()
 
-  foreach(json_source PackageStatistics TableStatistics UniqueTableStatistics MemoryManagerStatistics)
+  foreach(json_source PackageStatistics TableStatistics UniqueTableStatistics
+                      MemoryManagerStatistics)
     mqt_source_enable_exceptions(statistics/${json_source}.cpp)
   endforeach()
-
 
   include(GenerateExportHeader)
   generate_export_header(${dd_export_target} BASE_NAME mqt_core_dd EXPORT_FILE_NAME

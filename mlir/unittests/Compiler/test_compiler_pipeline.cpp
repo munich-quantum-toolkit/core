@@ -2233,8 +2233,8 @@ protected:
 } // namespace
 
 TEST_F(CompilerPipelineTest, PipelineVerificationFollowsAssertionMode) {
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   for (const bool repair : {false, true}) {
     SCOPED_TRACE(repair);
     auto moduleOp = parseSourceString<ModuleOp>(

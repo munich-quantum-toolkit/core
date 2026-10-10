@@ -2511,10 +2511,10 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           branch.qubits.bind(measure.getQubitOut(), *q);
         } else {
           if (!measuredZero) {
-            branch.state = dd.applyOperation(
-                *makeGateDD(dd, getStandardGateMatrix<XOp>({}),
-                            branch.qubits.numQubits, {*q}),
-                branch.state);
+            branch.state =
+                dd.applyOperation(*makeGateDD(dd, XOp::getUnitaryMatrix(),
+                                              branch.qubits.numQubits, {*q}),
+                                  branch.state);
           }
           branch.qubits.bind(reset.getQubitOut(), *q);
         }

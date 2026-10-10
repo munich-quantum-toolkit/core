@@ -20,6 +20,8 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>

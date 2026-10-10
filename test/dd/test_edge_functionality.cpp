@@ -74,14 +74,14 @@ TEST(VectorFunctionality, WideIndices) {
   EXPECT_EQ(::mqt::test::value(
                 dd::getValueByIndex(zero, std::numeric_limits<size_t>::max())),
             0.);
-  EXPECT_EQ(
-      ::mqt::test::errorKind([&] { return dd::getValueByIndex(vEdge::one(), 1); }),
-      ::mqt::ErrorCategory::OutOfRange);
-  EXPECT_EQ(
-      ::mqt::test::errorKind([&] {
-        return dd::getValueByIndex(::mqt::test::value(makeZeroState(3, *dd)), 8);
-      }),
-      ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd::getValueByIndex(vEdge::one(), 1); }),
+            ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
+              return dd::getValueByIndex(
+                  ::mqt::test::value(makeZeroState(3, *dd)), 8);
+            }),
+            ::mqt::ErrorCategory::OutOfRange);
 }
 
 TEST(VectorFunctionality, InvalidPaths) {
@@ -106,18 +106,19 @@ TEST(MatrixFunctionality, WideIndices) {
             std::complex<fp>(0, -1));
   EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(gate, digits + 1U, 1, 0)),
             std::complex<fp>(0, 1));
-  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(gate, digits + 1U, 2, 1)), 0.);
+  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(gate, digits + 1U, 2, 1)),
+            0.);
   const auto highGate = ::mqt::test::value(
       dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, digits));
-  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(highGate, digits + 1U, 0, 0)),
-            0.);
-  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(mEdge::one(),
-                digits, std::numeric_limits<size_t>::max(),
+  EXPECT_EQ(
+      ::mqt::test::value(dd::getValueByIndex(highGate, digits + 1U, 0, 0)), 0.);
+  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(
+                mEdge::one(), digits, std::numeric_limits<size_t>::max(),
                 std::numeric_limits<size_t>::max())),
             1.);
-  EXPECT_EQ(
-      ::mqt::test::errorKind([&] { return dd::getValueByIndex(gate, 1, 2, 0); }),
-      ::mqt::ErrorCategory::OutOfRange);
+  EXPECT_EQ(::mqt::test::errorKind(
+                [&] { return dd::getValueByIndex(gate, 1, 2, 0); }),
+            ::mqt::ErrorCategory::OutOfRange);
   EXPECT_EQ(::mqt::test::errorKind(
                 [&] { return dd::getValueByIndex(mEdge::one(), 1, 0, 2); }),
             ::mqt::ErrorCategory::OutOfRange);
@@ -302,7 +303,8 @@ TEST(MatrixFunctionality, GetValueByPathTerminal) {
 }
 
 TEST(MatrixFunctionality, GetValueByIndexTerminal) {
-  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(mEdge::zero(), 0, 0, 0)), 0.);
+  EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(mEdge::zero(), 0, 0, 0)),
+            0.);
   EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(mEdge::one(), 0, 0, 0)), 1.);
 }
 
@@ -450,7 +452,8 @@ TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
   // clang-format on
 
   const auto matDD = ::mqt::test::value(dd->makeDDFromMatrix(mat));
-  const auto matSparse = dd::getSparseMatrix(matDD, dd->qubits(), std::sqrt(0.1));
+  const auto matSparse =
+      dd::getSparseMatrix(matDD, dd->qubits(), std::sqrt(0.1));
   const auto matDense = dd::getMatrix(matDD, dd->qubits());
   for (const auto& [index, value] : matSparse) {
     const auto val = matDense.at(index.first).at(index.second);
