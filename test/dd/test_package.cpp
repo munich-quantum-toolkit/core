@@ -32,6 +32,8 @@
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -375,9 +377,20 @@ TEST(DDPackageTest, CorruptedBellState) {
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
   bellState.w = dd->cn.lookup(0.5, 0);
-  // prints a warning
   std::mt19937_64 mt; // NOLINT(cert-msc51-cpp)
-  std::cout << ::mqt::test::value(dd->measureAll(bellState, false, mt)) << "\n";
+  std::vector<mqt::Diagnostic> diagnostics;
+  {
+    const mqt::ScopedDiagnosticHandler capture(
+        [&](const mqt::Diagnostic& diagnostic) {
+          diagnostics.push_back(diagnostic);
+          return mlir::success();
+        });
+    EXPECT_EQ(::mqt::test::value(dd->measureAll(bellState, false, mt)).size(),
+              2);
+  }
+  ASSERT_EQ(diagnostics.size(), 1);
+  EXPECT_EQ(diagnostics.front().severity, mqt::DiagnosticSeverity::Warning);
+  EXPECT_EQ(diagnostics.front().category, mqt::ErrorCategory::Numerical);
 
   bellState.w = Complex::zero();
 

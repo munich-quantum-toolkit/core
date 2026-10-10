@@ -1,8 +1,8 @@
 # Exception-free Core APIs
 
-Status: in progress. Native and Python integration is validated against main
-`81c570c68`. The [audit recommendations](../audits/exception-free-rebase.md)
-remain unapplied; platform and performance acceptance remain open.
+Status: rebased and locally validated on main `d3fbd39e0`. The reassessed
+[audit findings](../audits/exception-free-rebase.md) are addressed. Result
+handling reuses invariants established at the owning boundary.
 
 ## Contract
 
@@ -15,13 +15,11 @@ implementation. See
 [native error handling](../../docs/cpp_api.md#handle-native-errors).
 
 Standalone driver and device builds embed diagnostic support. QDMI C interfaces
-carry status codes and use local logging. Main now keeps the driver
-implementation private. Its optional diagnostic-output parameters remain for
-tests; the [rebase audit](../audits/exception-free-rebase.md) recommends
-removing that plumbing. Keep C-status conversion at each runtime boundary. Do
-not pass `llvm::Error` between independently embedded, hidden LLVM support
-archives: their error class identities differ, and consuming such an error can
-abort.
+carry status codes and use local logging. Private driver APIs and their static
+tests use scoped diagnostics without separate error-output parameters. Keep
+C-status conversion at each runtime boundary. Do not pass `llvm::Error` between
+independently embedded, hidden LLVM support archives: their error class
+identities differ, and consuming such an error can abort.
 
 Preserve C++20, Python APIs, QDMI statuses, and result semantics. Private JSON
 translation units catch dependency exceptions and parse valid input once,
@@ -66,19 +64,22 @@ SIGALRM handler and may reap another child on timeout.
 
 ## Validation
 
-On Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
+Current checks on Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
 
-- `cmake --build --preset release` and `ctest --preset release`: 4,020 native
+- `cmake --build --preset release` and `ctest --preset release`: 4,023 native
   tests pass; `ScQDMIJobSpecificationTest.QueryJobId` is the one expected skip.
 - `uv run --no-sync pytest -n 0 test/python`: all 1,966 tests pass, including
   QDMI, Qiskit, MLIR, and QIR-runner integration.
 - `uvx nox -s stubs`: passes with no generated stub changes.
-- `uvx nox -s cpp-lint`: all 178 changed C++ files pass whole-file checks with
-  clang-tidy 23.1.2.
-- Installed Development consumers build and run with GCC and Clang, exercising
-  DD state extraction and diagnostic capture.
-- `uvx nox -s lint` and `uvx nox --non-interactive -s docs`: pass, including
-  executable examples and internal documentation links.
+- `uvx nox -s lint`: passes.
+- `uvx nox --non-interactive -s docs`: passes, including executable examples and
+  internal documentation links.
+- `uvx nox -s cpp-lint`: checked all 179 changed C++ files. Fixed its two
+  include diagnostics and rechecked both complete source files with the same
+  clang-tidy 23.1.2 configuration; no source findings remain.
+
+Installed Development consumers passed with GCC and Clang before this cleanup;
+those probes have not been repeated.
 
 Windows/macOS packaging and hosted checks for the published revision remain
 unverified. No new packaging test framework is introduced here.

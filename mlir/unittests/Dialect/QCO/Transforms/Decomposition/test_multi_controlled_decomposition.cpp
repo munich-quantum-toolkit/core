@@ -1007,9 +1007,8 @@ TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD = ::mqt::test::value(
-      makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
-                 {1, 2}, {{0}}));
+  const auto referenceDD = ::mqt::test::value(makeGateDD(
+      *dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, {1, 2}, {{0}}));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }
@@ -1035,9 +1034,8 @@ TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD = ::mqt::test::value(
-      makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
-                 {2, 3}, {{0}, {1}}));
+  const auto referenceDD = ::mqt::test::value(makeGateDD(
+      *dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, {2, 3}, {{0}, {1}}));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }

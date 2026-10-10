@@ -40,7 +40,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -692,9 +691,14 @@ mlir::FailureOr<std::string> Package::measureAll(vEdge& rootEdge,
           "Numerical instabilities led to a 0-vector! Abort simulation!",
           ::mqt::ErrorCategory::Numerical);
     }
-    std::cerr << "WARNING in MAll: numerical instability occurred during "
-                 "simulation: |alpha|^2 + |beta|^2 = "
-              << ComplexNumbers::mag2(rootEdge.w) << ", but should be 1!\n";
+    mqt::emitDiagnostic({
+        .message =
+            "Numerical instability during measurement: squared state norm is " +
+            std::to_string(ComplexNumbers::mag2(rootEdge.w)) +
+            ", but should be 1.",
+        .category = mqt::ErrorCategory::Numerical,
+        .severity = mqt::DiagnosticSeverity::Warning,
+    });
   }
 
   if (rootEdge.isTerminal()) {

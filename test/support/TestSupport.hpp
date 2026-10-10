@@ -16,7 +16,6 @@
 
 #include "mlir/Support/LogicalResult.h"
 
-#include <concepts>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -54,21 +53,10 @@ template <class Result> auto value(Result result) {
 
 template <class Function>
 std::optional<Diagnostic> diagnostic(Function&& function) {
-  if constexpr (std::invocable<Function, Diagnostic*>) {
-    Diagnostic error;
-    const auto result = std::invoke(std::forward<Function>(function), &error);
-    if (failed(result)) {
-      EXPECT_FALSE(error.message.empty());
-      return error;
-    }
-    EXPECT_TRUE(error.message.empty());
-    return std::nullopt;
-  } else {
-    DiagnosticCapture capture;
-    auto const result = std::invoke(std::forward<Function>(function));
-    EXPECT_EQ(failed(result), capture.error.has_value());
-    return std::move(capture.error);
-  }
+  DiagnosticCapture capture;
+  auto const result = std::invoke(std::forward<Function>(function));
+  EXPECT_EQ(failed(result), capture.error.has_value());
+  return std::move(capture.error);
 }
 template <class Function> std::string errorMessage(Function&& function) {
   auto error = diagnostic(std::forward<Function>(function));

@@ -179,7 +179,7 @@ ModularMultiplier::evaluate(const Counts& counts) const {
   size_t totalShots = 0;
   size_t successShots = 0;
   auto result = detail::evaluate(
-      output_, counts, [&](const std::string_view outcome, const size_t count) {
+      counts, [&](const std::string_view outcome, const size_t count) {
         auto reference = probability(outcome);
         totalShots += count;
         if (mlir::succeeded(reference) && *reference > 0.) {
@@ -190,7 +190,7 @@ ModularMultiplier::evaluate(const Counts& counts) const {
   if (mlir::failed(result)) {
     return mlir::failure();
   }
-  (*result).successProbability =
+  result->successProbability =
       static_cast<double>(successShots) / static_cast<double>(totalShots);
   return result;
 }

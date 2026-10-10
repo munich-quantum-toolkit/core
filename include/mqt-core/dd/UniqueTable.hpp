@@ -64,7 +64,8 @@ public:
 
   /// Validate capacities and create a table.
   ///
-  /// The manager must allocate the node type used in lookup and outlive the table.
+  /// The manager must allocate the node type used in lookup and outlive the
+  /// table.
   [[nodiscard]] static mlir::FailureOr<UniqueTable>
   create(MemoryManager& manager, const UniqueTableConfig& config);
 

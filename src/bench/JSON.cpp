@@ -72,7 +72,9 @@ template <class Benchmark> struct BenchmarkMetadata;
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
   [[nodiscard]] mlir::FailureOr<std::string> evaluate##TYPE(                   \
       std::string_view manifest, std::string_view source,                      \
-      const Counts& counts);
+      const Counts& counts);                                                   \
+  [[nodiscard]] mlir::FailureOr<TYPE> parse##TYPE##Parameters(                 \
+      const Json& parameters, std::string_view source);
 #include "bench/BenchmarkFamilies.inc"
 
 using InstanceSpecificationSchemaFunction = Json (*)();
@@ -85,25 +87,23 @@ struct RegistryEntry {
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
-  mlir::FailureOr<BenchmarkInstance> (*parse)(std::string_view,
-                                              std::string_view);
+  mlir::FailureOr<BenchmarkInstance> (*parse)(const Json&, std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  RegistryEntry{                                                               \
-      .id = (ID),                                                              \
-      .definitionVersion = (DEFINITION_VERSION),                               \
-      .instanceSpecificationSchema = STEM##InstanceSpecificationSchema,        \
-      .evaluate = evaluate##TYPE,                                              \
-      .parse =                                                                 \
-          +[](std::string_view json,                                           \
-              std::string_view source) -> mlir::FailureOr<BenchmarkInstance> { \
-        auto result = STEM##FromInstanceSpecificationJSON(json, source);       \
-        if (mlir::failed(result)) {                                            \
-          return mlir::failure();                                              \
-        }                                                                      \
-        return BenchmarkInstance{(*std::move(result))};                        \
-      }},
+  RegistryEntry{.id = (ID),                                                    \
+                .definitionVersion = (DEFINITION_VERSION),                     \
+                .instanceSpecificationSchema =                                 \
+                    STEM##InstanceSpecificationSchema,                         \
+                .evaluate = evaluate##TYPE,                                    \
+                .parse = +[](const Json& parameters, std::string_view source)  \
+                    -> mlir::FailureOr<BenchmarkInstance> {                    \
+                  auto result = parse##TYPE##Parameters(parameters, source);   \
+                  if (mlir::failed(result)) {                                  \
+                    return mlir::failure();                                    \
+                  }                                                            \
+                  return BenchmarkInstance{(*std::move(result))};              \
+                }},
 #include "bench/BenchmarkFamilies.inc"
 };
 static_assert(
@@ -409,7 +409,7 @@ parseBVParameters(const Json& parameters, const std::string_view source) {
     return mlir::failure();
   }
   BVOptions options{
-      .hiddenBitstring = (*hiddenBitstringValue),
+      .hiddenBitstring = std::move(*hiddenBitstringValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
@@ -497,7 +497,7 @@ parseModularMultiplierParameters(const Json& parameters,
     if (mlir::failed(controlValue)) {
       return mlir::failure();
     }
-    control = (*controlValue);
+    control = std::move(*controlValue);
   }
   if (control.size() != 1U) {
     return fail(source, "$/parameters/control", "must be '0', '1', or '+'");
@@ -533,9 +533,9 @@ parseModularMultiplierParameters(const Json& parameters,
   }
   return constructBenchmark(source, [&] {
     return ModularMultiplier::create({
-        .multiplier = (*multiplierValue),
-        .modulus = (*modulusValue),
-        .multiplicand = (*multiplicandValue),
+        .multiplier = std::move(*multiplierValue),
+        .modulus = std::move(*modulusValue),
+        .multiplicand = std::move(*multiplicandValue),
         .control = control.front(),
     });
   });
@@ -611,7 +611,7 @@ parseGroverParameters(const Json& parameters, const std::string_view source) {
     return mlir::failure();
   }
   GroverOptions options{
-      .markedBitstring = (*markedBitstringValue),
+      .markedBitstring = std::move(*markedBitstringValue),
   };
   if (const auto iterations = parameters.find("iterations");
       iterations != parameters.end()) {
@@ -723,8 +723,8 @@ parseQFTAdderParameters(const Json& parameters, const std::string_view source) {
     return mlir::failure();
   }
   QFTAdderOptions options{
-      .addend = (*addendValue),
-      .accumulator = (*accumulatorValue),
+      .addend = std::move(*addendValue),
+      .accumulator = std::move(*accumulatorValue),
   };
   if (const auto it = parameters.find("method"); it != parameters.end()) {
     auto methodValue = stringValue(*it, source, "$/parameters/method");
@@ -1992,23 +1992,24 @@ evaluationToJSON(std::string_view caseIdValue, size_t shots,
 mlir::FailureOr<ParsedBenchmark>
 parseInstanceSpecificationJSON(const std::string_view json,
                                const std::string_view source) {
-  auto id = benchmarkIdFromInstanceSpecificationJSON(json, source);
-  if (mlir::failed(id)) {
+  auto parsed = envelope(json, source, false);
+  if (mlir::failed(parsed)) {
     return mlir::failure();
   }
-  auto instance = findBenchmark((*id))->parse(json, source);
+  const auto& root = *parsed;
+  const auto& id = root["benchmark"].get_ref<const std::string&>();
+  auto instance = findBenchmark(id)->parse(root["parameters"], source);
   if (mlir::failed(instance)) {
     return mlir::failure();
   }
   return std::visit(
       [&](auto&& benchmark) {
-        auto caseIdValue = caseId(benchmark);
-        auto manifest = toManifestJSON(benchmark);
+        const Json manifest = manifestJSON(benchmark);
         return ParsedBenchmark{
             .instance = std::forward<decltype(benchmark)>(benchmark),
-            .benchmarkId = (*std::move(id)),
-            .caseId = std::move(caseIdValue),
-            .manifestJSON = std::move(manifest),
+            .benchmarkId = id,
+            .caseId = manifest["case_id"].get<std::string>(),
+            .manifestJSON = manifest.dump(),
         };
       },
       (*std::move(instance)));

@@ -15,8 +15,6 @@
 
 #include "qdmi/common/Common.hpp"
 
-#include "support/Diagnostics.hpp"
-
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
@@ -182,11 +180,8 @@ class LoadedDeviceAPI final : public DeviceAPI {
 
 public:
   /// Load and initialize a provider, releasing partial resources on failure.
-  /// If supplied, error receives the first failure diagnostic from this
-  /// library.
   [[nodiscard]] static mlir::FailureOr<std::shared_ptr<LoadedDeviceAPI>>
-  create(const std::string& libName, const std::string& prefix,
-         mqt::Diagnostic* error = nullptr);
+  create(const std::string& libName, const std::string& prefix);
 
   /// Destructor for the LoadedDeviceAPI.
   ///
@@ -232,13 +227,11 @@ public:
   /// Open a device session and its children.
   ///
   /// Failure releases partial sessions.
-  /// If supplied, error receives the first failure diagnostic from this
-  /// library.
   [[nodiscard]] static mlir::FailureOr<std::unique_ptr<QDMI_Device_impl_d>>
   create(std::shared_ptr<qdmi::DeviceAPI> library,
          const qdmi::DeviceSessionConfig& config = {},
          QDMI_Child_Device childDevice = nullptr, std::string id = {},
-         bool strict = false, mqt::Diagnostic* error = nullptr);
+         bool strict = false);
 
   /// Destructor for the QDMI device.
   ///
@@ -493,25 +486,20 @@ public:
   ///
   /// @param definition The definition to validate and store.
   /// @param replace Whether an existing unopened definition may be replaced.
-  /// @param error Optional output for the first failure; unchanged on success.
-  /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete or its
-  /// ID is already registered. Returns an error If replacing an already opened
-  /// definition.
-  [[nodiscard]] mlir::LogicalResult
-  registerDevice(DeviceDefinition definition, bool replace = false,
-                 mqt::Diagnostic* error = nullptr);
+  /// Reports QDMI_ERROR_INVALIDARGUMENT if the definition is incomplete or its
+  /// ID is already registered. Replacing an opened definition also fails.
+  [[nodiscard]] mlir::LogicalResult registerDevice(DeviceDefinition definition,
+                                                   bool replace = false);
 
   /// Registers a device definition unless its ID is already present.
   ///
   /// @param definition The definition to validate and store.
-  /// @param error Optional output for the first failure; unchanged on success.
   /// @returns Whether the definition was inserted.
-  /// Returns QDMI_ERROR_INVALIDARGUMENT If the definition is incomplete.
+  /// Reports QDMI_ERROR_INVALIDARGUMENT if the definition is incomplete.
   ///
   /// Existing and explicitly disabled IDs are not inserted. The
   /// complete definition is validated before checking for either condition.
-  auto registerDeviceIfAbsent(DeviceDefinition definition,
-                              mqt::Diagnostic* error = nullptr)
+  auto registerDeviceIfAbsent(DeviceDefinition definition)
       -> mlir::FailureOr<bool>;
 
   /// Lists the stable IDs of all registered devices.
@@ -520,16 +508,15 @@ public:
   ///
   /// This query includes runtime registrations and does not load device
   /// libraries or expose their definitions.
-  [[nodiscard]] auto registeredDeviceIds(mqt::Diagnostic* error = nullptr)
+  [[nodiscard]] auto registeredDeviceIds()
       -> mlir::FailureOr<std::vector<std::string>>;
 
   /// Opens the registered device with the given stable ID.
   ///
   /// @returns The existing device handle when the ID is already open.
-  /// Returns QDMI_ERROR_NOTFOUND If the ID is unknown.
-  /// Returns an error If loading or session initialization fails.
-  auto open(std::string_view id, mqt::Diagnostic* error = nullptr)
-      -> mlir::FailureOr<QDMI_Device>;
+  /// Reports QDMI_ERROR_NOTFOUND if the ID is unknown.
+  /// Loading or session initialization can also fail.
+  auto open(std::string_view id) -> mlir::FailureOr<QDMI_Device>;
 
   /// Allocates a new session.
   ///

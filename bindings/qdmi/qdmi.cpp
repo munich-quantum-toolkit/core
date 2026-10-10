@@ -177,26 +177,18 @@ qdmi::SessionConfig makeDriverSessionConfig(
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
-  const auto returnValue =
-      []<typename T>(std::optional<T> value) -> nb::object {
-    if (!value.has_value()) {
-      return nb::none();
-    }
-    return nb::cast(std::move(*value));
-  };
-
   const auto builtins = nb::builtins();
   if (valueType.is(builtins["str"])) {
-    return returnValue(query.template operator()<std::string>());
+    return nb::cast(query.template operator()<std::string>());
   }
   if (valueType.is(builtins["bool"])) {
-    return returnValue(query.template operator()<bool>());
+    return nb::cast(query.template operator()<bool>());
   }
   if (valueType.is(builtins["int"])) {
-    return returnValue(query.template operator()<int>());
+    return nb::cast(query.template operator()<int>());
   }
   if (valueType.is(builtins["float"])) {
-    return returnValue(query.template operator()<double>());
+    return nb::cast(query.template operator()<double>());
   }
   if (valueType.is(builtins["bytes"])) {
     const auto value = query.template operator()<std::vector<std::byte>>();
@@ -726,15 +718,11 @@ when the custom slot is unsupported.)pb");
       "Return no job only when the device rejects the program before "
       "submission.");
 
-  device.def(
-      "retrieve_job_by_id",
-      [](const qdmi::Device& self, const std::string& jobId) {
-        const nb::gil_scoped_release release;
-        return ::mqt::bindings::invoke(
-            [&] { return self.retrieveJobById(jobId); });
-      },
-      "job_id"_a, nb::rv_policy::reference_internal,
-      "Retrieves an existing job by its device-provided ID.");
+  device.def("retrieve_job_by_id",
+             bindings::bindResult(&qdmi::Device::retrieveJobById), "job_id"_a,
+             nb::rv_policy::reference_internal,
+             nb::call_guard<nb::gil_scoped_release>(),
+             "Retrieves an existing job by its device-provided ID.");
 
   device.def("__repr__", [](const qdmi::Device& dev) {
     const nb::gil_scoped_release release;

@@ -10,3 +10,10 @@ add_library(MQTCoreTestSupport INTERFACE)
 target_include_directories(MQTCoreTestSupport INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(MQTCoreTestSupport INTERFACE MQT::CoreSupport GTest::gtest)
 package_add_test(mqt-core-support-test MQT::CoreSupport test_diagnostics.cpp)
+
+# Keep allocations in the executable so replacement operator new also covers DLL builds.
+package_add_test(
+  mqt-core-support-allocation-test MQT::CoreSupport test_diagnostic_allocation.cpp
+  ${PROJECT_SOURCE_DIR}/src/support/Diagnostics.cpp
+  ${PROJECT_SOURCE_DIR}/src/support/DiagnosticFormatting.cpp)
+target_compile_definitions(mqt-core-support-allocation-test PRIVATE MQT_CORE_SUPPORT_STATIC_DEFINE)

@@ -76,9 +76,12 @@ auto invoke(Function&& function, Args&&... args) {
     }
   }();
   if (failedResult) {
-    raiseDiagnostic(error.value_or(Diagnostic{
+    if (error) {
+      raiseDiagnostic(*error);
+    }
+    raiseDiagnostic({
         .message = "Compiler action failed; see diagnostics for details.",
-    }));
+    });
   }
   if constexpr (requires { typename decltype(result)::value_type; }) {
     return std::move(*result);

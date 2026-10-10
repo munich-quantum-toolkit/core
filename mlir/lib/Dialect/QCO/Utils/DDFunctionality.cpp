@@ -373,7 +373,6 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
 
 using StandardGateFactory = FailureOr<dd::MatrixDD> (*)(dd::Package&,
                                                         ArrayRef<double>,
-                                                        size_t,
                                                         ArrayRef<dd::Qubit>,
                                                         const dd::Controls&);
 
@@ -385,16 +384,15 @@ struct DecodedStandardGate {
 } // namespace
 
 template <typename GateOp, size_t NumParams>
-static auto buildStandardGateDD(dd::Package& package,
-                                ArrayRef<double> parameters, size_t numQubits,
-                                ArrayRef<dd::Qubit> targets,
-                                const dd::Controls& controls)
+static auto
+buildStandardGateDD(dd::Package& package, ArrayRef<double> parameters,
+                    ArrayRef<dd::Qubit> targets, const dd::Controls& controls)
     -> FailureOr<dd::MatrixDD> {
   assert(parameters.size() == NumParams);
   std::array<double, NumParams> values{};
   std::copy_n(parameters.begin(), NumParams, values.begin());
-  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), numQubits,
-                    targets, controls);
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(values), targets,
+                    controls);
 }
 
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
@@ -478,9 +476,8 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  auto gate = diagnoseDD(op, [&] {
-    return makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires);
-  });
+  auto gate =
+      diagnoseDD(op, [&] { return makeGateDD(*walk.dd, local, wires); });
   if (failed(gate)) {
     return failure();
   }
@@ -503,8 +500,7 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   }
   const auto build = [&] {
     return diagnoseDD(unitary, [&] {
-      return gate.build(*walk.dd, gate.parameters, walk.qubits->numQubits,
-                        *targets, controls);
+      return gate.build(*walk.dd, gate.parameters, *targets, controls);
     });
   };
   FailureOr<dd::MatrixDD> matrix = failure();
@@ -1741,8 +1737,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           }
           if (*bit == '1') {
             auto gate = diagnoseDD(resetOp, [&] {
-              return makeGateDD(*walk.dd, XOp::getUnitaryMatrix(),
-                                walk.qubits->numQubits, {*q});
+              return makeGateDD(*walk.dd, XOp::getUnitaryMatrix(), {*q});
             });
             if (failed(gate)) {
               return failure();
@@ -2511,10 +2506,8 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           branch.qubits.bind(measure.getQubitOut(), *q);
         } else {
           if (!measuredZero) {
-            branch.state =
-                dd.applyOperation(*makeGateDD(dd, XOp::getUnitaryMatrix(),
-                                              branch.qubits.numQubits, {*q}),
-                                  branch.state);
+            branch.state = dd.applyOperation(
+                *makeGateDD(dd, XOp::getUnitaryMatrix(), {*q}), branch.state);
           }
           branch.qubits.bind(reset.getQubitOut(), *q);
         }
@@ -2839,8 +2832,10 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
                               work[i].shots.end());
         }
       }
-      return allSucceeded ? FailureOr<std::map<std::string, size_t>>(counts)
-                          : FailureOr<std::map<std::string, size_t>>(failure());
+      if (!allSucceeded) {
+        return failure();
+      }
+      return counts;
     }
   }
   const auto initial = *dd::makeZeroState(prepared->qubits.numQubits, *dd);

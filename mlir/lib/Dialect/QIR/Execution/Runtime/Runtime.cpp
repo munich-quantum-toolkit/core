@@ -256,8 +256,8 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
   const auto mappedTargets = mappedAddresses.drop_front(controls.size());
   const dd::Controls mappedControls(mappedAddresses.begin(),
                                     mappedTargets.begin());
-  auto gate = mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits,
-                                    mappedTargets, mappedControls);
+  auto gate =
+      mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls);
   if (mlir::failed(gate)) {
     return mlir::failure();
   }
@@ -351,8 +351,7 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> mlir::LogicalResult {
     }
     if (*bit == '1') {
       const std::array targetArray{mapped};
-      auto gate = mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits,
-                                        targetArray);
+      auto gate = mlir::qco::makeGateDD(*qState.dd, matrix, targetArray);
       if (mlir::failed(gate)) {
         return mlir::failure();
       }
@@ -486,8 +485,7 @@ auto Runtime::takeState() -> QState {
     while (qubitPermutation[q] != q) {
       const auto other = qubitPermutation[q];
       const std::array targets{other, qubitPermutation[other]};
-      auto gate =
-          mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, targets);
+      auto gate = mlir::qco::makeGateDD(*qState.dd, matrix, targets);
       assert(mlir::succeeded(gate));
       qState.edge = qState.dd->applyOperation(*gate, qState.edge);
       std::swap(qubitPermutation[q], qubitPermutation[other]);

@@ -13,7 +13,6 @@
 #include "support/Diagnostics.hpp"
 
 #include <format>
-#include <string>
 #include <string_view>
 
 namespace mqt::diagnostics::detail {
@@ -26,11 +25,7 @@ void emitFormatted(DiagnosticSeverity level, std::string_view format,
         .severity = level,
     });
   } catch (...) {
-    emitDiagnostic({
-        .message = std::string(format),
-        .category = ErrorCategory::Runtime,
-        .severity = level,
-    });
+    emitToStderr(level, format);
   }
 }
 } // namespace mqt::diagnostics::detail

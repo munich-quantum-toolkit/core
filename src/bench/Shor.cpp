@@ -158,13 +158,16 @@ const ShorOptions& Shor::options() const noexcept { return options_; }
 const Output& Shor::output() const noexcept { return output_; }
 
 mlir::FailureOr<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
-  const auto total = detail::validateCounts(output_, counts);
+  const auto total = detail::countShots(counts);
   if (mlir::failed(total)) {
     return mlir::failure();
   }
   size_t successes = 0;
   ShorEvaluation result;
   for (const auto& [outcome, count] : counts) {
+    if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
+      return mlir::failure();
+    }
     if (count == 0) {
       continue;
     }

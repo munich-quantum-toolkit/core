@@ -161,8 +161,8 @@ referenceGate(dd::Targets targets,
 template <typename GateOp>
 [[nodiscard]] static dd::MatrixDD
 referenceGateDD(dd::Package& package, llvm::ArrayRef<dd::Qubit> targets) {
-  return ::mqt::test::value(makeGateDD(package, GateOp::getUnitaryMatrix(),
-                                       package.qubits(), targets));
+  return ::mqt::test::value(
+      makeGateDD(package, GateOp::getUnitaryMatrix(), targets));
 }
 
 namespace {
@@ -205,7 +205,7 @@ protected:
     auto referenceSim = ::mqt::test::value(dd::makeZeroState(numQubits, *dd));
     for (const auto& gate : gates) {
       const auto operation = ::mqt::test::value(
-          makeGateDD(*dd, gate.matrix, numQubits, gate.targets, gate.controls));
+          makeGateDD(*dd, gate.matrix, gate.targets, gate.controls));
       referenceFn = dd->applyOperation(operation, referenceFn);
       referenceSim = dd->applyOperation(operation, referenceSim);
     }
@@ -339,8 +339,8 @@ TEST(DDAdapterTest, MatchesRawSingleQubitConstructor) {
   auto packageOwner = ::mqt::test::value(dd::Package::create(numQubits));
   auto& package = *packageOwner;
 
-  EXPECT_EQ(::mqt::test::value(makeGateDD(package, toDynamicMatrix(literal),
-                                          numQubits, {2}, controls)),
+  EXPECT_EQ(::mqt::test::value(
+                makeGateDD(package, toDynamicMatrix(literal), {2}, controls)),
             ::mqt::test::value(package.makeGateDD(raw, controls, 2)));
 }
 
@@ -355,7 +355,7 @@ TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
   for (const std::array<dd::Qubit, 2> targets :
        {std::array<dd::Qubit, 2>{3, 1}, {1, 3}}) {
     EXPECT_EQ(::mqt::test::value(makeGateDD(package, toDynamicMatrix(literal),
-                                            numQubits, targets, controls)),
+                                            targets, controls)),
               ::mqt::test::value(package.makeTwoQubitGateDD(
                   literal, controls, targets[0], targets[1])));
   }
@@ -372,7 +372,7 @@ TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
   for (const std::array<dd::Qubit, 3> targets :
        {std::array<dd::Qubit, 3>{4, 1, 3}, {1, 3, 4}}) {
     EXPECT_EQ(::mqt::test::value(makeGateDD(package, toDynamicMatrix(literal),
-                                            numQubits, targets, controls)),
+                                            targets, controls)),
               ::mqt::test::value(package.makeThreeQubitGateDD(
                   literal, controls, targets[0], targets[1], targets[2])));
   }
@@ -388,8 +388,8 @@ TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
   auto packageOwner = ::mqt::test::value(dd::Package::create(numQubits));
   auto& package = *packageOwner;
 
-  EXPECT_EQ(::mqt::test::value(makeGateDD(package, toDynamicMatrix(literal),
-                                          numQubits, targets)),
+  EXPECT_EQ(::mqt::test::value(
+                makeGateDD(package, toDynamicMatrix(literal), targets)),
             ::mqt::test::value(package.makeDDFromMatrix(
                 embedPermutation(numQubits, targets, rowForColumn))));
 }
@@ -410,8 +410,8 @@ TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
            std::array<dd::Qubit, 4>{4, 1, 5, 2},
        }) {
     const auto matrix =
-        dd::getMatrix(::mqt::test::value(makeGateDD(
-                          package, toDynamicMatrix(local), numQubits, targets)),
+        dd::getMatrix(::mqt::test::value(
+                          makeGateDD(package, toDynamicMatrix(local), targets)),
                       numQubits);
     size_t targetMask = 0;
     for (const auto wire : targets) {
@@ -436,17 +436,16 @@ TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
 }
 
 TEST(DDAdapterTest, PreservesScalarMatricesWithAndWithoutIdleWires) {
-  auto packageOwner = ::mqt::test::value(dd::Package::create(4));
-  auto& package = *packageOwner;
   for (const size_t numQubits : {0U, 4U}) {
+    auto packageOwner = ::mqt::test::value(dd::Package::create(numQubits));
+    auto& package = *packageOwner;
     for (const auto scalar : {
              std::complex<double>{},
              std::polar(1., 0.37),
              std::complex<double>{1e-15, 0.},
          }) {
       const std::array matrix{scalar};
-      EXPECT_EQ(::mqt::test::value(
-                    makeGateDD(package, std::span{matrix}, numQubits, {})),
+      EXPECT_EQ(::mqt::test::value(makeGateDD(package, std::span{matrix}, {})),
                 dd::mEdge::terminal(package.cn.lookup(scalar)));
     }
   }

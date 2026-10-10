@@ -16,7 +16,6 @@
 #include "Driver.hpp"
 #include "JSON.hpp"
 #include "SessionConfig.hpp"
-#include "support/Diagnostics.hpp"
 
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
@@ -678,9 +677,7 @@ void rollbackDeviceManifestFreeze() {
   state.frozen = false;
 }
 
-mlir::FailureOr<DeviceRegistry>
-DeviceRegistry::discover(mqt::Diagnostic* error) {
-  const mqt::ScopedDiagnosticHandler capture(error);
+mlir::FailureOr<DeviceRegistry> DeviceRegistry::discover() {
   std::error_code filesystemError;
   const auto cwd = std::filesystem::current_path(filesystemError);
   if (filesystemError) {

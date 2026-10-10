@@ -105,6 +105,10 @@ TEST(Shor, RejectsInvalidCounts) {
                 [&] { return benchmark.evaluate({{"000000000x", 1}}); }),
             ::mqt::ErrorCategory::InvalidArgument);
   EXPECT_EQ(::mqt::test::errorKind([&] {
+              return benchmark.evaluate({{"0000000000", 1}, {"000000000x", 0}});
+            }),
+            ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(::mqt::test::errorKind([&] {
               return benchmark.evaluate(
                   {{"0000000000", std::numeric_limits<size_t>::max()},
                    {"0010101011", 1}});

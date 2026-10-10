@@ -18,33 +18,36 @@
 
 namespace mqt::diagnostics {
 namespace detail {
+void emitToStderr(DiagnosticSeverity level, std::string_view message) noexcept;
 MQT_CORE_SUPPORT_EXPORT void emitFormatted(DiagnosticSeverity level,
                                            std::string_view format,
                                            std::format_args args) noexcept;
-}
+} // namespace detail
 
-/// Formats and writes one best-effort diagnostic to standard error.
+/// Formats and emits one best-effort diagnostic.
 ///
-/// Writes the unformatted format string if formatting fails.
+/// Writes the unformatted format string directly to stderr if formatting fails.
 template <class... Args>
 void emit(const DiagnosticSeverity level,
+          // make_format_args stores references and requires lvalues.
+          // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
           const std::format_string<Args...> format, Args&&... args) noexcept {
   detail::emitFormatted(level, format.get(), std::make_format_args(args...));
 }
 
-/// Formats and writes an informational diagnostic to standard error.
+/// Formats and emits an informational diagnostic.
 template <class... Args>
 void info(const std::format_string<Args...> format, Args&&... args) noexcept {
   emit(DiagnosticSeverity::Info, format, std::forward<Args>(args)...);
 }
 
-/// Formats and writes a warning diagnostic to standard error.
+/// Formats and emits a warning diagnostic.
 template <class... Args>
 void warn(const std::format_string<Args...> format, Args&&... args) noexcept {
   emit(DiagnosticSeverity::Warning, format, std::forward<Args>(args)...);
 }
 
-/// Formats and writes an error diagnostic to standard error.
+/// Formats and emits an error diagnostic.
 template <class... Args>
 void error(const std::format_string<Args...> format, Args&&... args) noexcept {
   emit(DiagnosticSeverity::Error, format, std::forward<Args>(args)...);

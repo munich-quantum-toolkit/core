@@ -39,8 +39,7 @@ inline mlir::LogicalResult validateOutcome(const std::string_view outcome,
   return mlir::success();
 }
 
-[[nodiscard]] inline mlir::FailureOr<size_t>
-validateCounts(const Output& output, const Counts& counts) {
+[[nodiscard]] inline mlir::FailureOr<size_t> countShots(const Counts& counts) {
   if (counts.empty()) {
     return ::mqt::emitError("counts must not be empty",
                             ::mqt::ErrorCategory::InvalidArgument);
@@ -48,9 +47,6 @@ validateCounts(const Output& output, const Counts& counts) {
 
   size_t totalShots = 0;
   for (const auto& [outcome, count] : counts) {
-    if (mlir::failed(validateOutcome(outcome, output.width))) {
-      return mlir::failure();
-    }
     if (count > std::numeric_limits<size_t>::max() - totalShots) {
       return ::mqt::emitError("total shot count exceeds size_t",
                               ::mqt::ErrorCategory::Overflow);
@@ -67,10 +63,9 @@ validateCounts(const Output& output, const Counts& counts) {
 
 template <class Probability>
 [[nodiscard]] mlir::FailureOr<Evaluation>
-evaluate(const Output& output, const Counts& counts,
-         const Probability& probability,
+evaluate(const Counts& counts, const Probability& probability,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
-  const auto totalShots = validateCounts(output, counts);
+  const auto totalShots = countShots(counts);
   if (mlir::failed(totalShots)) {
     return mlir::failure();
   }
@@ -89,7 +84,7 @@ evaluate(const Output& output, const Counts& counts,
     if (mlir::failed(reference)) {
       return mlir::failure();
     }
-    const auto ideal = static_cast<long double>((*reference));
+    const auto ideal = static_cast<long double>(*reference);
     const auto observed =
         static_cast<long double>(count) / static_cast<long double>(*totalShots);
     observedDistance += std::abs(observed - ideal);
@@ -118,7 +113,7 @@ template <class Benchmark>
 evaluate(const Benchmark& benchmark, const Counts& counts,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   return evaluate(
-      benchmark.output(), counts,
+      counts,
       [&benchmark](const std::string_view outcome, size_t) {
         return benchmark.probability(outcome);
       },

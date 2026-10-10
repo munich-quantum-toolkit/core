@@ -10,7 +10,6 @@
 
 #include "DeviceRegistry.hpp"
 #include "Driver.hpp"
-#include "support/Diagnostics.hpp"
 #include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
@@ -105,9 +104,8 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
         {"id": "duplicate", "library": "two", "prefix": "TWO"}
       ]}
     })");
-    EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                return qdmi::detail::DeviceRegistry::discover(error);
-              }),
+    EXPECT_EQ(::mqt::test::errorStatus(
+                  [&] { return qdmi::detail::DeviceRegistry::discover(); }),
               QDMI_ERROR_INVALIDARGUMENT);
   }
   {
@@ -115,9 +113,8 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
       "schema-version": 1,
       "qdmi": {"device-config": {"model": "unused"}}
     })");
-    EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                return qdmi::detail::DeviceRegistry::discover(error);
-              }),
+    EXPECT_EQ(::mqt::test::errorStatus(
+                  [&] { return qdmi::detail::DeviceRegistry::discover(); }),
               QDMI_ERROR_INVALIDARGUMENT);
   }
 }
@@ -139,8 +136,8 @@ TEST(DeviceRegistry, RejectsInvalidCStringAndPathFields) {
     SCOPED_TRACE(document);
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
                                                document);
-    EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                  return qdmi::detail::DeviceRegistry::discover(error);
+    EXPECT_TRUE(::mqt::test::errorStatus([&] {
+                  return qdmi::detail::DeviceRegistry::discover();
                 }).has_value());
   }
 }
@@ -271,9 +268,8 @@ TEST(DeviceRegistry, RejectsInvalidDeviceConfigurationSources) {
         std::string(source) + "}}]}}";
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
                                                json);
-    EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                return qdmi::detail::DeviceRegistry::discover(error);
-              }),
+    EXPECT_EQ(::mqt::test::errorStatus(
+                  [&] { return qdmi::detail::DeviceRegistry::discover(); }),
               QDMI_ERROR_INVALIDARGUMENT);
   }
 }
@@ -519,9 +515,8 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
       }) {
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
                                                document);
-    EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                return qdmi::detail::DeviceRegistry::discover(error);
-              }),
+    EXPECT_EQ(::mqt::test::errorStatus(
+                  [&] { return qdmi::detail::DeviceRegistry::discover(); }),
               QDMI_ERROR_INVALIDARGUMENT);
   }
 }
@@ -547,17 +542,16 @@ TEST(DeviceRegistry, ReportsInvalidExplicitJson) {
     const ScopedEnvironmentVariable configFile(
         "MQT_CORE_QDMI_CONFIG_FILE",
         (directory.path() / "missing.json").string());
-    EXPECT_TRUE(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                  return qdmi::detail::DeviceRegistry::discover(error);
+    EXPECT_TRUE(::mqt::test::errorStatus([&] {
+                  return qdmi::detail::DeviceRegistry::discover();
                 }).has_value());
   }
   {
     const auto invalid = directory.write("invalid.json", "{");
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                invalid.string());
-    EXPECT_EQ(::mqt::test::errorStatus([&](mqt::Diagnostic* error) {
-                return qdmi::detail::DeviceRegistry::discover(error);
-              }),
+    EXPECT_EQ(::mqt::test::errorStatus(
+                  [&] { return qdmi::detail::DeviceRegistry::discover(); }),
               QDMI_ERROR_INVALIDARGUMENT);
   }
 }

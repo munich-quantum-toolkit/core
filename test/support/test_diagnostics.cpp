@@ -8,12 +8,15 @@
  * Licensed under the MIT License
  */
 
+#include "support/DiagnosticFormatting.hpp"
 #include "support/Diagnostics.hpp"
 
 #include "gtest/gtest.h"
 
 #include "mlir/Support/LogicalResult.h"
 
+#include <format>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -93,32 +96,25 @@ TEST(Diagnostics, ReemissionStartsAtPreviousHandler) {
   EXPECT_EQ(message, "source: detail");
 }
 
-TEST(Diagnostics, CallerOwnedErrorKeepsFirstFailureAndForwardsWarnings) {
-  std::vector<mqt::Diagnostic> forwarded;
-  const mqt::ScopedDiagnosticHandler outer(
+TEST(Diagnostics, FormattedMessageRetainsMetadata) {
+  mqt::Diagnostic received;
+  const mqt::ScopedDiagnosticHandler handler(
       [&](const mqt::Diagnostic& diagnostic) {
-        forwarded.push_back(diagnostic);
+        received = diagnostic;
         return mlir::success();
       });
-  mqt::Diagnostic error{.message = "unchanged"};
-  {
-    const mqt::ScopedDiagnosticHandler capture(&error);
-    EXPECT_EQ(error.message, "unchanged");
-    mqt::emitDiagnostic(
-        {.message = "warning", .severity = mqt::DiagnosticSeverity::Warning});
-    std::ignore =
-        mqt::emitError("first", mqt::ErrorCategory::InvalidArgument, -42);
-    std::ignore = mqt::emitError("second");
-  }
-  EXPECT_EQ(error.message, "first");
-  EXPECT_EQ(error.category, mqt::ErrorCategory::InvalidArgument);
-  EXPECT_EQ(error.status, -42);
-  ASSERT_EQ(forwarded.size(), 1);
-  EXPECT_EQ(forwarded.front().message, "warning");
-  {
-    const mqt::ScopedDiagnosticHandler capture(nullptr);
-    std::ignore = mqt::emitError("forwarded");
-  }
-  ASSERT_EQ(forwarded.size(), 2);
-  EXPECT_EQ(forwarded.back().message, "forwarded");
+  mqt::diagnostics::warn("value {}", 42);
+  EXPECT_EQ(received.message, "value 42");
+  EXPECT_EQ(received.category, mqt::ErrorCategory::Runtime);
+  EXPECT_EQ(received.severity, mqt::DiagnosticSeverity::Warning);
+  EXPECT_FALSE(received.status.has_value());
+}
+
+TEST(Diagnostics, InvalidFormatWritesRawTextToStderr) {
+  testing::internal::CaptureStderr();
+  mqt::diagnostics::detail::emitFormatted(mqt::DiagnosticSeverity::Info,
+                                          "invalid format {",
+                                          std::make_format_args());
+  EXPECT_EQ(testing::internal::GetCapturedStderr(),
+            "[mqt-core] [info] invalid format {\n");
 }

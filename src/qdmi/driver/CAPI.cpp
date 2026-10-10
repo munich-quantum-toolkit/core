@@ -31,8 +31,8 @@ uint32_t QDMI_driver_get_client_abi_version() {
   return QDMI_CLIENT_ABI_VERSION;
 }
 
-/// The private C ABI fixes these exported symbol names.
-/// NOLINTBEGIN(readability-identifier-naming)
+// The private C ABI fixes these exported symbol names.
+// NOLINTBEGIN(readability-identifier-naming)
 extern "C" QDMI_DRIVER_EXPORT int
 MQT_CORE_QDMI_driver_add_manifest_v1(const char* const manifestPath) {
   if (manifestPath == nullptr || *manifestPath == '\0') {
@@ -115,7 +115,7 @@ MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
     return QDMI_ERROR_FATAL;
   }
 }
-/// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(readability-identifier-naming)
 
 int QDMI_session_alloc(QDMI_Session* session) {
   if (session == nullptr) {

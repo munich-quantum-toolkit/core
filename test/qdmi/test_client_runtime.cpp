@@ -18,10 +18,12 @@
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
+#include "llvm/ADT/ScopeExit.h"
+
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <memory>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,11 +46,10 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   for (const auto& path :
        {std::filesystem::relative(libraryPath), libraryPath}) {
     SCOPED_TRACE(path);
-    const std::unique_ptr<void, decltype(&dlclose)> library(
-        dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL), dlclose);
-    ASSERT_NE(library.get(), nullptr) << dlerror();
-    const auto* anchor =
-        dlsym(library.get(), "QDMI_driver_get_client_abi_version");
+    auto* library = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    ASSERT_NE(library, nullptr) << dlerror();
+    const auto close = llvm::scope_exit([&] { dlclose(library); });
+    const auto* anchor = dlsym(library, "QDMI_driver_get_client_abi_version");
     ASSERT_NE(anchor, nullptr) << dlerror();
     EXPECT_EQ(detail::moduleDirectory(anchor),
               std::filesystem::canonical(directory.path()));

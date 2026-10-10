@@ -10,6 +10,8 @@
 
 #include "support/Diagnostics.hpp"
 
+#include "support/DiagnosticFormatting.hpp"
+
 #include "mlir/Support/LogicalResult.h"
 
 #include <cassert>
@@ -18,12 +20,13 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace mqt {
 namespace {
-/// The mutable per-thread stack stays private to the library, outside DLL
-/// exports. NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+// The mutable per-thread stack stays private to the library, outside DLL
+// exports. NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 thread_local ScopedDiagnosticHandler* currentHandler = nullptr;
 } // namespace
 
@@ -32,20 +35,6 @@ ScopedDiagnosticHandler::ScopedDiagnosticHandler(
     : previous_(currentHandler), handler_(std::move(handler)) {
   currentHandler = this;
 }
-ScopedDiagnosticHandler::ScopedDiagnosticHandler(Diagnostic* error)
-    : ScopedDiagnosticHandler(
-          [error, captured = false](const Diagnostic& diagnostic) mutable {
-            if (error == nullptr ||
-                diagnostic.severity != DiagnosticSeverity::Error) {
-              return mlir::failure();
-            }
-            if (!captured) {
-              *error = diagnostic;
-              captured = true;
-            }
-            return mlir::success();
-          }) {}
-
 ScopedDiagnosticHandler::~ScopedDiagnosticHandler() {
   assert(currentHandler == this &&
          "diagnostic handlers must leave in stack order");
@@ -63,10 +52,15 @@ void emitDiagnostic(const Diagnostic& diagnostic) {
       return;
     }
   }
+  diagnostics::detail::emitToStderr(diagnostic.severity, diagnostic.message);
+}
+
+void diagnostics::detail::emitToStderr(DiagnosticSeverity level,
+                                       std::string_view message) noexcept {
   const char* severity = "error";
-  if (diagnostic.severity == DiagnosticSeverity::Warning) {
+  if (level == DiagnosticSeverity::Warning) {
     severity = "warning";
-  } else if (diagnostic.severity == DiagnosticSeverity::Info) {
+  } else if (level == DiagnosticSeverity::Info) {
     severity = "info";
   }
   static std::mutex stderrMutex;
@@ -74,7 +68,7 @@ void emitDiagnostic(const Diagnostic& diagnostic) {
   std::fputs("[mqt-core] [", stderr);
   std::fputs(severity, stderr);
   std::fputs("] ", stderr);
-  std::fwrite(diagnostic.message.data(), 1, diagnostic.message.size(), stderr);
+  std::fwrite(message.data(), 1, message.size(), stderr);
   std::fputc('\n', stderr);
   std::fflush(stderr);
 }

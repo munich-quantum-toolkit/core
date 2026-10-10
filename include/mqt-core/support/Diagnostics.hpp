@@ -29,7 +29,7 @@ enum class ErrorCategory : uint8_t {
   IO,
   Runtime,
   OutOfMemory,
-  NotSupported
+  NotSupported,
 };
 
 struct Diagnostic {
@@ -50,10 +50,6 @@ class MQT_CORE_SUPPORT_EXPORT ScopedDiagnosticHandler {
 public:
   explicit ScopedDiagnosticHandler(
       std::function<mlir::LogicalResult(const Diagnostic&)> handler);
-  /// Copy the first error into caller-owned storage and consume errors.
-  /// A null output forwards all diagnostics. Warnings always propagate.
-  /// The output is unchanged if no error is emitted.
-  explicit ScopedDiagnosticHandler(Diagnostic* error);
   ~ScopedDiagnosticHandler();
   ScopedDiagnosticHandler(const ScopedDiagnosticHandler&) = delete;
   ScopedDiagnosticHandler& operator=(const ScopedDiagnosticHandler&) = delete;

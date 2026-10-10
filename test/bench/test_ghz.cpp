@@ -104,6 +104,11 @@ TEST(GHZ, ValidatesOutcomesAndShotCounts) {
             ::mqt::ErrorCategory::InvalidArgument);
   EXPECT_EQ(::mqt::test::errorKind([&] { return ghz.probability("0x"); }),
             ::mqt::ErrorCategory::InvalidArgument);
+  for (const auto* invalid : {"0", "0x"}) {
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return ghz.evaluate({{"00", 1}, {invalid, 0}}); }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
   EXPECT_EQ(::mqt::test::errorKind([&] { return ghz.evaluate({}); }),
             ::mqt::ErrorCategory::InvalidArgument);
   EXPECT_EQ(::mqt::test::errorKind([&] { return ghz.evaluate({{"00", 0}}); }),
