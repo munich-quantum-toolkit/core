@@ -70,8 +70,8 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   const auto& phase = benchmark.options().phase;
   const auto denominator = phase.denominator();
 
-  /// Compute one exact starting residue in O(log precision). Products of
-  /// reduced uint64_t values fit in 128 bits.
+  // Compute one exact starting residue in O(log precision). Products of
+  // reduced uint64_t values fit in 128 bits.
   const llvm::APInt modulus(128, denominator);
   llvm::APInt initial(128, phase.numerator());
   llvm::APInt factor(128, 2);
@@ -85,11 +85,11 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   auto initialResidue =
       builder.intConstant(static_cast<int64_t>(initial.getZExtValue()));
 
-  /// For d=2^s*m with odd m, high powers reverse by halving and adding
-  /// ceil(d/2) when (residue>>s) is odd. Pack the lost wrap bits for powers at
-  /// most s.
+  // For d=2^s*m with odd m, high powers reverse by halving and adding
+  // ceil(d/2) when (residue>>s) is odd. Pack the lost wrap bits for powers at
+  // most s.
   const auto shift = static_cast<unsigned>(
-      std::countr_zero(denominator)); /// spellchecker:disable-line
+      std::countr_zero(denominator)); // spellchecker:disable-line
   uint64_t wraps = 0;
   auto residue = phase.numerator();
   for (unsigned power = 1; power <= shift; ++power) {
@@ -133,7 +133,7 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
       auto power = arith::SubIOp::create(builder, last, index);
       auto powerValue =
           arith::IndexCastOp::create(builder, builder.getI64Type(), power);
-      /// Keep the unused shift operand below 64 for large precisions.
+      // Keep the unused shift operand below 64 for large precisions.
       auto isLowPower = arith::CmpIOp::create(
           builder, arith::CmpIPredicate::ule, powerValue, shiftValue);
       auto boundedPower =

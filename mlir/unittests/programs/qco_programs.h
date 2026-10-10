@@ -90,10 +90,14 @@ Value deadGatesWithIfOpSimplified(QCOProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
+/// Builds an invalid program that mixes static and dynamic allocation.
+///
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
 Value mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
 
+/// Builds an invalid program that mixes static and dynamic allocation.
+///
 /// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
 /// static.
 Value mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
@@ -324,8 +328,9 @@ Value twoZ(QCOProgramBuilder& b);
 /// Creates a circuit with pow(0.5) wrapping a Z gate (folds to P(π/2) = S).
 Value powHalfZ(QCOProgramBuilder& b);
 
-/// Creates a circuit with pow(1.5) wrapping a Z gate. Exercises normalizeAngle
-/// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
+/// Creates a circuit with pow(1.5) wrapping a Z gate.
+///
+/// Exercises normalizeAngle `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
@@ -402,10 +407,12 @@ Value twoS(QCOProgramBuilder& b);
 Value powTwoS(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(4.0) wrapping an S gate.
+///
 /// Exercises tryReplaceWithNamedPhaseGate erase path (angle=2π → identity).
 Value powFourS(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(0.5) wrapping an S gate.
+///
 /// Exercises tryReplaceWithNamedPhaseGate TOp path (angle=π/4 → t).
 Value powHalfS(QCOProgramBuilder& b);
 
@@ -448,6 +455,7 @@ Value twoSdg(QCOProgramBuilder& b);
 Value powTwoSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(0.5) wrapping an Sdg gate.
+///
 /// Exercises tryReplaceWithNamedPhaseGate TdgOp path (angle=-π/4 → tdg).
 Value powHalfSdg(QCOProgramBuilder& b);
 
@@ -1347,29 +1355,35 @@ Value negPowRx(QCOProgramBuilder& b);
 Value powRxNeg(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(-0.5) wrapping H (negative non-integer exponent).
+///
 /// Expected to remain unchanged: fractional exponent on a unitary with
 /// eigenvalue -1 cannot safely apply NegPowToInvPow.
 Value negPowH(QCOProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow(0.5) wrapping H.
+///
 /// MovePowOutside emits pow(-0.5){H} (not wrapping in inv).
 Value invPowHFrac(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(-0.5) wrapping H (reference for invPowHFrac).
 Value powHFracNeg(QCOProgramBuilder& b);
 
-/// Creates inv wrapping pow(2){H}. The even power folds to the identity inside
-/// the modifier, leaving the inv body empty so it is erased (reference:
-/// emptyQCO).
+/// Creates inv wrapping pow(2){H}.
+///
+/// The even power folds to the identity inside the modifier, leaving the inv
+/// body empty so it is erased (reference: emptyQCO).
 Value invPowEvenH(QCOProgramBuilder& b);
 
-/// Creates inv wrapping pow(2){SWAP}. The even power folds to the identity
-/// inside the modifier, leaving the inv body empty so it is erased (reference:
-/// emptyQCO).
+/// Creates inv wrapping pow(2){SWAP}.
+///
+/// The even power folds to the identity inside the modifier, leaving the inv
+/// body empty so it is erased (reference: emptyQCO).
 Value invPowEvenSwap(QCOProgramBuilder& b);
 
-/// Creates inv wrapping pow(2){Z}. Z^2 folds to the identity inside the
-/// modifier, leaving the inv body empty so it is erased (reference: emptyQCO).
+/// Creates inv wrapping pow(2){Z}.
+///
+/// Z^2 folds to the identity inside the modifier, leaving the inv body empty so
+/// it is erased (reference: emptyQCO).
 Value invPowSquaredZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
@@ -1401,6 +1415,7 @@ Value powCtrlRx(QCOProgramBuilder& b);
 Value ctrlPowRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(-2) wrapping inv wrapping iSWAP.
+///
 /// Exercises NegPowToInvPow: inv{iswap} survives InvOp canonicalization,
 /// FoldPowIntoGate fails (inner is InvOp), so NegPowToInvPow fires.
 Value negPowInvIswap(QCOProgramBuilder& b);
@@ -1408,9 +1423,10 @@ Value negPowInvIswap(QCOProgramBuilder& b);
 /// Reference for negPowInvIswap: xx_plus_yy(-2π, 0) (the fully folded form).
 Value negPowInvIswapRef(QCOProgramBuilder& b);
 
-/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. The fold
-/// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
-/// so the pow survives canonicalization and reaches ConvertQCOPowOp.
+/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX.
+///
+/// The fold pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two
+/// ops), so the pow survives canonicalization and reaches ConvertQCOPowOp.
 Value ctrlPowSx(QCOProgramBuilder& b);
 
 // --- IfOp ---------------------------------------------------------------- //

@@ -40,6 +40,7 @@ using SingleQubitBasis = CompilerTarget::SingleQubitBasis;
 using RotationParameter = mqt::FloatParameter;
 
 /// Reduce a gate angle modulo 4*pi before adding fixed Euler offsets.
+///
 /// This preserves SU(2) phase and avoids losing offsets for large angles.
 [[nodiscard]] RotationParameter
 normalizeRotationParameter(OpBuilder& builder, Location loc,
@@ -50,8 +51,10 @@ struct RotationAngleTerm {
   double scale = 1.;
 };
 
-/// Cancel opposite SSA terms without creating IR. Dyadic input scaling is
-/// recognized; different surviving coefficients remain separate for accuracy.
+/// Cancel opposite SSA terms without creating IR.
+///
+/// Dyadic input scaling is recognized; different surviving coefficients remain
+/// separate for accuracy.
 void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles);
 
 /// Emit a simplified angle sum, normalizing before balanced addition.
@@ -59,7 +62,9 @@ void simplifyRotationAngles(SmallVectorImpl<RotationAngleTerm>& angles);
                                          ArrayRef<RotationAngleTerm> angles);
 
 /// Sum commuting rotation angles, cancelling inverse SSA terms before reducing
-/// each surviving angle modulo 4*pi. The expression depth is logarithmic.
+/// each surviving angle modulo 4*pi.
+///
+/// The expression depth is logarithmic.
 [[nodiscard]] Value sumRotationAngles(OpBuilder& builder, Location loc,
                                       ArrayRef<Value> angles);
 
@@ -125,14 +130,16 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          bool hasNonBasisGate,
                          const CompilerTarget::SynthesisBasis& basis);
 
-/// Emit basis Euler angles `(theta, phi, lambda, phase)`. For the U basis,
-/// phase is the correction multiplying U(theta, phi, lambda).
+/// Emit basis Euler angles `(theta, phi, lambda, phase)`.
+///
+/// For the U basis, phase is the correction multiplying U(theta, phi, lambda).
 [[nodiscard]] Value
 emitParameterizedEulerAngles(OpBuilder& builder, Location loc, Value qubit,
                              const std::array<RotationParameter, 4>& angles,
                              const CompilerTarget::SynthesisBasis& basis);
 
 /// Synthesize an elementary Pauli rotation without evaluating its angle.
+///
 /// Constant frame changes and their phases use the ordinary Euler emitter.
 [[nodiscard]] Value
 synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
@@ -162,6 +169,7 @@ void synthesizeParameterizedUnitary1Q(
     const CompilerTarget::SynthesisBasis& basis);
 
 /// Extract known Euler parameters without reconstructing a symbolic matrix.
+///
 /// Constant operations use their matrix; unknown operations return nullopt.
 [[nodiscard]] std::optional<std::array<RotationParameter, 4>>
 zyzAnglesFromOperation(OpBuilder& builder, Location loc,

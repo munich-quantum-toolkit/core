@@ -26,6 +26,7 @@ struct MappingOptions {
   /// lookahead.
   size_t lookahead = 20;
   /// Estimated node and layout bytes per routing search, per concurrent trial.
+  ///
   /// Zero disables node expansion. Container overhead, caches, and IR are
   /// extra.
   size_t searchMemoryLimit = 256UL * 1024 * 1024;
@@ -34,6 +35,7 @@ struct MappingOptions {
 /// Options shared by compilation entry points.
 struct CompilationOptions {
   /// Override compiler randomness, including explicitly seeded custom passes.
+  ///
   /// Omission preserves each pass's default or explicitly configured seed.
   std::optional<uint64_t> seed;
   bool enableTiming = false;

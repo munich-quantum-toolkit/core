@@ -33,8 +33,8 @@ function(enable_project_options target_name)
       target_link_libraries(${target_name} INTERFACE --coverage)
     endif()
 
-    if(NOT DEPLOY)
-      # only include machine-specific optimizations when building for the host machine
+    if(NOT DEPLOY AND NOT DEFINED ENV{CI})
+      # CI caches can reuse object files on runners with different CPUs.
       check_cxx_compiler_flag(-mtune=native HAS_MTUNE_NATIVE)
       if(HAS_MTUNE_NATIVE)
         target_compile_options(${target_name} INTERFACE -mtune=native)

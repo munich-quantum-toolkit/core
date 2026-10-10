@@ -724,8 +724,8 @@ TEST_F(MappingPassFixture,
         qubits[1] = builder.x(qubits[1]);
         qubits[1] = builder.measure(qubits[1], bits, 1).first;
         tensor = builder.qtensorInsert(qubits[1], tensor, 1);
-        /// Placement threads the terminal tensor wire and idle sites through
-        /// both regions, even though neither region uses them in the input.
+        // Placement threads the terminal tensor wire and idle sites through
+        // both regions, even though neither region uses them in the input.
         for (size_t i = 0; i < 2; ++i) {
           qubits[0] = builder.qcoIf(
               true, qubits[0], [&](Value qubit) { return builder.x(qubit); });
@@ -946,8 +946,8 @@ TEST_F(MappingPassFixture, RouteControlFromConsecutiveMeasurementResults) {
       auto conditional = *entry.getOps<IfOp>().begin();
       EXPECT_EQ(conditional.getCondition(), condition);
       if (controlIndex == 0) {
-        /// A dependency of the first result must not make later measurements
-        /// nonterminal.
+        // A dependency of the first result must not make later measurements
+        // nonterminal.
         EXPECT_TRUE(
             isa<SinkOp>(*measurements.back().getQubitOut().getUsers().begin()));
       }
@@ -2728,8 +2728,8 @@ TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
                 qubits.push_back(xBasis ? builder.h(qubit) : qubit);
               }
               for (size_t i = 1; i < order.size(); ++i) {
-                /// Split into three-qubit and two-qubit paths and an idle
-                /// qubit.
+                // Split into three-qubit and two-qubit paths and an idle
+                // qubit.
                 if (disjoint && (i == 3 || i == 5)) {
                   continue;
                 }
@@ -2849,7 +2849,7 @@ TEST_F(MappingPassFixture, PreserveBasisStatesWithTinySearchMemory) {
             EXPECT_EQ(*actual, *expected);
             size_t swaps = 0;
             moduleOp->walk([&](SWAPOp) { ++swaps; });
-            /// The logical triangle cannot embed in either bipartite target.
+            // The logical triangle cannot embed in either bipartite target.
             EXPECT_GT(swaps, 0);
           }
         }
@@ -2889,8 +2889,8 @@ TEST_F(MappingPassFixture, ScoreGreedyLayoutWithoutRefinement) {
     EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
     size_t swaps = 0;
     moduleOp->walk([&](SWAPOp) { ++swaps; });
-    /// Zero refinement scores the greedy start directly; identity and refined
-    /// greedy starts need four SWAPs for this input.
+    // Zero refinement scores the greedy start directly; identity and refined
+    // greedy starts need four SWAPs for this input.
     EXPECT_LE(swaps, 3);
     if (!multithreading) {
       expected = printModule(*moduleOp);
@@ -3373,9 +3373,9 @@ TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
       NativeOperations::unrestricted()));
   const auto target = withNativeBasis(topology, "cz");
   using Gate = std::tuple<size_t, size_t, bool>;
-  /// The first route uses more SWAPs and depth to reduce native gates from
-  /// 14 to 13. The second retains 11 native gates but reduces depth from 10
-  /// to 7. These bounds distinguish both parts of the ranking contract.
+  // The first route uses more SWAPs and depth to reduce native gates from
+  // 14 to 13. The second retains 11 native gates but reduces depth from 10
+  // to 7. These bounds distinguish both parts of the ranking contract.
   const std::array cases{
       std::pair{SmallVector<Gate>{
                     {3, 0, false},
@@ -3506,7 +3506,7 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
               EXPECT_EQ(*actual, *expected);
               size_t swaps = 0;
               moduleOp->walk([&](SWAPOp) { ++swaps; });
-              /// The final program contains only the selected native basis.
+              // The final program contains only the selected native basis.
               EXPECT_EQ(swaps, 0);
             }
           }
@@ -3621,7 +3621,7 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
       qubits.push_back(builder.allocQubit());
     }
     auto spectator = builder.allocQubit();
-    /// Prepare a phased GHZ state, or undo it. A line must route this star.
+    // Prepare a phased GHZ state, or undo it. A line must route this star.
     const auto transform = [&](MutableArrayRef<Value> values, bool inverse) {
       if (!inverse) {
         values[0] = builder.t(builder.h(values[0]));
@@ -3731,15 +3731,15 @@ TEST_F(MappingPassFixture, RespectRegionBoundariesBeforeFrontierDiscovery) {
       qubits.push_back(builder.allocQubit());
     }
     if (hiddenRegion) {
-      /// The frontier reaches H and the later CZ before it sees the region.
+      // The frontier reaches H and the later CZ before it sees the region.
       qubits[0] = builder.h(qubits[0]);
       qubits[0] =
           builder.qcoIf(true, qubits[0], [&](Value q) { return builder.x(q); });
       std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
       qubits[0] = builder.h(qubits[0]);
     } else {
-      /// A nonadjacent gate can defer the region. The
-      /// adjacent later gate must not lead the search and return zero SWAPs.
+      // A nonadjacent gate can defer the region. The
+      // adjacent later gate must not lead the search and return zero SWAPs.
       qubits[0] = builder.x(qubits[0]);
       qubits[2] = builder.x(qubits[2]);
       std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
@@ -3747,8 +3747,8 @@ TEST_F(MappingPassFixture, RespectRegionBoundariesBeforeFrontierDiscovery) {
       qubits[3] =
           builder.qcoIf(true, qubits[3], [&](Value q) { return builder.x(q); });
     }
-    /// A degree-three interaction graph cannot embed in a line, so candidate
-    /// scoring runs instead of taking the routing-free greedy shortcut.
+    // A degree-three interaction graph cannot embed in a line, so candidate
+    // scoring runs instead of taking the routing-free greedy shortcut.
     for (size_t i = 1; i < 4; ++i) {
       std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
     }
@@ -3806,7 +3806,7 @@ TEST_F(MappingPassFixture, NativeGuidancePreservesAlternatingPairs) {
         llvm::cantFail(Capability::create("gphase", 0, 1)),
     };
     if (nonuniformSwap) {
-      /// Native SWAP on one edge disables uniform-cost search guidance.
+      // Native SWAP on one edge disables uniform-cost search guidance.
       operations.push_back(llvm::cantFail(Capability::create(
           "swap", 2, 0, {llvm::cantFail(SiteTuple::create({0, 1}))})));
     }
@@ -3849,7 +3849,7 @@ TEST_F(MappingPassFixture, NativeGuidancePreservesAlternatingPairs) {
                      << ", parallel=" << parallel);
         context->enableMultithreading(parallel);
         OwningOpRef<ModuleOp> moduleOp = input->clone();
-        /// Strong lookahead explores competing paths to the same layout.
+        // Strong lookahead explores competing paths to the same layout.
         ASSERT_TRUE(succeeded(
             runPass(*moduleOp, target,
                     MappingPassOptions{.alpha = 0.1F,

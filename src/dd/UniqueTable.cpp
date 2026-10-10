@@ -44,7 +44,7 @@ void UniqueTable::resize(const std::size_t nVars) {
   }
   cfg.nVars = nVars;
   tables.resize(nVars);
-  /// TODO: release entries for removed levels when shrinking populated tables.
+  // TODO: release entries for removed levels when shrinking populated tables.
   stats.resize(nVars);
   for (auto i = oldSize; i < nVars; ++i) {
     tables[i].resize(cfg.nBuckets);
@@ -91,8 +91,8 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
     ++v;
   }
 
-  /// Adapt the threshold to live entries so a mostly full table does not
-  /// trigger a complete scan on every subsequent collection request.
+  // Adapt the threshold to live entries so a mostly full table does not
+  // trigger a complete scan on every subsequent collection request.
   const auto numEntries = getNumEntries();
   if (numEntries > gcLimit / 10 * 9) {
     gcLimit = numEntries + cfg.initialGCLimit;

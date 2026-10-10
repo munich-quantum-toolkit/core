@@ -29,10 +29,13 @@ struct Statistics {
   /// Reset all statistics (except for peak values)
   virtual void reset() noexcept {};
 
-  /// Get a JSON-formatted string representation of the statistics
+  /// Returns a JSON-formatted string representation of the statistics.
+  ///
+  /// The base class returns a JSON null value.
   [[nodiscard]] virtual std::string toString() const;
 
   /// Write a string representation to an output stream
+  ///
   /// @param os The output stream
   /// @param stats The statistics
   /// @return The output stream

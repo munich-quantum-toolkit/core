@@ -220,7 +220,7 @@ static void emitBoxedLine(StringRef line, const int indent, raw_ostream& os) {
 void printBoxLine(StringRef text, const int indent, raw_ostream& os) {
   const auto trimmedText = text.rtrim();
 
-  /// Avoid allocating wrapped lines when the text already fits.
+  // Avoid allocating wrapped lines when the text already fits.
   const int displayWidth = calculateDisplayWidth(trimmedText);
   if (displayWidth <= CONTENT_WIDTH - indent) {
     emitBoxedLine(trimmedText, indent, os);

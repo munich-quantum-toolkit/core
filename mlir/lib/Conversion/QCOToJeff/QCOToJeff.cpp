@@ -821,7 +821,7 @@ struct ConvertIntegerExpression final : ConversionPattern {
       const auto targetWidth = targetInteger ? targetInteger.getWidth() : 32U;
       auto targetType =
           cast<IntegerType>(getTypeConverter()->convertType(target));
-      /// jeff indices are i32; preserve casts to other integer widths.
+      // jeff indices are i32; preserve casts to other integer widths.
       rewriter.replaceOp(op, castInteger(rewriter, op->getLoc(), operands[0],
                                          sourceWidth, targetType, targetWidth,
                                          isa<arith::IndexCastOp>(op)));
@@ -1244,6 +1244,7 @@ struct ConvertQCOGPhaseOpToJeff final : StatefulOpConversionPattern<GPhaseOp> {
 };
 
 /// Convert a QCO gate to a standard jeff gate, preserving active modifiers.
+///
 /// @tparam JeffBaseAdjoint XOR with the inverse modifier, e.g. S† maps to an
 /// adjoint jeff.s operation.
 template <typename QCOOpType, typename JeffOpType, std::size_t NumTargets,
@@ -1713,7 +1714,7 @@ struct ConvertIfOpToJeff final : RegionMovingConversionPattern<IfOpType> {
       }
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(block);
-      /// Both Boolean cases are explicit, so the default cannot execute.
+      // Both Boolean cases are explicit, so the default cannot execute.
       SmallVector<Value> values;
       for (auto type : classicalTypes) {
         auto converted = getTypeConverter()->convertType(type);
@@ -2023,6 +2024,7 @@ struct PPRPaulis {
 } // namespace
 
 /// Register a gate pattern selected by its jeff representation and arity.
+///
 /// @param state Lowering state borrowed by every registered pattern.
 /// @param customName Name used only for JeffKind::Custom.
 /// @param ppr Pauli indices used only for JeffKind::PPR.
@@ -2261,8 +2263,8 @@ protected:
                  ConvertSCFWhileOpToJeff, ConvertQCOCallToJeff,
                  ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
-    /// Cloned region arguments already have target types. Convert their users
-    /// before source folds inspect typed quantum operands.
+    // Cloned region arguments already have target types. Convert their users
+    // before source folds inspect typed quantum operands.
     ConversionConfig config;
     config.foldingMode = DialectConversionFoldingMode::AfterPatterns;
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns),

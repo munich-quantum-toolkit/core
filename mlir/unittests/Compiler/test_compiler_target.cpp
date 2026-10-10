@@ -373,9 +373,9 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
                      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}}),
                      NativeOperations::fromOperations(operations),
                      valid(DurationUnit::create("ns", 0.5))));
-  /// The copy itself is the behavior under test: both objects must share the
-  /// immutable backing storage.
-  /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+  // The copy itself is the behavior under test: both objects must share the
+  // immutable backing storage.
+  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
   const auto copy = target;
 
   ASSERT_TRUE(target.name());

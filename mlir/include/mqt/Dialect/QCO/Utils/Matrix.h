@@ -48,6 +48,7 @@ struct Matrix1x1 {
   Complex value{0.0, 0.0};
 
   /// Constructs a matrix from its single entry.
+  ///
   /// @param m00 Element at row 0, column 0.
   /// @return A new `Matrix1x1` with the given element.
   [[nodiscard]] static constexpr Matrix1x1 fromElements(Complex m00) {
@@ -55,12 +56,14 @@ struct Matrix1x1 {
   }
 
   /// Mutable element access with `(row, col)` indexing.
+  ///
   /// @param row Row index (must be `0`).
   /// @param col Column index (must be `0`).
   /// @return Reference to the sole matrix entry.
   [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /// Const element access with `(row, col)` indexing.
+  ///
   /// @param row Row index (must be `0`).
   /// @param col Column index (must be `0`).
   /// @return Copy of the sole matrix entry.
@@ -72,20 +75,24 @@ struct Matrix1x1 {
   }
 
   /// Element-wise scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to the matrix entry.
   /// @return Scaled copy of this matrix.
   [[nodiscard]] Matrix1x1 operator*(const Complex& scalar) const;
 
   /// Element-wise in-place scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to the matrix entry.
   /// @return Reference to this matrix.
   Matrix1x1& operator*=(const Complex& scalar);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
+  ///
   /// @return Adjoint matrix `A†`.
   [[nodiscard]] Matrix1x1 adjoint() const;
 
   /// Checks approximate equality using an absolute tolerance.
+  ///
   /// @param other Matrix to compare against.
   /// @param tol Maximum allowed complex modulus of the entry difference.
   /// @return True if the difference is within @p tol.
@@ -120,6 +127,7 @@ struct Matrix2x2 {
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
 
   /// Constructs a matrix from its four row-major entries.
+  ///
   /// @param m00 Element at row 0, column 0.
   /// @param m01 Element at row 0, column 1.
   /// @param m10 Element at row 1, column 0.
@@ -133,16 +141,19 @@ struct Matrix2x2 {
   }
 
   /// Returns the 2x2 identity matrix.
+  ///
   /// @return Identity matrix `[[1, 0], [0, 1]]`.
   [[nodiscard]] static constexpr Matrix2x2 identity() { return {{1, 0, 0, 1}}; }
 
   /// Mutable element access.
+  ///
   /// @param row Row index in `[0, K_ROWS)`.
   /// @param col Column index in `[0, K_COLS)`.
   /// @return Reference to the element at `(row, col)`.
   [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /// Const element access.
+  ///
   /// @param row Row index in `[0, K_ROWS)`.
   /// @param col Column index in `[0, K_COLS)`.
   /// @return Copy of the element at `(row, col)`.
@@ -155,41 +166,50 @@ struct Matrix2x2 {
   }
 
   /// Matrix product `*this * rhs`.
+  ///
   /// @param rhs Right-hand factor.
   /// @return Product of the two matrices.
   [[nodiscard]] Matrix2x2 operator*(const Matrix2x2& rhs) const;
 
   /// Premultiplies by a matrix: `*this = lhs * *this`.
+  ///
   /// @param lhs Left-hand factor.
   void premultiplyBy(const Matrix2x2& lhs);
 
   /// Element-wise scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to every matrix entry.
   /// @return Scaled copy of this matrix.
   [[nodiscard]] Matrix2x2 operator*(const Complex& scalar) const;
 
   /// Element-wise in-place scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to every matrix entry.
   /// @return Reference to this matrix.
   Matrix2x2& operator*=(const Complex& scalar);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
+  ///
   /// @return Adjoint matrix `A†`.
   [[nodiscard]] Matrix2x2 adjoint() const;
 
   /// Returns the (non-conjugate) transpose of this matrix.
+  ///
   /// @return Transposed matrix `A^T`.
   [[nodiscard]] Matrix2x2 transpose() const;
 
   /// Returns the trace of this matrix.
+  ///
   /// @return Sum of diagonal entries.
   [[nodiscard]] Complex trace() const;
 
   /// Returns the determinant of this matrix.
+  ///
   /// @return Complex determinant `ad - bc`.
   [[nodiscard]] Complex determinant() const;
 
   /// Checks whether this matrix is approximately the identity.
+  ///
   /// @param tol Maximum allowed complex modulus of each entry difference.
   /// @return True if every entry is within @p tol of the identity.
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
@@ -254,6 +274,7 @@ struct Matrix4x4 {
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
 
   /// Constructs a matrix from its sixteen row-major entries.
+  ///
   /// @param m00 Element at row 0, column 0.
   /// @param m01 Element at row 0, column 1.
   /// @param m02 Element at row 0, column 2.
@@ -287,6 +308,7 @@ struct Matrix4x4 {
   }
 
   /// Returns the 4x4 identity matrix.
+  ///
   /// @return Identity matrix with ones on the diagonal.
   [[nodiscard]] static constexpr Matrix4x4 identity() {
     return {
@@ -298,12 +320,14 @@ struct Matrix4x4 {
   }
 
   /// Mutable element access.
+  ///
   /// @param row Row index in `[0, K_ROWS)`.
   /// @param col Column index in `[0, K_COLS)`.
   /// @return Reference to the element at `(row, col)`.
   [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
   /// Const element access.
+  ///
   /// @param row Row index in `[0, K_ROWS)`.
   /// @param col Column index in `[0, K_COLS)`.
   /// @return Copy of the element at `(row, col)`.
@@ -316,50 +340,61 @@ struct Matrix4x4 {
   }
 
   /// Matrix product `*this * rhs`.
+  ///
   /// @param rhs Right-hand factor.
   /// @return Product of the two matrices.
   [[nodiscard]] Matrix4x4 operator*(const Matrix4x4& rhs) const;
 
   /// Premultiplies by a matrix: `*this = lhs * *this`.
+  ///
   /// @param lhs Left-hand factor.
   void premultiplyBy(const Matrix4x4& lhs);
 
   /// Element-wise scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to every matrix entry.
   /// @return Scaled copy of this matrix.
   [[nodiscard]] Matrix4x4 operator*(const Complex& scalar) const;
 
   /// Element-wise in-place scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to every matrix entry.
   /// @return Reference to this matrix.
   Matrix4x4& operator*=(const Complex& scalar);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
+  ///
   /// @return Adjoint matrix `A†`.
   [[nodiscard]] Matrix4x4 adjoint() const;
 
   /// Returns the (non-conjugate) transpose of this matrix.
+  ///
   /// @return Transposed matrix `A^T`.
   [[nodiscard]] Matrix4x4 transpose() const;
 
   /// Returns the trace of this matrix.
+  ///
   /// @return Sum of diagonal entries.
   [[nodiscard]] Complex trace() const;
 
   /// Returns the determinant of this matrix.
+  ///
   /// @return Complex determinant computed via Laplace expansion.
   [[nodiscard]] Complex determinant() const;
 
   /// Checks whether this matrix is approximately the identity.
+  ///
   /// @param tol Maximum allowed complex modulus of each entry difference.
   /// @return True if every entry is within @p tol of the identity.
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
   /// Returns the four diagonal entries `(m00, m11, m22, m33)`.
+  ///
   /// @return Array of diagonal entries.
   [[nodiscard]] std::array<Complex, K_ROWS> diagonal() const;
 
   /// Builds a diagonal matrix from four diagonal entries.
+  ///
   /// @param m00 Diagonal entry at `(0, 0)`.
   /// @param m11 Diagonal entry at `(1, 1)`.
   /// @param m22 Diagonal entry at `(2, 2)`.
@@ -378,6 +413,7 @@ struct Matrix4x4 {
   }
 
   /// Builds a diagonal matrix from an array of four diagonal entries.
+  ///
   /// @param diagonalEntries Array of diagonal entries in order `(m00, m11, m22,
   /// m33)`.
   /// @return Diagonal matrix with the given entries.
@@ -400,31 +436,37 @@ struct Matrix4x4 {
                                       const Matrix2x2& rhs);
 
   /// Returns the entries of column @p col, top to bottom.
+  ///
   /// @param col Column index in `[0, K_COLS)`.
   /// @return Array of the four column entries.
   [[nodiscard]] std::array<Complex, K_ROWS> column(size_t col) const;
 
   /// Overwrites column @p col with @p values.
+  ///
   /// @param col Column index in `[0, K_COLS)`.
   /// @param values New column entries, top to bottom; must have length
   /// `K_ROWS`.
   void setColumn(size_t col, ArrayRef<Complex> values);
 
   /// Returns the entries of row @p row, left to right.
+  ///
   /// @param row Row index in `[0, K_ROWS)`.
   /// @return View over the four row entries.
   [[nodiscard]] ArrayRef<const Complex> row(size_t row) const;
 
   /// Overwrites row @p row with @p values.
+  ///
   /// @param row Row index in `[0, K_ROWS)`.
   /// @param values New row entries, left to right; must have length `K_COLS`.
   void setRow(size_t row, ArrayRef<Complex> values);
 
   /// Returns the element-wise real parts in row-major order.
+  ///
   /// @return Real parts of all entries.
   [[nodiscard]] std::array<double, K_SIZE_AT_COMPILE_TIME> realPart() const;
 
   /// Returns the element-wise imaginary parts in row-major order.
+  ///
   /// @return Imaginary parts of all entries.
   [[nodiscard]] std::array<double, K_SIZE_AT_COMPILE_TIME> imagPart() const;
 
@@ -538,14 +580,17 @@ public:
   DynamicMatrix();
 
   /// Creates a zero-initialized square matrix.
+  ///
   /// @param dim Side length of the square matrix.
   explicit DynamicMatrix(int64_t dim);
 
   /// Creates a dynamic matrix from a fixed 2x2 matrix.
+  ///
   /// @param src Source matrix.
   explicit DynamicMatrix(const Matrix2x2& src);
 
   /// Creates a dynamic matrix from a fixed 4x4 matrix.
+  ///
   /// @param src Source matrix.
   explicit DynamicMatrix(const Matrix4x4& src);
 
@@ -564,30 +609,36 @@ public:
   ~DynamicMatrix();
 
   /// Returns a square identity matrix of the given dimension.
+  ///
   /// @param dim Side length of the identity matrix.
   /// @return Identity matrix with ones on the diagonal.
   [[nodiscard]] static DynamicMatrix identity(int64_t dim);
 
   /// Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
+  ///
   /// @param src Source matrix.
   /// @return Adjoint matrix `src†`.
   [[nodiscard]] static DynamicMatrix fromAdjoint(const Matrix2x2& src);
 
   /// Returns the number of rows.
+  ///
   /// @return Matrix dimension.
   [[nodiscard]] int64_t rows() const;
 
   /// Returns the number of columns.
+  ///
   /// @return Matrix dimension.
   [[nodiscard]] int64_t cols() const;
 
   /// Mutable element access.
+  ///
   /// @param row Row index in `[0, dim)`.
   /// @param col Column index in `[0, dim)`.
   /// @return Reference to the element at `(row, col)`.
   [[nodiscard]] Complex& operator()(int64_t row, int64_t col);
 
   /// Const element access.
+  ///
   /// @param row Row index in `[0, dim)`.
   /// @param col Column index in `[0, dim)`.
   /// @return Copy of the element at `(row, col)`.
@@ -597,34 +648,41 @@ public:
   [[nodiscard]] std::span<const Complex> entries() const noexcept;
 
   /// Copies a 2x2 block into the bottom-right corner.
+  ///
   /// @param block Source block placed at indices `(dim-2, dim-2)` through
   /// `(dim-1, dim-1)`.
   void setBottomRightCorner(const Matrix2x2& block);
 
   /// Copies a 4x4 block into the bottom-right corner.
+  ///
   /// @param block Source block placed at indices `(dim-4, dim-4)` through
   /// `(dim-1, dim-1)`.
   void setBottomRightCorner(const Matrix4x4& block);
 
   /// Copies a dynamic block into the bottom-right corner.
+  ///
   /// @param block Source block placed at indices `(dim - block.rows(), ...)`
   /// through
   /// `(dim-1, dim-1)`.
   void setBottomRightCorner(const DynamicMatrix& block);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
+  ///
   /// @return Adjoint matrix `A†`.
   [[nodiscard]] DynamicMatrix adjoint() const;
 
   /// Replaces this matrix with a copy of a 1x1 matrix.
+  ///
   /// @param src Source matrix.
   void assignFrom(const Matrix1x1& src);
 
   /// Replaces this matrix with a copy of a 2x2 matrix.
+  ///
   /// @param src Source matrix.
   void assignFrom(const Matrix2x2& src);
 
   /// Replaces this matrix with a copy of a 4x4 matrix.
+  ///
   /// @param src Source matrix.
   void assignFrom(const Matrix4x4& src);
 
@@ -632,6 +690,7 @@ public:
   void assignFrom(const Matrix8x8& src);
 
   /// Replaces this matrix with a copy of another dynamic matrix.
+  ///
   /// @param src Source matrix.
   void assignFrom(const DynamicMatrix& src);
 
@@ -679,15 +738,18 @@ public:
                               double tol = MATRIX_TOLERANCE) const;
 
   /// Returns the trace of this matrix.
+  ///
   /// @return Sum of diagonal entries.
   [[nodiscard]] Complex trace() const;
 
   /// Matrix product `*this * rhs`.
+  ///
   /// @param rhs Right-hand factor.
   /// @return Product of the two matrices.
   [[nodiscard]] DynamicMatrix operator*(const DynamicMatrix& rhs) const;
 
   /// Premultiplies by a matrix: `*this = lhs * *this`.
+  ///
   /// @param lhs Left-hand factor.
   void premultiplyBy(const DynamicMatrix& lhs);
 
@@ -716,16 +778,19 @@ public:
                                size_t q0Index, size_t q1Index);
 
   /// Element-wise scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to every matrix entry.
   /// @return Scaled copy of this matrix.
   [[nodiscard]] DynamicMatrix operator*(const Complex& scalar) const;
 
   /// Element-wise in-place scaling by a complex scalar.
+  ///
   /// @param scalar Factor applied to every matrix entry.
   /// @return Reference to this matrix.
   DynamicMatrix& operator*=(const Complex& scalar);
 
   /// Checks whether this matrix is approximately the identity.
+  ///
   /// @param tol Maximum allowed complex modulus of each off-diagonal entry and
   /// each diagonal deviation from one.
   /// @return True when the matrix is close to the identity.
@@ -756,8 +821,9 @@ concept SupportedMatrix =
     std::same_as<T, DynamicMatrix>;
 
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
-/// `matrix * scalar`). Provided so generic code can scale a matrix from
-/// either side.
+/// `matrix * scalar`).
+///
+/// Provided so generic code can scale a matrix from either side.
 [[nodiscard]] Matrix2x2 operator*(const Complex& scalar,
                                   const Matrix2x2& matrix);
 /// @copydoc operator*(const Complex&, const Matrix2x2&)

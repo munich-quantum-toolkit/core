@@ -28,14 +28,15 @@ class RewriterBase;
 namespace mlir::qco::decomposition {
 
 /// Combine rotations with a common generator before native lowering.
+///
 /// With a target, only produce rotations whose angles are unrestricted.
 void populateRotationCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget* target = nullptr);
 
 /// Fuse one wire at a time during an existing reverse-order traversal.
-/// Reuse within one MLIR context.
-/// The caller must visit users before producers: fusion can erase successors.
-/// A supplied target must have a synthesis basis.
+///
+/// Reuse within one MLIR context. The caller must visit users before producers:
+/// fusion can erase successors. A supplied target must have a synthesis basis.
 class SingleQubitRunFusion {
 public:
   SingleQubitRunFusion(const CompilerTarget::SynthesisBasis& basis,
@@ -73,6 +74,7 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
     const CompilerTarget* target = nullptr);
 
 /// Merge Z rotations through diagonal gates on native RZ or equatorial targets.
+///
 /// Equatorial targets also lower single-qubit factors and absorb Z frames into
 /// R.
 LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,

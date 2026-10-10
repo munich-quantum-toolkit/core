@@ -74,35 +74,41 @@ public:
   ~JitSession();
 
   /// Execute the selected QIR entry point.
+  ///
   /// @return The 64-bit QIR exit code.
   int64_t run();
 
   /// Execute a batch, preserving recorded-result order and returning the first
-  /// nonzero exit code. With textual output disabled, eligible static Base
-  /// or Adaptive programs are executed once with deferred measurements, then
-  /// sampled. Other programs execute normally for every shot. State-extraction
-  /// sessions cannot be sampled. The supplied vector is replaced, including for
-  /// zero shots.
-  /// If supplied, stateAvailable is set only when successful terminal sampling
+  /// nonzero exit code.
+  ///
+  /// With textual output disabled, eligible static Base or Adaptive programs
+  /// are executed once with deferred measurements, then sampled. Other programs
+  /// execute normally for every shot. State-extraction sessions cannot be
+  /// sampled. The supplied vector is replaced, including for zero shots. If
+  /// supplied, stateAvailable is set only when successful terminal sampling
   /// leaves an uncollapsed state. The caller may then use runtime().takeState()
   /// before executing the session again.
   int64_t sample(size_t shots, std::vector<std::string>& results,
                  bool* stateAvailable = nullptr, bool emitHeader = true);
 
-  /// Whether sampling may share the compiled entry point. Eligible modules
-  /// have only constant globals and calls to the QIR runtime or LLVM
-  /// intrinsics.
+  /// Whether sampling may share the compiled entry point.
+  ///
+  /// Eligible modules have only constant globals and calls to the QIR runtime
+  /// or LLVM intrinsics.
   [[nodiscard]] bool canShareCompiledCode() const;
 
   /// Number of direct quantum instruction calls in the loaded module.
   [[nodiscard]] size_t quantumCallSites() const { return quantumCallSites_; }
 
-  /// Create a seeded runtime for one worker. Keep this session alive until all
-  /// workers finish; each runtime and its output stream belong to one worker.
-  /// Throws std::logic_error when the module is not eligible.
+  /// Create a seeded runtime for one worker.
+  ///
+  /// Keep this session alive until all workers finish; each runtime and its
+  /// output stream belong to one worker. Throws std::logic_error when the
+  /// module is not eligible.
   [[nodiscard]] std::unique_ptr<Runtime> makeWorkerRuntime(uint64_t seed) const;
 
   /// Sample with a worker runtime without changing this session's runtime.
+  ///
   /// Concurrent calls require separate runtimes from makeWorkerRuntime().
   /// Throws std::logic_error when a separate runtime is not eligible.
   int64_t sampleWithRuntime(Runtime& runtime, size_t shots,
@@ -128,21 +134,26 @@ private:
   int64_t runWithRuntime(Runtime& runtime);
 
   /// Initializes the native target, asm printer and asm parser.
+  ///
   /// Safe to call multiple times; the work runs only on the first call.
   static void initNativeTargets();
 
-  /// Parses LLVM IR (textual or bitcode) from @p irBytes using the session's
-  /// own thread-safe context. @p bufferName is used in diagnostics.
+  /// Parses LLVM IR (textual or bitcode) from @p irBytes.
+  ///
+  /// Uses the session's own thread-safe context. @p bufferName is used in
+  /// diagnostics.
   static llvm::Expected<llvm::orc::ThreadSafeModule>
   loadModuleFromMemory(llvm::StringRef irBytes, llvm::StringRef bufferName);
 
-  /// Prepares the session to run the program:
+  /// Prepares the session to run the program.
+  ///
   /// - Validates the loaded module.
   /// - Optionally truncates the entry point at its first irreversible operation
   ///   (for @c Execution::StateExtraction).
   /// - Builds the @c LLJIT instance
   /// - Registers QIR runtime symbols
   /// - Resolves the selected QIR entry point.
+  ///
   /// @throws std::runtime_error if loading failed or the JIT cannot start.
   void initialize(llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
                   Execution execution);

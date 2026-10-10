@@ -69,7 +69,7 @@ static std::vector<double> shorReference(uint64_t number, uint64_t base) {
 }
 
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
-  /// Keep the circuit small enough for unoptimized coverage builds.
+  // Keep the circuit small enough for unoptimized coverage builds.
   constexpr uint64_t number = 15;
   const Shor benchmark({.number = number});
   auto program = test::generateQCO(benchmark);

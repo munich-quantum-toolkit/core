@@ -27,6 +27,7 @@ namespace nb = nanobind;
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
 
 /// Snapshot a Qiskit Target or BackendV2 into an owned compiler target.
+///
 /// Unrepresentable gates warn by default and fail when selected explicitly.
 /// Instructions without gate applicability are skipped by default.
 [[nodiscard]] mlir::CompilerTarget

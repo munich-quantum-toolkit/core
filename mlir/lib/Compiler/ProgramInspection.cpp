@@ -108,7 +108,7 @@ static void forEachGate(ModuleOp moduleOp,
       return WalkResult::advance();
     }
     visit(op, arity);
-    /// Count each gate atomically, including modifiers.
+    // Count each gate atomically, including modifiers.
     return WalkResult::skip();
   });
 }

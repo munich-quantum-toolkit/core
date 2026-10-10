@@ -145,9 +145,9 @@ public:
   payloadSpecification() const noexcept;
 
   /// Whether indexed qubits can retain runtime addresses through placement.
+  ///
   /// Requires Adaptive QIR and an all-to-all target whose operations have no
-  /// site-specific restrictions.
-  /// Other payload control-flow limits still apply.
+  /// site-specific restrictions. Other payload control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 
   /// Materialize the pair as a typed MLIR attribute.
@@ -173,7 +173,9 @@ public:
   /// Return whether the module contains a valid target environment.
   [[nodiscard]] explicit operator bool() const noexcept;
 
-  /// Return the target environment. Requires a valid analysis.
+  /// Return the target environment.
+  ///
+  /// Requires a valid analysis.
   [[nodiscard]] const TargetEnvironment& environment() const noexcept;
 
   /// Return the validation error, or an empty string for a valid analysis.

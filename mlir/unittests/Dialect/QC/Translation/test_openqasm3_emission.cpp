@@ -1103,7 +1103,7 @@ wrapper(0.25) q;
         qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
     ASSERT_TRUE(succeeded(functionality));
     const auto matrix = dd::getMatrix(*functionality, 1);
-    /// The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
+    // The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
     for (size_t row = 0; row < 2; ++row) {
       for (size_t column = 0; column < 2; ++column) {
         const auto expected = row == column

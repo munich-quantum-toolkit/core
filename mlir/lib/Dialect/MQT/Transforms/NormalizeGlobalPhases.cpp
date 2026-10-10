@@ -58,10 +58,12 @@ struct Scale final {
 
 using PhaseInstruction = std::variant<double, Value, Add, Negate, Scale>;
 
-/// A postfix phase expression. Keeping modifier transformations symbolic avoids
-/// repeatedly walking and moving an ever-growing SSA arithmetic chain through
-/// nested modifiers. The expression is materialized exactly once at the scope
-/// where the phase stops bubbling.
+/// A postfix phase expression.
+///
+/// Keeping modifier transformations symbolic avoids repeatedly walking and
+/// moving an ever-growing SSA arithmetic chain through nested modifiers. The
+/// expression is materialized exactly once at the scope where the phase stops
+/// bubbling.
 class PhaseExpression final {
 public:
   explicit PhaseExpression(Value angle) {
@@ -203,6 +205,7 @@ struct PhaseContribution final {
 } // namespace
 
 /// Collect a memory-effect-free, body-local dependency slice in order.
+///
 /// Extraction crosses only eager quantum modifiers, never classical branches.
 static bool collectHoistableSlice(Value value, Block& body,
                                   SmallPtrSetImpl<Operation*>& visiting,
@@ -432,7 +435,7 @@ private:
     if (contributions.empty()) {
       return std::nullopt;
     }
-    /// Keep accumulated phase depth logarithmic for symbolic exporters.
+    // Keep accumulated phase depth logarithmic for symbolic exporters.
     for (size_t stride = 1; stride < contributions.size(); stride *= 2) {
       for (size_t i = 0; i + stride < contributions.size(); i += 2 * stride) {
         contributions[i].add(std::move(contributions[i + stride]));

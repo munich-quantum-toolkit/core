@@ -60,8 +60,10 @@
 #include <vector>
 
 namespace {
-/// Result reconstruction never performs DD arithmetic. Keep unused matrix
-/// storage and compute caches minimal while retaining normal vector storage.
+/// Result reconstruction never performs DD arithmetic.
+///
+/// Keep unused matrix storage and compute caches minimal while retaining normal
+/// vector storage.
 constexpr dd::DDPackageConfig RESULT_PACKAGE_CONFIG{
     .utMatNumBucket = 1,
     .utMatInitialAllocationSize = 1,
@@ -228,6 +230,7 @@ struct ProgramResult {
   std::vector<std::string> shots_;
 
   /// Owns an extracted state or an uncollapsed terminal-sampling state.
+  ///
   /// A null package means that no state result is available.
   std::unique_ptr<::dd::Package> dd_;
 
@@ -389,9 +392,9 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     OPERATION_ADDRESSES, prop, size, value, sizeRet)
-  /// Target facts that QDMI v1.3 cannot encode compactly.
-  /// TODO(#2093): Remove this compatibility marker when QDMI standardizes
-  /// explicit unrestricted connectivity and operation applicability.
+  // Target facts that QDMI v1.3 cannot encode compactly.
+  // TODO(#2093): Remove this compatibility marker when QDMI standardizes
+  // explicit unrestricted connectivity and operation applicability.
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM1,
                       "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
                       size, value, sizeRet)

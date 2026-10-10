@@ -24,6 +24,7 @@ namespace dd {
 struct MemoryManagerStatistics final : Statistics {
 
   /// Construct a new Memory Manager Statistics object
+  ///
   /// @param entrySize The size of a single entry
   explicit MemoryManagerStatistics(const std::size_t entrySize)
       : entrySize_(entrySize) {}

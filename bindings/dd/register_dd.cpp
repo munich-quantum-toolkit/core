@@ -54,11 +54,11 @@ Args:
 }
 } // namespace
 
-/// NOLINTNEXTLINE(performance-unnecessary-value-param)
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "MQT Core decision diagram module.";
 
-  /// Controls for raw matrix DD construction.
+  // Controls for raw matrix DD construction.
   registerControl(m);
 
   // Vector Decision Diagrams

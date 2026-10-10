@@ -62,7 +62,7 @@ private:
     return _putenv_s(name_.c_str(), value.value_or("").c_str()) == 0;
 #else
     const auto* const name = name_.c_str();
-    /// NOLINTNEXTLINE(misc-include-cleaner): POSIX environment functions.
+    // NOLINTNEXTLINE(misc-include-cleaner): POSIX environment functions.
     return (value ? setenv(name, value->c_str(), 1) : unsetenv(name)) == 0;
 #endif
   }

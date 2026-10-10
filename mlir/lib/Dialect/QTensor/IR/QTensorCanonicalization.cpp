@@ -67,7 +67,7 @@ analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
   bool reachedInsertPhase = false;
 
   while (true) {
-    /// SCF folding may temporarily leave a loop-carried argument unused.
+    // SCF folding may temporarily leave a loop-carried argument unused.
     if (!currentQTensor.hasOneUse()) {
       return std::nullopt;
     }

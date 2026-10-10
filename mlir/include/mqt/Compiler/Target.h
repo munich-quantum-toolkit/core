@@ -172,6 +172,7 @@ public:
       [[nodiscard]] static Arity fixed(size_t value) noexcept;
 
       /// Create an operation arity with the given inclusive minimum.
+      ///
       /// Capability construction requires a positive minimum.
       [[nodiscard]] static Arity variadic(size_t minimum) noexcept;
 
@@ -225,14 +226,16 @@ public:
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
 
-    /// Fixed parameter values; nullopt accepts any value. Empty is
-    /// unrestricted. Nonempty lists contain numParameters() entries. Constants
-    /// match with absolute tolerance 1e-15, without reducing angles modulo a
-    /// period.
+    /// Fixed parameter values; nullopt accepts any value.
+    ///
+    /// Empty is unrestricted. Nonempty lists contain numParameters() entries.
+    /// Constants match with absolute tolerance 1e-15, without reducing angles
+    /// modulo a period.
     [[nodiscard]] llvm::ArrayRef<std::optional<double>>
     fixedParameters() const noexcept;
 
     /// Inclusive parameter intervals; empty entries impose no bound.
+    ///
     /// Unknown values do not satisfy a bounded or fixed parameter constraint.
     [[nodiscard]] llvm::ArrayRef<std::optional<ParameterBounds>>
     parameterBounds() const noexcept;
@@ -430,15 +433,18 @@ public:
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
   /// Return the cached minimum number of couplings between valid dense
-  /// vertices. Explicit topologies cache breadth-first searches because every
-  /// coupling has unit cost.
+  /// vertices.
+  ///
+  /// Explicit topologies cache breadth-first searches because every coupling
+  /// has unit cost.
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
 
   /// Return a shortest path of dense vertices, including both endpoints.
+  ///
   /// Uses the distance cache shared by target copies. Among equally short
   /// paths, choose the smallest next vertex at each step. Equal endpoints
-  /// return a one-vertex path. Both endpoints must be valid dense vertices;
-  /// use siteForVertex() to convert path entries to target site IDs.
+  /// return a one-vertex path. Both endpoints must be valid dense vertices; use
+  /// siteForVertex() to convert path entries to target site IDs.
   [[nodiscard]] llvm::SmallVector<size_t>
   shortestPathBetween(size_t source, size_t target) const;
 
@@ -466,6 +472,7 @@ public:
                                        llvm::ArrayRef<SiteId> sites) const;
 
   /// Check parameter values, optionally on ordered sites.
+  ///
   /// Unknown values require unrestricted support.
   [[nodiscard]] bool
   supportsOperation(llvm::StringRef name, size_t arity,
@@ -481,6 +488,7 @@ public:
                               llvm::ArrayRef<SiteId> sites) const;
 
   /// Return whether a recognized gate is supported by the target.
+  ///
   /// Pauli rotations query the fixed synthesis primitive at angle pi/2.
   [[nodiscard]] bool supports(GateKind gate) const;
 
@@ -496,6 +504,7 @@ public:
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 
   /// Return a globally usable single-qubit basis with an optional entangler.
+  ///
   /// The cached basis remains valid while this target or a copy exists.
   [[nodiscard]] const std::optional<SynthesisBasis>&
   synthesisBasis() const noexcept;

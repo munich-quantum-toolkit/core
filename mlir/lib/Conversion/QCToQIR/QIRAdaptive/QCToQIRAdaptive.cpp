@@ -707,6 +707,7 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
 namespace {
 
 /// Lower supported QC operations to QIR Adaptive runtime calls and LLVM IR.
+///
 /// QIR attributes and module flags are attached by the separate metadata pass.
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;

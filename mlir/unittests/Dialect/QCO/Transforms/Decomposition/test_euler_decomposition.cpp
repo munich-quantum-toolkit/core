@@ -112,6 +112,7 @@ class EulerSynthesisExactTest
 } // namespace
 
 /// Measures the given qubits and returns the measurement outcomes.
+///
 /// @param b The `ProgramBuilder` used to perform the measurements.
 /// @param qubits The qubits to be measured.
 /// @return The result values.
@@ -1095,8 +1096,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, MergesUnboundedShortSameAxisRun) {
   ASSERT_TRUE(succeeded(verifyLinearity(*owned)));
   rotations.clear();
   funcOp.walk([&](RZOp op) { rotations.push_back(op); });
-  /// Normalize the evaluated inputs before adding, including finite values
-  /// whose direct sum would overflow.
+  // Normalize the evaluated inputs before adding, including finite values
+  // whose direct sum would overflow.
   ASSERT_EQ(rotations.size(), 1U);
 
   for (auto [firstAngle, secondAngle] : std::array{
@@ -1705,7 +1706,7 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
         }
       });
       EXPECT_TRUE(preservesAngle);
-      /// Bound phases must remain within the gphase verifier's 1e4 limit.
+      // Bound phases must remain within the gphase verifier's 1e4 limit.
       for (const double angle : {
                0.,
                1.e-8,

@@ -154,8 +154,8 @@ TEST(QCOClassicalControlPhaseIdentityTest,
   }
 }
 
-/// Test: Tests replacing a classically controlled gate where there is
-/// only one control.
+// Test: Tests replacing a classically controlled gate where there is
+// only one control.
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -200,8 +200,8 @@ TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsOnlyControl) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests replacing a classically controlled gate where only one of
-/// two controls can be replaced.
+// Test: Tests replacing a classically controlled gate where only one of
+// two controls can be replaced.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsOneOfTwoControls) {
   programBuilder.initialize({
@@ -273,8 +273,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests replacing a classically controlled gate where both of the
-/// two controls can be replaced.
+// Test: Tests replacing a classically controlled gate where both of the
+// two controls can be replaced.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsTwoOfTwoControls) {
   programBuilder.initialize({
@@ -344,8 +344,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests replacing a classically controlled gate where two out of
-/// three controls can be replaced.
+// Test: Tests replacing a classically controlled gate where two out of
+// three controls can be replaced.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsTwoOfThreeControls) {
   programBuilder.initialize({
@@ -433,8 +433,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: A measured target of a non-phase gate must not be mistaken for a
-/// replaceable classical control.
+// Test: A measured target of a non-phase gate must not be mistaken for a
+// replaceable classical control.
 TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
   programBuilder.initialize({
       programBuilder.getI1Type(),
@@ -492,8 +492,8 @@ TEST_F(QCOReplaceClassicalControlsTest, doNotReplaceMeasuredNonPhaseTarget) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: A measured control of a multi-target gate can be replaced
-/// without attempting a single-target phase-gate swap.
+// Test: A measured control of a multi-target gate can be replaced
+// without attempting a single-target phase-gate swap.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceMeasuredControlOfMultiTargetGate) {
   programBuilder.initialize({
@@ -561,8 +561,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests replacing a classically controlled gate where a phase
-/// target gate needs to be swapped with to achieve a replaceable control.
+// Test: Tests replacing a classically controlled gate where a phase
+// target gate needs to be swapped with to achieve a replaceable control.
 TEST_F(QCOReplaceClassicalControlsTest, replaceClassicalControlsSwapPhase) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -1292,8 +1292,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*program, *reference));
 }
 
-/// Test: Tests that a phase target gate is not swapped with a
-/// classical control if it's not necessary.
+// Test: Tests that a phase target gate is not swapped with a
+// classical control if it's not necessary.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsDontSwapPhaseIfNotNecessary) {
   programBuilder.initialize({
@@ -1350,8 +1350,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests replacing a classically controlled gate where one of two
-/// control qubits of a phase gate is swapped with the target qubit.
+// Test: Tests replacing a classically controlled gate where one of two
+// control qubits of a phase gate is swapped with the target qubit.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOneOfTwoPhase) {
   programBuilder.initialize(
@@ -1411,9 +1411,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// Test: Tests replacing a classically controlled gate where only one of
-/// two controls can possibly be swapped with the target qubit of a phase
-/// operation.
+// Test: Tests replacing a classically controlled gate where only one of
+// two controls can possibly be swapped with the target qubit of a phase
+// operation.
 TEST_F(QCOReplaceClassicalControlsTest,
        replaceClassicalControlsSwapOnlyPossiblePhase) {
   programBuilder.initialize({

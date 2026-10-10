@@ -65,6 +65,7 @@ struct NodeBase : LLBase {
   }
 
   /// Check if a node is terminal
+  ///
   /// @param p The node to check
   /// @return true if the node is terminal, false otherwise.
   [[nodiscard]] static constexpr bool isTerminal(const NodeBase* p) noexcept {

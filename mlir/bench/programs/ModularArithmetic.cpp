@@ -68,7 +68,7 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
     phaseAdd(builder, accumulator, width, modulus, {}, true);
   }
   toggleOverflow(inverse);
-  /// These diagonal phase additions commute in the Fourier basis.
+  // These diagonal phase additions commute in the Fourier basis.
   phaseAdd(builder, accumulator, width, addend, controls, !inverse);
   phaseAdd(builder, accumulator, width, modulus, work, inverse);
   toggleOverflow(!inverse);
@@ -96,11 +96,11 @@ void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
         control,
         builder.loadQubit(multiplicand, loop.getInductionVar()),
     };
-    /// Controlled modular translations commute on the clean-workspace domain,
-    /// so their inverses can consume the residues in the same forward order.
+    // Controlled modular translations commute on the clean-workspace domain,
+    // so their inverses can consume the residues in the same forward order.
     modularAdd(builder, accumulator, width, residue, modulus, controls, work,
                inverse);
-    /// Residues are below 2^63, so doubling fits unsigned i64.
+    // Residues are below 2^63, so doubling fits unsigned i64.
     auto doubled =
         arith::ShLIOp::create(builder, residue, builder.intConstant(1));
     auto next = arith::RemUIOp::create(builder, doubled, modulus);

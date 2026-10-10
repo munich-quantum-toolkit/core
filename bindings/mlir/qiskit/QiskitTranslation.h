@@ -113,7 +113,9 @@ public:
   struct Symbol {
     std::string name;
     std::optional<ParameterGroup> group;
-    /// Hexadecimal input ID. String storage keeps expression moves noexcept.
+    /// Hexadecimal input ID.
+    ///
+    /// String storage keeps expression moves noexcept.
     std::optional<std::string> identity;
   };
 

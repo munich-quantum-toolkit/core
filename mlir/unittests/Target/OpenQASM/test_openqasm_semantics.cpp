@@ -2212,7 +2212,7 @@ if(c==1) x q[0];
 )qasm";
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  /// Truncating to 64 bits would omit the leading zero bits.
+  // Truncating to 64 bits would omit the leading zero bits.
   EXPECT_TRUE(
       llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
         return c.kind ==

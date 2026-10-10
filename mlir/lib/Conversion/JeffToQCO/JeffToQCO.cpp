@@ -65,6 +65,7 @@ template <typename JeffOpType>
 }
 
 /// Nest jeff modifiers in QCO's canonical `ctrl { pow { inv { ... } } }` order.
+///
 /// @param lambda Build the inner operation from its targets and return its
 /// results.
 template <typename JeffOpType>
@@ -221,6 +222,7 @@ static cbit::RegisterType getCBitType(Type type) {
 }
 
 /// Earlier bit reads and static length queries need no snapshot.
+///
 /// Other users may keep old array contents live after the update.
 static bool needsArrayCopy(Value value, Operation* update) {
   return llvm::any_of(value.getUsers(), [&](Operation* user) {
@@ -1092,7 +1094,7 @@ struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
          llvm::zip_equal(conditionIndices, scfWhile.getResults())) {
       results[index - 1] = result;
     }
-    /// Each region has its own argument tuple; CBit references remain captures.
+    // Each region has its own argument tuple; CBit references remain captures.
     moveRegion<scf::ConditionOp>(op.getBefore(), scfWhile.getBefore(), rewriter,
                                  typeConverter, inValues, conditionIndices,
                                  capturedInputs);
@@ -1268,8 +1270,8 @@ protected:
         }
         sharedArrayUpdates.insert(update);
       }
-      /// ponytail: reject live arrays across any mutating region; track region
-      /// argument aliases if independent live arrays need support.
+      // Live arrays across mutating regions require region argument alias
+      // tracking.
       if (isa<jeff::SwitchOp, jeff::ForOp, jeff::WhileOp>(operation) &&
           llvm::any_of(operation->getOperands(), [&](Value value) {
             return getCBitType(value.getType()) &&

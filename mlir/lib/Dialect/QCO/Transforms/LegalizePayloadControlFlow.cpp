@@ -272,8 +272,8 @@ getExactConstantTripCount(scf::ForOp loop) {
 
 static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
   mqt::simplifyClassicalControl(moduleOp);
-  /// Fold branches without transforming loops before the capture and unroll
-  /// safety checks below.
+  // Fold branches without transforming loops before the capture and unroll
+  // safety checks below.
   RewritePatternSet patterns(moduleOp.getContext());
   populateFoldStaticIfPatterns(patterns);
   IndexSwitchOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
@@ -563,8 +563,8 @@ protected:
             signalPassFailure();
             return;
           }
-          /// Promotion preserves child operations and can make their bounds
-          /// literal. Defer larger loops until static branches have folded.
+          // Promotion preserves child operations and can make their bounds
+          // literal. Defer larger loops until static branches have folded.
           for (auto nested : nestedLoops) {
             const auto nestedTripCount = getExactConstantTripCount(nested);
             if (nestedTripCount && *nestedTripCount == 1 &&
@@ -590,8 +590,8 @@ protected:
         loop.getRegion().walk([&](Operation* operation) {
           bodyOperations += operation != terminator;
         });
-        /// LLVM skips terminator-only bodies. Budget a temporary constant so
-        /// its unroller can remap iteration arguments and induction values.
+        // LLVM skips terminator-only bodies. Budget a temporary constant so
+        // its unroller can remap iteration arguments and induction values.
         const bool emptyBody = bodyOperations == 0U;
         bodyOperations = std::max(bodyOperations, uint64_t{1});
         const uint64_t remaining = maxOperations - clonedOperations;
@@ -614,8 +614,8 @@ protected:
         if (emptyBody) {
           OpBuilder::InsertionGuard guard(rewriter);
           rewriter.setInsertionPointToStart(loop.getBody());
-          /// Remove this workaround when LLVM unrolls empty bodies. The
-          /// static-branch cleanup below removes the unused constants.
+          // Remove this workaround when LLVM unrolls empty bodies. The
+          // static-branch cleanup below removes the unused constants.
           arith::ConstantIndexOp::create(rewriter, loop.getLoc(), 0);
         }
         if (failed(loopUnrollFull(loop))) {

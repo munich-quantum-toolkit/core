@@ -50,7 +50,9 @@ enum class QPEMethod : uint8_t {
 struct QPEOptions {
   static constexpr size_t MAX_PRECISION = 1'000'000;
 
-  /// Number of measured phase bits. Must be in `[1, MAX_PRECISION]`.
+  /// Number of measured phase bits.
+  ///
+  /// Must be in `[1, MAX_PRECISION]`.
   size_t precision;
   /// Eigenphase in turns.
   Phase phase;

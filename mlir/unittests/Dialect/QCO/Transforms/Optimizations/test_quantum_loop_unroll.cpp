@@ -40,6 +40,7 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /// Build a program that constructs a GHZ state using a loop.
+///
 /// @param context The MLIR context to build the module.
 /// @param n The number of qubits of the GHZ state.
 /// @return A module with an entry point function containing the GHZ logic.
@@ -180,8 +181,8 @@ TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
     builder.sink(results[1]);
     auto m = builder.finalize();
     auto entry = *m->getOps<func::FuncOp>().begin();
-    /// The unroller handles general SCF permutations even though the program
-    /// builder requires positional quantum results.
+    // The unroller handles general SCF permutations even though the program
+    // builder requires positional quantum results.
     auto loop = *entry.getOps<scf::ForOp>().begin();
     auto args = loop.getRegionIterArgs();
     loop.getBody()->getTerminator()->setOperands({args[1], args[0]});
@@ -212,8 +213,8 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 1);
 
-  /// Partial unrolling retains the loop and duplicates each iteration's
-  /// extract/insert pairs.
+  // Partial unrolling retains the loop and duplicates each iteration's
+  // extract/insert pairs.
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
 

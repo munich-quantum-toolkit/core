@@ -13,7 +13,7 @@
 #include "TestUtils.hpp"
 
 /// Required for JSON construction inside GoogleTest macro expansions.
-#include "nlohmann/json.hpp" /// NOLINT(misc-include-cleaner)
+#include "nlohmann/json.hpp" // NOLINT(misc-include-cleaner)
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
@@ -58,8 +58,8 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
       testing::ThrowsMessage<std::runtime_error>(
           testing::HasSubstr("incompatible ABI")));
 
-  /// The upstream example requires a token. A failed initialization must allow
-  /// retry.
+  // The upstream example requires a token. A failed initialization must allow
+  // retry.
   EXPECT_THAT(
       [] {
         return Session{SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER}};
@@ -153,7 +153,7 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
     EXPECT_THROW(static_cast<void>(builtin_driver::openDevice("test.session")),
                  std::invalid_argument);
   }
-  /// Failed driver initialization must leave manifest registration available.
+  // Failed driver initialization must leave manifest registration available.
   builtin_driver::addManifest(late);
   const auto first = [&] {
     const ScopedEnvironmentVariable overrides{

@@ -188,8 +188,8 @@ TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
 
 } // namespace
 
-/// HEADER/START/METADATA/END frame the per-shot OUTPUT block.
-/// The default Labeled schema emits `labeled` in HEADER and METADATA.
+// HEADER/START/METADATA/END frame the per-shot OUTPUT block.
+// The default Labeled schema emits `labeled` in HEADER and METADATA.
 TEST_F(QIRRuntimeTest, OutputFraming) {
   auto& runtime = Runtime::getInstance();
   runtime.outputProgramHeader();
@@ -866,7 +866,7 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
 }
 
 TEST_F(QIRRuntimeTest, PackageResizeWhenEnlargingState) {
-  /// Acting on qubit 32 must extend the initially empty state.
+  // Acting on qubit 32 must extend the initially empty state.
   auto* q32 = reinterpret_cast<Qubit*>(32UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q32);

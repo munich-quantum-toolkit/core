@@ -599,7 +599,7 @@ void JitSession::initialize(
     }
   });
 
-  /// Use the ordinary module JIT; no function-lazy modules are submitted.
+  // Use the ordinary module JIT; no function-lazy modules are submitted.
   llvm::orc::LLJITBuilder builder;
 
   // Use the module's target triple if set, otherwise detect the host's.
@@ -617,7 +617,7 @@ void JitSession::initialize(
   }
   builder.setJITTargetMachineBuilder(*host);
 
-  /// Apply the module's explicit data layout if present.
+  // Apply the module's explicit data layout if present.
   if (dl) {
     builder.setDataLayout(dl);
   }

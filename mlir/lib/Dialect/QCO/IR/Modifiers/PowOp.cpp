@@ -431,7 +431,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         return failure();
       }
     }
-    /// These fixed multi-qubit gates only have an integral parity fold.
+    // These fixed multi-qubit gates only have an integral parity fold.
     if (isa<ECROp, RCCXOp, SWAPOp>(innerOp) && !mqt::isIntegerExponent(r)) {
       return failure();
     }
@@ -714,18 +714,6 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
                 });
 }
 
-/// Computes the unitary matrix of `pow(p) { U }`, i.e. `U^p`.
-///
-/// Short-circuits `U^1` and `U^0`; otherwise uses the
-/// eigendecomposition `U = V D V^{-1}` so that `U^p = V D^p V^{-1}`, with each
-/// eigenvalue raised to `p` on the principal branch. Since the body is unitary,
-/// `V` is unitary and `V^{-1} = V†`; this is verified before use because the
-/// eigensolver does not orthogonalize degenerate eigenspaces.
-///
-/// The body matrix `U` comes from @ref composeBodyMatrix over all targets.
-///
-/// @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body
-/// is not fully compile-time known, or `V` is not unitary.
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
   const auto exponent = getExponentValue();
   return exponent ? getUnitaryMatrix(*exponent) : std::nullopt;

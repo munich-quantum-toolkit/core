@@ -51,22 +51,24 @@ typedef struct QubitImpl Qubit;
 
 typedef struct ArrayImpl Array;
 
-/// Creates a new 1-dimensional array. The int64_t is the size of each element
-/// in bytes. The int64_t is the length of the array. The bytes of the new array
-/// should be set to zero.
-Array* __quantum__rt__array_create_1d(int32_t, int64_t) MQT_QIR_NOEXCEPT;
+/// Creates a zero-initialized 1-dimensional array.
+///
+/// Requires a positive element size in bytes and a nonnegative length.
+Array* __quantum__rt__array_create_1d(int32_t elementSize,
+                                      int64_t length) MQT_QIR_NOEXCEPT;
 
-/// Returns the length of a dimension of the array. The int64_t is the
-/// zero-based dimension to return the length of; it must be 0 for a
-/// 1-dimensional array.
+/// Returns the number of elements in the array.
 int64_t __quantum__rt__array_get_size_1d(const Array*) MQT_QIR_NOEXCEPT;
 
 /// Returns a pointer to the element of the array at the zero-based index given
-/// by the int64_t. Returns nullptr if the index is out of bounds.
+/// by the int64_t.
+///
+/// Returns nullptr if the index is out of bounds.
 int8_t* __quantum__rt__array_get_element_ptr_1d(Array*,
                                                 int64_t) MQT_QIR_NOEXCEPT;
 
 /// Adds the given integer value to the reference count for the array.
+///
 /// Deallocates the array if the reference count becomes 0. The behavior is
 /// undefined if the reference count becomes negative.
 void __quantum__rt__array_update_reference_count(Array*,
@@ -99,8 +101,9 @@ void __quantum__rt__result_array_allocate(int64_t, Result**,
                                           bool* outError) MQT_QIR_NOEXCEPT;
 void __quantum__rt__result_array_release(int64_t, Result**) MQT_QIR_NOEXCEPT;
 
-/// Releases a single qubit. Passing a null pointer as argument should cause a
-/// runtime failure.
+/// Releases a single qubit.
+///
+/// Passing a null pointer as argument should cause a runtime failure.
 void __quantum__rt__qubit_release(Qubit*) MQT_QIR_NOEXCEPT;
 
 // QUANTUM INSTRUCTION SET
@@ -196,43 +199,50 @@ void __quantum__qis__reset__body(Qubit*) MQT_QIR_NOEXCEPT;
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/under_development/profiles/Adaptive_Profile.md#runtime-functions
 
-/// Initializes the execution environment. Sets all qubits to a zero-state if
-/// they are not dynamically managed.
+/// Initializes the execution environment.
+///
+/// Sets all qubits to a zero-state if they are not dynamically managed.
 void __quantum__rt__initialize(char*) MQT_QIR_NOEXCEPT;
 
 /// Reads the value of the given measurement result and converts it to a boolean
 /// value.
 bool __quantum__rt__read_result(Result*) MQT_QIR_NOEXCEPT;
 
-/// Adds a measurement result to the generated output. The second parameter
-/// defines a string label for the result value. Depending on the output schema,
-/// the label is included in the output or omitted.
+/// Adds a measurement result to the generated output.
+///
+/// The second parameter defines a string label for the result value. Depending
+/// on the output schema, the label is included in the output or omitted.
 void __quantum__rt__result_record_output(Result*, const char*) MQT_QIR_NOEXCEPT;
 
-/// Adds a boolean value to the generated output. The second parameter defines
-/// a string label for the value. Depending on the output schema, the label is
-/// included in the output or omitted.
+/// Adds a boolean value to the generated output.
+///
+/// The second parameter defines a string label for the value. Depending on the
+/// output schema, the label is included in the output or omitted.
 void __quantum__rt__bool_record_output(bool, const char*) MQT_QIR_NOEXCEPT;
 
-/// Adds an integer value to the generated output. The second parameter defines
-/// a string label for the value. Depending on the output schema, the label is
-/// included in the output or omitted.
+/// Adds an integer value to the generated output.
+///
+/// The second parameter defines a string label for the value. Depending on the
+/// output schema, the label is included in the output or omitted.
 void __quantum__rt__int_record_output(int64_t, const char*) MQT_QIR_NOEXCEPT;
 
-/// Adds a floating-point value to the generated output. The second parameter
-/// defines a string label for the value. Depending on the output schema, the
-/// label is included in the output or omitted.
+/// Adds a floating-point value to the generated output.
+///
+/// The second parameter defines a string label for the value. Depending on the
+/// output schema, the label is included in the output or omitted.
 void __quantum__rt__double_record_output(double, const char*) MQT_QIR_NOEXCEPT;
 
 /// Inserts a marker in the generated output indicating that the next
-/// \p elementCount recorded values form the contents of a tuple. The second
-/// parameter defines a string label for the tuple.
+/// \p elementCount recorded values form the contents of a tuple.
+///
+/// The second parameter defines a string label for the tuple.
 void __quantum__rt__tuple_record_output(int64_t elementCount,
                                         const char*) MQT_QIR_NOEXCEPT;
 
 /// Inserts a marker in the generated output indicating that the next \p size
-/// recorded values form the contents of an array. The second parameter defines
-/// a string label for the array.
+/// recorded values form the contents of an array.
+///
+/// The second parameter defines a string label for the array.
 void __quantum__rt__array_record_output(int64_t size,
                                         const char*) MQT_QIR_NOEXCEPT;
 

@@ -61,6 +61,7 @@ registeredQDMIDeviceIds();
 payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
 /// Snapshot the device and select its executable payload before compilation.
+///
 /// Preference: Adaptive QIR (binary, text), OpenQASM 3, Base QIR (binary,
 /// text).
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
@@ -68,6 +69,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
     std::optional<QDMI_Program_Format> format = std::nullopt);
 
 /// Check equality of legality-relevant contracts, ignoring calibration data.
+///
 /// Ordered site IDs and ordered operation operands retain their meaning.
 [[nodiscard]] llvm::Error
 validateTargetCompatibility(const TargetEnvironment& compiled,

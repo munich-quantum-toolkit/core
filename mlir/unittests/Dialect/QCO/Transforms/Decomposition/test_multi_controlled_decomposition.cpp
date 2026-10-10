@@ -59,10 +59,11 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-/// DD for k=2…20 plus the first HP24 width (k=33): full matrix DD through k=8
-/// (MCX/MCY/MCZ) or k=6 (MCP); basis-state DD for larger Pauli widths;
-/// coherent-state DD at SP22/HP24 boundaries and representative larger
-/// MCP widths.
+/// DD coverage for k=2…20 and the first HP24 width (k=33).
+///
+/// Full matrix DD through k=8 (MCX/MCY/MCZ) or k=6 (MCP); basis-state DD for
+/// larger Pauli widths; coherent-state DD at SP22/HP24 boundaries and
+/// representative larger MCP widths.
 static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
     2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 33,
 };
@@ -75,17 +76,19 @@ static constexpr std::array<size_t, 12> K_COHERENT_PAULI_CONTROL_COUNTS = {
 };
 static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
 /// Additional fully-lowered/CX smoke checks for k > 20 through the SP22 MCX
-/// limit (k=32) and the first HP24 width (k=33). Selected widths also receive
-/// coherent DD coverage above.
+/// limit (k=32) and the first HP24 width (k=33).
+///
+/// Selected widths also receive coherent DD coverage above.
 static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
     21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
 };
 
 /// Expected elementary Ctrl@X counts after default `min-qubits=3` lowering.
-/// Defined for control counts through the first HP24 width, k=33.
-/// For `5 ≤ k ≤ 32`, MCX uses SP22 MCP(π); each CRX expands to 2 Ctrl@X while
-/// CP stays as Ctrl@P, so elementary CX is `4k² − 8k + 4`. k=33 is the first
-/// HP24 width (pinned measured CX).
+///
+/// Defined for control counts through the first HP24 width, k=33. For `5 ≤ k ≤
+/// 32`, MCX uses SP22 MCP(π); each CRX expands to 2 Ctrl@X while CP stays as
+/// Ctrl@P, so elementary CX is `4k² − 8k + 4`. k=33 is the first HP24 width
+/// (pinned measured CX).
 [[nodiscard]] static constexpr size_t expectedMcxCx(size_t k) {
   assert(k <= 33);
   if (k == 33) {
@@ -99,8 +102,9 @@ static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
 }
 
 /// Effective CX for MCP: elementary Ctrl@X plus ~2 CX per leftover
-/// single-controlled P. For `k >= 5` this matches the SP22 LDD bound
-/// `4k^2 - 4k + 2`.
+/// single-controlled P.
+///
+/// For `k >= 5` this matches the SP22 LDD bound `4k^2 - 4k + 2`.
 [[nodiscard]] static constexpr size_t expectedMcpCx(size_t k) {
   if (k >= 5) {
     return (4 * k * k) - (4 * k) + 2;
@@ -110,9 +114,10 @@ static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
 }
 
 /// CX regression budget for the borrowed-helper rotation construction.
-/// Each half-MCX occurs twice and costs 1/6/14 CX at 1/2/3 controls.
-/// Above that, its two passes each use a 6-CX CCX, a 3-CX RCCX,
-/// and 2(n-3) two-CX gadgets: 8n-6 CX. Both halves reach this case at k=8.
+///
+/// Each half-MCX occurs twice and costs 1/6/14 CX at 1/2/3 controls. Above
+/// that, its two passes each use a 6-CX CCX, a 3-CX RCCX, and 2(n-3) two-CX
+/// gadgets: 8n-6 CX. Both halves reach this case at k=8.
 [[nodiscard]] static constexpr size_t expectedMcrCxBudget(size_t k) {
   if (k >= 8) {
     return (16 * k) - 24;

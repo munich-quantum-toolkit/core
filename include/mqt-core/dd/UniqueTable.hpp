@@ -52,17 +52,19 @@ public:
     std::size_t initialGCLimit = INITIAL_GC_LIMIT;
 
     /// Per-level bucket ceiling; must be a power of two and at least nBuckets.
+    ///
     /// Set equal to nBuckets for fixed sizing. clear() retains grown
     /// capacities.
     size_t maxBuckets = 1048576U;
   };
 
   /// The default constructor
+  ///
   /// @param manager The memory manager to use
   /// @param config The configuration for the unique table
   ///
-  /// The MemoryManager shall be constructed from the same type that the
-  /// unique table is then used for in the lookup method.
+  /// The MemoryManager shall be constructed from the same type that the unique
+  /// table is then used for in the lookup method.
   UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
 
   void resize(std::size_t nVars);
@@ -113,7 +115,7 @@ public:
       return hashedNode;
     }
 
-    /// Grow only this populated level; node addresses and roots stay valid.
+    // Grow only this populated level; node addresses and roots stay valid.
     if (stats[v].numEntries >= tables[v].size() &&
         tables[v].size() < cfg.maxBuckets) {
       grow<Node>(v);
@@ -136,6 +138,7 @@ public:
   }
 
   /// Get a reference to the tables.
+  ///
   /// Bucket storage may change after insertion or resize; node addresses stay
   /// valid.
   [[nodiscard]] const auto& getTables() const { return tables; }
@@ -238,6 +241,7 @@ private:
   }
 
   /// Search for a node in the hash table with the given key.
+  ///
   /// @param p The node to search for.
   /// @param key The hashed value used to search the table.
   /// @returns A pointer to the node if found or Node::getTerminal() otherwise.

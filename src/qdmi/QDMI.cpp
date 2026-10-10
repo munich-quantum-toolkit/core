@@ -88,7 +88,7 @@ getSparseResult(const detail::DriverAPI& api, QDMI_Job job, size_t programIndex,
                                          valuesSize, values.data(), nullptr),
                      "Querying " + description + " values");
 
-  /// Parse the comma-separated keys.
+  // Parse the comma-separated keys.
   std::map<std::string, T> result;
   if (keys.empty() && values.size() == 1) {
     result[""] = values.front();
@@ -210,7 +210,7 @@ struct LoadedDriverAPI : detail::DriverAPI {
 template <class Function>
 [[nodiscard]] auto loadSymbol(LibraryHandle library, const char* name)
     -> Function {
-  /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   const auto function = reinterpret_cast<Function>(findSymbol(library, name));
   if (function == nullptr) {
     throw std::runtime_error("QDMI driver is missing symbol " +
@@ -226,8 +226,8 @@ template <class Function>
     std::map<std::filesystem::path, std::shared_ptr<const LoadedDriverAPI>>
         apis;
   };
-  /// Keep validated drivers available to sessions in global destructors.
-  /// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  // Keep validated drivers available to sessions in global destructors.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   static auto& cache = *new DriverAPICache;
   const std::scoped_lock lock(cache.mutex);
   if (const auto found = cache.apis.find(path); found != cache.apis.end()) {
@@ -312,8 +312,8 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
   SessionGuard guard{session, api->session_free};
   validateSessionAllocation(status, session);
   auto owner = std::make_shared<detail::DriverSession>(api, session);
-  /// Ownership transfers only after the shared allocation succeeds.
-  /// NOLINTNEXTLINE(bugprone-unused-return-value)
+  // Ownership transfers only after the shared allocation succeeds.
+  // NOLINTNEXTLINE(bugprone-unused-return-value)
   guard.release();
   return owner;
 }
@@ -377,7 +377,7 @@ Device builtin_driver::openDevice(
   SessionGuard guard{session, api->session_free};
   validateSessionAllocation(status, session);
   auto owner = std::make_shared<detail::DriverSession>(api, session);
-  /// NOLINTNEXTLINE(bugprone-unused-return-value)
+  // NOLINTNEXTLINE(bugprone-unused-return-value)
   guard.release();
   throwIfError(api->session_init(session), "Initializing QDMI device session");
   size_t size = 0;
@@ -881,7 +881,7 @@ Device::submitJobImpl(const QDMI_Program_Format format,
     return std::nullopt;
   }
   qdmi::throwIfError(result, "Setting programs");
-  /// The program format determines whether this device accepts shot counts.
+  // The program format determines whether this device accepts shot counts.
   if (numShots.has_value()) {
     qdmi::throwIfError(api().job_set_parameter(jobWrapper,
                                                QDMI_JOB_PARAMETER_SHOTSNUM,

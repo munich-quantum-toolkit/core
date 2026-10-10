@@ -28,9 +28,10 @@ namespace mlir::qco {
 
 class UnitaryOpInterface;
 
-/// Immutable numerical costs prepared once before routing trials. Construction
-/// requires linear QCO IR. No IR handles survive construction; target support
-/// and operand direction remain the caller's responsibility.
+/// Immutable numerical costs prepared once before routing trials.
+///
+/// Construction requires linear QCO IR. No IR handles survive construction;
+/// target support and operand direction remain the caller's responsibility.
 class NativeCostTable {
 public:
   static std::unique_ptr<const NativeCostTable>
@@ -55,21 +56,25 @@ private:
 };
 
 /// Read-only native synthesis decisions with bounded numerical caches.
-/// Keep instances local to a routing state or synthesis invocation.
-/// They retain no IR handles or target state.
-/// Supplied sites follow operand order and match the operation's arity.
-/// Unavailable results cover unsupported lowering and numerical failure.
+///
+/// Keep instances local to a routing state or synthesis invocation. They retain
+/// no IR handles or target state. Supplied sites follow operand order and match
+/// the operation's arity. Unavailable results cover unsupported lowering and
+/// numerical failure.
 class NativeCostAnalysis {
 public:
   using Sites = std::optional<ArrayRef<CompilerTarget::SiteId>>;
 
-  /// The optional shared table must outlive this analysis. Routing uses compact
-  /// counts with a local fallback; emission caches full decompositions.
+  /// The optional shared table must outlive this analysis.
+  ///
+  /// Routing uses compact counts with a local fallback; emission caches full
+  /// decompositions.
   explicit NativeCostAnalysis(uint64_t seed,
                               const NativeCostTable* shared = nullptr)
       : seed_(seed), shared_(shared) {}
 
   /// Whether an operation is native, and whether its operands must be reversed.
+  ///
   /// Only operand-swap-invariant operations can use reversed native support.
   static std::optional<bool> nativeOrientation(UnitaryOpInterface operation,
                                                const CompilerTarget& target,
@@ -84,7 +89,9 @@ public:
   const std::optional<decomposition::TwoQubitNativeDecomposition>&
   decompose(const Matrix4x4& matrix, CompilerTarget::Entangler entangler);
 
-  /// Native two-qubit count. Unavailable lowering is never a zero-cost gate.
+  /// Native two-qubit count.
+  ///
+  /// Unavailable lowering is never a zero-cost gate.
   std::optional<size_t> operationCost(UnitaryOpInterface operation,
                                       const CompilerTarget& target,
                                       Sites sites);
@@ -119,9 +126,11 @@ private:
   size_t lastDecomposition_ = 0;
 };
 
-/// Estimate a routed block without building IR. Vertices use the target's dense
-/// numbering. Pending runs occupy disjoint physical pairs; state is O(sites).
-/// Depth counts qubit dependencies only, without classical scheduling.
+/// Estimate a routed block without building IR.
+///
+/// Vertices use the target's dense numbering. Pending runs occupy disjoint
+/// physical pairs; state is O(sites). Depth counts qubit dependencies only,
+/// without classical scheduling.
 class NativeCostTracker {
 public:
   NativeCostTracker(const CompilerTarget& target, uint64_t seed,
@@ -131,7 +140,9 @@ public:
   void reset(WireDirection direction);
 
   /// Observe one original operation in traversal order, with vertices in its
-  /// operand order. Matrices always represent forward circuit execution.
+  /// operand order.
+  ///
+  /// Matrices always represent forward circuit execution.
   void append(Operation* operation, ArrayRef<size_t> vertices);
   /// Observe a routing SWAP before updating the logical-to-physical layout.
   void appendSwap(size_t first, size_t second);
@@ -143,9 +154,10 @@ public:
   /// Finish pending runs and return count/depth, or unavailable lowering.
   std::optional<std::pair<size_t, size_t>> score();
   /// Signed first-SWAP adjustment: extended run minus current and standalone
-  /// costs. Append in forward traversal; prepend in backward traversal.
-  /// May be positive. Does not consume the pending run.
-  /// Assumes first < second.
+  /// costs.
+  ///
+  /// Append in forward traversal; prepend in backward traversal. May be
+  /// positive. Does not consume the pending run. Assumes first < second.
   int64_t swapCostAdjustment(size_t first, size_t second,
                              size_t standaloneCost);
 
@@ -157,6 +169,7 @@ private:
   };
 
   /// Include the single-qubit suffix encountered first in backward traversal.
+  ///
   /// Its matrix remains in forward circuit order.
   Matrix4x4 withTrailingGates(Matrix4x4 matrix, size_t a, size_t b) const;
   size_t pendingCost(size_t a, size_t b);

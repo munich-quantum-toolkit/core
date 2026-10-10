@@ -219,8 +219,8 @@ protected:
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
     EXPECT_TRUE(verify(expected).succeeded());
-    /// Compare the same parser representation: LLVM builders can omit optional
-    /// default properties that the textual parser materializes (unnamed_addr).
+    // Compare the same parser representation: LLVM builders can omit optional
+    // default properties that the textual parser materializes (unnamed_addr).
     std::string referenceIR;
     llvm::raw_string_ostream referenceStream(referenceIR);
     expected.print(referenceStream);
@@ -560,7 +560,7 @@ TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
                                   ProgramFormat::QCO));
 }
 
-/// Raw QCO stops before the registered default optimization pipeline.
+// Raw QCO stops before the registered default optimization pipeline.
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -614,7 +614,7 @@ TEST_F(CompilerPipelineTest, MoveAssignmentKeepsModuleContextAlive) {
   EXPECT_EQ(first->module(), expected);
   EXPECT_TRUE(succeeded(verify(first->module())));
 
-  /// A self move must retain the module and its context.
+  // A self move must retain the module and its context.
   auto& alias = *first;
   *first = std::move(alias);
   ASSERT_TRUE(first->isValid());
@@ -2525,7 +2525,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   const auto target = makeSparseUCZTarget(true);
   const auto payload = makePayloadSpecification();
   const TargetEnvironment targetEnvironment(target, payload);
-  /// The supplied environment must replace stale metadata before all passes.
+  // The supplied environment must replace stale metadata before all passes.
   attachTargetEnvironment(
       qco->module(), TargetEnvironment(makeSparseUCZTarget(false), payload));
   ASSERT_TRUE(qco->compileForTarget(targetEnvironment));
@@ -4103,7 +4103,7 @@ TEST_F(CompilerPipelineTest,
   EXPECT_TRUE(StringRef(diagnostics).contains("scf.while")) << diagnostics;
 }
 
-/// Test: target passes use the canonical environment in textual form.
+// Test: target passes use the canonical environment in textual form.
 TEST_F(CompilerPipelineTest, TargetPassesRunFromTextualPipeline) {
   constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -4203,7 +4203,7 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
     compiled.module().walk([&](qco::UnitaryOpInterface unitary) {
       numTwoQubitGates += unitary.isTwoQubit();
     });
-    /// Individual lowering needs four CZ gates; the whole block needs two.
+    // Individual lowering needs four CZ gates; the whole block needs two.
     EXPECT_EQ(numTwoQubitGates, 2);
   }
   EXPECT_FALSE(program->synthesizeForTarget(TargetEnvironment(
@@ -4375,7 +4375,7 @@ TEST_F(CompilerPipelineTest,
   program->module().walk([&](qco::UnitaryOpInterface unitary) {
     entanglers += unitary.isTwoQubit();
   });
-  /// Each pair of CX gates cancels; routing must see no interactions.
+  // Each pair of CX gates cancels; routing must see no interactions.
   EXPECT_EQ(entanglers, 0U);
 }
 
@@ -4424,7 +4424,7 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {
     program->module().walk([&](qco::UnitaryOpInterface unitary) {
       entanglers += unitary.isTwoQubit();
     });
-    /// Routing a triangle on a line needs a SWAP; fusion saves two CZ gates.
+    // Routing a triangle on a line needs a SWAP; fusion saves two CZ gates.
     EXPECT_LE(entanglers, 4);
     const auto actual =
         qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
@@ -4500,7 +4500,7 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
   expectFullUnitaryEqual(*reference, program->module(), 2);
 }
 
-/// Test that target compilation leaves dead-value cleanup at a fixed point.
+// Test that target compilation leaves dead-value cleanup at a fixed point.
 TEST_F(CompilerPipelineTest,
        TargetCompilationLeavesDeadValueCleanupAtFixedPoint) {
   constexpr llvm::StringLiteral source = R"mlir(
@@ -4598,7 +4598,7 @@ if(c0==1) u1(pi/4) q[2];
   auto entry = mlir::mqt::getEntryPoint(program->module());
   auto branches = llvm::to_vector(entry.getOps<qco::IfOp>());
   ASSERT_EQ(branches.size(), 2);
-  /// Measuring c1 does not change c0, so both branches can share its read.
+  // Measuring c1 does not change c0, so both branches can share its read.
   EXPECT_EQ(branches[0].getCondition(), branches[1].getCondition());
 }
 
@@ -4918,7 +4918,7 @@ TEST_F(CompilerPipelineTest,
   EXPECT_LE(count, 4U);
 }
 
-/// Test: all-to-all target compilation uses compact placement.
+// Test: all-to-all target compilation uses compact placement.
 TEST_F(CompilerPipelineTest, QCOProgramUsesCompactAllToAllPlacement) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -4999,7 +4999,7 @@ h q[1];
   EXPECT_EQ(staticQubits, 2U);
 }
 
-/// Test: the payload specification selects the targeted output.
+// Test: the payload specification selects the targeted output.
 TEST_F(CompilerPipelineTest, DefaultPipelineDerivesTargetOutput) {
   auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   ASSERT_TRUE(input);
@@ -5175,9 +5175,9 @@ h q;
   EXPECT_EQ(std::get<QCProgram>(program).str(), original);
 }
 
-/// Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
-///
-/// Correctness of the decomposition is tested in a dedicated suite.
+// Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
+//
+// Correctness of the decomposition is tested in a dedicated suite.
 TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), mlir::qc::multipleControlledX);

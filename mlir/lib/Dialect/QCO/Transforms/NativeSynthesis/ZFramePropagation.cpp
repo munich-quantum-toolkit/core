@@ -103,7 +103,7 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
     return success();
   }
   if (equatorial) {
-    /// Fuse local factors before converting them to equatorial gates.
+    // Fuse local factors before converting them to equatorial gates.
     RewritePatternSet patterns(rewriter.getContext());
     populateFuseSingleQubitUnitaryRunsPatterns(
         patterns, {.singleQubit = SingleQubitBasis::U}, &target);
@@ -114,7 +114,7 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
   DominanceInfo dominance;
   const WalkResult result = moduleOp->walk<
       WalkOrder::PreOrder>([&](Operation* parent) {
-    /// Modifier bodies and their phases belong to the enclosing unitary.
+    // Modifier bodies and their phases belong to the enclosing unitary.
     if (isa<UnitaryOpInterface>(parent)) {
       return WalkResult::skip();
     }
@@ -148,15 +148,15 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
             }
             last = anchor.getDefiningOp<ROp>();
             if (last && last->getBlock() == &block && wire == anchor) {
-              /// The adjacent R can be replaced at the current boundary.
+              // The adjacent R can be replaced at the current boundary.
             } else if (last && last->getBlock() == &block &&
                        llvm::all_of(found->second.sums, [&](Value angle) {
                          return !angle ||
                                 dominance.properlyDominates(angle, last) ||
                                 mqt::valueToConstantDouble(angle);
                        })) {
-              /// Absorb before a diagonal segment when its scalar inputs
-              /// are already available at the preceding equatorial gate.
+              // Absorb before a diagonal segment when its scalar inputs
+              // are already available at the preceding equatorial gate.
               wire = anchor;
               rewriter.setInsertionPoint(last);
               for (auto& partial : found->second.sums) {
@@ -186,7 +186,7 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
                   last ? normalizeRotationParameter(rewriter, loc,
                                                     last.getTheta())
                        : mqt::FloatParameter{zero.getValue()});
-              /// RZ(a) R(t,p) = R(pi,p+a/2) R(t-pi,p), including its phase.
+              // RZ(a) R(t,p) = R(pi,p+a/2) R(t-pi,p), including its phase.
               auto first =
                   ROp::create(rewriter, loc, last ? last.getQubitIn() : wire,
                               (theta - pi).getValue(), axis.getValue());
@@ -206,8 +206,8 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
           rewriter.setInsertionPoint(&operation);
           auto loc = operation.getLoc();
           if (isa<MeasureOp, ResetOp>(operation)) {
-            /// A Z frame changes only the phase of each measurement
-            /// branch; reset discards the previous state altogether.
+            // A Z frame changes only the phase of each measurement
+            // branch; reset discards the previous state altogether.
             frames.erase(operation.getOperand(0));
             continue;
           }
@@ -232,7 +232,7 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
             if (!equatorial && !frames.contains(wire)) {
               auto next = dyn_cast<UnitaryOpInterface>(
                   *gate.getOutputQubit(0).user_begin());
-              /// Leave isolated native rotations and their angles intact.
+              // Leave isolated native rotations and their angles intact.
               if (!next || !commutesWithZFrames(next)) {
                 continue;
               }

@@ -66,14 +66,17 @@ class Device final : public Singleton<Device> {
 
 public:
   /// Allocates a new device session.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_alloc
   auto sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session) -> QDMI_STATUS;
 
   /// Frees a device session.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_free
   auto sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void;
 
   /// Query a device property.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_query_device_property
   auto queryProperty(QDMI_Device_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> QDMI_STATUS;
@@ -111,34 +114,41 @@ private:
 
 public:
   /// Initializes the device session.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_init
   auto init() -> QDMI_STATUS;
 
   /// Sets a parameter for the device session.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_set_parameter
   auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
                     const void* value) const -> QDMI_STATUS;
 
   /// Create a new device job.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_create_device_job
   auto createDeviceJob(MQT_DDSIM_QDMI_Device_Job* job) -> QDMI_STATUS;
 
   /// Frees the device job.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_free
   auto freeDeviceJob(MQT_DDSIM_QDMI_Device_Job job) -> void;
 
-  /// Forwards a query of a device property to the device.
+  /// Queries a device property.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_query_device_property
   auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
                            size_t* sizeRet) const -> QDMI_STATUS;
 
-  /// Forwards a query of a site property to the site.
+  /// Queries a site property.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_query_site_property
   auto querySiteProperty(MQT_DDSIM_QDMI_Site site, QDMI_Site_Property prop,
                          size_t size, void* value, size_t* sizeRet) const
       -> QDMI_STATUS;
 
-  /// Forwards a query of an operation property to the operation.
+  /// Queries an operation property.
+  ///
   /// @see MQT_DDSIM_QDMI_device_session_query_operation_property
   auto queryOperationProperty(MQT_DDSIM_QDMI_Operation operation,
                               size_t numSites, const MQT_DDSIM_QDMI_Site* sites,
@@ -172,6 +182,7 @@ public:
       MQT_DDSIM_QDMI_Device_Session_impl_d* session);
   ~MQT_DDSIM_QDMI_Device_Job_impl_d();
   /// Frees the device job.
+  ///
   /// @note This function just forwards to the session's @ref
   /// MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob function. This
   /// function is needed because the interface only provides the job handle to
@@ -195,27 +206,33 @@ public:
       -> QDMI_STATUS;
 
   /// Queries a property of the job.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_query_property
   auto queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> QDMI_STATUS;
 
   /// Submits the job to the device.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_submit
   auto submit() -> QDMI_STATUS;
 
   /// Cancels the job.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_cancel
   auto cancel() -> QDMI_STATUS;
 
   /// Checks the status of the job.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_check
   auto check(QDMI_Job_Status* status) const -> QDMI_STATUS;
 
   /// Waits for the job to complete but at most for the specified timeout.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_wait
   auto wait(size_t timeout) const -> QDMI_STATUS;
 
   /// Gets the results of the job.
+  ///
   /// @see MQT_DDSIM_QDMI_device_job_get_results
   auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
                   void* data, size_t* sizeRet) -> QDMI_STATUS;

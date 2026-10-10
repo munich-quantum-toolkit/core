@@ -302,8 +302,8 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        FoldsMulDerivedPhasesWithinPracticalAngleLimit) {
-  /// Fold and normalize each constant phase contribution before accumulation
-  /// so the merged angle stays within the GPhase verifier's 1e4-radian bound.
+  // Fold and normalize each constant phase contribution before accumulation
+  // so the merged angle stays within the GPhase verifier's 1e4-radian bound.
   OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
   builder.setInsertionPointToStart(moduleOp->getBody());

@@ -143,7 +143,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
         operation->flattenedSites.insert(operation->flattenedSites.end(),
                                          tuple.begin(), tuple.end());
       }
-      /// Keep the public flattened site list in its configured order.
+      // Keep the public flattened site list in its configured order.
       std::ranges::sort(operation->supportedSites, siteTupleLess);
       for (const auto& override : operationConfiguration.siteOverrides) {
         auto tuple = materializeTuple(override.sites, newSites);

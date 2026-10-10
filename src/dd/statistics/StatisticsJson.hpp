@@ -35,6 +35,7 @@ struct UniqueTableStatistics;
 [[nodiscard]] nlohmann::basic_json<> toJson(const UniqueTableStatistics& s);
 
 /// Render the statistics of every table in a unique table.
+///
 /// @param table The unique table
 /// @param includeIndividualTables Whether to add an entry per variable
 /// @return The rendered statistics, or "unused" if no table holds entries

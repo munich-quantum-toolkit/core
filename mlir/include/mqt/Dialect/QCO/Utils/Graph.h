@@ -32,6 +32,7 @@ public:
   }
 
   /// Add a directed edge to the internal representation of the graph.
+  ///
   /// Implicitly adds nodes.
   void addEdge(size_t u, size_t v);
 
@@ -46,10 +47,13 @@ public:
     return adj_.at(id).size();
   }
 
-  /// Remove the edges from the graph. Keep the nodes.
+  /// Remove the edges from the graph.
+  ///
+  /// Keep the nodes.
   void clearEdges();
 
   /// Return cycle in graph or `std::nullopt` if none exists.
+  ///
   /// Implements an iterative depth-first search inspired by LLVM's SCC
   /// utilities. For a cycle [A, B, C, A], the function returns [A, B, C].
   [[nodiscard]] std::optional<SmallVector<size_t>> findCycle() const;

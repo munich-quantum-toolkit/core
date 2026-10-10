@@ -56,6 +56,7 @@ void setUnitaryFunction(Operation* operation);
 }
 
 /// Check that dynamic quantum allocations belong to the program entry block.
+///
 /// Modules without an entry point must not contain dynamic quantum allocations.
 /// Nested modules have separate program scopes.
 [[nodiscard]] LogicalResult verifyQuantumAllocations(ModuleOp moduleOp);

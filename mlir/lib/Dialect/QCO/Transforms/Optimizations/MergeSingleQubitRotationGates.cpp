@@ -176,7 +176,7 @@ static Quat quaternionFromZYZ(Val theta, Val phi, Val lambda,
   const auto qTheta = axisQuaternion(theta, RotationAxis::Y, c);
   const auto qPhi = axisQuaternion(phi, RotationAxis::Z, c);
   const auto qLambda = axisQuaternion(lambda, RotationAxis::Z, c);
-  /// Expand the sparse axis products without combining the input angles.
+  // Expand the sparse axis products without combining the input angles.
   const auto w = qPhi.w * qTheta.w;
   const auto yz = qPhi.z * qTheta.y;
   const auto x = -yz;
@@ -212,9 +212,10 @@ static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,
   return normalizeGateAngle(Val(rewriter, loc, p));
 }
 
-/// Constant gates share the matrix contract. Only runtime gates need symbolic
-/// formulas; return their phase with the quaternion so each parameter is read
-/// once.
+/// Constant gates share the matrix contract.
+///
+/// Only runtime gates need symbolic formulas; return their phase with the
+/// quaternion so each parameter is read once.
 static std::pair<Quat, Val> quaternionFromGate(UnitaryOpInterface op,
                                                const ScalarConsts& c,
                                                RewriterBase& rewriter) {
@@ -297,8 +298,8 @@ static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
   };
   const auto xyNearZero = land(q.x.abs().olt(c.eps), q.y.abs().olt(c.eps));
 
-  /// The half-angle norms retain small rotations when cos(beta) rounds to one.
-  /// Force beta=0 when (x,y)≈0, retaining the pure-Z shortcut.
+  // The half-angle norms retain small rotations when cos(beta) rounds to one.
+  // Force beta=0 when (x,y)≈0, retaining the pure-Z shortcut.
   const auto sinHalfBetaSquared = q.x * q.x + q.y * q.y;
   const auto cosHalfBetaSquared = q.w * q.w + q.z * q.z;
   const auto sinHalfBeta = sinHalfBetaSquared.sqrt();
@@ -306,7 +307,7 @@ static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
   const auto betaRaw = sinHalfBeta.atan2(cosHalfBeta) * c.two;
   const auto beta = Val::select(xyNearZero, c.zero, betaRaw);
 
-  /// safe1 = |beta| >= eps; safe2 = |beta - π| >= eps
+  // safe1 = |beta| >= eps; safe2 = |beta - π| >= eps
   const auto safe1 = beta.abs().oge(c.eps);
   const auto betaMinusPi = beta - c.pi;
   const auto safe2 = betaMinusPi.abs().oge(c.eps);
@@ -316,8 +317,8 @@ static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
   const auto safe = land(land(safe1, safe2), notXy);
   const auto usePiGimbal = land(safe1, notXy);
 
-  /// theta+ = atan2(z, w); theta- = atan2(-x, y)
-  /// Sanitize y when (x,y)≈0 for the constant folder.
+  // theta+ = atan2(z, w); theta- = atan2(-x, y)
+  // Sanitize y when (x,y)≈0 for the constant folder.
   const auto yForAtan2 = Val::select(xyNearZero, c.one, q.y);
   const auto thetaPlus = q.z.atan2(q.w);
   const auto minusX = -q.x;
@@ -325,8 +326,8 @@ static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
   const auto twoThetaPlus = thetaPlus * c.two;
   const auto twoThetaMinus = thetaMinus * c.two;
 
-  /// Safe: alpha = theta+ + theta-, gamma = theta+ - theta-
-  /// Gimbal: beta≈0 → alpha = 2*theta+; beta≈π → alpha = 2*theta-; gamma = 0
+  // Safe: alpha = theta+ + theta-, gamma = theta+ - theta-
+  // Gimbal: beta≈0 → alpha = 2*theta+; beta≈π → alpha = 2*theta-; gamma = 0
   const auto alphaSafe = thetaPlus + thetaMinus;
   const auto gammaSafe = thetaPlus - thetaMinus;
   const auto alphaUnsafe =
@@ -336,8 +337,8 @@ static std::array<Val, 4> anglesFromQuaternion(const Quat& q,
 
   const auto phi = wrapToPi(alpha, c);
   const auto lambda = wrapToPi(gamma, c);
-  /// Each removed 2*π Z rotation flips the SU(2) representative. Half of the
-  /// total removed angle restores the original matrix as a global phase.
+  // Each removed 2*π Z rotation flips the SU(2) representative. Half of the
+  // total removed angle restores the original matrix as a global phase.
   const auto removedAlpha = alpha - phi;
   const auto removedGamma = gamma - lambda;
   const auto removedAngle = removedAlpha + removedGamma;
@@ -398,7 +399,7 @@ static LogicalResult mergeParameterizedRotations(RotationOp op,
   if (mqt::valueToConstantDouble(sum) == 0.) {
     rewriter.replaceOp(last, op.getQubitIn());
   } else {
-    /// Reuse the first gate so the common equatorial axis is unchanged.
+    // Reuse the first gate so the common equatorial axis is unchanged.
     rewriter.moveOpBefore(op, last);
     rewriter.modifyOpInPlace(op, [&] { op.getThetaMutable().assign(sum); });
     rewriter.replaceOp(last, op.getQubitOut());
@@ -577,9 +578,10 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Reuse Euler angles when the chain and output share their outer axis.
-  /// Either outer rotation may be absent. H/Z pairs use H RZ = RX H to
-  /// align the rotation with the output basis. Normalize gate operands before
-  /// adding Euler offsets or computing the U phase correction.
+  ///
+  /// Either outer rotation may be absent. H/Z pairs use H RZ = RX H to align
+  /// the rotation with the output basis. Normalize gate operands before adding
+  /// Euler offsets or computing the U phase correction.
   static LogicalResult
   tryMergeDirectChain(MutableArrayRef<UnitaryOpInterface> chain,
                       RewriterBase& rewriter,
@@ -598,7 +600,7 @@ struct MergeSingleQubitRotationGatesPattern final
          (isa<RZOp, POp>(chain.front()) && isa<HOp>(chain.back())));
     if (chain.size() == 3 && isa<HOp>(chain.front()) &&
         isa<RZOp, POp>(chain[1]) && isa<HOp>(chain.back())) {
-      /// H RZ(a) H = RX(a); P(a) also contributes phase a/2.
+      // H RZ(a) H = RX(a); P(a) also contributes phase a/2.
       const Location loc = chain.front()->getLoc();
       const auto angle = gateParam(chain[1], 0, rewriter, loc);
       Value qubit = decomposition::synthesizePauliRotation1Q(
@@ -624,7 +626,7 @@ struct MergeSingleQubitRotationGatesPattern final
       return failure();
     }
 
-    /// Check the complete run before creating or replacing any operations.
+    // Check the complete run before creating or replacing any operations.
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts(rewriter, loc);
     const auto angle = [&](UnitaryOpInterface op) {
@@ -656,7 +658,7 @@ struct MergeSingleQubitRotationGatesPattern final
       auto& outer = rotationFirst != outerX ? angles.lambda : angles.phi;
       outer = sumAngles(outer, rotationAngle);
       if (basis == decomposition::SingleQubitBasis::U) {
-        /// P/H pairs are U directly; RZ/H pairs retain phase -a/2.
+        // P/H pairs are U directly; RZ/H pairs retain phase -a/2.
         angles.phase = isa<POp>(rotation)
                            ? consts.zero
                            : rotationAngle * Val::constant(rewriter, loc, -0.5);
@@ -683,7 +685,7 @@ struct MergeSingleQubitRotationGatesPattern final
         angles.theta = consts.zero;
       } else if (const bool middleZ = isa<RZOp>(chain[middle].getOperation());
                  middleZ != (basis == decomposition::SingleQubitBasis::XZX)) {
-        /// RX conjugation exchanges Y and Z, with opposite quarter-turns.
+        // RX conjugation exchanges Y and Z, with opposite quarter-turns.
         const auto halfPi = consts.pi / consts.two;
         angles.phi = middleZ ? halfPi : -halfPi;
         angles.lambda = -angles.phi;
@@ -718,7 +720,9 @@ struct MergeSingleQubitRotationGatesPattern final
 
   /// Merges a dynamic or mixed-angle chain through scalar SSA operations.
   //
-  /// Fusion mode emits the requested basis directly. Regular merge mode emits
+  /// Fusion mode emits the requested basis directly.
+  ///
+  /// Regular merge mode emits
   /// U and applies its intrinsic global-phase correction:
   ///   correction = totalInputPhase - (phi + lambda) / 2
   /// Pass-level global-phase normalization combines and normalizes the result.
@@ -772,8 +776,10 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Matches the full chain, folds its quaternions with Hamilton products, and
-  /// emits one U operation or the requested fusion basis. Constant chains use
-  /// numerical Euler synthesis; runtime chains use quaternion composition.
+  /// emits one U operation or the requested fusion basis.
+  ///
+  /// Constant chains use numerical Euler synthesis; runtime chains use
+  /// quaternion composition.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     auto control = op->getParentOfType<CtrlOp>();
@@ -790,7 +796,7 @@ struct MergeSingleQubitRotationGatesPattern final
     if (target != nullptr && chain.size() == 1) {
       return failure();
     }
-    /// Emit helper operations at the chain tail next to the merged output.
+    // Emit helper operations at the chain tail next to the merged output.
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointAfter(chain.back().getOperation());
 
@@ -798,7 +804,7 @@ struct MergeSingleQubitRotationGatesPattern final
       if (!shouldComposeForFusion(chain, fusionBasis->singleQubit)) {
         return failure();
       }
-      /// A multi-gate control body is not itself a native operation.
+      // A multi-gate control body is not itself a native operation.
       if (target != nullptr && !control &&
           llvm::all_of(chain, [&](auto member) {
             return target->supports(member.getOperation());

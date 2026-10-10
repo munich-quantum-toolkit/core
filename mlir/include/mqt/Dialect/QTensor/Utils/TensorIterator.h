@@ -35,13 +35,13 @@ public:
       : op_(tensor.getDefiningOp()), tensor_(tensor), isFinal_(false),
         isSentinel_(false) {}
 
-  /// @returns the operation the iterator points to.
+  /// Returns the operation the iterator points to.
   [[nodiscard]] Operation* operation() const { return op_; }
 
-  /// @returns the operation the iterator points to.
+  /// Returns the operation the iterator points to.
   [[nodiscard]] Operation* operator*() const { return operation(); }
 
-  /// @returns the tensor the iterator points to.
+  /// Returns the tensor the iterator points to.
   [[nodiscard]] TypedValue<RankedTensorType> tensor() const;
 
   TensorIterator& operator++() {

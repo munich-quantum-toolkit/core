@@ -94,7 +94,7 @@ repos:
         name: Use LLVM-style C++ documentation comments
         language: pygrep
         # Continued macros require block comments to preserve declarations.
-        entry: '(/\*\*|[\\@](brief|details)\b)(?!.*\\$)'
+        entry: '(/\*\*|[\\@](brief|details)\b)(?!.*\\$)|///.*\bNOLINT(?:BEGIN|END|NEXTLINE)?\b'
         files: ^(include|src|mlir|bindings|test)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|cu|cuh)$
         priority: 0
 

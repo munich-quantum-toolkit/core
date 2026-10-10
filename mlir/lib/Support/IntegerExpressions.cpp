@@ -42,9 +42,9 @@ struct ExpandIntegerOperation final : RewritePattern {
       return success();
     }
     if (isa<math::CtPopOp>(op)) {
-      /// Count pairs, nibbles, then bytes. Multiplication sums the byte counts.
-      /// This uses eight copies of the input when expanded to a source tree,
-      /// rather than one copy per bit.
+      // Count pairs, nibbles, then bytes. Multiplication sums the byte counts.
+      // This uses eight copies of the input when expanded to a source tree,
+      // rather than one copy per bit.
       unsigned wordWidth = 8;
       while (wordWidth < width) {
         wordWidth *= 2;

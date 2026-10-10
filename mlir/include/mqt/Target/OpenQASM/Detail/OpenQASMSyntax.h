@@ -135,7 +135,9 @@ struct Modifier {
   std::optional<SyntaxExpressionId> argument = std::nullopt;
 };
 
-/// An inclusive register range. Missing endpoints select the register ends.
+/// An inclusive register range.
+///
+/// Missing endpoints select the register ends.
 struct Slice {
   std::optional<SyntaxExpressionId> start;
   std::optional<SyntaxExpressionId> step;

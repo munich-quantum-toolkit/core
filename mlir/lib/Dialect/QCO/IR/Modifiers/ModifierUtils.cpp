@@ -34,7 +34,7 @@ namespace mlir::qco::detail {
 
 /// Follow unitary ties only after nested operations have been verified.
 static bool hasPositionalBodyYields(Block& body) {
-  /// A valid modifier cannot permute fewer than two wires.
+  // A valid modifier cannot permute fewer than two wires.
   if (body.getNumArguments() < 2) {
     return true;
   }
@@ -45,7 +45,7 @@ static bool hasPositionalBodyYields(Block& body) {
     Operation* previous = body.getTerminator();
     while (origin != argument) {
       auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
-      /// SSA dominance is checked after operation verification.
+      // SSA dominance is checked after operation verification.
       if (!unitary || unitary->getBlock() != &body ||
           !unitary->isBeforeInBlock(previous)) {
         return false;

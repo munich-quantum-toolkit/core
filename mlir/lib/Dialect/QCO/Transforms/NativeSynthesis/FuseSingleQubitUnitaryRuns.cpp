@@ -254,7 +254,7 @@ SingleQubitRunFusion::SingleQubitRunFusion(
     const CompilerTarget::SynthesisBasis& basis, const CompilerTarget* target,
     GreedyRewriteConfig config)
     : basis_(basis), target_(target), config_(config) {
-  /// Do not rewrite producers or unrelated runs during the caller's walk.
+  // Do not rewrite producers or unrelated runs during the caller's walk.
   config_.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
 }
 
@@ -318,7 +318,7 @@ LogicalResult SingleQubitRunFusion::apply(Operation* operation) {
     if (failed(applyOpPatternsGreedily(members, *runtimePatterns_, config_))) {
       return failure();
     }
-    /// Runtime rewrites can replace the collected operations.
+    // Runtime rewrites can replace the collected operations.
     members.clear();
     collectCandidates();
   }

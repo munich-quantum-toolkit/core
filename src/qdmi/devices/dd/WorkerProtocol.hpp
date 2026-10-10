@@ -43,8 +43,10 @@ struct WorkerResponse {
   std::optional<std::string> state;
 };
 
-/// Frames are versioned and length-delimited. A failed read invalidates the
-/// worker. An empty request frame closes the worker session.
+/// Frames are versioned and length-delimited.
+///
+/// A failed read invalidates the worker. An empty request frame closes the
+/// worker session.
 bool writeFrame(llvm::raw_socket_stream& stream, llvm::StringRef bytes);
 bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes);
 std::string encode(const WorkerRequest& request);

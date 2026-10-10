@@ -25,6 +25,7 @@
 namespace dd {
 
 /// Data structure for caching computed results of binary operations
+///
 /// @tparam LeftOperandType type of the operation's left operand
 /// @tparam RightOperandType type of the operation's right operand
 /// @tparam ResultType type of the operation's result
@@ -35,6 +36,7 @@ public:
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 16384U;
 
   /// Default constructor
+  ///
   /// @param numBuckets Number of hash table buckets. Must be a power of two.
   explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
     // numBuckets must be a power of two
@@ -58,6 +60,7 @@ public:
   };
 
   /// Compute the hash value for a given pair of operands
+  ///
   /// @param leftOperand The left operand
   /// @param rightOperand The right operand
   /// @return The hash value
@@ -94,6 +97,7 @@ public:
   }
 
   /// Look up a result in the compute table
+  ///
   /// @param leftOperand The left operand
   /// @param rightOperand The right operand
   /// @return A pointer to the result if it is found, otherwise nullptr.
@@ -127,6 +131,7 @@ public:
   }
 
   /// Replace the bucket storage and discard cached results.
+  ///
   /// The capacity must be a power of two. Invalidates lookup result pointers.
   /// Allocation failure leaves the table unchanged.
   void resize(const size_t numBuckets) {
@@ -138,6 +143,7 @@ public:
   }
 
   /// Print the statistics of the compute table
+  ///
   /// @param os The output stream to print to
   /// @return The output stream
   std::ostream& printStatistics(std::ostream& os = std::cout) const {

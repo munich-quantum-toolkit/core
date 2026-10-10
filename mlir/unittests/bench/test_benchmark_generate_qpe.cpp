@@ -141,8 +141,8 @@ TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
         const auto index =
             method == QPEMethod::Standard ? power : precision - 1 - power;
         EXPECT_EQ(residues[index], remainder);
-        /// Allow f64 conversion/division/multiplication rounding against the
-        /// long-double reference while keeping phase reduction exact.
+        // Allow f64 conversion/division/multiplication rounding against the
+        // long-double reference while keeping phase reduction exact.
         EXPECT_NEAR(
             angles[index],
             static_cast<double>(2.L * std::numbers::pi_v<long double> *

@@ -419,8 +419,8 @@ TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
             auto actual = build(circuit);
             auto function = mainFunction(*actual);
             if (parameterIndex) {
-              /// Keep theta fixed when phi is symbolic to exercise the
-              /// zero, quarter-turn, and half-turn shortcuts at runtime.
+              // Keep theta fixed when phi is symbolic to exercise the
+              // zero, quarter-turn, and half-turn shortcuts at runtime.
               ASSERT_TRUE(mlir::succeeded(function.insertArgument(
                   0, mlir::Float64Type::get(context.get()), {},
                   function.getLoc())));
@@ -723,8 +723,8 @@ TEST_F(TargetSynthesisTest, NativeSynthesisFusesSwapWithCx) {
       ASSERT_TRUE(mlir::succeeded(runTargetPass(
           *optimized, target, mlir::qco::createVerifyTargetConformance())));
       EXPECT_EQ(countOps<SWAPOp>(*optimized), 0U);
-      /// A CX and a SWAP need two CX gates after cancellation, rather than
-      /// four.
+      // A CX and a SWAP need two CX gates after cancellation, rather than
+      // four.
       EXPECT_EQ(countOps<CtrlOp>(*optimized), 2U);
       expectEquivalent(expected, optimized);
     }
@@ -836,7 +836,7 @@ TEST_F(TargetSynthesisTest, NativeCostPreservesSingletonNativeGates) {
       tracker.append(
           gate, llvm::ArrayRef(vertices).take_front(gate.isTwoQubit() ? 2 : 1));
       if (!followedByOneQubitGate) {
-        /// RXX(pi) is local, but remains native unless another gate joins it.
+        // RXX(pi) is local, but remains native unless another gate joins it.
         mlir::qco::NativeCostAnalysis analysis(2023);
         const auto swapCost =
             analysis.swapCost(target, std::array<Target::SiteId, 2>{0, 1});
@@ -893,7 +893,7 @@ TEST_F(TargetSynthesisTest, NativeCostPreservesCircuitOrderInBothDirections) {
     const std::array<size_t, 2> vertices = reverseOperands
                                                ? std::array<size_t, 2>{1, 0}
                                                : std::array<size_t, 2>{0, 1};
-    /// Reuse the tracker across direction changes, as layout refinement does.
+    // Reuse the tracker across direction changes, as layout refinement does.
     for (const auto direction : {
              WireDirection::Forward,
              WireDirection::Backward,
@@ -907,7 +907,7 @@ TEST_F(TargetSynthesisTest, NativeCostPreservesCircuitOrderInBothDirections) {
         tracker.append(gate, gate.isTwoQubit() ? llvm::ArrayRef(vertices)
                                                : llvm::ArrayRef<size_t>{0});
       }
-      /// The circuit product C B H A is identity; reversing it is not.
+      // The circuit product C B H A is identity; reversing it is not.
       auto completed = tracker;
       EXPECT_EQ(completed.score(), (std::pair<size_t, size_t>{0, 0}));
       EXPECT_EQ(tracker.swapCostAdjustment(0, 1, 3), 0);
@@ -955,7 +955,7 @@ TEST_F(TargetSynthesisTest,
     ASSERT_TRUE(tracker.score());
     EXPECT_EQ(tracker.score()->first, before ? 1U : 0U);
     if (!before) {
-      /// A region boundary must discard the pending single-qubit suffix.
+      // A region boundary must discard the pending single-qubit suffix.
       tracker.reset(mlir::qco::WireDirection::Backward);
       tracker.append(gates.back(), llvm::ArrayRef(vertices).take_front(1));
       tracker.flush();
@@ -986,8 +986,8 @@ TEST_F(TargetSynthesisTest, NativeCachesPreserveDecompositionsAfterEviction) {
     moduleOp = {};
     NativeCostAnalysis analysis(seed, shared.get());
     NativeCostAnalysis otherSeed(seed + 1, shared.get());
-    /// Revisit recent entries, then exceed both local capacities. Interleave
-    /// count and full-result queries to check their independent result state.
+    // Revisit recent entries, then exceed both local capacities. Interleave
+    // count and full-result queries to check their independent result state.
     for (size_t i = 0; i < 240; ++i) {
       auto matrix = Matrix4x4::identity();
       matrix(3, 3) = std::polar(1.0, static_cast<double>((i / 2) % 73) * 0.031);
@@ -1258,7 +1258,7 @@ TEST_F(TargetSynthesisTest, ColdCostIncludesPositiveSwapAdjustment) {
     auto prefix = costs;
     ASSERT_TRUE(prefix.score());
     EXPECT_EQ(prefix.score()->first, 0U);
-    /// The local run costs zero, but extending it retains three gates.
+    // The local run costs zero, but extending it retains three gates.
     EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
     EXPECT_EQ(costs.swapCostAdjustment(0, 1, *standalone), 2);
     costs.appendSwap(0, 1);
@@ -1366,8 +1366,8 @@ TEST_F(TargetSynthesisTest, PrePlacementFusionRequiresSmallerNativeCircuit) {
     const auto before = printModule(*moduleOp);
     ASSERT_TRUE(mlir::succeeded(
         runPass(*moduleOp, mlir::qco::createFuseTwoQubitGates(target))));
-    /// Two native gates stay native; a SWAP plus CX also stays compact until
-    /// placement, even though their individual native lowering costs more.
+    // Two native gates stay native; a SWAP plus CX also stays compact until
+    // placement, even though their individual native lowering costs more.
     EXPECT_EQ(printModule(*moduleOp), before);
   }
 }
@@ -1422,7 +1422,7 @@ TEST_F(TargetSynthesisTest,
         // Optional fusion needs at least two operations in the run.
         static_cast<void>(builder.h(outputs[0]));
       } else {
-        /// Failed block synthesis must fall back to the individual diagnostic.
+        // Failed block synthesis must fall back to the individual diagnostic.
         static_cast<void>(builder.cx(outputs[0], outputs[1]));
       }
       return builder.intConstant(0);
@@ -1674,8 +1674,8 @@ TEST_F(TargetSynthesisTest,
         *synthesized, target, mlir::qco::createVerifyTargetConformance())));
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
-    /// Compare the full circuit at DD precision; synthesis and DD rounding
-    /// accumulate across the repeated decompositions. Keep global phase.
+    // Compare the full circuit at DD precision; synthesis and DD rounding
+    // accumulate across the repeated decompositions. Keep global phase.
     ::mqt::test::expectFullUnitaryEqual(*expected, *synthesized, 3);
   }
 }
@@ -2030,8 +2030,8 @@ TEST_F(TargetSynthesisTest,
     builder.sink(outputs[1]);
     return builder.intConstant(0);
   });
-  /// Exercise synthesis diagnostics for non-positional input outside the
-  /// program builder's contract.
+  // Exercise synthesis diagnostics for non-positional input outside the
+  // program builder's contract.
   auto branch = *mainFunction(*module).getOps<mlir::qco::IfOp>().begin();
   auto& region = branch.getElseRegion();
   auto args = region.getArguments();
@@ -2167,7 +2167,7 @@ TEST_F(TargetSynthesisTest, AcceptsMatchingBranchSitePermutations) {
     std::tie(q0, q1) = builder.cx(outputs[0], outputs[1]);
     return builder.intConstant(0);
   });
-  /// Site analysis also accepts matching permutations in externally built IR.
+  // Site analysis also accepts matching permutations in externally built IR.
   auto branch = *mainFunction(*moduleOp).getOps<mlir::qco::IfOp>().begin();
   for (auto& region : branch->getRegions()) {
     auto args = region.getArguments();
@@ -2461,7 +2461,7 @@ TEST_F(TargetSynthesisTest, EquatorialFrameAbsorptionPreservesScalarDominance) {
           %polar = arith.constant 0.3 : f64
           %axis = arith.constant 0.4 : f64
     )mlir";
-    /// H creates its residual constant frame after the emitted R.
+    // H creates its residual constant frame after the emitted R.
     source +=
         timing == "constant" ? "%q2 = qco.h %q : !qco.qubit -> !qco.qubit\n"
         : timing == "early"
@@ -2527,7 +2527,7 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
         valid(OperationCapability::create(name, 2, 1,
                                           {valid(SiteTuple::create({1, 0}))})),
     };
-    /// A fixed forward tuple must not hide unrestricted reverse support.
+    // A fixed forward tuple must not hide unrestricted reverse support.
     operations.push_back(valid(OperationCapability::create(
         std::string(name) + "_fixed", 2, 1, {valid(SiteTuple::create({0, 1}))},
         std::nullopt, std::nullopt, {std::numbers::pi / 2.}, name)));
@@ -2580,7 +2580,7 @@ TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
       expectEquivalent(original, synthesized);
     }
   }
-  /// Fixed and unrestricted decompositions of the same matrix cannot alias.
+  // Fixed and unrestricted decompositions of the same matrix cannot alias.
   mlir::qco::NativeCostAnalysis cache(2023);
   const auto matrix = mlir::qco::RZZOp::unitaryMatrix(0.371);
   for (const bool parameterized : {false, true, false, true}) {
@@ -2643,8 +2643,8 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
              std::tuple{"rzx", 1U, true},
              std::tuple{"rzz", 1U, true},
          }) {
-      /// Cover each input with CZ and each native entangler with RZZ.
-      /// CRX/sqrt-iSWAP retains the numerical reconstruction regression.
+      // Cover each input with CZ and each native entangler with RZZ.
+      // CRX/sqrt-iSWAP retains the numerical reconstruction regression.
       const bool phaseCase = gate == "p" && !fixed &&
                              (std::string_view(entangler) == "cx" ||
                               std::string_view(entangler) == "rxx" ||

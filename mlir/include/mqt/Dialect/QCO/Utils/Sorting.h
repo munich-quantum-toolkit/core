@@ -15,10 +15,12 @@
 
 namespace mlir::qco {
 /// Fix SSA dominance issues by reordering operations of the block in-place in
-/// topological order. Assumes that the block is acyclic. Historically this
-/// replaced MLIR's `sortTopologically` due to significant runtime overhead.
-/// Preserve deterministic discovery order for ready operations.
-/// Keep SSA dependencies and order effects on each SSA value. This does not
-/// perform alias analysis or order unknown and value-less effects.
+/// topological order.
+///
+/// Assumes that the block is acyclic. Historically this replaced MLIR's
+/// `sortTopologically` due to significant runtime overhead. Preserve
+/// deterministic discovery order for ready operations. Keep SSA dependencies
+/// and order effects on each SSA value. This does not perform alias analysis or
+/// order unknown and value-less effects.
 void reorderTopologically(Block& block, IRRewriter& rewriter);
 } // namespace mlir::qco
