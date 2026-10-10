@@ -771,6 +771,19 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
   }
 }
 
+TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
+  Package package(1);
+  for (const auto* unit : {"i", "I", "+i", "+I", "-i", "-I"}) {
+    SCOPED_TRACE(unit);
+    const std::complex<fp> phase{0., *unit == '-' ? -1. : 1.};
+    std::istringstream root(std::string("1\n") + unit + "\n");
+    EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(root), 0), phase);
+    std::istringstream edge(std::string("1\n1\n0 0 (-1 ") + unit + ") ()\n");
+    EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(edge), 0), phase);
+  }
+}
+
+
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
   Package package(2);
   for (const auto* text : {

@@ -618,3 +618,17 @@ TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
   EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
   EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
 }
+
+TEST(DDComplexTest, ParsesImaginaryUnits) {
+  for (const auto* imaginary : {"i", "I", "+i", "+I", "-i", "-I"}) {
+    SCOPED_TRACE(imaginary);
+    ComplexValue value;
+    value.fromString("0.5", imaginary);
+    EXPECT_EQ(value.r, 0.5);
+    EXPECT_EQ(value.i, *imaginary == '-' ? -1. : 1.);
+  }
+  ComplexValue value;
+  value.fromString("0.5", "");
+  EXPECT_EQ(value.r, 0.5);
+  EXPECT_EQ(value.i, 0.);
+}
