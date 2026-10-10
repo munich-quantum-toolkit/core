@@ -1,0 +1,321 @@
+{
+  "captured_at": "2026-10-10T20:16:39.642167+00:00",
+  "papers": {
+    "mqss": {
+      "title": "The Munich Quantum Software Stack: Connecting End Users, Integrating Diverse Quantum Technologies, Accelerating HPC",
+      "venue": "SCA/HPCAsia 2026",
+      "url": "https://doi.org/10.1145/3773656.3773669",
+      "short_url": "doi.org/10.1145/3773656.3773669",
+      "source": "https://www.cda.cit.tum.de/files/eda/2026_sca_hpcasia_munich_quantum_software_stack.pdf",
+      "university_record": "https://portal.fis.tum.de/en/publications/the-munich-quantum-software-stack-connecting-end-users-integratin/",
+      "publisher_metadata": "https://api.crossref.org/works/10.1145/3773656.3773669",
+      "publisher": "ACM",
+      "pages": "55\u201367",
+      "authors": [
+        "Lukas Burgholzer",
+        "Jorge Echavarria",
+        "Patrick Hopf",
+        "Yannick Stade",
+        "Damian Rovara",
+        "Ludwig Schmid",
+        "Erc\u00fcment Kaya",
+        "Burak Mete",
+        "Muhammad Nufail Farooqi",
+        "Minh Chung",
+        "Marco De Pascale",
+        "Laura Schulz",
+        "Martin Schulz",
+        "Robert Wille"
+      ],
+      "year": 2026,
+      "citation": "Burgholzer, Echavarria, et al., 2026",
+      "design_principles": ["modular", "efficient", "extensible"],
+      "design_principles_source": {
+        "quote": "modular, efficient, and extensible",
+        "pdf_page": 2,
+        "scope": "Architecture design intent in the article; not a measured performance comparison."
+      },
+      "publication_status": "published",
+      "published_online": {
+        "date-parts": [[2026, 1, 25]]
+      },
+      "metadata_sha256": "0c6bd464a46b2118adda422a3112a998e238985b803ac8a1b7a3611f1e36a2a7"
+    },
+    "unrolling": {
+      "title": "Why Are We Unrolling? The Importance of Structured Quantum Programs for Compilation",
+      "url": "https://arxiv.org/abs/2609.16171",
+      "short_url": "arxiv.org/abs/2609.16171",
+      "publication_status": "preprint",
+      "authors": [
+        "Damian Rovara",
+        "Daniel Haag",
+        "Mark Koch",
+        "Josh Izaac",
+        "Seyon Sivarajah",
+        "Robert Wille",
+        "August\u00edn Borgna",
+        "Lukas Burgholzer",
+        "Brad Chase",
+        "Olivia Di Matteo",
+        "David Ittah"
+      ],
+      "year": 2026,
+      "citation": "Rovara, Haag, et al., 2026",
+      "published": "2026-09-14T18:07:52Z",
+      "metadata_url": "https://export.arxiv.org/api/query?id_list=2609.16171",
+      "metadata_sha256": "6becc6d74612d086c7e5a8b201537e1d7d09c4321b6eec00852ed0b1f5d01791"
+    }
+  },
+  "core_stats": {
+    "dashboard_url": "https://burgholzer.github.io/mqt-dashboard/",
+    "dashboard_sha256": "9d8996b46568c6dc29b9f5de5a3e77f79842452211ac9dcfd8c2b4403bad6a12",
+    "dashboard_snapshot": {
+      "daily_downloads": "598",
+      "docs_link": "https://mqt.readthedocs.io/en/stable/core/",
+      "docs_slug": "core",
+      "github_link": "https://github.com/cda-tum/mqt-core",
+      "latest_release_version": "v3.11.0",
+      "monthly_downloads": "11.9k",
+      "published_at": "08 October 2026",
+      "pypi_link": "https://pypi.org/project/mqt-core",
+      "repo": "mqt-core",
+      "stars": 135,
+      "timestamp": "Sat, 10 Oct 2026 10:29:02 GMT",
+      "total_downloads": "965.5k",
+      "weekly_downloads": "2.5k"
+    },
+    "github_api_url": "https://api.github.com/repos/munich-quantum-toolkit/core",
+    "github_revision": "b35d3334a31fbce3471643c447400911f82e9b07",
+    "github": {
+      "stargazers_count": 135,
+      "forks_count": 76,
+      "subscribers_count": 9,
+      "open_issues_count": 72,
+      "updated_at": "2026-10-10T17:45:27Z",
+      "pushed_at": "2026-10-10T19:26:53Z"
+    },
+    "contributors_scope": "Named GitHub accounts of API type User; anonymous contributors and accounts marked Bot are excluded. This does not verify that every User account is human.",
+    "metric_limits": "Downloads are rounded cumulative package downloads from the dashboard, not unique users; dashboard release identifies its latest-published release and is not a latest-version claim.",
+    "dashboard_collection_source": "https://github.com/burgholzer/mqt-dashboard/blob/c16fdfbf1f8bfa792547ac82723177dba428e463/src/mqt/dashboard/data_collection.py",
+    "github_named_user_contributors": 41,
+    "retrieved_at": "2026-10-10T20:16:39.642167+00:00"
+  },
+  "links": {
+    "core_docs": "https://mqt.readthedocs.io/projects/core/en/latest/",
+    "compiler_docs": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html",
+    "qdmi_docs": "https://munich-quantum-software-stack.github.io/QDMI/",
+    "iqm": {
+      "code": "https://github.com/iqm-finland/QDMI-on-IQM",
+      "docs": "https://iqm-finland.github.io/QDMI-on-IQM/",
+      "paper": "https://arxiv.org/abs/2604.19869"
+    },
+    "ibm": {
+      "code": "https://github.com/munich-quantum-software/ibm-qdmi-device",
+      "docs": "https://ibm-qdmi-device.readthedocs.io/en/latest/",
+      "validation_scope": "The implementation README reports validated live metadata queries; hardware execution is not yet validated. Examples default to local simulation.",
+      "scope_source": "https://raw.githubusercontent.com/munich-quantum-software/ibm-qdmi-device/main/README.md"
+    },
+    "aws": {
+      "code": "https://github.com/munich-quantum-software/amazon-braket-qdmi-device",
+      "docs": "https://amazon-braket-qdmi-device.readthedocs.io/en/stable/",
+      "paper": "https://arxiv.org/abs/2603.05138"
+    },
+    "core_repo": "https://github.com/munich-quantum-toolkit/core",
+    "qdmi_repo": "https://github.com/Munich-Quantum-Software-Stack/QDMI",
+    "linkedin": "https://www.linkedin.com/in/lukas-burgholzer-7a1741a7/",
+    "event_program": "https://munich-quantum-software.github.io/mqsf/2026/program/"
+  },
+  "visual_references": {
+    "website": {
+      "url": "https://munichquantum.software/",
+      "sha256": "22edc73ea40f4dd8033f2cc098269dcfaf93da61269cf0b24897142f1436b06f",
+      "design": "HPC centers and hyperscalers connect via MQSC to superconducting, trapped-ion, neutral-atom, photonic and spin hardware; role-specific routes and shared admission."
+    },
+    "summary_deck": {
+      "attachment": "2026-10-07_MQSC_Summary.pptx",
+      "sha256": "4261d296730b7ba11e759c20b0436389e49ac1d4648981c302158a8e85af6a3b",
+      "slides": [6, 7, 8, 9, 14],
+      "design": "Slide 9 separates frontend interfaces, compiler infrastructure, resource management/scheduling and backend interfaces."
+    }
+  },
+  "scientific_illustrations": {
+    "molecule": "Schematic LiH and active-space occupancy; no measured geometry, orbital densities, or energy curves are encoded."
+  },
+  "qdmi_stats": {
+    "github_api_url": "https://api.github.com/repos/Munich-Quantum-Software-Stack/QDMI",
+    "github_revision": "5b50bb661031632342d93672dcdda0d0bc69f2f5",
+    "github": {
+      "stargazers_count": 85,
+      "forks_count": 20,
+      "subscribers_count": 8,
+      "open_issues_count": 25,
+      "updated_at": "2026-10-10T01:44:21Z",
+      "pushed_at": "2026-10-10T17:53:52Z"
+    },
+    "retrieved_at": "2026-10-10T20:16:39.642167+00:00",
+    "package_downloads": null,
+    "metric_limits": "No official QDMI package-download metric is reported in its README or the MQT dashboard. QDMI is distributed as a header-only C11 interface. Omit download badges; do not treat GitHub stars as users or deployments."
+  },
+  "event": {
+    "name": "Munich Quantum Software Forum 2026",
+    "program_url": "https://munich-quantum-software.github.io/mqsf/2026/program/",
+    "start_date": "2026-10-14",
+    "end_date": "2026-10-15",
+    "timezone": "Europe/Berlin",
+    "logo_key": "mqsf",
+    "program_sha256": "62e41590edc7fe1b5afeac7b0133019c4f93f9d5eb76ae7ae36952128dc6877f"
+  },
+  "speaker": {
+    "name": "Lukas Burgholzer",
+    "website": "https://burgholzer.me/",
+    "linkedin": "https://www.linkedin.com/in/lukas-burgholzer-7a1741a7/",
+    "linkedin_verification": {
+      "source": "https://burgholzer.me/",
+      "sha256": "f229a8c7ce96791bc456b41e59ca90c07e62f6a685d1c2144d391edad5cd69e5"
+    },
+    "primary_affiliation": "CTO and Co-founder, MQSC",
+    "secondary_affiliation": "Senior Researcher, Chair for Design Automation, TUM",
+    "affiliation_source": "Speaker-provided presentation wording; LinkedIn verified independently from the personal website."
+  },
+  "credits": {
+    "core": {
+      "short": "Developed by MQSC, TUM\u2019s Chair for Design Automation, and the open-source community.",
+      "origin": "MQT originated at TUM\u2019s Chair for Design Automation.",
+      "origin_scope": "Historical context supplied by the presenter; current maintainers and contributor credit verified from the current README.",
+      "source": "https://raw.githubusercontent.com/munich-quantum-toolkit/core/b35d3334a31fbce3471643c447400911f82e9b07/README.md",
+      "source_sha256": "e96dc82d11c93e38017d79aaeb9baf9e6470704661c9690bce8e54571c786112",
+      "contributors": "https://github.com/munich-quantum-toolkit/core/graphs/contributors",
+      "logo_keys": ["mqsc", "tum-cda"]
+    },
+    "qdmi": {
+      "short": "Created by TUM CDA, TUM CAPS, and LRZ within MQV; maintained by MQV gGmbH and MQSC with the wider community.",
+      "source": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/ecosystem.md#origins-maintenance-and-participation-ecosystem-stewardship",
+      "source_sha256": "88bc515be2caf7cafa53d1e4bb5f974dfd5b85dca80ef5d0d163b9bc696330c0",
+      "contributors": "https://github.com/Munich-Quantum-Software-Stack/QDMI/graphs/contributors",
+      "logo_keys": ["tum-cda", "tum", "lrz", "mqv", "mqsc"],
+      "scope": "Organization logos identify documented origins and maintenance, not universal endorsement or an exclusive partnership."
+    }
+  },
+  "interfaces": {
+    "OpenQASM 3": {
+      "role": "compiler frontend",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/OpenQASM.html",
+      "limit": "Supported language subset is defined by the frontend documentation; not a claim of complete OpenQASM 3 conformance."
+    },
+    "Qiskit": {
+      "role": "compiler frontend and QDMI runtime adapter",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html",
+      "runtime_source": "https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html",
+      "logo_key": "qiskit"
+    },
+    "jeff": {
+      "role": "compiler input and interchange",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/jeff.html",
+      "logo_key": "jeff"
+    },
+    "PennyLane": {
+      "role": "QDMI runtime adapter",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/qdmi/pennylane_device.html",
+      "logo_key": "pennylane"
+    },
+    "CUDA-Q": {
+      "role": "MQT Core QDMI runtime adapter and compiler frontend",
+      "status": "planned / draft",
+      "source_scope": "Presenter-specified status as of this capture; not advertised as shipped. Separate MQSS Client CUDA-Q adapter exists and does not establish MQT Core support.",
+      "mqss_client_source": "https://github.com/Munich-Quantum-Software-Stack/MQSS-CUDAQ-Adapter",
+      "logo_key": "cuda-q"
+    },
+    "LLVM / MLIR": {
+      "role": "compiler infrastructure",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html",
+      "logo_key": "mlir",
+      "logo_keys": ["llvm", "mlir"]
+    },
+    "QIR": {
+      "role": "compiled execution representation and runtime",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/qir/index.html",
+      "logo_key": "qir"
+    },
+    "Slurm": {
+      "role": "HPC allocation and runtime integration",
+      "status": "available",
+      "source": "https://mqt.readthedocs.io/projects/core/en/latest/qdmi/slurm.html",
+      "logo_key": "slurm"
+    }
+  },
+  "source_evidence": {
+    "retrieved_at": "2026-10-10T20:16:39.642167+00:00",
+    "files": {
+      "event-program.html": {
+        "url": "https://munich-quantum-software.github.io/mqsf/2026/program/",
+        "sha256": "62e41590edc7fe1b5afeac7b0133019c4f93f9d5eb76ae7ae36952128dc6877f"
+      },
+      "speaker.html": {
+        "url": "https://burgholzer.me/",
+        "sha256": "f229a8c7ce96791bc456b41e59ca90c07e62f6a685d1c2144d391edad5cd69e5"
+      },
+      "dashboard.html": {
+        "url": "https://burgholzer.github.io/mqt-dashboard/",
+        "sha256": "9d8996b46568c6dc29b9f5de5a3e77f79842452211ac9dcfd8c2b4403bad6a12"
+      },
+      "core-api.json": {
+        "url": "https://api.github.com/repos/munich-quantum-toolkit/core",
+        "sha256": "b3ed84a003ecd5bcc86e4c2010e9e88bb28c568111a4c4108f6321068ac553e8"
+      },
+      "core-revision.json": {
+        "url": "https://api.github.com/repos/munich-quantum-toolkit/core/commits/main",
+        "sha256": "0669204f131b5e32da6c4a4cab22da66cc4a6159da1b17f0fb51c18415ab6ec6"
+      },
+      "core-contributors.json": {
+        "url": "https://api.github.com/repos/munich-quantum-toolkit/core/contributors?per_page=100",
+        "sha256": "222684a63ef805f2cea54f30d1a61bcb917f5bc73a6da955ac12608828f9832d"
+      },
+      "qdmi-api.json": {
+        "url": "https://api.github.com/repos/Munich-Quantum-Software-Stack/QDMI",
+        "sha256": "80275e044345dc15b62544dd8f951b5cef0a0f49c26212c81701e7cf9d2ebdb2"
+      },
+      "qdmi-revision.json": {
+        "url": "https://api.github.com/repos/Munich-Quantum-Software-Stack/QDMI/commits/develop",
+        "sha256": "ccc42b84057769defb313e33ef01573cff75756a987dd704d28187fa9b0378ca"
+      },
+      "mqss-crossref.json": {
+        "url": "https://api.crossref.org/works/10.1145/3773656.3773669",
+        "sha256": "0c6bd464a46b2118adda422a3112a998e238985b803ac8a1b7a3611f1e36a2a7"
+      },
+      "mqss-paper.pdf": {
+        "url": "https://www.cda.cit.tum.de/files/eda/2026_sca_hpcasia_munich_quantum_software_stack.pdf",
+        "sha256": "b8886690ab7713c38cd915314db5645ab208b5f923a16389ff987a562ad6918e"
+      },
+      "unrolling-atom.xml": {
+        "url": "https://export.arxiv.org/api/query?id_list=2609.16171",
+        "sha256": "6becc6d74612d086c7e5a8b201537e1d7d09c4321b6eec00852ed0b1f5d01791"
+      },
+      "core-readme.md": {
+        "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/core/b35d3334a31fbce3471643c447400911f82e9b07/README.md",
+        "sha256": "e96dc82d11c93e38017d79aaeb9baf9e6470704661c9690bce8e54571c786112"
+      },
+      "qdmi-ecosystem.md": {
+        "url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/ecosystem.md",
+        "sha256": "88bc515be2caf7cafa53d1e4bb5f974dfd5b85dca80ef5d0d163b9bc696330c0"
+      },
+      "qdmi-readme.md": {
+        "url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/README.md",
+        "sha256": "0fb792d0c0fe7093de7a97ad70eeae61f0eea2436c171b50a2b2e8afd85c6e6a"
+      },
+      "qdmi-logo-sources.md": {
+        "url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/_static/logos/SOURCES.md",
+        "sha256": "356d00e4def9abfd692e67d55dc82142fd66d323041e8a8cb884d0dc64bb6c8d"
+      },
+      "ibm-device-readme.md": {
+        "url": "https://raw.githubusercontent.com/munich-quantum-software/ibm-qdmi-device/main/README.md",
+        "sha256": "505a9485451c52b781b12a058b8ec8163b3e173454ba667cce651412ff561cfe"
+      }
+    }
+  }
+}

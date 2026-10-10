@@ -1,0 +1,269 @@
+{
+  "mqsc": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqsc-light.svg",
+    "sha256": "c38350c2403b44e3448b308d1a5ff3a2618c7323f49b6b338b16d97c7f2326b2",
+    "source_sha256": "90d830869e15bd23e417262ccf7419d07b804669afc01f9fc5370aac3aa6bc95",
+    "adaptation": "Original path geometry retained; Removed redundant root width/height attributes; viewBox retained to prevent clipping in nested SVG image renderers."
+  },
+  "mqt": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqt-light.svg",
+    "sha256": "fe45f5ffa3efcc121c3cb890575d00698d01f3091e0d21eaeecd5ec1ea7892f8"
+  },
+  "q": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-q-light.svg",
+    "sha256": "69d4c24f9ac2704c3c50fb091cd24e6d7a4ec82f440e63ae11bce0414fbd8389"
+  },
+  "mqss": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqss-light.svg",
+    "sha256": "e02ef53487b8d58a36b6e8edd5629f6172b52781e80a7629e5aa85d7c2a31dcb"
+  },
+  "tum-cda": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-tum-cda-light.svg",
+    "sha256": "1fb29173d8b95160168eade7e316c383e665ff44d40b92746268495b94adc2b0"
+  },
+  "mqv": {
+    "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqv-light.svg",
+    "sha256": "10abd92b99183dd89fa422491f2a69b3e6375337e9fd4a47e279a42ec208d985"
+  },
+  "qdmi": {
+    "url": "https://munichquantum.software/qdmi-logo-themed.svg",
+    "source_sha256": "d2e8e0c093ac2c9407b8bd01990a139154b155d3fc64c62c7794557ebb884ec6",
+    "adaptation": "Original path geometry retained; automatic dark-mode style removed; dark lettering changed from #333333 to #142B45 for the fixed light presentation. Removed redundant root width/height attributes; viewBox retained to prevent clipping in nested SVG image renderers.",
+    "sha256": "cd82f237df8ae8f6b6ebff66d0b01de4420addc955d0200ada44e641bc54043e"
+  },
+  "qr-company": {
+    "encoded_url": "https://mq.sc",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "c55f3da27e68796a52102204655ca0fc07e3b75c292af36f17a5d4daf62e7e3b"
+  },
+  "qr-core": {
+    "encoded_url": "https://mqt.readthedocs.io/projects/core",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "402fb120e2db313823577fc4457bcca6b1c899c9389265cbac16915d288c9f84"
+  },
+  "qr-qdmi": {
+    "encoded_url": "https://munich-quantum-software-stack.github.io/QDMI/",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "f59efdda5dae994524431a6b755472f1ee624aff651640e7b3f4d5df24bbc0b4"
+  },
+  "qr-afqmc": {
+    "encoded_url": "https://github.com/amazon-braket/amazon-braket-examples/tree/feature/quantum-monte-carlo/examples/hybrid_quantum_algorithms/Quantum_Monte_Carlo_Chemistry",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4",
+    "sha256": "2603a0df8cf14bcd9a9150cd9b68388d46719c39432f2a7fc21832975b3ae05f"
+  },
+  "inter-latin": {
+    "url": "https://munichquantum.software/_astro/inter-latin-wght-normal.Dx4kXJAl.woff2",
+    "license": "Inter-LICENSE.txt"
+  },
+  "pennylane": {
+    "url": "https://munichquantum.software/frontend-logos/pennylane.svg",
+    "retrieved_at": "2026-10-10T01:04:42.166493+00:00",
+    "sha256": "980839fdc6f96db353d00224187c4008bb6ca854731fb933fcb64a14652f8a8a"
+  },
+  "cuda-q": {
+    "url": "https://munichquantum.software/frontend-logos/cuda-q.svg",
+    "retrieved_at": "2026-10-10T01:04:42.346953+00:00",
+    "sha256": "b52cf9c53abc81ec4807106bf556ed22f966c94756da8c987488ba60fd2a1748"
+  },
+  "qir": {
+    "url": "https://munichquantum.software/frontend-logos/qir.svg",
+    "retrieved_at": "2026-10-10T01:04:42.464085+00:00",
+    "sha256": "cecd43bc190a17a71595c9890507a57b58f439c32f94603cfac14611e691c639",
+    "source_sha256": "8ec37384670d8fc0ac1932b8725d99ee9ee55fab10d7f0b10d29dcbd7dbcbc61",
+    "adaptation": "Added final newline; original SVG geometry retained."
+  },
+  "cirq": {
+    "url": "https://munichquantum.software/frontend-logos/cirq.svg",
+    "retrieved_at": "2026-10-10T01:04:42.590183+00:00",
+    "sha256": "6994629de18c2bbe9c7350feefd7444350079d90b930ddfd81d8bd4e59f7c3fb"
+  },
+  "qr-mqss": {
+    "encoded_url": "https://doi.org/10.1145/3773656.3773669",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "824dd7c430b401b2e97bab91180c2fa7052d47f81a828883cfcf8e2da472cd7f"
+  },
+  "qr-unrolling": {
+    "encoded_url": "https://arxiv.org/abs/2609.16171",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "7904454c99db2da4f7bf815c46007be859ab125b5aaac6805d1cb92907faeecd"
+  },
+  "qr-iqm": {
+    "encoded_url": "https://github.com/iqm-finland/QDMI-on-IQM",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "d79decd3582320239b24348519ebadf6d03ddec207fd8346521ed6e63f18fb64"
+  },
+  "qr-ibm": {
+    "encoded_url": "https://github.com/munich-quantum-software/ibm-qdmi-device",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "37b79b33362e4554cc12d8629f863fe960d74a7f209bdef315ec37970ca7ed9f"
+  },
+  "qr-compiler": {
+    "encoded_url": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "154544d59f3b5d0b953bf7dfa5ed2249dc8047d0311d1b7943855c799ab19711"
+  },
+  "eq-afqmc-projection": {
+    "generator": "render_equations.py; Matplotlib 3.11.2; STIX mathtext; SVG path glyphs; tight text bounds with 0.04-inch padding",
+    "equations": [
+      "$|\\Psi(\\tau)\\rangle = e^{-\\tau(\\hat{H}-E_T)}\\,|\\Psi_T\\rangle$"
+    ],
+    "scope": "Formal unnormalized imaginary-time propagation. The phaseless AFQMC calculation approximates this projection.",
+    "sha256": "4f1de0f66852f3523c952ba64165a7fce96c520963152edf7431d6d20f4cfe42"
+  },
+  "eq-afqmc-energy": {
+    "generator": "render_equations.py; Matplotlib 3.11.2; STIX mathtext; SVG path glyphs; tight text bounds with 0.04-inch padding",
+    "equations": [
+      "$E_L[\\phi_w]=\\frac{\\langle\\Psi_T|\\hat{H}|\\phi_w\\rangle}{\\langle\\Psi_T|\\phi_w\\rangle}$",
+      "$\\widehat{E}(\\tau)=\\frac{\\sum_w W_w(\\tau)\\,\\mathrm{Re}\\,E_L[\\phi_w(\\tau)]}{\\sum_w W_w(\\tau)}$"
+    ],
+    "scope": "The local-energy ratio requires nonzero trial overlap. The displayed estimator uses nonnegative walker weights.",
+    "sha256": "37047a64e658bf504a4b074944c6b8d5f3cd38412501a34fee4cb1c051f7bef3"
+  },
+  "eq-qpe-phase": {
+    "generator": "render_equations.py; Matplotlib 3.11.2; STIX mathtext; SVG path glyphs; tight text bounds with 0.04-inch padding",
+    "equations": [
+      "$\\hat{U}|\\psi\\rangle=e^{2\\pi i\\varphi}|\\psi\\rangle$",
+      "$\\varphi\\approx 0.b_1b_2\\ldots b_m=\\sum_{k=1}^{m}\\frac{b_k}{2^k}=\\frac{j}{2^m}$"
+    ],
+    "scope": "The binary fraction is exact only for a representable phase; finite-register QPE samples nearby integer outcomes.",
+    "sha256": "b07c348ae222567f1642fb2ccbbc55a1bebaab1a70e6018f27656b105f5c5fe4"
+  },
+  "qr-core-repo": {
+    "encoded_url": "https://github.com/munich-quantum-toolkit/core",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "cd1966c2de7374f46be568e785befd315d24030d1ce0fb4e1bd8c50cbf07a66c"
+  },
+  "qr-braket": {
+    "encoded_url": "https://amazon-braket-qdmi-device.readthedocs.io/en/stable/",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "04ee18cfb43b24dfc7c02c06e2120a59a738609d9f6c3e4b47de4bf18390e5f7"
+  },
+  "mqsf": {
+    "url": "https://munich-quantum-software.github.io/mqsf/assets/images/brand/mqsf-logo.svg",
+    "retrieved_at": "2026-10-10T20:14:35.945033+00:00",
+    "source_sha256": "ddec0e7c91582b7cf3e82d3199d54b6d1e87e987446e6e50a3cd4d67760578b4",
+    "sha256": "a73de61bef00630bea5bb870c588142b74a033dde786ea36947f4845f18ac687",
+    "adaptation": "Original path geometry and colors retained. Removed unused embedded CMYK ICC color profile; normalized trailing whitespace and final newline. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization."
+  },
+  "jeff": {
+    "url": "https://raw.githubusercontent.com/unitaryfoundation/jeff/74853169b5510c363ae5542f149a60cfb96cb8ee/docs/assets/JEFF_logo.svg",
+    "retrieved_at": "2026-10-10T20:14:35.946267+00:00",
+    "source_sha256": "99010c6ad3fe7601092ea98131cfd5ac29ec8f24d2d1ae1fd239aa7bf1e88bd2",
+    "sha256": "f2194d8e97b84f66937a99d6ca7902133402f647d107b98aaab4ff10ff0aae0a",
+    "adaptation": "Original drawing and colors; trailing whitespace normalized and final newline ensured. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization.",
+    "revision": "74853169b5510c363ae5542f149a60cfb96cb8ee",
+    "license": "Apache-2.0",
+    "license_url": "https://raw.githubusercontent.com/unitaryfoundation/jeff/74853169b5510c363ae5542f149a60cfb96cb8ee/LICENCE",
+    "license_file": "jeff-LICENSE.txt",
+    "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "license_source_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  "mlir": {
+    "url": "https://raw.githubusercontent.com/llvm/mlir-www/38ef1528dbe275f6736b9951c2b379aa2ef700d1/website/static/LogoAssets/logo/svg/full_color/mlir-identity-01.svg",
+    "retrieved_at": "2026-10-10T20:14:35.946322+00:00",
+    "source_sha256": "6fbbd769fae81ca141305b5aea55cf16b5bfa9ff750bed6ac87c7d9da19ed27e",
+    "sha256": "5574706529475b3a493d52fd8d0cad9a78eea1be5a5502b7c8e7e503d7c11b91",
+    "adaptation": "Original drawing and colors; trailing whitespace normalized and final newline ensured. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization.",
+    "revision": "38ef1528dbe275f6736b9951c2b379aa2ef700d1"
+  },
+  "qiskit": {
+    "url": "https://www.ibm.com/quantum/qiskit",
+    "retrieved_at": "2026-10-10T20:15:26.511226+00:00",
+    "source_sha256": "33772a752cba3c1ec732a4cb9418d39f8c58085cd7dc8c49481bd82184dcd67c",
+    "sha256": "dec867e45d6e9cd2e048e7fc5c64ff5c8fad0fe5f8e15ab95068e252d9f2d7a3",
+    "adaptation": "Extracted unchanged current Qiskit logo SVG (title Qiskit logo) from official IBM Qiskit page; currentColor renders black in the standalone asset; final newline added. Embedded source and attribution comment.",
+    "rights": "IBM/Qiskit trademark; used to identify the Qiskit interface."
+  },
+  "iqm": {
+    "url": "https://raw.githubusercontent.com/iqm-finland/QDMI-on-IQM/27fd009c1b6aff55bd79ae8c5f9314e0c6c4eebe/docs/_static/iqm_logo.svg",
+    "retrieved_at": "2026-10-10T20:14:35.963930+00:00",
+    "source_sha256": "a644ed5f3418f9ac0419e5a3584a37df9fff7f9692e321b6150a25b02cc13c55",
+    "sha256": "c1377b948fd0d07bba0c024338e74dad437b6786b67c952f63f9f489c23bea24",
+    "adaptation": "Original drawing and colors; trailing whitespace normalized and final newline ensured. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization.",
+    "revision": "27fd009c1b6aff55bd79ae8c5f9314e0c6c4eebe",
+    "license": "Apache-2.0 WITH LLVM-exception",
+    "license_url": "https://raw.githubusercontent.com/iqm-finland/QDMI-on-IQM/27fd009c1b6aff55bd79ae8c5f9314e0c6c4eebe/LICENSE",
+    "license_file": "iqm-LICENSE.txt",
+    "license_sha256": "da7abc08783858324d64d98396ad57eb01583a25e3824c94adf304e4b3ed702f",
+    "license_source_sha256": "da7abc08783858324d64d98396ad57eb01583a25e3824c94adf304e4b3ed702f"
+  },
+  "aws": {
+    "url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/_static/logos/aws.svg",
+    "retrieved_at": "2026-10-10T20:14:36.110557+00:00",
+    "source_sha256": "43ba18c2ff2f2d70545c5da53d684de77750b251af8676f715d494f61d3e298c",
+    "sha256": "f0d62501ae7a977ccc41b02d9c5d573880b728305930c8e66680a3b714db2c3a",
+    "adaptation": "Original drawing and colors; trailing whitespace normalized and final newline ensured. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization.",
+    "upstream_artwork_source": "https://commons.wikimedia.org/wiki/File:Amazon_Web_Services_Logo.svg",
+    "license": "Apache-2.0",
+    "source_notes": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/_static/logos/SOURCES.md",
+    "license_url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/_static/logos/aws-LICENSE.txt",
+    "license_file": "aws-LICENSE.txt",
+    "license_sha256": "65c6633c2c9effa87f95bfe794d5da07bd3faab2814e4a0a15883e28ec4e543f",
+    "license_source_sha256": "65c6633c2c9effa87f95bfe794d5da07bd3faab2814e4a0a15883e28ec4e543f"
+  },
+  "lrz": {
+    "url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/_static/logos/lrz.svg",
+    "retrieved_at": "2026-10-10T20:14:36.110693+00:00",
+    "source_sha256": "c6a4bbef55dd13a5334a7d8f9336326ba2d454dab8c9398c0809cf5b5cbb486d",
+    "sha256": "f85045fd49a9bda906f65fb60a43eee6fa82b23be1694c414df8fec51389cad9",
+    "adaptation": "Original drawing and colors; trailing whitespace normalized and final newline ensured. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization."
+  },
+  "tum": {
+    "url": "https://raw.githubusercontent.com/Munich-Quantum-Software-Stack/QDMI/5b50bb661031632342d93672dcdda0d0bc69f2f5/docs/_static/logos/tum.svg",
+    "retrieved_at": "2026-10-10T20:14:36.110909+00:00",
+    "source_sha256": "a983693f0201cd71b31c3bf48eeaa17a53cdd488327564222c2c789fc88e765e",
+    "sha256": "297df04c1a36c7d033436e61984a226a398b5fea4cee52160fd3fb3641914851",
+    "adaptation": "Original drawing and colors; trailing whitespace normalized and final newline ensured. Embedded source and attribution comment.",
+    "rights": "Copyright and trademark rights remain with the respective owner; included only to identify the project or organization."
+  },
+  "ibm": {
+    "url": "https://www.ibm.com/quantum/qiskit",
+    "retrieved_at": "2026-10-10T20:14:36.999795+00:00",
+    "source_sha256": "33772a752cba3c1ec732a4cb9418d39f8c58085cd7dc8c49481bd82184dcd67c",
+    "sha256": "3d66501f87a77671d52a0b727ec29f3cdc75e371b5f576a63338eb8a9368b3e9",
+    "adaptation": "Extracted the unchanged IBM wordmark SVG (viewBox 0 0 58 23) from the official page header; final newline added. Embedded source and attribution comment.",
+    "rights": "IBM trademark; used to identify IBM Quantum Platform."
+  },
+  "qr-qdmi-repo": {
+    "encoded_url": "https://github.com/Munich-Quantum-Software-Stack/QDMI",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "40cda1b47ec4fd6546b52e516d76b6895f9270bac229c985c424e8b8ba723cab"
+  },
+  "qr-linkedin": {
+    "encoded_url": "https://www.linkedin.com/in/lukas-burgholzer-7a1741a7/",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "9558a2ec137f0d00722c4ed96e2c3c9cb5f0a5b9e9563defe69e2a01d08852b2"
+  },
+  "llvm": {
+    "url": "https://us1.discourse-cdn.com/flex021/uploads/llvm/original/3X/4/f/4f7ae2ec6808412e99bacd5a48e73d9f7e724a6f.svg",
+    "artwork_source": "https://discourse.llvm.org/t/license-and-attribution-of-the-llvm-logo/88464/9",
+    "attribution": "LLVM wyvern; vector rendition with outline published by MacDue in the LLVM project forum (2 October 2025).",
+    "rights": "LLVM logo and trademark rights remain with their owners. This is an attributed community vector rendition, not an official SVG release.",
+    "adaptation": "Source drawing retained unchanged; line endings and trailing whitespace normalized. Embedded source and attribution comment.",
+    "retrieved_at": "2026-10-10T20:17:30.908404+00:00",
+    "source_sha256": "404d1a09f1740f9270b289ea4fc54c0e8fccd8fa8b713d049004e83db8032a3a",
+    "sha256": "a998e38fe7f06ca15ccc2a4722f46c1cacc2b8d445866edcf9afc4ddb0d02712"
+  },
+  "slurm": {
+    "url": "https://commons.wikimedia.org/wiki/Special:FilePath/Slurm_logo.svg",
+    "artwork_source": "https://commons.wikimedia.org/wiki/File:Slurm_logo.svg",
+    "attribution": "Slurm logo; original artist unknown; vector traced from official Slurm branding artwork, uploaded and color-corrected by Mwtoews.",
+    "rights": "GPL-2.0-or-later as stated by the Wikimedia source; Slurm trademark rights remain with their owner.",
+    "license_url": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html",
+    "adaptation": "Original vector drawing and colors retained; line endings and trailing whitespace normalized. Embedded source and attribution comment.",
+    "retrieved_at": "2026-10-10T20:17:30.908768+00:00",
+    "source_sha256": "8bbf4b8c3f76ba365baad7ca4ad8777cbe9be2bac0eb5a5da716c9c6e9292084",
+    "sha256": "d7e14b5158a8f0189099874aaf5481667e3d18f62f1a3037d57591147bb61f0e",
+    "license": "GPL-2.0-or-later",
+    "license_file": "slurm-LICENSE.txt",
+    "license_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "license_source_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "license_text_source": "/usr/share/common-licenses/GPL-2 (unmodified GNU GPL version 2 text, whitespace normalized)"
+  }
+}

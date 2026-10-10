@@ -386,6 +386,8 @@ class CompilerTarget:
 
         R = 2
 
+        R_FIXED = 7
+
         XZX = 3
 
         XYX = 4

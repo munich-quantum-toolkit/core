@@ -30,9 +30,12 @@
 #include "llvm/Support/raw_socket_stream.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -129,9 +132,37 @@ struct Execution {
           automaticWorkers_ ? std::min(workerSlots_, automatic) : workerSlots_;
     }
     if (workers == 1) {
-      const auto rc =
-          sampling ? jitSession.sample(numShots_, shots_, &stateAvailable)
-                   : jitSession.run();
+      int64_t rc = 0;
+      if (const auto* tracePath = std::getenv("MQT_MQSF_SHOT_TRACE");
+          sampling && tracePath != nullptr) {
+        // Demo-only serial capture preserves this session's RNG between shots.
+        std::ofstream trace(tracePath);
+        if (!trace) {
+          std::cerr << "Cannot open MQSF shot trace" << '\n';
+          return false;
+        }
+        std::vector<std::string> shot;
+        for (size_t i = 0; i < numShots_; ++i) {
+          rc = jitSession.sample(1, shot, &stateAvailable, i == 0);
+          if (rc != 0 || shot.size() != 1) {
+            return false;
+          }
+          const auto completed =
+              std::chrono::duration_cast<std::chrono::nanoseconds>(
+                  std::chrono::steady_clock::now().time_since_epoch())
+                  .count();
+          shots_.push_back(shot.front());
+          std::ranges::reverse(shot.front());
+          trace << completed << '\t' << shot.front() << '\n';
+        }
+        trace.flush();
+        if (!trace) {
+          return false;
+        }
+      } else {
+        rc = sampling ? jitSession.sample(numShots_, shots_, &stateAvailable)
+                      : jitSession.run();
+      }
       if (rc != 0) {
         std::cerr << "QIR program returned exit code " << rc << '\n';
         return false;

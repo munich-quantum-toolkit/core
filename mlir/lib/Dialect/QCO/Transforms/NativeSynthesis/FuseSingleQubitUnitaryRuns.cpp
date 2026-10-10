@@ -213,7 +213,7 @@ protected:
     if (!parsed) {
       moduleOp.emitError()
           << "Invalid single-qubit synthesis basis '" << basis
-          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r.";
+          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r, r-fixed.";
       signalPassFailure();
       return;
     }

@@ -138,8 +138,8 @@ static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  constexpr std::array<const char*, 7> bases = {
-      "zyz", "zxz", "xzx", "xyx", "u", "zsxx", "r",
+  constexpr std::array<const char*, 8> bases = {
+      "zyz", "zxz", "xzx", "xyx", "u", "zsxx", "r", "r-fixed",
   };
   for (const char* basis : bases) {
     fn(StringRef{basis});
@@ -295,6 +295,7 @@ static LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
   case ZSXX:
     return countZSXXGates(funcOp);
   case R:
+  case RFixed:
     return countOps<ROp>(funcOp);
   }
   return 0;
@@ -560,6 +561,13 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
     return isa<RZOp, SXOp, XOp>(op);
   case R:
     return isa<ROp>(op);
+  case RFixed:
+    if (auto gate = dyn_cast<ROp>(op)) {
+      const auto angle = mqt::valueToConstantDouble(gate.getTheta());
+      return angle &&
+             (*angle == std::numbers::pi || *angle == std::numbers::pi / 2.);
+    }
+    return false;
   }
   return false;
 }
