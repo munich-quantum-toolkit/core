@@ -21,6 +21,8 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <cmath>
 
 namespace mqt::bench {
@@ -30,7 +32,7 @@ using namespace mlir;
 TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
   const QFT benchmark{{.qubits = 4, .periodExponent = 2}};
   auto program = generate(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto moduleOp = program->module();
   EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
 }
@@ -40,7 +42,7 @@ TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
     SCOPED_TRACE(static_cast<int>(method));
     auto program =
         generate(QFT{{.qubits = 1025, .periodExponent = 10, .method = method}});
-    ASSERT_TRUE(program);
+    ASSERT_TRUE(mlir::succeeded(program));
     EXPECT_LT(test::countOperations(program->module()), 100U);
     program->module().walk([&](arith::ConstantOp op) {
       if (const auto value = dyn_cast<FloatAttr>(op.getValue())) {

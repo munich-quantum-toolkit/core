@@ -27,6 +27,7 @@
 #include "llvm/Support/CheckedArithmetic.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -832,7 +833,7 @@ CompiledProgram::compile(CompilerInput&& program,
     return format.takeError();
   }
   auto result = runDefaultPipeline(std::move(program), environment, options);
-  if (!result) {
+  if (failed(result)) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Compilation failed for selected payload " +
@@ -873,14 +874,14 @@ CompiledProgram::compile(CompilerInput&& program,
     return error;
   }
   if (qdmi::isBinaryProgramFormat(*format)) {
-    if (auto bytes = qir.toBitcode()) {
+    if (auto bytes = qir.toBitcode(); succeeded(bytes)) {
       return CompiledProgram(
           environment,
           std::string(reinterpret_cast<const char*>(bytes->data()),
                       bytes->size()),
           *format);
     }
-  } else if (auto text = qir.llvmIR()) {
+  } else if (auto text = qir.llvmIR(); succeeded(text)) {
     return CompiledProgram(environment, std::move(*text), *format);
   }
   return llvm::createStringError(

@@ -22,6 +22,8 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <cstddef>
 
 namespace mqt::bench {
@@ -30,7 +32,7 @@ using namespace mlir;
 
 TEST(GenerateProgramTest, KeepsTeleportationFeedForwardAndReturnsOnlyBob) {
   auto program = generate(Teleportation{});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto moduleOp = program->module();
 
   SmallVector<qc::MeasureOp> measurements;
@@ -66,7 +68,7 @@ TEST(GenerateProgramTest, KeepsTeleportationFeedForwardAndReturnsOnlyBob) {
 
 TEST(GenerateProgramTest, SamplesTeleportedStateAtBob) {
   auto program = test::generateQCO(Teleportation{});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 128, 17);
   ASSERT_TRUE(succeeded(counts));

@@ -25,6 +25,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <bit>
 #include <cmath>
@@ -34,7 +35,6 @@
 #include <functional>
 #include <numbers>
 #include <numeric>
-#include <optional>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -73,7 +73,7 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
   constexpr uint64_t number = 15;
   const Shor benchmark({.number = number});
   auto program = test::generateQCO(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));
@@ -97,7 +97,7 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
   EXPECT_TRUE(benchmark.evaluate(*shared).factors);
 }
 
-static std::optional<QCOProgram>
+static mlir::FailureOr<QCOProgram>
 inPlaceMultiplier(uint64_t number, uint64_t multiplier,
                   bool composeInverse = false) {
   const auto bits = static_cast<int64_t>(std::bit_width(number));
@@ -140,13 +140,13 @@ inPlaceMultiplier(uint64_t number, uint64_t multiplier,
         return SmallVector<Value>{};
       });
   auto qcProgram = QCProgram::fromModule(context, std::move(moduleOp));
-  if (!qcProgram) {
-    return std::nullopt;
+  if (mlir::failed(qcProgram)) {
+    return mlir::failure();
   }
   auto compiled = runDefaultPipeline(CompilerInput{std::move(*qcProgram)},
                                      ProgramFormat::QCO);
-  if (!compiled) {
-    return std::nullopt;
+  if (mlir::failed(compiled)) {
+    return mlir::failure();
   }
   return std::get<QCOProgram>(std::move(*compiled));
 }
@@ -160,7 +160,7 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
         continue;
       }
       auto program = inPlaceMultiplier(number, multiplier);
-      ASSERT_TRUE(program);
+      ASSERT_TRUE(mlir::succeeded(program));
       dd::Package package(qubits);
       auto functionality = qco::buildFunctionality(
           mlir::mqt::getEntryPoint(program->module()), package);
@@ -190,7 +190,7 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
   for (const bool composeInverse : {false, true}) {
     for (uint64_t number : {3ULL, 5ULL, 7ULL, 15ULL}) {
       auto program = inPlaceMultiplier(number, 2, composeInverse);
-      ASSERT_TRUE(program);
+      ASSERT_TRUE(mlir::succeeded(program));
       const auto qubits = 2U * std::bit_width(number) + 3U;
       dd::CVec input(size_t{1} << qubits);
       dd::CVec expected(input.size());
@@ -232,13 +232,13 @@ TEST(GenerateProgramTest, PreservesMultiplierCoherenceAndUncomputesWorkspace) {
 TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   const Shor benchmark({.number = ShorOptions::MAX_NUMBER});
   auto program = generate(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(program->str().size(), 32'768U);
   auto qcoProgram = std::move(*program).intoQCO();
-  ASSERT_TRUE(qcoProgram);
+  ASSERT_TRUE(mlir::succeeded(qcoProgram));
   auto qir = runDefaultPipeline(CompilerInput{std::move(*qcoProgram)},
                                 ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(qir);
+  ASSERT_TRUE(mlir::succeeded(qir));
 }
 
 } // namespace mqt::bench

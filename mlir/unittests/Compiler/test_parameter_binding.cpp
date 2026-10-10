@@ -15,6 +15,8 @@
 
 #include "mlir/IR/Verifier.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <limits>
 #include <string>
 #include <utility>
@@ -36,9 +38,9 @@ TEST(ParameterBinding, PartialBindingPreservesRemainingInputs) {
       }
     }
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   EXPECT_EQ(qc->parameters(), (std::vector<std::string>{"a", "b"}));
-  ASSERT_TRUE(qc->bindParameters({{"a", 0.5}}));
+  ASSERT_TRUE(mlir::succeeded(qc->bindParameters({{"a", 0.5}})));
   EXPECT_EQ(qc->parameters(), (std::vector<std::string>{"b"}));
   auto entry = mlir::mqt::getEntryPoint(qc->module());
   EXPECT_EQ(entry.getNumArguments(), 2);
@@ -46,8 +48,8 @@ TEST(ParameterBinding, PartialBindingPreservesRemainingInputs) {
       entry.getArgAttrOfType<mlir::IntegerAttr>(1, "mqt.input_id").getInt(), 9);
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qc->module())));
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
-  ASSERT_TRUE(qco->bindParameters({{"b", -0.5}}));
+  ASSERT_TRUE(mlir::succeeded(qco));
+  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"b", -0.5}})));
   EXPECT_TRUE(qco->parameters().empty());
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
 }
@@ -60,37 +62,37 @@ input float[64] alpha;
 qubit q;
 rz(alpha + beta) q;
 )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   EXPECT_EQ(qc->parameters(), (std::vector<std::string>{"beta", "alpha"}));
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qc->module())));
   EXPECT_EQ(mlir::mqt::getEntryPoint(qc->module()).getNumResults(), 0);
 
   auto exported = qc->toOpenQASM3();
-  ASSERT_TRUE(exported);
+  ASSERT_TRUE(mlir::succeeded(exported));
   const auto beta = exported->source().find("input float[64] beta;");
   const auto alpha = exported->source().find("input float[64] alpha;");
   EXPECT_NE(beta, std::string::npos);
   EXPECT_NE(alpha, std::string::npos);
   EXPECT_LT(beta, alpha);
   auto restored = mlir::QCProgram::fromOpenQASMString(exported->source());
-  ASSERT_TRUE(restored);
+  ASSERT_TRUE(mlir::succeeded(restored));
   EXPECT_EQ(restored->parameters(),
             (std::vector<std::string>{"beta", "alpha"}));
 
-  ASSERT_TRUE(restored->bindParameters({{"beta", 0.25}}));
+  ASSERT_TRUE(mlir::succeeded(restored->bindParameters({{"beta", 0.25}})));
   EXPECT_EQ(restored->parameters(), (std::vector<std::string>{"alpha"}));
   exported = restored->toOpenQASM3();
-  ASSERT_TRUE(exported);
+  ASSERT_TRUE(mlir::succeeded(exported));
   EXPECT_EQ(exported->source().find("input float[64] beta;"),
             std::string::npos);
   EXPECT_NE(exported->source().find("input float[64] alpha;"),
             std::string::npos);
 
   auto qco = std::move(*restored).intoQCO();
-  ASSERT_TRUE(qco);
-  ASSERT_TRUE(qco->cleanup());
+  ASSERT_TRUE(mlir::succeeded(qco));
+  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
   EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"alpha"}));
-  ASSERT_TRUE(qco->bindParameters({{"alpha", -0.5}}));
+  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"alpha", -0.5}})));
   EXPECT_TRUE(qco->parameters().empty());
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
 }
@@ -106,29 +108,29 @@ TEST(ParameterBinding, InvalidBindingDoesNotChangeProgram) {
       }
     }
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const auto before = qc->str();
-  EXPECT_FALSE(qc->bindParameters({{"a", 1.0}, {"unknown", 2.0}}));
+  EXPECT_TRUE(mlir::failed(qc->bindParameters({{"a", 1.0}, {"unknown", 2.0}})));
   EXPECT_EQ(qc->str(), before);
-  EXPECT_FALSE(
-      qc->bindParameters({{"a", std::numeric_limits<double>::infinity()}}));
+  EXPECT_TRUE(mlir::failed(
+      qc->bindParameters({{"a", std::numeric_limits<double>::infinity()}})));
   EXPECT_EQ(qc->str(), before);
 }
 
 TEST(ParameterBinding, QIRRequiresBoundParameters) {
   auto qc = mlir::QCProgram::fromOpenQASMString(
       "OPENQASM 3.1; input float theta; qubit q; ry(theta) q;");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   for (const auto profile :
        {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
     auto unbound = qc->copy();
-    EXPECT_FALSE(std::move(unbound).intoQIR(profile));
+    EXPECT_TRUE(mlir::failed(std::move(unbound).intoQIR(profile)));
   }
 }
 
 TEST(ParameterBinding, OpenQASMRejectsReservedInputName) {
-  EXPECT_FALSE(mlir::QCProgram::fromOpenQASMString(
-      "OPENQASM 3.1; input float _mqt_theta; qubit q; ry(_mqt_theta) q;"));
+  EXPECT_TRUE(mlir::failed(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; input float _mqt_theta; qubit q; ry(_mqt_theta) q;")));
 }
 
 TEST(ParameterBinding, BindingRejectsReferencedEntryPoint) {
@@ -143,9 +145,9 @@ TEST(ParameterBinding, BindingRejectsReferencedEntryPoint) {
       }
     }
   )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   const auto before = qc->str();
-  EXPECT_FALSE(qc->bindParameters({{"a", 1.0}}));
+  EXPECT_TRUE(mlir::failed(qc->bindParameters({{"a", 1.0}})));
   EXPECT_EQ(qc->str(), before);
 }
 } // namespace

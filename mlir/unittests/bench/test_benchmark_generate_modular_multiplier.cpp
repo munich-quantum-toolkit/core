@@ -18,6 +18,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -46,7 +48,7 @@ static void expectCoherentModularMultiplier(const size_t bits,
       .control = controlInput,
   }};
   auto program = test::generateQCO(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
 
   dd::Package package(0);
   auto state = qco::simulateStatevector(
@@ -129,7 +131,7 @@ TEST(GenerateProgramTest, VerifiesEverySmallModularMultiplierBasisInput) {
             SCOPED_TRACE(expected);
             ASSERT_EQ(benchmark.expectedResult(), expected);
             auto program = test::generateQCO(benchmark);
-            ASSERT_TRUE(program);
+            ASSERT_TRUE(mlir::succeeded(program));
             auto counts = qco::sample(
                 mlir::mqt::getEntryPoint(program->module()), 32, 17);
             ASSERT_TRUE(succeeded(counts));
@@ -151,7 +153,7 @@ TEST(GenerateProgramTest, BoundsLargestModularMultiplierPayload) {
       .multiplicand = std::string(bits, '+'),
       .control = '+',
   }});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(program->str().size(), 16'384U);
 }
 

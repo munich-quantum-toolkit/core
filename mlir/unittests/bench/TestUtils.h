@@ -22,14 +22,13 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
-#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
-#include <optional>
 #include <utility>
 #include <variant>
 
@@ -70,16 +69,16 @@ namespace mqt::bench::test {
 }
 
 template <class Benchmark>
-[[nodiscard]] std::optional<mlir::QCOProgram>
+[[nodiscard]] mlir::FailureOr<mlir::QCOProgram>
 generateQCO(const Benchmark& benchmark) {
   auto program = generate(benchmark);
-  if (!program) {
-    return std::nullopt;
+  if (mlir::failed(program)) {
+    return mlir::failure();
   }
   auto compiled = mlir::runDefaultPipeline(
       mlir::CompilerInput{std::move(*program)}, mlir::ProgramFormat::QCO);
-  if (!compiled) {
-    return std::nullopt;
+  if (mlir::failed(compiled)) {
+    return mlir::failure();
   }
   return std::get<mlir::QCOProgram>(std::move(*compiled));
 }
@@ -88,7 +87,7 @@ template <class Benchmark>
 void expectSamplingMatchesReference(const Benchmark& benchmark,
                                     double tolerance = 0.03) {
   auto program = generateQCO(benchmark);
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   constexpr size_t shots = 16'384;
   auto counts =
       mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
@@ -111,13 +110,13 @@ template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {
 inline void expectJeffRoundTrip(mlir::QCProgram&& program) {
   auto compiled = mlir::runDefaultPipeline(
       mlir::CompilerInput{std::move(program)}, mlir::ProgramFormat::Jeff);
-  ASSERT_TRUE(compiled);
+  ASSERT_TRUE(mlir::succeeded(compiled));
   ASSERT_TRUE(std::holds_alternative<mlir::JeffProgram>(*compiled));
   auto& jeff = std::get<mlir::JeffProgram>(*compiled);
   const auto bytes = jeff.toBytes();
   ASSERT_FALSE(bytes.empty());
   auto restored = mlir::JeffProgram::fromBytes(bytes);
-  ASSERT_TRUE(restored);
+  ASSERT_TRUE(mlir::succeeded(restored));
   EXPECT_EQ(restored->toBytes(), bytes);
 }
 

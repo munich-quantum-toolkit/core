@@ -19,9 +19,9 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <optional>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -30,33 +30,33 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-[[nodiscard]] static std::optional<QCProgram> buildProgram(
+[[nodiscard]] static FailureOr<QCProgram> buildProgram(
     const llvm::StringRef name,
     const llvm::function_ref<SmallVector<Value>(qc::QCProgramBuilder&)>& emit) {
   auto context = createCompilerContext();
   auto moduleOp = qc::QCProgramBuilder::build(context.get(), emit);
   if (!moduleOp) {
     llvm::errs() << name << ": failed to build the module\n";
-    return std::nullopt;
+    return failure();
   }
 
   auto program = QCProgram::fromModule(context, std::move(moduleOp));
-  if (!program || !program->cleanup()) {
+  if (failed(program) || failed(program->cleanup())) {
     llvm::errs() << name << ": failed to clean up the module\n";
-    return std::nullopt;
+    return failure();
   }
   return program;
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  std::optional<QCProgram> generate(const TYPE& benchmark) {                   \
+  FailureOr<QCProgram> generate(const TYPE& benchmark) {                       \
     return buildProgram(ID, [&](qc::QCProgramBuilder& builder) {               \
       return STEM(builder, benchmark);                                         \
     });                                                                        \
   }
 #include "bench/BenchmarkFamilies.inc"
 
-std::optional<GeneratedBenchmark>
+FailureOr<GeneratedBenchmark>
 generate(const std::string_view instanceSpecificationJSON,
          const std::string_view source) {
   auto parsed =
@@ -64,8 +64,8 @@ generate(const std::string_view instanceSpecificationJSON,
   auto program =
       std::visit([](const auto& benchmark) { return generate(benchmark); },
                  parsed.instance);
-  if (!program) {
-    return std::nullopt;
+  if (failed(program)) {
+    return failure();
   }
   return GeneratedBenchmark{
       .benchmarkId = std::move(parsed.benchmarkId),

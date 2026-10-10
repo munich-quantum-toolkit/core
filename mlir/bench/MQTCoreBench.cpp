@@ -19,6 +19,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
@@ -227,7 +228,7 @@ programExtension(const std::string_view format) {
   } else {
     auto compiled = mlir::runDefaultPipeline(std::move(generated.program),
                                              mlir::ProgramFormat::Jeff);
-    if (!compiled) {
+    if (mlir::failed(compiled)) {
       llvm::errs() << generated.benchmarkId
                    << ": failed to build the jeff program\n";
       return 1;
@@ -284,7 +285,7 @@ programExtension(const std::string_view format) {
 generateFromInstanceSpecification(const std::string& instanceSpecification,
                                   const std::string& source) {
   auto generated = mqt::bench::generate(instanceSpecification, source);
-  if (!generated) {
+  if (mlir::failed(generated)) {
     return 1;
   }
   return publish(std::move(*generated), outputFormat,

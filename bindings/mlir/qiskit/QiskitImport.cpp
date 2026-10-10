@@ -2999,7 +2999,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   }
   validateGeneratedControlFlow(moduleOp->getOperation());
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
-  if (!program) {
+  if (mlir::failed(program)) {
     throw std::runtime_error(
         "Qiskit circuit import produced an invalid QC program");
   }

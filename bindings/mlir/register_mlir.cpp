@@ -43,9 +43,9 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/Support/Error.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -121,8 +121,8 @@ toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
 }
 
 template <class T>
-[[nodiscard]] static T takeResult(std::optional<T>&& result) {
-  if (!result) {
+[[nodiscard]] static T takeResult(mlir::FailureOr<T>&& result) {
+  if (mlir::failed(result)) {
     throw std::runtime_error(
         "Compiler action failed; see diagnostics for details.");
   }
@@ -142,8 +142,8 @@ static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
   std::construct_at(&self, takeResult(std::move(result)));
 }
 
-static void requireSuccess(const bool succeeded) {
-  if (!succeeded) {
+static void requireSuccess(const mlir::LogicalResult result) {
+  if (mlir::failed(result)) {
     throw std::runtime_error(
         "Compiler action failed; see diagnostics for details.");
   }
@@ -163,19 +163,20 @@ template <class ProgramType>
 }
 
 namespace {
-template <auto Function> struct OptionalFunctionAdapter;
+template <auto Function> struct FallibleFunctionAdapter;
 
-template <class T, class... Args, std::optional<T> (*Function)(Args...)>
-struct OptionalFunctionAdapter<Function> {
+template <class T, class... Args, mlir::FailureOr<T> (*Function)(Args...)>
+struct FallibleFunctionAdapter<Function> {
   static T call(Args... args) {
     return takeResult(Function(std::forward<Args>(args)...));
   }
 };
 
-template <auto Method> struct BooleanMemberAdapter;
+template <auto Method> struct FallibleMemberAdapter;
 
-template <class Class, class... Args, bool (Class::*Method)(Args...)>
-struct BooleanMemberAdapter<Method> {
+template <class Class, class... Args,
+          mlir::LogicalResult (Class::*Method)(Args...)>
+struct FallibleMemberAdapter<Method> {
   static void call(Class& self, Args... args) {
     if constexpr (std::is_base_of_v<mlir::Program, Class>) {
       requireValid(self);
@@ -184,8 +185,9 @@ struct BooleanMemberAdapter<Method> {
   }
 };
 
-template <class Class, class... Args, bool (Class::*Method)(Args...) const>
-struct BooleanMemberAdapter<Method> {
+template <class Class, class... Args,
+          mlir::LogicalResult (Class::*Method)(Args...) const>
+struct FallibleMemberAdapter<Method> {
   static void call(const Class& self, Args... args) {
     if constexpr (std::is_base_of_v<mlir::Program, Class>) {
       requireValid(self);
@@ -258,9 +260,9 @@ static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
           "bind_parameters",
           [](T& program, const std::map<std::string, double>& values) {
             requireValid(program);
-            withDiagnostics(
-                program.module().getContext(), "cannot bind parameters",
-                [&] { return mlir::success(program.bindParameters(values)); });
+            withDiagnostics(program.module().getContext(),
+                            "cannot bind parameters",
+                            [&] { return program.bindParameters(values); });
           },
           "values"_a,
           R"pb(Bind named f64 parameters in place without folding expressions.
@@ -739,7 +741,7 @@ sample(const nb::object& program, size_t shots, uint64_t seed) {
 [[nodiscard]] static mlir::QCProgram
 generateBenchmark(const std::string_view instanceSpecificationJSON) {
   auto generated = bench::generate(instanceSpecificationJSON);
-  if (!generated) {
+  if (mlir::failed(generated)) {
     throw std::runtime_error("failed to generate benchmark");
   }
   return std::move(generated->program);
@@ -1556,22 +1558,22 @@ before conversion to QCO.)pb");
   qcProgram
       .def_static(
           "from_mlir_str",
-          &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRString>::call,
+          &FallibleFunctionAdapter<&mlir::QCProgram::fromMLIRString>::call,
           "source"_a, "Parse a QC MLIR source string.")
       .def_static(
           "from_mlir_file",
-          &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRFile>::call,
+          &FallibleFunctionAdapter<&mlir::QCProgram::fromMLIRFile>::call,
           "path"_a, "Parse QC MLIR from a file.")
       .def_static(
           "from_openqasm_str",
-          &OptionalFunctionAdapter<&mlir::QCProgram::fromOpenQASMString>::call,
+          &FallibleFunctionAdapter<&mlir::QCProgram::fromOpenQASMString>::call,
           "source"_a,
           R"pb(Translate supported OpenQASM to QC MLIR.
 
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
           "from_openqasm_file",
-          &OptionalFunctionAdapter<&mlir::QCProgram::fromOpenQASMFile>::call,
+          &FallibleFunctionAdapter<&mlir::QCProgram::fromOpenQASMFile>::call,
           "path"_a,
           R"pb(Translate a supported OpenQASM file to QC MLIR.
 
@@ -1591,11 +1593,12 @@ Args:
         metadata.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
+      .def("cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
            "Run the standard QC cleanup pipeline in place.")
-      .def("normalize_global_phases",
-           &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
-           "Normalize scoped global phases in place.")
+      .def(
+          "normalize_global_phases",
+          &FallibleMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
+          "Normalize scoped global phases in place.")
       .def(
           "to_openqasm3",
           [](const mlir::QCProgram& program) {
@@ -1603,13 +1606,7 @@ Args:
             return withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(),
                 "cannot export QC program to OpenQASM 3",
-                [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
-                  auto result = program.toOpenQASM3();
-                  if (!result) {
-                    return mlir::failure();
-                  }
-                  return std::move(*result);
-                });
+                [&] { return program.toOpenQASM3(); });
           },
           "Clean up and emit this QC program as OpenQASM 3 without QCO "
           "optimization.")
@@ -1663,20 +1660,20 @@ operations.)pb");
   qcoProgram
       .def_static(
           "from_mlir_str",
-          &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,
+          &FallibleFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,
           "source"_a, "Parse a QCO MLIR source string.")
       .def_static(
           "from_mlir_file",
-          &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
+          &FallibleFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
           "path"_a, "Parse QCO MLIR from a file.")
       .def("copy", &copyProgram<mlir::QCOProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
+      .def("cleanup", &FallibleMemberAdapter<&mlir::QCOProgram::cleanup>::call,
            "Run the standard QCO cleanup pipeline in place.")
-      .def(
-          "normalize_global_phases",
-          &BooleanMemberAdapter<&mlir::QCOProgram::normalizeGlobalPhases>::call,
-          "Normalize scoped global phases in place.")
+      .def("normalize_global_phases",
+           &FallibleMemberAdapter<
+               &mlir::QCOProgram::normalizeGlobalPhases>::call,
+           "Normalize scoped global phases in place.")
       .def(
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
@@ -1687,31 +1684,31 @@ operations.)pb");
           "pipeline"_a, nb::kw_only(), "options"_a = mlir::CompilationOptions{},
           "Run a textual MLIR pass pipeline in place.")
       .def("merge_single_qubit_rotation_gates",
-           &BooleanMemberAdapter<
+           &FallibleMemberAdapter<
                &mlir::QCOProgram::mergeSingleQubitRotationGates>::call,
            "Merge compatible consecutive single-qubit rotation gates.")
       .def(
           "fuse_single_qubit_unitary_runs",
-          &BooleanMemberAdapter<
+          &FallibleMemberAdapter<
               &mlir::QCOProgram::fuseSingleQubitUnitaryRuns>::call,
           nb::kw_only(), "basis"_a = "zyz",
           "Fuse single-qubit unitary runs into the chosen decomposition basis.")
       .def("unroll_quantum_loops",
-           &BooleanMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
+           &FallibleMemberAdapter<&mlir::QCOProgram::unrollQuantumLoops>::call,
            nb::kw_only(), "unroll_factor"_a = -1,
            "Unroll quantum loops, optionally using a maximum unroll factor.")
       .def("lift_hadamards",
-           &BooleanMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
+           &FallibleMemberAdapter<&mlir::QCOProgram::liftHadamards>::call,
            "Move Hadamard gates through compatible operations.")
       .def("reuse_qubits",
-           &BooleanMemberAdapter<&mlir::QCOProgram::reuseQubits>::call,
+           &FallibleMemberAdapter<&mlir::QCOProgram::reuseQubits>::call,
            "Reuse independent single-qubit allocations.")
-      .def(
-          "run_qubit_reuse_pipeline",
-          &BooleanMemberAdapter<&mlir::QCOProgram::runQubitReusePipeline>::call,
-          "Prepare the program for qubit reuse and reuse eligible qubits.")
+      .def("run_qubit_reuse_pipeline",
+           &FallibleMemberAdapter<
+               &mlir::QCOProgram::runQubitReusePipeline>::call,
+           "Prepare the program for qubit reuse and reuse eligible qubits.")
       .def("decompose_multi_controlled",
-           &BooleanMemberAdapter<
+           &FallibleMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
            R"pb(Decompose gates that act on at least min_qubits qubits.
@@ -1728,8 +1725,7 @@ at least 3; default 3 means wider than two-qubit.)pb")
                 program.module().getContext(), "Target compilation failed",
                 [&] {
                   const nb::gil_scoped_release release;
-                  return mlir::success(
-                      program.compileForTarget(environment, options));
+                  return program.compileForTarget(environment, options);
                 });
           },
           "target_environment"_a, nb::kw_only(),
@@ -1746,8 +1742,7 @@ RuntimeError with MLIR diagnostics.)pb")
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target synthesis failed", [&] {
-                  return mlir::success(
-                      program.synthesizeForTarget(environment, options));
+                  return program.synthesizeForTarget(environment, options);
                 });
           },
           "target_environment"_a, nb::kw_only(),
@@ -1837,7 +1832,7 @@ further compilation.)pb");
               }
               views.emplace_back(data, size);
             }
-            std::optional<mlir::JeffProgram> program;
+            mlir::FailureOr<mlir::JeffProgram> program;
             auto exception = kj::runCatchingExceptions([&] {
               capnp::SegmentArrayMessageReader reader(
                   kj::arrayPtr(views.data(), views.size()));
@@ -1866,11 +1861,11 @@ returned program does not retain the buffers.)pb")
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
       .def_static("from_file",
-                  &OptionalFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
+                  &FallibleFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
                   "path"_a, "Read a ``jeff`` program from a file.")
       .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call,
+      .def("cleanup", &FallibleMemberAdapter<&mlir::JeffProgram::cleanup>::call,
            "Run the standard ``jeff`` cleanup pipeline in place.")
       .def(
           "to_segment_views",
@@ -1906,7 +1901,7 @@ segment data is copied or flattened.)pb")
             return nb::bytes(bytes.begin(), bytes.size());
           },
           "Serialize this program to its ``jeff`` byte representation.")
-      .def("write", &BooleanMemberAdapter<&mlir::JeffProgram::write>::call,
+      .def("write", &FallibleMemberAdapter<&mlir::JeffProgram::write>::call,
            "path"_a, "Write this program to a ``jeff`` file.")
       .def(
           "to_qco",
@@ -1924,7 +1919,7 @@ Set ``copy=True`` to preserve it.)pb");
       "An immutable compiler program containing OpenQASM 3 source.")
       .def_prop_ro("source", &mlir::OpenQASMProgram::source,
                    "The emitted OpenQASM 3 source.")
-      .def("write", &BooleanMemberAdapter<&mlir::OpenQASMProgram::write>::call,
+      .def("write", &FallibleMemberAdapter<&mlir::OpenQASMProgram::write>::call,
            "path"_a, "Write the emitted source to a file.")
       .def("__str__", &mlir::OpenQASMProgram::str,
            "Return the emitted OpenQASM 3 source.");
@@ -1937,7 +1932,7 @@ LLVM bitcode.)pb");
   qirProgram
       .def("copy", &copyProgram<mlir::QIRProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &BooleanMemberAdapter<&mlir::QIRProgram::cleanup>::call,
+      .def("cleanup", &FallibleMemberAdapter<&mlir::QIRProgram::cleanup>::call,
            "Run the standard QIR cleanup pipeline in place.")
       .def_prop_ro("profile", &mlir::QIRProgram::profile,
                    "The QIR target profile used to produce this program.")
@@ -1958,7 +1953,7 @@ LLVM bitcode.)pb");
           },
           "Serialize this program as LLVM bitcode.")
       .def("write_bitcode",
-           &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
+           &FallibleMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
            "path"_a, "Write this program as LLVM bitcode.");
 
   nb::module_::import_("mqt.core.dd");

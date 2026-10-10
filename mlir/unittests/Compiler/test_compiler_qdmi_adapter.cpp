@@ -25,6 +25,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
 #include <cstring>
@@ -560,16 +561,16 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
       return %bits : !cbit.reg<2>
     }
   })mlir");
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(program->cleanup());
+  ASSERT_TRUE(mlir::succeeded(program));
+  ASSERT_TRUE(mlir::succeeded(program->cleanup()));
   auto qco = std::move(*program).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   program = std::move(*qco).intoQC();
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
+  ASSERT_TRUE(mlir::succeeded(qir));
   auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
+  ASSERT_TRUE(mlir::succeeded(ir));
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   auto job = device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
   ASSERT_TRUE(job.wait());

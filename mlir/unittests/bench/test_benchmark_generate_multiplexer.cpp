@@ -23,6 +23,8 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <numbers>
 #include <utility>
 
@@ -32,7 +34,7 @@ using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
   auto program = generate(Multiplexer{{.qubits = 3}});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto moduleOp = program->module();
 
   qc::CtrlOp controlledRotation;
@@ -81,7 +83,7 @@ TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
 TEST(GenerateProgramTest, SerializesTheLargestQuantumMultiplexer) {
   auto program =
       generate(Multiplexer{{.qubits = MultiplexerOptions::MAX_QUBITS}});
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(test::countOperations(program->module()), 150U);
 
   test::expectJeffRoundTrip(std::move(*program));
