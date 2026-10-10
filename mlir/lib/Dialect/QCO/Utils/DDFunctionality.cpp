@@ -2083,9 +2083,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
 
   dd::MatrixDD state = dd::MatrixDD::one();
   if (failed(walkFunction(func, walkState, state))) {
-    if (qubits.numQubits != 0) {
-      dd.decRef(state);
-    }
+    dd.decRef(state);
     return failure();
   }
   return state;
