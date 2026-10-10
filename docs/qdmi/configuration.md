@@ -28,9 +28,6 @@ packaged device definitions. Treat `MQT_CORE_QDMI_CONFIG_JSON` as trusted input
 too.
 :::
 
-An empty environment variable is still set. Unset a configuration variable to
-use the next discovery source; an empty JSON configuration is invalid.
-
 ## Device definitions
 
 The following `qdmi.json` registers one device:
