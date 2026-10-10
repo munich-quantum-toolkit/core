@@ -61,6 +61,7 @@ endif()
 
 # MSVC /GL libraries repeat code generation at every test executable's link.
 if(NOT DEPLOY
+   AND NOT "$ENV{CI}"
    AND CMAKE_BUILD_TYPE STREQUAL "Release"
    AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND BUILD_MQT_CORE_TESTS))
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" ON)

@@ -117,10 +117,10 @@ This requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
 and [CMake](https://cmake.org/) 3.28 or newer.
 
-Release source builds default to `DEPLOY=OFF`, which enables native CPU tuning
-and LTO when the compiler supports them. On Linux, Clang with its matching LLD
-linker is a useful choice; on macOS, use Apple Clang from Xcode. For example,
-with Clang 23 installed on Linux:
+Local Release source builds default to `DEPLOY=OFF`, which enables native CPU
+tuning and LTO when the compiler supports them. On Linux, Clang with its
+matching LLD linker is a useful choice; on macOS, use Apple Clang from Xcode.
+For example, with Clang 23 installed on Linux:
 
 ```console
 CC=clang-23 CXX=clang++-23 uv pip install mqt.core --no-binary mqt.core \
@@ -140,8 +140,8 @@ plugin; LLD includes the required support. MSVC IPO applies to static libraries
 and DLLs with explicit exports; CMake cannot extract automatic exports from MSVC
 IPO objects. MSVC builds with native tests default IPO off because each test
 link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
-to test IPO explicitly. Builds without native tests and release wheels retain
-IPO.
+to test IPO explicitly. CI builds default IPO off on all platforms; release
+wheels explicitly enable it.
 
 With CMake 3.29 or newer, Clang with LLD on Linux and Apple Clang with Apple's
 linker cache ThinLTO results under `thinlto-cache-<configuration>` in the build

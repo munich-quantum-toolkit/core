@@ -256,6 +256,7 @@ cache-keys = [
   { file = "json/**/*" },
   { env = "SKBUILD_CMAKE_ARGS" },
   { env = "SKBUILD_CMAKE_BUILD_TYPE" },
+  { env = "CI" },
   { env = "DEPLOY" },
 ]
 
