@@ -12,6 +12,7 @@ import importlib.util
 import json
 import tempfile
 import zipfile
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,100 @@ def sample_capture() -> dict:
             }
         ],
     }
+
+
+def sample_target_capture() -> dict:
+    """Return two tiny consistent target captures for merge-boundary regression tests."""
+    data = sample_capture()
+    code = data["scenarios"][0]["variants"][0]["stages"][0]["code"]
+    source_hash = hashlib.sha256(code.encode()).hexdigest()
+    data["application"] = {
+        "representative_source": {"code": code, "sha256": source_hash},
+        "provenance": {"core_revision": data["provenance"]["core_revision"]},
+    }
+    data["provenance"].update({"compiler_sha256": "c" * 64, "execution_script_sha256": "d" * 64})
+    data["target_provenance"] = {
+        "source_sha256": source_hash,
+        "compiler_sha256": "c" * 64,
+        "execution_script_sha256": "d" * 64,
+    }
+    data["targets"] = []
+    for identifier in ("target-a", "target-b"):
+        compilation = deepcopy(data["scenarios"][0]["variants"][0])
+        compilation["source_sha256"] = source_hash
+        compilation["execution"]["capture_script_sha256"] = "d" * 64
+        compilation["stages"] = [
+            {
+                "id": stage,
+                "code": code,
+                "sha256": source_hash,
+                "language": "text",
+                "circuit": {"qubits": [{"id": 0}], "operations": []},
+            }
+            for stage in ("source", "qc", "qco", "optimized", "place-and-route", "target-native-synthesis")
+        ]
+        raw = {"device": identifier}
+        data["targets"].append({
+            "id": identifier,
+            "metadata": deepcopy(data["device"]),
+            "compilation": compilation,
+            "provenance": {
+                "source_url": "https://example.com/device",
+                "retrieved_at": "2026-10-10T00:00:00Z",
+                "raw": raw,
+                "raw_sha256": hashlib.sha256(json.dumps(raw, sort_keys=True).encode()).hexdigest(),
+            },
+        })
+    return data
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "application-source",
+        "target-source",
+        "target-digest",
+        "stage-source",
+        "stage-circuit",
+        "stage-order",
+        "metadata",
+        "execution",
+        "merge",
+        "duplicate",
+    ],
+)
+def test_rejects_inconsistent_application_target_merge(failure: str) -> None:
+    """Bind every target, compiler view, and provenance record to the actual application."""
+    data = sample_target_capture()
+    BUILDER.validate_capture(data)
+    target = data["targets"][1]
+    compilation = target["compilation"]
+    if failure == "application-source":
+        data["application"]["representative_source"]["code"] += "changed"
+    elif failure == "target-source":
+        stage = compilation["stages"][0]
+        stage["code"] += "changed"
+        stage["sha256"] = hashlib.sha256(stage["code"].encode()).hexdigest()
+    elif failure == "target-digest":
+        compilation["source_sha256"] = "b" * 64
+    elif failure == "stage-source":
+        stage = compilation["stages"][2]
+        stage["code"] += "changed"
+        stage["sha256"] = hashlib.sha256(stage["code"].encode()).hexdigest()
+    elif failure == "stage-circuit":
+        compilation["stages"][2]["circuit"]["operations"].append({"name": "x", "qubits": [0]})
+    elif failure == "stage-order":
+        compilation["stages"][-2:] = compilation["stages"][:-3:-1]
+    elif failure == "metadata":
+        target["provenance"]["raw"]["device"] = "a different device"
+    elif failure == "execution":
+        compilation["execution"]["capture_script_sha256"] = "b" * 64
+    elif failure == "merge":
+        data["target_provenance"]["compiler_sha256"] = "b" * 64
+    else:
+        target["id"] = data["targets"][0]["id"]
+    with pytest.raises(ValueError, match=r"source|stages|provenance|Duplicate target"):
+        BUILDER.validate_capture(data)
 
 
 def test_embedded_source_cannot_end_script_and_roundtrips() -> None:
@@ -145,17 +240,33 @@ def test_bundle_is_self_contained_and_keeps_exact_source() -> None:
         )
         (root / "presentation.css").write_text("body { color: white; }", encoding="utf-8")
         (root / "presentation.js").write_text("window.ready = true;", encoding="utf-8")
+        for name in ("visuals", "circuit", "motion"):
+            (root / f"{name}.js").write_text(f"window.{name} = true;", encoding="utf-8")
+        (root / "assets").mkdir()
+        (root / "assets/equation.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
+        (root / "assets/inter-latin.woff2").write_bytes(b"font test bytes")
         source = root / "capture.json"
-        source.write_text(json.dumps(sample_capture()), encoding="utf-8")
+        data = sample_target_capture()
+        source.write_text(json.dumps(data), encoding="utf-8")
         result = BUILDER.build(root / "output", source, root)
         html = result.read_text(encoding="utf-8")
         assert "<!-- MQSF_" not in html
         assert "<script src=" not in html
         assert "window.MQSF_DATA=" in html
         assert "window.ready = true;" in html
+        for name in ("visuals", "circuit", "motion"):
+            assert html.index(f"window.{name} = true;") < html.index("window.ready = true;")
+        assert "data:image/svg+xml;base64," in html
+        assert "data:font/woff2;base64," in html
+        packaged = json.loads(html.split("window.MQSF_DATA=", 1)[1].split(";</script>", 1)[0])
+        assert packaged["target_provenance"] == data["target_provenance"]
+        for target, original in zip(packaged["targets"], data["targets"], strict=True):
+            assert target["provenance"] == original["provenance"]
+            assert target["compilation"]["stages"][0]["code"] == data["application"]["representative_source"]["code"]
+            assert target["compilation"]["stages"][0]["lines_html"]
         with zipfile.ZipFile(result.parent / "mqsf-2026.zip") as archive:
-            assert archive.read("index.html").decode() == html
-            assert json.loads(gzip.decompress(archive.read("evidence.json.gz"))) == sample_capture()
+            assert archive.read("index.html") == result.read_bytes()
+            assert json.loads(gzip.decompress(archive.read("evidence.json.gz"))) == data
 
 
 def test_large_artifacts_keep_exact_source_in_compressed_download() -> None:

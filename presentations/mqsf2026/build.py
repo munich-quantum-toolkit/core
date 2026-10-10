@@ -13,6 +13,7 @@ import base64
 import gzip
 import hashlib
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,72 @@ def validate_capture(data: dict[str, Any]) -> None:
     if data.get("schema_version") != 1 or not data.get("provenance", {}).get("core_revision"):
         msg = "Capture must identify its schema and Core revision"
         raise ValueError(msg)
+    if targets := data.get("targets"):
+        application = data.get("application", {})
+        source = application.get("representative_source", {})
+        source_hash = hashlib.sha256(source.get("code", "").encode()).hexdigest()
+        provenance = data.get("target_provenance", {})
+        if (
+            not source.get("code")
+            or source.get("sha256") != source_hash
+            or provenance.get("source_sha256") != source_hash
+        ):
+            msg = "Target captures must identify the exact application source"
+            raise ValueError(msg)
+        if application.get("provenance", {}).get("core_revision") != data["provenance"]["core_revision"] or any(
+            not provenance.get(key) or provenance[key] != data["provenance"].get(key)
+            for key in ("compiler_sha256", "execution_script_sha256")
+        ):
+            msg = "Merged application and target provenance disagree"
+            raise ValueError(msg)
+        if len({target["id"] for target in targets}) != len(targets):
+            msg = "Duplicate target ID"
+            raise ValueError(msg)
+        common_stages: dict[str, dict] = {}
+        for target in targets:
+            compilation = target["compilation"]
+            stages = compilation.get("stages", [])
+            stage_ids = [stage["id"] for stage in stages]
+            if (
+                stage_ids[:4] != ["source", "qc", "qco", "optimized"]
+                or "place-and-route" not in stage_ids
+                or "target-native-synthesis" not in stage_ids
+                or stage_ids.index("place-and-route") > stage_ids.index("target-native-synthesis")
+                or any(not stage.get("code") or not stage.get("sha256") for stage in stages)
+            ):
+                msg = "Target compiler stages are incomplete or out of order"
+                raise ValueError(msg)
+            if compilation.get("source_sha256") != source_hash or stages[0]["code"] != source["code"]:
+                msg = "Target compilation uses a different application source"
+                raise ValueError(msg)
+            for stage in stages[:4]:
+                shared = {key: stage.get(key) for key in ("code", "circuit")}
+                if not shared["circuit"] or common_stages.setdefault(stage["id"], shared) != shared:
+                    msg = "Target-independent stage source or circuit differs between targets"
+                    raise ValueError(msg)
+            if compilation.get("execution", {}).get("capture_script_sha256") != provenance["execution_script_sha256"]:
+                msg = "Target execution provenance differs from its capture"
+                raise ValueError(msg)
+            metadata = target.get("provenance", {})
+            raw = metadata.get("raw", {})
+            # The IBM capture hashes its configuration/property pair in this recorded order.
+            encoded = [raw["configuration"], raw["properties"]] if set(raw) == {"configuration", "properties"} else raw
+            if (
+                not raw
+                or not metadata.get("source_url")
+                or not metadata.get("retrieved_at")
+                or hashlib.sha256(json.dumps(encoded, sort_keys=True).encode()).hexdigest()
+                != metadata.get("raw_sha256")
+            ):
+                msg = "Target metadata provenance differs from its original source"
+                raise ValueError(msg)
+    for target in data.get("targets", []):
+        validate_capture({
+            "schema_version": 1,
+            "provenance": data["provenance"],
+            "device": target["metadata"],
+            "scenarios": [{"id": target["id"], "variants": [target["compilation"]]}],
+        })
     sites = {site["id"] for site in data["device"]["sites"]}
     if len(sites) != len(data["device"]["sites"]):
         msg = "Duplicate topology site"
@@ -104,47 +171,66 @@ def build(output: Path, capture: Path = HERE / "captures/demo.json.gz", source: 
     validate_capture(data)
     formatter = HtmlFormatter(cssclass="highlight", nowrap=False, style="friendly")
     line_formatter = HtmlFormatter(nowrap=True, style="friendly")
-    for scenario in data["scenarios"]:
-        for variant in scenario["variants"]:
-            for artifact in [*variant.get("stages", []), *variant.get("exports", [])]:
-                if "code" in artifact:
-                    code = artifact["code"]
-                    artifact["sha256"] = hashlib.sha256(code.encode()).hexdigest()
-                    lines = code.splitlines(keepends=True)
-                    artifact["line_count"] = len(lines)
-                    if len(lines) > 200:
-                        artifact["full_code_gzip"] = base64.b64encode(gzip.compress(code.encode(), mtime=0)).decode(
-                            "ascii"
+    variants = [variant for scenario in data["scenarios"] for variant in scenario["variants"]]
+    variants.extend(target["compilation"] for target in data.get("targets", []))
+    for variant in variants:
+        for artifact in [*variant.get("stages", []), *variant.get("exports", [])]:
+            if "code" in artifact:
+                code = artifact["code"]
+                artifact["sha256"] = hashlib.sha256(code.encode()).hexdigest()
+                lines = code.splitlines(keepends=True)
+                artifact["line_count"] = len(lines)
+                if len(lines) > 200:
+                    artifact["full_code_gzip"] = base64.b64encode(gzip.compress(code.encode(), mtime=0)).decode("ascii")
+                    focus_line = artifact.get("focus_line", 1)
+                    if artifact.get("language") == "mlir":
+                        focus_line = next(
+                            (i + 1 for i, line in enumerate(lines) if re.search(r"\b(?:qc|qco)\.(?!static)", line)),
+                            focus_line,
                         )
-                        start = max(0, min(artifact.get("focus_line", 1) - 5, len(lines) - 200))
-                        excerpt = lines[start : start + 200]
-                        artifact["code"] = "".join(excerpt)
-                        artifact["excerpt_lines"] = len(excerpt)
-                        artifact["excerpt_start_line"] = start + 1
-                    language = artifact.get("language", "text")
-                    lexer = get_lexer_by_name("openqasm3" if language == "qasm" else language)
-                    artifact["html"] = highlight(artifact["code"], lexer, formatter)
-                    artifact["lines_html"] = [
-                        highlight(line, lexer, line_formatter).rstrip("\n") for line in artifact["code"].splitlines()
-                    ]
-    for scenario in data["scenarios"]:
-        for variant in scenario["variants"]:
-            for execution in [variant.get("execution"), *variant.get("executions", {}).values()]:
-                if execution and execution.get("client_source"):
-                    execution["client_source_lines_html"] = [
-                        highlight(line, get_lexer_by_name("python"), line_formatter).rstrip("\n")
-                        for line in execution["client_source"].splitlines()
-                    ]
-    if data.get("application", {}).get("source"):
-        data["application"]["source_lines_html"] = [
+                    start = max(0, min(focus_line - 2, len(lines) - 200))
+                    excerpt = lines[start : start + 200]
+                    artifact["code"] = "".join(excerpt)
+                    artifact["excerpt_lines"] = len(excerpt)
+                    artifact["excerpt_start_line"] = start + 1
+                language = artifact.get("language", "text")
+                lexer = get_lexer_by_name("openqasm3" if language == "qasm" else language)
+                artifact["html"] = highlight(artifact["code"], lexer, formatter)
+                artifact["lines_html"] = [
+                    highlight(line, lexer, line_formatter).rstrip("\n") for line in artifact["code"].splitlines()
+                ]
+    for variant in variants:
+        for execution in [variant.get("execution"), *variant.get("executions", {}).values()]:
+            if execution and execution.get("client_source"):
+                execution["client_source_lines_html"] = [
+                    highlight(line, get_lexer_by_name("python"), line_formatter).rstrip("\n")
+                    for line in execution["client_source"].splitlines()
+                ]
+    application = data.get("application", {})
+    for key in ("source", "batch_source", "classical_source"):
+        if application.get(key):
+            application[key + "_lines_html"] = [
+                highlight(line, get_lexer_by_name("python"), line_formatter).rstrip("\n")
+                for line in application[key].splitlines()
+            ]
+    if application.get("execution", {}).get("client_source"):
+        execution = application["execution"]
+        execution["client_source_lines_html"] = [
             highlight(line, get_lexer_by_name("python"), line_formatter).rstrip("\n")
-            for line in data["application"]["source"].splitlines()
+            for line in execution["client_source"].splitlines()
         ]
     css = source.joinpath("presentation.css").read_text(encoding="utf-8")
     css = formatter.get_style_defs(".highlight") + "\n" + css
     script = source.joinpath("presentation.js").read_text(encoding="utf-8")
-    if source.joinpath("visuals.js").exists():
-        script = source.joinpath("visuals.js").read_text(encoding="utf-8") + "\n" + script
+    script = (
+        "\n".join(
+            source.joinpath(name).read_text(encoding="utf-8")
+            for name in ("visuals.js", "circuit.js", "motion.js")
+            if source.joinpath(name).exists()
+        )
+        + "\n"
+        + script
+    )
     assets = {
         path.stem: "data:image/svg+xml;base64," + base64.b64encode(path.read_bytes()).decode()
         for path in sorted(source.glob("assets/*.svg"))

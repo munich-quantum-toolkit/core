@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -51,44 +52,131 @@ LAYOUT_CHECK = """() => {
 }"""
 
 
-def check(html: Path, executable: str | None, screenshot: Path | None, screenshots_dir: Path | None = None) -> None:
-    """Exercise every build, keyboard navigation, replay completion, and visible assets.
+EVIDENCE_CHECK = """() => {
+    const id = MQSF_DECK.slides[MQSF_DECK.getState().slide].id;
+    const progress = document.getElementById('slide').dataset.progress;
+    const step = MQSF_DECK.getState().step;
+    const fraction = progress === '' ? (id === 'adaptive-execution' || step ? 1 : 0) : Number(progress);
+    let capture, elapsed, actual, expected;
+    if (id === 'adaptive-execution') {
+        capture = MQSF_DATA.scenarios.find(s => s.id === 'qpe').variants[0].executions['qir-adaptive'];
+        const end = Math.max(capture.completed_ms, ...capture.events.map(e => e.time_ms + e.duration_ms));
+        elapsed = fraction * end;
+        const shots = capture.shot_events.filter(s => s.time_ms <= elapsed);
+        const counts = Array(18).fill(0);
+        shots.forEach(s => {const n = parseInt(s.outcome, 2); counts[n < 78 ? 0 : n > 93 ? 17 : n - 77]++;});
+        const histogram = document.querySelector('.histogram');
+        actual = {count:Number(histogram.dataset.shots), bins:[...histogram.querySelectorAll('[data-count]')]
+            .map(bar => Number(bar.dataset.count))};
+        expected = {count:shots.length, bins:counts};
+    } else if (id === 'afqmc-execution') {
+        capture = MQSF_DATA.application.execution;
+        elapsed = fraction * capture.duration_ms;
+        expected = {count:capture.events.filter(e => Number.isInteger(e.program_index) &&
+            e.time_ms + e.duration_ms <= elapsed).length};
+        actual = {count:Number(document.querySelector('.batch-grid').dataset.programs)};
+    } else return null;
+    const event = [...capture.events].reverse().find(e => e.time_ms <= elapsed);
+    const submit = capture.events.find(e => e.operation.includes('try_submit_job'));
+    const checkLine = id === 'adaptive-execution' ? step > 0 : elapsed >= (submit?.time_ms ?? 0);
+    return {actual, expected, fraction,
+        actualLine:checkLine ? Number(document.querySelector('.code-line.hot .line-no')?.textContent) : null,
+        expectedLine:checkLine ? event?.source_line || 1 : null};
+}"""
 
-    Layout findings are collected across the whole deck and reported together,
-    after the functional checks, so one overflow does not hide other failures.
-    """
+CIRCUIT_CHECK = """() => {
+    const {schedule, render, flatten} = MQSF_CIRCUIT, failures = [];
+    const parity = MQSF_DATA.scenarios.find(s => s.id === 'parity').variants[0];
+    const source = parity.stages.find(s => s.id === 'source').circuit;
+    const h = schedule(source).filter(o => o.name === 'h');
+    if (h.length < 2 || h[0].column !== h[1].column) failures.push('Independent parity H gates are not parallel');
+    const feedback = document.createElement('div');
+    feedback.innerHTML = render(source, {limit:20});
+    if (!feedback.querySelector('[data-morph*="-classical-"]')) failures.push('Missing measured-bit feedback wire');
+    let dependencies = 0, windows = 0;
+    function checkWindow(c, options, label) {
+        const holder = document.createElement('div');
+        holder.innerHTML = render(c, options);
+        const active = Array.isArray(options.active) ? options.active : [options.active];
+        if (holder.querySelectorAll('.gate-highlight').length !== active.length)
+            failures.push(`${label}: active gates missing`);
+        for (const gate of holder.querySelectorAll('[data-operation]')) {
+            const x = Number(gate.getAttribute('transform').match(/translate\\(([-.\\d]+)/)[1]);
+            if (x < 143 || x > 1075) failures.push(`${label}: gate outside wires`);
+        }
+        windows++;
+    }
+    for (const s of MQSF_DATA.scenarios) for (const v of s.variants) for (const stage of v.stages || []) {
+        if (!stage.circuit) continue;
+        const measured = new Map();
+        for (const op of schedule(stage.circuit)) {
+            for (const r of op.region.filter(r => r.name === 'if_else')) for (const b of r.condition_bits || []) {
+                if (!measured.has(b) || measured.get(b) >= op.column)
+                    failures.push(`${s.id}: feedback precedes measurement`);
+                dependencies++;
+            }
+            if (op.name === 'measure') for (const b of op.clbits || []) measured.set(b, op.column);
+        }
+    }
+    for (const target of MQSF_DATA.targets) {
+        const edges = new Set(target.metadata.edges.flatMap(([a,b]) => [`${a},${b}`, `${b},${a}`]));
+        for (const stage of target.compilation.stages.filter(s => s.circuit)) {
+            const c = stage.circuit, ops = flatten(c);
+            if (['place-and-route','target-native-synthesis'].includes(stage.id)) {
+                const sites = new Map(c.qubits.map(q => [q.id, q.site]));
+                for (const o of ops.filter(o => o.qubits.length === 2))
+                    if (!edges.has(o.qubits.map(q => sites.get(q)).join(',')))
+                        failures.push(`${target.id}: non-edge gate`);
+            }
+            if (!['optimized','place-and-route','target-native-synthesis'].includes(stage.id)) continue;
+            for (let active = 0; active < ops.length; active++) {
+                checkWindow(c, {active, limit:18, start:Math.max(0,active-8)}, `${target.id}/${stage.id}/${active}`);
+            }
+            const layers = new Map();
+            for (const op of schedule(c)) layers.set(op.column, [...(layers.get(op.column) || []), op.index]);
+            for (const [column, active] of layers) {
+                checkWindow(c, {active, camera:column + 0.37, limit:18}, `${target.id}/${stage.id}/layer${column}`);
+            }
+        }
+    }
+    return {failures:failures.slice(0,20), dependencies, windows};
+}"""
+
+
+def check(html: Path, executable: str | None, screenshot: Path | None, screenshots_dir: Path | None = None) -> None:
+    """Check all builds, recorded evidence, print pages, and interrupted motion offline."""
     with import_module("playwright.sync_api").sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=executable, args=["--no-sandbox"])
-        context = browser.new_context(offline=True, viewport={"width": 1920, "height": 1080}, reduced_motion="reduce")
         network: list[str] = []
         errors: list[str] = []
         geometry: dict[tuple[int, str], int] = {}
 
-        def route_request(route: Any) -> None:  # ruff: ignore[any-type] - Playwright is an optional runtime import.
+        def route_request(route: Any) -> None:  # ruff: ignore[any-type] - Optional Playwright import.
             if route.request.url.startswith(("http:", "https:")):
                 network.append(route.request.url)
                 route.abort()
             else:
                 route.continue_()
 
+        context = browser.new_context(offline=True, viewport={"width": 1920, "height": 1080}, reduced_motion="reduce")
         context.route("**/*", route_request)
         page = context.new_page()
         page.on("pageerror", lambda error: errors.append(str(error)))
-        # Slow CI must not miss the short 1x replay before checking its next-click behavior.
+        # Freeze the browser clock so even the short 1x replay can be inspected.
         page.clock.install(time="2026-10-14T07:00:00Z")
         page.goto(html.resolve().as_uri(), wait_until="load")
         page.evaluate("document.fonts.ready")
         page.clock.pause_at("2026-10-14T08:00:00Z")
         assert page.title() == TITLE
         slides = page.evaluate("window.MQSF_DECK.slides")
-        assert len(slides) == 28, f"Expected the 28-slide keynote, found {len(slides)} slides"
+        assert len(slides) == 19, f"Expected the 19-slide keynote, found {len(slides)} slides"
         states = [(index, step) for index, slide in enumerate(slides) for step in range(slide["builds"] + 1)]
-        execution = page.evaluate("""() => {
-            const run = MQSF_DATA.scenarios.find(s => s.id === 'qpe').variants[0].execution;
-            const end = Math.max(run.completed_ms, ...run.events.map(e => e.time_ms + e.duration_ms));
-            return {shots: run.num_shots, halfway: run.shot_events.filter(s => s.time_ms <= end / 2).length};
-        }""")
-        shots = execution["shots"]
+        ids = {slide["id"]: index for index, slide in enumerate(slides)}
+        expected_mapping = page.evaluate("MQSF_DATA.targets[0].compilation.layout.final.slice(0,6)")
+        probe = page.evaluate(CIRCUIT_CHECK)
+        assert not probe["failures"], probe["failures"]
+        assert probe["dependencies"]
+        assert probe["windows"]
 
         def assert_state(expected: tuple[int, int]) -> dict[str, Any]:
             current = page.evaluate("window.MQSF_DECK.getState()")
@@ -97,64 +185,92 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             assert page.locator("#slide").get_attribute("data-step") == str(expected[1])
             return current
 
+        def inspect_evidence() -> dict[str, Any] | None:
+            evidence = page.evaluate(EVIDENCE_CHECK)
+            if evidence:
+                assert evidence["actual"] == evidence["expected"], evidence
+                assert evidence["actualLine"] == evidence["expectedLine"], evidence
+            return evidence
+
         def inspect_slide(index: int, step: int) -> None:
             for issue in page.evaluate(LAYOUT_CHECK):
                 geometry.setdefault((index, issue), step)
             assert page.locator("#slide-number").inner_text().startswith(f"{index + 1:02d} / {len(slides)}")
             assert page.locator("#section-label").inner_text().strip()
             assert page.locator("#mqsc-logo").is_visible()
-            if index == 9 and step == slides[index]["builds"]:
-                assert page.locator(".mapping-legend span").all_text_contents() == ["q[0] → 4", "q[1] → 1", "q[2] → 0"]
-            if step != slides[index]["builds"]:
-                return
-            page.wait_for_function(
-                "[...document.querySelectorAll('#deck img')].every(i => i.complete && i.naturalWidth > 0)"
-            )
-            assets = page.evaluate("""() => [...document.querySelectorAll('#deck img, #deck svg image')].map(i => ({
-                source: i.currentSrc || i.getAttribute('href') || i.getAttribute('xlink:href')
-            }))""")
-            assert assets, f"Slide {index + 1} has no branding image"
-            assert all(asset["source"].startswith("data:image/svg+xml") for asset in assets), (
+            inspect_evidence()
+            if slides[index]["id"] == "routing" and step == 2 and not assert_state((index, step))["animating"]:
+                expected = [f"q{i} → {site}" for i, site in enumerate(expected_mapping)]
+                assert page.locator(".mapping-legend span").all_text_contents() == expected
+            page.evaluate("Promise.all([...document.querySelectorAll('#deck img')].map(i => i.decode()))")
+            assets = page.evaluate("""() => [...document.querySelectorAll('#deck img, #deck svg image')].map(i =>
+                i.currentSrc || i.getAttribute('href') || i.getAttribute('xlink:href'))""")
+            assert assets
+            assert all(source.startswith("data:image/svg+xml") for source in assets), (
                 f"Slide {index + 1} contains a non-vector or external image"
             )
             assert page.locator("#deck canvas, #deck video").count() == 0
-            if screenshots_dir:
+            if screenshots_dir and step == slides[index]["builds"]:
                 screenshots_dir.mkdir(parents=True, exist_ok=True)
                 page.screenshot(path=str(screenshots_dir / f"slide-{index + 1:02d}.png"))
 
+        def inspect_progress(index: int, step: int, playback: dict[str, Any]) -> None:
+            fractions = page.evaluate(
+                """id => {
+                const c = id === 'adaptive-execution'
+                    ? MQSF_DATA.scenarios.find(s => s.id === 'qpe').variants[0].executions['qir-adaptive']
+                    : MQSF_DATA.application.execution;
+                const times = c.shot_events?.map(e => e.time_ms) || c.events
+                    .filter(e => Number.isInteger(e.program_index)).map(e => e.time_ms + e.duration_ms);
+                const duration = c.duration_ms || Math.max(c.completed_ms,
+                    ...c.events.map(e => e.time_ms + e.duration_ms));
+                return [0.25,0.5,0.75].map(f => times[Math.floor(f * times.length)] / duration);
+            }""",
+                slides[index]["id"],
+            )
+            last = 0.0
+            counts = []
+            for fraction in fractions:
+                page.clock.fast_forward(round(playback["duration"] * (fraction - last)))
+                evidence = inspect_evidence()
+                assert evidence is not None
+                counts.append(evidence["actual"]["count"])
+                for issue in page.evaluate(LAYOUT_CHECK):
+                    geometry.setdefault((index, issue), step)
+                last = fraction
+            assert 0 < counts[0] < counts[-1], f"No growing in-progress results on {slides[index]['id']}: {counts}"
+
         page.keyboard.press("Home")
-        completed_animations = 0
+        completed = loops = 0
         for position, expected in enumerate(states):
             current = assert_state(expected)
+            slide = slides[expected[0]]
+            playback = slide["playbacks"].get(str(expected[1]))
             if current["animating"]:
-                if "slow down" in slides[expected[0]]["title"]:
-                    page.clock.fast_forward(9000)
-                    progress = page.locator(".histogram").evaluate("""node => ({
-                        shots: Number(node.dataset.shots),
-                        bars: [...node.querySelectorAll('[data-count]')]
-                            .reduce((n, bar) => n + Number(bar.dataset.count), 0)
-                    })""")
-                    assert 0 < progress["shots"] < shots
-                    assert progress["shots"] == execution["halfway"], "Replay must follow the actual shot timestamps"
-                    assert progress["shots"] == progress["bars"]
-                    assert "device_job_wait" in page.locator(".code-line.hot").inner_text()
-                    for issue in page.evaluate(LAYOUT_CHECK):
-                        geometry.setdefault((expected[0], issue), expected[1])
-                    if screenshots_dir:
-                        page.screenshot(path=str(screenshots_dir / "runtime-progress.png"))
-                page.keyboard.press("PageDown")
-                assert assert_state(expected)["animating"] is False, "First click must finish, not advance, a replay"
-                assert page.locator(".histogram").get_attribute("data-shots") == str(shots)
-                completed_animations += 1
+                assert playback
+                if slide["id"] in {"adaptive-execution", "afqmc-execution"}:
+                    inspect_progress(*expected, playback)
+                else:
+                    page.clock.fast_forward(round(playback["duration"] / 2))
+                if playback.get("loop"):
+                    loops += 1
+                    assert assert_state(expected)["animating"], "A looping scene must remain active"
+                else:
+                    page.keyboard.press("PageDown")
+                    assert not assert_state(expected)["animating"], "First click must finish a finite replay"
+                    completed += 1
             inspect_slide(*expected)
             if position + 1 < len(states):
+                # For looping scenes this click must finish AND advance in one action.
                 page.keyboard.press(("PageDown", "Space", "ArrowRight")[position % 3])
-        assert completed_animations == 2, f"Expected both runtime replays, observed {completed_animations}"
+        expected_loops = sum(bool(p.get("loop")) for s in slides for p in s["playbacks"].values())
+        expected_completed = sum(not p.get("loop") for s in slides for p in s["playbacks"].values())
+        assert (loops, completed) == (expected_loops, expected_completed), (loops, completed)
         page.keyboard.press("PageDown")
         assert_state(states[-1])
         for expected in reversed(states[:-1]):
             page.keyboard.press("PageUp")
-            assert assert_state(expected)["animating"] is False
+            assert not assert_state(expected)["animating"]
         page.keyboard.press("PageUp")
         assert_state(states[0])
 
@@ -162,15 +278,14 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
         assert_state(states[-1])
         page.keyboard.press("Home")
         assert_state(states[0])
-        page.keyboard.press("2")
-        page.keyboard.press("8")
+        page.keyboard.press("1")
+        page.keyboard.press("9")
         assert page.locator("#jump-indicator").is_visible()
         page.keyboard.press("Enter")
-        assert_state((27, 0))
+        assert_state((18, 0))
         assert page.locator("#jump-indicator").is_hidden()
         page.reload(wait_until="load")
-        assert_state((27, 0))
-
+        assert_state((18, 0))
         page.keyboard.press("Home")
         page.keyboard.press("g")
         assert page.locator("#overview").is_visible()
@@ -182,45 +297,91 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
         assert_state((6, 0))
         assert page.locator("#overview").is_hidden()
         page.keyboard.press("Escape")
-        assert page.locator("#overview").is_visible()
         page.keyboard.press("ArrowLeft")
         page.keyboard.press("Escape")
         assert page.locator("#overview").is_hidden()
         assert_state((6, 0))
-        page.keyboard.press("b")
-        assert page.locator("#blackout").is_visible()
-        page.keyboard.press("b")
-        assert page.locator("#blackout").is_hidden()
-        page.keyboard.press("p")
-        assert page.locator("#speaker-notes").is_visible()
-        page.keyboard.press("p")
-        assert page.locator("#speaker-notes").is_hidden()
+        for key, selector in (("b", "#blackout"), ("p", "#speaker-notes")):
+            page.keyboard.press(key)
+            assert page.locator(selector).is_visible()
+            page.keyboard.press(key)
+            assert page.locator(selector).is_hidden()
 
+        page.evaluate("dispatchEvent(new Event('beforeprint'))")
+        page.emulate_media(media="print")
+        assert page.locator("#print-deck .print-slide").count() == len(slides)
+        assert page.locator("#deck").is_hidden()
+        for index in range(len(slides)):
+            printed = page.locator(".print-slide").nth(index)
+            assert printed.locator(".slide-footer").inner_text().endswith(f"{index + 1} / {len(slides)}")
+            assert printed.locator("h1, h2").count() > 0
+        pdf = page.pdf(prefer_css_page_size=True, print_background=True)
+        assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == len(slides), "Printed PDF has extra or missing pages"
+        page.evaluate("dispatchEvent(new Event('afterprint'))")
+        page.emulate_media(media="screen")
+        assert page.locator("#print-deck .print-slide").count() == 0
         page.keyboard.press("Home")
         if screenshot:
             screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(screenshot))
         context.close()
+
         context = browser.new_context(offline=True, viewport={"width": 1920, "height": 1080})
         context.route("**/*", route_request)
         page = context.new_page()
         page.on("pageerror", lambda error: errors.append(f"Normal motion: {error}"))
         page.goto(html.resolve().as_uri(), wait_until="load")
-        for key in ["PageDown"] * 16 + ["PageUp"] * 7:
+        for key in ["PageDown"] * 8 + ["PageUp"] * 4:
             page.keyboard.press(key)
-        expected = states[9]
-        page.wait_for_function(
-            "expected => {const slide = document.getElementById('slide');"
-            "return Number(slide.dataset.slide) === expected[0] + 1 && Number(slide.dataset.step) === expected[1];}",
-            arg=expected,
-        )
-        page.wait_for_function("document.getAnimations().every(animation => animation.playState !== 'running')")
-        assert_state(expected)
+        assert_state(states[4])
+        motion = page.evaluate("""async () => {
+            const root = document.createElement('div'); document.body.append(root);
+            const html = (x,r) => `<svg><g data-morph="probe" transform="translate(${x} 0)">` +
+                `<circle r="${r}"/></g></svg>`;
+            const position = () => Number(root.querySelector('g').getAttribute('transform').match(/[-.\\d]+/)[0]);
+            MQSF_MOTION.replace(root,html(0,10),0);
+            MQSF_MOTION.replace(root,html(100,20),1000);
+            await new Promise(resolve=>setTimeout(resolve,200));
+            const forward = position();
+            MQSF_MOTION.replace(root,html(0,10),1000);
+            await new Promise(resolve=>setTimeout(resolve,200));
+            const reverse = position();
+            MQSF_MOTION.replace(root,html(250,30),1000);
+            MQSF_MOTION.finish();
+            const finished = root.querySelector('g').getAttribute('transform');
+            for(let i=0;i<50;i++) MQSF_MOTION.replace(root,html(i*10,10+i),1000);
+            MQSF_MOTION.replace(root,html(999,9),0);
+            await new Promise(resolve=>setTimeout(resolve,100));
+            const result = {forward, reverse, finished, transform:root.querySelector('g').getAttribute('transform'),
+                radius:root.querySelector('circle').getAttribute('r'),
+                animations:root.getAnimations({subtree:true}).length};
+            root.remove(); return result;
+        }""")
+        assert 0 < motion.pop("forward") < 100, "Forward morph must change geometry between endpoints"
+        assert 0 < motion.pop("reverse") < 100, "Reverse morph must change geometry between endpoints"
+        assert motion == {
+            "finished": "translate(250 0)",
+            "transform": "translate(999 0)",
+            "radius": "9",
+            "animations": 0,
+        }
+        # Leaving an active timeline must invalidate its pending frame callbacks.
+        page.evaluate("index => { MQSF_DECK.go(index,0); MQSF_DECK.next(); MQSF_DECK.go(0); }", ids["routing"])
+        page.wait_for_timeout(100)
+        assert_state((0, 0))
+        page.evaluate("MQSF_DECK.finishMotion()")
         assert not errors, f"Browser errors: {errors}"
         assert not network, f"Presentation requested network resources: {network}"
         context.close()
         browser.close()
-        print(f"Offline browser checks passed: {len(slides)} slides, {len(states)} builds, both timed replays.")
+        print(
+            f"Offline functional checks passed: {len(slides)} slides, {len(states)} builds, "
+            f"{completed} finite replays, {loops} loops."
+        )
+        print(
+            f"Evidence: {probe['dependencies']} feedback dependencies, {probe['windows']} circuit windows, "
+            "exact result progress, 19 print pages."
+        )
         for (index, issue), step in geometry.items():
             print(f"Layout: slide {index + 1}, build {step}: {issue}")
         assert not geometry, f"Found {len(geometry)} FullHD layout issues (listed above)"
@@ -230,7 +391,12 @@ def main() -> None:
     """Run the standalone browser check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--html", type=Path, default=DEFAULT_HTML)
-    parser.add_argument("--browser", default=os.environ.get("MQSF_BROWSER") or os.environ.get("CHROME_BIN"))
+    parser.add_argument(
+        "--browser",
+        default=os.environ.get("MQSF_BROWSER")
+        or os.environ.get("CHROME_BIN")
+        or ("/usr/bin/google-chrome" if Path("/usr/bin/google-chrome").is_file() else None),
+    )
     parser.add_argument("--screenshot", type=Path, help="Save the opening slide")
     parser.add_argument("--screenshots-dir", type=Path, help="Save the final build of every slide at FullHD")
     args = parser.parse_args()

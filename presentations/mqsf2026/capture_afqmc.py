@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Run the pinned H2 quantum-classical AFQMC example locally through MQT DDSIM.
+"""Run a LiH active-space quantum-classical AFQMC example locally through MQT DDSIM.
 
 Record molecular references, quantum shadows, reconstructed overlaps, phaseless
 walker propagation, and weighted molecular energies for offline presentation.
@@ -20,16 +20,21 @@ import importlib
 import importlib.metadata
 import inspect
 import json
+import multiprocessing
+import operator as op
+import os
 import shutil
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, datetime
 from functools import partial
-from itertools import combinations
+from itertools import combinations, starmap
 from pathlib import Path
 from time import perf_counter_ns
 from typing import TYPE_CHECKING, Any, TypeVar
+from unittest.mock import patch
 
 import numpy as np
 import pennylane as qml
@@ -60,7 +65,7 @@ SOURCE_HASHES = {
 }
 
 
-DETERMINANTS = np.asarray(list(combinations(range(4), 2)))
+DETERMINANTS = np.asarray(list(combinations(range(6), 2)))
 
 
 def validate_native_batch(submitted_jobs: int, snapshot_count: int, snapshots: list[dict]) -> None:
@@ -83,12 +88,13 @@ def validate_native_batch(submitted_jobs: int, snapshot_count: int, snapshots: l
 
 
 def determinant_amplitudes(walker: NDArray[np.complex128]) -> NDArray[np.complex128]:
-    """Expand a four-orbital, two-electron Slater determinant without approximation.
+    """Expand a two-electron Slater determinant without approximation.
 
     Returns:
         Amplitudes in lexicographic occupied-orbital order.
     """
-    return np.linalg.det(walker[DETERMINANTS])
+    first, second = np.triu_indices(len(walker), 1)
+    return walker[first, 0] * walker[second, 1] - walker[second, 0] * walker[first, 1]
 
 
 def weighted_energy_statistics(energies: NDArray, weights: NDArray) -> tuple[float, float, float]:
@@ -112,189 +118,346 @@ def weighted_energy_statistics(energies: NDArray, weights: NDArray) -> tuple[flo
     return mean, float(np.sqrt(variance)), float(1 / np.sum(normalized**2))
 
 
-def capture_h2_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed: int) -> dict:
-    """Complete the pinned tutorial's H2 chemistry and phaseless AFQMC workflow.
+TRIAL_PARAMETERS = np.asarray([0.01138048, 0.29796188, 0.06563527, -0.02079659, 1.00227801])
+_WORKER: dict[str, Any] = {}
 
-    Reconstruct six determinant overlaps once, then reuse their exact linear
-    expansion in the unchanged upstream energy, force-bias, and propagation
-    routines. This shortcut is specific to the tiny demonstration space.
+
+def lithium_hydride_trial() -> None:
+    """Prepare the fixed number-conserving LiH active-space trial on an occupied reference."""
+    for angle, wires in zip(TRIAL_PARAMETERS[:2], ([0, 1, 2, 3], [0, 1, 4, 5]), strict=True):
+        qml.DoubleExcitation(angle, wires=wires)
+    for angle, (first, last) in zip(TRIAL_PARAMETERS[2:], ((0, 2), (0, 4), (2, 4)), strict=True):
+        for spin in (0, 1):
+            qml.FermionicSingleExcitation(float(angle), wires=range(first + spin, last + spin + 1))
+
+
+def make_cached_trial(prop: Any, shadow: dict, bra: NDArray, hamiltonian: NDArray) -> Any:  # ruff: ignore[any-type] - pinned external helper has no type stubs
+    """Use exact active-space contractions for the reconstructed quantum trial.
 
     Returns:
-        Verified chemistry, reconstructed overlaps, and measured propagation data.
+        An adapter accepted by the pinned upstream phaseless propagator.
+    """
+    quantum_trial = importlib.import_module("afqmc.trial_wavefunction.quantum_ovlp")
+    openfermion = importlib.import_module("openfermion")
+    indices = [sum(1 << (5 - int(orbital)) for orbital in occupied) for occupied in DETERMINANTS]
+    one_body_matrices = []
+    for operator in prop.L_gamma:
+        full = openfermion.get_sparse_operator(
+            openfermion.InteractionOperator(0, operator, np.zeros((6, 6, 6, 6)))
+        ).toarray()
+        one_body_matrices.append(full[np.ix_(indices, indices)])
+
+    class CachedTrial(quantum_trial.QTrial):
+        # shortcut: enumerate this 15-state active space; larger spaces need scalable overlap estimators.
+        def compute_ovlp(self, walker: NDArray) -> complex:
+            return complex(self.coefficients @ determinant_amplitudes(walker))
+
+        def compute_local_energy(self, walker: NDArray, overlap: complex) -> tuple[complex, dict]:
+            amplitudes = determinant_amplitudes(walker)
+            electronic = self.coefficients @ self.hamiltonian @ amplitudes - self.nuclear_repulsion * overlap
+            return complex(electronic), {}
+
+        def compute_one_body_local(self, walker: NDArray, operators: list, overlap: complex, _cache: dict) -> NDArray:
+            assert operators is self.L_gamma
+            return self.coefficients @ self.one_body_matrices @ determinant_amplitudes(walker) / overlap
+
+    trial = CachedTrial(prop, shadow)
+    trial.coefficients = bra
+    trial.hamiltonian = hamiltonian
+    trial.one_body_matrices = np.asarray(one_body_matrices)
+    return trial
+
+
+def initialize_worker(prop: Any, shadow: dict, bra: NDArray, hamiltonian: NDArray, reference: float) -> None:  # ruff: ignore[any-type] - pinned external helper has no type stubs
+    """Create one immutable trial per worker process, shared by that process's independent walkers."""
+    single_slater = importlib.import_module("afqmc.trial_wavefunction.single_slater")
+    _WORKER.update({
+        "prop": prop,
+        "reference": reference,
+        "quantum": make_cached_trial(prop, shadow, bra, hamiltonian),
+        "classical": single_slater.SingleSlater(prop, np.eye(6, 2, dtype=np.complex128)),
+    })
+
+
+def propagate_one_walker(label: str, walker_id: int, seed: int, steps: int, dtau: float) -> dict:
+    """Propagate one independent walker and record actual worker/step completion times.
+
+    Returns:
+        Raw local energies, old weights, sampled states, and monotonic-clock observations.
 
     Raises:
-        ValueError: If a scientific identity fails or walker weights become invalid.
+        ValueError: If a walker produces a nonfinite weight or energy.
+    """
+    qmc = importlib.import_module(f"afqmc.qmc.{'quantum_shadow' if label == 'quantum' else 'classical'}")
+    np.random.seed(seed)  # ruff: ignore[numpy-legacy-random] - the pinned propagators consume the global RNG
+    trial = _WORKER[label]
+    walker, weight = np.eye(6, 2, dtype=np.complex128), 1.0
+    started = perf_counter_ns()
+    energies, weights, frames = [], [], []
+    for step in range(steps):
+        if label == "quantum":
+            energy, new_walker, new_weight = qmc.cqa_imag_time_propogator(  # spellchecker:disable-line
+                dtau, trial, walker, weight, _WORKER["reference"]
+            )
+        else:
+            energy, new_walker, new_weight = qmc.imag_time_propogator(  # spellchecker:disable-line
+                dtau, trial, walker, weight, _WORKER["prop"], _WORKER["reference"]
+            )
+        if not np.isfinite(energy) or not np.isfinite(new_weight) or new_weight < 0:
+            msg = "AFQMC produced a nonfinite local energy or invalid importance weight"
+            raise ValueError(msg)
+        energies.append(float(energy.real))
+        weights.append(float(weight))
+        if step % max(1, steps // 80) == 0 or step == steps - 1:
+            frames.append({
+                "step": step,
+                "tau": step * dtau,
+                "completed_ns": perf_counter_ns(),
+                "id": walker_id,
+                "weight": float(weight),
+                "local_energy": float(energy.real),
+                "occupations": np.sum(np.abs(walker) ** 2, axis=1).tolist(),
+                "overlap_magnitude": float(abs(trial.compute_ovlp(walker))),
+            })
+        walker, weight = new_walker, new_weight
+    return {
+        "label": label,
+        "walker_id": walker_id,
+        "seed": seed,
+        "pid": os.getpid(),
+        "started_ns": started,
+        "finished_ns": perf_counter_ns(),
+        "energies": energies,
+        "weights": weights,
+        "frames": frames,
+    }
+
+
+def capture_lih_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed: int, processes: int) -> dict:
+    """Run a genuine LiH CAS(2,3) calculation with four local classical worker processes.
+
+    The trial amplitudes come only from the measured matchgate shadows. Dense
+    contractions replace the upstream H2 estimator, which fails an independent
+    local-energy check for this larger active space. Its propagator is unchanged.
+
+    Returns:
+        Molecular references, shadow overlaps, raw parallel observations, and energy curves.
+
+    Raises:
+        ValueError: If reference Hamiltonians, overlaps, or importance weights fail validation.
     """
     openfermion = importlib.import_module("openfermion")
     molecular_data = importlib.import_module("openfermion.chem.molecular_data")
     pyscf = importlib.import_module("pyscf")
-
+    mcscf = importlib.import_module("pyscf.mcscf")
     chemistry = importlib.import_module("afqmc.utils.chemical_preparation")
     quantum_trial = importlib.import_module("afqmc.trial_wavefunction.quantum_ovlp")
-    classical_trial = importlib.import_module("afqmc.trial_wavefunction.single_slater")
-    quantum_qmc = importlib.import_module("afqmc.qmc.quantum_shadow")
-    classical_qmc = importlib.import_module("afqmc.qmc.classical")
     pyscf.lib.num_threads(1)
     begin = perf_counter_ns()
-    molecule = pyscf.gto.M(atom="H 0 0 0; H 0 0 0.75", basis="sto-3g", verbose=0)
+    molecule = pyscf.gto.M(atom="Li 0 0 0; H 0 0 1.6", basis="sto-3g", verbose=0)
     hf = molecule.RHF().run()
-    reference_energy = float(pyscf.fci.FCI(hf).kernel()[0])
-    prop = chemistry.chemistry_preparation(molecule, hf)
+    active = [2, 3, 6]
+    cas = mcscf.CASCI(hf, 3, (1, 1))
+    cas.kernel(cas.sort_mo(active))
+    reference_energy = float(cas.e_tot)
+    prop = chemistry.chemistry_preparation(molecule, hf, active_orbitals=active, nel=(1, 1))
     one_body, two_body = molecular_data.spinorb_from_spatial(prop.h1e, prop.eri)
     full_hamiltonian = openfermion.get_sparse_operator(
         openfermion.InteractionOperator(prop.nuclear_repulsion, one_body, 0.5 * two_body)
     ).toarray()
-    basis_indices = [sum(1 << (3 - int(orbital)) for orbital in occupied) for occupied in DETERMINANTS]
+    basis_indices = [sum(1 << (5 - int(orbital)) for orbital in occupied) for occupied in DETERMINANTS]
     hamiltonian = full_hamiltonian[np.ix_(basis_indices, basis_indices)]
-    if not np.allclose(hamiltonian, hamiltonian.conj().T, atol=1e-12) or not np.isclose(
-        np.linalg.eigvalsh(hamiltonian)[0], reference_energy, atol=1e-10
+    if (
+        not np.allclose(hamiltonian, hamiltonian.conj().T, atol=1e-12)
+        or not np.isclose(np.linalg.eigvalsh(hamiltonian)[0], reference_energy, atol=1e-10)
+        or not np.isclose(hamiltonian[0, 0], hf.e_tot, atol=1e-10)
     ):
-        msg = "The independent two-electron Hamiltonian disagrees with PySCF FCI"
+        msg = "The independent active-space Hamiltonian disagrees with PySCF CASCI or Hartree-Fock"
+        raise ValueError(msg)
+    with qml.queuing.AnnotatedQueue() as queue:
+        lithium_hydride_trial()
+    unitary = np.asarray(qml.matrix(qml.tape.QuantumScript.from_queue(queue), wire_order=range(6)))
+    exact_bra = unitary[basis_indices, 48].conj()
+    if not np.isclose(np.vdot(exact_bra, exact_bra), 1, atol=1e-12) or not np.allclose(unitary[:, 0], np.eye(64)[:, 0]):
+        msg = "The trial circuit must conserve the two-electron sector and leave the vacuum reference unchanged"
         raise ValueError(msg)
     chemistry_ms = (perf_counter_ns() - begin) / 1e6
     begin = perf_counter_ns()
-    shadow_trial = quantum_trial.QTrial(prop, {key: np.asarray(value) for key, value in compact.items()})
-    bra = np.asarray([shadow_trial.compute_ovlp(np.eye(4)[:, occupied]) for occupied in DETERMINANTS])
-    exact_bra = np.asarray([np.cos(0.06), 0, 0, 0, 0, -np.sin(0.06)], dtype=np.complex128)
-
-    class CachedTrial(quantum_trial.QTrial):
-        # shortcut: enumerate six determinants only for H2, use scalable overlap routines for larger spaces.
-        def compute_ovlp(self, walker: NDArray) -> complex:
-            return complex(self.coefficients @ determinant_amplitudes(walker))
-
-    cached_trial = CachedTrial(prop, shadow_trial.shadow)
-    cached_trial.coefficients = bra
+    shadow = {key: np.asarray(value) for key, value in compact.items()}
+    shadow_trial = quantum_trial.QTrial(prop, shadow)
+    bra = np.asarray([shadow_trial.compute_ovlp(np.eye(6)[:, occupied]) for occupied in DETERMINANTS])
+    cached = make_cached_trial(prop, shadow, bra, hamiltonian)
     rng = np.random.default_rng(seed + 1)
-    overlap_errors, local_energy_errors = [], []
-    for _ in range(8):
-        spatial, _ = np.linalg.qr(rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2)))
+    overlap_errors, upstream_energy_errors, force_bias_errors = [], [], []
+    for _ in range(12):
+        spatial, _ = np.linalg.qr(rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3)))
         walker = np.kron(spatial[:, :1], np.eye(2))
-        overlap = cached_trial.compute_ovlp(walker)
+        overlap = cached.compute_ovlp(walker)
         overlap_errors.append(abs(overlap - shadow_trial.compute_ovlp(walker)))
-        energy = cached_trial.compute_local_energy(walker, overlap)[0] / overlap + prop.nuclear_repulsion
-        amplitudes = determinant_amplitudes(walker)
-        local_energy_errors.append(abs(energy - bra @ hamiltonian @ amplitudes / overlap))
-    if max(overlap_errors + local_energy_errors) > 1e-9:
-        msg = "Cached shadow overlaps or upstream local energies violate the independent determinant-space check"
+        forces = cached.compute_one_body_local(walker, cached.L_gamma, overlap, {})
+        for one_body_operator, force in zip(cached.L_gamma, forces, strict=True):
+            delta = 1e-5 * one_body_operator
+            derivative = (
+                cached.compute_ovlp((np.eye(6) + delta) @ walker) - cached.compute_ovlp((np.eye(6) - delta) @ walker)
+            ) / (2e-5 * overlap)
+            force_bias_errors.append(abs(derivative - force))
+        numerator = cached.compute_local_energy(walker, overlap)[0]
+        upstream_energy_errors.append(abs(numerator - shadow_trial.compute_local_energy(walker, overlap)[0]))
+    if max(force_bias_errors) > 1e-7:
+        msg = "The active-space force bias disagrees with the independent overlap derivative"
+        raise ValueError(msg)
+    if max(overlap_errors) > 1e-9:
+        msg = "The cached determinant overlaps disagree with the measured-shadow Pfaffian estimator"
+        raise ValueError(msg)
+    # An exact eigenstate trial must give its eigenvalue for every nonorthogonal walker.
+    eigenvalues, eigenvectors = np.linalg.eigh(hamiltonian)
+    oracle_trial = make_cached_trial(prop, shadow, eigenvectors[:, 0].conj(), hamiltonian)
+    oracle_errors = []
+    for _ in range(12):
+        walker, _ = np.linalg.qr(rng.normal(size=(6, 2)) + 1j * rng.normal(size=(6, 2)))
+        overlap = oracle_trial.compute_ovlp(walker)
+        oracle_errors.append(
+            abs(
+                oracle_trial.compute_local_energy(walker, overlap)[0] / overlap
+                + prop.nuclear_repulsion
+                - eigenvalues[0]
+            )
+        )
+    if max(oracle_errors) > 1e-9:
+        msg = "The active-space local-energy adapter failed the exact-eigenstate identity"
         raise ValueError(msg)
     reconstruction_ms = (perf_counter_ns() - begin) / 1e6
-    initial = np.eye(4, 2, dtype=np.complex128)
-    hf_trial = classical_trial.SingleSlater(prop, initial)
+    seeds = np.random.SeedSequence(seed).generate_state(walkers).tolist()
+    started = perf_counter_ns()
+    tasks, results, completion_events = [], [], []
+    with ProcessPoolExecutor(
+        max_workers=processes,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=initialize_worker,
+        initargs=(prop, shadow, bra, hamiltonian, float(hf.e_tot)),
+    ) as pool:
+        for label in ("quantum", "classical"):
+            for walker_id, walker_seed in enumerate(seeds):
+                tasks.append(pool.submit(propagate_one_walker, label, walker_id, walker_seed, steps, dtau))
+        for completed in as_completed(tasks):
+            result = completed.result()
+            completion_events.append({
+                "time_ms": (perf_counter_ns() - started) / 1e6,
+                "operation": "Future.result()",
+                "walker_id": result["walker_id"],
+                "label": result["label"],
+                "worker_pid": result["pid"],
+                "status": "returned",
+            })
+            results.append(result)
+    propagation_ms = (perf_counter_ns() - started) / 1e6
     curves = []
-    begin = perf_counter_ns()
-    for label, trial in (("Quantum shadow trial", cached_trial), ("Hartree-Fock trial", hf_trial)):
-        # Both curves receive the same auxiliary-field sequence for a controlled comparison.
-        np.random.seed(seed)  # ruff: ignore[numpy-legacy-random] - upstream propagators consume the global RNG
-        states = [initial.copy() for _ in range(walkers)]
-        weights = np.ones(walkers)
-        curve = {
-            "label": label,
-            "energy": [],
-            "stderr": [],
-            "effective_walkers": [],
-            "frames": [],
-            "walker_energies": [],
-            "walker_weights": [],
+    for label, title in (("quantum", "Quantum shadow trial"), ("classical", "Hartree-Fock trial")):
+        selected = sorted((r for r in results if r["label"] == label), key=op.itemgetter("walker_id"))
+        energies = np.asarray([r["energies"] for r in selected]).T
+        weights = np.asarray([r["weights"] for r in selected]).T
+        statistics = np.asarray(list(starmap(weighted_energy_statistics, zip(energies, weights, strict=True))))
+        frames = []
+        for index, sample in enumerate(selected[0]["frames"]):
+            frame = {"step": sample["step"], "tau": sample["tau"], "walkers": []}
+            for result in selected:
+                record = result["frames"][index].copy()
+                record["completed_ms"] = (record.pop("completed_ns") - started) / 1e6
+                record["worker_pid"] = result["pid"]
+                frame["walkers"].append(record)
+            frames.append(frame)
+        curves.append({
+            "label": title,
+            "energy": statistics[:, 0].tolist(),
+            "stderr": statistics[:, 1].tolist(),
+            "effective_walkers": statistics[:, 2].tolist(),
+            "frames": frames,
+            "walker_energies": energies.tolist(),
+            "walker_weights": weights.tolist(),
+            "duration_ms": (max(r["finished_ns"] for r in selected) - min(r["started_ns"] for r in selected)) / 1e6,
+        })
+    intervals = [
+        {
+            "label": r["label"],
+            "walker_id": r["walker_id"],
+            "seed": r["seed"],
+            "worker_pid": r["pid"],
+            "started_ms": (r["started_ns"] - started) / 1e6,
+            "finished_ms": (r["finished_ns"] - started) / 1e6,
         }
-        curve_begin = perf_counter_ns()
-        for step in range(steps):
-            energies = np.empty(walkers, dtype=np.complex128)
-            new_states, new_weights = [], []
-            for index, (walker, weight) in enumerate(zip(states, weights, strict=True)):
-                if label == "Quantum shadow trial":
-                    energy, state, new_weight = quantum_qmc.cqa_imag_time_propogator(  # spellchecker:disable-line
-                        dtau, trial, walker, weight, float(hf.e_tot)
-                    )
-                else:
-                    energy, state, new_weight = classical_qmc.imag_time_propogator(  # spellchecker:disable-line
-                        dtau, trial, walker, weight, prop, float(hf.e_tot)
-                    )
-                energies[index] = energy
-                new_states.append(state)
-                new_weights.append(new_weight)
-            mean, stderr, effective = weighted_energy_statistics(energies, weights)
-            curve["energy"].append(mean)
-            curve["stderr"].append(stderr)
-            curve["effective_walkers"].append(effective)
-            curve["walker_energies"].append(energies.real.tolist())
-            curve["walker_weights"].append(weights.tolist())
-            if step % max(1, steps // 24) == 0 or step == steps - 1:
-                curve["frames"].append({
-                    "step": step,
-                    "tau": step * dtau,
-                    "walkers": [
-                        {
-                            "id": index,
-                            "weight": float(weight),
-                            "local_energy": float(energy.real),
-                            "occupations": np.sum(np.abs(state) ** 2, axis=1).tolist(),
-                            "overlap_magnitude": float(abs(trial.compute_ovlp(state))),
-                        }
-                        for index, (state, weight, energy) in enumerate(zip(states, weights, energies, strict=True))
-                    ],
-                })
-            states = new_states
-            weights = np.asarray(new_weights)
-            if not np.all(np.isfinite(weights)) or np.sum(weights) <= 0:
-                msg = "AFQMC walker weights became invalid or all walkers died"
-                raise ValueError(msg)
-            weights /= np.mean(weights)
-        curve["duration_ms"] = (perf_counter_ns() - curve_begin) / 1e6
-        curves.append(curve)
-    propagation_ms = (perf_counter_ns() - begin) / 1e6
+        for r in results
+    ]
     return {
         "chemistry": {
-            "molecule": "H2",
-            "geometry_angstrom": [[0, 0, 0], [0, 0, 0.75]],
+            "molecule": "LiH",
+            "elements": ["Li", "H"],
+            "geometry_angstrom": [[0, 0, 0], [0, 0, 1.6]],
             "basis": "STO-3G",
             "electrons": 2,
-            "spin_orbitals": 4,
+            "total_electrons": 4,
+            "spin_orbitals": 6,
+            "active_space": "CAS(2 electrons, 3 spatial orbitals)",
+            "active_orbitals_one_based": active,
+            "frozen_core": "Doubly occupied Li 1s orbital; omit the two π virtual orbitals",
+            "reference_scope": "FCI within the stated active space; includes frozen-core and nuclear energies",
             "hf_energy": float(hf.e_tot),
             "fci_energy": reference_energy,
-            "trial_energy": float((exact_bra @ hamiltonian @ exact_bra).real),
+            "trial_energy": float((exact_bra @ hamiltonian @ exact_bra.conj()).real),
             "shadow_trial_energy": float((bra @ hamiltonian @ bra.conj() / (bra @ bra.conj())).real),
-            "nuclear_repulsion": float(prop.nuclear_repulsion),
+            "nuclear_and_frozen_core_energy": float(prop.nuclear_repulsion),
             "duration_ms": chemistry_ms,
             "hamiltonian_real": hamiltonian.real.tolist(),
             "energy_unit": "Ha",
+            "trial_parameters": TRIAL_PARAMETERS.tolist(),
+            "trial_method": (
+                "Fixed parameters tuned classically in the 15-state model; not a quantum VQE or advantage claim"
+            ),
         },
         "overlap": {
             "determinants": [
-                "".join("1" if wire in occupied else "0" for wire in range(4)) for occupied in DETERMINANTS
+                "".join("1" if wire in occupied else "0" for wire in range(6)) for occupied in DETERMINANTS
             ],
             "shadow_bra_real": bra.real.tolist(),
             "shadow_bra_imag": bra.imag.tolist(),
             "exact_bra_real": exact_bra.real.tolist(),
+            "exact_bra_imag": exact_bra.imag.tolist(),
             "max_absolute_coefficient_error": float(np.max(abs(bra - exact_bra))),
             "cached_overlap_max_error": float(max(overlap_errors)),
-            "local_energy_max_error": float(max(local_energy_errors)),
+            "local_energy_max_error": float(max(oracle_errors)),
+            "force_bias_max_error": float(max(force_bias_errors)),
+            "upstream_local_energy_numerator_max_error": float(max(upstream_energy_errors)),
             "validation_walkers": len(overlap_errors),
             "duration_ms": reconstruction_ms,
-            "method": "Six Pfaffian shadow overlaps, then exact Slater determinant expansion in the H2 space",
+            "method": "15 measured Pfaffian overlaps; exact Slater expansion and Hamiltonian/force-bias contractions",
         },
         "propagation": {
-            "algorithm": "Phaseless importance-sampled AFQMC; upstream propagators unchanged",
+            "algorithm": "Phaseless AFQMC; unchanged upstream propagator with verified active-space contractions",
             "walkers": walkers,
             "steps": steps,
             "dtau": dtau,
             "seed": seed,
+            "walker_seeds": seeds,
             "tau": (dtau * np.arange(steps)).tolist(),
             "curves": curves,
             "duration_ms": propagation_ms,
-            "weight_control": "Common weight normalization after each step; no population resampling",
+            "processes": processes,
+            "worker_pids": sorted({r["pid"] for r in results}),
+            "tasks": intervals,
+            "events": completion_events,
+            "clock": "perf_counter_ns shared monotonic clock; measured local worker intervals and completion calls",
+            "parallel_source": inspect.getsource(propagate_one_walker),
+            "weight_control": "Raw positive importance weights; no population resampling",
             "stderr_scope": (
-                "One standard error across independent walkers, conditional on the measured shadows; "
-                "excludes shadow error and systematic bias"
+                "One walker-only standard error conditional on measured shadows; excludes shadow and systematic errors"
             ),
             "frame_scope": (
-                "Actual orbital occupations and weights; "
-                "point positions in the presentation are schematic, not electron trajectories"
+                "Recorded orbital occupations/weights at imaginary-time steps; worker timestamps are wall time"
             ),
             "limits": [
-                "Four spin orbitals and two electrons; no quantum advantage claim",
-                "Finite shadow sample shared by every walker; its sampling error is not in the bands",
-                "Finite projection time, finite walker population, finite time step, and phaseless approximation",
-                "Exact state and FCI are validation references only; shadow walkers use measured coefficients",
+                "Six-qubit active space and local ideal simulation; no hardware or quantum-advantage claim",
+                "Dense 15-state post-processing is specific to this demonstration",
+                "Finite shadows, projection time, walker population, time step, and phaseless approximation",
+                "Two curves use the same per-walker auxiliary-field seeds; their errors are correlated",
             ],
         },
     }
@@ -313,15 +476,20 @@ def main() -> None:
         "--source", type=Path, required=True, help="Pinned upstream Quantum_Monte_Carlo_Chemistry directory"
     )
     parser.add_argument("--output", type=Path, default=HERE / "captures/afqmc.json")
-    parser.add_argument("--snapshots", type=int, default=512)
-    parser.add_argument("--shots", type=int, default=512)
+    parser.add_argument("--snapshots", type=int, default=2048)
+    parser.add_argument("--shots", type=int, default=256)
     parser.add_argument("--seed", type=int, default=17)
-    parser.add_argument("--walkers", type=int, default=64)
-    parser.add_argument("--steps", type=int, default=160)
+    parser.add_argument("--walkers", type=int, default=128)
+    parser.add_argument("--steps", type=int, default=240)
     parser.add_argument("--dtau", type=float, default=0.02)
+    parser.add_argument("--processes", type=int, default=4)
     args = parser.parse_args()
-    if min(args.snapshots, args.shots, args.walkers, args.steps) <= 0 or not 0 < args.dtau <= 0.05:
-        msg = "Counts must be positive and the imaginary-time step must be in (0, 0.05]"
+    if (
+        min(args.snapshots, args.shots, args.steps, args.processes) <= 0
+        or args.walkers < 2
+        or not 0 < args.dtau <= 0.05
+    ):
+        msg = "Counts must be positive, walkers at least two, and the imaginary-time step in (0, 0.05]"
         raise ValueError(msg)
     for name, expected in SOURCE_HASHES.items():
         if hashlib.sha256((args.source / name).read_bytes()).hexdigest() != expected:
@@ -340,7 +508,7 @@ def main() -> None:
     apply_pauli_layer = matchgate.apply_pauli_layer
 
     np.random.seed(args.seed)  # ruff: ignore[numpy-legacy-random] - upstream helpers consume the legacy global RNG
-    rotations = [shadow.random_signed_permutation(8) for _ in range(max(32, args.snapshots))]
+    rotations = [shadow.random_signed_permutation(12) for _ in range(max(32, args.snapshots))]
     compiled = [matchgate.compile_gaussian_givens(rotation) for rotation in rotations]
     schedule = compiled[0][0]
     if any(entry[0] != schedule for entry in compiled):
@@ -349,8 +517,8 @@ def main() -> None:
     angles = -np.stack([entry[1] for entry in compiled])
     paulis = np.stack([entry[2] for entry in compiled])
     gammas = [
-        np.asarray(qml.matrix(qml.prod(*([qml.Z(q) for q in range(p)] + [operator(p)])), wire_order=range(4)))
-        for p in range(4)
+        np.asarray(qml.matrix(qml.prod(*([qml.Z(q) for q in range(p)] + [operator(p)])), wire_order=range(6)))
+        for p in range(6)
         for operator in (qml.X, qml.Y)
     ]
     errors = []
@@ -362,9 +530,9 @@ def main() -> None:
                 apply_gaussian_givens(thetas, schedule)
                 apply_pauli_layer(paulis[index])
             circuit = qml.tape.QuantumScript.from_queue(queue)
-            unitary = np.asarray(qml.matrix(qml.prod(*reversed(circuit.operations)), wire_order=range(4)))
+            unitary = np.asarray(qml.matrix(qml.prod(*reversed(circuit.operations)), wire_order=range(6)))
             error = max(
-                np.max(np.abs(unitary.conj().T @ gamma @ unitary - sum(rotation[j, k] * gammas[k] for k in range(8))))
+                np.max(np.abs(unitary.conj().T @ gamma @ unitary - sum(rotation[j, k] * gammas[k] for k in range(12))))
                 for j, gamma in enumerate(gammas)
             )
             errors_to_append.append(float(error))
@@ -374,27 +542,88 @@ def main() -> None:
     rotations = rotations[: args.snapshots]
     angles, paulis = angles[: args.snapshots], paulis[: args.snapshots]
 
-    device = qml.device("mqt.ddsim.default", wires=4)
+    device = qml.device("mqt.ddsim.default", wires=6)
 
     @qml.set_shots(shots=args.shots)
     @qml.qnode(device)
-    def hydrogen_shadow_circuit(
+    def lithium_hydride_shadow_circuit(
         thetas: NDArray[np.float64], pauli_vectors: NDArray[np.float64]
     ) -> tuple[qml.measurements.SampleMP, qml.measurements.CountsMP]:
         qml.Hadamard(wires=0)
         qml.CNOT(wires=[0, 1])
-        qml.DoubleExcitation(0.12, wires=[0, 1, 2, 3])
+        lithium_hydride_trial()
         apply_gaussian_givens(thetas, schedule)
         apply_pauli_layer(pauli_vectors)
-        return qml.sample(wires=range(4)), qml.counts(wires=range(4))
+        return qml.sample(wires=range(6)), qml.counts(wires=range(6))
 
+    job_class = importlib.import_module("mqt.core.plugins.pennylane.job").PennyLaneJob
+    original_submit, original_result, original_samples = (
+        job_class._submit_programs,  # ruff: ignore[private-member-access] - observe the real adapter boundary
+        job_class.result,
+        job_class._samples,  # ruff: ignore[private-member-access] - observe indexed result decoding
+    )
+    methods = (original_submit, original_result, original_samples)
+    client_source = "\n".join(inspect.getsource(method) for method in methods)
+    source_lines = client_source.splitlines()
+    batch_events = []
     started = perf_counter_ns()
-    samples_batch, counts_batch = hydrogen_shadow_circuit(angles, paulis)
+
+    def traced_call(operation: str, needle: str, method: Callable[..., T], *arguments: object, **details: object) -> T:
+        begin = perf_counter_ns()
+        value = method(*arguments)
+        end = perf_counter_ns()
+        batch_events.append({
+            "time_ms": (begin - started) / 1e6,
+            "duration_ms": (end - begin) / 1e6,
+            "actor": "PennyLane application",
+            "target": "Core QDMI adapter",
+            "operation": operation,
+            "status": "returned",
+            "source_line": next(i + 1 for i, line in enumerate(source_lines) if needle in line),
+            **details,
+        })
+        return value
+
+    def submit(batch: object, indices: list) -> object:
+        return traced_call(
+            "Device.try_submit_job(programs)",
+            "self._device.qdmi_device.try_submit_job(",
+            original_submit,
+            batch,
+            indices,
+            programs=len(indices),
+        )
+
+    def collect(batch: object) -> object:
+        return traced_call("PennyLaneJob.result(): wait and collect", "self._batch.complete()", original_result, batch)
+
+    def samples(batch: object, index: int, job: object, program_index: int) -> object:
+        return traced_call(
+            "QDMI indexed shots and PennyLane decoding",
+            "self._shots_or_counts(job, program_index)",
+            original_samples,
+            batch,
+            index,
+            job,
+            program_index,
+            program_index=program_index,
+        )
+
+    with (
+        patch.object(job_class, "_submit_programs", submit),
+        patch.object(job_class, "result", collect),
+        patch.object(job_class, "_samples", samples),
+    ):
+        samples_batch, counts_batch = lithium_hydride_shadow_circuit(angles, paulis)
     finished = perf_counter_ns()
     batch_ms = (finished - started) / 1e6
     if device.last_job is None or len(device.last_job.entries) != args.snapshots:
         msg = "PennyLane did not retain one batch entry per snapshot"
         raise ValueError(msg)
+    representative_tape = qml.workflow.construct_tape(lithium_hydride_shadow_circuit)(angles[0], paulis[0])
+    representative_source = qml.to_openqasm(representative_tape, wires=range(6))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.with_name("afqmc-source.qasm").write_text(representative_source)
     compact = {name: [] for name in ("perm", "sign", "bits", "count", "snap_id")}
     snapshots = []
     variants = []
@@ -425,7 +654,7 @@ def main() -> None:
                 "duration_ms": batch_ms,
                 "actor": "AFQMC application",
                 "target": "PennyLane / MQT Core",
-                "operation": "hydrogen_shadow_circuit(angles, paulis)",
+                "operation": "lithium_hydride_shadow_circuit(angles, paulis)",
                 "status": "returned",
                 "detail": f"Actual broadcast call: {args.snapshots} circuits, {args.shots} shots each",
             }
@@ -482,7 +711,7 @@ def main() -> None:
                     "id": "pennylane",
                     "label": "PennyLane application",
                     "language": "python",
-                    "code": inspect.getsource(hydrogen_shadow_circuit.func),
+                    "code": inspect.getsource(lithium_hydride_shadow_circuit.func),
                 }
             ],
             "exports": [
@@ -508,29 +737,65 @@ def main() -> None:
             },
         })
     validate_native_batch(device.submitted_jobs, args.snapshots, snapshots)
-    science = capture_h2_afqmc(compact, args.walkers, args.steps, args.dtau, args.seed)
+    science = capture_lih_afqmc(compact, args.walkers, args.steps, args.dtau, args.seed, args.processes)
     data = {
         "schema_version": 1,
-        "title": "Hydrogen quantum-classical AFQMC",
+        "title": "Lithium hydride quantum-classical AFQMC",
         "label": "Actual PennyLane → MQT Core → QDMI → DDSIM batch",
-        "scope": "H2/STO-3G quantum trial shadows and classical phaseless AFQMC, with exact small-system references",
+        "scope": (
+            "LiH CAS(2,3)/STO-3G quantum trial shadows and classical phaseless AFQMC, "
+            "with exact small-system references"
+        ),
         "workload": {
-            "molecule": "H2",
-            "spin_orbitals": 4,
-            "ansatz": "Vacuum reference superposition with DoubleExcitation(0.12), following the upstream H2 notebook",
+            "molecule": "LiH",
+            "spin_orbitals": 6,
+            "ansatz": "Vacuum reference plus a six-qubit number-conserving LiH CAS(2,3) trial",
             "snapshots": args.snapshots,
             "shots_per_snapshot": args.shots,
             "total_shots": args.snapshots * args.shots,
             "submitted_qdmi_jobs": device.submitted_jobs,
             "batch_duration_ms": batch_ms,
-            "measurement_order": "PennyLane wire order 0,1,2,3; raw QDMI strings are stored separately",
+            "measurement_order": "PennyLane wire order 0,1,2,3,4,5; raw QDMI strings are stored separately",
             "permutation_seed": args.seed,
             "simulator_seed": "DDSIM default randomness; actual ordered shots are retained",
             "schedule": schedule,
         },
         **science,
-        "source": inspect.getsource(hydrogen_shadow_circuit.func),
-        "classical_source": inspect.getsource(capture_h2_afqmc),
+        "execution": {
+            "events": sorted(batch_events, key=op.itemgetter("time_ms")),
+            "client_source": client_source,
+            "client_source_note": (
+                "Actual Core PennyLane adapter methods; "
+                "observed Python call boundaries include native wait and decoding"
+            ),
+            "duration_ms": batch_ms,
+            "completed_ms": batch_ms,
+            "num_programs": args.snapshots,
+            "shots_per_program": args.shots,
+            "terminal_status": "DONE",
+            "submitted_qdmi_jobs": device.submitted_jobs,
+            "trace_kind": "python-observed-adapter-calls",
+            "backend": "Local ideal MQT DDSIM",
+        },
+        "batch_source": "\n".join(
+            line.strip()
+            for line in inspect.getsource(main).splitlines()
+            if line.strip().startswith((
+                "angles = -np.stack",
+                "paulis = np.stack",
+                "samples_batch, counts_batch = lithium_hydride_shadow_circuit",
+            ))
+        ),
+        "representative_source": {
+            "code": representative_source,
+            "sha256": hashlib.sha256(representative_source.encode()).hexdigest(),
+            "language": "qasm",
+            "format": "OpenQASM 2.0",
+            "label": "Actual first LiH shadow circuit before device compilation",
+        },
+        "source": inspect.getsource(lithium_hydride_shadow_circuit.func),
+        "trial_source": inspect.getsource(lithium_hydride_trial),
+        "classical_source": inspect.getsource(capture_lih_afqmc),
         "snapshots": snapshots,
         "shadow": compact,
         "validation": {
@@ -543,14 +808,14 @@ def main() -> None:
         },
         "scenario": {
             "id": "afqmc",
-            "label": "H2 quantum-classical AFQMC",
+            "label": "LiH quantum-classical AFQMC",
             "application": True,
             "summary": (
-                "Real four-wire PennyLane → Core → QDMI shadows drive classical phaseless AFQMC walkers. "
+                "Real six-wire PennyLane → Core → QDMI shadows drive classical phaseless AFQMC walkers. "
                 "Uses ideal DDSIM directly, not the Emerald compilation target."
             ),
-            "parameters": {"qubits": 4, "snapshots": args.snapshots, "shots_per_snapshot": args.shots},
-            "device_label": "Local ideal four-wire DDSIM; application capture",
+            "parameters": {"qubits": 6, "snapshots": args.snapshots, "shots_per_snapshot": args.shots},
+            "device_label": "Local ideal six-wire DDSIM; application capture",
             "variants": variants[:1],
         },
         "provenance": {
@@ -571,11 +836,15 @@ def main() -> None:
             "patches": [
                 (
                     "Negate upstream compile_gaussian_givens angles to satisfy its documented Majorana convention "
-                    "in PennyLane; verify each circuit by exact 16x16 matrices"
+                    "in PennyLane; verify each circuit by exact 64x64 matrices"
                 ),
                 "Collect sample rows alongside counts and execute a broadcast batch on MQT DDSIM",
-                "Cache six determinant overlaps; exact linearity replaces repeated Pfaffian reconstruction",
-                "Use upstream phaseless propagators with seeded walkers and capture all energies and weights",
+                "Cache 15 determinant overlaps; exact linearity replaces repeated Pfaffian reconstruction",
+                "Use local processes with independent seeded walkers and actual worker timings",
+                (
+                    "Replace the upstream larger-space local-energy and force-bias contractions with independently "
+                    "verified 15-state Hamiltonian contractions; retain its phaseless propagator unchanged"
+                ),
             ],
             "omitted": "Hardware noise, large active spaces, population resampling, and full uncertainty analysis",
         },

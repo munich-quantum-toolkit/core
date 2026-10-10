@@ -1,7 +1,9 @@
 {
   "mqsc": {
     "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqsc-light.svg",
-    "sha256": "90d830869e15bd23e417262ccf7419d07b804669afc01f9fc5370aac3aa6bc95"
+    "sha256": "c38350c2403b44e3448b308d1a5ff3a2618c7323f49b6b338b16d97c7f2326b2",
+    "source_sha256": "90d830869e15bd23e417262ccf7419d07b804669afc01f9fc5370aac3aa6bc95",
+    "adaptation": "Original path geometry retained; Removed redundant root width/height attributes; viewBox retained to prevent clipping in nested SVG image renderers."
   },
   "mqt": {
     "url": "https://raw.githubusercontent.com/munich-quantum-toolkit/.github/main/docs/_static/logo-mqt-light.svg",
@@ -24,13 +26,10 @@
     "sha256": "10abd92b99183dd89fa422491f2a69b3e6375337e9fd4a47e279a42ec208d985"
   },
   "qdmi": {
-    "attachment": "qce26_tut71 (3).pptx",
-    "attachment_sha256": "ceff38564a7dfa930950972235da716b1868f1e591a933c0ce569bd22ee1cc19",
-    "member": "ppt/media/image78.svg",
-    "slides": [16, 17],
-    "source_sha256": "08369bc1ce801ca1deaa4d6d7779f2c8c5c3e28bb95258737461d47d644c4d81",
-    "adaptation": "Original path geometry retained; white fills changed to #142B45 for the light deck; unused Office style/classes removed and line endings normalized.",
-    "sha256": "fb7835cc0586c8021422ff56508e2a4868484162509f445b2442076f4a3f4a7c"
+    "url": "https://munichquantum.software/qdmi-logo-themed.svg",
+    "source_sha256": "d2e8e0c093ac2c9407b8bd01990a139154b155d3fc64c62c7794557ebb884ec6",
+    "adaptation": "Original path geometry retained; automatic dark-mode style removed; dark lettering changed from #333333 to #142B45 for the fixed light presentation. Removed redundant root width/height attributes; viewBox retained to prevent clipping in nested SVG image renderers.",
+    "sha256": "cd82f237df8ae8f6b6ebff66d0b01de4420addc955d0200ada44e641bc54043e"
   },
   "qr-company": {
     "encoded_url": "https://mq.sc",
@@ -55,5 +54,83 @@
   "inter-latin": {
     "url": "https://munichquantum.software/_astro/inter-latin-wght-normal.Dx4kXJAl.woff2",
     "license": "Inter-LICENSE.txt"
+  },
+  "pennylane": {
+    "url": "https://munichquantum.software/frontend-logos/pennylane.svg",
+    "retrieved_at": "2026-10-10T01:04:42.166493+00:00",
+    "sha256": "980839fdc6f96db353d00224187c4008bb6ca854731fb933fcb64a14652f8a8a"
+  },
+  "cuda-q": {
+    "url": "https://munichquantum.software/frontend-logos/cuda-q.svg",
+    "retrieved_at": "2026-10-10T01:04:42.346953+00:00",
+    "sha256": "b52cf9c53abc81ec4807106bf556ed22f966c94756da8c987488ba60fd2a1748"
+  },
+  "qir": {
+    "url": "https://munichquantum.software/frontend-logos/qir.svg",
+    "retrieved_at": "2026-10-10T01:04:42.464085+00:00",
+    "sha256": "cecd43bc190a17a71595c9890507a57b58f439c32f94603cfac14611e691c639",
+    "source_sha256": "8ec37384670d8fc0ac1932b8725d99ee9ee55fab10d7f0b10d29dcbd7dbcbc61",
+    "adaptation": "Added final newline; original SVG geometry retained."
+  },
+  "cirq": {
+    "url": "https://munichquantum.software/frontend-logos/cirq.svg",
+    "retrieved_at": "2026-10-10T01:04:42.590183+00:00",
+    "sha256": "6994629de18c2bbe9c7350feefd7444350079d90b930ddfd81d8bd4e59f7c3fb"
+  },
+  "qr-mqss": {
+    "encoded_url": "https://doi.org/10.1145/3773656.3773669",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "824dd7c430b401b2e97bab91180c2fa7052d47f81a828883cfcf8e2da472cd7f"
+  },
+  "qr-unrolling": {
+    "encoded_url": "https://arxiv.org/abs/2609.16171",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "7904454c99db2da4f7bf815c46007be859ab125b5aaac6805d1cb92907faeecd"
+  },
+  "qr-iqm": {
+    "encoded_url": "https://github.com/iqm-finland/QDMI-on-IQM",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "d79decd3582320239b24348519ebadf6d03ddec207fd8346521ed6e63f18fb64"
+  },
+  "qr-ibm": {
+    "encoded_url": "https://github.com/munich-quantum-software/ibm-qdmi-device",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "37b79b33362e4554cc12d8629f863fe960d74a7f209bdef315ec37970ca7ed9f"
+  },
+  "qr-compiler": {
+    "encoded_url": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html",
+    "generator": "Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "154544d59f3b5d0b953bf7dfa5ed2249dc8047d0311d1b7943855c799ab19711"
+  },
+  "eq-afqmc-projection": {
+    "generator": "render_equations.py; Matplotlib 3.11.2; STIX mathtext; SVG path glyphs; tight text bounds with 0.04-inch padding",
+    "equations": [
+      "$|\\Psi(\\tau)\\rangle = e^{-\\tau(\\hat{H}-E_T)}\\,|\\Psi_T\\rangle$"
+    ],
+    "scope": "Formal unnormalized imaginary-time propagation. The phaseless AFQMC calculation approximates this projection.",
+    "sha256": "4f1de0f66852f3523c952ba64165a7fce96c520963152edf7431d6d20f4cfe42"
+  },
+  "eq-afqmc-energy": {
+    "generator": "render_equations.py; Matplotlib 3.11.2; STIX mathtext; SVG path glyphs; tight text bounds with 0.04-inch padding",
+    "equations": [
+      "$E_L[\\phi_w]=\\frac{\\langle\\Psi_T|\\hat{H}|\\phi_w\\rangle}{\\langle\\Psi_T|\\phi_w\\rangle}$",
+      "$\\widehat{E}(\\tau)=\\frac{\\sum_w W_w(\\tau)\\,\\mathrm{Re}\\,E_L[\\phi_w(\\tau)]}{\\sum_w W_w(\\tau)}$"
+    ],
+    "scope": "The local-energy ratio requires nonzero trial overlap. The displayed estimator uses nonnegative walker weights.",
+    "sha256": "37047a64e658bf504a4b074944c6b8d5f3cd38412501a34fee4cb1c051f7bef3"
+  },
+  "eq-qpe-phase": {
+    "generator": "render_equations.py; Matplotlib 3.11.2; STIX mathtext; SVG path glyphs; tight text bounds with 0.04-inch padding",
+    "equations": [
+      "$\\hat{U}|\\psi\\rangle=e^{2\\pi i\\varphi}|\\psi\\rangle$",
+      "$\\varphi\\approx 0.b_1b_2\\ldots b_m=\\sum_{k=1}^{m}\\frac{b_k}{2^k}=\\frac{j}{2^m}$"
+    ],
+    "scope": "The binary fraction is exact only for a representable phase; finite-register QPE samples nearby integer outcomes.",
+    "sha256": "b07c348ae222567f1642fb2ccbbc55a1bebaab1a70e6018f27656b105f5c5fe4"
+  },
+  "qr-core-repo": {
+    "encoded_url": "https://github.com/munich-quantum-toolkit/core",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "cd1966c2de7374f46be568e785befd315d24030d1ce0fb4e1bd8c50cbf07a66c"
   }
 }

@@ -85,6 +85,8 @@ def test_circuit_metadata_keeps_control_flow_and_physical_sites() -> None:
     assert [wire["site"] for wire in diagram["qubits"]] == [7, 19, 42]
     branch = diagram["operations"][-1]
     assert branch["name"] == "if_else"
+    assert diagram["operations"][1]["clbits"] == [0]
+    assert branch["condition_bits"] == [0]
     assert branch["blocks"][0][0]["qubits"] == [2, 1]
     loop = QuantumCircuit(54)
     body = QuantumCircuit(54)
@@ -99,11 +101,16 @@ def test_parity_example_retains_loop_feedback_and_even_data_parity() -> None:
     """The small compiler story must be real and have a simple semantic check."""
     from mqt.core.mlir import QCProgram  # ruff: ignore[import-outside-top-level]
 
-    source = runpy.run_path(str(SCRIPT))["PARITY_SOURCE"]
+    helpers = runpy.run_path(str(SCRIPT))
+    source = helpers["PARITY_SOURCE"]
     program = QCProgram.from_openqasm_str(source).to_qco()
     program.cleanup()
     assert "scf.for" in program.ir
     assert "qco.if" in program.ir
+    circuit = helpers["capture_circuit"](program.to_qiskit())
+    loop = next(op for op in circuit["operations"] if op["name"] == "for_loop")
+    branch = next(op for op in loop["blocks"][0] if op["name"] == "if_else")
+    assert branch["condition_bits"] == [0]
     counts = program.sample(128, 7)
     assert set(counts) == {"000", "110"}
 
@@ -121,6 +128,17 @@ def test_four_qubit_qpe_resolves_non_exact_phase() -> None:
         difference = 1 / 3 - bin_value / 256
         expected = (math.sin(256 * math.pi * difference) / (256 * math.sin(math.pi * difference))) ** 2
         assert counts[f"{bin_value:08b}"] / 2048 == pytest.approx(expected, abs=0.05)
+
+
+def test_repeat_until_success_retains_conditional_loop_and_heralded_state() -> None:
+    """The retry loop must survive compilation and terminate in the heralded state."""
+    from mqt.core.mlir import QCProgram  # ruff: ignore[import-outside-top-level]
+
+    source = runpy.run_path(str(SCRIPT))["RUS_SOURCE"]
+    program = QCProgram.from_openqasm_str(source).to_qco()
+    program.cleanup()
+    assert "scf.while" in program.ir
+    assert program.sample(128, 7) == {"11": 128}
 
 
 @pytest.mark.parametrize(

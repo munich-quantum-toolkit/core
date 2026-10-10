@@ -1,3 +1,6 @@
 captures/programs.json
 captures/demo.json
 captures/afqmc.json
+captures/demo-base.json.gz
+captures/devices.json
+captures/afqmc-source.qasm

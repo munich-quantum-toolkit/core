@@ -91,6 +91,19 @@
           <ellipse cx="50" cy="50" rx="22" ry="9" transform="rotate(60 50 50)" fill="none" stroke="${blue}" stroke-width="2"/>
           <ellipse cx="50" cy="50" rx="22" ry="9" transform="rotate(120 50 50)" fill="none" stroke="${blue}" stroke-width="2"/><circle cx="50" cy="50" r="4" fill="${blue}"/>`;
         break;
+      case "photonics":
+        body = `<path d="M9 38L42 17L93 47L61 70Z" fill="${pale}" stroke="${navy}" stroke-width="2"/>
+          <path d="M9 38V50L61 82L93 59V47M61 70V82" fill="#BED6EB" stroke="${navy}" stroke-width="2"/>
+          <path d="M19 38C34 29 45 42 55 45S72 43 84 49M17 47C29 39 41 52 52 55S69 54 82 60" fill="none" stroke="${blue}" stroke-width="3"/>
+          <path d="M4 25L30 41M4 41L22 51M71 57L97 74" stroke="${cyan}" stroke-width="3"/>
+          <circle cx="42" cy="42" r="4" fill="${cyan}"/><circle cx="66" cy="53" r="4" fill="${cyan}"/>`;
+        break;
+      case "spin":
+        body = `<path d="M9 36L41 17L92 47L60 68Z" fill="${pale}" stroke="${navy}" stroke-width="2"/>
+          <path d="M9 36V51L60 82L92 62V47M60 68V82" fill="#BED6EB" stroke="${navy}" stroke-width="2"/>
+          ${[0, 1, 2].map((n) => `<path d="M${28 + n * 13} ${28 + n * 8}L${48 + n * 13} ${40 + n * 8}L${36 + n * 13} ${48 + n * 8}L${16 + n * 13} ${36 + n * 8}Z" fill="${gold}"/><circle cx="${38 + n * 11}" cy="${42 + n * 6}" r="4" fill="${blue}"/>`).join("")}
+          <path d="M40 38V17M36 23L40 17L44 23M65 52V30M61 36L65 30L69 36" fill="none" stroke="${blue}" stroke-width="2"/>`;
+        break;
       case "cloud":
         body = `<path d="M22 77C-1 76-2 42 21 40C16 11 55 2 67 28C96 21 111 63 86 76Z" fill="${pale}" stroke="${blue}" stroke-width="2"/>`;
         break;
@@ -103,7 +116,7 @@
         break;
       case "molecule":
       case "orbitals":
-        body = `<ellipse cx="35" cy="47" rx="29" ry="34" transform="rotate(-25 35 47)" fill="${blue}" opacity=".12"/><ellipse cx="65" cy="47" rx="29" ry="34" transform="rotate(25 65 47)" fill="${cyan}" opacity=".2"/><path d="M33 52L67 39" stroke="${navy}" stroke-width="5"/><circle cx="33" cy="52" r="13" fill="${blue}"/><circle cx="67" cy="39" r="13" fill="${cyan}"/><circle cx="29" cy="47" r="4" fill="white" opacity=".7"/><circle cx="63" cy="34" r="4" fill="white" opacity=".7"/>`;
+        body = `<ellipse cx="35" cy="47" rx="29" ry="34" transform="rotate(-25 35 47)" fill="${blue}" opacity=".12"/><ellipse cx="65" cy="47" rx="29" ry="34" transform="rotate(25 65 47)" fill="${cyan}" opacity=".2"/><path d="M33 52L67 39" stroke="${navy}" stroke-width="5"/><circle cx="33" cy="52" r="18" fill="${blue}"/><circle cx="67" cy="39" r="11" fill="${cyan}"/><circle cx="29" cy="47" r="4" fill="white" opacity=".7"/><circle cx="63" cy="34" r="4" fill="white" opacity=".7"/>`;
         break;
       default:
         throw new Error(`Unknown MQSF illustration: ${name}`);
@@ -117,149 +130,357 @@
       <rect width="1600" height="650" fill="white"/>${body}</svg>`;
   }
 
-  function ecosystem(step = 99) {
-    const hardware =
-      icon("cryostat", 1325, 15, 150) +
-      icon("iontrap", 1310, 230, 170) +
-      icon("neutralatom", 1320, 435, 160) +
-      text(1400, 199, "Superconducting", 30) +
-      text(1400, 424, "Trapped ions", 30) +
-      text(1400, 634, "Neutral atoms", 30);
-    const tangle = [
-      "M320 150C650 150 825 120 1290 120",
-      "M320 150C590 150 710 333 1290 333",
-      "M320 150C640 150 930 540 1290 540",
-      "M320 495C750 495 770 120 1290 120",
-      "M320 495C670 495 870 333 1290 333",
-      "M320 495C610 495 860 540 1290 540",
-    ]
-      .map((d) => path(d, "#A0B9D1", 3))
-      .join("");
-    return scene(
-      "ecosystem",
-      "Researchers and HPC systems connect to different quantum technologies through a shared software stack",
-      icon("researcher", 65, 25, 235) +
-        text(185, 288, "Researchers", 36) +
-        icon("server", 100, 350, 190) +
-        text(190, 591, "HPC systems", 36) +
-        reveal(step, 1, hardware) +
-        `<g opacity="${step === 1 ? 1 : 0}">${tangle}</g>` +
-        reveal(
-          step,
-          2,
-          `${path("M325 155C520 155 505 310 640 310", blue, 5)}${path("M325 490C520 490 505 340 640 340", blue, 5)}
-        ${path("M990 325H1130M1130 120V545M1130 120H1290M1130 335H1290M1130 545H1290", blue, 5)}
-        <path d="M620 254Q805 176 990 254V389Q805 467 620 389Z" fill="${pale}"/>
-        ${logo("mqss", 670, 240, 260, 94)}${text(805, 373, "Shared software", 38)}${text(805, 418, "stack", 38)}`,
-        ) +
-        reveal(
-          step,
-          3,
-          `${text(805, 90, "Connect once. Compose the workflow.", 39)}
-        <circle cx="535" cy="248" r="10" fill="${cyan}"/><circle cx="1070" cy="325" r="10" fill="${blue}"/><circle cx="1192" cy="120" r="10" fill="${cyan}"/>
-        ${text(805, 565, "Programs → devices → results", 34)}`,
-        ),
-    );
-  }
+  const keyed = (
+    key,
+    body,
+    transform = "translate(0 0) scale(1)",
+    opacity = 1,
+  ) =>
+    `<g data-morph="${key}" transform="${transform}" opacity="${opacity}">${body}</g>`;
 
-  function stack(step = 99) {
-    const layers = [
-      { y: 465, name: "Device access", color: "#D2E3F4", at: 1 },
-      { y: 345, name: "Runtime & scheduling", color: "#AFCFEA", at: 2 },
-      { y: 225, name: "Compiler infrastructure", color: blue, at: 3 },
+  // These scenes share the same tree and keys so a click can move existing objects.
+  function landscape(stage, expansion = 0, title = false) {
+    const clean = stage >= 3;
+    const expanded = expansion >= 1;
+    const small = expanded ? 0 : 1;
+    const qp = [
+      ["cryostat", "Superconducting", 8],
+      ["iontrap", "Trapped ions", 125],
+      ["neutralatom", "Neutral atoms", 242],
+      ["photonics", "Photonics", 359],
+      ["spin", "Spin qubits", 476],
     ];
-    return scene(
-      "stack",
-      "Application, compiler, runtime and device access form a shared quantum software stack",
-      icon("researcher", 35, 190, 235) +
-        text(160, 470, "Application", 36) +
-        icon("cryostat", 1370, 20, 145) +
-        icon("iontrap", 1350, 220, 170) +
-        icon("neutralatom", 1360, 430, 160) +
-        path("M285 325H410", blue, 5, 'marker-end="url(#stack-arrow)"') +
-        layers
-          .map(({ y, name, color, at }) =>
-            reveal(
-              step,
-              at,
-              `
-        <path d="M465 ${y}L895 ${y - 58}L1125 ${y + 6}L695 ${y + 67}Z" fill="${color}"/>
-        <path d="M465 ${y}V${y + 24}L695 ${y + 90}V${y + 67}Z" fill="${color}" opacity=".8"/>
-        <path d="M695 ${y + 67}V${y + 90}L1125 ${y + 30}V${y + 6}Z" fill="${color}" opacity=".6"/>
-        ${text(795, y + 13, name, 36, "middle", `fill="${at === 3 ? "white" : navy}"`)}
-      `,
+    const users = [
+      ["Researchers", "molecule", 8],
+      ["Developers", "circuit", 120],
+      ["Experimentalists", "measurement", 232],
+      ["Computer scientists", "chip", 344],
+      ["End users", "orbitals", 456],
+    ];
+    const userArt = users
+      .map(([label, badge, y], i) =>
+        keyed(
+          `user-${i}`,
+          icon("researcher", 33, 0, 82) +
+            icon(badge, 110, 35, 40) +
+            text(100, 107, label, 26),
+          `translate(28 ${y}) scale(1)`,
+        ),
+      )
+      .join("");
+    const qpuArt = qp
+      .map(([kind, label, y], i) =>
+        keyed(
+          `qpu-${i}`,
+          icon(kind, 0, 0, 104) + text(120, 64, label, 30, "start"),
+          `translate(1215 ${y}) scale(1)`,
+        ),
+      )
+      .join("");
+    const classical =
+      keyed(
+        "hpc-racks",
+        icon("server", 0, 0, 109) +
+          icon("server", 81, 0, 109) +
+          icon("server", 162, 0, 109),
+        title ? "translate(80 112) scale(1)" : "translate(470 478) scale(1)",
+      ) +
+      keyed(
+        "hpc-label",
+        text(title ? 217 : 607, title ? 264 : 630, "HPC centers", 32),
+      ) +
+      keyed(
+        "cloud-icon",
+        icon("cloud", 0, 0, 124),
+        title ? "translate(155 340) scale(1)" : "translate(846 475) scale(1)",
+      ) +
+      keyed(
+        "cloud-label",
+        text(title ? 217 : 908, title ? 495 : 630, "Hyperscalers", 32),
+      );
+    const routes = users
+      .flatMap(([, , y], i) =>
+        qp.map(([, , qy], j) => {
+          const endY = qy + 50;
+          const d = `M225 ${y + 47}C${450 + 80 * j} ${y + 20 + 18 * j} ${980 - 90 * i} ${endY + 65 * (i - 1)} 1202 ${endY}`;
+          return path(
+            d,
+            "#AEC5D9",
+            2.7,
+            `data-morph="route-${i}-${j}" opacity="${stage === 2 ? 0.72 : 0}"`,
+          );
+        }),
+      )
+      .join("");
+    const inRoutes = users
+      .map(([, , y], i) =>
+        path(
+          `M225 ${y + 47}C380 ${y + 47} 410 306 538 306`,
+          blue,
+          4,
+          `data-morph="input-route-${i}" opacity="${clean && !expanded && !title ? 1 : 0}"`,
+        ),
+      )
+      .join("");
+    const outRoutes = qp
+      .map(([, , y], i) =>
+        path(
+          `M1050 309C1155 309 1132 ${y + 50} 1202 ${y + 50}`,
+          blue,
+          4,
+          `data-morph="output-route-${i}" opacity="${clean && !expanded ? 1 : 0}"`,
+        ),
+      )
+      .join("");
+    const stackTransform = expanded
+      ? "translate(282 52) scale(1.4)"
+      : "translate(515 108) scale(0.82)";
+    const layouts = expanded
+      ? [
+          [0, 76, 185, 270],
+          [205, 76, 330, 112],
+          [205, 210, 330, 136],
+          [555, 76, 185, 270],
+        ]
+      : [
+          [20, 93, 660, 65],
+          [20, 167, 660, 65],
+          [20, 241, 660, 65],
+          [20, 315, 660, 65],
+        ];
+    const layerNames = ["Frontends", "Resources", "Compiler", "Backends"];
+    const layerKeys = ["frontends", "resources", "compiler", "backends"];
+    const layers = layouts
+      .map(([x, y, w, h], i) => {
+        const emphasize = expansion !== 2 || i === 2;
+        const labelY = expanded ? (i === 1 ? 38 : 44) : 44;
+        const color = i === 2 ? "#D5E7F7" : pale;
+        const label = text(
+          w / 2,
+          labelY,
+          layerNames[i],
+          expanded ? 30 : 38,
+          "middle",
+          `data-morph="stack-${layerKeys[i]}-label" font-weight="600"`,
+        );
+        const detail =
+          i === 0
+            ? logo("pennylane", 41, 86, 104, 48) +
+              logo("cuda-q", 45, 155, 96, 41) +
+              logo("qir", 53, 213, 82, 33)
+            : i === 1
+              ? text(w / 2, 82, "Scheduling", 30)
+              : i === 2
+                ? logo("mqt", 88, 67, 158, 58)
+                : logo("qdmi", 34, 105, 119, 64) + icon("chip", 69, 194, 49);
+        return keyed(
+          `stack-${layerKeys[i]}`,
+          `<rect data-morph="stack-${layerKeys[i]}-surface" x="0" y="0" width="${w}" height="${h}" rx="5" fill="${color}" stroke="${blue}" stroke-width="1.7"/>` +
+            label +
+            keyed(
+              `stack-${layerKeys[i]}-detail`,
+              detail,
+              "translate(0 0) scale(1)",
+              expanded ? 1 : 0,
+            ),
+          `translate(${x} ${y}) scale(1)`,
+          emphasize ? 1 : 0.3,
+        );
+      })
+      .join("");
+    const stackArt =
+      keyed(
+        "stack-brand",
+        logo("mqsc", 240, -3, 220, 80),
+        expanded ? "translate(20 0) scale(1)" : "translate(0 0) scale(1)",
+      ) + layers;
+    const frame =
+      keyed(
+        "world-users",
+        userArt,
+        expanded ? "translate(-155 0) scale(0.78)" : "translate(0 0) scale(1)",
+        title ? 0 : small,
+      ) +
+      keyed(
+        "world-qpus",
+        qpuArt,
+        expanded ? "translate(670 0) scale(0.78)" : "translate(0 0) scale(1)",
+        stage >= 1 ? small : 0,
+      ) +
+      keyed(
+        "world-classical",
+        classical,
+        "translate(0 0) scale(1)",
+        stage >= 1 && !expanded ? 1 : 0,
+      );
+    const titleInput =
+      path(
+        "M365 230C457 230 432 309 530 309",
+        blue,
+        4,
+        `data-morph="title-input" opacity="${title ? 1 : 0}"`,
+      ) +
+      path(
+        "M294 411C450 411 417 309 530 309",
+        blue,
+        4,
+        `data-morph="title-cloud-input" opacity="${title ? 1 : 0}"`,
+      );
+    const hpcRoute = path(
+      "M730 478C730 445 787 448 787 422",
+      blue,
+      4,
+      `data-morph="classical-input" opacity="${clean && !expanded && !title ? 1 : 0}"`,
+    );
+    const flow = (key, d, visible) =>
+      path(
+        d,
+        cyan,
+        7,
+        `data-morph="flow-${key}" class="flow-particles" stroke-dasharray="2 50" opacity="${visible ? 0.9 : 0}"`,
+      );
+    const flowPaths = keyed(
+      "world-flow",
+      flow("hpc", "M365 230C457 230 432 309 530 309", title) +
+        flow("cloud", "M294 411C450 411 417 309 530 309", title) +
+        flow("classical", "M730 478C730 445 787 448 787 422", clean && !title) +
+        users
+          .map(([, , y], i) =>
+            flow(
+              `user-${i}`,
+              `M225 ${y + 47}C380 ${y + 47} 410 306 538 306`,
+              clean && !title,
             ),
           )
           .join("") +
-        reveal(
-          step,
-          1,
-          path(
-            "M1145 484H1225M1225 104V525M1225 104H1340M1225 310H1340M1225 525H1340",
-            blue,
-            5,
-          ),
-        ) +
-        reveal(
-          step,
-          3,
-          `${logo("mqt", 635, 53, 300, 100)}${text(805, 632, "Shared interfaces. Distinct responsibilities.", 34)}`,
-        ),
+        qp
+          .map(([, , y], i) =>
+            flow(
+              `qpu-${i}`,
+              `M1050 309C1155 309 1132 ${y + 50} 1202 ${y + 50}`,
+              clean,
+            ),
+          )
+          .join(""),
+      "translate(0 0) scale(1)",
+      clean && !expanded ? 1 : 0,
+    );
+    const caption = keyed(
+      "stack-caption",
+      text(
+        800,
+        625,
+        expansion === 2
+          ? "One compiler infrastructure. Many programming models and devices."
+          : "Shared interfaces. Distinct responsibilities.",
+        32,
+      ),
+      "translate(0 0) scale(1)",
+      0,
+    );
+    return scene(
+      "landscape",
+      "Users, HPC and cloud resources connect to diverse quantum hardware through shared software; an expanded view separates frontends, resource management, the compiler and backend interfaces",
+      routes +
+        inRoutes +
+        outRoutes +
+        titleInput +
+        hpcRoute +
+        flowPaths +
+        frame +
+        keyed("shared-stack", stackArt, stackTransform, clean ? 1 : 0) +
+        caption,
     );
   }
 
-  function molecule(step = 99) {
-    const contours = [1, 0.85, 0.7, 0.55, 0.4]
+  function bridge(step = 3) {
+    return landscape(Math.min(3, step), 0, true);
+  }
+
+  function ecosystem(step = 3) {
+    return landscape(Math.min(3, step));
+  }
+
+  function stack(step = 3) {
+    return landscape(3, Math.min(3, step));
+  }
+
+  function molecule(step = 3) {
+    const contours = [1, 0.82, 0.65, 0.48]
       .map(
-        (scale, i) =>
-          `<g transform="translate(435 288) scale(${scale})"><path d="M-290 0C-290-156-90-194 0-98C90-194 290-156 290 0C290 156 90 194 0 98C-90 194-290 156-290 0Z" fill="${i ? "none" : pale}" stroke="${blue}" stroke-width="${i ? 2 : 0}" opacity="${0.17 + i * 0.09}"/></g>`,
+        (s, i) =>
+          `<path data-morph="lih-density-${i}" d="M-265 0C-265-155-70-170 20-82C100-142 242-105 242 0C242 105 100 142 20 82C-70 170-265 155-265 0Z" transform="translate(402 283) scale(${s})" fill="${i ? "none" : pale}" stroke="${blue}" stroke-width="${i ? 2 : 0}" opacity="${0.13 + i * 0.12}"/>`,
       )
+      .join("");
+    const atoms =
+      keyed("lih-bond", path("M270 301L551 263", navy, 14)) +
+      keyed(
+        "lih-lithium",
+        `<circle cx="270" cy="301" r="74" fill="${blue}"/><circle cx="250" cy="278" r="19" fill="white" opacity=".5"/>${text(270, 313, "Li", 41, "middle", 'fill="white" font-weight="600"')}`,
+      ) +
+      keyed(
+        "lih-hydrogen",
+        `<circle cx="551" cy="263" r="43" fill="${cyan}"/><circle cx="540" cy="249" r="11" fill="white" opacity=".5"/>${text(551, 275, "H", 36, "middle", 'fill="white" font-weight="600"')}`,
+      );
+    const orbitals = [0, 1, 2]
+      .map((i) => {
+        const x = 916 + i * 196;
+        return keyed(
+          `lih-orbital-${i}`,
+          `<ellipse cx="${x - 24}" cy="240" rx="46" ry="79" transform="rotate(-22 ${x - 24} 240)" fill="${blue}" opacity=".16"/><ellipse cx="${x + 24}" cy="240" rx="46" ry="79" transform="rotate(22 ${x + 24} 240)" fill="${cyan}" opacity=".22"/>` +
+            text(x, 365, `Orbital ${i + 1}`, 30) +
+            path(`M${x - 67} 438H${x - 8}M${x + 8} 438H${x + 67}`, blue, 4) +
+            text(x - 39, 491, "α", 31) +
+            text(x + 39, 491, "β", 31),
+          "translate(0 0) scale(1)",
+          step >= 1 ? 1 : 0,
+        );
+      })
       .join("");
     return scene(
       "molecule",
-      "A schematic hydrogen molecule and an energy curve illustrate the molecular ground-state problem",
-      reveal(
-        step,
-        0,
-        contours +
-          path("M310 325L560 240", navy, 17) +
-          `<circle cx="310" cy="325" r="58" fill="${blue}"/><circle cx="560" cy="240" r="58" fill="${cyan}"/>
-        <circle cx="290" cy="305" r="14" fill="white" opacity=".65"/><circle cx="540" cy="220" r="14" fill="white" opacity=".65"/>` +
-          text(310, 424, "H", 44) +
-          text(560, 159, "H", 44) +
-          text(425, 554, "Molecule + electrons", 38),
-      ) +
-        reveal(
-          step,
-          1,
-          `${path("M960 490V110M960 490H1485", navy, 3)}${text(1215, 563, "Bond distance", 32)}
-        ${text(900, 305, "Energy", 32, "middle", 'transform="rotate(-90 900 305)"')}
-        ${path("M990 120C1010 290 1050 435 1133 426C1240 410 1285 296 1480 278", blue, 6)}
-        <circle cx="1133" cy="426" r="9" fill="${blue}"/>`,
+      "Conceptual lithium hydride molecule with frozen lithium 1s and an active space of two electrons in three spatial orbitals, corresponding to six spin orbitals",
+      contours +
+        atoms +
+        text(400, 487, "Lithium hydride · LiH", 39) +
+        keyed(
+          "lih-frozen",
+          text(400, 548, "Freeze the Li 1s core", 31),
+          "translate(0 0) scale(1)",
+          step >= 1 ? 1 : 0,
         ) +
-        reveal(
-          step,
-          2,
-          `${path("M1143 417L1207 260", cyan, 3)}${text(1220, 241, "Ground state", 34, "start")}`,
+        keyed(
+          "lih-active-title",
+          text(1112, 107, "Active space", 38, "middle", 'font-weight="600"'),
+          "translate(0 0) scale(1)",
+          step >= 1 ? 1 : 0,
         ) +
-        reveal(
-          step,
-          3,
-          text(800, 632, "Ground-state energy · conceptual illustration", 26),
+        orbitals +
+        keyed(
+          "lih-space",
+          text(1112, 559, "2 electrons · 6 spin orbitals", 33),
+          "translate(0 0) scale(1)",
+          step >= 2 ? 1 : 0,
+        ) +
+        keyed(
+          "lih-caption",
+          text(800, 630, "Conceptual molecular and orbital illustration", 26),
+          "translate(0 0) scale(1)",
+          step >= 0 ? 1 : 0,
         ),
     );
   }
 
   function shadows(step = 99, bits = "measured bits") {
-    const wires = [250, 330, 410]
+    const wires = [190, 240, 290, 340, 390, 440]
       .map((y) => path(`M65 ${y}H1115`, navy, 3))
       .join("");
     const state = `<path d="M220 180Q300 146 380 180V480Q300 514 220 480Z" fill="${pale}" stroke="${blue}" stroke-width="3"/>
       ${text(300, 305, "Trial", 38)}${text(300, 353, "state", 38)}${text(300, 552, "Prepare", 38)}`;
     const rotation = `<path d="M555 180Q635 146 715 180V480Q635 514 555 480Z" fill="#D5EAF2" stroke="${cyan}" stroke-width="3"/>
       ${text(635, 305, "Random", 36)}${text(635, 353, "basis", 36)}${text(635, 552, "Rotate", 38)}`;
-    const meters = [195, 275, 355]
-      .map((y) => icon("measurement", 892, y, 105))
+    const meters = [155, 205, 255, 305, 355, 405]
+      .map((y) => icon("measurement", 911, y, 57))
       .join("");
     const samples = [
       { x: 1250, y: 170, angle: -9, basis: "U₁" },
@@ -351,5 +572,13 @@
     );
   }
 
-  window.MQSF_VIZ = { icon, ecosystem, stack, molecule, shadows, walkers };
+  window.MQSF_VIZ = {
+    icon,
+    bridge,
+    ecosystem,
+    stack,
+    molecule,
+    shadows,
+    walkers,
+  };
 })();

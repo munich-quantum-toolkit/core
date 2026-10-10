@@ -1,0 +1,90 @@
+{
+  "captured_at": "2026-10-10T01:04:44.475450+00:00",
+  "papers": {
+    "mqss": {
+      "title": "The Munich Quantum Software Stack: Connecting End Users, Integrating Diverse Quantum Technologies, Accelerating HPC",
+      "venue": "SCA/HPCAsia 2026",
+      "url": "https://doi.org/10.1145/3773656.3773669",
+      "short_url": "doi.org/10.1145/3773656.3773669",
+      "source": "https://www.cda.cit.tum.de/files/eda/2026_sca_hpcasia_munich_quantum_software_stack.pdf",
+      "university_record": "https://portal.fis.tum.de/en/publications/the-munich-quantum-software-stack-connecting-end-users-integratin/",
+      "publisher_metadata": "https://api.crossref.org/works/10.1145/3773656.3773669",
+      "publisher": "ACM",
+      "pages": "55\u201367"
+    },
+    "unrolling": {
+      "title": "Why Are We Unrolling? The Importance of Structured Quantum Programs for Compilation",
+      "url": "https://arxiv.org/abs/2609.16171",
+      "short_url": "arxiv.org/abs/2609.16171",
+      "publication_status": "preprint"
+    }
+  },
+  "core_stats": {
+    "dashboard_url": "https://burgholzer.github.io/mqt-dashboard/",
+    "dashboard_sha256": "35c57aeea6fe150d134e006bb5790f98333ed0bb4369bed8e1eb726a1ff3fbe8",
+    "dashboard_snapshot": {
+      "daily_downloads": "378",
+      "docs_link": "https://mqt.readthedocs.io/en/stable/core/",
+      "docs_slug": "core",
+      "github_link": "https://github.com/cda-tum/mqt-core",
+      "latest_release_version": "v3.11.0",
+      "monthly_downloads": "12.4k",
+      "published_at": "08 October 2026",
+      "pypi_link": "https://pypi.org/project/mqt-core",
+      "repo": "mqt-core",
+      "stars": 135,
+      "timestamp": "Fri, 09 Oct 2026 11:11:44 GMT",
+      "total_downloads": "964.4k",
+      "weekly_downloads": "2.1k"
+    },
+    "github_api_url": "https://api.github.com/repos/munich-quantum-toolkit/core",
+    "github_revision": "81c570c6884ab1e9ab70d214369cf848aa943345",
+    "github": {
+      "stargazers_count": 135,
+      "forks_count": 76,
+      "subscribers_count": 9,
+      "open_issues_count": 78,
+      "updated_at": "2026-10-09T22:52:47Z",
+      "pushed_at": "2026-10-10T01:04:03Z"
+    },
+    "contributors_scope": "Named GitHub accounts of API type User; anonymous contributors and accounts marked Bot are excluded. This does not verify that every User account is human.",
+    "metric_limits": "Downloads are rounded cumulative package downloads from the dashboard, not unique users; dashboard release identifies its latest-published release and is not a latest-version claim.",
+    "dashboard_collection_source": "https://github.com/burgholzer/mqt-dashboard/blob/c16fdfbf1f8bfa792547ac82723177dba428e463/src/mqt/dashboard/data_collection.py",
+    "github_named_user_contributors": 41
+  },
+  "links": {
+    "core_docs": "https://mqt.readthedocs.io/projects/core/en/latest/",
+    "compiler_docs": "https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html",
+    "qdmi_docs": "https://munich-quantum-software-stack.github.io/QDMI/",
+    "iqm": {
+      "code": "https://github.com/iqm-finland/QDMI-on-IQM",
+      "docs": "https://iqm-finland.github.io/QDMI-on-IQM/",
+      "paper": "https://arxiv.org/abs/2604.19869"
+    },
+    "ibm": {
+      "code": "https://github.com/munich-quantum-software/ibm-qdmi-device",
+      "docs": "https://ibm-qdmi-device.readthedocs.io/en/latest/"
+    },
+    "aws": {
+      "code": "https://github.com/munich-quantum-software/amazon-braket-qdmi-device",
+      "docs": "https://amazon-braket-qdmi-device.readthedocs.io/en/stable/",
+      "paper": "https://arxiv.org/abs/2603.05138"
+    }
+  },
+  "visual_references": {
+    "website": {
+      "url": "https://munichquantum.software/",
+      "sha256": "22edc73ea40f4dd8033f2cc098269dcfaf93da61269cf0b24897142f1436b06f",
+      "design": "HPC centers and hyperscalers connect via MQSC to superconducting, trapped-ion, neutral-atom, photonic and spin hardware; role-specific routes and shared admission."
+    },
+    "summary_deck": {
+      "attachment": "2026-10-07_MQSC_Summary.pptx",
+      "sha256": "4261d296730b7ba11e759c20b0436389e49ac1d4648981c302158a8e85af6a3b",
+      "slides": [6, 7, 8, 9, 14],
+      "design": "Slide 9 separates frontend interfaces, compiler infrastructure, resource management/scheduling and backend interfaces."
+    }
+  },
+  "scientific_illustrations": {
+    "molecule": "Schematic LiH and active-space occupancy; no measured geometry, orbital densities, or energy curves are encoded."
+  }
+}
