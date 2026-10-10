@@ -771,6 +771,18 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
   }
 }
 
+TEST(DDPackageTest, SerializationReportsWriteFailures) {
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "Requires /dev/full to reject writes after opening";
+  }
+  for (const bool binary : {false, true}) {
+    EXPECT_THROW(serialize(vEdge::one(), "/dev/full", binary),
+                 std::runtime_error);
+    EXPECT_THROW(serialize(mEdge::one(), "/dev/full", binary),
+                 std::runtime_error);
+  }
+}
+
 TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
   Package package(1);
   for (const auto* unit : {"i", "I", "+i", "+I", "-i", "-I"}) {
@@ -782,7 +794,6 @@ TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
     EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(edge), 0), phase);
   }
 }
-
 
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
   Package package(2);
@@ -2267,7 +2278,6 @@ TEST(DDPackageTest, MeasurementFidelityValidatesWidthAndPermutation) {
         std::out_of_range);
   }
 }
-
 
 TEST(DDPackageTest, CloseToIdentity) {
   auto dd = std::make_unique<Package>(3);
