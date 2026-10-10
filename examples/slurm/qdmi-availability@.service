@@ -1,0 +1,25 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+[Unit]
+Description=Monitor QDMI device availability (%i)
+Requires=slurmctld.service
+After=slurmctld.service network-online.target
+
+[Service]
+Type=exec
+Environment=PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/runtime/qdmi.env
+PassEnvironment=IQM_TOKEN IQM_TOKENS_FILE AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE AWS_DEFAULT_REGION AWS_REGION AWS_EC2_METADATA_DISABLED
+ExecStart=/usr/local/sbin/mqt-qdmi-monitor %i
+ExecStopPost=/opt/venv/bin/python /usr/local/libexec/mqt-qdmi-availability.py --license %i --block-only
+Restart=always
+RestartSec=30
+TimeoutStopSec=5
+KillMode=control-group
+LimitCORE=0

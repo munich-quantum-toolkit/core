@@ -129,7 +129,7 @@ It opens the device, accepts an `IDLE` or `BUSY` status, and exits without
 submitting a quantum job:
 
 ```console
-mqt-core-qdmi-check --device mqt.sc.default --timeout 10
+mqt-core-qdmi-check --device mqt.sc.default
 ```
 
 Run it in the workload environment with the required credentials. The Python
@@ -140,14 +140,14 @@ native executable accepts additional manifests through repeated
 retain the lowest precedence in [QDMI configuration](configuration.md);
 `MQT_CORE_QDMI_CONFIG_FILE` selects an explicit catalogue.
 
-The timeout covers device initialization, the status query, and worker exit. It
-defaults to 30 seconds and accepts whole seconds from 1 to 3600. Exit codes are
-0 for availability, 1 for failure, 2 for invalid arguments, and 124 for a
-timeout. Device output is suppressed to protect credentials.
+The command opens only the requested device through MQT Core's built-in QDMI
+driver. Other devices in the environment need not be reachable or authenticated.
+Exit codes are 0 for availability, 1 for failure, and 2 for invalid arguments.
+Device output is suppressed to protect credentials. The caller supplies any
+deadline; the [Slurm availability monitor](slurm.md) bounds each probe and
+supervises device processes.
 
-The command is included in Linux, macOS, and Windows builds and wheels (Windows
-10 or Windows Server 2016 and newer). Availability is a snapshot; it does not
-authorize access or reserve device capacity.
+Availability is a snapshot; it does not authorize access or reserve capacity.
 
 ## Python Bindings
 

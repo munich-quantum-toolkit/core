@@ -1,29 +1,29 @@
 # Use QDMI devices with Slurm
 
-Slurm can limit concurrent access to a quantum device through a cluster-wide
-license. Use a QDMI device ID as the license name, then open that device in the
-job with MQT Core. The job can compile and submit workloads through the same
-QDMI interface it uses outside Slurm.
+Slurm limits concurrent access to a quantum device through a cluster-wide
+license. A QDMI device ID names the license; the job opens that device through
+MQT Core's driver. The same environment can contain implementations from several
+vendors, and independent sessions can submit work to their devices concurrently.
 
-Slurm schedules jobs; the device implementation authenticates users and submits
-quantum work. A license does not grant device access or reserve capacity at a
-remote service. Device availability and queues can change after admission.
+An administrative monitor checks each device's operational status and keeps its
+license reserved while it is unavailable. Jobs then wait in Slurm instead of
+occupying compute nodes during an outage. Device implementations authenticate
+users and submit quantum work; licenses do not grant device access or reserve
+capacity at a remote service.
 
 ## Run a job
 
-Install MQT Core and the required QDMI device implementation in the workload
-environment. Make its catalogue, libraries, and credentials available on the
-compute nodes. See [device configuration](configuration.md) and the device
+Install MQT Core and the required device implementations in one workload
+environment. Make its catalogue, libraries, and credentials available on compute
+nodes. See [device configuration](configuration.md) and each device
 implementation's installation guide.
 
-An administrator registers each device ID in `slurm.conf`, for example:
+An administrator registers the device IDs and concurrency limits in
+`slurm.conf`, for example:
 
 ```ini
-Licenses=mqt.sc.default:1,amazon.braket.sv1:2,iqm.emerald:1
+Licenses=mqt.sc.default:1,amazon.braket.sv1:2,iqm.emerald.mock:1
 ```
-
-The counts limit simultaneous Slurm allocations. Choose counts appropriate for
-the device and the site's access policy.
 
 Request one device with `--licenses=ID` or `--licenses=ID:1`:
 
@@ -33,14 +33,13 @@ Request one device with `--licenses=ID` or `--licenses=ID:1`:
 #SBATCH --time=00:05:00
 set -eu
 
-source /shared/quantum/braket/bin/activate
-export MQT_CORE_QDMI_CONFIG_FILE=/shared/quantum/catalogues/braket-sv1.json
+source /shared/quantum/bin/activate
+export MQT_CORE_QDMI_CONFIG_FILE=/shared/quantum/catalogue.json
 export AWS_PROFILE=research
-mqt-core-qdmi-check --device amazon.braket.sv1 --timeout 10
 srun python workload.py
 ```
 
-In `workload.py`, select the allocated device:
+In `workload.py`, open the allocated device:
 
 ```python
 from mqt.core.qdmi import slurm
@@ -48,87 +47,66 @@ from mqt.core.qdmi import slurm
 device = slurm.open_device_from_license()
 ```
 
-Pass `device` to the appropriate Qiskit or PennyLane adapter. MQT Core accepts
-one local license with a unit count and requires the device to report `IDLE` or
-`BUSY`. Compound license expressions and remote licenses are unsupported.
+Pass `device` to the Qiskit or PennyLane adapter. This convenience function
+accepts one local license with a unit count and requires the device to report
+`IDLE` or `BUSY`. It initializes only the selected device, so an unrelated
+device's initialization does not delay the job. Applications using several
+devices can request their licenses explicitly and open separate
+[built-in driver sessions](driver.md).
 
-The optional [availability command](driver.md#probe-device-availability) gives a
-quick indication that the device is operational. Run it after activating the
-workload environment and setting credentials. It does not reserve the device.
-The workload still opens the device and handles submission errors normally.
+Slurm exports the submission environment by default. Use environment variables
+or `--export` for job settings; variables set in a batch script reach its
+subsequent `srun` steps. IQM and AWS authentication settings can coexist in the
+same environment. The workload must handle authentication and submission
+failures even after a successful site availability check.
 
-Slurm exports the submission environment by default. Use ordinary environment
-variables or Slurm's `--export` option for job-specific settings. Variables set
-inside a batch script are inherited by its subsequent `srun` steps.
-
-### Use several vendors on one cluster
-
-Jobs for different vendors can run concurrently, with independent license counts
-and credentials. Each job selects one device. For example, an IQM job can use an
-IQM runtime while a Braket job uses a Braket runtime on the same compute nodes.
-
-Use a separate virtual environment for each vendor, with MQT Core and the
-required device implementation's wheel installed. Give each job a catalogue that
-enables only its target device. The built-in driver initializes every enabled
-catalogue entry when opening a standard QDMI session; an unrelated device's slow
-initialization can therefore delay or time out the selected device's check. An
-explicit `MQT_CORE_QDMI_CONFIG_FILE` still retains installed wheel manifests, so
-disable unneeded presets in the catalogue. Review that catalogue when updating
-the runtime. Native installations can use separate installation prefixes and the
-same catalogue policy.
-
-## Hold jobs while a device is unavailable
-
-A check inside a job runs after Slurm has allocated resources. To leave jobs
-pending while a device is unavailable, an administrator must update scheduler
-state independently of the jobs.
-
-Slurm supports
-[license-only reservations](https://slurm.schedmd.com/reservations.html) for
-unavailable shared resources. Reserve the device's entire configured license
-count for an administrative account. New jobs requiring it remain pending with
-reason `Licenses`; running jobs continue, and other devices remain usable.
-Remove the reservation after a successful health check.
+## Keep unavailable devices out of allocations
 
 The
-[availability monitor example](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm)
-performs one such update. It blocks the licenses before invoking the bounded
-QDMI checker and removes the block only on success. Run it periodically from a
-trusted administrative host with Slurm clients, MQT Core, the device
-implementation, and site-owned credentials. Initialize the blocks before
-admitting workloads. Run one monitor per device, using its vendor runtime and
-scoped catalogue, so one vendor's initialization failure cannot close another
-vendor's license. The controller does not need device libraries.
+[cluster example](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm)
+includes an availability monitor for every configured device license. Each
+monitor creates a Slurm
+[license-only reservation](https://slurm.schedmd.com/reservations.html) for the
+full license count, then invokes the
+[QDMI availability command](driver.md#probe-device-availability). It removes the
+reservation only after a successful check. New jobs otherwise remain pending
+with reason `Licenses`; running jobs and unrelated devices continue.
 
-Use a site account that can assess the shared device's operational state. One
-user's expired credentials must not determine availability for every user.
-Conversely, a successful site check does not verify each user's authorization.
-The monitor is a snapshot: device status can change between checks, and a
-stopped monitor leaves its last scheduler state in place. Supervise it and alert
-on stale updates. Keep the optional job check for the user's environment.
+Run monitors on an administrative host with Slurm clients, the shared QDMI
+environment, and site-owned credentials. Monitors use separate sessions to probe
+their selected devices in that environment. They run outside Slurm daemons.
+Initialize the reservations before opening the queue; the example's systemd
+units enforce this ordering, bound probes, restart failed monitors, and close
+admission when a monitor stops.
 
-This integration uses licenses and Slurm's environment export. Device libraries
-run in application or checker processes; no Slurm plugin is needed. The
-[QRMI integration paper](https://arxiv.org/abs/2607.19591) describes a separate
+A monitor's credentials must represent site access. One user's expired token
+must not determine cluster-wide availability, and a successful site check does
+not verify each user's authorization. Availability is a snapshot: device status
+can change after admission. Alert on controller errors, which prevent the
+monitor from updating reservations.
+
+This integration uses Slurm licenses, reservations, and environment export; it
+requires no Slurm plugin. The
+[QRMI integration paper](https://arxiv.org/abs/2607.19591) also describes an
 acquire/execute/release lifecycle for services that issue allocation tokens. The
-QDMI device implementations used here do not require that lifecycle.
+QDMI device implementations used here do not need that lifecycle.
 
 ## Configure the cluster
 
-Use matching Slurm versions across the cluster. This integration requires Slurm
-25.11 or newer.
+Use matching Slurm versions, at least 25.11, across the cluster.
 
 | Location               | Software and configuration                           |
 | ---------------------- | ---------------------------------------------------- |
 | Login/submission nodes | Slurm clients and access to the workload environment |
 | Controller             | `slurmctld`, scheduling policy, and license counts   |
+| Administrative host    | Availability monitors and site-owned credentials     |
 | Compute nodes          | `slurmd`, cgroup v2, and the workload environment    |
 | Accounting service     | `slurmdbd` when persistent accounting is needed      |
 
-Static local licenses do not require an accounting database. The controller does
-not need device libraries or SDKs. Use consistent numeric user/group IDs and
-readable catalogue/library paths across compute nodes. A shared versioned
-environment and identical per-node installations are both suitable.
+Static local licenses do not require an accounting database. The controller
+needs no device libraries unless it also hosts the monitors. Use consistent
+numeric user/group IDs and readable catalogue/library paths across nodes. A
+shared versioned environment or identical per-node installations both work.
 
 Keep scheduler authentication, such as Munge, separate from device credentials.
 For CPU and allocated-memory constraints, use memory-consuming selection with
@@ -156,19 +134,12 @@ site. See the
 [Slurm administration guide](https://slurm.schedmd.com/quickstart_admin.html)
 and [cgroup configuration](https://slurm.schedmd.com/cgroup.conf.html).
 
-`SLURM_JOB_LICENSES` is mutable within a process. MQT Core uses it for device
-selection, not as proof of allocation or authorization. Device services and
-operating-system permissions must enforce access independently.
+`SLURM_JOB_LICENSES` is mutable within a process. MQT Core uses it for
+selection, not proof of allocation or authorization. Device services and
+operating-system permissions enforce access independently.
 
-## Try the Docker cluster
-
-The reusable
-[Docker Slurm setup](https://github.com/munich-quantum-toolkit/core/tree/main/docker/slurm)
-supports local demonstrations and integration tests with a configurable number
-of compute containers. Follow its README to build the workload image, start the
-cluster, submit jobs, and remove it.
-
-Use rootful Docker on a disposable Linux cgroup-v2 host. The containers run
-systemd and require privileged access to the host cgroup hierarchy. Jobs run as
-an unprivileged user. This setup is intended for development and demonstrations,
-not a production security boundary.
+The
+[example cluster](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm)
+puts these components together for demonstrations and integration tests. Docker
+Compose supplies its hosts; the jobs, QDMI configuration, and Slurm scheduling
+follow the same interfaces as other clusters.

@@ -136,11 +136,7 @@ def _run_tests(
     extra_command: Sequence[str] = (),
     pytest_run_args: Sequence[str] = (),
 ) -> None:
-    env = {
-        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
-        # Coverage.py cannot apply its execv patch on Windows.
-        "MQT_CORE_COVERAGE_PROCESS_PATCH": "subprocess" if os.name == "nt" else "execv",
-    }
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
     if shutil.which("cmake") is None:
         session.install("cmake")
     if shutil.which("ninja") is None:

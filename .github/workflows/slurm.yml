@@ -14,7 +14,6 @@ on:
       - "python/mqt/core/_commands.py"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
-      - "docker/slurm/**"
       - "examples/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
@@ -32,7 +31,6 @@ on:
       - "python/mqt/core/_commands.py"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
-      - "docker/slurm/**"
       - "examples/slurm/**"
       - "test/slurm/**"
       - "test/qdmi/**"
@@ -67,11 +65,12 @@ jobs:
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-          python-version: "3.14"
+          version: "0.13.0"
+          python-version: "3.15"
 
       - name: Check the Slurm test runner
         run: >-
-          uv run --no-project --with 'pytest>=9.0.1' --python 3.14
+          uv run --no-project --with 'pytest>=9.0.1' --python 3.15
           pytest -o addopts= -q test/python/test_slurm_integration.py test/python/test_slurm_availability.py
 
       - name: Set up MLIR
@@ -90,4 +89,4 @@ jobs:
 
       - name: Test Slurm admission and QDMI execution
         timeout-minutes: 15
-        run: uv run --no-project --python 3.14 test/slurm/run_integration.py --nodes 3
+        run: uv run --no-project --python 3.15 test/slurm/run_integration.py --nodes 3

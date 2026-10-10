@@ -86,11 +86,11 @@ def main(arguments: Sequence[str] | None = None) -> int:
     try:
         # The administrator selects the site executable; arguments use no shell.
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
-            (options.checker, "--device", device, "--timeout", str(options.timeout)),
+            (options.checker, "--device", device),
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=options.timeout + 2,
+            timeout=options.timeout,
         )
     except (OSError, subprocess.SubprocessError):
         LOGGER.exception("Readiness probe failed; %s remains blocked", device)

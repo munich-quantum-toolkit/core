@@ -40,21 +40,16 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-if(UNIX OR WIN32)
-  add_executable(mqt-core-qdmi-check Check.cpp)
-  target_link_libraries(mqt-core-qdmi-check PRIVATE MQT::CoreQDMI MQT::ProjectWarnings
-                                                    MQT::ProjectOptions)
-  if(WIN32)
-    target_compile_definitions(mqt-core-qdmi-check PRIVATE NOMINMAX _WIN32_WINNT=0x0A00)
-    if(MINGW)
-      target_link_options(mqt-core-qdmi-check PRIVATE -municode)
-    endif()
-  endif()
-  mqt_copy_qdmi_runtime(mqt-core-qdmi-check)
-  if(MQT_CORE_INSTALL)
-    install(TARGETS mqt-core-qdmi-check RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-                                                COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
-  endif()
+add_executable(mqt-core-qdmi-check Check.cpp)
+target_link_libraries(mqt-core-qdmi-check PRIVATE MQT::CoreQDMI MQT::ProjectWarnings
+                                                  MQT::ProjectOptions)
+if(MINGW)
+  target_link_options(mqt-core-qdmi-check PRIVATE -municode)
+endif()
+mqt_copy_qdmi_runtime(mqt-core-qdmi-check)
+if(MQT_CORE_INSTALL)
+  install(TARGETS mqt-core-qdmi-check RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+                                              COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
 endif()
 
 set(MQT_CORE_TARGETS

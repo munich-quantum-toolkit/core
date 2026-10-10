@@ -24,18 +24,17 @@ AWS_CREDENTIALS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TO
 
 
 def environment(vendor: str) -> tuple[str, ...]:
-    """Select one runtime and remove the other vendor's credentials before submission."""
+    """Keep one shared catalogue while submitting only the needed credentials."""
     unrelated = AWS_CREDENTIALS if vendor == "iqm" else ("IQM_TOKEN", "IQM_TOKENS_FILE")
     return (
         "env",
         *(argument for name in unrelated for argument in ("-u", name)),
-        f"PATH=/opt/runtimes/{vendor}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        f"MQT_CORE_QDMI_CONFIG_FILE=/jobs/{vendor}.json",
+        "MQT_CORE_QDMI_CONFIG_FILE=/jobs/devices.json",
     )
 
 
-def submit(vendor: str, *, probe: bool = True) -> str:
-    """Submit one licensed batch job, retaining the allocation after a successful probe."""
+def submit(vendor: str, *, hold: bool = True) -> str:
+    """Submit one licensed batch job, holding the allocation when requested."""
     unrelated = AWS_CREDENTIALS if vendor == "iqm" else ("IQM_TOKEN", "IQM_TOKENS_FILE")
     metadata = (
         "import json, os, socket; from pathlib import Path; "
@@ -45,10 +44,8 @@ def submit(vendor: str, *, probe: bool = True) -> str:
         "json.dumps({'node': socket.gethostname(), 'licenses': os.environ['SLURM_JOB_LICENSES']}))"
     )
     body = "set -eu\n"
-    if probe:
-        body += f"mqt-core-qdmi-check --device {DEVICES[vendor]} --timeout 30\npython3 /{vendor}/test/slurm/probe.py\n"
     body += f"python3 -c {shlex.quote(metadata)}\n"
-    if probe:
+    if hold:
         body += 'while [ ! -f "/jobs/release-$SLURM_JOB_ID" ]; do sleep 0.2; done\n'
     result = cluster.job(
         *environment(vendor),
@@ -76,54 +73,55 @@ def test_vendors() -> None:
     licenses = ",".join(f"{device}:1" for device in DEVICES.values())
     configuration.write_text(configuration.read_text().replace("Licenses=", f"Licenses={licenses},", 1))
     cluster.controller("scontrol", "reconfigure")
-    for vendor, device in DEVICES.items():
+    definitions = []
+    for vendor in DEVICES:
         cluster.controller(
-            *environment(vendor),
-            "PROVIDER_INSTALL_MODE=wheel",
-            "sh",
-            f"/{vendor}/test/slurm/setup.sh",
-            f"/jobs/{vendor}.json",
+            "env", "PROVIDER_INSTALL_MODE=wheel", "sh", f"/{vendor}/test/slurm/setup.sh", f"/jobs/{vendor}.json"
         )
-        other = "amazon.braket." if vendor == "iqm" else "iqm."
-        cluster.job(
-            *environment(vendor),
-            "python3",
-            "-c",
-            "from mqt.core.qdmi.builtin_driver import registered_device_ids; "
-            f"ids = registered_device_ids(); assert '{device}' in ids; "
-            f"assert not any(device.startswith('{other}') for device in ids)",
-        )
+        definitions.extend(json.loads((cluster.RUNTIME / "jobs" / f"{vendor}.json").read_text())["qdmi"]["devices"])
+    catalogue = cluster.RUNTIME / "jobs" / "devices.json"
+    catalogue.write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": definitions}}))
+    (cluster.RUNTIME / "qdmi.env").write_text("MQT_CORE_QDMI_CONFIG_FILE=/jobs/devices.json\n")
+    cluster.controller("systemctl", "restart", "qdmi-admission.service")
+    for device in DEVICES.values():
+        cluster.wait_for(f"{device} admission", lambda device=device: cluster.license_record(device)["Reserved"] == "0")
+    cluster.job(
+        "env",
+        "MQT_CORE_QDMI_CONFIG_FILE=/jobs/devices.json",
+        "srun",
+        "--immediate=5",
+        "--time=5",
+        f"--licenses={','.join(DEVICES.values())}",
+        "python3",
+        "/workspace/test/slurm/multivendor_job.py",
+        timeout=300,
+    )
 
     iqm, braket = (submit(vendor) for vendor in DEVICES)
     for vendor, job_id in (("iqm", iqm), ("braket", braket)):
-        cluster.wait_for_result(vendor, job_id, f"the {vendor} eight-shot workload")
+        cluster.wait_for_result(vendor, job_id, f"the {vendor} allocation")
     for vendor, job_id in (("iqm", iqm), ("braket", braket)):
         assert cluster.job_matches(job_id, "RUNNING")
         cluster.assert_license(DEVICES[vendor], total=1, used=1, free=0)
         assert cluster.load_result(vendor, job_id)["node"] in cluster.NODES
 
-    monitor = (
-        "python3",
-        "/workspace/examples/slurm/update_availability.py",
-        "--license",
-        f"{DEVICES['iqm']}:1",
-        "--timeout",
-        "30",
+    service = f"qdmi-availability@{DEVICES['iqm']}:1.service"
+    cluster.controller("systemctl", "stop", service)
+    offline = json.loads(catalogue.read_text())
+    for definition in offline["qdmi"]["devices"]:
+        if definition["id"] == DEVICES["iqm"]:
+            definition["session"]["base-url"] = "http://127.0.0.1:1"
+    catalogue.write_text(json.dumps(offline))
+    cluster.controller("systemctl", "start", service)
+    cluster.wait_for(
+        "the failed IQM probe",
+        lambda: (
+            cluster.controller("systemctl", "show", service, "--property=SubState", "--value").stdout.strip()
+            == "auto-restart"
+        ),
     )
-    unavailable = json.loads((cluster.RUNTIME / "jobs" / "iqm.json").read_text())
-    for definition in unavailable["qdmi"]["devices"]:
-        definition["enabled"] = False
-    (cluster.RUNTIME / "jobs" / "iqm-offline.json").write_text(json.dumps(unavailable))
-    failed = cluster.controller(
-        *environment("iqm"),
-        "MQT_CORE_QDMI_CONFIG_FILE=/jobs/iqm-offline.json",
-        *monitor,
-        check=False,
-        timeout=45,
-    )
-    assert failed.returncode == 1
     assert cluster.license_record(DEVICES["iqm"])["Reserved"] == "1"
-    waiting = submit("iqm", probe=False)
+    waiting = submit("iqm", hold=False)
     (cluster.RUNTIME / "jobs" / f"release-{iqm}").touch()
     cluster.wait_for("the first IQM job to finish", lambda: cluster.job_finished(iqm))
     cluster.wait_for(
@@ -132,11 +130,10 @@ def test_vendors() -> None:
     )
     assert cluster.job_matches(braket, "RUNNING")
     assert not (cluster.RUNTIME / "jobs" / f"iqm-{waiting}.json").exists()
-    cluster.job(
-        *environment("braket"), "mqt-core-qdmi-check", "--device", DEVICES["braket"], "--timeout", "30", timeout=45
-    )
-    cluster.controller(*environment("iqm"), *monitor, timeout=45)
-    cluster.wait_for_result("iqm", waiting, "the pending IQM job to execute after recovery")
+    cluster.job(*environment("braket"), "mqt-core-qdmi-check", "--device", DEVICES["braket"], timeout=45)
+    catalogue.write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": definitions}}))
+    cluster.controller("systemctl", "restart", service)
+    cluster.wait_for_result("iqm", waiting, "the pending IQM job to start after recovery")
     cluster.wait_for("the recovered IQM allocation to finish", lambda: cluster.job_finished(waiting))
     (cluster.RUNTIME / "jobs" / f"release-{braket}").touch()
     cluster.wait_for("the Braket job to finish", lambda: cluster.job_finished(braket))
@@ -159,7 +156,7 @@ def main() -> None:
     for vendor in DEVICES:
         wheels = list((options.dist / vendor).glob("*.whl"))
         source = getattr(options, vendor).resolve()
-        if len(wheels) != 1 or not (source / "test/slurm/probe.py").is_file():
+        if len(wheels) != 1 or not (source / "test/slurm/setup.sh").is_file():
             parser.error(f"Supply one {vendor} wheel under --dist/{vendor} and its source checkout")
         cluster.COMPOSE_ENV[f"MQT_CORE_SLURM_{vendor.upper()}"] = str(source)
     cluster.main(

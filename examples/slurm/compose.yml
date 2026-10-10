@@ -36,13 +36,22 @@ services:
         workload: ${MQT_CORE_SLURM_WORKLOAD:-.}
         dist: ${MQT_CORE_SLURM_DIST:-../../dist}
       args:
+        BUILDKIT_SYNTAX: docker/dockerfile:1.19
         SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
     hostname: controller
     command: [/usr/local/sbin/mqt-slurm-start, controller]
     healthcheck:
       <<: *healthcheck
       test:
-        [CMD, systemctl, is-active, --quiet, munge.service, slurmctld.service]
+        [
+          CMD,
+          systemctl,
+          is-active,
+          --quiet,
+          munge.service,
+          slurmctld.service,
+          qdmi-admission.service,
+        ]
 
   node:
     <<: *cluster

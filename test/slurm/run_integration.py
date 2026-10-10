@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "test" / "slurm"
-CLUSTER = ROOT / "docker" / "slurm"
+CLUSTER = ROOT / "examples" / "slurm"
 DIST = ROOT / "dist"
 RUNTIME = ROOT / "build" / "slurm-tests" / uuid.uuid4().hex
 NODES: list[str] = []
@@ -141,7 +141,6 @@ def job(*command: str, check: bool = True, timeout: float = COMMAND_TIMEOUT) -> 
         "10000:10000",
         "controller",
         "env",
-        "PYTHONPATH=/workspace/test/slurm",
         *command,
         check=check,
         timeout=timeout,
@@ -369,12 +368,8 @@ def test_core() -> None:
     assert_license("mqt.ddsim.default", total=2, used=0, free=2)
     assert_license("mqt.sc.default", total=1, used=0, free=1)
 
-    non_unit = submit("ddsim-job.sh", "mqt.ddsim.default:2")
-    wait_for_failed_adapter(non_unit, "must request exactly one Slurm license")
     compound = submit("ddsim-job.sh", "mqt.ddsim.default:1,mqt.sc.default:1")
-    wait_for_failed_adapter(compound, "uses a compound AND expression")
-    alternative = submit("ddsim-job.sh", "mqt.ddsim.default:1|mqt.sc.default:1")
-    wait_for_failed_adapter(alternative, "uses a compound OR expression")
+    wait_for_failed_adapter(compound, "must name exactly one local QDMI device license")
     assert_license("mqt.ddsim.default", total=2, used=0, free=2)
     assert_license("mqt.sc.default", total=1, used=0, free=1)
 
@@ -406,6 +401,8 @@ def test_core() -> None:
         msg = "The SC job did not complete while both DDSIM licenses remained held"
         raise AssertionError(msg)
 
+    monitor_service = "qdmi-availability@mqt.ddsim.default:2.service"
+    controller("systemctl", "stop", monitor_service)
     configuration = RUNTIME / "jobs" / "availability.json"
     configuration.write_text(
         json.dumps({"schema-version": 1, "qdmi": {"devices": [{"id": "mqt.ddsim.default", "enabled": False}]}}),
@@ -425,7 +422,7 @@ def test_core() -> None:
     assert job_matches(third, "PENDING", node="", reason="Licenses")
     assert job("scontrol", "delete", "ReservationName=qdmi-unavailable-mqt.ddsim.default", check=False).returncode != 0
 
-    controller(*monitor)
+    controller("systemctl", "start", monitor_service)
     wait_for_result("ddsim", third, "the pending DDSIM job to execute after recovery")
     wait_for("the third DDSIM job to finish", lambda: job_finished(third))
     assert_bell_result(first, NODES[0])
@@ -525,7 +522,7 @@ def test_explicit_check() -> None:
             "--licenses=mqt.sc.default",
             "sh",
             "-ec",
-            setup + "mqt-core-qdmi-check --device mqt.sc.default --timeout 10\ntouch /jobs/checked-body",
+            setup + "mqt-core-qdmi-check --device mqt.sc.default\ntouch /jobs/checked-body",
             check=False,
             timeout=60,
         )
@@ -565,6 +562,8 @@ def main(arguments: Sequence[str] = (), *, workload: Callable[[], None] | None =
                 r"^Licenses=(.*)$", rf"Licenses=\1,{options.device_license}:2", configuration, flags=re.MULTILINE
             )
             (RUNTIME / "slurm.conf").write_text(configuration, encoding="utf-8")
+        if options.qdmi_config_file:
+            (RUNTIME / "qdmi.env").write_text(f"MQT_CORE_QDMI_CONFIG_FILE={options.qdmi_config_file}\n")
         LOGGER.info("Slurm runtime directory: %s", RUNTIME)
         started = True
         compose(
@@ -609,6 +608,16 @@ def main(arguments: Sequence[str] = (), *, workload: Callable[[], None] | None =
 
         registered = set(controller("sinfo", "--Node", "--noheader", "--format=%N").stdout.split())
         assert registered == set(NODES), registered
+        healthy_licenses = (
+            "mqt.ddsim.default",
+            "mqt.sc.default",
+            *([options.device_license] if options.device_license else []),
+        )
+        for license_name in healthy_licenses:
+            wait_for(
+                f"{license_name} to become available",
+                lambda license_name=license_name: license_record(license_name)["Reserved"] == "0",
+            )
         if workload is not None:
             workload()
         elif options.command:

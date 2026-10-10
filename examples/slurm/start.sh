@@ -22,4 +22,7 @@ install -o munge -g munge -m 0400 /runtime/munge.key /etc/munge/munge.key
 install -d -o slurm -g slurm -m 0755 /var/spool/slurmctld /var/log/slurm
 install -d -o root -g root -m 0755 /var/spool/slurmd
 systemctl enable munge.service "$daemon.service"
+if [ "$daemon" = slurmctld ]; then
+    systemctl enable qdmi-admission.service
+fi
 exec /usr/lib/systemd/systemd

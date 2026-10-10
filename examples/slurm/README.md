@@ -1,129 +1,155 @@
-# Update Slurm device availability
+# A Slurm cluster for QDMI workloads
 
-`update_availability.py` uses Slurm 25.11+ license-only reservations to keep
-jobs pending while a QDMI device is unavailable. It reserves the device's full
-local license count before each check and removes that reservation only after a
-successful check. Running jobs continue, and unrelated licenses remain usable.
-No SPANK plugin or SlurmDBD is required.
+This example runs quantum workloads through MQT Core's QDMI driver on a Slurm
+cluster. One shared Python 3.15 environment contains MQT Core and the device
+implementations. Jobs can use different devices concurrently, with separate
+licenses and credentials. An availability monitor keeps new jobs pending while
+their device is unavailable.
 
-Run one monitor per device, as root or the configured `SlurmUser`, on an
-administrative host with Slurm clients and the site's QDMI checker, catalogue,
-device implementation, and credentials. The controller itself needs no device
-implementation. The monitor's credentials must represent site access; a user's
-failed authentication must not change cluster-wide availability. Jobs retain
-their own credentials and must handle failures after allocation.
+The cluster has one controller and a configurable number of compute nodes. Each
+node provides two CPUs and 2 GiB of scheduled memory. Slurm enforces allocations
+with cgroup v2; jobs run as the unprivileged user `mqt-test` (UID/GID 10000).
+The [Slurm guide](../../docs/qdmi/slurm.md) explains the scheduling and QDMI
+interfaces used here.
 
-Devices from several vendors can share a Slurm cluster while using separate
-runtime environments. Install MQT Core and one device implementation in each
-environment, and use a catalogue that enables only the monitored device. An
-explicit catalogue file retains installed wheel manifests: disable the device
-implementation's other presets in the file. The built-in driver initializes all
-enabled devices when opening a session, so a shared catalogue with an unrelated
-slow device can time out a healthy device's probe. Keep each monitor's runtime,
-catalogue, and credentials independent.
+## Start the cluster
 
-For `Licenses=mqt.ddsim.default:2`, run:
+Docker Compose supplies the hosts for this example. Use rootful Docker on a
+disposable Linux host with cgroup v2. The containers run systemd and need
+privileged access to the host cgroup hierarchy.
+
+From an MQT Core checkout, build a Python 3.15 wheel and prepare the cluster:
 
 ```console
-python3 update_availability.py --license mqt.ddsim.default:2 --checker /opt/qdmi/bin/mqt-core-qdmi-check
+uv build --python 3.15 --wheel --out-dir dist -Ccmake.define.DEPLOY=ON
+sh examples/slurm/prepare.sh
+docker compose -f examples/slurm/compose.yml up --build -d --wait --scale node=2
 ```
 
-The count must equal the full configured capacity. The monitor owns
-`qdmi-unavailable-mqt.ddsim.default`; reserve this name for it, and do not
-create overlapping license reservations. Each invocation renews the block for
-one year. Use `--block-only` to close admission without probing. Stop both the
-timer and its service before using this option for a manual outage, so an
-in-flight or later healthy check cannot reopen it.
+`dist` must contain exactly one MQT Core wheel. The image uses uv 0.13.0 to
+install the wheels into `/opt/venv`, which is on every node's `PATH`.
 
-Exit status is `0` for a successful readiness check or `--block-only`, `1` for a
-failed or timed-out probe with admission blocked, and `2` for invalid arguments
-or a controller operation failure. Alert on controller failures: an unreachable
-controller cannot be updated. Checker diagnostics are suppressed because they
-can contain credentials. Inspect device failures separately under the site's
-logging policy.
+The controller starts with its compute partition closed. It reserves every
+configured device license, starts the availability monitors, then opens the
+partition. Each monitor releases its reservation after a successful probe. This
+ordering also allows the cluster to start while a device is unavailable.
 
-The checker accepts `IDLE` and `BUSY` as operational states. The license count
-is the site's concurrency policy; this check does not measure the remote queue
-or reserve capacity at the service. Probe failures, including expired monitor
-credentials, leave admission closed until a later successful probe.
+Submit a job and inspect the cluster:
 
-## Poll with systemd
-
-Copy the example to `/opt/mqt-core/examples/slurm/`. Install the template
-`/etc/systemd/system/qdmi-availability@.service`:
-
-```ini
-[Unit]
-Description=Update QDMI device admission in Slurm (%i)
-Wants=network-online.target
-After=network-online.target munge.service
-
-[Service]
-Type=oneshot
-User=slurm
-EnvironmentFile=/etc/mqt-core/slurm/%i.env
-ExecStart=/usr/bin/python3 /opt/mqt-core/examples/slurm/update_availability.py --license ${QDMI_LICENSE} --checker ${QDMI_CHECKER}
-TimeoutStartSec=45
+```console
+docker compose -f examples/slurm/compose.yml exec --user 10000:10000 controller \
+  srun --licenses=mqt.sc.default python3 /workspace/test/slurm/sc_job.py
+docker compose -f examples/slurm/compose.yml exec controller sinfo
+docker compose -f examples/slurm/compose.yml exec controller scontrol show licenses
 ```
 
-Create one root-owned environment file per device. For example,
-`/etc/mqt-core/slurm/braket-sv1.env` can contain:
+The shared `/jobs` directory is `build/slurm/jobs` on the host. Slurm registers
+each compute node under its unique hostname. Add nodes with:
+
+```console
+docker compose -f examples/slurm/compose.yml up -d --wait --scale node=4
+```
+
+The partition accepts up to 128 nodes. Drain nodes and wait for their jobs
+before scaling down. Slurm retains stopped nodes until they are removed with
+`scontrol delete NodeName=...` or the cluster is recreated.
+
+## Multiple device implementations
+
+Build compatible wheels from the current MQT Core, QDMI-on-IQM, and
+Amazon-Braket-QDMI `main` branches. Put them together in `dist`:
+
+```text
+dist/
+  mqt_core-....whl
+  iqm_qdmi-....whl
+  amazon_braket_qdmi-....whl
+```
+
+All wheels share `/opt/venv`; subdirectories under `dist` are also accepted. The
+Qiskit and PennyLane adapters are installed with MQT Core. The driver discovers
+the installed device catalogues, and each targeted session initializes only its
+selected device. Sessions for IQM and Braket can therefore coexist in one
+process without initializing unrelated devices.
+
+Before starting the cluster, add the device license counts to
+`build/slurm/slurm.conf`, for example:
 
 ```ini
-QDMI_LICENSE=amazon.braket.sv1:2
-QDMI_CHECKER=/opt/runtimes/braket/bin/mqt-core-qdmi-check
-MQT_CORE_QDMI_CONFIG_FILE=/etc/mqt-core/catalogues/braket-sv1.json
-AWS_SHARED_CREDENTIALS_FILE=/etc/mqt-core/credentials/braket
+Licenses=mqt.ddsim.default:2,mqt.sc.default:1,iqm.emerald.mock:1,amazon.braket.sv1:2
+```
+
+Place the site's shared configuration in `build/slurm/qdmi.env`, using systemd
+`EnvironmentFile` syntax. The file is read only by the administrative monitors.
+For example:
+
+```ini
+MQT_CORE_QDMI_CONFIG_FILE=/jobs/catalogue.json
+IQM_TOKENS_FILE=/run/credentials/iqm.json
+AWS_SHARED_CREDENTIALS_FILE=/run/credentials/aws
 AWS_PROFILE=site-monitor
 ```
 
-For `/etc/mqt-core/slurm/iqm-emerald.env`:
+Mount these credential files read-only into the controller, and keep `qdmi.env`
+private to its administrator. Credentials stay outside the image. The
+integration overlays can also pass IQM and AWS credential variables into the
+controller at runtime. Configure each device's session parameters in the shared
+[catalogue](../../docs/qdmi/configuration.md).
 
-```ini
-QDMI_LICENSE=iqm.emerald:1
-QDMI_CHECKER=/opt/runtimes/iqm/bin/mqt-core-qdmi-check
-MQT_CORE_QDMI_CONFIG_FILE=/etc/mqt-core/catalogues/iqm-emerald.json
-IQM_TOKENS_FILE=/etc/mqt-core/credentials/iqm.json
-```
+Users submit jobs with their own credentials. Slurm exports the submission
+environment to jobs; a batch script can also select credentials before its
+`srun` steps. IQM and Braket settings use distinct variable names and can be
+present together. A successful site probe does not authorize an individual user.
 
-The `slurm` account needs read access to the catalogue and its credential file.
-Use credential-file references; do not put tokens or keys in command-line
-arguments. Install `/etc/systemd/system/qdmi-availability@.timer`:
+## Device availability
 
-```ini
-[Unit]
-Description=Poll QDMI device readiness (%i)
+`qdmi-availability@ID:COUNT.service` probes each device every 30 seconds. It
+reserves the device's full license count before probing and removes the
+reservation only when the device reports `IDLE` or `BUSY`. Failed or timed-out
+probes leave jobs pending with reason `Licenses`. Running jobs and other device
+licenses remain unaffected.
 
-[Timer]
-OnBootSec=1s
-OnUnitInactiveSec=30s
-AccuracySec=1s
-
-[Install]
-WantedBy=timers.target
-```
-
-Before opening the queue, establish blocks for every monitored license. For an
-existing cluster, this sequence pauses new allocations while retaining running
-jobs. Apply it to every partition that can request these licenses:
+The monitor runs outside Slurm daemons. Each check has a ten-second timeout;
+systemd restarts failed monitors and cleans up their child processes. Stopping a
+monitor closes its license until the service is restarted:
 
 ```console
-scontrol update PartitionName=compute State=DOWN
-python3 /opt/mqt-core/examples/slurm/update_availability.py --license amazon.braket.sv1:2 --block-only
-python3 /opt/mqt-core/examples/slurm/update_availability.py --license iqm.emerald:1 --block-only
-systemctl daemon-reload
-systemctl enable --now qdmi-availability@braket-sv1.timer qdmi-availability@iqm-emerald.timer
-scontrol update PartitionName=compute State=UP
+systemctl stop qdmi-availability@iqm.emerald.mock:1.service
+systemctl start qdmi-availability@iqm.emerald.mock:1.service
 ```
 
-For a new controller, start the affected partitions with `State=DOWN` in
-`slurm.conf`, then establish the blocks before setting them `UP`. Incorporate
-this ordering into site startup procedures.
+Run these commands on the controller, for example through `docker compose exec`.
+The monitor owns reservations named `qdmi-unavailable-ID`; do not create
+conflicting reservations. Inspect both `Free` and `Reserved` in
+`scontrol show licenses`: reserved tokens can still appear in `Free`.
 
-Polling gives a readiness snapshot. A device can fail after a successful probe,
-and a stopped timer after success leaves the license open. Supervise the timer
-and service; if the site requires a maximum observation age, an independent
-watchdog must run `--block-only` when that age is exceeded. A service
-`OnFailure` handler can alert or close admission, but cannot detect a stopped
-timer by itself. Inspect both `Free` and `Reserved` in `scontrol show licenses`:
-reserved tokens can still appear in `Free`.
+Availability is a snapshot. Jobs must handle failures after allocation, and
+administrators must investigate controller communication errors because an
+unreachable controller cannot receive reservation updates. Monitor credentials
+must represent site access; a user's expired token must not block everyone.
+
+## Integration tests and cleanup
+
+`test/slurm/run_integration.py` uses this cluster with a test overlay. Device
+implementation repositories supply their workload, credentials, and optional
+native-library installation through `MQT_CORE_SLURM_WORKLOAD`,
+`MQT_CORE_SLURM_SETUP_SCRIPT`, `PROVIDER_RUNTIME_COMPONENT`, and
+`PROVIDER_INSTALL_MODE` (`native` or `wheel`). Their Python adapters use the
+same environment in either mode. The independent device build stage lets MQT
+Core wheel changes reuse compiled device libraries.
+
+`test/slurm/multivendor.py` runs the IQM Emerald Resonance mock and Braket SV1
+workloads together, and checks that an IQM outage leaves Braket usable. These
+smoke tests make small, paid simulator requests; they do not use quantum
+hardware.
+
+Stop the cluster and remove its runtime files with:
+
+```console
+docker compose -f examples/slurm/compose.yml down --volumes
+rm -r build/slurm
+```
+
+Images and the build cache remain available. For independent clusters, select a
+Compose `--project-name`, set `MQT_CORE_SLURM_RUNTIME` to an absolute directory,
+and pass that directory to `prepare.sh`.
