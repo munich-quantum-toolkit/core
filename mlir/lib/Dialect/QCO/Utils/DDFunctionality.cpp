@@ -2750,8 +2750,9 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
           return sampleImpl(
               func,
               dd::makeZeroState(worker.prepared.qubits.numQubits, *worker.dd),
-              *worker.dd, count, workerRng, worker.prepared, &worker.shots,
-              nullptr, options, /*forceDynamic=*/true);
+              *worker.dd, count, workerRng, worker.prepared,
+              shotResults != nullptr ? &worker.shots : nullptr, nullptr,
+              options, /*forceDynamic=*/true);
         }));
       }
       std::map<std::string, size_t> counts;

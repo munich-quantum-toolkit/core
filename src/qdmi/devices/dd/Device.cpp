@@ -264,7 +264,7 @@ struct ProgramResult {
                         size_t* sizeRet) -> QDMI_STATUS;
 
   /// Translate the state vector DD to a dense vector of probabilities for QDMI
-  auto getProbabilities(size_t size, void* data, size_t* sizeRet)
+  auto getProbabilities(size_t size, void* data, size_t* sizeRet) const
       -> QDMI_STATUS;
 
   auto getResults(QDMI_Job_Result result, size_t size, void* data,
@@ -1035,10 +1035,12 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
     return QDMI_ERROR_NOTSUPPORTED;
   }
   std::call_once(stateVecSparseOnce_, [this] {
-    const auto sparse = ::dd::getSparseVector(stateVecDD_);
-    stateVecSparse_.assign(sparse.begin(), sparse.end());
-    std::ranges::sort(stateVecSparse_, {},
-                      &decltype(stateVecSparse_)::value_type::first);
+    stateVecSparse_.clear();
+    ::dd::traverseVector(
+        stateVecDD_,
+        [this](const size_t index, const std::complex<::dd::fp>& amplitude) {
+          stateVecSparse_.emplace_back(index, amplitude);
+        });
   });
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
@@ -1109,7 +1111,8 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
   return QDMI_SUCCESS;
 }
 auto qdmi::dd::ProgramResult::getProbabilities(const size_t size, void* data,
-                                               size_t* sizeRet) -> QDMI_STATUS {
+                                               size_t* sizeRet) const
+    -> QDMI_STATUS {
   const auto numQubits = stateVecDD_.isTerminal()
                              ? 0U
                              : static_cast<size_t>(stateVecDD_.p->v) + 1U;
@@ -1124,17 +1127,13 @@ auto qdmi::dd::ProgramResult::getProbabilities(const size_t size, void* data,
     if (size < reqSize) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    if (dimension > stateVec_.max_size()) {
-      return QDMI_ERROR_OUTOFMEM;
-    }
-    std::call_once(stateVecOnce_,
-                   [this] { stateVec_ = ::dd::getVector(stateVecDD_); });
-    // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
-    auto* dataPtr = static_cast<double*>(data);
-    for (const auto& c : stateVec_) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      *dataPtr++ = std::norm(c);
-    }
+    const std::span probabilities(static_cast<double*>(data), dimension);
+    std::ranges::fill(probabilities, 0.);
+    ::dd::traverseVector(
+        stateVecDD_, [probabilities](const size_t index,
+                                     const std::complex<::dd::fp>& amplitude) {
+          probabilities[index] = std::norm(amplitude);
+        });
   }
   if (sizeRet != nullptr) {
     *sizeRet = reqSize;
