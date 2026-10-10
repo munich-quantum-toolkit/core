@@ -106,6 +106,56 @@ target_link_libraries(my-application PRIVATE MQT::CoreDD)
 Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
 {doc}`installation` for source builds and other CMake integration options.
 
+## Handle native errors
+
+Fallible operations return `llvm::FailureOr<T>` or `llvm::LogicalResult` for
+status alone. Check `llvm::failed(result)` before dereferencing a value.
+Infallible operations return ordinary values or `void`. An `optional<T>` can
+represent successful absence, such as an unsupported optional QDMI property.
+Borrowed results use pointers; keep their owner alive.
+
+Use `create(...)` for fallible construction. Python reports invalid arguments as
+`ValueError`, range errors as `IndexError`, and unsupported direct QDMI
+operations as `RuntimeError`. Compiler target queries and submission failures
+raise `ValueError`; device lookup and source parsing use their respective
+exception categories.
+
+Diagnostics carry the message, severity, error category, and original QDMI
+status when applicable. Install a handler **before** calling the operation:
+
+```cpp
+#include "support/Diagnostics.hpp"
+
+mqt::ScopedDiagnosticHandler handler([](const mqt::Diagnostic& diagnostic) {
+  std::cerr << diagnostic.message << '\n';
+  return llvm::success();
+});
+auto package = dd::Package::create(2);
+if (llvm::failed(package)) {
+  return 1;
+}
+```
+
+Handlers run synchronously on their installing thread, newest first, and must
+not throw. Success consumes a diagnostic; failure forwards it to the previous
+handler. Unhandled diagnostics go to stderr. Install handlers on each worker
+thread. Diagnostics emitted inside a handler start at the previous handler.
+
+Compiler contexts created by Core forward MLIR diagnostics, including attached
+notes and locations, to these handlers. A later MLIR handler can consume a
+diagnostic before forwarding. Caller-owned contexts retain their handler policy.
+
+Standalone QDMI driver and device libraries embed their own diagnostic runtime.
+A caller's handler cannot capture messages from another runtime. QDMI C
+interfaces transfer status codes; provider messages remain in local logging.
+Client-side wrappers translate statuses to diagnostics and Python exceptions.
+Builds that enable shared Core libraries retain their shared dependencies.
+
+Native algorithms do not recover from allocation exhaustion or unexpected
+dependency exceptions. QDMI session allocation reports memory exhaustion through
+its C status. See [QIR runtime failures](qir/index.md#runtime-failures) for the
+direct-execution contract.
+
 ## Extend the compiler or QIR runtime
 
 The MLIR compiler and QIR runtime use source-tree C++ interfaces. They are not

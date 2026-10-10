@@ -15,6 +15,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -30,7 +31,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <array>
@@ -188,27 +188,27 @@ static std::optional<double> synthesisParameter(GateKind gate) {
   return canonical;
 }
 
-[[nodiscard]] static llvm::Error invalidTarget(const Twine& message) {
-  return llvm::createStringError(
-      std::make_error_code(std::errc::invalid_argument), message);
+[[nodiscard]] static LogicalResult invalidTarget(const Twine& message) {
+  return ::mqt::emitError(llvm::Twine(message).str(),
+                          ::mqt::ErrorCategory::InvalidArgument);
 }
 
-[[nodiscard]] static llvm::Error
+[[nodiscard]] static LogicalResult
 validatePositiveCoherenceTime(std::optional<uint64_t> time,
                               StringRef description) {
   if (time && *time == 0) {
     return invalidTarget(description + " must be positive");
   }
-  return llvm::Error::success();
+  return success();
 }
 
-[[nodiscard]] static llvm::Error
+[[nodiscard]] static LogicalResult
 validateFidelity(std::optional<double> fidelity, StringRef description) {
   if (fidelity &&
       (!std::isfinite(*fidelity) || *fidelity < 0. || *fidelity > 1.)) {
     return invalidTarget(description + " must be finite and in [0, 1]");
   }
-  return llvm::Error::success();
+  return success();
 }
 
 CompilerTarget::Connectivity CompilerTarget::Connectivity::allToAll() {
@@ -234,7 +234,7 @@ CompilerTarget::Connectivity::Connectivity(Kind kind,
                                            ArrayRef<Coupling> couplings)
     : kind_(kind), couplings_(couplings) {}
 
-[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Site>>
+[[nodiscard]] static FailureOr<std::vector<CompilerTarget::Site>>
 makeDenseSites(size_t numSites) {
   if (numSites == 0) {
     return invalidTarget("Compiler target must contain at least one site");
@@ -250,15 +250,15 @@ makeDenseSites(size_t numSites) {
   sites.reserve(numSites);
   for (size_t id = 0; id < numSites; ++id) {
     auto site = CompilerTarget::Site::create(static_cast<SiteId>(id));
-    if (!site) {
-      return site.takeError();
+    if (failed(site)) {
+      return failure();
     }
     sites.emplace_back(std::move(*site));
   }
   return sites;
 }
 
-llvm::Expected<CompilerTarget::DurationUnit>
+FailureOr<CompilerTarget::DurationUnit>
 CompilerTarget::DurationUnit::create(std::string unit, double scaleFactor) {
   if (StringRef(unit).trim().empty()) {
     return invalidTarget("Compiler target duration unit must not be empty");
@@ -279,7 +279,7 @@ double CompilerTarget::DurationUnit::scaleFactor() const noexcept {
   return scaleFactor_;
 }
 
-llvm::Expected<CompilerTarget::Site>
+FailureOr<CompilerTarget::Site>
 CompilerTarget::Site::create(SiteId id, std::optional<std::string> name,
                              std::optional<uint64_t> t1,
                              std::optional<uint64_t> t2) {
@@ -290,13 +290,11 @@ CompilerTarget::Site::create(SiteId id, std::optional<std::string> name,
     return invalidTarget(
         "Compiler target site name must not be empty when present");
   }
-  if (auto error =
-          validatePositiveCoherenceTime(t1, "Compiler target site T1")) {
-    return std::move(error);
+  if (failed(validatePositiveCoherenceTime(t1, "Compiler target site T1"))) {
+    return failure();
   }
-  if (auto error =
-          validatePositiveCoherenceTime(t2, "Compiler target site T2")) {
-    return std::move(error);
+  if (failed(validatePositiveCoherenceTime(t2, "Compiler target site T2"))) {
+    return failure();
   }
   return Site(id, std::move(name), t1, t2);
 }
@@ -323,7 +321,7 @@ std::optional<uint64_t> CompilerTarget::Site::t2() const noexcept {
   return t2_;
 }
 
-llvm::Expected<CompilerTarget::SiteTuple>
+FailureOr<CompilerTarget::SiteTuple>
 CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
                                   std::optional<uint64_t> duration,
                                   std::optional<double> fidelity) {
@@ -338,9 +336,9 @@ CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
           "Compiler target site tuple contains a duplicate site");
     }
   }
-  if (auto error =
-          validateFidelity(fidelity, "Compiler target site-tuple fidelity")) {
-    return std::move(error);
+  if (failed(
+          validateFidelity(fidelity, "Compiler target site-tuple fidelity"))) {
+    return failure();
   }
   return SiteTuple(std::move(sites), duration, fidelity);
 }
@@ -390,7 +388,7 @@ CompilerTarget::OperationCapability::Arity::Arity(Kind kind,
                                                   size_t value) noexcept
     : kind_(kind), value_(value) {}
 
-llvm::Expected<CompilerTarget::OperationCapability>
+FailureOr<CompilerTarget::OperationCapability>
 CompilerTarget::OperationCapability::create(
     std::string name, size_t arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
@@ -404,7 +402,7 @@ CompilerTarget::OperationCapability::create(
                 std::move(parameterBounds));
 }
 
-llvm::Expected<CompilerTarget::OperationCapability>
+FailureOr<CompilerTarget::OperationCapability>
 CompilerTarget::OperationCapability::create(
     std::string name, Arity arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
@@ -421,9 +419,9 @@ CompilerTarget::OperationCapability::create(
     return invalidTarget(
         "Compiler target canonical operation name must not be empty");
   }
-  if (auto error =
-          validateFidelity(fidelity, "Compiler target operation fidelity")) {
-    return std::move(error);
+  if (failed(
+          validateFidelity(fidelity, "Compiler target operation fidelity"))) {
+    return failure();
   }
   if (arity.kind() == Arity::Kind::Variadic && arity.value() == 0) {
     return invalidTarget(
@@ -605,7 +603,7 @@ struct CompilerTarget::Storage {
           SmallVector<OperationCapability> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
-  [[nodiscard]] llvm::Error initialize();
+  [[nodiscard]] LogicalResult initialize();
   void computeDistances(size_t source, MutableArrayRef<size_t> row) const;
 
   [[nodiscard]] bool supportsOperation(
@@ -672,7 +670,7 @@ void CompilerTarget::Storage::computeDistances(
   }
 }
 
-llvm::Error CompilerTarget::Storage::initialize() {
+LogicalResult CompilerTarget::Storage::initialize() {
   if (name && name->empty()) {
     return invalidTarget("Compiler target name must not be empty when present");
   }
@@ -781,7 +779,7 @@ llvm::Error CompilerTarget::Storage::initialize() {
     }
   }
   basis = resolveSynthesisBasis();
-  return llvm::Error::success();
+  return success();
 }
 
 static bool
@@ -1043,33 +1041,33 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   };
 }
 
-llvm::Expected<CompilerTarget>
+FailureOr<CompilerTarget>
 CompilerTarget::create(size_t numSites, Connectivity connectivity,
                        NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
   auto sites = makeDenseSites(numSites);
-  if (!sites) {
-    return sites.takeError();
+  if (failed(sites)) {
+    return failure();
   }
   return createImpl(std::nullopt, std::move(*sites), std::move(connectivity),
                     std::move(nativeOperations), std::move(durationUnit));
 }
 
-llvm::Expected<CompilerTarget>
+FailureOr<CompilerTarget>
 CompilerTarget::create(std::string name, size_t numSites,
                        Connectivity connectivity,
                        NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
   auto sites = makeDenseSites(numSites);
-  if (!sites) {
-    return sites.takeError();
+  if (failed(sites)) {
+    return failure();
   }
   return createImpl(std::optional<std::string>(std::move(name)),
                     std::move(*sites), std::move(connectivity),
                     std::move(nativeOperations), std::move(durationUnit));
 }
 
-llvm::Expected<CompilerTarget>
+FailureOr<CompilerTarget>
 CompilerTarget::create(std::vector<Site> sites, Connectivity connectivity,
                        NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
@@ -1077,7 +1075,7 @@ CompilerTarget::create(std::vector<Site> sites, Connectivity connectivity,
                     std::move(nativeOperations), std::move(durationUnit));
 }
 
-llvm::Expected<CompilerTarget>
+FailureOr<CompilerTarget>
 CompilerTarget::create(std::string name, std::vector<Site> sites,
                        Connectivity connectivity,
                        NativeOperations nativeOperations,
@@ -1087,7 +1085,7 @@ CompilerTarget::create(std::string name, std::vector<Site> sites,
                     std::move(nativeOperations), std::move(durationUnit));
 }
 
-llvm::Expected<CompilerTarget>
+FailureOr<CompilerTarget>
 CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
   if (!attribute) {
     return invalidTarget("Compiler target attribute must not be null");
@@ -1117,8 +1115,8 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
     }
     auto site = Site::create(siteAttr.getId(), std::move(siteName),
                              siteAttr.getT1(), siteAttr.getT2());
-    if (!site) {
-      return site.takeError();
+    if (failed(site)) {
+      return failure();
     }
     sites.emplace_back(std::move(*site));
   }
@@ -1128,8 +1126,8 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
     auto unit =
         DurationUnit::create(unitAttr.getUnit().getValue().str(),
                              unitAttr.getScaleFactor().getValueAsDouble());
-    if (!unit) {
-      return unit.takeError();
+    if (failed(unit)) {
+      return failure();
     }
     durationUnit = std::move(*unit);
   }
@@ -1169,8 +1167,8 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
             SiteTuple::create(std::vector<SiteId>(tupleAttr.getSites().begin(),
                                                   tupleAttr.getSites().end()),
                               tupleAttr.getDuration(), fidelity);
-        if (!siteTuple) {
-          return siteTuple.takeError();
+        if (failed(siteTuple)) {
+          return failure();
         }
         siteTuples.emplace_back(std::move(*siteTuple));
       }
@@ -1222,8 +1220,8 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
               ? std::optional{operationAttr.getCanonicalName().getValue().str()}
               : std::nullopt,
           std::move(parameterBounds));
-      if (!operation) {
-        return operation.takeError();
+      if (failed(operation)) {
+        return failure();
       }
       operations.emplace_back(std::move(*operation));
     }
@@ -1234,7 +1232,7 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
                     std::move(nativeOperations), std::move(durationUnit));
 }
 
-llvm::Expected<CompilerTarget>
+FailureOr<CompilerTarget>
 CompilerTarget::createImpl(std::optional<std::string> name,
                            std::vector<Site> sites, Connectivity connectivity,
                            NativeOperations nativeOperations,
@@ -1243,8 +1241,8 @@ CompilerTarget::createImpl(std::optional<std::string> name,
       std::move(name), std::move(sites), connectivity.kind_,
       std::move(connectivity.couplings_), nativeOperations.kind_,
       std::move(nativeOperations.operations_), std::move(durationUnit));
-  if (auto error = storage->initialize()) {
-    return std::move(error);
+  if (failed(storage->initialize())) {
+    return failure();
   }
   return CompilerTarget(std::move(storage));
 }

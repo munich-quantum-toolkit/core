@@ -9,35 +9,42 @@
  */
 
 #include "dd/CachedEdge.hpp"
+#include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "llvm/Support/LogicalResult.h"
+
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <ios>
 #include <istream>
-#include <regex>
-#include <stdexcept>
+#include <memory>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
-#include <utility>
 
 namespace dd {
 
-template <class Node, std::size_t N>
-CachedEdge<Node>
-Package::deserializeNode(const std::int64_t index, const Qubit v,
-                         std::array<std::int64_t, N>& edgeIdx,
+template <class Node, size_t N>
+llvm::FailureOr<CachedEdge<Node>>
+Package::deserializeNode(const int64_t index, const Qubit v,
+                         const std::array<int64_t, N>& edgeIdx,
                          const std::array<ComplexValue, N>& edgeWeight,
-                         std::unordered_map<std::int64_t, Node*>& nodes) {
+                         std::unordered_map<int64_t, Node*>& nodes) {
   if (index < 0 || v >= qubits() || nodes.contains(index)) {
-    throw std::runtime_error("Invalid serialized DD node index or qubit.");
+    return ::mqt::emitError("Invalid serialized DD node index or qubit.",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
 
   std::array<CachedEdge<Node>, N> edges{};
@@ -51,186 +58,199 @@ Package::deserializeNode(const std::int64_t index, const Qubit v,
         const auto child = nodes.find(edgeIdx[i]);
         if (child == nodes.end() ||
             (!Node::isTerminal(child->second) && child->second->v >= v)) {
-          throw std::runtime_error(
-              "Serialized DD edges must refer to preceding nodes on lower "
-              "qubits.");
+          return ::mqt::emitError(
+              "Serialized DD edges must refer to preceding nodes on "
+              "lower qubits.",
+              ::mqt::ErrorCategory::InvalidArgument);
         }
         edges[i].p = child->second;
       }
       if (!std::isfinite(edgeWeight[i].r) || !std::isfinite(edgeWeight[i].i)) {
-        throw std::runtime_error("Serialized DD weights must be finite.");
+        return ::mqt::emitError("Serialized DD weights must be finite.",
+                                ::mqt::ErrorCategory::InvalidArgument);
       }
       edges[i].w = edgeWeight[i];
     }
     if constexpr (IsVector<Node>) {
       if (!edges[i].w.exactlyZero() &&
           (edges[i].isTerminal() ? v != 0 : edges[i].p->v + 1 != v)) {
-        throw std::runtime_error(
+        return ::mqt::emitError(
             "Serialized vector DD edges must follow consecutive qubit "
-            "levels.");
+            "levels.",
+            ::mqt::ErrorCategory::InvalidArgument);
       }
     }
   }
-  // reset
-  edgeIdx.fill(-2);
-
   auto r = makeDDNode(v, edges);
   nodes[index] = r.p;
   return r;
 }
 
-template <class Node, class Edge, std::size_t N>
-Edge Package::deserialize(std::istream& is, const bool readBinary) {
+template <class Node, class Edge, size_t N>
+llvm::FailureOr<Edge> Package::deserialize(std::istream& is,
+                                           const bool readBinary) {
+  if (is.exceptions() != std::ios::goodbit) {
+    return ::mqt::emitError(
+        "DD deserialization requires a stream without exception flags.",
+        ::mqt::ErrorCategory::IO);
+  }
   auto result = CachedEdge<Node>::one();
   ComplexValue rootweight{};
-
-  std::unordered_map<std::int64_t, Node*> nodes{};
-  std::int64_t nodeIndex{};
-  Qubit v{};
-  std::array<ComplexValue, N> edgeWeights{};
-  std::array<std::int64_t, N> edgeIndices{};
-  edgeIndices.fill(-2);
-
+  std::unordered_map<int64_t, Node*> nodes;
+  const auto invalid = [] {
+    return ::mqt::emitError("Invalid or truncated serialized DD.",
+                            ::mqt::ErrorCategory::InvalidArgument);
+  };
+  const auto readInteger = []<typename T>(std::string_view& input, T& value) {
+    if (input.empty()) {
+      return false;
+    }
+    const auto parsed = std::from_chars(std::to_address(input.begin()),
+                                        std::to_address(input.end()), value);
+    if (parsed.ec != std::errc{}) {
+      return false;
+    }
+    input.remove_prefix(static_cast<size_t>(parsed.ptr - input.data()));
+    return true;
+  };
   if (readBinary) {
     std::remove_const_t<decltype(SERIALIZATION_VERSION)> version{};
-    is.read(reinterpret_cast<char*>(&version),
-            sizeof(decltype(SERIALIZATION_VERSION)));
-    if (!is) {
-      throw std::runtime_error("Truncated serialized DD version.");
+    is.read(reinterpret_cast<char*>(&version), sizeof(version));
+    if (!is || version != SERIALIZATION_VERSION) {
+      return invalid();
     }
-    if (version != SERIALIZATION_VERSION) {
-      throw std::runtime_error(
-          "Wrong Version of serialization file version. version of file: " +
-          std::to_string(version) +
-          "; current version: " + std::to_string(SERIALIZATION_VERSION));
-    }
-
     rootweight.readBinary(is);
-    if (!is) {
-      throw std::runtime_error("Truncated serialized DD root weight.");
+    if (!is || !std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
+      return invalid();
     }
-
-    while (is.read(reinterpret_cast<char*>(&nodeIndex),
-                   sizeof(decltype(nodeIndex)))) {
-      is.read(reinterpret_cast<char*>(&v), sizeof(decltype(v)));
-      for (std::size_t i = 0U; i < N; i++) {
-        is.read(reinterpret_cast<char*>(&edgeIndices[i]),
-                sizeof(decltype(edgeIndices[i])));
-        edgeWeights[i].readBinary(is);
+    while (true) {
+      int64_t index{};
+      is.read(reinterpret_cast<char*>(&index), sizeof(index));
+      if (!is) {
+        if (is.eof() && is.gcount() == 0) {
+          break;
+        }
+        return invalid();
+      }
+      Qubit wire{};
+      is.read(reinterpret_cast<char*>(&wire), sizeof(wire));
+      std::array<int64_t, N> indices{};
+      std::array<ComplexValue, N> weights{};
+      for (size_t i = 0; i < N; ++i) {
+        is.read(reinterpret_cast<char*>(&indices[i]), sizeof(indices[i]));
+        weights[i].readBinary(is);
       }
       if (!is) {
-        throw std::runtime_error("Truncated serialized DD node.");
+        return invalid();
       }
-      result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-    }
-    if (!is.eof() || is.gcount() != 0) {
-      throw std::runtime_error("Truncated serialized DD node index.");
+      auto node = deserializeNode(index, wire, indices, weights, nodes);
+      if (llvm::failed(node)) {
+        return llvm::failure();
+      }
+      result = (*node);
     }
   } else {
-    std::string version;
-    if (!std::getline(is, version)) {
-      throw std::runtime_error("Missing serialized DD version.");
-    }
-    size_t versionEnd = 0;
-    if (std::cmp_not_equal(std::stoi(version, &versionEnd),
-                           SERIALIZATION_VERSION) ||
-        versionEnd != version.size()) {
-      throw std::runtime_error(
-          "Wrong Version of serialization file version. version of file: " +
-          version +
-          "; current version: " + std::to_string(SERIALIZATION_VERSION));
-    }
-
-    const std::string complexRealRegex =
-        R"(([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![ \d\.]*(?:[eE][+-])?\d*[iI]))?)";
-    const std::string complexImagRegex =
-        R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
-    const std::string edgeRegex =
-        " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-    const std::regex complexWeightRegex(complexRealRegex + complexImagRegex);
-
-    std::string lineConstruct = "(\\d+) (\\d+)";
-    for (std::size_t i = 0U; i < N; ++i) {
-      lineConstruct += "(?:" + edgeRegex + ")";
-    }
-    lineConstruct += " *(?:#.*)?";
-    const std::regex lineRegex(lineConstruct);
-    std::smatch m;
-
     std::string line;
+    if (!std::getline(is, line)) {
+      return invalid();
+    }
+    std::string_view text = line;
+    uint64_t version{};
+    if (!readInteger(text, version) || !text.empty() ||
+        version != SERIALIZATION_VERSION) {
+      return invalid();
+    }
     if (!std::getline(is, line) || line.empty()) {
-      throw std::runtime_error("Missing serialized DD root weight.");
+      return invalid();
     }
-    if (!std::regex_match(line, m, complexWeightRegex)) {
-      throw std::runtime_error("Regex did not match second line: " + line);
+    auto weight = ComplexValue::parse(line);
+    if (llvm::failed(weight)) {
+      return llvm::failure();
     }
-    rootweight.fromString(m.str(1), m.str(2));
-
+    rootweight = (*weight);
     while (std::getline(is, line)) {
       if (line.empty()) {
         continue;
       }
-
-      if (!std::regex_match(line, m, lineRegex)) {
-        throw std::runtime_error("Regex did not match line: " + line);
+      text = line;
+      int64_t index{};
+      size_t wire{};
+      if (!readInteger(text, index) || index < 0 || !text.starts_with(' ')) {
+        return invalid();
       }
-
-      // match 1: node_idx
-      // match 2: qubit_idx
-
-      // repeats for every edge
-      // match 3: edge content
-      // match 4: edge_target_idx
-      // match 5: real + imag (without i)
-      // match 6: real
-      // match 7: imag (without i)
-      nodeIndex = std::stoll(m.str(1));
-      const auto qubit = std::stoull(m.str(2));
-      if (qubit >= qubits()) {
-        throw std::runtime_error("Invalid serialized DD qubit.");
+      text.remove_prefix(1);
+      if (!readInteger(text, wire) || wire >= qubits()) {
+        return invalid();
       }
-      v = static_cast<Qubit>(qubit);
-
-      for (auto edgeIdx = 3U, i = 0U; i < N; i++, edgeIdx += 5) {
-        if (m.str(edgeIdx).empty()) {
+      std::array<int64_t, N> indices{};
+      indices.fill(-2);
+      std::array<ComplexValue, N> weights{};
+      for (size_t i = 0; i < N; ++i) {
+        if (!text.starts_with(" (")) {
+          return invalid();
+        }
+        text.remove_prefix(2);
+        const auto end = text.find(')');
+        if (end == std::string_view::npos) {
+          return invalid();
+        }
+        auto edge = text.substr(0, end);
+        text.remove_prefix(end + 1);
+        if (edge.empty()) {
           continue;
         }
-
-        if (m.str(edgeIdx + 2).empty()) {
-          throw std::runtime_error("Missing serialized DD edge weight.");
+        if (!readInteger(edge, indices[i]) || !edge.starts_with(' ')) {
+          return invalid();
         }
-        edgeIndices[i] = std::stoll(m.str(edgeIdx + 1));
-        edgeWeights[i].fromString(m.str(edgeIdx + 3), m.str(edgeIdx + 4));
+        edge.remove_prefix(1);
+        if (edge.empty()) {
+          return invalid();
+        }
+        auto edgeWeight = ComplexValue::parse(edge);
+        if (llvm::failed(edgeWeight)) {
+          return llvm::failure();
+        }
+        weights[i] = (*edgeWeight);
       }
-
-      result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
+      while (text.starts_with(' ')) {
+        text.remove_prefix(1);
+      }
+      if (!text.empty() && !text.starts_with('#')) {
+        return invalid();
+      }
+      auto node = deserializeNode(index, static_cast<Qubit>(wire), indices,
+                                  weights, nodes);
+      if (llvm::failed(node)) {
+        return llvm::failure();
+      }
+      result = (*node);
     }
   }
   if (is.bad()) {
-    throw std::runtime_error("Cannot read serialized DD.");
-  }
-  if (!std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
-    throw std::runtime_error("Serialized DD weights must be finite.");
+    return ::mqt::emitError("Cannot read serialized DD.",
+                            ::mqt::ErrorCategory::IO);
   }
   return cn.lookup(CachedEdge<Node>{result.p, result.w * rootweight});
 }
 
 template <class Node, class Edge>
-Edge Package::deserialize(const std::string& inputFilename,
-                          const bool readBinary) {
-  auto ifs = std::ifstream(inputFilename, std::ios::binary);
-
-  if (!ifs.good()) {
-    throw std::invalid_argument("Cannot open serialized file: " +
-                                inputFilename);
+llvm::FailureOr<Edge> Package::deserialize(const std::string& inputFilename,
+                                           const bool readBinary) {
+  auto input = std::ifstream(inputFilename, std::ios::binary);
+  if (!input) {
+    return ::mqt::emitError("Cannot open serialized file: " + inputFilename,
+                            ::mqt::ErrorCategory::IO);
   }
-
-  return deserialize<Node>(ifs, readBinary);
+  return deserialize<Node>(input, readBinary);
 }
 
-template vEdge Package::deserialize<vNode>(std::istream&, bool);
-template mEdge Package::deserialize<mNode>(std::istream&, bool);
-template vEdge Package::deserialize<vNode>(const std::string&, bool);
-template mEdge Package::deserialize<mNode>(const std::string&, bool);
+template llvm::FailureOr<vEdge> Package::deserialize<vNode>(std::istream&,
+                                                            bool);
+template llvm::FailureOr<mEdge> Package::deserialize<mNode>(std::istream&,
+                                                            bool);
+template llvm::FailureOr<vEdge> Package::deserialize<vNode>(const std::string&,
+                                                            bool);
+template llvm::FailureOr<mEdge> Package::deserialize<mNode>(const std::string&,
+                                                            bool);
 
 } // namespace dd

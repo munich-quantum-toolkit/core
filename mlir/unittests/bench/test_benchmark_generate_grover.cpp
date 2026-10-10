@@ -11,14 +11,15 @@
 #include "bench/Grover.hpp"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
 namespace mqt::bench {
 
 TEST(GenerateProgramTest, SamplesGroverAgainstReference) {
-  test::expectSamplingMatchesReference(
-      Grover{{.markedBitstring = "01", .iterations = 1}});
+  test::expectSamplingMatchesReference(::mqt::test::value(
+      Grover::create({.markedBitstring = "01", .iterations = 1})));
 }
 
 } // namespace mqt::bench

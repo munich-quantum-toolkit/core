@@ -79,9 +79,9 @@ void registerMQTCompilerPasses() {
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
-    mqt::registerNormalizeGlobalPhases();
-    mqt::registerSimplifyClassicalControl();
-    mqt::registerUnrollModifiers();
+    mlir::mqt::registerNormalizeGlobalPhases();
+    mlir::mqt::registerSimplifyClassicalControl();
+    mlir::mqt::registerUnrollModifiers();
     qc::registerShrinkQubitRegistersPass();
     qtensor::registerShrinkQTensorToFitPass();
     qir::registerQIRPasses();
@@ -103,8 +103,8 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
 
 void populateQIRPreparationPipeline(OpPassManager& pm) {
   pm.addPass(createInlinerPass());
-  pm.addPass(mqt::createNormalizeGlobalPhases());
-  pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createCanonicalizerPass());
 }
 

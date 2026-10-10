@@ -24,6 +24,8 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -997,11 +999,11 @@ U(0.4, -0.2, 0.7) q;
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
   ASSERT_TRUE(succeeded(manager.run(*roundTrip)));
-  dd::Package package(1);
+  auto package = ::mqt::test::value(dd::Package::create(1));
   auto before =
-      qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), package);
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), *package);
   auto after =
-      qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), *package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
   const auto expected = dd::getMatrix(*before, 1);
@@ -1098,9 +1100,9 @@ wrapper(0.25) q;
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
     checkGateStructure(moduleOp);
-    dd::Package package(1);
+    auto package = ::mqt::test::value(dd::Package::create(1));
     auto functionality =
-        qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
+        qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), *package);
     ASSERT_TRUE(succeeded(functionality));
     const auto matrix = dd::getMatrix(*functionality, 1);
     // The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
@@ -1827,9 +1829,9 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   PassManager manager(&context);
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(2);
+  auto package = ::mqt::test::value(dd::Package::create(2));
   auto functionality = qco::buildFunctionality(
-      restored->lookupSymbol<func::FuncOp>("main"), package);
+      restored->lookupSymbol<func::FuncOp>("main"), *package);
   ASSERT_TRUE(succeeded(functionality));
   const auto matrix = dd::getMatrix(*functionality, 2);
   for (size_t row = 0; row < 4; ++row) {
@@ -2191,11 +2193,13 @@ TEST(OpenQASM3EmissionTest, RejectsExplicitRuntimeAssertionsWithoutOutput) {
   std::string output;
   llvm::raw_string_ostream stream(output);
   bool diagnosed = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnosed |= diagnostic.str().find("unsupported operation 'cf.assert'") !=
-                 std::string::npos;
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |=
+            diagnostic.str().find("unsupported operation 'cf.assert'") !=
+            std::string::npos;
+        return mlir::success();
+      });
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
   EXPECT_TRUE(diagnosed);
   EXPECT_TRUE(output.empty());
@@ -2727,7 +2731,8 @@ TEST(OpenQASM3EmissionTest,
           *emitted, &context,
           {.gatePolicy = openqasm::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
-      dd::Package package(width);
+      auto packageOwner = ::mqt::test::value(dd::Package::create(width));
+      auto& package = *packageOwner;
       PassManager manager(&context);
       manager.addPass(createInlinerPass());
       manager.addPass(createCanonicalizerPass());

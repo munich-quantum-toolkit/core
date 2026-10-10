@@ -19,6 +19,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -37,7 +38,8 @@ namespace mqt::bench {
 
 TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
   for (const size_t qubits : {1U, 3U, 16U}) {
-    const WState benchmark{{.qubits = qubits}};
+    const auto benchmark =
+        ::mqt::test::value(WState::create({.qubits = qubits}));
     auto qc = generate(benchmark);
     ASSERT_TRUE(mlir::succeeded(qc));
     if (qubits > 1) {
@@ -46,18 +48,20 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
     auto qco = qc->copy().intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
     const auto before = qco->str();
-    dd::Package package(0);
+    auto package = ::mqt::test::value(dd::Package::create(0));
     const auto root = mlir::qco::simulateStatevector(
-        mlir::mqt::getEntryPoint(qco->module()), package);
+        mlir::mqt::getEntryPoint(qco->module()), *package);
     ASSERT_TRUE(mlir::succeeded(root));
     EXPECT_EQ(qco->str(), before);
     qco.reset();
-    EXPECT_NEAR(package.fidelity(*root, dd::makeWState(qubits, package)), 1.,
-                1e-10);
+    EXPECT_NEAR(package->fidelity(*root, ::mqt::test::value(
+                                             dd::makeWState(qubits, *package))),
+                1., 1e-10);
     for (size_t wire = 0; wire < qubits; ++wire) {
       auto outcome = std::string(qubits, '0');
       outcome[qubits - wire - 1] = '1';
-      const auto amplitude = root->getValueByPath(qubits, outcome);
+      const auto amplitude =
+          ::mqt::test::value(root->getValueByPath(qubits, outcome));
       EXPECT_NEAR(amplitude.real(), 1. / std::sqrt(static_cast<double>(qubits)),
                   1e-10);
       EXPECT_NEAR(amplitude.imag(), 0., 1e-10);
@@ -69,7 +73,7 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
 
 TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   constexpr size_t qubits = 1024;
-  const WState benchmark{{.qubits = qubits}};
+  const auto benchmark = ::mqt::test::value(WState::create({.qubits = qubits}));
   auto qc = generate(benchmark);
   ASSERT_TRUE(mlir::succeeded(qc));
   EXPECT_LT(test::countOperations(qc->module()), 100U);
@@ -81,18 +85,20 @@ TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   ASSERT_TRUE(mlir::succeeded(restored));
   qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
-  dd::Package package(0);
+  auto package = ::mqt::test::value(dd::Package::create(0));
   const auto root = mlir::qco::simulateStatevector(
-      mlir::mqt::getEntryPoint(qco->module()), package);
+      mlir::mqt::getEntryPoint(qco->module()), *package);
   ASSERT_TRUE(mlir::succeeded(root));
-  EXPECT_EQ(package.qubits(), qubits);
-  EXPECT_NEAR(package.fidelity(*root, dd::makeWState(qubits, package)), 1.,
-              1e-8);
-  EXPECT_NEAR(package.innerProduct(*root, *root).r, 1., 1e-8);
+  EXPECT_EQ(package->qubits(), qubits);
+  EXPECT_NEAR(package->fidelity(
+                  *root, ::mqt::test::value(dd::makeWState(qubits, *package))),
+              1., 1e-8);
+  EXPECT_NEAR(package->innerProduct(*root, *root).r, 1., 1e-8);
   for (const size_t index : {size_t{0}, qubits / 2, qubits - 1}) {
     auto outcome = std::string(qubits, '0');
     outcome[index] = '1';
-    const auto amplitude = root->getValueByPath(qubits, outcome);
+    const auto amplitude =
+        ::mqt::test::value(root->getValueByPath(qubits, outcome));
     EXPECT_NEAR(amplitude.real(), 1. / std::sqrt(static_cast<double>(qubits)),
                 1e-8);
     EXPECT_NEAR(amplitude.imag(), 0., 1e-8);

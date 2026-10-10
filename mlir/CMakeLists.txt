@@ -17,6 +17,13 @@ endif()
 
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
+  get_target_property(target_type ${target_name} TYPE)
+  if(target_type STREQUAL "EXECUTABLE")
+    if(NOT (APPLE AND SKBUILD))
+      set_property(TARGET ${target_name} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+    endif()
+    mqt_copy_runtime_dlls(${target_name})
+  endif()
   llvm_update_compile_flags(${target_name})
   mqt_llvm_target_disable_rtti(${target_name})
 

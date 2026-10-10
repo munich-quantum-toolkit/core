@@ -11,6 +11,8 @@
 #include "bench/Grover.hpp"
 #include "bench/JSON.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/optional.h"    // NOLINT(misc-include-cleaner)
@@ -18,13 +20,16 @@
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
+#include <new>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerGrover(const nb::module_& m) {
@@ -39,7 +44,14 @@ void registerGrover(const nb::module_& m) {
 
   auto grover = nb::class_<bench::Grover>(
       m, "Grover", "A validated single-solution Grover benchmark.");
-  grover.def(nb::init<bench::GroverOptions>(), "options"_a)
+  grover
+      .def(
+          "__init__",
+          [](bench::Grover* self, bench::GroverOptions options) {
+            new (self) bench::Grover(::mqt::bindings::invoke(
+                [&] { return bench::Grover::create(std::move(options)); }));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::Grover::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -48,9 +60,9 @@ void registerGrover(const nb::module_& m) {
                    "The logical output register.")
       .def_prop_ro("qubits", &bench::Grover::qubits,
                    "The number of search qubits.")
-      .def("probability", &bench::Grover::probability, "outcome"_a,
+      .def("probability", bindResult(&bench::Grover::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::Grover::evaluate, "counts"_a,
+      .def("evaluate", bindResult(&bench::Grover::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -78,11 +90,13 @@ void registerGrover(const nb::module_& m) {
           [](const bench::Grover& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::groverFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
+                  bindResult(&bench::groverFromInstanceSpecificationJSON),
+                  "json"_a, nb::kw_only(),
+                  "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::groverFromManifestJSON,
-                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+      .def_static("from_manifest_json",
+                  bindResult(&bench::groverFromManifestJSON), "json"_a,
+                  nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

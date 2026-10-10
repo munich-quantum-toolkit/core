@@ -52,7 +52,7 @@ else:
 try:
     builtin_driver.add_manifest(Path(sys.argv[2]))
 except ValueError as error:
-    assert "Invalid argument" in str(error)
+    assert "invalid JSON" in str(error)
 else:
     raise AssertionError("malformed manifest must fail")
 

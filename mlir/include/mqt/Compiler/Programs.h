@@ -477,7 +477,9 @@ private:
 /// Creates a context that holds every dialect the pipelines need.
 ///
 /// Callers that build a module themselves need a context with the same dialects
-/// that the conversions and the backends create operations from.
+/// that the conversions and the backends create operations from. Unhandled
+/// MLIR diagnostics are forwarded to the current native diagnostic handler;
+/// handlers registered later on this context run first.
 [[nodiscard]] std::shared_ptr<MLIRContext> createCompilerContext();
 
 /// Valid input variants for the default compiler pipeline.

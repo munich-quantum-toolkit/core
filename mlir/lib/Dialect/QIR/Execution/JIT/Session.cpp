@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
@@ -44,7 +45,6 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -61,9 +61,9 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -76,11 +76,12 @@ static auto isEntryPoint(const llvm::Function& function) -> bool {
   return function.hasFnAttribute(ENTRY_POINT_ATTR);
 }
 
-static void validateNativeABI(llvm::CallingConv::ID convention,
+static auto validateNativeABI(llvm::CallingConv::ID convention,
                               llvm::AttributeList attributes,
-                              const llvm::Twine& description) {
+                              const llvm::Twine& description)
+    -> mlir::LogicalResult {
   if (convention != llvm::CallingConv::C) {
-    throw std::runtime_error(
+    return ::mqt::emitError(
         (description + " must use the C calling convention").str());
   }
   for (const auto index : attributes.indexes()) {
@@ -102,41 +103,46 @@ static void validateNativeABI(llvm::CallingConv::ID convention,
              llvm::Attribute::Nest,
          }) {
       if (attributeSet.hasAttribute(kind)) {
-        throw std::runtime_error((description +
-                                  " has unsupported ABI attribute " +
-                                  attributeSet.getAttribute(kind).getAsString())
-                                     .str());
+        return ::mqt::emitError((description +
+                                 " has unsupported ABI attribute " +
+                                 attributeSet.getAttribute(kind).getAsString())
+                                    .str());
       }
     }
   }
+  return mlir::success();
 }
 
-static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
+static auto selectEntryPoint(llvm::Module& moduleOp)
+    -> mlir::FailureOr<llvm::Function*> {
   llvm::Function* selected = nullptr;
-  for (auto& function : module) {
+  for (auto& function : moduleOp) {
     if (!function.isDeclaration() && isEntryPoint(function)) {
       if (selected != nullptr) {
-        throw std::runtime_error("Multiple QIR entry points were found");
+        return ::mqt::emitError("Multiple QIR entry points were found");
       }
       selected = &function;
     }
   }
   if (selected == nullptr) {
-    throw std::runtime_error("No QIR entry point was found");
+    return ::mqt::emitError("No QIR entry point was found");
   }
   auto& entryPoint = *selected;
-  validateNativeABI(entryPoint.getCallingConv(), entryPoint.getAttributes(),
-                    "QIR entry point '" + entryPoint.getName() + "'");
+  if (mlir::failed(validateNativeABI(
+          entryPoint.getCallingConv(), entryPoint.getAttributes(),
+          "QIR entry point '" + entryPoint.getName() + "'"))) {
+    return mlir::failure();
+  }
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
     std::string actual;
     llvm::raw_string_ostream stream(actual);
     type->print(stream);
-    throw std::runtime_error("QIR entry point '" + entryPoint.getName().str() +
-                             "' must have type i64 (), but has type " + actual);
+    return ::mqt::emitError("QIR entry point '" + entryPoint.getName().str() +
+                            "' must have type i64 (), but has type " + actual);
   }
-  return entryPoint;
+  return &entryPoint;
 }
 
 static auto readOutputSchema(const llvm::Function& entryPoint)
@@ -155,7 +161,7 @@ static int mingwNoopMain() {
   // when running under lli: the executor process will have run non-JIT ctors,
   // and ORC will take care of running JIT'd ctors. To avoid a missing symbol
   // error we just implement __main as a no-op.
-  return 0;
+  return int64_t{0};
 }
 
 // Try to enable debugger support for the given instance.
@@ -364,22 +370,25 @@ static auto createRuntimeRegistry() -> RuntimeRegistry {
   return registry;
 }
 
-static auto selectRuntimeSymbols(const llvm::Module& module)
-    -> std::vector<std::pair<std::string, void*>> {
+static auto selectRuntimeSymbols(const llvm::Module& moduleOp)
+    -> mlir::FailureOr<std::vector<std::pair<std::string, void*>>> {
   static const auto REGISTRY = createRuntimeRegistry();
   std::vector<std::pair<std::string, void*>> selected;
-  for (const auto& function : module) {
+  for (const auto& function : moduleOp) {
     if (!function.isDeclaration() || function.use_empty() ||
         !function.getName().starts_with("__quantum__")) {
       continue;
     }
     const auto it = REGISTRY.find(function.getName().str());
     if (it == REGISTRY.end()) {
-      throw std::runtime_error("Unsupported QIR runtime declaration '" +
-                               function.getName().str() + "'");
+      return ::mqt::emitError("Unsupported QIR runtime declaration '" +
+                              function.getName().str() + "'");
     }
-    validateNativeABI(function.getCallingConv(), function.getAttributes(),
-                      "QIR runtime declaration '" + function.getName() + "'");
+    if (mlir::failed(validateNativeABI(
+            function.getCallingConv(), function.getAttributes(),
+            "QIR runtime declaration '" + function.getName() + "'"))) {
+      return mlir::failure();
+    }
     const auto& symbol = it->second;
     if (!matches(*function.getFunctionType(), symbol)) {
       std::string actual;
@@ -389,35 +398,38 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
       message << "QIR declaration '" << function.getName().str()
               << "' has unsupported type " << actual << "; expected "
               << describe(symbol);
-      throw std::runtime_error(message.str());
+      return ::mqt::emitError(message.str());
     }
     selected.emplace_back(function.getName().str(), symbol.address);
   }
-  for (const auto& function : module) {
+  for (const auto& function : moduleOp) {
     for (const auto& instruction : llvm::instructions(function)) {
       const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
-      if (call == nullptr) {
-        continue;
-      }
-      const auto* callee = llvm::dyn_cast<llvm::Function>(
-          call->getCalledOperand()->stripPointerCastsAndAliases());
+      const auto* callee =
+          call == nullptr
+              ? nullptr
+              : llvm::dyn_cast<llvm::Function>(
+                    call->getCalledOperand()->stripPointerCastsAndAliases());
       if (callee == nullptr || !callee->isDeclaration() ||
           !callee->getName().starts_with("__quantum__")) {
         continue;
       }
-      validateNativeABI(call->getCallingConv(), call->getAttributes(),
-                        "QIR runtime call to '" + callee->getName() + "'");
+      if (mlir::failed(validateNativeABI(
+              call->getCallingConv(), call->getAttributes(),
+              "QIR runtime call to '" + callee->getName() + "'"))) {
+        return mlir::failure();
+      }
       if (call->getFunctionType() != callee->getFunctionType()) {
-        throw std::runtime_error("QIR runtime call to '" +
-                                 callee->getName().str() +
-                                 "' must match its declaration");
+        return ::mqt::emitError("QIR runtime call to '" +
+                                callee->getName().str() +
+                                "' must match its declaration");
       }
     }
   }
   return selected;
 }
 
-llvm::Expected<llvm::orc::ThreadSafeModule>
+mlir::FailureOr<llvm::orc::ThreadSafeModule>
 JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
                                  const llvm::StringRef bufferName) {
   llvm::orc::ThreadSafeContext context{std::make_unique<llvm::LLVMContext>()};
@@ -432,20 +444,29 @@ JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
     std::string message;
     llvm::raw_string_ostream stream(message);
     err.print(DEBUG_TYPE, stream);
-    return llvm::make_error<llvm::StringError>(std::move(message),
-                                               llvm::inconvertibleErrorCode());
+    return ::mqt::emitError(std::move(message));
   }
   return llvm::orc::ThreadSafeModule(std::move(m), std::move(context));
 }
 
-JitSession::JitSession(const llvm::StringRef irBytes,
-                       const llvm::StringRef bufferName,
-                       const Execution execution,
-                       std::optional<uint64_t> randomSeed)
+JitSession::JitSession(Execution execution, std::optional<uint64_t> randomSeed)
     : runtime_(std::make_unique<Runtime>(
           randomSeed ? *randomSeed : Runtime::generateRandomSeed())),
-      execution_(execution) {
-  initialize(loadModuleFromMemory(irBytes, bufferName), execution);
+      execution_(execution) {}
+
+mlir::FailureOr<std::unique_ptr<JitSession>>
+JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+                   Execution execution, std::optional<uint64_t> randomSeed) {
+  auto llvmModule = loadModuleFromMemory(irBytes, bufferName);
+  if (mlir::failed(llvmModule)) {
+    return mlir::failure();
+  }
+  auto session =
+      std::unique_ptr<JitSession>(new JitSession(execution, randomSeed));
+  if (mlir::failed(session->initialize(std::move(*llvmModule), execution))) {
+    return mlir::failure();
+  }
+  return session;
 }
 
 JitSession::~JitSession() { deinitialize(); }
@@ -457,68 +478,86 @@ int64_t JitSession::runWithRuntime(Runtime& runtime) {
     runtime.reset();
   }
   auto* previous = Runtime::bind(&runtime);
-  const auto restoreRuntime =
-      llvm::scope_exit([previous] { Runtime::bind(previous); });
+  const llvm::scope_exit restoreRuntime(
+      [previous] { Runtime::bind(previous); });
+
   const auto code = entryPointFn_();
-  if (runtime.invalidStateExtraction_) {
-    throw std::invalid_argument(
-        "QIR state extraction cannot reset or operate on a measured qubit");
-  }
+
   return code;
 }
 
-int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
-                           bool* stateAvailable, bool emitHeader) {
+mlir::FailureOr<int64_t> JitSession::sample(size_t shots,
+                                            std::vector<std::string>& results,
+                                            bool* stateAvailable,
+                                            bool emitHeader) {
   return sampleWithRuntime(*runtime_, shots, results, emitHeader,
                            stateAvailable);
 }
 
-int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
-                                      std::vector<std::string>& results,
-                                      bool emitHeader, bool* stateAvailable) {
+mlir::FailureOr<int64_t>
+JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
+                              std::vector<std::string>& results,
+                              bool emitHeader, bool* stateAvailable) {
   if (&runtime != runtime_.get() && !shareCompiledCode_) {
-    throw std::logic_error("QIR entry point cannot be shared across workers");
+    return ::mqt::emitError("QIR entry point cannot be shared across workers");
   }
   if (stateAvailable != nullptr) {
     *stateAvailable = false;
   }
-  if (execution_ != Execution::Sampling) {
-    throw std::logic_error("Cannot sample a QIR state-extraction session");
-  }
   results.clear();
-  results.reserve(shots);
-  if (emitHeader) {
-    runtime.outputProgramHeader();
+  if (execution_ != Execution::Sampling) {
+    return ::mqt::emitError("Cannot sample a QIR state-extraction session");
   }
-  const auto execute = [&] {
+  results.reserve(shots);
+  if (emitHeader && mlir::failed(runtime.outputProgramHeader())) {
+    runtime.reset();
+    return mlir::failure();
+  }
+  const auto execute = [&]() -> mlir::FailureOr<int64_t> {
     if (!initializesRuntime_) {
       runtime.reset();
     }
-    runtime.outputShotStart();
+    if (mlir::failed(runtime.outputShotStart())) {
+      runtime.reset();
+      return mlir::failure();
+    }
     const auto code = runWithRuntime(runtime);
-    runtime.outputShotEnd(code);
+    if (mlir::failed(runtime.outputShotEnd(code))) {
+      runtime.reset();
+      return mlir::failure();
+    }
     return code;
   };
   if (samplingOutputs_ && !runtime.hasOutput() && shots != 0) {
     runtime.deferMeasurements_ = true;
-    const auto restore =
-        llvm::scope_exit([&] { runtime.deferMeasurements_ = false; });
-    if (const auto code = execute(); code != 0) {
-      return code;
+    const llvm::scope_exit restore([&] { runtime.deferMeasurements_ = false; });
+    auto code = execute();
+    if (mlir::failed(code)) {
+      return mlir::failure();
     }
-    runtime.sampleMeasurements(*samplingOutputs_, shots, results);
+    if (mlir::failed(
+            runtime.sampleMeasurements(*samplingOutputs_, shots, results))) {
+      results.clear();
+      runtime.reset();
+      return mlir::failure();
+    }
     if (stateAvailable != nullptr) {
       *stateAvailable = true;
     }
-    return 0;
+    return int64_t{0};
   }
   for (size_t i = 0; i < shots; ++i) {
-    if (const auto code = execute(); code != 0) {
-      return code;
+    auto code = execute();
+    if (mlir::failed(code)) {
+      results.clear();
+      return mlir::failure();
+    }
+    if (*code != 0) {
+      return *code;
     }
     results.push_back(runtime.getMeasurements());
   }
-  return 0;
+  return int64_t{0};
 }
 
 auto JitSession::runtime() -> Runtime& { return *runtime_; }
@@ -529,15 +568,18 @@ bool JitSession::canSampleTerminal() const {
 
 bool JitSession::canShareCompiledCode() const { return shareCompiledCode_; }
 
-std::unique_ptr<Runtime> JitSession::makeWorkerRuntime(uint64_t seed) const {
+mlir::FailureOr<std::unique_ptr<Runtime>>
+JitSession::makeWorkerRuntime(uint64_t seed) const {
   if (!shareCompiledCode_ || execution_ != Execution::Sampling) {
-    throw std::logic_error("QIR entry point cannot be shared across workers");
+    return ::mqt::emitError("QIR entry point cannot be shared across workers");
   }
   auto worker = std::make_unique<Runtime>(seed);
   worker->outputSchema = runtime_->outputSchema;
   worker->metadata = runtime_->metadata;
-  worker->configureStaticResources(runtime_->staticQubits_,
-                                   runtime_->staticResults_);
+  if (mlir::failed(worker->configureStaticResources(
+          runtime_->staticQubits_, runtime_->staticResults_))) {
+    return mlir::failure();
+  }
   return worker;
 }
 
@@ -554,50 +596,46 @@ void JitSession::initNativeTargets() {
   });
 }
 
-static std::optional<size_t>
+static mlir::FailureOr<std::optional<size_t>>
 readStaticCapacity(const llvm::Module& llvmModule,
                    const llvm::Function& entryPoint, llvm::StringRef flagName,
                    llvm::StringRef attributeName) {
   if (auto* flag = llvmModule.getModuleFlag(flagName)) {
     const auto* dynamic = llvm::mdconst::dyn_extract<llvm::ConstantInt>(flag);
     if (dynamic == nullptr || dynamic->getValue().getLimitedValue() > 1) {
-      throw std::invalid_argument("Invalid QIR resource flag '" +
-                                  flagName.str() + "'");
+      return ::mqt::emitError("Invalid QIR resource flag '" + flagName.str() +
+                              "'");
     }
     if (!dynamic->isZero()) {
-      return std::nullopt;
+      return std::optional<size_t>{};
     }
   }
   const auto attribute = entryPoint.getFnAttribute(attributeName);
   if (!attribute.isValid()) {
-    return std::nullopt;
+    return std::optional<size_t>{};
   }
   uint64_t capacity = 0;
   if (attribute.getValueAsString().getAsInteger(10, capacity) ||
       capacity > std::numeric_limits<size_t>::max()) {
-    throw std::invalid_argument("Invalid QIR resource capacity '" +
-                                attributeName.str() + "'");
+    return ::mqt::emitError("Invalid QIR resource capacity '" +
+                            attributeName.str() + "'");
   }
-  return static_cast<size_t>(capacity);
+  return std::optional<size_t>{static_cast<size_t>(capacity)};
 }
 
-void JitSession::initialize(
-    llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-    const Execution execution) {
-  if (!llvmModule) {
-    throw std::runtime_error(llvm::toString(llvmModule.takeError()));
-  }
-  auto loadedModule = std::move(*llvmModule);
-
+mlir::LogicalResult
+JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
+                       const Execution execution) {
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
-  loadedModule.withModuleDo([&](llvm::Module& module) {
+  auto preparation = loadedModule.withModuleDo([&](llvm::Module& moduleOp)
+                                                   -> mlir::LogicalResult {
     std::string verification;
     llvm::raw_string_ostream diagnostics(verification);
-    if (llvm::verifyModule(module, &diagnostics)) {
-      throw std::runtime_error("Invalid QIR module: " + verification);
+    if (llvm::verifyModule(moduleOp, &diagnostics)) {
+      return ::mqt::emitError("Invalid QIR module: " + verification);
     }
-    for (const auto& function : module) {
+    for (const auto& function : moduleOp) {
       for (const auto& block : function) {
         for (const auto& instruction : block) {
           const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
@@ -613,17 +651,21 @@ void JitSession::initialize(
     }
     shareCompiledCode_ =
         execution == Execution::Sampling &&
-        llvm::all_of(module.globals(),
+        llvm::all_of(moduleOp.globals(),
                      [](const auto& global) {
                        return global.isConstant() && !global.isDeclaration();
                      }) &&
-        module.aliases().empty() && module.ifuncs().empty() &&
-        llvm::all_of(module, [](const auto& function) {
+        moduleOp.aliases().empty() && moduleOp.ifuncs().empty() &&
+        llvm::all_of(moduleOp, [](const auto& function) {
           return !function.isDeclaration() || function.use_empty() ||
                  function.isIntrinsic() ||
                  function.getName().starts_with("__quantum__");
         });
-    auto& entryPoint = selectEntryPoint(module);
+    auto selected = selectEntryPoint(moduleOp);
+    if (mlir::failed(selected)) {
+      return mlir::failure();
+    }
+    auto& entryPoint = **selected;
     entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));
     std::vector<std::pair<std::string, std::string>> metadata;
@@ -635,17 +677,34 @@ void JitSession::initialize(
     }
     runtime_->setMetadata(std::move(metadata));
     if (execution == Execution::StateExtraction) {
-      prepareForStateExtraction(entryPoint);
+      auto prepared = prepareForStateExtraction(entryPoint);
+      if (mlir::failed(prepared)) {
+        return mlir::failure();
+      }
       runtime_->extractState_ = entryPoint.getFnAttribute(QIR_PROFILES_ATTR)
                                     .getValueAsString()
                                     .compare(ADAPTIVE_PROFILE) == 0;
     }
-    runtimeSymbols = selectRuntimeSymbols(module);
-    runtime_->configureStaticResources(
-        readStaticCapacity(module, entryPoint, "dynamic_qubit_management",
-                           "required_num_qubits"),
-        readStaticCapacity(module, entryPoint, "dynamic_result_management",
-                           "required_num_results"));
+    auto symbols = selectRuntimeSymbols(moduleOp);
+    if (mlir::failed(symbols)) {
+      return mlir::failure();
+    }
+    runtimeSymbols = std::move(*symbols);
+    auto qubits =
+        readStaticCapacity(moduleOp, entryPoint, "dynamic_qubit_management",
+                           "required_num_qubits");
+    if (mlir::failed(qubits)) {
+      return mlir::failure();
+    }
+    auto results =
+        readStaticCapacity(moduleOp, entryPoint, "dynamic_result_management",
+                           "required_num_results");
+    if (mlir::failed(results)) {
+      return mlir::failure();
+    }
+    if (mlir::failed(runtime_->configureStaticResources(*qubits, *results))) {
+      return mlir::failure();
+    }
     const auto* first =
         llvm::dyn_cast<llvm::CallInst>(&entryPoint.getEntryBlock().front());
     initializesRuntime_ =
@@ -655,7 +714,15 @@ void JitSession::initialize(
     if (execution == Execution::Sampling) {
       samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
     }
+
+    if (llvm::verifyModule(moduleOp, &diagnostics)) {
+      return ::mqt::emitError("Invalid prepared QIR module: " + verification);
+    }
+    return mlir::success();
   });
+  if (mlir::failed(preparation)) {
+    return preparation;
+  }
   initNativeTargets();
 
   // Get TargetTriple and DataLayout from the main module if they're explicitly
@@ -677,12 +744,12 @@ void JitSession::initialize(
   // Use the module's target triple if set, otherwise detect the host's.
   auto host = llvm::orc::JITTargetMachineBuilder::detectHost();
   if (!host) {
-    throw std::runtime_error(llvm::toString(host.takeError()));
+    return ::mqt::emitError(host.takeError());
   }
   if (tt) {
     if (tt->getArch() != host->getTargetTriple().getArch() ||
         tt->getOS() != host->getTargetTriple().getOS()) {
-      throw std::invalid_argument(
+      return ::mqt::emitError(
           "QIR target triple must match the execution host");
     }
     host->getTargetTriple() = *tt;
@@ -715,9 +782,12 @@ void JitSession::initialize(
   // Build the JIT.
   auto expectedJit = builder.create();
   if (!expectedJit) {
-    throw std::runtime_error(llvm::toString(expectedJit.takeError()));
+    return ::mqt::emitError(expectedJit.takeError());
   }
   jit_ = std::move(*expectedJit);
+  jit_->getExecutionSession().setErrorReporter([](llvm::Error error) {
+    std::ignore = ::mqt::emitError(std::move(error));
+  });
 
   // Register QIR runtime symbols.
   auto& jd = jit_->getMainJITDylib();
@@ -727,7 +797,7 @@ void JitSession::initialize(
         llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
   }
   if (auto err = jd.define(llvm::orc::absoluteSymbols(hostSymbols))) {
-    throw std::runtime_error(llvm::toString(std::move(err)));
+    return ::mqt::emitError(std::move(err));
   }
 
   // GDB listener (no error path)
@@ -753,34 +823,40 @@ void JitSession::initialize(
                 },
             },
         }))) {
-      throw std::runtime_error(llvm::toString(std::move(err)));
+      return ::mqt::emitError(std::move(err));
     }
   }
 
   if (auto err = jit_->addIRModule(std::move(loadedModule))) {
-    throw std::runtime_error(llvm::toString(std::move(err)));
+    return ::mqt::emitError(std::move(err));
   }
 
   // Run any static constructors.
+  auto* previous = Runtime::bind(runtime_.get());
+  const llvm::scope_exit restoreRuntime(
+      [previous] { Runtime::bind(previous); });
   if (auto err = jit_->initialize(jit_->getMainJITDylib())) {
-    throw std::runtime_error(llvm::toString(std::move(err)));
+    return ::mqt::emitError(std::move(err));
   }
 
   // Resolve the selected QIR entry point.
   auto entryPointAddress = jit_->lookup(entryPointName);
   if (!entryPointAddress) {
-    throw std::runtime_error(llvm::toString(entryPointAddress.takeError()));
+    return ::mqt::emitError(entryPointAddress.takeError());
   }
   entryPointFn_ = entryPointAddress->toPtr<EntryPointFn*>();
+  return mlir::success();
 }
 
 void JitSession::deinitialize() const {
   if (!jit_) {
     return;
   }
+  auto* previous = Runtime::bind(runtime_.get());
+  const llvm::scope_exit restoreRuntime(
+      [previous] { Runtime::bind(previous); });
   if (auto err = jit_->deinitialize(jit_->getMainJITDylib())) {
-    llvm::errs() << "JitSession deinitialize failed: "
-                 << llvm::toString(std::move(err)) << "\n";
+    std::ignore = ::mqt::emitError(std::move(err));
   }
 }
 

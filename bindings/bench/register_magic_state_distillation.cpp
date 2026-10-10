@@ -11,12 +11,15 @@
 #include "bench/JSON.hpp"
 #include "bench/MagicStateDistillation.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
+#include <new>
 
 namespace mqt {
 
@@ -48,18 +51,27 @@ Bit 1 flags any rejected block; bit 0 checks the retained root state against
 regardless of rejection. The benchmark models ideal logical circuits without
 input noise, physical error correction, or retries.)pb");
   magicStateDistillation
-      .def(nb::init<bench::MagicStateDistillationOptions>(),
-           "options"_a = bench::MagicStateDistillationOptions{})
+      .def(
+          "__init__",
+          [](bench::MagicStateDistillation* self,
+             bench::MagicStateDistillationOptions options) {
+            new (self) bench::MagicStateDistillation(bindings::invoke([&] {
+              return bench::MagicStateDistillation::create(options);
+            }));
+          },
+          "options"_a = bench::MagicStateDistillationOptions{})
       .def_prop_ro("options", &bench::MagicStateDistillation::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::MagicStateDistillation::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::MagicStateDistillation::probability,
+      .def("probability",
+           bindings::bindResult(&bench::MagicStateDistillation::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::MagicStateDistillation::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
+      .def("evaluate",
+           bindings::bindResult(&bench::MagicStateDistillation::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
           [](const bench::MagicStateDistillation& value) {
@@ -87,15 +99,17 @@ input noise, physical error correction, or retries.)pb");
             return bench::caseId(value);
           },
           "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::magicStateDistillationFromInstanceSpecificationJSON,
-                  "json"_a, nb::kw_only(),
-                  "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json",
-                  &bench::magicStateDistillationFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def_static(
+          "from_instance_specification_json",
+          bindings::bindResult(
+              &bench::magicStateDistillationFromInstanceSpecificationJSON),
+          "json"_a, nb::kw_only(), "source"_a = "<instance-specification>",
+          "Parse a strict benchmark instance specification.")
+      .def_static(
+          "from_manifest_json",
+          bindings::bindResult(&bench::magicStateDistillationFromManifestJSON),
+          "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+          "Parse a strict benchmark manifest.");
 }
 
 } // namespace mqt

@@ -26,7 +26,6 @@ endif()
 
 include(CMakeFindDependencyMacro)
 find_dependency(qdmi)
-
 include("${CMAKE_CURRENT_LIST_DIR}/AddMQTQDMIDevice.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-runtime-targets.cmake")
 if(mqt-core_Development_FOUND AND (NOT mqt-core_FIND_COMPONENTS OR "Development" IN_LIST
@@ -34,7 +33,7 @@ if(mqt-core_Development_FOUND AND (NOT mqt-core_FIND_COMPONENTS OR "Development"
   find_package(LLVM @LLVM_VERSION_MAJOR@.@LLVM_VERSION_MINOR@ CONFIG QUIET)
   if(LLVM_FOUND)
     include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-development-targets.cmake")
-    target_include_directories(MQT::CoreQDMICommon SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
+    target_include_directories(MQT::CoreSupport SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
   else()
     set(mqt-core_Development_FOUND FALSE)
     set(mqt-core_NOT_FOUND_MESSAGE

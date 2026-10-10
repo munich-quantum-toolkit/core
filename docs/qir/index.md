@@ -27,6 +27,20 @@ examples use the bundled simulator and need no hardware account.
 For experiments that compare static circuits with measurement feedback, continue
 with the {doc}`QIR tutorial <../tutorials/qir_execution>`.
 
+## Runtime failures
+
+Under the
+[QIR allocation contract](https://github.com/qir-alliance/qir-spec/blob/main/specification/Memory_Management.md),
+qubit and result allocations report invalid requests and runtime resource limits
+through the supplied error-output pointer, releasing partial allocations.
+Without that pointer, these failures emit a diagnostic and terminate execution.
+Host-memory exhaustion and other unhandled runtime failures also terminate, even
+with an error-output pointer; C++ and Python exceptions cannot catch them. Setup
+and compilation errors remain recoverable.
+
+Use [DDSIM through QDMI](../qdmi/ddsim_device.md#multi-program-execution) to
+contain execution failures in a worker process and keep the host usable.
+
 ## Compile a Base Profile program
 
 Use the Base Profile for a circuit whose measurements do not control subsequent
@@ -296,16 +310,19 @@ binary or non-text formats. The `num_shots` argument is optional for
 device-defined formats that encode their repetition count in the program
 payload.
 
+Direct host functions called by the JIT must obey their declared ABI and must
+not throw. Host function pointers cannot be sent to a DDSIM worker because they
+belong to the host process. `JitSession::run` returns the completed program's
+`int64_t` exit code, including nonzero codes. `sample` returns
+`FailureOr<int64_t>` for recoverable sampling or output setup failures. Neither
+API recovers from an unhandled QIR runtime failure; see
+[runtime failures](#runtime-failures). Output streams must have exceptions
+disabled.
+
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
 result bits directly and formats textual records only when capture is enabled.
-
-QIR runtime functions do not propagate C++ exceptions. Allocations report
-invalid resource requests and runtime limits through the QIR error-output
-pointer when one is supplied. Other failures, including host-memory exhaustion,
-stop the isolated DDSIM worker and fail its assigned program; concurrent and
-later jobs remain usable.
 
 ### Sampling and state extraction
 

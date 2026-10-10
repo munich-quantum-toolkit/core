@@ -10,6 +10,8 @@
 
 #include "qdmi/Slurm.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 
 namespace nb = nanobind;
@@ -20,7 +22,8 @@ namespace mqt::bindings {
 void registerSlurm(nb::module_& qdmiModule) {
   auto slurm = qdmiModule.def_submodule(
       "slurm", "Open a QDMI device named by the Slurm license environment.");
-  slurm.def("open_device_from_license", &qdmi::slurm::openDeviceFromLicense,
+  slurm.def("open_device_from_license",
+            bindResult(&qdmi::slurm::openDeviceFromLicense),
             nb::call_guard<nb::gil_scoped_release>(),
             R"pb(Open the QDMI device named by the Slurm license environment.
 

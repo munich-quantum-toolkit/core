@@ -12,6 +12,8 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
@@ -26,6 +28,8 @@
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/client.h"
+
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <cstddef>
@@ -173,26 +177,18 @@ qdmi::SessionConfig makeDriverSessionConfig(
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
-  const auto returnValue =
-      []<typename T>(std::optional<T> value) -> nb::object {
-    if (!value.has_value()) {
-      return nb::none();
-    }
-    return nb::cast(std::move(*value));
-  };
-
   const auto builtins = nb::builtins();
   if (valueType.is(builtins["str"])) {
-    return returnValue(query.template operator()<std::string>());
+    return nb::cast(query.template operator()<std::string>());
   }
   if (valueType.is(builtins["bool"])) {
-    return returnValue(query.template operator()<bool>());
+    return nb::cast(query.template operator()<bool>());
   }
   if (valueType.is(builtins["int"])) {
-    return returnValue(query.template operator()<int>());
+    return nb::cast(query.template operator()<int>());
   }
   if (valueType.is(builtins["float"])) {
-    return returnValue(query.template operator()<double>());
+    return nb::cast(query.template operator()<double>());
   }
   if (valueType.is(builtins["bytes"])) {
     const auto value = query.template operator()<std::vector<std::byte>>();
@@ -232,11 +228,13 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
             const nb::gil_scoped_release release;
-            new (self) qdmi::Session(makeDriverSessionConfig(
-                std::move(driverPath), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(projectId), std::move(custom1), std::move(custom2),
-                std::move(custom3), std::move(custom4), std::move(custom5)));
+            new (self) qdmi::Session(::mqt::bindings::invoke([&] {
+              return qdmi::Session::create(makeDriverSessionConfig(
+                  std::move(driverPath), std::move(token), std::move(authFile),
+                  std::move(authUrl), std::move(username), std::move(password),
+                  std::move(projectId), std::move(custom1), std::move(custom2),
+                  std::move(custom3), std::move(custom4), std::move(custom5)));
+            }));
           },
           nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -245,14 +243,15 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
           "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
           "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
           "custom5"_a = std::nullopt)
-      .def_prop_ro("devices", &qdmi::Session::getDevices,
+      .def_prop_ro("devices", bindings::bindResult(&qdmi::Session::getDevices),
                    nb::call_guard<nb::gil_scoped_release>(),
                    "The devices visible to this authenticated session.")
-      .def_prop_ro("device_ids", &qdmi::Session::getDeviceIds,
+      .def_prop_ro("device_ids",
+                   bindings::bindResult(&qdmi::Session::getDeviceIds),
                    nb::call_guard<nb::gil_scoped_release>(),
                    "The stable IDs of devices visible to this session.")
-      .def("get_device", &qdmi::Session::getDevice, "device_id"_a,
-           nb::call_guard<nb::gil_scoped_release>(),
+      .def("get_device", bindings::bindResult(&qdmi::Session::getDevice),
+           "device_id"_a, nb::call_guard<nb::gil_scoped_release>(),
            "Find a device by stable ID within this session.");
 
   qdmiModule.def(
@@ -269,13 +268,15 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
          std::optional<std::string> custom3, std::optional<std::string> custom4,
          std::optional<std::string> custom5) {
         const nb::gil_scoped_release release;
-        return qdmi::Session::openDevice(
-            deviceId,
-            makeDriverSessionConfig(
-                std::move(driverPath), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(projectId), std::move(custom1), std::move(custom2),
-                std::move(custom3), std::move(custom4), std::move(custom5)));
+        return ::mqt::bindings::invoke([&] {
+          return qdmi::Session::openDevice(
+              deviceId,
+              makeDriverSessionConfig(
+                  std::move(driverPath), std::move(token), std::move(authFile),
+                  std::move(authUrl), std::move(username), std::move(password),
+                  std::move(projectId), std::move(custom1), std::move(custom2),
+                  std::move(custom3), std::move(custom4), std::move(custom5)));
+        });
       },
       "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -287,7 +288,17 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
       "Open a client-visible device by stable ID in a fresh session.");
 
   qdmiModule.def(
-      "device_ids", [] { return qdmi::Session{}.getDeviceIds(); },
+      "device_ids",
+      [] {
+        return ::mqt::bindings::invoke(
+            []() -> llvm::FailureOr<std::vector<std::string>> {
+              auto session = qdmi::Session::create();
+              if (llvm::failed(session)) {
+                return llvm::failure();
+              }
+              return session->getDeviceIds();
+            });
+      },
       nb::call_guard<nb::gil_scoped_release>(),
       "Return the stable IDs visible to a fresh QDMI driver session.");
 
@@ -296,10 +307,11 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
       qdmiModule, "Job",
       "A job represents a submitted quantum program execution.");
 
-  job.def("check", &qdmi::Job::check, nb::call_guard<nb::gil_scoped_release>(),
+  job.def("check", bindings::bindResult(&qdmi::Job::check),
+          nb::call_guard<nb::gil_scoped_release>(),
           "Returns the current status of the job.");
 
-  job.def("wait", &qdmi::Job::wait, "timeout"_a = 0,
+  job.def("wait", bindings::bindResult(&qdmi::Job::wait), "timeout"_a = 0,
           nb::call_guard<nb::gil_scoped_release>(),
           R"pb(Waits for the job to complete.
 
@@ -309,33 +321,37 @@ Args:
 Returns:
     True if the job completed within the timeout, False otherwise.)pb");
 
-  job.def("cancel", &qdmi::Job::cancel,
+  job.def("cancel", bindings::bindResult(&qdmi::Job::cancel),
           nb::call_guard<nb::gil_scoped_release>(), "Cancels the job.");
 
-  job.def("get_shots", &qdmi::Job::getShots, "program_index"_a = 0,
-          nb::call_guard<nb::gil_scoped_release>(),
+  job.def("get_shots", bindings::bindResult(&qdmi::Job::getShots),
+          "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the raw shot results from the job.");
 
-  job.def("get_counts", &qdmi::Job::getCounts, "program_index"_a = 0,
-          nb::call_guard<nb::gil_scoped_release>(),
+  job.def("get_counts", bindings::bindResult(&qdmi::Job::getCounts),
+          "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
-  job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
+  job.def("get_dense_statevector",
+          bindings::bindResult(&qdmi::Job::getDenseStateVector),
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_dense_probabilities", &qdmi::Job::getDenseProbabilities,
+  job.def("get_dense_probabilities",
+          bindings::bindResult(&qdmi::Job::getDenseProbabilities),
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the dense probabilities from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_statevector", &qdmi::Job::getSparseStateVector,
+  job.def("get_sparse_statevector",
+          bindings::bindResult(&qdmi::Job::getSparseStateVector),
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the sparse statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_probabilities", &qdmi::Job::getSparseProbabilities,
+  job.def("get_sparse_probabilities",
+          bindings::bindResult(&qdmi::Job::getSparseProbabilities),
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
@@ -347,7 +363,8 @@ Returns:
         return queryCustomValue(
             [&self, customProperty]<qdmi::custom_property_value T> {
               const nb::gil_scoped_release release;
-              return self.queryCustomProperty<T>(customProperty);
+              return ::mqt::bindings::invoke(
+                  [&] { return self.queryCustomProperty<T>(customProperty); });
             },
             valueType);
       },
@@ -370,7 +387,9 @@ when the custom slot is unsupported.)pb");
             [&self, customProperty,
              programIndex]<qdmi::custom_property_value T> {
               const nb::gil_scoped_release release;
-              return self.getCustomResult<T>(customProperty, programIndex);
+              return ::mqt::bindings::invoke([&] {
+                return self.getCustomResult<T>(customProperty, programIndex);
+              });
             },
             valueType);
       },
@@ -385,15 +404,16 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  job.def_prop_ro("id", &qdmi::Job::getId,
+  job.def_prop_ro("id", bindings::bindResult(&qdmi::Job::getId),
                   nb::call_guard<nb::gil_scoped_release>(), "The job ID.");
 
-  job.def_prop_ro("program_format", &qdmi::Job::getProgramFormat,
+  job.def_prop_ro("program_format",
+                  bindings::bindResult(&qdmi::Job::getProgramFormat),
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The format of the submitted program.");
 
-  job.def("get_program", &qdmi::Job::getProgram, "program_index"_a = 0,
-          nb::call_guard<nb::gil_scoped_release>(),
+  job.def("get_program", bindings::bindResult(&qdmi::Job::getProgram),
+          "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Return one submitted text program by input index.");
 
   job.def(
@@ -405,7 +425,8 @@ when the custom slot is unsupported.)pb");
         }
         const auto program = [&] {
           const nb::gil_scoped_release release;
-          return self.getProgramBytes(programIndex);
+          return ::mqt::bindings::invoke(
+              [&] { return self.getProgramBytes(programIndex); });
         }();
         return nb::bytes(reinterpret_cast<const char*>(program.data()),
                          program.size());
@@ -415,10 +436,12 @@ when the custom slot is unsupported.)pb");
               "program_index: int = 0) -> bytes"),
       "Return one submitted program's exact bytes by input index.");
 
-  job.def_prop_ro("num_programs", &qdmi::Job::getNumPrograms,
+  job.def_prop_ro("num_programs",
+                  bindings::bindResult(&qdmi::Job::getNumPrograms),
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The number of programs in input order.");
-  job.def("get_program_status", &qdmi::Job::getProgramStatus,
+  job.def("get_program_status",
+          bindings::bindResult(&qdmi::Job::getProgramStatus),
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Return one program outcome, or None when unsupported.");
   job.def(
@@ -426,20 +449,22 @@ when the custom slot is unsupported.)pb");
       [](const qdmi::Job& self, const int result, const size_t programIndex) {
         const auto value = [&] {
           const nb::gil_scoped_release release;
-          return self.getResults(static_cast<QDMI_Job_Result>(result),
-                                 programIndex);
+          return ::mqt::bindings::invoke([&] {
+            return self.getResults(static_cast<QDMI_Job_Result>(result),
+                                   programIndex);
+          });
         }();
         return nb::bytes(value.data(), value.size());
       },
       "result"_a, "program_index"_a = 0,
       "Returns an indexed result as exact bytes.");
 
-  job.def_prop_ro("num_shots", &qdmi::Job::getNumShots,
+  job.def_prop_ro("num_shots", bindings::bindResult(&qdmi::Job::getNumShots),
                   nb::call_guard<nb::gil_scoped_release>(),
                   "The number of shots.");
 
   job.def_prop_ro(
-      "queue_position", &qdmi::Job::getQueuePosition,
+      "queue_position", bindings::bindResult(&qdmi::Job::getQueuePosition),
       nb::call_guard<nb::gil_scoped_release>(),
       "The number of jobs ahead in the queue, or None if unavailable or not "
       "applicable in the current state.");
@@ -515,87 +540,97 @@ Returns:
       .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
       .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
 
-  device.def("name", &qdmi::Device::getName,
+  device.def("name", bindings::bindResult(&qdmi::Device::getName),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the name of the device.");
 
-  device.def_prop_ro("id", &qdmi::Device::getId,
+  device.def_prop_ro("id", bindings::bindResult(&qdmi::Device::getId),
                      "The stable client-visible device ID.");
 
-  device.def("version", &qdmi::Device::getVersion,
+  device.def("version", bindings::bindResult(&qdmi::Device::getVersion),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the version of the device.");
 
-  device.def("status", &qdmi::Device::getStatus,
+  device.def("status", bindings::bindResult(&qdmi::Device::getStatus),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the current status of the device.");
 
-  device.def("library_version", &qdmi::Device::getLibraryVersion,
+  device.def("library_version",
+             bindings::bindResult(&qdmi::Device::getLibraryVersion),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the version of the library used to define the device.");
 
-  device.def("qubits_num", &qdmi::Device::getQubitsNum,
+  device.def("qubits_num", bindings::bindResult(&qdmi::Device::getQubitsNum),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the number of qubits available on the device.");
 
-  device.def("sites", &qdmi::Device::getSites,
+  device.def("sites", bindings::bindResult(&qdmi::Device::getSites),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the list of all sites (zone and regular sites) available "
              "on the device.");
 
-  device.def("regular_sites", &qdmi::Device::getRegularSites,
+  device.def("regular_sites",
+             bindings::bindResult(&qdmi::Device::getRegularSites),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the list of regular sites (without zone sites) available "
              "on the device.");
 
-  device.def("zones", &qdmi::Device::getZones,
+  device.def("zones", bindings::bindResult(&qdmi::Device::getZones),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the list of zone sites (without regular sites) available "
              "on the device.");
 
-  device.def("operations", &qdmi::Device::getOperations,
+  device.def("operations", bindings::bindResult(&qdmi::Device::getOperations),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the list of operations supported by the device.");
 
-  device.def("coupling_map", &qdmi::Device::getCouplingMap,
+  device.def("coupling_map",
+             bindings::bindResult(&qdmi::Device::getCouplingMap),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the coupling map of the device as a list of site pairs.");
 
-  device.def("queue_length", &qdmi::Device::getQueueLength,
+  device.def("queue_length",
+             bindings::bindResult(&qdmi::Device::getQueueLength),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the current queue length, or None if unavailable.");
 
-  device.def("length_unit", &qdmi::Device::getLengthUnit,
+  device.def("length_unit", bindings::bindResult(&qdmi::Device::getLengthUnit),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the unit of length used by the device.");
 
-  device.def("length_scale_factor", &qdmi::Device::getLengthScaleFactor,
+  device.def("length_scale_factor",
+             bindings::bindResult(&qdmi::Device::getLengthScaleFactor),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the scale factor for length used by the device.");
 
-  device.def("duration_unit", &qdmi::Device::getDurationUnit,
+  device.def("duration_unit",
+             bindings::bindResult(&qdmi::Device::getDurationUnit),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the unit of duration used by the device.");
 
-  device.def("duration_scale_factor", &qdmi::Device::getDurationScaleFactor,
+  device.def("duration_scale_factor",
+             bindings::bindResult(&qdmi::Device::getDurationScaleFactor),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the scale factor for duration used by the device.");
 
-  device.def("min_atom_distance", &qdmi::Device::getMinAtomDistance,
+  device.def("min_atom_distance",
+             bindings::bindResult(&qdmi::Device::getMinAtomDistance),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the minimum atom distance on the device.");
 
   device.def("supported_program_formats",
-             &qdmi::Device::getSupportedProgramFormats,
+             bindings::bindResult(&qdmi::Device::getSupportedProgramFormats),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the list of program formats supported by the device.");
 
-  device.def("child_devices", &qdmi::Device::getChildDevices,
+  device.def("child_devices",
+             bindings::bindResult(&qdmi::Device::getChildDevices),
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the direct child devices managed by this device.");
 
   device.def(
-      "query_custom_operations", &qdmi::Device::queryCustomOperations,
+      "query_custom_operations",
+      bindings::bindResult(&qdmi::Device::queryCustomOperations),
       nb::call_guard<nb::gil_scoped_release>(), "custom_property"_a,
       R"pb(Query a custom device property that contains operation handles.
 
@@ -609,7 +644,8 @@ slot is unsupported. A supported empty list is returned as an empty list.)pb");
         return queryCustomValue(
             [&self, customProperty]<qdmi::custom_property_value T> {
               const nb::gil_scoped_release release;
-              return self.queryCustomProperty<T>(customProperty);
+              return ::mqt::bindings::invoke(
+                  [&] { return self.queryCustomProperty<T>(customProperty); });
             },
             valueType);
       },
@@ -640,8 +676,10 @@ when the custom slot is unsupported.)pb");
         };
         return withProgramPayload(program, [&](const auto& payload) {
           const nb::gil_scoped_release release;
-          return self.submitJob(payload, format, numShots, params[0], params[1],
-                                params[2], params[3], params[4]);
+          return ::mqt::bindings::invoke([&] {
+            return self.submitJob(payload, format, numShots, params[0],
+                                  params[1], params[2], params[3], params[4]);
+          });
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
@@ -666,8 +704,11 @@ when the custom slot is unsupported.)pb");
         };
         return withProgramPayload(program, [&](const auto& payload) {
           const nb::gil_scoped_release release;
-          return self.trySubmitJob(payload, format, numShots, params[0],
-                                   params[1], params[2], params[3], params[4]);
+          return ::mqt::bindings::invoke([&] {
+            return self.trySubmitJob(payload, format, numShots, params[0],
+                                     params[1], params[2], params[3],
+                                     params[4]);
+          });
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
@@ -677,18 +718,16 @@ when the custom slot is unsupported.)pb");
       "Return no job only when the device rejects the program before "
       "submission.");
 
-  device.def(
-      "retrieve_job_by_id",
-      [](const qdmi::Device& self, const std::string& jobId) {
-        const nb::gil_scoped_release release;
-        return self.retrieveJobById(jobId);
-      },
-      "job_id"_a, nb::rv_policy::reference_internal,
-      "Retrieves an existing job by its device-provided ID.");
+  device.def("retrieve_job_by_id",
+             bindings::bindResult(&qdmi::Device::retrieveJobById), "job_id"_a,
+             nb::rv_policy::reference_internal,
+             nb::call_guard<nb::gil_scoped_release>(),
+             "Retrieves an existing job by its device-provided ID.");
 
   device.def("__repr__", [](const qdmi::Device& dev) {
     const nb::gil_scoped_release release;
-    return "<Device name=\"" + dev.getName() + "\">";
+    return "<Device name=\"" +
+           ::mqt::bindings::invoke([&] { return dev.getName(); }) + "\">";
   });
 
   device.def(nb::self == nb::self,
@@ -701,53 +740,56 @@ when the custom slot is unsupported.)pb");
       device, "Site",
       "A site represents a potential qubit location on a quantum device.");
 
-  site.def("index", &qdmi::Site::getIndex,
+  site.def("index", bindings::bindResult(&qdmi::Site::getIndex),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the index of the site.");
 
-  site.def("t1", &qdmi::Site::getT1, nb::call_guard<nb::gil_scoped_release>(),
+  site.def("t1", bindings::bindResult(&qdmi::Site::getT1),
+           nb::call_guard<nb::gil_scoped_release>(),
            "Returns the T1 coherence time of the site.");
 
-  site.def("t2", &qdmi::Site::getT2, nb::call_guard<nb::gil_scoped_release>(),
+  site.def("t2", bindings::bindResult(&qdmi::Site::getT2),
+           nb::call_guard<nb::gil_scoped_release>(),
            "Returns the T2 coherence time of the site.");
 
-  site.def("name", &qdmi::Site::getName,
+  site.def("name", bindings::bindResult(&qdmi::Site::getName),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the name of the site.");
 
-  site.def("x_coordinate", &qdmi::Site::getXCoordinate,
+  site.def("x_coordinate", bindings::bindResult(&qdmi::Site::getXCoordinate),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the x coordinate of the site.");
 
-  site.def("y_coordinate", &qdmi::Site::getYCoordinate,
+  site.def("y_coordinate", bindings::bindResult(&qdmi::Site::getYCoordinate),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the y coordinate of the site.");
 
-  site.def("z_coordinate", &qdmi::Site::getZCoordinate,
+  site.def("z_coordinate", bindings::bindResult(&qdmi::Site::getZCoordinate),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the z coordinate of the site.");
 
-  site.def("is_zone", &qdmi::Site::isZone,
+  site.def("is_zone", bindings::bindResult(&qdmi::Site::isZone),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns whether the site is a zone.");
 
-  site.def("x_extent", &qdmi::Site::getXExtent,
+  site.def("x_extent", bindings::bindResult(&qdmi::Site::getXExtent),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the x extent of the site.");
 
-  site.def("y_extent", &qdmi::Site::getYExtent,
+  site.def("y_extent", bindings::bindResult(&qdmi::Site::getYExtent),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the y extent of the site.");
 
-  site.def("z_extent", &qdmi::Site::getZExtent,
+  site.def("z_extent", bindings::bindResult(&qdmi::Site::getZExtent),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the z extent of the site.");
 
-  site.def("module_index", &qdmi::Site::getModuleIndex,
+  site.def("module_index", bindings::bindResult(&qdmi::Site::getModuleIndex),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the index of the module the site belongs to.");
 
-  site.def("submodule_index", &qdmi::Site::getSubmoduleIndex,
+  site.def("submodule_index",
+           bindings::bindResult(&qdmi::Site::getSubmoduleIndex),
            nb::call_guard<nb::gil_scoped_release>(),
            "Returns the index of the submodule the site belongs to.");
 
@@ -758,7 +800,8 @@ when the custom slot is unsupported.)pb");
         return queryCustomValue(
             [&self, customProperty]<qdmi::custom_property_value T> {
               const nb::gil_scoped_release release;
-              return self.queryCustomProperty<T>(customProperty);
+              return ::mqt::bindings::invoke(
+                  [&] { return self.queryCustomProperty<T>(customProperty); });
             },
             valueType);
       },
@@ -775,7 +818,10 @@ when the custom slot is unsupported.)pb");
 
   site.def("__repr__", [](const qdmi::Site& s) {
     const nb::gil_scoped_release release;
-    return "<Site index=" + std::to_string(s.getIndex()) + ">";
+    return "<Site index=" + std::to_string(::mqt::bindings::invoke([&] {
+             return s.getIndex();
+           })) +
+           ">";
   });
 
   site.def(nb::self == nb::self,
@@ -788,68 +834,75 @@ when the custom slot is unsupported.)pb");
       "An operation represents a quantum operation that can be performed on a "
       "quantum device.");
 
-  operation.def("name", &qdmi::Operation::getName,
+  operation.def("name", bindings::bindResult(&qdmi::Operation::getName),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the name of the operation.");
 
-  operation.def("qubits_num", &qdmi::Operation::getQubitsNum,
+  operation.def("qubits_num",
+                bindings::bindResult(&qdmi::Operation::getQubitsNum),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of qubits the operation acts on.");
 
-  operation.def("parameters_num", &qdmi::Operation::getParametersNum,
+  operation.def("parameters_num",
+                bindings::bindResult(&qdmi::Operation::getParametersNum),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of parameters the operation has.");
 
-  operation.def("duration", &qdmi::Operation::getDuration,
+  operation.def("duration", bindings::bindResult(&qdmi::Operation::getDuration),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the duration of the operation.");
 
-  operation.def("fidelity", &qdmi::Operation::getFidelity,
+  operation.def("fidelity", bindings::bindResult(&qdmi::Operation::getFidelity),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the fidelity of the operation.");
 
-  operation.def("interaction_radius", &qdmi::Operation::getInteractionRadius,
+  operation.def("interaction_radius",
+                bindings::bindResult(&qdmi::Operation::getInteractionRadius),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the interaction radius of the operation.");
 
-  operation.def("blocking_radius", &qdmi::Operation::getBlockingRadius,
+  operation.def("blocking_radius",
+                bindings::bindResult(&qdmi::Operation::getBlockingRadius),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the blocking radius of the operation.");
 
-  operation.def("idling_fidelity", &qdmi::Operation::getIdlingFidelity,
+  operation.def("idling_fidelity",
+                bindings::bindResult(&qdmi::Operation::getIdlingFidelity),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the idling fidelity of the operation.");
 
-  operation.def("is_zoned", &qdmi::Operation::isZoned,
+  operation.def("is_zoned", bindings::bindResult(&qdmi::Operation::isZoned),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "Returns whether the operation is zoned.");
 
-  operation.def("sites", &qdmi::Operation::getSites,
+  operation.def("sites", bindings::bindResult(&qdmi::Operation::getSites),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "Returns the list of sites the operation can be performed on.");
 
-  operation.def("site_pairs", &qdmi::Operation::getSitePairs,
+  operation.def("site_pairs",
+                bindings::bindResult(&qdmi::Operation::getSitePairs),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "Returns the list of site pairs the local 2-qubit operation "
                 "can be performed on.");
 
-  operation.def("mean_shuttling_speed", &qdmi::Operation::getMeanShuttlingSpeed,
+  operation.def("mean_shuttling_speed",
+                bindings::bindResult(&qdmi::Operation::getMeanShuttlingSpeed),
                 nb::call_guard<nb::gil_scoped_release>(),
                 "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
@@ -864,7 +917,10 @@ when the custom slot is unsupported.)pb");
             [&self, customProperty, &sites,
              &params]<qdmi::custom_property_value T> {
               const nb::gil_scoped_release release;
-              return self.queryCustomProperty<T>(customProperty, sites, params);
+              return ::mqt::bindings::invoke([&] {
+                return self.queryCustomProperty<T>(customProperty, sites,
+                                                   params);
+              });
             },
             valueType);
       },
@@ -885,7 +941,8 @@ when the custom slot is unsupported.)pb");
 
   operation.def("__repr__", [](const qdmi::Operation& op) {
     const nb::gil_scoped_release release;
-    return "<Operation name=\"" + op.getName() + "\">";
+    return "<Operation name=\"" +
+           ::mqt::bindings::invoke([&] { return op.getName(); }) + "\">";
   });
 
   operation.def(nb::self == nb::self,
@@ -893,13 +950,15 @@ when the custom slot is unsupported.)pb");
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  builtinDriver.def("add_manifest", &qdmi::builtin_driver::addManifest,
+  builtinDriver.def("add_manifest",
+                    bindings::bindResult(&qdmi::builtin_driver::addManifest),
                     "manifest_path"_a,
                     "Register an installed device manifest before listing or "
                     "opening devices.");
 
   builtinDriver.def(
-      "registered_device_ids", &qdmi::builtin_driver::registeredDeviceIds,
+      "registered_device_ids",
+      bindings::bindResult(&qdmi::builtin_driver::registeredDeviceIds),
       nb::call_guard<nb::gil_scoped_release>(),
       R"pb(List enabled stable IDs without loading devices or contacting providers.
 
@@ -926,7 +985,9 @@ The first call fixes the MQT Core QDMI driver configuration.)pb");
             baseUrl, token, authFile, authUrl, username, password, deviceConfig,
             deviceConfigFile, custom1, custom2, custom3, custom4, custom5);
         const nb::gil_scoped_release release;
-        return qdmi::builtin_driver::openDevice(deviceId, config, driverPath);
+        return ::mqt::bindings::invoke([&] {
+          return qdmi::builtin_driver::openDevice(deviceId, config, driverPath);
+        });
       },
       "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
       "base_url"_a = std::nullopt, "token"_a = std::nullopt,

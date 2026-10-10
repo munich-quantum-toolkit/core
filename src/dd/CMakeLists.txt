@@ -29,10 +29,17 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
     endif()
   endif()
 
+  foreach(json_source PackageStatistics TableStatistics UniqueTableStatistics
+                      MemoryManagerStatistics)
+    mqt_source_enable_exceptions(statistics/${json_source}.cpp)
+  endforeach()
+
   include(GenerateExportHeader)
   generate_export_header(${dd_export_target} BASE_NAME mqt_core_dd EXPORT_FILE_NAME
                          mqt_core_dd_export.h)
   foreach(dd_target IN LISTS dd_targets)
+    mqt_target_disable_exceptions(${dd_target})
+    target_link_libraries(${dd_target} PUBLIC MQT::CoreSupport)
     target_sources(${dd_target} PRIVATE ${DD_SOURCES})
     target_sources(
       ${dd_target}

@@ -17,8 +17,11 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "support/Diagnostics.hpp"
+
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -31,7 +34,6 @@
 #include <iostream>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -107,15 +109,17 @@ void traverseMatrixImpl(const mEdge& edge, const std::complex<fp>& amp,
 template <class Node>
 auto Edge<Node>::getValueByPath(const std::size_t numQubits,
                                 const std::string& decisions) const
-    -> std::complex<fp> {
+    -> llvm::FailureOr<std::complex<fp>> {
   if (decisions.size() < numQubits) {
-    throw std::out_of_range(
-        "Decision path is shorter than the number of qubits.");
+    return ::mqt::emitError(
+        "Decision path is shorter than the number of qubits.",
+        ::mqt::ErrorCategory::OutOfRange);
   }
   const auto path = std::string_view(decisions).substr(0, numQubits);
   if (path.find_first_not_of(IsVector<Node> ? "01" : "0123") !=
       std::string_view::npos) {
-    throw std::invalid_argument("Decision path contains an invalid digit.");
+    return ::mqt::emitError("Decision path contains an invalid digit.",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   auto c = static_cast<std::complex<fp>>(w);
   if constexpr (IsVector<Node>) {
@@ -132,7 +136,7 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
     // node is not at the expected level (skipped node)
     if (r.isTerminal() || r.p->v != level - 1U) {
       if (r.isZeroTerminal() || tmp == 1U || tmp == 2U) {
-        return 0.;
+        return std::complex<fp>{0.};
       }
       --level;
       continue;
@@ -265,12 +269,14 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
   return r;
 }
 
-auto getValueByIndex(const vEdge& edge, const size_t i) -> std::complex<fp> {
+auto getValueByIndex(const vEdge& edge, const size_t i)
+    -> llvm::FailureOr<std::complex<fp>> {
   const auto numQubits =
       edge.isTerminal() ? 0U : static_cast<size_t>(edge.p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
       (i >> numQubits) != 0U) {
-    throw std::out_of_range("Vector index is out of range.");
+    return ::mqt::emitError("Vector index is out of range.",
+                            ::mqt::ErrorCategory::OutOfRange);
   }
   auto current = edge;
   auto amplitude = static_cast<std::complex<fp>>(current.w);
@@ -324,7 +330,7 @@ auto printVector(const vEdge& edge) -> void {
   }
   const size_t element = 2ULL << edge.p->v;
   for (auto i = 0ULL; i < element; i++) {
-    const auto amplitude = getValueByIndex(edge, i);
+    const auto amplitude = *getValueByIndex(edge, i);
     const auto n = static_cast<size_t>(edge.p->v) + 1U;
     for (auto j = n; j > 0; --j) {
       std::cout << ((i >> (j - 1)) & 1ULL);
@@ -430,10 +436,11 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 }
 
 auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
-                     const size_t j) -> std::complex<fp> {
+                     const size_t j) -> llvm::FailureOr<std::complex<fp>> {
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
-    throw std::out_of_range("Matrix index is out of range.");
+    return ::mqt::emitError("Matrix index is out of range.",
+                            ::mqt::ErrorCategory::OutOfRange);
   }
   if (edge.isTerminal()) {
     return i == j ? static_cast<std::complex<fp>>(edge.w) : 0.;
@@ -449,7 +456,7 @@ auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
         q < std::numeric_limits<size_t>::digits ? (j >> q) & 1U : 0U;
     if (current.isTerminal() || current.p->v != q) {
       if (current.isZeroTerminal() || rowBit != colBit) {
-        return 0.;
+        return std::complex<fp>{0.};
       }
     } else {
       current = current.p->e[(2 * rowBit) + colBit];
@@ -508,7 +515,7 @@ auto printMatrix(const mEdge& edge, const size_t numQubits) -> void {
   const size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
     for (auto j = 0ULL; j < element; ++j) {
-      const auto amplitude = getValueByIndex(edge, numQubits, i, j);
+      const auto amplitude = *getValueByIndex(edge, numQubits, i, j);
       std::cout << amplitude << " ";
     }
     std::cout << "\n";

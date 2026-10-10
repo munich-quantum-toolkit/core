@@ -26,11 +26,15 @@
 #include "bench/WState.hpp"
 #include "bench/WeakMeasurementGrover.hpp"
 
+#include "JSON.hpp"
+#include "support/Diagnostics.hpp"
+
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/SHA256.h"
 
 #include <algorithm>
@@ -42,11 +46,11 @@
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bench {
@@ -65,23 +69,17 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
-  [[nodiscard]] ParsedBenchmark parse##TYPE##Instance(                         \
-      const Json& parameters, std::string_view source);                        \
-  [[nodiscard]] std::string evaluate##TYPE(std::string_view manifest,          \
-                                           std::string_view source,            \
-                                           const Counts& counts);
+  [[nodiscard]] llvm::FailureOr<TYPE> parse##TYPE##Parameters(                 \
+      const Json& parameters, std::string_view source);
 #include "bench/BenchmarkFamilies.inc"
 
 using InstanceSpecificationSchemaFunction = Json (*)();
-using EvaluationFunction = std::string (*)(std::string_view, std::string_view,
-                                           const Counts&);
 
 struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
-  ParsedBenchmark (*parse)(const Json&, std::string_view);
-  EvaluationFunction evaluate;
+  llvm::FailureOr<BenchmarkInstance> (*parse)(const Json&, std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
@@ -89,8 +87,14 @@ constexpr std::array REGISTRY{
                 .definitionVersion = (DEFINITION_VERSION),                     \
                 .instanceSpecificationSchema =                                 \
                     STEM##InstanceSpecificationSchema,                         \
-                .parse = parse##TYPE##Instance,                                \
-                .evaluate = evaluate##TYPE},
+                .parse = +[](const Json& parameters, std::string_view source)  \
+                    -> llvm::FailureOr<BenchmarkInstance> {                    \
+                  auto result = parse##TYPE##Parameters(parameters, source);   \
+                  if (llvm::failed(result)) {                                  \
+                    return llvm::failure();                                    \
+                  }                                                            \
+                  return BenchmarkInstance{(*std::move(result))};              \
+                }},
 #include "bench/BenchmarkFamilies.inc"
 };
 static_assert(
@@ -114,486 +118,766 @@ findBenchmark(const std::string_view benchmark) {
   return nullptr;
 }
 
-[[noreturn]] void fail(const std::string_view source,
-                       const std::string_view pointer,
-                       const std::string_view message) {
-  throw std::invalid_argument(std::string(source) + ":" + std::string(pointer) +
-                              " " + std::string(message));
+[[nodiscard]] llvm::LogicalResult fail(const std::string_view source,
+                                       const std::string_view pointer,
+                                       const std::string_view message) {
+  return ::mqt::emitError(std::string(source) + ":" + std::string(pointer) +
+                              " " + std::string(message),
+                          ::mqt::ErrorCategory::InvalidArgument);
 }
 
 template <class Factory>
 [[nodiscard]] auto constructBenchmark(const std::string_view source,
-                                      const Factory& factory) {
-  try {
-    return factory();
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+                                      Factory&& factory) {
+  ::mqt::ScopedDiagnosticHandler const context(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        auto located = diagnostic;
+        located.message =
+            std::string(source) + ":$/parameters " + located.message;
+        ::mqt::emitDiagnostic(located);
+        return llvm::success();
+      });
+  return std::forward<Factory>(factory)();
 }
 
-[[nodiscard]] Json parseJSON(const std::string_view text,
-                             const std::string_view source) {
+[[nodiscard]] llvm::FailureOr<Json> parseJSON(const std::string_view text,
+                                              const std::string_view source) {
   std::vector<std::unordered_set<std::string>> keysByDepth;
-  const Json::parser_callback_t rejectDuplicates =
-      [&](const int depth, const Json::parse_event_t event, Json& parsed) {
-        if (event == Json::parse_event_t::object_start) {
-          const auto index = static_cast<size_t>(depth);
-          if (keysByDepth.size() <= index) {
-            keysByDepth.resize(index + 1U);
-          }
-          keysByDepth[index].clear();
-        } else if (event == Json::parse_event_t::key) {
-          const auto index = static_cast<size_t>(depth - 1);
-          const auto& key = parsed.get_ref<const std::string&>();
-          auto& keys = keysByDepth.at(index);
-          if (!keys.emplace(key).second) {
-            fail(source, "$", "contains duplicate key '" + key + "'");
-          }
-        }
-        return true;
-      };
-
-  try {
-    return Json::parse(text.begin(), text.end(), rejectDuplicates);
-  } catch (const Json::exception& error) {
-    throw std::invalid_argument(std::string(source) +
-                                ": invalid JSON: " + error.what());
+  auto duplicate = llvm::success();
+  const auto rejectDuplicates = [&](const int depth,
+                                    const Json::parse_event_t event,
+                                    Json& parsed) {
+    if (event == Json::parse_event_t::object_start) {
+      const auto index = static_cast<size_t>(depth);
+      if (keysByDepth.size() <= index) {
+        keysByDepth.resize(index + 1U);
+      }
+      keysByDepth[index].clear();
+    } else if (event == Json::parse_event_t::key) {
+      const auto index = static_cast<size_t>(depth - 1);
+      const auto& key = parsed.get_ref<const std::string&>();
+      if (!keysByDepth[index].emplace(key).second &&
+          llvm::succeeded(duplicate)) {
+        duplicate = fail(source, "$", "contains duplicate key '" + key + "'");
+      }
+    }
+    return true;
+  };
+  auto result = mqt::detail::parseJSON(text, source, rejectDuplicates);
+  if (llvm::failed(duplicate)) {
+    return llvm::failure();
   }
+  return result;
 }
 
-void requireObject(const Json& value, const std::string_view source,
-                   const std::string_view pointer) {
+llvm::LogicalResult requireObject(const Json& value,
+                                  const std::string_view source,
+                                  const std::string_view pointer) {
   if (!value.is_object()) {
-    fail(source, pointer, "must be an object");
+    return fail(source, pointer, "must be an object");
   }
+  return llvm::success();
 }
 
-void rejectUnknownKeys(const Json& value,
-                       const std::initializer_list<std::string_view> known,
-                       const std::string_view source,
-                       const std::string_view pointer) {
+llvm::LogicalResult rejectUnknownKeys(
+    const Json& value, const std::initializer_list<std::string_view> known,
+    const std::string_view source, const std::string_view pointer) {
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
     if (std::ranges::find(known, key) == known.end()) {
-      fail(source, pointer, "contains unknown key '" + key + "'");
+      return fail(source, pointer, "contains unknown key '" + key + "'");
     }
   }
+  return llvm::success();
 }
 
-[[nodiscard]] const Json& required(const Json& value, const char* const key,
-                                   const std::string_view source,
-                                   const std::string_view pointer) {
+[[nodiscard]] llvm::FailureOr<const Json*>
+required(const Json& value, const char* const key,
+         const std::string_view source, const std::string_view pointer) {
   const auto found = value.find(key);
   if (found == value.end()) {
-    fail(source, std::string(pointer) + "/" + key, "is required");
+    return fail(source, std::string(pointer) + "/" + key, "is required");
   }
-  return *found;
+  return &*found;
 }
 
-[[nodiscard]] uint64_t unsignedInteger(const Json& value,
-                                       const std::string_view source,
-                                       const std::string_view pointer) {
+[[nodiscard]] llvm::FailureOr<uint64_t>
+unsignedInteger(const Json& value, const std::string_view source,
+                const std::string_view pointer) {
   if (value.is_number_float()) {
-    fail(source, pointer, "must be encoded as an integer");
+    return fail(source, pointer, "must be encoded as an integer");
   }
   if (!value.is_number_unsigned() &&
       (!value.is_number_integer() || value.get<int64_t>() < 0)) {
-    fail(source, pointer, "must be a non-negative integer");
+    return fail(source, pointer, "must be a non-negative integer");
   }
-  try {
-    return value.get<uint64_t>();
-  } catch (const Json::exception&) {
-    fail(source, pointer, "must fit an unsigned 64-bit integer");
-  }
+  return value.get<uint64_t>();
 }
 
-[[nodiscard]] size_t sizeValue(const Json& value, const std::string_view source,
-                               const std::string_view pointer) {
-  const auto parsed = unsignedInteger(value, source, pointer);
+[[nodiscard]] llvm::FailureOr<size_t>
+sizeValue(const Json& value, const std::string_view source,
+          const std::string_view pointer) {
+  auto result = unsignedInteger(value, source, pointer);
+  if (llvm::failed(result)) {
+    return llvm::failure();
+  }
+  const auto parsed = (*result);
   if (parsed > std::numeric_limits<size_t>::max()) {
-    fail(source, pointer, "must fit size_t");
+    return fail(source, pointer, "must fit size_t");
   }
   return static_cast<size_t>(parsed);
 }
 
-[[nodiscard]] std::string stringValue(const Json& value,
-                                      const std::string_view source,
-                                      const std::string_view pointer) {
+[[nodiscard]] llvm::FailureOr<std::string>
+stringValue(const Json& value, const std::string_view source,
+            const std::string_view pointer) {
   if (!value.is_string()) {
-    fail(source, pointer, "must be a string");
+    return fail(source, pointer, "must be a string");
   }
   return value.get<std::string>();
 }
 
-[[nodiscard]] double numberValue(const Json& value,
-                                 const std::string_view source,
-                                 const std::string_view pointer) {
+[[nodiscard]] llvm::FailureOr<double>
+numberValue(const Json& value, const std::string_view source,
+            const std::string_view pointer) {
   if (!value.is_number()) {
-    fail(source, pointer, "must be a number");
+    return fail(source, pointer, "must be a number");
   }
   return value.get<double>();
 }
 
-void requireSchemaVersion(const Json& root, const std::string_view source) {
-  const auto version =
-      unsignedInteger(required(root, "schema_version", source, "$"), source,
-                      "$/schema_version");
+llvm::LogicalResult requireSchemaVersion(const Json& root,
+                                         const std::string_view source) {
+  auto schemaVersionField = required(root, "schema_version", source, "$");
+  if (llvm::failed(schemaVersionField)) {
+    return llvm::failure();
+  }
+  auto schemaVersionValue =
+      unsignedInteger(*(*schemaVersionField), source, "$/schema_version");
+  if (llvm::failed(schemaVersionValue)) {
+    return llvm::failure();
+  }
+  const auto version = (*schemaVersionValue);
   if (version != SCHEMA_VERSION) {
-    fail(source, "$/schema_version", "must be 1");
+    return fail(source, "$/schema_version", "must be 1");
   }
+  return llvm::success();
 }
 
-[[nodiscard]] const RegistryEntry&
+[[nodiscard]] llvm::FailureOr<const RegistryEntry*>
 requireBenchmarkEntry(const Json& root, const std::string_view source) {
-  const auto benchmark = stringValue(required(root, "benchmark", source, "$"),
-                                     source, "$/benchmark");
+  auto benchmarkField = required(root, "benchmark", source, "$");
+  if (llvm::failed(benchmarkField)) {
+    return llvm::failure();
+  }
+  auto benchmarkValue = stringValue(*(*benchmarkField), source, "$/benchmark");
+  if (llvm::failed(benchmarkValue)) {
+    return llvm::failure();
+  }
+  const auto& benchmark = (*benchmarkValue);
   if (const auto* entry = findBenchmark(benchmark)) {
-    return *entry;
+    return entry;
   }
-  fail(source, "$/benchmark",
-       "selects unsupported benchmark '" + benchmark + "'");
+  return fail(source, "$/benchmark",
+              "selects unsupported benchmark '" + benchmark + "'");
 }
 
-[[nodiscard]] Json
-instanceSpecificationEnvelope(const std::string_view text,
-                              const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
-                    "$");
-  requireSchemaVersion(root, source);
-  static_cast<void>(requireBenchmarkEntry(root, source));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  return root;
+[[nodiscard]] llvm::FailureOr<Json> envelope(const std::string_view text,
+                                             const std::string_view source,
+                                             const bool manifest) {
+  auto parsed = parseJSON(text, source);
+  if (llvm::failed(parsed)) {
+    return llvm::failure();
+  }
+  auto& root = (*parsed);
+  if (llvm::failed(requireObject(root, source, "$"))) {
+    return llvm::failure();
+  }
+  auto const keyError =
+      manifest
+          ? rejectUnknownKeys(root,
+                              {
+                                  "schema_version",
+                                  "case_id",
+                                  "benchmark",
+                                  "definition_version",
+                                  "parameters",
+                                  "outputs",
+                                  "reference",
+                              },
+                              source, "$")
+          : rejectUnknownKeys(root,
+                              {"schema_version", "benchmark", "parameters"},
+                              source, "$");
+  if (llvm::failed(keyError)) {
+    return llvm::failure();
+  }
+  if (llvm::failed(requireSchemaVersion(root, source))) {
+    return llvm::failure();
+  }
+  auto entry = requireBenchmarkEntry(root, source);
+  if (llvm::failed(entry)) {
+    return llvm::failure();
+  }
+  auto parameters = required(root, "parameters", source, "$");
+  if (llvm::failed(parameters)) {
+    return llvm::failure();
+  }
+  if (llvm::failed(requireObject(*(*parameters), source, "$/parameters"))) {
+    return llvm::failure();
+  }
+  if (manifest) {
+    auto definitionVersionField =
+        required(root, "definition_version", source, "$");
+    if (llvm::failed(definitionVersionField)) {
+      return llvm::failure();
+    }
+    auto definitionVersionValue = unsignedInteger(
+        *(*definitionVersionField), source, "$/definition_version");
+    if (llvm::failed(definitionVersionValue)) {
+      return llvm::failure();
+    }
+    const auto definition = (*definitionVersionValue);
+    if (definition != (*entry)->definitionVersion) {
+      return fail(source, "$/definition_version",
+                  "must be " + std::to_string((*entry)->definitionVersion));
+    }
+    auto caseIdField = required(root, "case_id", source, "$");
+    if (llvm::failed(caseIdField)) {
+      return llvm::failure();
+    }
+    auto caseIdValue = stringValue(*(*caseIdField), source, "$/case_id");
+    if (llvm::failed(caseIdValue)) {
+      return llvm::failure();
+    }
+    const auto& caseId = (*caseIdValue);
+    static_cast<void>(caseId);
+    auto outputsField = required(root, "outputs", source, "$");
+    if (llvm::failed(outputsField)) {
+      return llvm::failure();
+    }
+    const auto& outputs = *(*outputsField);
+    if (!outputs.is_array()) {
+      return fail(source, "$/outputs", "must be an array");
+    }
+    auto referenceField = required(root, "reference", source, "$");
+    if (llvm::failed(referenceField)) {
+      return llvm::failure();
+    }
+    const auto& reference = *(*referenceField);
+    if (llvm::failed(requireObject(reference, source, "$/reference"))) {
+      return llvm::failure();
+    }
+  }
+  return std::move(root);
 }
 
-[[nodiscard]] Json manifestEnvelope(const std::string_view text,
-                                    const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root,
-                    {
-                        "schema_version",
-                        "case_id",
-                        "benchmark",
-                        "definition_version",
-                        "parameters",
-                        "outputs",
-                        "reference",
-                    },
-                    source, "$");
-  requireSchemaVersion(root, source);
-  const auto& benchmark = requireBenchmarkEntry(root, source);
-  const auto definition =
-      unsignedInteger(required(root, "definition_version", source, "$"), source,
-                      "$/definition_version");
-  const auto expectedDefinition = benchmark.definitionVersion;
-  if (definition != expectedDefinition) {
-    fail(source, "$/definition_version",
-         "must be " + std::to_string(expectedDefinition));
-  }
-  static_cast<void>(
-      stringValue(required(root, "case_id", source, "$"), source, "$/case_id"));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  if (!required(root, "outputs", source, "$").is_array()) {
-    fail(source, "$/outputs", "must be an array");
-  }
-  requireObject(required(root, "reference", source, "$"), source,
-                "$/reference");
-  return root;
-}
-
-void requireBenchmark(const Json& root, const std::string_view expected,
-                      const std::string_view source) {
-  const auto actual = stringValue(required(root, "benchmark", source, "$"),
-                                  source, "$/benchmark");
+llvm::LogicalResult requireBenchmark(const Json& root,
+                                     const std::string_view expected,
+                                     const std::string_view source) {
+  const auto& actual = root["benchmark"].get_ref<const std::string&>();
   if (actual != expected) {
-    fail(source, "$/benchmark", "must be '" + std::string(expected) + "'");
+    return fail(source, "$/benchmark",
+                "must be '" + std::string(expected) + "'");
   }
+  return llvm::success();
 }
 
-[[nodiscard]] BV parseBVParameters(const Json& parameters,
-                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"hidden_bitstring", "method"}, source,
-                    "$/parameters");
+[[nodiscard]] llvm::FailureOr<BV>
+parseBVParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(parameters, {"hidden_bitstring", "method"},
+                                     source, "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto hiddenBitstringField =
+      required(parameters, "hidden_bitstring", source, "$/parameters");
+  if (llvm::failed(hiddenBitstringField)) {
+    return llvm::failure();
+  }
+  auto hiddenBitstringValue = stringValue(*(*hiddenBitstringField), source,
+                                          "$/parameters/hidden_bitstring");
+  if (llvm::failed(hiddenBitstringValue)) {
+    return llvm::failure();
+  }
   BVOptions options{
-      .hiddenBitstring = stringValue(
-          required(parameters, "hidden_bitstring", source, "$/parameters"),
-          source, "$/parameters/hidden_bitstring"),
+      .hiddenBitstring = std::move(*hiddenBitstringValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
+    auto methodValue = stringValue(*method, source, "$/parameters/method");
+    if (llvm::failed(methodValue)) {
+      return llvm::failure();
+    }
+    const auto& value = (*methodValue);
     if (value == "static") {
       options.method = BVMethod::Static;
     } else if (value == "dynamic") {
       options.method = BVMethod::Dynamic;
     } else {
-      fail(source, "$/parameters/method", "must be 'static' or 'dynamic'");
+      return fail(source, "$/parameters/method",
+                  "must be 'static' or 'dynamic'");
     }
   }
   return constructBenchmark(source,
-                            [&options] { return BV(std::move(options)); });
+                            [&] { return BV::create(std::move(options)); });
 }
 
-[[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
-                    "$/parameters");
-  GHZOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-  };
-  if (const auto topology = parameters.find("topology");
-      topology != parameters.end()) {
-    const auto value = stringValue(*topology, source, "$/parameters/topology");
-    if (value == "linear") {
-      options.topology = GHZTopology::Linear;
-    } else if (value == "star") {
-      options.topology = GHZTopology::Star;
-    } else {
-      fail(source, "$/parameters/topology", "must be 'linear' or 'star'");
-    }
-  }
-  if (const auto basis = parameters.find("basis"); basis != parameters.end()) {
-    const auto value = stringValue(*basis, source, "$/parameters/basis");
-    if (value == "z") {
-      options.basis = GHZBasis::Z;
-    } else if (value == "x") {
-      options.basis = GHZBasis::X;
-    } else {
-      fail(source, "$/parameters/basis", "must be 'z' or 'x'");
-    }
-  }
-  return constructBenchmark(source, [&options] { return GHZ(options); });
-}
-
-[[nodiscard]] Grover parseGroverParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"marked_bitstring", "iterations"}, source,
-                    "$/parameters");
-  GroverOptions options{
-      .markedBitstring = stringValue(
-          required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring"),
-  };
-  if (const auto iterations = parameters.find("iterations");
-      iterations != parameters.end()) {
-    options.iterations =
-        sizeValue(*iterations, source, "$/parameters/iterations");
-  }
-  return constructBenchmark(source,
-                            [&options] { return Grover(std::move(options)); });
-}
-
-[[nodiscard]] WeakMeasurementGrover
+[[nodiscard]] llvm::FailureOr<WeakMeasurementGrover>
 parseWeakMeasurementGroverParameters(const Json& parameters,
                                      const std::string_view source) {
-  rejectUnknownKeys(parameters, {"marked_bitstring", "measurement_strength"},
-                    source, "$/parameters");
-  WeakMeasurementGroverOptions options{
-      .markedBitstring = stringValue(
-          required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring"),
-  };
+  if (llvm::failed(rejectUnknownKeys(
+          parameters, {"marked_bitstring", "measurement_strength"}, source,
+          "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto field = required(parameters, "marked_bitstring", source, "$/parameters");
+  if (llvm::failed(field)) {
+    return llvm::failure();
+  }
+  auto marked = stringValue(**field, source, "$/parameters/marked_bitstring");
+  if (llvm::failed(marked)) {
+    return llvm::failure();
+  }
+  WeakMeasurementGroverOptions options{.markedBitstring = std::move(*marked)};
   if (const auto strength = parameters.find("measurement_strength");
       strength != parameters.end()) {
-    options.measurementStrength =
+    const auto value =
         numberValue(*strength, source, "$/parameters/measurement_strength");
+    if (llvm::failed(value)) {
+      return llvm::failure();
+    }
+    options.measurementStrength = value;
   }
-  return constructBenchmark(
-      source, [&options] { return WeakMeasurementGrover(std::move(options)); });
+  return constructBenchmark(source, [&] {
+    return WeakMeasurementGrover::create(std::move(options));
+  });
 }
 
-[[nodiscard]] MagicStateDistillation
+[[nodiscard]] llvm::FailureOr<MagicStateDistillation>
 parseMagicStateDistillationParameters(const Json& parameters,
                                       const std::string_view source) {
-  rejectUnknownKeys(parameters, {"levels"}, source, "$/parameters");
+  if (llvm::failed(
+          rejectUnknownKeys(parameters, {"levels"}, source, "$/parameters"))) {
+    return llvm::failure();
+  }
   MagicStateDistillationOptions options;
   if (const auto levels = parameters.find("levels");
       levels != parameters.end()) {
-    options.levels = sizeValue(*levels, source, "$/parameters/levels");
+    auto value = sizeValue(*levels, source, "$/parameters/levels");
+    if (llvm::failed(value)) {
+      return llvm::failure();
+    }
+    options.levels = *value;
   }
   return constructBenchmark(
-      source, [&options] { return MagicStateDistillation(options); });
+      source, [&] { return MagicStateDistillation::create(options); });
 }
 
-[[nodiscard]] ModularMultiplier
+[[nodiscard]] llvm::FailureOr<ModularMultiplier>
 parseModularMultiplierParameters(const Json& parameters,
                                  const std::string_view source) {
-  rejectUnknownKeys(parameters,
-                    {"multiplier", "modulus", "multiplicand", "control"},
-                    source, "$/parameters");
+  if (llvm::failed(rejectUnknownKeys(
+          parameters, {"multiplier", "modulus", "multiplicand", "control"},
+          source, "$/parameters"))) {
+    return llvm::failure();
+  }
   auto control = std::string("1");
   if (const auto value = parameters.find("control");
       value != parameters.end()) {
-    control = stringValue(*value, source, "$/parameters/control");
+    auto controlValue = stringValue(*value, source, "$/parameters/control");
+    if (llvm::failed(controlValue)) {
+      return llvm::failure();
+    }
+    control = std::move(*controlValue);
   }
   if (control.size() != 1U) {
-    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+    return fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+  }
+  auto multiplicandField =
+      required(parameters, "multiplicand", source, "$/parameters");
+  if (llvm::failed(multiplicandField)) {
+    return llvm::failure();
+  }
+  auto multiplicandValue =
+      stringValue(*(*multiplicandField), source, "$/parameters/multiplicand");
+  if (llvm::failed(multiplicandValue)) {
+    return llvm::failure();
+  }
+  auto modulusField = required(parameters, "modulus", source, "$/parameters");
+  if (llvm::failed(modulusField)) {
+    return llvm::failure();
+  }
+  auto modulusValue =
+      stringValue(*(*modulusField), source, "$/parameters/modulus");
+  if (llvm::failed(modulusValue)) {
+    return llvm::failure();
+  }
+  auto multiplierField =
+      required(parameters, "multiplier", source, "$/parameters");
+  if (llvm::failed(multiplierField)) {
+    return llvm::failure();
+  }
+  auto multiplierValue =
+      stringValue(*(*multiplierField), source, "$/parameters/multiplier");
+  if (llvm::failed(multiplierValue)) {
+    return llvm::failure();
   }
   return constructBenchmark(source, [&] {
-    return ModularMultiplier({
-        .multiplier = stringValue(
-            required(parameters, "multiplier", source, "$/parameters"), source,
-            "$/parameters/multiplier"),
-        .modulus =
-            stringValue(required(parameters, "modulus", source, "$/parameters"),
-                        source, "$/parameters/modulus"),
-        .multiplicand = stringValue(
-            required(parameters, "multiplicand", source, "$/parameters"),
-            source, "$/parameters/multiplicand"),
+    return ModularMultiplier::create({
+        .multiplier = std::move(*multiplierValue),
+        .modulus = std::move(*modulusValue),
+        .multiplicand = std::move(*multiplicandValue),
         .control = control.front(),
     });
   });
 }
 
-[[nodiscard]] Multiplexer
+[[nodiscard]] llvm::FailureOr<GHZ>
+parseGHZParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(parameters,
+                                     {"qubits", "topology", "basis"}, source,
+                                     "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (llvm::failed(qubitsField)) {
+    return llvm::failure();
+  }
+  auto qubitsValue = sizeValue(*(*qubitsField), source, "$/parameters/qubits");
+  if (llvm::failed(qubitsValue)) {
+    return llvm::failure();
+  }
+  GHZOptions options{
+      .qubits = (*qubitsValue),
+  };
+  if (const auto topology = parameters.find("topology");
+      topology != parameters.end()) {
+    auto topologyValue =
+        stringValue(*topology, source, "$/parameters/topology");
+    if (llvm::failed(topologyValue)) {
+      return llvm::failure();
+    }
+    const auto& value = (*topologyValue);
+    if (value == "linear") {
+      options.topology = GHZTopology::Linear;
+    } else if (value == "star") {
+      options.topology = GHZTopology::Star;
+    } else {
+      return fail(source, "$/parameters/topology",
+                  "must be 'linear' or 'star'");
+    }
+  }
+  if (const auto basis = parameters.find("basis"); basis != parameters.end()) {
+    auto basisValue = stringValue(*basis, source, "$/parameters/basis");
+    if (llvm::failed(basisValue)) {
+      return llvm::failure();
+    }
+    const auto& value = (*basisValue);
+    if (value == "z") {
+      options.basis = GHZBasis::Z;
+    } else if (value == "x") {
+      options.basis = GHZBasis::X;
+    } else {
+      return fail(source, "$/parameters/basis", "must be 'z' or 'x'");
+    }
+  }
+  return constructBenchmark(source, [&] { return GHZ::create(options); });
+}
+
+[[nodiscard]] llvm::FailureOr<Grover>
+parseGroverParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(parameters,
+                                     {"marked_bitstring", "iterations"}, source,
+                                     "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto markedBitstringField =
+      required(parameters, "marked_bitstring", source, "$/parameters");
+  if (llvm::failed(markedBitstringField)) {
+    return llvm::failure();
+  }
+  auto markedBitstringValue = stringValue(*(*markedBitstringField), source,
+                                          "$/parameters/marked_bitstring");
+  if (llvm::failed(markedBitstringValue)) {
+    return llvm::failure();
+  }
+  GroverOptions options{
+      .markedBitstring = std::move(*markedBitstringValue),
+  };
+  if (const auto iterations = parameters.find("iterations");
+      iterations != parameters.end()) {
+    auto iterationsValue =
+        sizeValue(*iterations, source, "$/parameters/iterations");
+    if (llvm::failed(iterationsValue)) {
+      return llvm::failure();
+    }
+    options.iterations.emplace(*iterationsValue);
+  }
+  return constructBenchmark(source,
+                            [&] { return Grover::create(std::move(options)); });
+}
+
+[[nodiscard]] llvm::FailureOr<Multiplexer>
 parseMultiplexerParameters(const Json& parameters,
                            const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  if (llvm::failed(
+          rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (llvm::failed(qubitsField)) {
+    return llvm::failure();
+  }
+  auto qubitsValue = sizeValue(*(*qubitsField), source, "$/parameters/qubits");
+  if (llvm::failed(qubitsValue)) {
+    return llvm::failure();
+  }
   return constructBenchmark(source, [&] {
-    return Multiplexer({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
+    return Multiplexer::create({
+        .qubits = (*qubitsValue),
     });
   });
 }
 
-[[nodiscard]] QFT parseQFTParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"}, source,
-                    "$/parameters");
+[[nodiscard]] llvm::FailureOr<QFT>
+parseQFTParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(parameters,
+                                     {"qubits", "period_exponent", "method"},
+                                     source, "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto periodExponentField =
+      required(parameters, "period_exponent", source, "$/parameters");
+  if (llvm::failed(periodExponentField)) {
+    return llvm::failure();
+  }
+  auto periodExponentValue = sizeValue(*(*periodExponentField), source,
+                                       "$/parameters/period_exponent");
+  if (llvm::failed(periodExponentValue)) {
+    return llvm::failure();
+  }
+  auto qubitsField = required(parameters, "qubits", source, "$/parameters");
+  if (llvm::failed(qubitsField)) {
+    return llvm::failure();
+  }
+  auto qubitsValue = sizeValue(*(*qubitsField), source, "$/parameters/qubits");
+  if (llvm::failed(qubitsValue)) {
+    return llvm::failure();
+  }
   QFTOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-      .periodExponent = sizeValue(
-          required(parameters, "period_exponent", source, "$/parameters"),
-          source, "$/parameters/period_exponent"),
+      .qubits = (*qubitsValue),
+      .periodExponent = (*periodExponentValue),
   };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
+    auto methodValue = stringValue(*method, source, "$/parameters/method");
+    if (llvm::failed(methodValue)) {
+      return llvm::failure();
+    }
+    const auto& value = (*methodValue);
     if (value == "standard") {
       options.method = QFTMethod::Standard;
     } else if (value == "semiclassical") {
       options.method = QFTMethod::Semiclassical;
     } else {
-      fail(source, "$/parameters/method",
-           "must be 'standard' or 'semiclassical'");
+      return fail(source, "$/parameters/method",
+                  "must be 'standard' or 'semiclassical'");
     }
   }
-  return constructBenchmark(source, [&options] { return QFT(options); });
+  return constructBenchmark(source, [&] { return QFT::create(options); });
 }
 
-[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
-                                               const std::string_view source) {
-  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
-                    source, "$/parameters");
+[[nodiscard]] llvm::FailureOr<QFTAdder>
+parseQFTAdderParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(
+          parameters, {"addend", "accumulator", "method", "overflow"}, source,
+          "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto accumulatorField =
+      required(parameters, "accumulator", source, "$/parameters");
+  if (llvm::failed(accumulatorField)) {
+    return llvm::failure();
+  }
+  auto accumulatorValue =
+      stringValue(*(*accumulatorField), source, "$/parameters/accumulator");
+  if (llvm::failed(accumulatorValue)) {
+    return llvm::failure();
+  }
+  auto addendField = required(parameters, "addend", source, "$/parameters");
+  if (llvm::failed(addendField)) {
+    return llvm::failure();
+  }
+  auto addendValue =
+      stringValue(*(*addendField), source, "$/parameters/addend");
+  if (llvm::failed(addendValue)) {
+    return llvm::failure();
+  }
   QFTAdderOptions options{
-      .addend =
-          stringValue(required(parameters, "addend", source, "$/parameters"),
-                      source, "$/parameters/addend"),
-      .accumulator = stringValue(
-          required(parameters, "accumulator", source, "$/parameters"), source,
-          "$/parameters/accumulator"),
+      .addend = std::move(*addendValue),
+      .accumulator = std::move(*accumulatorValue),
   };
   if (const auto it = parameters.find("method"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/method");
+    auto methodValue = stringValue(*it, source, "$/parameters/method");
+    if (llvm::failed(methodValue)) {
+      return llvm::failure();
+    }
+    const auto& value = (*methodValue);
     if (value == "register") {
       options.method = QFTAdderMethod::Register;
     } else if (value == "constant") {
       options.method = QFTAdderMethod::Constant;
     } else {
-      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
+      return fail(source, "$/parameters/method",
+                  "must be 'register' or 'constant'");
     }
   }
   if (const auto it = parameters.find("overflow"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/overflow");
+    auto overflowValue = stringValue(*it, source, "$/parameters/overflow");
+    if (llvm::failed(overflowValue)) {
+      return llvm::failure();
+    }
+    const auto& value = (*overflowValue);
     if (value == "wrap") {
       options.overflow = QFTAdderOverflow::Wrap;
     } else if (value == "carry") {
       options.overflow = QFTAdderOverflow::Carry;
     } else {
-      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
+      return fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
     }
   }
   return constructBenchmark(
-      source, [&options] { return QFTAdder(std::move(options)); });
+      source, [&] { return QFTAdder::create(std::move(options)); });
 }
 
-[[nodiscard]] QPE parseQPEParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"precision", "phase", "method"}, source,
-                    "$/parameters");
-  const auto precision =
-      sizeValue(required(parameters, "precision", source, "$/parameters"),
-                source, "$/parameters/precision");
-  const auto& phase = required(parameters, "phase", source, "$/parameters");
-  requireObject(phase, source, "$/parameters/phase");
-  rejectUnknownKeys(phase, {"numerator", "denominator"}, source,
-                    "$/parameters/phase");
-  const auto numerator = unsignedInteger(
-      required(phase, "numerator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/numerator");
-  const auto denominator = unsignedInteger(
-      required(phase, "denominator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/denominator");
+[[nodiscard]] llvm::FailureOr<QPE>
+parseQPEParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(parameters,
+                                     {"precision", "phase", "method"}, source,
+                                     "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto precisionField =
+      required(parameters, "precision", source, "$/parameters");
+  if (llvm::failed(precisionField)) {
+    return llvm::failure();
+  }
+  auto precisionValue =
+      sizeValue(*(*precisionField), source, "$/parameters/precision");
+  if (llvm::failed(precisionValue)) {
+    return llvm::failure();
+  }
+  const auto precision = (*precisionValue);
+  auto phaseField = required(parameters, "phase", source, "$/parameters");
+  if (llvm::failed(phaseField)) {
+    return llvm::failure();
+  }
+  const auto& phase = *(*phaseField);
+  if (llvm::failed(requireObject(phase, source, "$/parameters/phase"))) {
+    return llvm::failure();
+  }
+  if (llvm::failed(rejectUnknownKeys(phase, {"numerator", "denominator"},
+                                     source, "$/parameters/phase"))) {
+    return llvm::failure();
+  }
+  auto numeratorField =
+      required(phase, "numerator", source, "$/parameters/phase");
+  if (llvm::failed(numeratorField)) {
+    return llvm::failure();
+  }
+  auto numeratorValue = unsignedInteger(*(*numeratorField), source,
+                                        "$/parameters/phase/numerator");
+  if (llvm::failed(numeratorValue)) {
+    return llvm::failure();
+  }
+  const auto numerator = (*numeratorValue);
+  auto denominatorField =
+      required(phase, "denominator", source, "$/parameters/phase");
+  if (llvm::failed(denominatorField)) {
+    return llvm::failure();
+  }
+  auto denominatorValue = unsignedInteger(*(*denominatorField), source,
+                                          "$/parameters/phase/denominator");
+  if (llvm::failed(denominatorValue)) {
+    return llvm::failure();
+  }
+  const auto denominator = (*denominatorValue);
   auto method = QPEMethod::Standard;
   if (const auto value = parameters.find("method"); value != parameters.end()) {
-    const auto name = stringValue(*value, source, "$/parameters/method");
+    auto methodValue = stringValue(*value, source, "$/parameters/method");
+    if (llvm::failed(methodValue)) {
+      return llvm::failure();
+    }
+    const auto& name = (*methodValue);
     if (name == "standard") {
       method = QPEMethod::Standard;
     } else if (name == "iterative") {
       method = QPEMethod::Iterative;
     } else {
-      fail(source, "$/parameters/method", "must be 'standard' or 'iterative'");
+      return fail(source, "$/parameters/method",
+                  "must be 'standard' or 'iterative'");
     }
   }
+  auto phaseValue = constructBenchmark(
+      source, [&] { return Phase::create(numerator, denominator); });
+  if (llvm::failed(phaseValue)) {
+    return llvm::failure();
+  }
   return constructBenchmark(source, [&] {
-    return QPE({
+    return QPE::create({
         .precision = precision,
-        .phase = Phase(numerator, denominator),
+        .phase = (*phaseValue),
         .method = method,
     });
   });
 }
 
-[[nodiscard]] RepeatUntilSuccess
+[[nodiscard]] llvm::FailureOr<RepeatUntilSuccess>
 parseRepeatUntilSuccessParameters(const Json& parameters,
                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"data_qubits"}, source, "$/parameters");
+  if (llvm::failed(rejectUnknownKeys(parameters, {"data_qubits"}, source,
+                                     "$/parameters"))) {
+    return llvm::failure();
+  }
   RepeatUntilSuccessOptions options;
   if (const auto width = parameters.find("data_qubits");
       width != parameters.end()) {
-    options.dataQubits = sizeValue(*width, source, "$/parameters/data_qubits");
+    auto dataQubitsValue =
+        sizeValue(*width, source, "$/parameters/data_qubits");
+    if (llvm::failed(dataQubitsValue)) {
+      return llvm::failure();
+    }
+    options.dataQubits = (*dataQubitsValue);
   }
-  return constructBenchmark(source,
-                            [&options] { return RepeatUntilSuccess(options); });
+  return constructBenchmark(
+      source, [&] { return RepeatUntilSuccess::create(options); });
 }
 
-[[nodiscard]] Teleportation
+[[nodiscard]] llvm::FailureOr<Teleportation>
 parseTeleportationParameters(const Json& parameters,
                              const std::string_view source) {
-  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  if (llvm::failed(rejectUnknownKeys(parameters, {}, source, "$/parameters"))) {
+    return llvm::failure();
+  }
   return Teleportation{};
 }
 
-[[nodiscard]] WState parseWStateParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  return constructBenchmark(source, [&] {
-    return WState({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
-    });
-  });
+[[nodiscard]] llvm::FailureOr<WState>
+parseWStateParameters(const Json& parameters, const std::string_view source) {
+  if (llvm::failed(
+          rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters"))) {
+    return llvm::failure();
+  }
+  auto field = required(parameters, "qubits", source, "$/parameters");
+  if (llvm::failed(field)) {
+    return llvm::failure();
+  }
+  auto qubits = sizeValue(**field, source, "$/parameters/qubits");
+  if (llvm::failed(qubits)) {
+    return llvm::failure();
+  }
+  return constructBenchmark(
+      source, [&] { return WState::create({.qubits = *qubits}); });
 }
 
 [[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
@@ -616,18 +900,29 @@ parseTeleportationParameters(const Json& parameters,
   return method == QPEMethod::Standard ? "standard" : "iterative";
 }
 
-[[nodiscard]] Shor parseShorParameters(const Json& parameters,
-                                       std::string_view source) {
-  rejectUnknownKeys(parameters, {"number", "base"}, source, "$/parameters");
-  ShorOptions options{
-      .number = unsignedInteger(
-          required(parameters, "number", source, "$/parameters"), source,
-          "$/parameters/number"),
-  };
-  if (const auto base = parameters.find("base"); base != parameters.end()) {
-    options.base = unsignedInteger(*base, source, "$/parameters/base");
+[[nodiscard]] llvm::FailureOr<Shor>
+parseShorParameters(const Json& parameters, std::string_view source) {
+  if (llvm::failed(rejectUnknownKeys(parameters, {"number", "base"}, source,
+                                     "$/parameters"))) {
+    return llvm::failure();
   }
-  return constructBenchmark(source, [&] { return Shor(options); });
+  auto field = required(parameters, "number", source, "$/parameters");
+  if (llvm::failed(field)) {
+    return llvm::failure();
+  }
+  auto number = unsignedInteger(**field, source, "$/parameters/number");
+  if (llvm::failed(number)) {
+    return llvm::failure();
+  }
+  ShorOptions options{.number = *number};
+  if (const auto base = parameters.find("base"); base != parameters.end()) {
+    auto value = unsignedInteger(*base, source, "$/parameters/base");
+    if (llvm::failed(value)) {
+      return llvm::failure();
+    }
+    options.base = *value;
+  }
+  return constructBenchmark(source, [&] { return Shor::create(options); });
 }
 
 [[nodiscard]] Json parametersJSON(const Shor& benchmark) {
@@ -872,26 +1167,36 @@ template <class Benchmark>
   };
 }
 
-template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark
-parseInstanceSpecification(const std::string_view text,
-                           const std::string_view source,
-                           const ParseParameters& parseParameters) {
-  const auto root = instanceSpecificationEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  return parseParameters(root.at("parameters"), source);
+template <class Benchmark>
+[[nodiscard]] llvm::LogicalResult
+requireManifest(const Json& root, const Benchmark& benchmark,
+                const std::string_view source) {
+  if (root.dump() != manifestJSON(benchmark).dump()) {
+    return fail(source, "$",
+                "does not match its resolved benchmark instance and case ID");
+  }
+  return llvm::success();
 }
 
 template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark parseManifest(const std::string_view text,
-                                      const std::string_view source,
-                                      const ParseParameters& parseParameters) {
-  const auto root = manifestEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  auto benchmark = parseParameters(root.at("parameters"), source);
-  if (root.dump() != manifestJSON(benchmark).dump()) {
-    fail(source, "$",
-         "does not match its resolved benchmark instance and case ID");
+[[nodiscard]] llvm::FailureOr<Benchmark>
+parseBenchmark(const std::string_view text, const std::string_view source,
+               const ParseParameters& parseParameters, const bool manifest) {
+  auto parsed = envelope(text, source, manifest);
+  if (llvm::failed(parsed)) {
+    return llvm::failure();
+  }
+  const auto& root = (*parsed);
+  if (llvm::failed(
+          requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source))) {
+    return llvm::failure();
+  }
+  auto benchmark = parseParameters(root["parameters"], source);
+  if (llvm::failed(benchmark)) {
+    return llvm::failure();
+  }
+  if (manifest && llvm::failed(requireManifest(root, *benchmark, source))) {
+    return llvm::failure();
   }
   return benchmark;
 }
@@ -1425,39 +1730,6 @@ template <class Benchmark>
   });
 }
 
-template <class Benchmark>
-[[nodiscard]] ParsedBenchmark resolveInstance(Benchmark benchmark) {
-  const Json manifest = manifestJSON(benchmark);
-  return {
-      .instance = std::move(benchmark),
-      .benchmarkId = std::string(BenchmarkMetadata<Benchmark>::id),
-      .caseId = manifest.at("case_id").template get<std::string>(),
-      .manifestJSON = manifest.dump(),
-  };
-}
-
-template <class Benchmark>
-[[nodiscard]] std::string evaluateBenchmark(const Benchmark& benchmark,
-                                            const Counts& counts) {
-  const auto shots = std::accumulate(
-      counts.begin(), counts.end(), size_t{0},
-      [](const size_t sum, const auto& item) { return sum + item.second; });
-  return evaluationToJSON(caseId(benchmark), shots, benchmark.evaluate(counts));
-}
-
-#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  ParsedBenchmark parse##TYPE##Instance(const Json& parameters,                \
-                                        const std::string_view source) {       \
-    return resolveInstance(parse##TYPE##Parameters(parameters, source));       \
-  }                                                                            \
-  std::string evaluate##TYPE(const std::string_view manifest,                  \
-                             const std::string_view source,                    \
-                             const Counts& counts) {                           \
-    return evaluateBenchmark(STEM##FromManifestJSON(manifest, source),         \
-                             counts);                                          \
-  }
-#include "bench/BenchmarkFamilies.inc"
-
 [[nodiscard]] bool validCaseId(const std::string_view value) {
   constexpr std::string_view prefix = "sha256-";
   if (!value.starts_with(prefix) || value.size() != prefix.size() + 64U) {
@@ -1470,24 +1742,24 @@ template <class Benchmark>
 
 } // namespace
 
-ParsedBenchmark parseInstanceSpecificationJSON(const std::string_view json,
-                                               const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  const auto& id = root.at("benchmark").get_ref<const std::string&>();
-  return findBenchmark(id)->parse(root.at("parameters"), source);
-}
-
-std::string
+llvm::FailureOr<std::string>
 benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,
                                          const std::string_view source) {
-  return instanceSpecificationEnvelope(json, source)
-      .at("benchmark")
-      .get<std::string>();
+  auto result = envelope(json, source, false);
+  if (llvm::failed(result)) {
+    return llvm::failure();
+  }
+  return (*result)["benchmark"].get<std::string>();
 }
 
-std::string benchmarkIdFromManifestJSON(const std::string_view json,
-                                        const std::string_view source) {
-  return manifestEnvelope(json, source).at("benchmark").get<std::string>();
+llvm::FailureOr<std::string>
+benchmarkIdFromManifestJSON(const std::string_view json,
+                            const std::string_view source) {
+  auto result = envelope(json, source, true);
+  if (llvm::failed(result)) {
+    return llvm::failure();
+  }
+  return (*result)["benchmark"].get<std::string>();
 }
 
 std::string listBenchmarksJSON() {
@@ -1505,26 +1777,27 @@ std::string listBenchmarksJSON() {
       .dump();
 }
 
-std::string describeBenchmarkJSON(const std::string_view benchmark) {
+llvm::FailureOr<std::string>
+describeBenchmarkJSON(const std::string_view benchmark) {
   if (const auto* entry = findBenchmark(benchmark)) {
     return entry->instanceSpecificationSchema().dump();
   }
-  throw std::invalid_argument("unsupported benchmark '" +
-                              std::string(benchmark) + "'");
+  return ::mqt::emitError("unsupported benchmark '" + std::string(benchmark) +
+                              "'",
+                          ::mqt::ErrorCategory::InvalidArgument);
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  TYPE STEM##FromInstanceSpecificationJSON(const std::string_view json,        \
-                                           const std::string_view source) {    \
-    return parseInstanceSpecification<TYPE>(json, source,                      \
-                                            parse##TYPE##Parameters);          \
+  llvm::FailureOr<TYPE> STEM##FromInstanceSpecificationJSON(                   \
+      const std::string_view json, const std::string_view source) {            \
+    return parseBenchmark<TYPE>(json, source, parse##TYPE##Parameters, false); \
   }                                                                            \
   std::string toInstanceSpecificationJSON(const TYPE& benchmark) {             \
     return instanceSpecificationJSON(benchmark).dump();                        \
   }                                                                            \
-  TYPE STEM##FromManifestJSON(const std::string_view json,                     \
-                              const std::string_view source) {                 \
-    return parseManifest<TYPE>(json, source, parse##TYPE##Parameters);         \
+  llvm::FailureOr<TYPE> STEM##FromManifestJSON(                                \
+      const std::string_view json, const std::string_view source) {            \
+    return parseBenchmark<TYPE>(json, source, parse##TYPE##Parameters, true);  \
   }                                                                            \
   std::string toManifestJSON(const TYPE& benchmark) {                          \
     return manifestJSON(benchmark).dump();                                     \
@@ -1534,16 +1807,33 @@ std::string describeBenchmarkJSON(const std::string_view benchmark) {
   }
 #include "bench/BenchmarkFamilies.inc"
 
-Counts countsFromJSON(const std::string_view json,
-                      const std::string_view source) {
-  const auto root = parseJSON(json, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$");
-  requireSchemaVersion(root, source);
-  const auto& values = required(root, "counts", source, "$");
-  requireObject(values, source, "$/counts");
+llvm::FailureOr<Counts> countsFromJSON(const std::string_view json,
+                                       const std::string_view source) {
+  auto parsed = parseJSON(json, source);
+  if (llvm::failed(parsed)) {
+    return llvm::failure();
+  }
+  const auto& root = (*parsed);
+  if (llvm::failed(requireObject(root, source, "$"))) {
+    return llvm::failure();
+  }
+  if (llvm::failed(
+          rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$"))) {
+    return llvm::failure();
+  }
+  if (llvm::failed(requireSchemaVersion(root, source))) {
+    return llvm::failure();
+  }
+  auto field = required(root, "counts", source, "$");
+  if (llvm::failed(field)) {
+    return llvm::failure();
+  }
+  const auto& values = *(*field);
+  if (llvm::failed(requireObject(values, source, "$/counts"))) {
+    return llvm::failure();
+  }
   if (values.empty()) {
-    fail(source, "$/counts", "must not be empty");
+    return fail(source, "$/counts", "must not be empty");
   }
 
   Counts result;
@@ -1552,15 +1842,19 @@ Counts countsFromJSON(const std::string_view json,
     if (outcome.empty() || !std::ranges::all_of(outcome, [](const char bit) {
           return bit == '0' || bit == '1';
         })) {
-      fail(source, "$/counts", "outcomes must be non-empty bitstrings");
+      return fail(source, "$/counts", "outcomes must be non-empty bitstrings");
     }
     const auto pointer = "$/counts/" + outcome;
-    const auto count = sizeValue(countJSON, source, pointer);
+    auto countResult = sizeValue(countJSON, source, pointer);
+    if (llvm::failed(countResult)) {
+      return llvm::failure();
+    }
+    const auto count = (*countResult);
     if (count == 0) {
-      fail(source, pointer, "must be positive");
+      return fail(source, pointer, "must be positive");
     }
     if (count > std::numeric_limits<size_t>::max() - shots) {
-      fail(source, "$/counts", "total shot count exceeds size_t");
+      return fail(source, "$/counts", "total shot count exceeds size_t");
     }
     shots += count;
     result.emplace(outcome, count);
@@ -1568,22 +1862,55 @@ Counts countsFromJSON(const std::string_view json,
   return result;
 }
 
-std::string evaluateJSON(const std::string_view manifest,
-                         const std::string_view counts,
-                         const std::string_view manifestSource,
-                         const std::string_view countsSource) {
-  const auto id = benchmarkIdFromManifestJSON(manifest, manifestSource);
-  const auto parsedCounts = countsFromJSON(counts, countsSource);
-  return findBenchmark(id)->evaluate(manifest, manifestSource, parsedCounts);
+llvm::FailureOr<std::string> evaluateJSON(const std::string_view manifest,
+                                          const std::string_view counts,
+                                          const std::string_view manifestSource,
+                                          const std::string_view countsSource) {
+  auto parsed = envelope(manifest, manifestSource, true);
+  if (llvm::failed(parsed)) {
+    return llvm::failure();
+  }
+  auto parsedCounts = countsFromJSON(counts, countsSource);
+  if (llvm::failed(parsedCounts)) {
+    return llvm::failure();
+  }
+  const auto& root = *parsed;
+  const auto& id = root["benchmark"].get_ref<const std::string&>();
+  auto instance = findBenchmark(id)->parse(root["parameters"], manifestSource);
+  if (llvm::failed(instance)) {
+    return llvm::failure();
+  }
+  return std::visit(
+      [&](const auto& benchmark) -> llvm::FailureOr<std::string> {
+        if (llvm::failed(requireManifest(root, benchmark, manifestSource))) {
+          return llvm::failure();
+        }
+        auto evaluation = benchmark.evaluate(*parsedCounts);
+        if (llvm::failed(evaluation)) {
+          return llvm::failure();
+        }
+        // Evaluation validates the total before this sum.
+        const auto shots =
+            std::accumulate(parsedCounts->begin(), parsedCounts->end(),
+                            size_t{0}, [](const size_t sum, const auto& item) {
+                              return sum + item.second;
+                            });
+        return evaluationToJSON(root["case_id"].get_ref<const std::string&>(),
+                                shots, *evaluation);
+      },
+      *instance);
 }
 
-std::string evaluationToJSON(const std::string_view caseIdValue,
-                             const size_t shots, const Evaluation& evaluation) {
+llvm::FailureOr<std::string>
+evaluationToJSON(const std::string_view caseIdValue, const size_t shots,
+                 const Evaluation& evaluation) {
   if (!validCaseId(caseIdValue)) {
-    throw std::invalid_argument("case ID must be a full lowercase SHA-256 ID");
+    return ::mqt::emitError("case ID must be a full lowercase SHA-256 ID",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   if (shots == 0) {
-    throw std::invalid_argument("evaluation requires at least one shot");
+    return ::mqt::emitError("evaluation requires at least one shot",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   const auto validMetric = [](const double value) {
     return std::isfinite(value) && value >= 0. && value <= 1.;
@@ -1592,8 +1919,8 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       !validMetric(evaluation.squaredHellingerFidelity) ||
       (evaluation.successProbability &&
        !validMetric(*evaluation.successProbability))) {
-    throw std::invalid_argument(
-        "evaluation metrics must be finite and in [0, 1]");
+    return ::mqt::emitError("evaluation metrics must be finite and in [0, 1]",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
 
   Json success = nullptr;
@@ -1619,26 +1946,30 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       .dump();
 }
 
-std::string evaluationToJSON(std::string_view caseIdValue, size_t shots,
-                             const ShorEvaluation& evaluation) {
+llvm::FailureOr<std::string>
+evaluationToJSON(std::string_view caseIdValue, size_t shots,
+                 const ShorEvaluation& evaluation) {
   if (!validCaseId(caseIdValue) || shots == 0) {
-    throw std::invalid_argument(
-        "evaluation requires a SHA-256 case ID and at least one shot");
+    return ::mqt::emitError(
+        "evaluation requires a SHA-256 case ID and at least one shot",
+        ::mqt::ErrorCategory::InvalidArgument);
   }
   if (!std::isfinite(evaluation.successProbability) ||
       evaluation.successProbability < 0. ||
       evaluation.successProbability > 1. ||
       evaluation.factors.has_value() != (evaluation.successProbability > 0.)) {
-    throw std::invalid_argument("factor verification requires a success "
-                                "fraction in [0, 1] and factors on success");
+    return ::mqt::emitError("factor verification requires a success "
+                            "fraction in [0, 1] and factors on success",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   Json factors = nullptr;
   if (evaluation.factors) {
     const auto [first, second] = *evaluation.factors;
     if (first < 2 || first > second ||
         second > ShorOptions::MAX_NUMBER / first) {
-      throw std::invalid_argument("factors must form a sorted nontrivial pair "
-                                  "within the supported range");
+      return ::mqt::emitError("factors must form a sorted nontrivial pair "
+                              "within the supported range",
+                              ::mqt::ErrorCategory::InvalidArgument);
     }
     factors = Json::array({first, second});
   }
@@ -1650,6 +1981,32 @@ std::string evaluationToJSON(std::string_view caseIdValue, size_t shots,
       {"shots", shots},
   }
       .dump();
+}
+
+llvm::FailureOr<ParsedBenchmark>
+parseInstanceSpecificationJSON(const std::string_view json,
+                               const std::string_view source) {
+  auto parsed = envelope(json, source, false);
+  if (llvm::failed(parsed)) {
+    return llvm::failure();
+  }
+  const auto& root = *parsed;
+  const auto& id = root["benchmark"].get_ref<const std::string&>();
+  auto instance = findBenchmark(id)->parse(root["parameters"], source);
+  if (llvm::failed(instance)) {
+    return llvm::failure();
+  }
+  return std::visit(
+      [&](auto&& benchmark) {
+        const Json manifest = manifestJSON(benchmark);
+        return ParsedBenchmark{
+            .instance = std::forward<decltype(benchmark)>(benchmark),
+            .benchmarkId = id,
+            .caseId = manifest["case_id"].get<std::string>(),
+            .manifestJSON = manifest.dump(),
+        };
+      },
+      (*std::move(instance)));
 }
 
 } // namespace mqt::bench

@@ -14,6 +14,8 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <string_view>
 
 namespace mqt::bench {
@@ -22,12 +24,16 @@ Teleportation::Teleportation() : output_{.name = "result", .width = 1} {}
 
 const Output& Teleportation::output() const noexcept { return output_; }
 
-double Teleportation::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+llvm::FailureOr<double>
+Teleportation::probability(const std::string_view outcome) const {
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
+  }
   return outcome == "0" ? 1. : 0.;
 }
 
-Evaluation Teleportation::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation>
+Teleportation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "0");
 }
 

@@ -68,8 +68,8 @@ protected:
   /// @param module The module to run the pass on.
   /// @param liftMeasurements Whether to lift measurements before applying qubit
   /// reuse.
-  static LogicalResult runQubitReusePass(ModuleOp module,
-                                         bool liftMeasurements = false) {
+  static mlir::LogicalResult runQubitReusePass(ModuleOp module,
+                                               bool liftMeasurements = false) {
     PassManager pm(module.getContext());
     if (liftMeasurements) {
       pm.addPass(createMeasurementLifting());
@@ -82,7 +82,7 @@ protected:
   }
 
   /// Removes dead gates, canonicalizes the module, and runs the passes.
-  static LogicalResult runCanonicalizerPass(ModuleOp module) {
+  static mlir::LogicalResult runCanonicalizerPass(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(createRemoveDeadGates());
     pm.addPass(createCanonicalizerPass());

@@ -90,8 +90,8 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static LogicalResult runPass(OwningOpRef<ModuleOp>& program,
-                               const QuantumLoopUnrollOptions options) {
+  static mlir::LogicalResult runPass(OwningOpRef<ModuleOp>& program,
+                                     const QuantumLoopUnrollOptions options) {
     PassManager pm(program->getContext());
     pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll(options));
     return pm.run(*program);

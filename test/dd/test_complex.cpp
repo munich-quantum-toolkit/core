@@ -16,9 +16,13 @@
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
+#include "support/Diagnostics.hpp"
+#include "support/TestSupport.hpp"
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -26,8 +30,9 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
-#include <stdexcept>
+#include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 using namespace dd;
@@ -37,7 +42,9 @@ namespace {
 class CNTest : public testing::Test {
 protected:
   const fp savedTolerance = RealNumber::eps;
-  void TearDown() override { ComplexNumbers::setTolerance(savedTolerance); }
+  void TearDown() override {
+    ::mqt::test::value(ComplexNumbers::setTolerance(savedTolerance));
+  }
 
   MemoryManager mm{MemoryManager::create<RealNumber>()};
   RealNumberUniqueTable ut{mm};
@@ -54,8 +61,9 @@ TEST_F(CNTest, RejectsInvalidTolerance) {
            std::numeric_limits<fp>::infinity(),
            std::numeric_limits<fp>::quiet_NaN(),
        }) {
-    EXPECT_THROW(ComplexNumbers::setTolerance(tolerance),
-                 std::invalid_argument);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return ComplexNumbers::setTolerance(tolerance); }),
+              ::mqt::ErrorCategory::InvalidArgument);
     EXPECT_EQ(RealNumber::eps, savedTolerance);
   }
 }
@@ -176,7 +184,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
   auto* second = ut.lookup(0.25 + (4 * RealNumber::eps));
   ASSERT_NE(first, second);
   RealNumber::mark(first);
-  ComplexNumbers::setTolerance(RealNumber::eps * 16);
+  ::mqt::test::value(ComplexNumbers::setTolerance(RealNumber::eps * 16));
   EXPECT_EQ(ut.lookup(second->value), second);
   EXPECT_EQ(ut.lookup(first->value), first);
   EXPECT_TRUE(RealNumber::isMarked(first));
@@ -188,7 +196,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
            1e-6,
            1e-3,
        }) {
-    ComplexNumbers::setTolerance(tolerance);
+    ::mqt::test::value(ComplexNumbers::setTolerance(tolerance));
     for (const fp value : {
              0.25,
              std::nextafter(0.25, 0.),
@@ -239,6 +247,44 @@ TEST(DDComplexTest, LowestFractions) {
   EXPECT_THAT(ComplexValue::getLowestFraction(2.0), ::testing::Pair(2, 1));
   EXPECT_THAT(ComplexValue::getLowestFraction(2047.0 / 2048.0, 1024U),
               ::testing::Pair(1, 1));
+}
+
+TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
+  for (const auto& [text, expected] :
+       std::to_array<std::pair<std::string_view, ComplexValue>>({
+           {"", {}},
+           {"+1.25", {1.25}},
+           {"-2.5e-3", {-0.0025}},
+           {"i", {0., 1.}},
+           {"-I", {0., -1.}},
+           {"-2.5e+3i", {0., -2500.}},
+           {"1.25 - 2.5e-3i", {1.25, -0.0025}},
+           {"0e-400", {}},
+           {"4.9406564584124654e-324", {std::numeric_limits<fp>::denorm_min()}},
+       })) {
+    SCOPED_TRACE(text);
+    const auto parsed = ::mqt::test::value(ComplexValue::parse(text));
+    EXPECT_DOUBLE_EQ(parsed.r, expected.r);
+    EXPECT_DOUBLE_EQ(parsed.i, expected.i);
+    EXPECT_EQ(std::fpclassify(parsed.r), std::fpclassify(expected.r));
+  }
+  for (const auto* text : {
+           "nan",
+           "inf",
+           "1e400",
+           "1e-400",
+           "0x1p2",
+           "1e+",
+           "1+2",
+           "1,5",
+           "1+infi",
+           "1+1e400i",
+       }) {
+    SCOPED_TRACE(text);
+    EXPECT_TRUE(::mqt::test::errorKind([&] {
+                  return ComplexValue::parse(text);
+                }).has_value());
+  }
 }
 
 TEST_F(CNTest, NumberPrintingToString) {
@@ -613,8 +659,8 @@ TEST(DDComplexTest, ScalarComplexDivisorsPreserveRange) {
 }
 
 TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
-  ComplexValue value;
-  EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
-  EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
-  EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
+  for (const auto* text : {"1e-400", "1e400i", "invalid"}) {
+    EXPECT_EQ(::mqt::test::errorKind([&] { return ComplexValue::parse(text); }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
 }

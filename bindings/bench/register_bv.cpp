@@ -11,17 +11,22 @@
 #include "bench/BV.hpp"
 #include "bench/JSON.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
+#include <new>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerBV(const nb::module_& m) {
@@ -40,16 +45,22 @@ void registerBV(const nb::module_& m) {
 
   auto bv = nb::class_<bench::BV>(m, "BV",
                                   "A validated Bernstein--Vazirani benchmark.");
-  bv.def(nb::init<bench::BVOptions>(), "options"_a)
+  bv.def(
+        "__init__",
+        [](bench::BV* self, bench::BVOptions options) {
+          new (self) bench::BV(::mqt::bindings::invoke(
+              [&] { return bench::BV::create(std::move(options)); }));
+        },
+        "options"_a)
       .def_prop_ro("options", &bench::BV::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::BV::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::BV::probability, "outcome"_a,
+      .def("probability", bindResult(&bench::BV::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::BV::evaluate, "counts"_a,
+      .def("evaluate", bindResult(&bench::BV::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -75,11 +86,11 @@ void registerBV(const nb::module_& m) {
           [](const bench::BV& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::bvFromInstanceSpecificationJSON, "json"_a,
+                  bindResult(&bench::bvFromInstanceSpecificationJSON), "json"_a,
                   nb::kw_only(), "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::bvFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
+      .def_static("from_manifest_json", bindResult(&bench::bvFromManifestJSON),
+                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

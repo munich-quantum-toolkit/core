@@ -125,6 +125,9 @@ endif()
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
+  if(NOT BUILD_MQT_CORE_QDMI_SC_DEVICE OR NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
+    message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
+  endif()
   enable_testing()
   include(GoogleTest)
   add_subdirectory(test)

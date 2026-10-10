@@ -22,8 +22,10 @@
 
 #include "Worker.hpp"
 #include "WorkerProtocol.hpp"
+#include "support/Diagnostics.hpp"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 
@@ -40,7 +42,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <iostream>
+#include <ios>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -56,6 +58,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -795,8 +798,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             } catch (const std::exception& error) {
               result.reset();
               worker->terminate();
-              std::cerr << "Could not release DDSIM worker: " << error.what()
-                        << '\n';
+              std::ignore = mqt::emitError(
+                  std::string("Could not release DDSIM worker: ") +
+                  error.what());
             }
           }
           device.decreaseRunningJobs();
@@ -833,12 +837,23 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
               ++result->counts_[shot];
             }
             if (response.state) {
-              result->dd_ = std::make_unique<dd::Package>(
-                  response.qubits, RESULT_PACKAGE_CONFIG);
+              auto package =
+                  dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
+              if (llvm::failed(package)) {
+                result.reset();
+                reusable = false;
+                return;
+              }
+              result->dd_ = std::move(*package);
               std::istringstream bytes(std::move(*response.state),
                                        std::ios::binary);
-              result->stateVecDD_ =
-                  result->dd_->deserialize<dd::vNode>(bytes, true);
+              auto state = result->dd_->deserialize<dd::vNode>(bytes, true);
+              if (llvm::failed(state)) {
+                result.reset();
+                reusable = false;
+                return;
+              }
+              result->stateVecDD_ = *state;
               const auto root = result->stateVecDD_;
               const auto qubits =
                   root.isTerminal() ? 0U : static_cast<uint32_t>(root.p->v) + 1;
@@ -854,13 +869,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         } catch (const std::exception& error) {
           result.reset();
           reusable = false;
-          std::cerr << "DDSIM worker failed: " << error.what() << '\n';
+          std::ignore = mqt::emitError(std::string("DDSIM worker failed: ") +
+                                       error.what());
         }
       });
     } catch (const std::exception& error) {
       execution->programs[index].status = QDMI_JOB_STATUS_FAILED;
       execution->finish();
-      std::cerr << "Could not schedule DDSIM program: " << error.what() << '\n';
+      std::ignore = mqt::emitError(
+          std::string("Could not schedule DDSIM program: ") + error.what());
     }
   }
   return QDMI_SUCCESS;

@@ -13,6 +13,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -30,9 +31,10 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
-  const QFT benchmark{{.qubits = 4, .periodExponent = 2}};
+  const auto benchmark =
+      ::mqt::test::value(QFT::create({.qubits = 4, .periodExponent = 2}));
   auto program = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(program));
+  ASSERT_TRUE(succeeded(program));
   auto moduleOp = program->module();
   EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
 }
@@ -40,9 +42,9 @@ TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
 TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
   for (const auto method : {QFTMethod::Standard, QFTMethod::Semiclassical}) {
     SCOPED_TRACE(static_cast<int>(method));
-    auto program =
-        generate(QFT{{.qubits = 1025, .periodExponent = 10, .method = method}});
-    ASSERT_TRUE(mlir::succeeded(program));
+    auto program = generate(::mqt::test::value(
+        QFT::create({.qubits = 1025, .periodExponent = 10, .method = method})));
+    ASSERT_TRUE(succeeded(program));
     EXPECT_LT(test::countOperations(program->module()), 100U);
     program->module().walk([&](arith::ConstantOp op) {
       if (const auto value = dyn_cast<FloatAttr>(op.getValue())) {
@@ -55,8 +57,8 @@ TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
 TEST(GenerateProgramTest, SamplesQFTAgainstReference) {
   for (const auto method : {QFTMethod::Standard, QFTMethod::Semiclassical}) {
     SCOPED_TRACE(static_cast<int>(method));
-    test::expectSamplingMatchesReference(
-        QFT{{.qubits = 8, .periodExponent = 4, .method = method}});
+    test::expectSamplingMatchesReference(::mqt::test::value(
+        QFT::create({.qubits = 8, .periodExponent = 4, .method = method})));
   }
 }
 

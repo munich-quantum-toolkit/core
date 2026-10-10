@@ -25,7 +25,10 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
                                        ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
 
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon LLVMSupport)
+  mqt_target_disable_exceptions(${TARGET_NAME})
+  mqt_source_enable_exceptions(Device.cpp)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon MQT::CoreSupport
+                                               LLVMSupport)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
   # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
   # LLVM's process-wide registries when it loads this device.
@@ -34,12 +37,18 @@ if(NOT TARGET ${TARGET_NAME})
   elseif(UNIX)
     target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
   endif()
+  set_target_properties(${TARGET_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   set(WORKER_TARGET ${MQT_CORE_TARGET_NAME}-ddsim-worker)
   add_executable(${WORKER_TARGET} WorkerMain.cpp WorkerProtocol.cpp)
+  if(NOT (APPLE AND SKBUILD))
+    set_property(TARGET ${WORKER_TARGET} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+  endif()
   target_compile_features(${WORKER_TARGET} PRIVATE cxx_std_20)
+  mqt_target_disable_exceptions(${WORKER_TARGET})
   target_link_libraries(
     ${WORKER_TARGET}
-    PRIVATE MQT::CoreDD
+    PRIVATE MQT::CoreSupport
+            MQT::CoreDD
             MQT::CoreQDMICommon
             MLIRQCODDFunctionality
             MQTCompilerPrograms
@@ -47,6 +56,7 @@ if(NOT TARGET ${TARGET_NAME})
             MQT::CoreQIRRuntime
             MQT::ProjectWarnings
             MQT::ProjectOptions)
+  mqt_copy_runtime_dlls(${WORKER_TARGET})
   mqt_llvm_target_disable_rtti(${WORKER_TARGET})
   if(WIN32)
     target_compile_definitions(${TARGET_NAME} PRIVATE NOMINMAX)

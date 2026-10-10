@@ -261,8 +261,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   auto unitary = UnitaryOp::create(builder, ValueRange{qubit, qubit}, identity);
 
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_TRUE(failed(unitary.verify()));
   unitary.erase();
 }
@@ -280,8 +280,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsNonFiniteMatrices) {
     EXPECT_TRUE(failed(unitary.verify()));
     unitary.erase();
   };
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
 
   expectRejected(std::numeric_limits<double>::infinity());
   expectRejected(std::numeric_limits<double>::quiet_NaN());
@@ -303,8 +303,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsOutputArityMismatch) {
   state.addTypes(QubitType::get(context.get()));
   auto unitary = cast<UnitaryOp>(builder.create(state));
 
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_TRUE(failed(unitary.verify()));
   unitary.erase();
 }

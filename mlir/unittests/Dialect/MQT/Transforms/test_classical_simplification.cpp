@@ -48,7 +48,7 @@ protected:
                          func::FuncDialect, qco::QCODialect>();
   }
 
-  LogicalResult canonicalize(ModuleOp moduleOp) {
+  mlir::LogicalResult canonicalize(ModuleOp moduleOp) {
     PassManager manager(&context_);
     manager.addPass(mlir::mqt::createSimplifyClassicalControl());
     manager.addPass(createCanonicalizerPass());

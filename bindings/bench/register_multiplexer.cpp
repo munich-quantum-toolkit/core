@@ -11,17 +11,21 @@
 #include "bench/JSON.hpp"
 #include "bench/Multiplexer.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
+#include <new>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerMultiplexer(const nb::module_& m) {
@@ -33,16 +37,23 @@ void registerMultiplexer(const nb::module_& m) {
 
   auto multiplexer = nb::class_<bench::Multiplexer>(
       m, "Multiplexer", "A validated quantum multiplexer benchmark.");
-  multiplexer.def(nb::init<bench::MultiplexerOptions>(), "options"_a)
+  multiplexer
+      .def(
+          "__init__",
+          [](bench::Multiplexer* self, bench::MultiplexerOptions options) {
+            new (self) bench::Multiplexer(::mqt::bindings::invoke(
+                [&] { return bench::Multiplexer::create(options); }));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::Multiplexer::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::Multiplexer::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::Multiplexer::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::Multiplexer::evaluate, "counts"_a,
+      .def("probability", bindResult(&bench::Multiplexer::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", bindResult(&bench::Multiplexer::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -70,11 +81,13 @@ void registerMultiplexer(const nb::module_& m) {
           [](const bench::Multiplexer& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::multiplexerFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
+                  bindResult(&bench::multiplexerFromInstanceSpecificationJSON),
+                  "json"_a, nb::kw_only(),
+                  "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::multiplexerFromManifestJSON,
-                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+      .def_static("from_manifest_json",
+                  bindResult(&bench::multiplexerFromManifestJSON), "json"_a,
+                  nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

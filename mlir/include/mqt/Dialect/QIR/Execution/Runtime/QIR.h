@@ -21,7 +21,7 @@
 #pragma once
 
 // NOLINTBEGIN(modernize-use-using)
-// QIR ABI names are prescribed by the specification.
+/// QIR ABI names are prescribed by the specification.
 // NOLINTBEGIN(readability-identifier-naming,bugprone-reserved-identifier)
 
 #include <stdbool.h>
@@ -30,6 +30,7 @@
 #ifdef __cplusplus
 #define MQT_QIR_NOEXCEPT noexcept
 extern "C" {
+
 #else
 #define MQT_QIR_NOEXCEPT
 #endif

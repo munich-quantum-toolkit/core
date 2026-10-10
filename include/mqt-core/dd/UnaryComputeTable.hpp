@@ -16,9 +16,14 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "llvm/Support/LogicalResult.h"
+
 #include <bit>
 #include <cstddef>
-#include <stdexcept>
+#include <functional>
+#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -32,18 +37,27 @@ public:
   /// Default number of buckets for the compute table
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 32768U;
 
-  /// Default constructor
-  explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
-    // numBuckets must be a power of two
+  UnaryComputeTable() : UnaryComputeTable(DEFAULT_NUM_BUCKETS) {}
+
+  [[nodiscard]] static llvm::FailureOr<UnaryComputeTable>
+  create(const size_t numBuckets) {
     if (!std::has_single_bit(numBuckets)) {
-      throw std::invalid_argument("Number of buckets must be a power of two.");
+      return ::mqt::emitError("Number of buckets must be a power of two.",
+                              ::mqt::ErrorCategory::InvalidArgument);
     }
+    return UnaryComputeTable(numBuckets);
+  }
+
+private:
+  friend class Package;
+  explicit UnaryComputeTable(const size_t numBuckets) {
     stats.entrySize = sizeof(Entry);
     stats.numBuckets = numBuckets;
     valid = std::vector(numBuckets, false);
     table = std::vector<Entry>(numBuckets);
   }
 
+public:
   /// An entry in the compute table
   struct Entry {
     OperandType operand{};
