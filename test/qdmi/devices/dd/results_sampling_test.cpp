@@ -525,9 +525,19 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 job.job, 0, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
+  auto program = qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll");
+  program += R"(
+@destructor_value = global i64 99
+@llvm.global_dtors = appending global [1 x { i32, ptr, ptr }]
+    [{ i32, ptr, ptr } { i32 65535, ptr @record_teardown, ptr null }]
+define void @record_teardown() {
+  %value = load i64, ptr @destructor_value
+  call void @__quantum__rt__int_record_output(i64 %value, ptr null)
+  ret void
+}
+)";
   ASSERT_EQ(qdmi_test::setProgram(
-                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-                qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")),
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(job.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
@@ -544,13 +554,20 @@ TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
             QDMI_SUCCESS);
   EXPECT_EQ(output.back(), '\0');
   EXPECT_TRUE(output.starts_with("HEADER\tschema_id\t"));
-  EXPECT_TRUE(output.ends_with(std::string("END\t0\n\0", 7)));
-  size_t starts = 0;
-  for (size_t pos = 0; (pos = output.find("START\n", pos)) != std::string::npos;
-       pos += 6) {
-    ++starts;
+  constexpr std::string_view destructorRecord = "OUTPUT\tINT\t99\n";
+  EXPECT_TRUE(output.ends_with(std::string(destructorRecord) + '\0'));
+  for (const auto record : {
+           std::string_view{"START\n"},
+           std::string_view{"END\t0\n"},
+           destructorRecord,
+       }) {
+    size_t count = 0;
+    for (size_t pos = 0; (pos = output.find(record, pos)) != std::string::npos;
+         pos += record.size()) {
+      ++count;
+    }
+    EXPECT_EQ(count, workers) << record;
   }
-  EXPECT_EQ(starts, 4U);
   EXPECT_EQ(output.find("HEADER\tschema_id\t", 1), std::string::npos);
   for (const auto* type :
        {"RESULT", "BOOL", "INT", "DOUBLE", "TUPLE", "ARRAY"}) {
