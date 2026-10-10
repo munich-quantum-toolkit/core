@@ -33,8 +33,8 @@ Request one device with `--licenses=ID` or `--licenses=ID:1`:
 #SBATCH --time=00:05:00
 set -eu
 
-source /shared/quantum/.venv/bin/activate
-export MQT_CORE_QDMI_CONFIG_FILE=/shared/quantum/devices.json
+source /shared/quantum/braket/bin/activate
+export MQT_CORE_QDMI_CONFIG_FILE=/shared/quantum/catalogues/braket-sv1.json
 export AWS_PROFILE=research
 mqt-core-qdmi-check --device amazon.braket.sv1 --timeout 10
 srun python workload.py
@@ -61,6 +61,22 @@ Slurm exports the submission environment by default. Use ordinary environment
 variables or Slurm's `--export` option for job-specific settings. Variables set
 inside a batch script are inherited by its subsequent `srun` steps.
 
+### Use several vendors on one cluster
+
+Jobs for different vendors can run concurrently, with independent license counts
+and credentials. Each job selects one device. For example, an IQM job can use an
+IQM runtime while a Braket job uses a Braket runtime on the same compute nodes.
+
+Use a separate virtual environment for each vendor, with MQT Core and the
+required device implementation's wheel installed. Give each job a catalogue that
+enables only its target device. The built-in driver initializes every enabled
+catalogue entry when opening a standard QDMI session; an unrelated device's slow
+initialization can therefore delay or time out the selected device's check. An
+explicit `MQT_CORE_QDMI_CONFIG_FILE` still retains installed wheel manifests, so
+disable unneeded presets in the catalogue. Review that catalogue when updating
+the runtime. Native installations can use separate installation prefixes and the
+same catalogue policy.
+
 ## Hold jobs while a device is unavailable
 
 A check inside a job runs after Slurm has allocated resources. To leave jobs
@@ -80,7 +96,9 @@ performs one such update. It blocks the licenses before invoking the bounded
 QDMI checker and removes the block only on success. Run it periodically from a
 trusted administrative host with Slurm clients, MQT Core, the device
 implementation, and site-owned credentials. Initialize the blocks before
-admitting workloads. The controller does not need device libraries.
+admitting workloads. Run one monitor per device, using its vendor runtime and
+scoped catalogue, so one vendor's initialization failure cannot close another
+vendor's license. The controller does not need device libraries.
 
 Use a site account that can assess the shared device's operational state. One
 user's expired credentials must not determine availability for every user.

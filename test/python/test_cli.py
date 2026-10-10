@@ -146,14 +146,13 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
         "mqt-core-qdmi-check",
     ],
 )
+@pytest.mark.script_launch_mode("subprocess")
 def test_native_tool_entry_point(script_runner: ScriptRunner, tool: str) -> None:
-    """Resolve the console entry point and forward arguments to its native tool."""
-    with patch("os.execv") as execute:
-        ret = script_runner.run([tool, "--help"])
+    """Report help and propagate native argument errors through the installed command."""
+    ret = script_runner.run([tool, "--help"])
     assert ret.success
-    executable, arguments = execute.call_args.args
-    assert Path(executable).is_file()
-    assert arguments == [str(executable), "--help"]
+    assert ret.stdout
+    assert not script_runner.run([tool, "--mqt-invalid-test-option"]).success
 
 
 @pytest.mark.script_launch_mode("subprocess")

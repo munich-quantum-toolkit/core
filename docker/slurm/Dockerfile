@@ -39,6 +39,24 @@ RUN --mount=type=bind,from=dist,target=/tmp/dist \
 
 ARG SETUP_SCRIPT=""
 
+RUN --mount=type=bind,from=dist,target=/tmp/dist \
+    --mount=type=cache,target=/root/.cache/uv \
+    set -- /tmp/dist/mqt_core-*.whl \
+    && test "$#" -eq 1 && test -f "$1" && core_wheel="$1" \
+    && printf 'mqt-core[qiskit,pennylane] @ file://%s\n' "$core_wheel" > /tmp/core-override.txt \
+    && for directory in /tmp/dist/*/; do \
+        [ -d "$directory" ] || continue; \
+        test -z "$SETUP_SCRIPT" || { echo 'Use wheel runtimes or a source workload, not both.' >&2; exit 1; }; \
+        directory="${directory%/}"; runtime="/opt/runtimes/${directory##*/}"; \
+        set -- "$directory"/*.whl; \
+        test "$#" -eq 1 && test -f "$1" \
+        && uv venv --python /usr/bin/python3 "$runtime" \
+        && uv pip install --python "$runtime/bin/python" --link-mode=copy \
+            --overrides /tmp/core-override.txt "$core_wheel[qiskit,pennylane]" "$1[qiskit]" \
+        || exit 1; \
+    done \
+    && rm /tmp/core-override.txt
+
 FROM scratch AS provider-source
 
 COPY --from=workload \

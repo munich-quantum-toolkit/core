@@ -13,6 +13,15 @@ implementation. The monitor's credentials must represent site access; a user's
 failed authentication must not change cluster-wide availability. Jobs retain
 their own credentials and must handle failures after allocation.
 
+Devices from several vendors can share a Slurm cluster while using separate
+runtime environments. Install MQT Core and one device implementation in each
+environment, and use a catalogue that enables only the monitored device. An
+explicit catalogue file retains installed wheel manifests: disable the device
+implementation's other presets in the file. The built-in driver initializes all
+enabled devices when opening a session, so a shared catalogue with an unrelated
+slow device can time out a healthy device's probe. Keep each monitor's runtime,
+catalogue, and credentials independent.
+
 For `Licenses=mqt.ddsim.default:2`, run:
 
 ```console
@@ -40,30 +49,50 @@ credentials, leave admission closed until a later successful probe.
 
 ## Poll with systemd
 
-Copy the example to `/opt/mqt-core/examples/slurm/`. Adapt this service for each
-device as `/etc/systemd/system/qdmi-availability.service`:
+Copy the example to `/opt/mqt-core/examples/slurm/`. Install the template
+`/etc/systemd/system/qdmi-availability@.service`:
 
 ```ini
 [Unit]
-Description=Update QDMI device admission in Slurm
+Description=Update QDMI device admission in Slurm (%i)
 Wants=network-online.target
 After=network-online.target munge.service
 
 [Service]
 Type=oneshot
 User=slurm
-Environment=MQT_CORE_QDMI_CONFIG_FILE=/etc/mqt-core/site.qdmi.json
-ExecStart=/usr/bin/python3 /opt/mqt-core/examples/slurm/update_availability.py --license mqt.ddsim.default:2 --checker /opt/qdmi/bin/mqt-core-qdmi-check
+EnvironmentFile=/etc/mqt-core/slurm/%i.env
+ExecStart=/usr/bin/python3 /opt/mqt-core/examples/slurm/update_availability.py --license ${QDMI_LICENSE} --checker ${QDMI_CHECKER}
 TimeoutStartSec=45
 ```
 
-Provide any device-specific credential-file reference through a root-owned
-service configuration; do not put tokens or keys in command-line arguments.
-Install `/etc/systemd/system/qdmi-availability.timer`:
+Create one root-owned environment file per device. For example,
+`/etc/mqt-core/slurm/braket-sv1.env` can contain:
+
+```ini
+QDMI_LICENSE=amazon.braket.sv1:2
+QDMI_CHECKER=/opt/runtimes/braket/bin/mqt-core-qdmi-check
+MQT_CORE_QDMI_CONFIG_FILE=/etc/mqt-core/catalogues/braket-sv1.json
+AWS_SHARED_CREDENTIALS_FILE=/etc/mqt-core/credentials/braket
+AWS_PROFILE=site-monitor
+```
+
+For `/etc/mqt-core/slurm/iqm-emerald.env`:
+
+```ini
+QDMI_LICENSE=iqm.emerald:1
+QDMI_CHECKER=/opt/runtimes/iqm/bin/mqt-core-qdmi-check
+MQT_CORE_QDMI_CONFIG_FILE=/etc/mqt-core/catalogues/iqm-emerald.json
+IQM_TOKENS_FILE=/etc/mqt-core/credentials/iqm.json
+```
+
+The `slurm` account needs read access to the catalogue and its credential file.
+Use credential-file references; do not put tokens or keys in command-line
+arguments. Install `/etc/systemd/system/qdmi-availability@.timer`:
 
 ```ini
 [Unit]
-Description=Poll QDMI device readiness
+Description=Poll QDMI device readiness (%i)
 
 [Timer]
 OnBootSec=1s
@@ -80,9 +109,10 @@ jobs. Apply it to every partition that can request these licenses:
 
 ```console
 scontrol update PartitionName=compute State=DOWN
-python3 /opt/mqt-core/examples/slurm/update_availability.py --license mqt.ddsim.default:2 --block-only
+python3 /opt/mqt-core/examples/slurm/update_availability.py --license amazon.braket.sv1:2 --block-only
+python3 /opt/mqt-core/examples/slurm/update_availability.py --license iqm.emerald:1 --block-only
 systemctl daemon-reload
-systemctl enable --now qdmi-availability.timer
+systemctl enable --now qdmi-availability@braket-sv1.timer qdmi-availability@iqm-emerald.timer
 scontrol update PartitionName=compute State=UP
 ```
 

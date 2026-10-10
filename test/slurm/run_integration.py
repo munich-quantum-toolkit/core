@@ -533,7 +533,7 @@ def test_explicit_check() -> None:
         assert body.exists() == enabled
 
 
-def main(arguments: Sequence[str] = ()) -> None:
+def main(arguments: Sequence[str] = (), *, workload: Callable[[], None] | None = None) -> None:
     """Build the shared cluster and run its Core or provider workload."""
     options = parse_arguments(arguments)
     wheels = tuple(options.dist.glob("mqt_core-*.whl"))
@@ -609,7 +609,9 @@ def main(arguments: Sequence[str] = ()) -> None:
 
         registered = set(controller("sinfo", "--Node", "--noheader", "--format=%N").stdout.split())
         assert registered == set(NODES), registered
-        if options.command:
+        if workload is not None:
+            workload()
+        elif options.command:
             test_provider(options)
         else:
             test_core()

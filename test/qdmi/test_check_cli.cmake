@@ -8,15 +8,21 @@
 
 file(MAKE_DIRECTORY "${WORK_DIR}")
 set(configuration "${WORK_DIR}/devices.json")
+set(manifest "${WORK_DIR}/other-device.qdmi.json")
+file(
+  WRITE "${manifest}"
+  "{\"schema-version\":1,\"qdmi\":{\"devices\":[{\"id\":\"test.unrelated\",\"library\":\"${SESSION_DEVICE}\",\"prefix\":\"TEST_SESSION\",\"session\":{\"custom4\":\"hang\"}}]}}"
+)
 foreach(status idle busy offline hang hang-exit)
   file(
     WRITE "${configuration}"
-    "{\"schema-version\":1,\"qdmi\":{\"devices\":[{\"id\":\"test.check\",\"library\":\"${SESSION_DEVICE}\",\"prefix\":\"TEST_SESSION\",\"session\":{\"custom4\":\"${status}\"}}]}}"
+    "{\"schema-version\":1,\"qdmi\":{\"devices\":[{\"id\":\"test.check\",\"library\":\"${SESSION_DEVICE}\",\"prefix\":\"TEST_SESSION\",\"session\":{\"custom4\":\"${status}\"}},{\"id\":\"test.unrelated\",\"enabled\":false}]}}"
   )
   execute_process(
     COMMAND
       "${CMAKE_COMMAND}" -E env --unset=MQT_CORE_QDMI_DRIVER --unset=MQT_CORE_QDMI_CONFIG_JSON
-      "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" "${CHECKER}" --device test.check --timeout 1
+      "MQT_CORE_QDMI_CONFIG_FILE=${configuration}" "${CHECKER}" --manifest "${manifest}" --device
+      test.check --timeout 1
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error

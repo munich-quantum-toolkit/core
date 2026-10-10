@@ -57,3 +57,57 @@ arguments `PROVIDER_RUNTIME_COMPONENT` and `PROVIDER_INSTALL_MODE` (`native` or
 implementation overlays supply credentials to the submission container at
 runtime. Slurm exports these settings to the workload; credentials are never
 part of the image build.
+
+## Multiple device implementations
+
+Supply an MQT Core wheel and one device implementation wheel per subdirectory to
+create separate Python environments in the same image:
+
+```text
+dist/
+  mqt_core-....whl
+  iqm/
+    iqm_qdmi-....whl
+  braket/
+    amazon_braket_qdmi-....whl
+```
+
+Use Linux wheels compatible with the image's Python interpreter. Each
+`dist/<name>` directory becomes `/opt/runtimes/<name>`, with its device
+implementation, the supplied MQT Core wheel, and the Qiskit and PennyLane
+adapters. These environments discover only their own installed device
+catalogues. In the submission container, select the matching environment and
+configuration before each job:
+
+```console
+export PATH=/opt/runtimes/iqm/bin:$PATH
+export MQT_CORE_QDMI_CONFIG_FILE=/jobs/iqm.json
+sbatch --licenses=iqm.emerald.mock job.sh
+```
+
+Keep each catalogue limited to the devices needed by that workload. Device
+sessions can initialize all enabled definitions in the selected catalogue. Use
+the same environment and catalogue for that device's availability monitor. These
+wheel environments are an alternative to the source workload build selected by
+`MQT_CORE_SLURM_SETUP_SCRIPT`.
+
+The combined integration test uses the IQM Emerald Resonance mock and Amazon
+Braket SV1 through their existing device probes. Build the wheels from the
+matching device implementation checkouts, arrange them as above, and export
+`IQM_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and, for temporary
+AWS credentials, `AWS_SESSION_TOKEN`. From the MQT Core checkout, run:
+
+```console
+uv run --no-project test/slurm/multivendor.py \
+  --dist /absolute/path/to/dist \
+  --iqm /absolute/path/to/qdmi-on-iqm \
+  --braket /absolute/path/to/amazon-braket-qdmi
+```
+
+The test mounts the device implementation checkouts read-only, writes separate
+catalogues, and removes the other vendor's credentials before each submission.
+It runs the eight-shot device probes in overlapping allocations on one
+controller, then blocks IQM admission while the Braket allocation remains
+active. A queued IQM job must wait without a compute node and start after IQM
+becomes available. The test makes paid SV1 simulator requests; it does not use
+quantum hardware.

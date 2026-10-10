@@ -1,6 +1,6 @@
 # QDMI workloads on Slurm
 
-Status: implemented and published; hosted checks pending.
+Status: rebased onto #2726; local multi-vendor validation passed.
 
 ## Scope and decisions
 
@@ -30,6 +30,32 @@ not a request to monitor CI.
 Local validation: 48 focused Python cases and seven native tests pass. The
 three-node cluster proves license capacity, outage blocking, and recovery.
 Credentialed Emerald mock and SV1 tests pass in both installation modes.
-Executable documentation and lint pass. Windows execution awaits hosted CI. The
-upstream #2726 portable-CI condition is mirrored until it merges; the
-Cache.cmake workaround is removed.
+Executable documentation and lint pass. The CMake changes from PR #2726 are
+supplied by upstream; no overlapping patch remains. The Windows Python launcher
+fix awaits hosted validation.
+
+## Multi-vendor review
+
+The standard QDMI session initializes every enabled catalogue entry. Use
+separate installed environments and per-device catalogue overlays for
+independent vendor jobs and monitors. The shared Docker image accepts an
+optional wheel directory per environment; one controller schedules both vendors
+concurrently. A hung or blocked vendor must not block the other.
+
+The AFQMC application is prepared in a separate local follow-up worktree.
+Quantum shadow collection holds one device license; dependent classical
+propagation releases that license and uses CPU jobs. Keep the external
+scientific helpers pinned and preserve their license provenance.
+
+The combined wheel cluster passed real Emerald mock and SV1 workloads in
+overlapping allocations, selective credential export, failed-IQM admission
+blocking, a successful Braket check during the outage, and recovery. The
+three-node core cluster and 48 focused Python cases also passed. The native
+Windows checks passed on the previous hosted head; its Python launcher lost
+nonzero exit codes. The launcher now waits and forwards the exit status on
+Windows, with real help/error console tests replacing the mocked exec test.
+
+The local AFQMC follow-up passed 32 DDSIM shadow circuits with 64 shots each
+through Slurm, followed by an afterok CPU array with no quantum licenses. Four
+walkers completed six steps and produced a summary. This is execution coverage,
+not a chemistry convergence result.
