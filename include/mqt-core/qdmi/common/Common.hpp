@@ -15,6 +15,8 @@
 
 #include "qdmi/client.h"
 
+#include "llvm/Support/ErrorHandling.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -89,19 +91,6 @@ public:
     return *instance;
   }
 };
-
-/// Function used to mark unreachable code
-///
-/// Uses compiler-specific extensions if possible. Even if no extension
-/// is used, undefined behavior is still raised by an empty function body and
-/// the noreturn attribute.
-[[noreturn]] inline void unreachable() {
-#ifdef __GNUC__ // GCC, Clang, ICC
-  __builtin_unreachable();
-#elif defined(_MSC_VER) // MSVC
-  __assume(false);
-#endif
-}
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
@@ -201,7 +190,7 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
   case QDMI_ERROR_TIMEOUT:
     return "Timeout";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Throws an exception if the result indicates an error.
@@ -242,7 +231,7 @@ constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {
   case QDMI_SESSION_PARAMETER_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given session property @p prop.
@@ -263,7 +252,7 @@ constexpr auto toString(const QDMI_Session_Property prop) -> const char* {
   case QDMI_SESSION_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given device session parameter
@@ -298,7 +287,7 @@ constexpr auto toString(const QDMI_Device_Session_Parameter param) -> const
   case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given site property @p prop.
@@ -343,7 +332,7 @@ constexpr auto toString(const QDMI_Site_Property prop) -> const char* {
   case QDMI_SITE_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given operation property @p prop.
@@ -384,7 +373,7 @@ constexpr auto toString(const QDMI_Operation_Property prop) -> const char* {
   case QDMI_OPERATION_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 /// Returns the string representation of the given device property @p prop.
@@ -437,7 +426,7 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
   case QDMI_DEVICE_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
-  unreachable();
+  llvm_unreachable("Invalid QDMI enum value");
 }
 
 } // namespace qdmi

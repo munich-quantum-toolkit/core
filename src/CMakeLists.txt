@@ -36,11 +36,35 @@ if(NOT TARGET MQT::ProjectOptions)
   set_target_properties(project_options PROPERTIES EXPORT_NAME ProjectOptions)
 endif()
 
+if(APPLE)
+  set(CMAKE_LINK_LIBRARY_USING_mqt_llvm_hidden "LINKER:-load_hidden,<LIBRARY>")
+  set(CMAKE_LINK_LIBRARY_USING_mqt_llvm_hidden_SUPPORTED TRUE)
+endif()
+
 add_subdirectory(bench)
 
 add_subdirectory(dd)
 
 add_subdirectory(qdmi)
+
+# Keep statically linked LLVM implementation symbols out of the native shared-library ABI.
+if(BUILD_MQT_CORE_SHARED_LIBS)
+  foreach(llvm_library LLVMSupport LLVMDemangle)
+    get_target_property(llvm_library_type ${llvm_library} TYPE)
+    if(NOT llvm_library_type STREQUAL "STATIC_LIBRARY")
+      continue()
+    endif()
+    foreach(native_library ${MQT_CORE_TARGET_NAME}-bench-library ${MQT_CORE_TARGET_NAME}-qdmi)
+      if(APPLE)
+        set_property(TARGET ${native_library} PROPERTY LINK_LIBRARY_OVERRIDE_${llvm_library}
+                                                       mqt_llvm_hidden)
+      elseif(UNIX)
+        target_link_options(${native_library} PRIVATE
+                            "LINKER:--exclude-libs,$<TARGET_FILE_NAME:${llvm_library}>")
+      endif()
+    endforeach()
+  endforeach()
+endif()
 
 if(MQT_CORE_INSTALL)
   include(CMakePackageConfigHelpers)

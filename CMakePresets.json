@@ -13,15 +13,6 @@
       }
     },
     {
-      "name": "base-no-mlir",
-      "hidden": true,
-      "inherits": "base",
-      "cacheVariables": {
-        "BUILD_MQT_CORE_MLIR": "OFF",
-        "CMAKE_DISABLE_FIND_PACKAGE_MLIR": "ON"
-      }
-    },
-    {
       "name": "debug",
       "inherits": "base",
       "displayName": "Debug config",
@@ -31,25 +22,9 @@
       }
     },
     {
-      "name": "debug-no-mlir",
-      "inherits": "base-no-mlir",
-      "displayName": "Debug config without MLIR",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
       "name": "release",
       "inherits": "base",
       "displayName": "Release config",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "release-no-mlir",
-      "inherits": "base-no-mlir",
-      "displayName": "Release config without MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -81,16 +56,8 @@
       "configurePreset": "debug"
     },
     {
-      "name": "debug-no-mlir",
-      "configurePreset": "debug-no-mlir"
-    },
-    {
       "name": "release",
       "configurePreset": "release"
-    },
-    {
-      "name": "release-no-mlir",
-      "configurePreset": "release-no-mlir"
     },
     {
       "name": "coverage",
@@ -114,19 +81,9 @@
       "configurePreset": "debug"
     },
     {
-      "name": "debug-no-mlir",
-      "inherits": "base",
-      "configurePreset": "debug-no-mlir"
-    },
-    {
       "name": "release",
       "inherits": "base",
       "configurePreset": "release"
-    },
-    {
-      "name": "release-no-mlir",
-      "inherits": "base",
-      "configurePreset": "release-no-mlir"
     },
     {
       "name": "coverage",

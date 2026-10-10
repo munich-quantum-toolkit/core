@@ -17,7 +17,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
 
   target_sources(${MQT_CORE_TARGET_NAME}-bench-library PRIVATE ${BENCH_SOURCES})
   target_link_libraries(${MQT_CORE_TARGET_NAME}-bench-library
-                        PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+                        PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json> LLVMSupport)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-bench-library
     PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${BENCH_HEADERS})

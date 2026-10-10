@@ -17,6 +17,8 @@
 
 #include "qdmi/client.h"
 
+#include "llvm/Support/ErrorHandling.h"
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
@@ -939,7 +941,7 @@ bool Job::wait(const size_t timeout) const {
     return false;
   }
   qdmi::throwIfError(ret, "Waiting for job");
-  qdmi::unreachable();
+  llvm_unreachable("Unexpected return after checking a QDMI error");
 }
 
 void Job::cancel() const {

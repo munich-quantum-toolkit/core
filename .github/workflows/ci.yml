@@ -35,22 +35,15 @@ jobs:
             compiler: gcc
             preset: debug
             run-on-draft: true
-            setup-mlir: true
-          - runs-on: ubuntu-26.04
-            compiler: gcc
-            preset: release-no-mlir
-            run-on-draft: true
-            setup-mlir: false
           - runs-on: ubuntu-26.04-arm
             compiler: gcc
             preset: release
             run-on-draft: false
-            setup-mlir: true
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@fd3d75dece69c363989347869529a5e99cdcfffc # v2.5.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: ${{ matrix.setup-mlir }}
+      setup-mlir: true
       llvm-version: 23.1.2
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
