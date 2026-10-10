@@ -402,7 +402,8 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   }
 #else
   appendIfFile(files, "/etc/mqt-core/qdmi.json");
-  if (auto xdg = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME")) {
+  if (auto xdg = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME");
+      xdg && !xdg->empty()) {
     appendIfFile(files, pathFromString(*xdg) / "mqt-core" / "qdmi.json");
   } else if (auto home = llvm::sys::Process::GetEnv("HOME")) {
     appendIfFile(files,

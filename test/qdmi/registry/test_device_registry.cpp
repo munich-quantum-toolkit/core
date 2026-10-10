@@ -462,6 +462,30 @@ TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
   EXPECT_EQ(definition->session.custom1, "user-default");
 }
 
+#ifndef _WIN32
+TEST(DeviceRegistry, UsesHomeWhenXdgConfigHomeIsUnsetOrEmpty) {
+  const TemporaryDirectory directory;
+  std::ignore = directory.write(".config/mqt-core/qdmi.json", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "home.device", "library": "home.so", "prefix": "HOME"
+    }]}
+  })");
+  const ScopedCurrentPath currentPath(directory.path());
+  const ScopedEnvironmentVariable home("HOME", directory.path().string());
+  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
+                                             std::nullopt);
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                             std::nullopt);
+  for (const auto& value :
+       {std::optional<std::string>{}, std::optional<std::string>{""}}) {
+    const ScopedEnvironmentVariable xdg("XDG_CONFIG_HOME", value);
+    const qdmi::detail::DeviceRegistry registry;
+    EXPECT_NE(findDefinition(registry, "home.device"), nullptr);
+  }
+}
+#endif
+
 TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
   const TemporaryDirectory directory;
   const auto configFile = emptyConfig(directory);
