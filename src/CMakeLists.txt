@@ -56,7 +56,8 @@ if(BUILD_MQT_CORE_SHARED_LIBS)
     if(NOT llvm_library_type STREQUAL "STATIC_LIBRARY")
       continue()
     endif()
-    foreach(native_library ${MQT_CORE_TARGET_NAME}-bench-library ${MQT_CORE_TARGET_NAME}-qdmi)
+    foreach(native_library ${MQT_CORE_TARGET_NAME}-support ${MQT_CORE_TARGET_NAME}-bench-library
+                           ${MQT_CORE_TARGET_NAME}-qdmi)
       if(APPLE)
         set_property(TARGET ${native_library} PROPERTY LINK_LIBRARY_OVERRIDE_${llvm_library}
                                                        mqt_llvm_hidden)

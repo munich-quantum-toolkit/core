@@ -1,9 +1,9 @@
 # Exception-free Core APIs
 
-Status: rebased on main `da9ce44fc` after #2731 and locally validated. The
-[current reassessment](../audits/exception-free-rebase.md) defines two
-independent follow-up extractions and the remaining acceptance work. Python
-exception compatibility still needs the identified submission-category fix.
+Status: rebased on main `715da0ee6` after #2732. The
+[current reassessment](../audits/exception-free-rebase.md) defines the compiler
+Program API extraction and the remaining acceptance work. Python exception
+compatibility still needs the identified submission-category fix.
 
 ## Contract
 
@@ -70,19 +70,20 @@ SIGALRM handler and may reap another child on timeout.
 
 Validation on Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
 
-- Release build with LTO passes. CTest passes 4,043 runnable tests, with the
+- Release build with LTO passes. CTest passes 4,045 runnable tests, with the
   expected `ScQDMIJobSpecificationTest.QueryJobId` skip.
-- The rebuilt Python package passes all 1,974 tests.
+- The rebuilt Python package passes all 1,974 tests. The final wheel passes all
+  433 QDMI tests after the XDG fallback fix.
 - Stub generation passes with no generated API changes.
-- Repository lint passes.
-- Whole-file C++ lint covers all 179 changed source files. Its findings are
-  fixed; the three source files touched during validation pass complete-file
-  clang-tidy checks with the same configuration.
-- The 231 DD/compiler regression checks pass after the integration fixes. All
-  127 DD package tests pass again after the final parser lint cleanup.
+- Repository lint passes. Whole-file C++ lint covered all 183 changed source
+  files. Both unused-include findings are fixed; complete-file checks and all
+  450 affected QDMI native tests pass after the cleanup.
+- Installed GCC Development and default consumers build and run. Runtime and
+  optional Development lookups work without the LLVM SDK; required Development
+  and default lookups report the missing SDK. The wheel's native shared
+  libraries, including CoreSupport, export no LLVM-owned definitions.
 
-Documentation execution and installed Development consumer probes passed on the
-previous head; they were not repeated for this rebase.
+Documentation execution was not repeated for this rebase.
 
 Windows/macOS packaging and hosted checks for the published revision remain
 unverified. No new packaging test framework is introduced here.

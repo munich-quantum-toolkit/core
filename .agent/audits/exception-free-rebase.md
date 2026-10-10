@@ -1,27 +1,19 @@
 # Exception-free API reassessment
 
-Rebased PR #2545 on main `da9ce44fc` after #2731. Validation of the rebased
+Rebased PR #2545 on main `715da0ee6` after #2732. Validation of the rebased
 implementation is recorded in the
 [execution plan](../plans/exception-free-core.md).
 
-## Next separations
+## Next separation
 
-1. **Require LLVM/MLIR for native development.** Remove the compiler-disabled
-   option, presets, CI row, and conditional build graph. Replace the private
-   SHA-256 implementation and QDMI unreachable helper with LLVM facilities. Keep
-   existing native throwing APIs and exception settings. Link the targets that
-   use LLVM directly; do not add CoreSupport as a dependency wrapper. Installed
-   Development consumers need SDK discovery, while wheel Runtime consumers must
-   remain SDK-free. This is a small build-contract change with independent
-   value.
+Use upstream results for compiler Program APIs. Change failing `optional<T>` and
+status `bool` returns to `FailureOr<T>` and `LogicalResult` in Programs,
+Pipeline, and ParameterBinding, then adapt their consumers. Retain existing MLIR
+diagnostics, Python exception classes, successful absence, predicates, and
+infallible accessors. Adapt the existing compiler binding helpers; leave native
+diagnostic registration and shared binding capture with #2545.
 
-2. **Use upstream results for compiler Program APIs.** Change failing
-   `optional<T>` and status `bool` returns to `FailureOr<T>` and `LogicalResult`
-   in Programs, Pipeline, and ParameterBinding, then adapt their consumers.
-   Retain existing MLIR diagnostics, Python exception classes, successful
-   absence, predicates, and infallible accessors. These targets already require
-   LLVM/MLIR, so this split does not depend on the first one. Most of its file
-   count comes from existing tests and bindings.
+LLVM/MLIR dependency and utility reuse are already on main through #2732.
 
 Do not extract the compiler directory wholesale. Target and TargetEnvironment
 currently own errors through `llvm::Expected`; converting them to status-only

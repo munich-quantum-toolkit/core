@@ -17,11 +17,10 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
-#include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/ScopeExit.h"
-
 #include "support/Diagnostics.hpp"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>

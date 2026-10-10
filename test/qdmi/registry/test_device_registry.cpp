@@ -354,7 +354,8 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
     const ScopedCurrentPath currentPath(directory.path());
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                "config/device.json");
-    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", std::nullopt);
+    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                               std::nullopt);
     const auto registry =
         ::mqt::test::value(qdmi::detail::DeviceRegistry::discover());
     const auto* definition = findDefinition(registry, "relative");
@@ -492,7 +493,8 @@ TEST(DeviceRegistry, UsesHomeWhenXdgConfigHomeIsUnsetOrEmpty) {
   for (const auto& value :
        {std::optional<std::string>{}, std::optional<std::string>{""}}) {
     const ScopedEnvironmentVariable xdg("XDG_CONFIG_HOME", value);
-    const qdmi::detail::DeviceRegistry registry;
+    const auto registry =
+        ::mqt::test::value(qdmi::detail::DeviceRegistry::discover());
     EXPECT_NE(findDefinition(registry, "home.device"), nullptr);
   }
 }

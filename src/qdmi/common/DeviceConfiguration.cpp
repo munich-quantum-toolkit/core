@@ -10,8 +10,6 @@
 
 #include "qdmi/common/DeviceConfiguration.hpp"
 
-#include "qdmi/common/Common.hpp"
-
 #include "support/DiagnosticFormatting.hpp"
 
 #include "qdmi/device.h"

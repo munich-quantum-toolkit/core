@@ -21,9 +21,8 @@
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
-#include "llvm/Support/LogicalResult.h"
-
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
@@ -716,7 +715,8 @@ llvm::FailureOr<DeviceRegistry> DeviceRegistry::discover() {
       return llvm::failure();
     }
   }
-  if (auto inlineJson = llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_JSON")) {
+  if (auto inlineJson =
+          llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_JSON")) {
     auto root = parseJson(*inlineJson, "<MQT_CORE_QDMI_CONFIG_JSON>");
     if (llvm::failed(root)) {
       return llvm::failure();

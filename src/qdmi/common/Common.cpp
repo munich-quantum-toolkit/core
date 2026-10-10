@@ -21,12 +21,9 @@
 #include "llvm/Support/LogicalResult.h"
 
 #include <string>
-#include <string_view>
-
 #include <utility>
 
 namespace qdmi {
-
 llvm::LogicalResult emitError(const int status, std::string message) {
   auto category = ::mqt::ErrorCategory::Runtime;
   switch (status) {

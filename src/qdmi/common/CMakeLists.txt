@@ -28,8 +28,6 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi MQT::CoreSupport
     PRIVATE $<BUILD_LOCAL_INTERFACE:qdmi::qdmi_project_warnings> ${CMAKE_DL_LIBS})
 
-  target_include_directories(${TARGET_NAME} SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>")
-
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

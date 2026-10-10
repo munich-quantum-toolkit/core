@@ -18,11 +18,9 @@
 
 #include "qdmi/client.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/LogicalResult.h"
-
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
