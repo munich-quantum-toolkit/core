@@ -165,9 +165,9 @@ print(builtin_driver.registered_device_ids())
 
 The list includes configured devices that are unavailable or need credentials.
 Use `builtin_driver.open_device(device_id, ...)` to open only the selected
-device. Core supplies `mqt.ddsim.default` for local execution. Other configured
-IDs may refer to simulator or compilation-only devices, including the models
-described in {doc}`sc_device`.
+device. MQT Core supplies `mqt.ddsim.default` for local execution. Other
+configured IDs may refer to simulator or compilation-only devices, including the
+models described in {doc}`sc_device`.
 
 With the MQT Core driver, standard `Session` enumeration initializes configured
 devices and skips those that fail to open. Another driver may present a
@@ -195,8 +195,8 @@ session parameters, for every definition.
 
 MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
 licenses for cluster-wide admission. The license name must equal one stable ID
-reported by the selected QDMI driver. Each job must request one license. For
-example:
+registered with the built-in MQT Core driver. The adapter accepts one device
+license per job. For example:
 
 ```bash
 sbatch --licenses=mqt.ddsim.default:1 simulation.sh
@@ -215,14 +215,14 @@ The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
 `<device-id>` or `<device-id>:1`. They reject remote, compound, and non-unit
 license values.
 
-The adapter creates a fresh driver session and selects the device with the
-licensed ID. It does not replace configuration or inject credentials. Each
+The adapter opens a fresh session for the licensed device without initializing
+other devices. It does not replace configuration or inject credentials. Each
 device implementation defines its own credential sources. The adapter accepts
 QDMI device status `IDLE` and `BUSY`. It rejects all other device states.
 
 `SLURM_JOB_LICENSES` is process-mutable. The adapter uses this value only for
 device selection. It does not verify that Slurm allocated the license. It does
-not authenticate the caller or authorize access to the device. Provider
+not authenticate the caller or authorize access to the device. Device
 credentials must authorize remote devices. The operating system must isolate a
 local device when access requires enforcement. A caller can also bypass this
 adapter and call {py:func}`~mqt.core.qdmi.open_device` with a stable device ID.

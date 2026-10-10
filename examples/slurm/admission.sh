@@ -11,7 +11,7 @@ set -eu
 
 licenses=$(awk -F= '/^Licenses=/ {gsub(/,/, " ", $2); print $2}' /etc/slurm/slurm.conf)
 for license in $licenses; do
-    /opt/venv/bin/python /usr/local/libexec/mqt-qdmi-availability.py --license "$license" --block-only
+    /usr/local/libexec/mqt-qdmi-availability.py --license "$license" --block-only
 done
 for license in $licenses; do
     systemctl start "qdmi-availability@$license.service"

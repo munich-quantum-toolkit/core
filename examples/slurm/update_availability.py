@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --no-project --offline --no-python-downloads
 # Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
 # Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.

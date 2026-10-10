@@ -43,9 +43,6 @@ endif()
 add_executable(mqt-core-qdmi-check Check.cpp)
 target_link_libraries(mqt-core-qdmi-check PRIVATE MQT::CoreQDMI MQT::ProjectWarnings
                                                   MQT::ProjectOptions)
-if(MINGW)
-  target_link_options(mqt-core-qdmi-check PRIVATE -municode)
-endif()
 mqt_copy_qdmi_runtime(mqt-core-qdmi-check)
 if(MQT_CORE_INSTALL)
   install(TARGETS mqt-core-qdmi-check RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"

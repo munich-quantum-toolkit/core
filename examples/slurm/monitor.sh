@@ -9,7 +9,7 @@
 
 set -eu
 
-while /opt/venv/bin/python /usr/local/libexec/mqt-qdmi-availability.py --license "$1"; do
+while /usr/local/libexec/mqt-qdmi-availability.py --license "$1"; do
     sleep 30
 done
 exit 1

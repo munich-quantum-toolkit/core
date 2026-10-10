@@ -27,11 +27,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=uv /uv /uvx /bin/
-RUN --mount=type=cache,target=/root/.cache/uv uv venv --python 3.15 /opt/venv
+ARG UV_LINK_MODE=copy
+ARG UV_PYTHON_CACHE_DIR=/root/.cache/uv/python
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv python install 3.15 --compile-bytecode \
+    && uv venv --python 3.15 /opt/venv
 COPY --chmod=755 start.sh /usr/local/sbin/mqt-slurm-start
 COPY --chmod=755 admission.sh /usr/local/sbin/mqt-qdmi-admission
 COPY --chmod=755 monitor.sh /usr/local/sbin/mqt-qdmi-monitor
-COPY update_availability.py /usr/local/libexec/mqt-qdmi-availability.py
+COPY --chmod=755 update_availability.py /usr/local/libexec/mqt-qdmi-availability.py
 COPY qdmi-*.service /etc/systemd/system/
 COPY node.conf /etc/systemd/system/slurmd.service.d/mqt-node.conf
 
@@ -50,6 +54,8 @@ COPY --from=workload \
 FROM ubuntu:26.04 AS provider-build
 
 COPY --from=uv /uv /uvx /bin/
+ARG UV_LINK_MODE=copy
+ARG UV_PYTHON_CACHE_DIR=/root/.cache/uv/python
 
 ARG SETUP_SCRIPT=""
 RUN if [ -n "$SETUP_SCRIPT" ]; then \
@@ -85,7 +91,7 @@ RUN --mount=type=bind,from=dist,target=/tmp/dist \
         [ -f "$wheel" ] || continue; \
         case "$wheel" in /tmp/dist/mqt_core-*) ;; *) printf '%s[qiskit]\n' "$wheel" >> /tmp/wheels.txt ;; esac; \
     done \
-    && uv pip install --link-mode=copy --overrides /tmp/core-override.txt -r /tmp/wheels.txt \
+    && uv pip install --compile-bytecode --overrides /tmp/core-override.txt -r /tmp/wheels.txt \
     && rm /tmp/core-override.txt /tmp/wheels.txt \
     && if [ -n "$SETUP_SCRIPT" ]; then \
         case "$PROVIDER_INSTALL_MODE" in native|wheel) ;; *) exit 1 ;; esac \

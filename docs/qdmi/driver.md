@@ -129,7 +129,7 @@ It opens the device, accepts an `IDLE` or `BUSY` status, and exits without
 submitting a quantum job:
 
 ```console
-mqt-core-qdmi-check --device mqt.sc.default
+mqt-core-qdmi-check --device mqt.ddsim.default
 ```
 
 Run it in the workload environment with the required credentials. The Python

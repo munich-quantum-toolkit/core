@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Submit to IQM and Braket concurrently through one QDMI driver process."""
+"""Submit to DDSIM, IQM, and Braket concurrently through one QDMI driver process."""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ from mqt.core.qdmi.builtin_driver import open_device, registered_device_ids
 def submit(device_id: str) -> None:
     """Open an independent driver session and collect eight shots."""
     device = open_device(device_id)
-    module, name = (
-        ("iqm.qdmi.qiskit", "IQMBackend")
-        if device_id.startswith("iqm.")
-        else ("amazon.braket.qdmi.qiskit", "AmazonBraketBackend")
-    )
+    module, name = {
+        "mqt.ddsim.default": ("mqt.core.plugins.qiskit", "QDMIBackend"),
+        "iqm.emerald.mock": ("iqm.qdmi.qiskit", "IQMBackend"),
+        "amazon.braket.sv1": ("amazon.braket.qdmi.qiskit", "AmazonBraketBackend"),
+    }[device_id]
     backend_type = getattr(import_module(module), name)
     backend = backend_type(device=device)
     circuit = QuantumCircuit(2)
@@ -38,10 +38,10 @@ def submit(device_id: str) -> None:
 
 
 def main() -> None:
-    """Use the same environment, catalogue and driver for both device implementations."""
-    devices = ("iqm.emerald.mock", "amazon.braket.sv1")
+    """Use the same environment, catalogue and driver for all three device implementations."""
+    devices = ("mqt.ddsim.default", "iqm.emerald.mock", "amazon.braket.sv1")
     assert set(devices) <= set(registered_device_ids())
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=len(devices)) as executor:
         list(executor.map(submit, devices))
 
 

@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Exercise IQM and Braket independently on one credentialed Slurm cluster."""
+"""Exercise DDSIM, IQM, and Braket independently on one credentialed Slurm cluster."""
 
 from __future__ import annotations
 
@@ -19,13 +19,16 @@ from pathlib import Path
 
 import run_integration as cluster
 
-DEVICES = {"iqm": "iqm.emerald.mock", "braket": "amazon.braket.sv1"}
+DEVICES = {"ddsim": "mqt.ddsim.default", "iqm": "iqm.emerald.mock", "braket": "amazon.braket.sv1"}
 AWS_CREDENTIALS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
 
 
 def environment(vendor: str) -> tuple[str, ...]:
     """Keep one shared catalogue while submitting only the needed credentials."""
-    unrelated = AWS_CREDENTIALS if vendor == "iqm" else ("IQM_TOKEN", "IQM_TOKENS_FILE")
+    unrelated = (
+        *(AWS_CREDENTIALS if vendor != "braket" else ()),
+        *(("IQM_TOKEN", "IQM_TOKENS_FILE") if vendor != "iqm" else ()),
+    )
     return (
         "env",
         *(argument for name in unrelated for argument in ("-u", name)),
@@ -70,11 +73,11 @@ def submit(vendor: str, *, hold: bool = True) -> str:
 def test_vendors() -> None:
     """Keep vendor allocations independent while one device license is unavailable."""
     configuration = cluster.RUNTIME / "slurm.conf"
-    licenses = ",".join(f"{device}:1" for device in DEVICES.values())
+    licenses = ",".join(f"{device}:1" for vendor, device in DEVICES.items() if vendor != "ddsim")
     configuration.write_text(configuration.read_text().replace("Licenses=", f"Licenses={licenses},", 1))
     cluster.controller("scontrol", "reconfigure")
     definitions = []
-    for vendor in DEVICES:
+    for vendor in ("iqm", "braket"):
         cluster.controller(
             "env", "PROVIDER_INSTALL_MODE=wheel", "sh", f"/{vendor}/test/slurm/setup.sh", f"/jobs/{vendor}.json"
         )
@@ -97,7 +100,7 @@ def test_vendors() -> None:
         timeout=300,
     )
 
-    iqm, braket = (submit(vendor) for vendor in DEVICES)
+    iqm, braket = (submit(vendor) for vendor in ("iqm", "braket"))
     for vendor, job_id in (("iqm", iqm), ("braket", braket)):
         cluster.wait_for_result(vendor, job_id, f"the {vendor} allocation")
     for vendor, job_id in (("iqm", iqm), ("braket", braket)):
@@ -130,17 +133,22 @@ def test_vendors() -> None:
     )
     assert cluster.job_matches(braket, "RUNNING")
     assert not (cluster.RUNTIME / "jobs" / f"iqm-{waiting}.json").exists()
-    cluster.job(*environment("braket"), "mqt-core-qdmi-check", "--device", DEVICES["braket"], timeout=45)
+    for vendor in ("ddsim", "braket"):
+        cluster.job(*environment(vendor), "mqt-core-qdmi-check", "--device", DEVICES[vendor], timeout=45)
     catalogue.write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": definitions}}))
     cluster.controller("systemctl", "restart", service)
     cluster.wait_for_result("iqm", waiting, "the pending IQM job to start after recovery")
     cluster.wait_for("the recovered IQM allocation to finish", lambda: cluster.job_finished(waiting))
     (cluster.RUNTIME / "jobs" / f"release-{braket}").touch()
     cluster.wait_for("the Braket job to finish", lambda: cluster.job_finished(braket))
-    for device in DEVICES.values():
-        cluster.assert_license(device, total=1, used=0, free=1)
-        assert cluster.license_record(device)["Reserved"] == "0"
-    cluster.LOGGER.info("IQM and Braket ran together; an IQM outage blocked only IQM admission.")
+    for vendor, device in DEVICES.items():
+        capacity = 2 if vendor == "ddsim" else 1
+        cluster.assert_license(device, total=capacity, used=0, free=capacity)
+        cluster.wait_for(
+            f"{device} admission after recovery",
+            lambda device=device: cluster.license_record(device)["Reserved"] == "0",
+        )
+    cluster.LOGGER.info("DDSIM, IQM, and Braket ran together; an IQM outage blocked only IQM admission.")
 
 
 def main() -> None:
@@ -153,7 +161,7 @@ def main() -> None:
     for name in ("IQM_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         if not os.environ.get(name):
             parser.error(f"{name} must be set for the credentialed workload")
-    for vendor in DEVICES:
+    for vendor in ("iqm", "braket"):
         wheels = list((options.dist / vendor).glob("*.whl"))
         source = getattr(options, vendor).resolve()
         if len(wheels) != 1 or not (source / "test/slurm/setup.sh").is_file():

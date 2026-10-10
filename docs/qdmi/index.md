@@ -89,6 +89,7 @@ QDMI device configuration <configuration>
 DDSIM QDMI Device <ddsim_device>
 SC QDMI Device <sc_device>
 Slurm integration <slurm>
+Example Slurm cluster <slurm_cluster>
 QDMI-Qiskit Backend <qdmi_backend>
 PennyLane interface for QDMI devices <pennylane_device>
 ```

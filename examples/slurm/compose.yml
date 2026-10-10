@@ -19,6 +19,7 @@ x-cluster: &cluster
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}:/runtime
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/jobs:/jobs
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/slurm.conf:/etc/slurm/slurm.conf:ro
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.json:/etc/mqt-core/qdmi.json:ro
     - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
 
 x-healthcheck: &healthcheck

@@ -14,6 +14,7 @@ After=slurmctld.service
 
 [Service]
 Type=oneshot
+Environment=VIRTUAL_ENV=/opt/venv
 ExecStart=/usr/local/sbin/mqt-qdmi-admission
 RemainAfterExit=yes
 Restart=on-failure

@@ -13,11 +13,12 @@ After=slurmctld.service network-online.target
 
 [Service]
 Type=exec
+Environment=VIRTUAL_ENV=/opt/venv
 Environment=PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=-/runtime/qdmi.env
 PassEnvironment=IQM_TOKEN IQM_TOKENS_FILE AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE AWS_DEFAULT_REGION AWS_REGION AWS_EC2_METADATA_DISABLED
 ExecStart=/usr/local/sbin/mqt-qdmi-monitor %i
-ExecStopPost=/opt/venv/bin/python /usr/local/libexec/mqt-qdmi-availability.py --license %i --block-only
+ExecStopPost=/usr/local/libexec/mqt-qdmi-availability.py --license %i --block-only
 Restart=always
 RestartSec=30
 TimeoutStopSec=5
