@@ -53,10 +53,10 @@ LAYOUT_CHECK = """() => {
 
 
 EVIDENCE_CHECK = """() => {
-    const id = MQSF_DECK.slides[MQSF_DECK.getState().slide].id;
-    const progress = document.getElementById('slide').dataset.progress;
-    const step = MQSF_DECK.getState().step;
-    const fraction = progress === '' ? (id === 'adaptive-execution' || step ? 1 : 0) : Number(progress);
+    const id = document.querySelector('.batch-grid') ? 'afqmc-execution' :
+        document.querySelector('.histogram') ? 'adaptive-execution' : '';
+    const clock = document.querySelector('.execution-grid .clock-line > div');
+    const fraction = clock ? parseFloat(clock.style.width) / 100 : 1;
     let capture, elapsed, actual, expected;
     if (id === 'adaptive-execution') {
         capture = MQSF_DATA.scenarios.find(s => s.id === 'qpe').variants[0].executions['qir-adaptive'];
@@ -71,14 +71,14 @@ EVIDENCE_CHECK = """() => {
         expected = {count:shots.length, bins:counts};
     } else if (id === 'afqmc-execution') {
         capture = MQSF_DATA.application.execution;
-        elapsed = fraction * capture.duration_ms;
+        const begin = capture.events.find(e => e.operation.includes('try_submit_job'))?.time_ms || 0;
+        elapsed = begin + fraction * (capture.duration_ms - begin);
         expected = {count:capture.events.filter(e => Number.isInteger(e.program_index) &&
             e.time_ms + e.duration_ms <= elapsed).length};
         actual = {count:Number(document.querySelector('.batch-grid').dataset.programs)};
     } else return null;
     const event = [...capture.events].reverse().find(e => e.time_ms <= elapsed);
-    const submit = capture.events.find(e => e.operation.includes('try_submit_job'));
-    const checkLine = id === 'adaptive-execution' ? step > 0 : elapsed >= (submit?.time_ms ?? 0);
+    const checkLine = !!document.querySelector('.code-line.hot');
     return {actual, expected, fraction,
         actualLine:checkLine ? Number(document.querySelector('.code-line.hot .line-no')?.textContent) : null,
         expectedLine:checkLine ? event?.source_line || 1 : null};
@@ -143,10 +143,141 @@ CIRCUIT_CHECK = """() => {
 }"""
 
 
-def check(html: Path, executable: str | None, screenshot: Path | None, screenshots_dir: Path | None = None) -> None:
+REAL_MOTION_CHECK = """async () => {
+    const failures = [], samples = [], gaps = [];
+    const waitFrames = async duration => {
+        const start = await new Promise(requestAnimationFrame);
+        while (await new Promise(requestAnimationFrame) - start < duration) {}
+    };
+    const root = document.createElement('div'); document.body.append(root);
+    MQSF_MOTION.replace(root,
+        '<svg><g data-morph="hidden" opacity="0"><circle r="20"/></g></svg>', 950);
+    for (let i = 0; i < 20; i++) {
+        await new Promise(requestAnimationFrame);
+        if (Number(getComputedStyle(root.querySelector('g')).opacity) !== 0)
+            failures.push('A future SVG build flashed before its reveal');
+    }
+    MQSF_MOTION.finish();
+    MQSF_MOTION.update(root, '<svg><g data-morph="stable"><circle r="2"/></g></svg>');
+    const group = root.querySelector('g');
+    MQSF_MOTION.update(root, '<svg><g data-morph="stable"><circle r="4"/><text>Added</text></g></svg>');
+    if (root.querySelector('g') !== group || root.querySelector('circle').getAttribute('r') !== '4')
+        failures.push('Timeline updates recreated a stable SVG node');
+    MQSF_MOTION.update(root, '<p>Changed scene</p>');
+    if (root.innerHTML !== '<p>Changed scene</p>') failures.push('Changed timeline structure was not replaced');
+    const phase = opacity => `<svg><g data-morph="next-phase" opacity="${opacity}"><circle r="4"/></g></svg>`;
+    MQSF_MOTION.update(root, phase(1));
+    const entrance = root.querySelector('g').getAnimations()[0];
+    if (!entrance) failures.push('A new compiler phase appeared without an entrance');
+    await new Promise(requestAnimationFrame);
+    MQSF_MOTION.update(root, phase(1));
+    if (root.querySelector('g').getAnimations()[0] !== entrance)
+        failures.push('An entrance restarted on a stable timeline frame');
+    MQSF_MOTION.update(root, phase(0));
+    if (Number(getComputedStyle(root.querySelector('g')).opacity) !== 0)
+        failures.push('An entrance overrode a later hidden state');
+    MQSF_MOTION.finish();
+    root.remove();
+    const targetIndex = MQSF_DECK.slides.findIndex(s => s.id === 'device-switch');
+    const targetSlide = MQSF_DECK.slides[targetIndex];
+    const positions = () => new Map([...document.querySelectorAll('[data-morph^="device-node-"]')]
+        .map(node => {
+            // consolidate() rewrites Firefox's attribute and changes the geometry under test.
+            const {e, f} = node.transform.baseVal.getItem(0).matrix;
+            return [node.dataset.morph, [e, f]];
+        }));
+    for (let step = 1; step <= targetSlide.builds; step++) {
+        MQSF_DECK.go(targetIndex, step); MQSF_DECK.finishMotion();
+        const destination = positions();
+        MQSF_DECK.go(targetIndex, step - 1); MQSF_DECK.finishMotion();
+        const origin = positions();
+        const key = [...origin.keys()].find(k => destination.has(k)
+            && Math.hypot(...destination.get(k).map((v, i) => v - origin.get(k)[i])) > 5);
+        if (!key) { failures.push('No shared target node to test'); continue; }
+        const from = origin.get(key), to = destination.get(key);
+        const distance = point => Math.hypot(...point.map((v, i) => v - from[i]));
+        MQSF_DECK.next();
+        if (distance(positions().get(key)) > .001)
+            failures.push(`Target ${step} flashed its final topology before morphing`);
+        await waitFrames(targetSlide.playbacks[step].transition / 2);
+        const middle = positions().get(key), fraction = distance(middle) / distance(to);
+        if (!(fraction > 0 && fraction < 1))
+            failures.push(`Target ${step} did not morph through an intermediate position: ${fraction}`);
+        if (document.querySelector('#slide').dataset.progress !== '0')
+            failures.push(`Target ${step} replay overwrote its unfinished topology morph`);
+        MQSF_DECK.next();
+        if (MQSF_DECK.getState().animating || document.querySelector('#slide').dataset.progress !== '')
+            failures.push(`Target ${step} could not finish during its transition`);
+        if (Math.abs(distance(positions().get(key)) - distance(to)) > .001)
+            failures.push(`Target ${step} did not settle its topology on finish`);
+        MQSF_DECK.go(targetIndex, step - 1); MQSF_DECK.finishMotion(); MQSF_DECK.next();
+        await new Promise(requestAnimationFrame);
+        MQSF_DECK.go(0);
+        await waitFrames(targetSlide.playbacks[step].transition + 50);
+        if (MQSF_DECK.getState().slide !== 0 || document.querySelector('#slide').dataset.progress !== '')
+            failures.push(`Target ${step} transition survived navigation`);
+    }
+    for (const [index, slide] of MQSF_DECK.slides.entries()) {
+        for (const [build, playback] of Object.entries(slide.playbacks)) {
+            const step = Number(build);
+            const start = () => {
+                if (step) MQSF_DECK.go(index, step - 1);
+                else MQSF_DECK.go(index - 1, MQSF_DECK.slides[index - 1].builds);
+                MQSF_DECK.finishMotion(); MQSF_DECK.next();
+            };
+            start();
+            const heading = document.querySelector('#slide h2, #slide h1');
+            if (document.querySelector('#slide').dataset.progress !== '0')
+                failures.push(`${slide.id}/${step}: first paint was not the initial frame`);
+            if (playback.transition) await waitFrames(playback.transition);
+            let previous = 0, previousTime;
+            for (let i = 0; i < 14; i++) {
+                const now = await new Promise(requestAnimationFrame);
+                if (previousTime !== undefined) gaps.push(now - previousTime);
+                previousTime = now;
+                const value = document.querySelector('#slide').dataset.progress;
+                const progress = value === '' ? 1 : Number(value);
+                if (!Number.isFinite(progress) || progress < previous || progress > 1)
+                    failures.push(`${slide.id}/${step}: invalid progression ${previous} -> ${progress}`);
+                if (document.querySelector('#slide h2, #slide h1') !== heading)
+                    failures.push(`${slide.id}/${step}: recreated heading during playback`);
+                previous = progress;
+            }
+            if (!(previous > 0)) failures.push(`${slide.id}/${step}: stalled at first frame`);
+            samples.push({id:slide.id, step, progress:previous});
+            // A cancelled callback must not overwrite the destination slide.
+            MQSF_DECK.go(0); await new Promise(requestAnimationFrame);
+            if (MQSF_DECK.getState().slide !== 0 || document.querySelector('#slide').dataset.progress !== '')
+                failures.push(`${slide.id}/${step}: callback survived navigation`);
+            // Repeated starts reproduce the first-frame clock race without a mocked clock.
+            for (let i = 0; i < 4; i++) {
+                start();
+                if (playback.transition) await waitFrames(playback.transition);
+                for (let frame = 0; frame < 4; frame++) await new Promise(requestAnimationFrame);
+                const value = document.querySelector('#slide').dataset.progress;
+                if (value !== '' && !(Number(value) > 0)) failures.push(`${slide.id}/${step}: restart stalled`);
+            }
+            MQSF_DECK.go(0);
+        }
+    }
+    gaps.sort((a,b) => a-b);
+    MQSF_DECK.finishMotion();
+    return {failures, samples, frames:gaps.length, p95:gaps[Math.floor(gaps.length * .95)] || 0};
+}"""
+
+
+def check(
+    html: Path,
+    executable: str | None,
+    screenshot: Path | None,
+    screenshots_dir: Path | None = None,
+    engine: str = "chromium",
+) -> None:
     """Check all builds, recorded evidence, print pages, and interrupted motion offline."""
     with import_module("playwright.sync_api").sync_playwright() as playwright:
-        browser = playwright.chromium.launch(executable_path=executable, args=["--no-sandbox"])
+        browser = getattr(playwright, engine).launch(
+            executable_path=executable, args=["--no-sandbox"] if engine == "chromium" else []
+        )
         network: list[str] = []
         errors: list[str] = []
         geometry: dict[tuple[int, str], int] = {}
@@ -158,7 +289,9 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             else:
                 route.continue_()
 
-        context = browser.new_context(offline=True, viewport={"width": 1920, "height": 1080}, reduced_motion="reduce")
+        context = browser.new_context(
+            offline=True, viewport={"width": 1920, "height": 1080}, reduced_motion="no-preference"
+        )
         context.route("**/*", route_request)
         page = context.new_page()
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -169,10 +302,12 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
         page.clock.pause_at("2026-10-14T08:00:00Z")
         assert page.title() == TITLE
         slides = page.evaluate("window.MQSF_DECK.slides")
-        assert len(slides) == 19, f"Expected the 19-slide keynote, found {len(slides)} slides"
+        assert slides
+        assert len({slide["id"] for slide in slides}) == len(slides), "Slide IDs must be unique"
         states = [(index, step) for index, slide in enumerate(slides) for step in range(slide["builds"] + 1)]
         ids = {slide["id"]: index for index, slide in enumerate(slides)}
         expected_mapping = page.evaluate("MQSF_DATA.targets[0].compilation.layout.final.slice(0,6)")
+        expected_swaps = page.evaluate("MQSF_DATA.targets[0].compilation.layout.swaps.length")
         probe = page.evaluate(CIRCUIT_CHECK)
         assert not probe["failures"], probe["failures"]
         assert probe["dependencies"]
@@ -193,15 +328,38 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             return evidence
 
         def inspect_slide(index: int, step: int) -> None:
+            page.evaluate("MQSF_DECK.finishMotion()")
             for issue in page.evaluate(LAYOUT_CHECK):
                 geometry.setdefault((index, issue), step)
             assert page.locator("#slide-number").inner_text().startswith(f"{index + 1:02d} / {len(slides)}")
             assert page.locator("#section-label").inner_text().strip()
             assert page.locator("#mqsc-logo").is_visible()
             inspect_evidence()
+            if slides[index]["id"] == "structured" and step in {1, 2}:
+                source = page.evaluate(
+                    """id => {
+                    const v = MQSF_DATA.scenarios.find(s => s.id === 'parity').variants
+                        .find(v => v.id === 'structured');
+                    return [...v.stages, ...v.exports].find(a => a.id === id).code;
+                }""",
+                    "openqasm3" if step == 1 else "qir-adaptive",
+                )
+                visible = {line.strip() for line in page.locator(".structure-code .code-text").all_text_contents()}
+                pattern = (
+                    r"[{}]|\b(?:for|if|while|reset|measure)\b"
+                    if step == 1
+                    else r"\bcall\b.*(?:__reset__|__mz__|__read_result)|\b(?:br|phi|icmp)\b"
+                )
+                required = [line.strip() for line in source.splitlines() if re.search(pattern, line)]
+                assert required
+                missing = [line for line in required if line not in visible]
+                assert not missing, f"Structured build {step} hides source control or quantum effects: {missing}"
             if slides[index]["id"] == "routing" and step == 2 and not assert_state((index, step))["animating"]:
                 expected = [f"q{i} → {site}" for i, site in enumerate(expected_mapping)]
                 assert page.locator(".mapping-legend span").all_text_contents() == expected
+            if slides[index]["id"] == "routing" and step in {0, 2} and not assert_state((index, step))["animating"]:
+                swaps = int(page.locator(".telemetry strong").inner_text().split()[0])
+                assert swaps == (0 if step == 0 else expected_swaps), "SWAP telemetry must follow the routing stage"
             page.evaluate("Promise.all([...document.querySelectorAll('#deck img')].map(i => i.decode()))")
             assets = page.evaluate("""() => [...document.querySelectorAll('#deck img, #deck svg image')].map(i =>
                 i.currentSrc || i.getAttribute('href') || i.getAttribute('xlink:href'))""")
@@ -216,17 +374,18 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
 
         def inspect_progress(index: int, step: int, playback: dict[str, Any]) -> None:
             fractions = page.evaluate(
-                """id => {
-                const c = id === 'adaptive-execution'
+                """() => {
+                const c = document.querySelector('.histogram')
                     ? MQSF_DATA.scenarios.find(s => s.id === 'qpe').variants[0].executions['qir-adaptive']
                     : MQSF_DATA.application.execution;
                 const times = c.shot_events?.map(e => e.time_ms) || c.events
                     .filter(e => Number.isInteger(e.program_index)).map(e => e.time_ms + e.duration_ms);
                 const duration = c.duration_ms || Math.max(c.completed_ms,
                     ...c.events.map(e => e.time_ms + e.duration_ms));
-                return [0.25,0.5,0.75].map(f => times[Math.floor(f * times.length)] / duration);
+                const begin = c.shot_events ? 0 :
+                    c.events.find(e => e.operation.includes('try_submit_job'))?.time_ms || 0;
+                return [0.25,0.5,0.75].map(f => (times[Math.floor(f * times.length)] - begin) / (duration - begin));
             }""",
-                slides[index]["id"],
             )
             last = 0.0
             counts = []
@@ -248,7 +407,9 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             playback = slide["playbacks"].get(str(expected[1]))
             if current["animating"]:
                 assert playback
-                if slide["id"] in {"adaptive-execution", "afqmc-execution"}:
+                page.clock.run_for(playback.get("transition", 0) + 32)
+                evidence = inspect_evidence()
+                if evidence and evidence["fraction"] < 1:
                     inspect_progress(*expected, playback)
                 else:
                     page.clock.fast_forward(round(playback["duration"] / 2))
@@ -278,14 +439,14 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
         assert_state(states[-1])
         page.keyboard.press("Home")
         assert_state(states[0])
-        page.keyboard.press("1")
-        page.keyboard.press("9")
+        for digit in str(len(slides)):
+            page.keyboard.press(digit)
         assert page.locator("#jump-indicator").is_visible()
         page.keyboard.press("Enter")
-        assert_state((18, 0))
+        assert_state((len(slides) - 1, 0))
         assert page.locator("#jump-indicator").is_hidden()
         page.reload(wait_until="load")
-        assert_state((18, 0))
+        assert_state((len(slides) - 1, 0))
         page.keyboard.press("Home")
         page.keyboard.press("g")
         assert page.locator("#overview").is_visible()
@@ -315,8 +476,9 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             printed = page.locator(".print-slide").nth(index)
             assert printed.locator(".slide-footer").inner_text().endswith(f"{index + 1} / {len(slides)}")
             assert printed.locator("h1, h2").count() > 0
-        pdf = page.pdf(prefer_css_page_size=True, print_background=True)
-        assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == len(slides), "Printed PDF has extra or missing pages"
+        if engine == "chromium":
+            pdf = page.pdf(prefer_css_page_size=True, print_background=True)
+            assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == len(slides), "Printed PDF has extra or missing pages"
         page.evaluate("dispatchEvent(new Event('afterprint'))")
         page.emulate_media(media="screen")
         assert page.locator("#print-deck .print-slide").count() == 0
@@ -331,9 +493,11 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
         page = context.new_page()
         page.on("pageerror", lambda error: errors.append(f"Normal motion: {error}"))
         page.goto(html.resolve().as_uri(), wait_until="load")
-        for key in ["PageDown"] * 8 + ["PageUp"] * 4:
-            page.keyboard.press(key)
-        assert_state(states[4])
+        page.keyboard.press("PageDown")
+        page.keyboard.press("PageUp")
+        assert_state((0, 0))
+        real_motion = page.evaluate(REAL_MOTION_CHECK)
+        assert not real_motion["failures"], real_motion["failures"]
         motion = page.evaluate("""async () => {
             const root = document.createElement('div'); document.body.append(root);
             const html = (x,r) => `<svg><g data-morph="probe" transform="translate(${x} 0)">` +
@@ -344,6 +508,7 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             await new Promise(resolve=>setTimeout(resolve,200));
             const forward = position();
             MQSF_MOTION.replace(root,html(0,10),1000);
+            const reverseStart = position();
             await new Promise(resolve=>setTimeout(resolve,200));
             const reverse = position();
             MQSF_MOTION.replace(root,html(250,30),1000);
@@ -352,12 +517,15 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
             for(let i=0;i<50;i++) MQSF_MOTION.replace(root,html(i*10,10+i),1000);
             MQSF_MOTION.replace(root,html(999,9),0);
             await new Promise(resolve=>setTimeout(resolve,100));
-            const result = {forward, reverse, finished, transform:root.querySelector('g').getAttribute('transform'),
+            const result = {forward, reverseStart, reverse, finished,
+                transform:root.querySelector('g').getAttribute('transform'),
                 radius:root.querySelector('circle').getAttribute('r'),
                 animations:root.getAnimations({subtree:true}).length};
             root.remove(); return result;
         }""")
-        assert 0 < motion.pop("forward") < 100, "Forward morph must change geometry between endpoints"
+        forward = motion.pop("forward")
+        assert 0 < forward < 100, "Forward morph must change geometry between endpoints"
+        assert abs(motion.pop("reverseStart") - forward) < 0.001, "Reversing a morph must retain its current position"
         assert 0 < motion.pop("reverse") < 100, "Reverse morph must change geometry between endpoints"
         assert motion == {
             "finished": "translate(250 0)",
@@ -370,37 +538,53 @@ def check(html: Path, executable: str | None, screenshot: Path | None, screensho
         page.wait_for_timeout(100)
         assert_state((0, 0))
         page.evaluate("MQSF_DECK.finishMotion()")
+        page.emulate_media(reduced_motion="reduce")
+        for index, slide in enumerate(slides):
+            for step in map(int, slide["playbacks"]):
+                page.evaluate("([index, step]) => MQSF_DECK.go(index, step, true)", [index, step])
+                assert not assert_state((index, step))["animating"], "Reduced motion must settle without a timeline"
+                assert not page.locator("#slide").get_attribute("data-progress")
+                inspect_evidence()
+                assert page.evaluate("document.querySelector('#slide').getAnimations({subtree:true}).length") == 0
         assert not errors, f"Browser errors: {errors}"
         assert not network, f"Presentation requested network resources: {network}"
         context.close()
         browser.close()
+        for (index, issue), step in geometry.items():
+            print(f"Layout: slide {index + 1}, build {step}: {issue}")
+        assert not geometry, f"Found {len(geometry)} FullHD layout issues (listed above)"
         print(
-            f"Offline functional checks passed: {len(slides)} slides, {len(states)} builds, "
+            f"Offline {engine} checks passed: {len(slides)} slides, {len(states)} builds, "
             f"{completed} finite replays, {loops} loops."
         )
         print(
             f"Evidence: {probe['dependencies']} feedback dependencies, {probe['windows']} circuit windows, "
-            "exact result progress, 19 print pages."
+            f"exact result progress, {len(slides)} print pages."
         )
-        for (index, issue), step in geometry.items():
-            print(f"Layout: slide {index + 1}, build {step}: {issue}")
-        assert not geometry, f"Found {len(geometry)} FullHD layout issues (listed above)"
+        print(
+            f"Real RAF: {len(real_motion['samples'])} playback builds, {real_motion['frames']} sampled frames, "
+            f"p95 frame interval {real_motion['p95']:.1f} ms; "
+            "first paint, restart, cancellation, and reduced motion passed."
+        )
 
 
 def main() -> None:
     """Run the standalone browser check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--html", type=Path, default=DEFAULT_HTML)
+    parser.add_argument("--engine", choices=("chromium", "firefox"), default="chromium")
     parser.add_argument(
         "--browser",
-        default=os.environ.get("MQSF_BROWSER")
-        or os.environ.get("CHROME_BIN")
-        or ("/usr/bin/google-chrome" if Path("/usr/bin/google-chrome").is_file() else None),
+        default=os.environ.get("MQSF_BROWSER"),
     )
     parser.add_argument("--screenshot", type=Path, help="Save the opening slide")
     parser.add_argument("--screenshots-dir", type=Path, help="Save the final build of every slide at FullHD")
     args = parser.parse_args()
-    check(args.html, args.browser, args.screenshot, args.screenshots_dir)
+    if not args.browser and args.engine == "chromium":
+        args.browser = os.environ.get("CHROME_BIN") or (
+            "/usr/bin/google-chrome" if Path("/usr/bin/google-chrome").is_file() else None
+        )
+    check(args.html, args.browser, args.screenshot, args.screenshots_dir, args.engine)
 
 
 if __name__ == "__main__":

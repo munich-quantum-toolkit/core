@@ -2,7 +2,7 @@
 
 ## System Software for Quantum Computing: From the Metal to the User
 
-A 19-slide, 35-minute keynote for a 1920 × 1080 projector. The white and blue
+A 12-slide, 35-minute keynote for a 1920 × 1080 projector. The white and blue
 MQSC presentation opens with the shared software stack, follows a LiH
 quantum-classical application, compiles one of its measurement programs for
 three device models, and then shows structured programs and adaptive execution.
@@ -41,7 +41,7 @@ links and QR destinations are optional audience resources.
 | Show inline speaker notes           | P                                                    |
 
 `P` displays notes on the projector; use the separate notes file for private
-rehearsal. A URL fragment such as `#17.0` opens a slide and build. Printing
+rehearsal. A URL fragment such as `#9.0` opens a slide and build. Printing
 produces the final build of each slide.
 
 Forward starts a playback when it enters that build. During a one-shot replay,
@@ -49,32 +49,42 @@ forward finishes the current replay; the next press advances. During a looping
 replay, forward stops it and advances immediately. Back cancels playback and
 restores the previous build. Playback never changes slides automatically.
 
-| Slide | Playback builds                                                |
-| ----- | -------------------------------------------------------------- |
-| 7     | Native batch retrieval, slowed to 12 seconds                   |
-| 8     | Walker evolution, 20-second loop; CPU timeline, 10-second loop |
-| 9     | Energy trajectory, 16-second loop                              |
-| 12    | Placement refinement, routing, synthesis: 18 / 16 / 14 seconds |
-| 17    | QPE at measured duration, then the same trace over 18 seconds  |
+| Slide | Playback                                                                            |
+| ----- | ----------------------------------------------------------------------------------- |
+| 3     | AFQMC workflow unfolds over 6.5 seconds; one further build shows source             |
+| 4     | QDMI submission window over 8.5 seconds; parallel CPU/walker replay over 11 seconds |
+| 5     | Energy and walker weights evolve over a 12-second loop                              |
+| 6     | Placement refinement, routing and synthesis: 10 / 10 / 8 seconds                    |
+| 7     | Each device selection replays query, placement, routing and synthesis               |
+| 10    | One QPE replay over 9.5 seconds, with API calls and shots on one clock              |
 
-Looping builds hold their final frame for 2.4 seconds before restarting. The
-imaginary-time animations on slides 8–9 are distinct from wall-clock execution.
-Their interpolated frames smooth recorded states; they do not add measurements.
+Forward entry starts a build-zero replay automatically. Direct jumps, backward
+navigation, printing, and reduced-motion mode show settled final states. Looping
+builds hold their final frame for 2.4 seconds before restarting. The quantum
+batch replay omits preprocessing and starts at the recorded submission call; its
+displayed time is relative to that boundary. CPU task time and imaginary time
+are separate, explicitly labelled coordinates.
+
+SVG nodes persist across timeline frames. Morphs start at their current
+intermediate geometry when interrupted; hidden future elements remain hidden.
+References are present with the substantive content and never require a separate
+click. Code is not shortened horizontally. Structured outputs use explicitly
+labelled display folds with original source line numbers; the bundle retains all
+unmodified artifacts.
 
 ## Evidence and its limits
 
-The LiH example uses STO-3G at 1.6 Å, with the Li 1s core frozen and two active
-electrons in three sigma spatial orbitals: six spin orbitals and 15 possible
-two-electron determinants. The exact reference is FCI within that active space,
-including the frozen-core and nuclear energy. The trial parameters were tuned
-classically to a nearly exact small-system state; this is not a quantum VQE. Its
-mixed local-energy estimate starts near the reference at imaginary time zero, so
-the trajectory is not evidence of discovering the ground state from an
-unoptimized trial.
+The LiH example uses STO-3G at a stretched 2.4 Å bond, with the Li 1s core
+frozen and two active electrons in three sigma spatial orbitals: six spin
+orbitals and 15 possible two-electron determinants. The exact reference is FCI
+within that active space, including the frozen-core and nuclear energy. The
+fixed trial parameters were tuned classically at 1.6 Å and reused at 2.4 Å. This
+more demanding geometry makes the projection visible without enlarging the
+circuit. It is not a quantum VQE or a quantum advantage demonstration.
 
 The recorded workflow submits 2,048 matchgate measurement programs with 256
 shots each as one native QDMI job. Measured shadows supply 15 determinant
-overlaps. Four local CPU processes then propagate 128 walkers for 240 steps per
+overlaps. Four local CPU processes then propagate 128 walkers for 480 steps per
 trial, comparing the shadow-derived and Hartree–Fock trials. The step size is
 0.02 Ha⁻¹. A checked Givens-angle sign adaptation enforces the Majorana
 convention. Dense active-space energy and force-bias contractions replace the
@@ -102,16 +112,20 @@ evidence:
 - IBM Nighthawk: the official `ibm_miami` public r1 snapshot, calibrated on 17
   April 2026, pinned in Qiskit IBM Runtime. It is not a current r2 calibration.
 - IonQ Forte-1: an AWS Braket response with 36 all-to-all connected qubits. The
-  compiler targets the supported RX/RY/RZ/CNOT QIS interface. GPI/GPI2/ZZ
-  hardware synthesis remains with the provider.
+  compiler synthesizes to GPI/GPI2/RZZ. The local target adds explicit pulse
+  constraints absent from the QDMI metadata API: fixed equatorial rotations and
+  RZZ angles in [0, π/2]. MLIR/QIR retain their exact R representations; the
+  target-aware Qiskit export and native OpenQASM definitions preserve global
+  phase. Units are radians, as in Braket, rather than direct IonQ API turns.
 
 The compiler queries the real local QDMI SC provider (`mqt.sc.default`),
-populated with those recorded models. These are not calls to the live vendor
-QDMI providers. Target-specific payloads execute unchanged on DDSIM; no physical
-hardware job is submitted. Calibration summaries are source-reported values, not
-an execution noise model. Topology positions are schematic. The routing
-animation uses actual recorded refinement endpoints and emitted operations, with
-interpolated motion between them.
+populated with those recorded models. The IonQ snapshot is extended with its
+recorded native-pulse constraints and passed as an explicit compiler target.
+These are not calls to the live vendor QDMI providers. Target-specific payloads
+execute unchanged on DDSIM; no physical hardware job is submitted. Calibration
+summaries are source-reported values, not an execution noise model. Topology
+positions are schematic. The routing animation uses actual recorded refinement
+endpoints and emitted operations, with interpolated motion between them.
 
 A separate three-qubit parity-feedback program exposes counted loops, reset, and
 conditional correction. Its bounded-unrolled form still contains adaptive
@@ -158,7 +172,7 @@ imported files against pinned hashes.
 ```console
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
   python presentations/mqsf2026/capture_afqmc.py \
-  --source /path/to/Quantum_Monte_Carlo_Chemistry
+  --source /path/to/Quantum_Monte_Carlo_Chemistry --bond-length 2.4 --steps 480
 
 python presentations/mqsf2026/capture_execution.py \
   --library build/release-clang-ipo/lib/libmqt-core-qdmi-ddsim-device.so \
@@ -166,11 +180,12 @@ python presentations/mqsf2026/capture_execution.py \
 ```
 
 AFQMC defaults are `--snapshots 2048 --shots 256 --walkers 128 --steps 240`,
-with `--dtau 0.02 --seed 17 --processes 4`. Its permutation/propagation seed
-does not seed the DDSIM measurement stream; actual ordered outcomes are
-retained. The execution recorder defaults to `--shots 2048 --seed 7`, requires
-Linux for QIR clock alignment, and writes `captures/demo.json.gz` with the
-application merged.
+with `--dtau 0.02 --seed 17 --processes 4 --bond-length 1.6`. The committed
+presentation capture selects `--bond-length 2.4 --steps 480`. Its
+permutation/propagation seed does not seed the DDSIM measurement stream; actual
+ordered outcomes are retained. The execution recorder defaults to
+`--shots 2048 --seed 7`, requires Linux for QIR clock alignment, and writes
+`captures/demo.json.gz` with the application merged.
 
 To refresh device compilation, provide already downloaded AWS responses and the
 [official pinned IBM configuration and properties](https://github.com/Qiskit/qiskit-ibm-runtime/tree/fa4cecc76321f9559456b132cfdfc7d06999f802/qiskit_ibm_runtime/fake_provider/backends/miami):
@@ -228,15 +243,18 @@ python -m pytest -o addopts= -q test/python/presentation
 
 uv run --no-project --with playwright playwright install chromium
 uv run --no-project --with playwright presentations/mqsf2026/check_browser.py
+uv run --no-project --with playwright playwright install firefox
+uv run --no-project --with playwright presentations/mqsf2026/check_browser.py --engine firefox
 ```
 
 Run the full presentation suite in the native environment; AFQMC tests need
 NumPy and PennyLane. The offline browser check accepts `--html`, `--browser`,
-`--screenshot`, and `--screenshots-dir`. The last option saves every final slide
-at FullHD. Repository lint and native checks are separate; local success does
-not establish hosted CI or Read the Docs status.
+`--screenshot`, `--screenshots-dir`, and `--engine chromium|firefox`. The last
+option saves every final slide at FullHD. Repository lint and native checks are
+separate; local success does not establish hosted CI or Read the Docs status.
 
 Asset and reference provenance is recorded in `assets/sources.json` and
 `captures/references.json`. The QDMI wordmark is the official MQSC website SVG,
 adapted to the white background. Regenerate tightly cropped equation paths and
-the Core repository QR with `uv run presentations/mqsf2026/render_equations.py`.
+the repository/device QR codes with
+`uv run presentations/mqsf2026/render_equations.py`.

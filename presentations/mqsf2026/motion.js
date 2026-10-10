@@ -11,7 +11,13 @@
 "use strict";
 window.MQSF_MOTION = (() => {
   const number = /[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:e[-+]?\d+)?/gi;
+  const entrances = new Set();
   let cancel = () => {};
+  function finish() {
+    cancel();
+    entrances.forEach((animation) => animation.cancel());
+    entrances.clear();
+  }
   function interpolate(from, to) {
     const a = from.match(number)?.map(Number),
       b = to.match(number)?.map(Number);
@@ -28,17 +34,24 @@ window.MQSF_MOTION = (() => {
     };
   }
   function replace(root, html, duration = 950) {
-    cancel();
+    entrances.forEach((animation) => animation.cancel());
+    entrances.clear();
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!duration || reduced) {
+      cancel();
+      root.innerHTML = html;
+      return;
+    }
     const old = new Map(
       [...root.querySelectorAll("[data-morph]")].map((n) => [
         n.dataset.morph,
         { node: n, rect: n.getBoundingClientRect() },
       ]),
     );
+    cancel(false);
     root.innerHTML = html;
     const tweens = [],
       animations = [];
-    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const svgAttributes = [
       "x",
       "y",
@@ -60,7 +73,6 @@ window.MQSF_MOTION = (() => {
       "points",
       "viewBox",
     ];
-    if (!duration || reduced) return;
     function pair(before, after) {
       if (before.tagName !== after.tagName) return;
       for (const name of svgAttributes) {
@@ -83,13 +95,17 @@ window.MQSF_MOTION = (() => {
       const previous = old.get(node.dataset.morph);
       if (node instanceof SVGElement) {
         if (previous) pair(previous.node, node);
-        else
-          animations.push(
-            node.animate([{ opacity: 0 }, { opacity: 1 }], {
-              duration: 650,
-              fill: "backwards",
-            }),
-          );
+        else {
+          const opacity = Number(getComputedStyle(node).opacity);
+          // Hidden future builds must stay hidden during their entry animation.
+          if (opacity > 0)
+            animations.push(
+              node.animate([{ opacity: 0 }, { opacity }], {
+                duration: 650,
+                fill: "backwards",
+              }),
+            );
+        }
       } else if (previous) {
         const current = node.getBoundingClientRect(),
           scale =
@@ -133,19 +149,20 @@ window.MQSF_MOTION = (() => {
           { duration: 450 },
         ),
       );
-    const begin = performance.now();
-    let frame;
-    const finish = () => {
+    let begin, frame;
+    const finish = (settle = true) => {
       cancelAnimationFrame(frame);
-      tweens.forEach(({ node, name, target }) =>
-        node.setAttribute(name, target),
-      );
+      if (settle)
+        tweens.forEach(({ node, name, target }) =>
+          node.setAttribute(name, target),
+        );
       animations.forEach((a) => a.cancel());
       cancel = () => {};
     };
     cancel = finish;
     function tick(now) {
-      const fraction = Math.min(1, (now - begin) / duration),
+      begin ??= now;
+      const fraction = Math.max(0, Math.min(1, (now - begin) / duration)),
         ease = 1 - Math.pow(1 - fraction, 4);
       tweens.forEach(({ node, name, lerp }) =>
         node.setAttribute(name, lerp(ease)),
@@ -155,5 +172,67 @@ window.MQSF_MOTION = (() => {
     }
     frame = requestAnimationFrame(tick);
   }
-  return { replace, finish: () => cancel(), interpolate };
+  function update(root, html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function enter(node) {
+      if (reduced || node.nodeType !== Node.ELEMENT_NODE) return;
+      const keyed = node.matches("[data-morph]")
+        ? [node]
+        : node.querySelectorAll("[data-morph]");
+      for (const child of keyed) {
+        if (!(child instanceof SVGElement)) continue;
+        const opacity = Number(getComputedStyle(child).opacity);
+        if (!opacity) continue;
+        const animation = child.animate([{ opacity: 0 }, { opacity }], {
+          duration: 200,
+          easing: "ease-out",
+          fill: "backwards",
+        });
+        entrances.add(animation);
+        animation.onfinish = animation.oncancel = () =>
+          entrances.delete(animation);
+      }
+    }
+    function sync(parent, content) {
+      for (let i = 0; i < content.childNodes.length; i++) {
+        const target = content.childNodes[i],
+          current = parent.childNodes[i];
+        if (!current) {
+          const added = target.cloneNode(true);
+          parent.append(added);
+          enter(added);
+        } else if (
+          current.nodeType !== target.nodeType ||
+          current.nodeName !== target.nodeName ||
+          current.namespaceURI !== target.namespaceURI ||
+          current.dataset?.morph !== target.dataset?.morph
+        ) {
+          const added = target.cloneNode(true);
+          current.replaceWith(added);
+          enter(added);
+        } else if (target.nodeType === Node.ELEMENT_NODE) {
+          for (const { name } of [...current.attributes])
+            if (!target.hasAttribute(name)) current.removeAttribute(name);
+          for (const { name, value } of target.attributes)
+            if (current.getAttribute(name) !== value) {
+              if (name === "opacity")
+                current
+                  .getAnimations()
+                  .filter((animation) => entrances.has(animation))
+                  .forEach((animation) => animation.cancel());
+              current.setAttribute(name, value);
+            }
+          sync(current, target);
+        } else if (current.nodeValue !== target.nodeValue)
+          current.nodeValue = target.nodeValue;
+      }
+      while (parent.childNodes.length > content.childNodes.length)
+        parent.lastChild.remove();
+    }
+    // Keep stable SVG nodes alive so their motion does not restart every frame.
+    sync(root, template.content);
+  }
+  return { replace, update, finish, interpolate };
 })();

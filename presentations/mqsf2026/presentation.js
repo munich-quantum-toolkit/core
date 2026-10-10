@@ -53,8 +53,6 @@
     `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${width}"/>`;
   const logo = (name, cls = "logo") =>
     `<img class="${cls}" src="${assets[name]}" alt="${esc(name === "tum-cda" ? "Chair for Design Automation, TUM" : name.toUpperCase())}" />`;
-  const reveal = (step, at, html) =>
-    `<div class="reveal ${step < at ? "off" : ""}" aria-hidden="${step < at}">${html}</div>`;
   const heading = (title, sub = "") =>
     `<h2 data-morph="heading">${title}</h2>${sub ? `<p class="subtitle">${sub}</p>` : ""}`;
   const metric = (value, label, wide = false) =>
@@ -66,14 +64,7 @@
   const sourceNote = (s) => `<p class="source-line">${s}</p>`;
   function code(
     a,
-    {
-      start = 0,
-      count = 11,
-      hot = [],
-      title,
-      compact = false,
-      columns = 96,
-    } = {},
+    { start = 0, count = 11, hot = [], title, compact = false } = {},
   ) {
     if (!a?.code)
       return `<div class="code-frame"><p class="small">Capture unavailable</p></div>`;
@@ -91,14 +82,11 @@
             new RegExp(`^ {0,${indent}}`),
             "",
           );
-        const content =
-          l.length > columns
-            ? esc(l.slice(0, columns)) + '<span class="elision"> …</span>'
-            : (highlighted ?? esc(l));
+        const content = highlighted ?? esc(l);
         return `<span class="code-line ${hot.includes(start + i) ? "hot" : ""}"><span class="line-no">${start + i + (a.excerpt_start_line || 1)}</span><span class="code-text">${content}</span></span>`;
       })
       .join("");
-    return `<div data-morph="code-panel" class="code-frame ${compact ? "compact" : ""}"><div class="code-title">${esc(title || a.label || a.language || "Actual source")}</div><pre class="highlight">${body}</pre>${shown.some((l) => l.length - indent > columns) ? '<p class="code-foot">… Excerpt shortened for projection; full source in the bundle.</p>' : ""}</div>`;
+    return `<div data-morph="code-panel" class="code-frame ${compact ? "compact" : ""}"><div class="code-title">${esc(title || a.label || a.language || "Actual source")}</div><pre class="highlight">${body}</pre></div>`;
   }
   const focus = (a, needle, before = 1) =>
     Math.max(
@@ -107,9 +95,6 @@
     );
   const flatten = window.MQSF_CIRCUIT.flatten;
   const circuit = window.MQSF_CIRCUIT.render;
-  function pipeline(step) {
-    return `<div class="pipeline">${["OpenQASM", "QC", "QCO", "Optimize", "Target"].map((s, i) => `${i ? '<span class="arrow">→</span>' : ""}<span class="stage ${i === step ? "active" : ""}">${s}</span>`).join("")}</div>`;
-  }
   function histogram(capture, elapsed = Infinity, box = "0 0 900 480") {
     const bins = new Map();
     const timed = capture.shot_events || [];
@@ -214,23 +199,23 @@
     return `<div class="sequence-svg">${svg(body, "0 0 780 350", "Real QDMI call sequence")}</div>`;
   }
   function runtimeCode(capture, elapsed = Infinity) {
-    const events = capture.events || [],
-      e = [...events].reverse().find((e) => e.time_ms <= elapsed),
-      a = {
-        code: capture.client_source || "",
-        lines_html: capture.client_source_lines_html,
-        label:
-          capture.trace_kind === "python-observed-adapter-calls"
-            ? "Actual Core PennyLane adapter"
-            : "Actual client · Python → QDMI C ABI",
-      };
-    const srcLine = e?.source_line || 1;
+    const e = [...(capture.events || [])]
+      .reverse()
+      .find((e) => e.time_ms <= elapsed);
+    const a = {
+      code: capture.client_source || "",
+      lines_html: capture.client_source_lines_html,
+    };
+    const python = capture.trace_kind === "python-observed-adapter-calls";
+    const srcLine = (e?.source_line || 1) - 1;
     return code(a, {
-      start: Math.max(0, srcLine - 2),
-      count: 3,
-      columns: 42,
-      hot: [srcLine - 1],
+      start: python ? 0 : Math.max(0, srcLine - 3),
+      count: python ? 8 : 9,
+      hot: [srcLine],
       compact: true,
+      title: python
+        ? "Actual Core adapter · native batch submission"
+        : "Actual client · QDMI C ABI",
     });
   }
   const totalTime = () =>
@@ -342,82 +327,14 @@
   ];
   const targetStage = (target, id) =>
     stagesFor(target).find((a) => a.id === id);
-  function applicationFlow(step) {
-    const boxes = [
-      [
-        55,
-        95,
-        340,
-        165,
-        "Molecular problem",
-        "Integrals · trial wavefunction",
-        "molecule",
-        0,
-      ],
-      [
-        590,
-        95,
-        390,
-        165,
-        "Quantum sampling",
-        `${fmt(app.workload?.snapshots, 0)} shadow circuits · ${fmt(app.workload?.shots_per_snapshot, 0)} shots`,
-        "circuit",
-        1,
-      ],
-      [
-        1210,
-        95,
-        330,
-        165,
-        "Classical shadows",
-        "Basis + measured bitstrings",
-        "measurement",
-        1,
-      ],
-      [
-        590,
-        405,
-        390,
-        165,
-        "Parallel AFQMC",
-        `${fmt(app.propagation?.walkers, 0)} walkers · ${fmt(app.propagation?.steps, 0)} steps`,
-        "server",
-        2,
-      ],
-      [
-        1210,
-        405,
-        330,
-        165,
-        "Energy estimate",
-        "Weighted ensemble average",
-        "orbitals",
-        3,
-      ],
-    ];
-    let body = `<path class="flow-track" d="M395 178H590M980 178H1210M1375 260V338H785V405M980 487H1210" fill="none" stroke="#a6c3de" stroke-width="4"/>`;
-    body += `<path class="flow-particles" d="M395 178H590M980 178H1210M1375 260V338H785V405M980 487H1210" fill="none" stroke="#2f70b8" stroke-width="6" stroke-dasharray="12 105"/>`;
-    body += boxes
-      .map(
-        ([x, y, w, h, title, sub, icon, at], i) =>
-          `<g data-morph="workflow-${i}" opacity="${step >= at ? 1 : 0.12}" transform="translate(${x} ${y})"><rect width="${w}" height="${h}" rx="18" fill="${i === 3 ? "#e4f1fb" : "#f3f7fc"}" stroke="#b9cee2" stroke-width="2"/>${viz.icon(icon, w / 2 - 31, 12, 62)}${text(w / 2, 105, title, 28)}${text(w / 2, 140, sub, 20, "#526d88")}</g>`,
-      )
-      .join("");
-    body += `<g data-morph="workflow-reuse" opacity="${step >= 2 ? 1 : 0}"><path d="M630 570C430 675 410 405 590 445" fill="none" stroke="#087d92" stroke-width="3"/><path d="M577 435L593 445L574 451" fill="none" stroke="#087d92" stroke-width="3"/>${text(270, 550, "Propagate → overlap → reweight", 24, "#087d92")}${text(270, 588, "Reuse quantum data at every step", 22, "#526d88")}</g>`;
-    body +=
-      text(80, 32, "Quantum stage", 24, "#2f70b8", "start") +
-      text(80, 376, "Classical compute", 24, "#2f70b8", "start");
-    return svg(
-      body,
-      "0 0 1600 650",
-      "Quantum-assisted AFQMC algorithm and classical parallel propagation",
-    );
-  }
   function walkerScene(progress = 1) {
     const p = app.propagation,
       frames = p?.curves?.[0]?.frames || [];
     if (!frames.length) return "";
-    const index = Math.min(frames.length - 1, progress * (frames.length - 1)),
+    const index = Math.max(
+        0,
+        Math.min(frames.length - 1, progress * (frames.length - 1)),
+      ),
       low = Math.floor(index),
       high = Math.min(low + 1, frames.length - 1),
       t = index - low;
@@ -461,9 +378,9 @@
     const capture = app.execution || {},
       events = capture.events || [],
       duration = capture.duration_ms || 1;
-    const elapsed =
-      progress === null ? (step ? duration : 0) : progress * duration;
-    const submit = events.find((e) => e.operation.includes("try_submit_job"));
+    const submit = events.find((e) => e.operation.includes("try_submit_job")),
+      begin = submit?.time_ms ?? 0,
+      elapsed = begin + (progress ?? 1) * (duration - begin);
     const preparing = elapsed < (submit?.time_ms ?? 0);
     const client = preparing
       ? code(
@@ -472,7 +389,7 @@
             lines_html: app.batch_source_lines_html,
             label: "Actual PennyLane broadcast call",
           },
-          { count: 3, columns: 57, compact: true },
+          { count: 3, compact: true },
         )
       : runtimeCode(capture, elapsed);
     const retrieved = events.filter(
@@ -504,7 +421,7 @@
       22,
       "#526d88",
     );
-    return `<div class="execution-grid batch-grid" data-programs="${count}"><div>${client}<p class="batch-phase">${preparing ? "Prepare and lower the circuit collection" : count === snapshots.length ? "All indexed samples retrieved" : "Submit → wait → retrieve by program index"}</p>${sequence(capture, elapsed)}</div><div><div class="runtime-strip"><span>Recorded call · slowed replay</span><span>${fmt(elapsed, 1)} / ${fmt(duration, 1)} ms</span></div><div class="clock-line"><div style="width:${(elapsed / duration) * 100}%"></div></div><div class="batch-result">${svg(body, "0 0 750 420", "Captured indexed program results arriving at their actual retrieval times")}</div><div class="metric-row">${metric(fmt(app.workload?.snapshots, 0), "programs")}${metric(fmt(count * (app.workload?.shots_per_snapshot || 0), 0), "shots retrieved")}</div></div></div>`;
+    return `<div class="execution-grid batch-grid" data-programs="${count}"><div>${client}<p class="batch-phase">${preparing ? "Prepare and lower the circuit collection" : count === snapshots.length ? "All indexed samples retrieved" : "Submit → wait → retrieve by program index"}</p>${sequence(capture, elapsed)}</div><div><div class="runtime-strip"><span>QDMI window · slowed replay</span><span>${fmt(elapsed - begin, 1)} / ${fmt(duration - begin, 1)} ms</span></div><div class="clock-line"><div style="width:${((elapsed - begin) / (duration - begin)) * 100}%"></div></div><div class="batch-result">${svg(body, "0 0 750 420", "Captured indexed program results arriving at their actual retrieval times")}</div><div class="metric-row">${metric(fmt(app.workload?.snapshots, 0), "programs")}${metric(fmt(count * (app.workload?.shots_per_snapshot || 0), 0), "shots retrieved")}</div></div></div>`;
   }
   function deviceView(
     target = targets[0],
@@ -604,20 +521,13 @@
         return `<line data-morph="device-edge-${a}-${b}" x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="${hot ? "#087d92" : fidelityColor(f)}" stroke-width="${hot ? 6 : full ? 1 : 3.5}" opacity="${full ? 0.22 : 1}"><title>${a}–${b}${f === undefined ? "" : `: reported fidelity ${fmt(f * 100, 3)}%`}</title></line>`;
       })
       .join("");
-    if (fidelities.size)
-      body +=
-        text(410, 590, "Reported 2Q fidelity", 23, "#526d88") +
-        text(190, 622, "< 98%", 21, "#ce9152") +
-        text(410, 622, "98–99.5%", 21, "#54a0b2") +
-        text(630, 622, "≥ 99.5%", 21, "#2f70b8");
-    else
-      body += text(
-        410,
-        620,
-        "All-to-all connectivity · aggregate calibration",
-        22,
-        "#526d88",
-      );
+    body += text(
+      410,
+      620,
+      full ? "All-to-all connectivity" : "Device connectivity · physical sites",
+      24,
+      "#526d88",
+    );
     const r = sites.length > 80 ? 12 : sites.length > 40 ? 17 : 20;
     body += sites
       .map((s) => {
@@ -639,30 +549,15 @@
   }
   function targetSummary(target) {
     const m = target?.metadata || {},
-      names = (m.operations || []).map((o) =>
-        typeof o === "string" ? o : o.name,
-      );
+      names = (
+        target?.id === "aws.ionq.forte-1"
+          ? target.compiler_model.operations.filter((o) => o.name !== "measure")
+          : m.operations || []
+      ).map((o) => (typeof o === "string" ? o : o.name));
     return `<div class="device-properties"><div><b>${m.qubits || m.sites?.length || 0}</b><span>qubits</span></div><div><b>${m.edges?.length || 0}</b><span>couplings</span></div><div class="gate-set"><b>${esc(names.join(" · "))}</b><span>native operations</span></div></div>`;
   }
-  function calibrationSummary(target) {
-    const c = target.metadata?.calibration || {};
-    return (
-      [
-        ["one_qubit", "1Q"],
-        ["two_qubit", "2Q"],
-        ["readout", "Readout"],
-      ]
-        .map(
-          ([key, label]) =>
-            `${label}: ${c[key]?.available ? fmt(c[key].mean * 100, 2) + "%" : "unavailable"}`,
-        )
-        .join(" · ") +
-      `<br>Reported means · ${esc((target.metadata?.calibration_date || "undated").slice(0, 10))}`
-    );
-  }
-  function routingScene(step, progress = null) {
-    const target = targets[0],
-      comp = target?.compilation || {},
+  function routingScene(step, progress = null, target = targets[0]) {
+    const comp = target?.compilation || {},
       events = comp.routing_trace || [];
     const search = events.filter((e) =>
       ["forward", "backward", "score", "selected"].includes(e.phase),
@@ -686,7 +581,7 @@
     );
     const circuitData =
       step < 2
-        ? appStage("optimized")?.circuit || appCircuit()
+        ? targetStage(target, "optimized")?.circuit || appCircuit()
         : stage?.circuit;
     const ops = window.MQSF_CIRCUIT.schedule(circuitData);
     const lastColumn = Math.max(0, ...ops.map((o) => o.column));
@@ -755,7 +650,7 @@
           : step === 2
             ? "Routed operations"
             : "Initial placement";
-    return `<div class="architecture-grid"><div><div class="phase-labels">${["Placement", "Forward ↔ backward", "Routing", "Native synthesis"].map((l, i) => `<span class="${i === step ? "selected" : ""}">${l}</span>`).join("")}</div>${circuit(circuitData, { active: opIndices, camera: step >= 2 ? layerPosition : null, limit: 18, key: step < 2 ? "routing-logical" : step === 2 ? "routing-routed" : "routing-native" })}<div class="mapping-legend">${step === 3 ? "Physical wires shown in the circuit" : placement.map((p, i) => `<span>q${i} → ${p}</span>`).join("")}</div><div class="telemetry"><b>${phase}</b><span>${step === 1 ? `Search event ${index + 1} / ${search.length}` : step === 3 ? nativeSummary : "Actual compiler output"}</span>${step < 3 ? `<strong>${step === 1 ? (event.swaps ?? events.find((e) => e.phase === "score" && e.trial === event.trial)?.swaps ?? 0) : step === 2 && progress !== null ? swaps : (comp.layout?.swaps?.length ?? 0)}<small> SWAPs</small></strong>` : ""}</div></div><div>${deviceView(target, active, step === 3 ? null : placement, blend, step >= 1 ? activeEdges : null)}</div></div>`;
+    return `<div class="architecture-grid"><div><div class="phase-labels">${["Placement", "Forward ↔ backward", "Routing", "Native synthesis"].map((l, i) => `<span class="${i === step ? "selected" : ""}">${l}</span>`).join("")}</div>${circuit(circuitData, { active: opIndices, camera: step >= 2 ? layerPosition : null, limit: 18, key: step < 2 ? "routing-logical" : step === 2 ? "routing-routed" : "routing-native" })}<div class="mapping-legend">${step === 3 ? "Physical wires shown in the circuit" : placement.map((p, i) => `<span>q${i} → ${p}</span>`).join("")}</div><div class="telemetry"><b>${phase}</b><span>${step === 1 ? `Search event ${index + 1} / ${search.length}` : step === 3 ? nativeSummary : "Actual compiler output"}</span>${step < 3 ? `<strong>${step === 0 ? 0 : step === 1 ? (event.swaps ?? events.find((e) => e.phase === "score" && e.trial === event.trial)?.swaps ?? 0) : step === 2 && progress !== null ? swaps : (comp.layout?.swaps?.length ?? 0)}<small> SWAPs</small></strong>` : ""}</div>${programMetrics(target, step < 2 ? "optimized" : step === 2 ? "place-and-route" : "target-native-synthesis")}</div><div>${deviceView(target, active, step === 3 ? null : placement, blend, step >= 1 ? activeEdges : null)}</div></div>`;
   }
   function hpcScene(progress = 1) {
     const p = app.propagation || {},
@@ -802,43 +697,93 @@
       code: app.classical_source || "",
       lines_html: app.classical_source_lines_html,
     };
-    return `<div class="hpc-lanes">${svg(body, "0 0 1550 385", "Actual four-process AFQMC task intervals on a measured wall clock")}</div><div class="hpc-details"><div>${code(src, { start: focus(src, "for label in", 0), count: 5, columns: 74, compact: true, title: "Actual CPU task submission" })}</div><div><div class="metric-row">${metric(p.processes || 0, "CPU processes")}${metric(tasks.length, "walker tasks")}</div><p class="note">Each bar: one complete ${p.steps}-step walker.<br>Blue: shadow trial · grey: Hartree–Fock trial.<br>Measured steady-phase zoom; whole pool: ${fmt((p.duration_ms || 0) / 1000, 2)} s, including startup.</p></div></div>`;
+    return `<div class="hpc-lanes">${svg(body, "0 0 1550 385", "Actual four-process AFQMC task intervals on a measured wall clock")}</div><div class="hpc-details"><div>${code(src, { start: focus(src, "for label in", 0), count: 3, compact: true, title: "Actual walker-task submission loop" })}</div><div><div class="metric-row">${metric(p.processes || 0, "CPU processes")}${metric(tasks.length, "walker tasks")}</div><p class="note">Each bar: one complete ${p.steps}-step walker.<br>Blue: shadow trial · grey: Hartree–Fock trial.<br>Measured steady-phase zoom; whole pool: ${fmt((p.duration_ms || 0) / 1000, 2)} s, including startup.</p></div></div>`;
   }
-  function coreStack(step) {
-    const layers = [
-      ["Frontends & exchange", "OpenQASM 3.1 · Qiskit · jeff", 0],
-      [
-        "MQT Compiler Collection",
-        "MLIR · QC / QCO · placement · routing · synthesis",
-        1,
-      ],
-      [
-        "Program representations & libraries",
-        "Quantum IR · decision diagrams · ZX calculus",
-        1,
-      ],
-      [
-        "QDMI integration",
-        "Device discovery · batching · Qiskit / PennyLane adapters",
-        2,
-      ],
-      [
-        "Execution & verification",
-        "DDSIM · structured programs · OpenQASM / QIR",
-        2,
-      ],
-    ];
-    let body = layers
+  function programMetrics(target, id) {
+    const m = target?.compilation?.metrics?.[id] || {},
+      c = targetStage(target, id)?.circuit,
+      ops = c ? flatten(c) : [];
+    const two =
+      m.two_qubit_operations ??
+      ops.filter((o) => o.qubits?.length === 2).length;
+    return `<div class="program-metrics" data-stage="${id}">${[
+      [m.operations ?? ops.length, "operations"],
+      [two, "two-qubit"],
+      [m.depth ?? 0, "depth"],
+      [m.active_qubits ?? c?.qubits?.length ?? 0, "active qubits"],
+    ]
       .map(
-        ([title, sub, at], i) =>
-          `<g data-morph="core-layer-${i}" opacity="${step >= at ? 1 : 0.08}" transform="translate(${step < at ? 55 : 0} ${i * 102})"><rect x="15" y="0" width="1010" height="87" rx="13" fill="${i === 1 ? "#2f70b8" : "#e9f2fa"}"/>${text(43, 35, title, 30, i === 1 ? "white" : "#142b45", "start")}${text(43, 67, sub, 22, i === 1 ? "#eaf2fa" : "#526d88", "start")}</g>`,
+        ([v, l]) =>
+          `<div data-morph="metric-${l.replaceAll(" ", "-")}"><b>${fmt(v, 0)}</b><span>${l}</span></div>`,
       )
-      .join("");
-    return svg(
-      body,
-      "0 0 1045 515",
-      "MQT Core components arranged as a quantum software stack",
-    );
+      .join("")}</div>`;
+  }
+  function stageFlow(labels, active, progress = 1) {
+    return `<div class="stage-flow" style="--stage:${active};--stages:${labels.length}">${labels.map((l, i) => `<div data-morph="pipeline-${i}" class="${i === active ? "selected" : i < active ? "complete" : ""}"><span>${i + 1}</span>${l}</div>`).join("")}<i style="width:${(100 * (active + progress)) / labels.length}%"></i></div>`;
+  }
+  // Display folds retain the original line numbers and every control boundary.
+  // This changes the view only; full unmodified programs remain in evidence.json.gz.
+  function structureCode(a, title, qir = false) {
+    const lines = (a?.code || "").split("\n"),
+      rows = [];
+    const start = qir ? lines.findIndex((l) => l.startsWith("define ")) : 0;
+    let end = qir
+      ? lines.findIndex((l, i) => i > start && l === "}") + 1
+      : lines.length;
+    if (end <= start) end = lines.length;
+    const foldable = (l) =>
+      qir
+        ? l.trim() &&
+          !/^define|^\}|^\w+:/u.test(l) &&
+          !/(?:\b(?:br |phi |icmp |ret |add )|__(?:reset|mz)__|__read_result)/u.test(
+            l,
+          )
+        : /^\s*(?:r\(|ctrl @ z |rx\(|rz\()/u.test(l);
+    for (let i = Math.max(0, start); i < end;) {
+      if (!lines[i].trim()) {
+        i++;
+        continue;
+      }
+      let last = i + 1;
+      if (foldable(lines[i]))
+        while (last < end && foldable(lines[last])) last++;
+      if (last - i > 1)
+        rows.push(
+          `<span class="code-line folded"><span class="line-no">${i + 1}–${last}</span><span class="code-text">${" ".repeat(lines[i].match(/^ */)[0].length)}⋯ ${last - i} ${qir ? "straight-line instructions" : "gate operations"}</span></span>`,
+        );
+      else
+        rows.push(
+          `<span class="code-line ${/for |if |while |br |phi |icmp |measure|reset|read_result/.test(lines[i]) ? "hot" : ""}"><span class="line-no">${i + 1}</span><span class="code-text">${qir && /^\w+:/.test(lines[i]) ? esc(lines[i].replace(/ {2,};/, "  ;")) : (a.lines_html?.[i] ?? esc(lines[i]))}</span></span>`,
+        );
+      i = last;
+    }
+    const middle = Math.ceil(rows.length / 2);
+    return `<div class="code-frame structure-code ${qir ? "qir-structure" : ""}" data-lines="${rows.length}"><div class="code-title">${title}</div><div class="${qir ? "code-columns" : ""}"><pre class="highlight">${(qir ? rows.slice(0, middle) : rows).join("")}</pre>${qir ? `<pre class="highlight">${rows.slice(middle).join("")}</pre>` : ""}</div><p class="code-foot">${qir ? "Complete entry-point control flow · label spacing condensed" : "Complete program structure"} · explicit folds · original line numbers</p></div>`;
+  }
+  function afqmcExecution(s, t) {
+    const progress = t ?? 1;
+    return `<div class="hybrid-execution ${s ? "cpu-focus" : ""}"><div class="quantum-pane"><div class="location-label">Quantum device · DDSIM capture</div>${batchScene(1, s ? 1 : progress)}</div><aside class="cpu-pane"><div class="location-label">Classical CPUs</div>${walkerScene(s ? progress : 0)}<div class="cpu-algorithm"><b>Parallel walker propagation</b><p>Propagate → trial overlap<br>→ reweight → reduce energy</p></div>${metric(app.propagation?.processes || 0, "local worker processes")}<p class="note">Measured quantum data is reused at every imaginary-time step.</p></aside></div>${s ? `<div class="integrated-hpc">${hpcScene(progress)}</div>` : ""}`;
+  }
+  function targetSwitchScene(s, t) {
+    const target = targets[Math.min(s, targets.length - 1)] || {},
+      progress = t ?? 1;
+    const phase =
+      progress < 0.2 ? 0 : progress < 0.45 ? 1 : progress < 0.72 ? 2 : 3;
+    const ids = [
+      "optimized",
+      "optimized",
+      "place-and-route",
+      "target-native-synthesis",
+    ];
+    const a = targetStage(target, ids[phase]),
+      circuitData = a?.circuit;
+    const label = [
+      "Query target",
+      "Place qubits",
+      "Route operations",
+      "Synthesize gates",
+    ];
+    return `<div class="device-id" data-morph="device-id">device_id = <b>"${esc(target.id)}"</b></div>${stageFlow(label, phase)}<div class="architecture-grid device-recompile"><div><h3>${esc(target.label)}</h3>${targetSummary(target)}${circuit(circuitData, { limit: 17, key: `switch-${phase}`, label: label[phase] })}${programMetrics(target, ids[phase])}<p class="note">${phase === 3 ? "Compiled for this gate set and topology." : "The same input program is recompiled for the selected target."}</p></div><div>${deviceView(target, phase ? target.compilation?.layout?.initial || [] : [], phase ? target.compilation?.layout?.initial : null)}<div class="device-links">${qr(s === 0 ? "iqm" : s === 1 ? "ibm" : "braket", s === 0 ? "iqm-finland.github.io/QDMI-on-IQM" : s === 1 ? "ibm-qdmi-device.readthedocs.io" : "amazon-braket-qdmi-device.readthedocs.io", "Device integration through QDMI")}</div></div></div>`;
   }
   const slides = [];
   function add(id, section, title, builds, render, notes = "", playbacks = {}) {
@@ -850,8 +795,8 @@
     "System Software for Quantum Computing",
     0,
     () =>
-      `<div class="title-layout"><h1>System Software for Quantum Computing:<br><span class="blue">From the Metal to the User</span></h1><div class="title-byline"><b>Lukas Burgholzer</b><span>CTO &amp; Co-founder · MQSC</span><span>Technical University of Munich</span></div><div class="title-animation" data-morph="world">${viz.bridge(3)}</div></div>`,
-    "The application, the computing infrastructure, and the quantum device need to work together. Introduce MQSC as the system software company connecting these layers.",
+      `<div class="title-layout"><h1>System Software for Quantum Computing:<br><span class="blue">From the Metal to the User</span></h1><div class="title-byline"><b>Lukas Burgholzer</b><span>CTO &amp; Co-founder · MQSC</span><span>Technical University of Munich</span></div><div class="title-animation" data-morph="world">${viz.architecture("title")}</div></div>`,
+    "Introduce MQSC: system software connects users, classical computing infrastructure and heterogeneous quantum systems.",
   );
   add(
     "integration",
@@ -859,303 +804,213 @@
     "Hardware scales. Software breaks.",
     2,
     (s) =>
-      heading('Hardware scales.<span class="blue"> Software breaks.</span>') +
-      `<div class="scene ecosystem-scene" data-morph="world">${viz.ecosystem(s)}</div>`,
-    "Build the people who need quantum systems, the heterogeneous hardware and classical computing resources, then the bespoke integrations. These connections are architectural illustrations, not measurements of integration effort.",
-  );
-  add(
-    "shared-stack",
-    "01 · System software",
-    "A shared software stack",
-    0,
-    () =>
-      heading("A shared software stack") +
-      `<div class="scene ecosystem-scene" data-morph="world">${viz.ecosystem(3)}</div>`,
-    "Let the same objects move into place. MQSC and MQT supply the shared software between users, classical compute, and quantum hardware.",
-  );
-  add(
-    "architecture",
-    "01 · System software",
-    "From the metal to the user",
-    3,
-    (s) =>
-      heading("From the metal to the user") +
-      `<div class="scene stack-scene" data-morph="world">${viz.stack(s)}</div><div class="reference-corner">${qr("mqss", "doi.org/10.1145/3773656.3773669", "Munich Quantum Software Stack · SCA/HPCAsia 2026")}</div>`,
-    "Zoom into the middle. Frontends and backends are separate; compilation connects program semantics to hardware constraints; resource management connects execution to classical computing. The paper describes the broader architecture, not only Core.",
-  );
-  add(
-    "chemistry",
-    "02 · A hybrid application",
-    "Quantum-assisted auxiliary-field Monte Carlo",
-    2,
-    (s) =>
       heading(
-        "Quantum-assisted auxiliary-field Monte Carlo",
-        "Estimate molecular ground-state energies using quantum and classical computation.",
+        [
+          'Hardware scales.<span class="blue"> Software breaks.</span>',
+          "A shared software stack",
+          "From the metal to the user",
+        ][s],
       ) +
-      `<div class="scene chemistry-scene">${viz.molecule(s)}</div><div class="projection-formula"><span>Imaginary-time projection</span><img src="${assets["eq-afqmc-projection"]}" alt="Ground state from imaginary-time propagation of the trial state" /></div>` +
-      sourceNote(
-        `${esc(app.chemistry?.molecule || "LiH")} · ${esc(app.chemistry?.basis || "STO-3G")} · active space: 2 electrons / 3 spatial orbitals · ideal DDSIM simulation`,
-      ),
-    "LiH provides a concrete near-term application. Define the active space before showing circuits. The six-qubit trial was tuned classically for this verified small demonstration; this is a workflow demonstration, not evidence of quantum advantage.",
+      `<div class="scene world-scene" data-morph="world">${viz.architecture(["problem", "stack", "detail"][s])}</div><div class="reference-strip">${qr("mqss", "doi.org/10.1145/3773656.3773669", "Munich Quantum Software Stack · published architecture")}</div>`,
+    "Build the common stack in the same world. Users and devices remain in place while bespoke connections become shared interfaces. The second build reveals resource management, compiler infrastructure and QDMI. Resource orchestration belongs to the surrounding system, not to Core alone.",
   );
   add(
     "hybrid-algorithm",
-    "02 · A hybrid application",
-    "The quantum–classical algorithm",
-    3,
-    (s) =>
-      heading("The quantum–classical algorithm") +
-      `<div class="scene workflow-scene">${applicationFlow(s)}</div>` +
-      sourceNote(
-        "Quantum measurements supply trial overlaps. Classical processors propagate and reweight the walker ensemble.",
-      ),
-    "Read the full algorithm. Generate a collection of randomized measurement programs. Submit them as one multi-program job. Reuse those shadows for overlap estimates throughout imaginary-time propagation; there is no invented quantum call inside every walker update.",
+    "02 · A practical hybrid application",
+    "Quantum-assisted auxiliary-field Monte Carlo",
+    1,
+    (s, t = null) =>
+      heading(
+        "Quantum-assisted auxiliary-field Monte Carlo",
+        "A molecular energy calculation connects quantum sampling and parallel classical computation.",
+      ) +
+      (s === 0
+        ? `<div class="scene application-scene">${viz.application(t ?? 1, app)}</div>`
+        : `<div class="application-code"><div>${code({ code: app.source, lines_html: app.source_lines_html }, { count: 20, title: "Complete captured PennyLane quantum function", compact: true })}${code({ code: app.batch_source, lines_html: app.batch_source_lines_html }, { count: 6, title: "Actual broadcast submission", compact: true })}</div><div class="application-mini">${viz.application(1, app)}<div class="metric-row">${metric(fmt(app.workload?.snapshots, 0), "programs")}${metric(fmt((app.workload?.snapshots || 0) * (app.workload?.shots_per_snapshot || 0), 0), "quantum shots")}</div></div></div>`) +
+      `<div class="reference-strip">${qr("afqmc", "github.com/amazon-braket/amazon-braket-examples", "Public AFQMC example · adapted and verified for LiH")}</div>`,
+    "A software workflow demonstration, not a quantum advantage claim. LiH: STO-3G, six active spin orbitals. Quantum measurements produce shadows once. CPUs reuse them for overlap estimates during walker propagation. The second build shows the complete recorded quantum function and its actual broadcast call.",
+    { 0: { duration: 6500 } },
   );
   add(
     "afqmc-execution",
-    "02 · Device execution through QDMI",
-    "Many programs, one device job",
-    2,
+    "02 · Quantum and classical execution",
+    "Many programs, one hybrid workflow",
+    1,
     (s, t = null) =>
       heading(
-        "Many programs, one device job",
-        `${fmt(app.workload?.snapshots, 0)} shadow programs × ${fmt(app.workload?.shots_per_snapshot, 0)} shots · native QDMI batching`,
+        "Many programs, one hybrid workflow",
+        s
+          ? "The same quantum data feeds parallel classical worker tasks."
+          : "Submit the program collection, wait, then retrieve each indexed result.",
       ) +
-      batchScene(s, t) +
+      afqmcExecution(s, t) +
       sourceNote(
-        "Recorded local DDSIM run · API events use measured timestamps · results appear when they are retrieved",
+        "Recorded local runs · QDMI replay starts at submission · CPU task intervals use their own measured clock",
       ),
-    "The actual submission source and QDMI call trace share one clock. First follow the recorded call; then review the complete batch. The square array represents the collection, not a per-program completion clock. Use the retained payloads and indexed results for debugging.",
-    { 1: { duration: 12000 } },
-  );
-  add(
-    "classical-compute",
-    "02 · Classical compute",
-    "Parallel propagation of the walker ensemble",
-    2,
-    (s, t = null) =>
-      s === 2
-        ? heading(
-            "Classical parallelism in the same workflow",
-            "Four local processes execute independent walker tasks and reduce their results.",
-          ) + hpcScene(t ?? 1)
-        : heading(
-            "Parallel propagation of the walker ensemble",
-            "Each walker is a Slater determinant—a numerical electronic state.",
-          ) +
-          `<div class="split walker-layout"><div class="walker-scene">${walkerScene(t === null ? (s ? 1 : 0) : t)}</div><div><p class="eyebrow">Classical AFQMC</p><ol class="algorithm-steps"><li>Propagate in imaginary time</li><li>Evaluate trial overlaps</li><li>Apply the phaseless constraint</li><li>Reweight and reduce energies</li></ol><div class="metric-row">${metric(app.propagation?.walkers || 0, "walkers")}${metric(app.propagation?.steps || 0, "time steps")}</div><p class="note">Circle area tracks recorded walker weight.<br>Imaginary time is a projection parameter.<br>Interpolation only smooths the replay.</p></div></div>`,
-    "Explain the ensemble before starting its movement. Imaginary time is a mathematical projection parameter, not wall time or a molecular trajectory. Quantum-derived trial overlaps guide classical matrix operations. Independent walker partitions are processed in parallel and reduced to the weighted estimate.",
-    { 1: { duration: 20000, loop: true }, 2: { duration: 10000, loop: true } },
+    "The replay skips Python circuit preparation and begins at the first QDMI submission. Indexed results arrive at their recorded retrieval times. The second build replays CPU task intervals and imaginary-time walker weights alongside the completed quantum stage. These are different clocks and are labelled separately. Four processes on this machine demonstrate the parallel execution pattern; no HPC cluster execution is claimed.",
+    { 0: { duration: 8500 }, 1: { duration: 11000, loop: true } },
   );
   add(
     "afqmc-result",
     "02 · Results and validation",
-    "From the walker ensemble to an energy estimate",
-    2,
+    "From walker weights to an energy estimate",
+    0,
     (s, t = null) =>
       heading(
-        "From the walker ensemble to an energy estimate",
-        "Quantum-derived trial overlaps guide a classical imaginary-time projection.",
+        "From walker weights to an energy estimate",
+        `${esc(app.chemistry.molecule)} · stretched ${fmt(Math.hypot(...app.chemistry.geometry_angstrom[1].map((value, i) => value - app.chemistry.geometry_angstrom[0][i])), 1)} Å bond · ${app.chemistry.electrons} electrons in ${app.chemistry.spin_orbitals} spin orbitals`,
       ) +
-      energyChart(t === null ? (s === 0 ? 0 : 3) : t * 3) +
-      `<div class="result-notes"><p><b>Blue:</b> classically tuned, shadow-derived trial &nbsp; <b>Dashed:</b> Hartree–Fock trial<br><b>Zero:</b> exact active-space reference</p><p>Band: ±1 walker standard error.<br>Shadow error and systematic biases are separate.</p></div>` +
-      sourceNote(
-        `${esc(app.chemistry?.molecule || "LiH")} active space · exact Hamiltonian / overlap checks · full recorded trajectory`,
-      ),
-    "Grow the measured trajectory. The energy estimate is a weighted reduction over walkers, and each time step reuses the quantum measurement data. Explain the band and reference; do not imply the finite active-space calculation establishes chemical accuracy for the full molecule.",
-    { 1: { duration: 16000, loop: true } },
-  );
-  add(
-    "device-contract",
-    "03 · Compiling for a device",
-    "A simulator is only the beginning",
-    1,
-    (s) =>
-      heading(
-        "A simulator is only the beginning",
-        "A physical target defines where operations can run and which gates are available.",
-      ) +
-      `<div class="architecture-grid"><div><div class="device-id">device_id = <b>"iqm.emerald"</b></div>${targetSummary(targets[0])}<div class="device-questions"><p>Connectivity → placement and routing</p><p>Native operations → synthesis</p><p>Control capabilities → legal program forms</p></div>${s ? qr("iqm", "iqm-finland.github.io/QDMI-on-IQM", "IQM devices through QDMI") : logo("qdmi")}</div><div>${deviceView(targets[0])}</div></div>` +
-      sourceNote(
-        "Provider metadata captured before the talk · SC target adapter for compilation · compiled payloads execute on DDSIM",
-      ),
-    "The same workflow first ran on a simulator. Targeting real hardware adds constraints. The Emerald graph and calibration are retrieved metadata, the local compiler target is an SC adapter, and no job is submitted to hardware.",
-  );
-  add(
-    "compiler-stages",
-    "03 · MQT Compiler Collection",
-    "A program through the compiler",
-    4,
-    (s) => {
-      const ids = [
-          "source",
-          "qc",
-          "qco",
-          "optimized",
-          "target-native-synthesis",
-        ],
-        a = appStage(ids[s]) || artifact(ids[s]);
-      const labels = [
-        "OpenQASM input",
-        "QC: quantum references",
-        "QCO: explicit quantum values",
-        "Optimize quantum operations",
-        "Target-native program",
-      ];
-      const descriptions = [
-        "Import gates, types and classical computations into MLIR.",
-        "Operations act on references; classical code uses standard MLIR dialects.",
-        "Single-use quantum values make dependencies explicit for transformations.",
-        "Simplify and combine operations while respecting their quantum semantics.",
-        "Placement, routing and synthesis use the selected QDMI device.",
-      ];
-      const needle =
-        s === 0 ? "qreg" : s === 1 ? "qc.h" : s === 4 ? "qco.r(" : "qco.h";
-      return (
-        heading("A program through the compiler") +
-        pipeline(s) +
-        `<div class="compiler-caption"><h3>${labels[s]}</h3><p>${descriptions[s]}</p></div><div class="compiler-source">${code(a, { start: focus(a, needle, 0), count: 8, compact: true, title: a?.label || labels[s] })}</div><div class="dialect-key"><span><b>MLIR</b> reusable compiler infrastructure</span><span><b>QC / QCO</b> quantum semantics</span><span><b>arith / scf / func</b> classical semantics</span></div>`
-      );
-    },
-    "Follow one captured LiH measurement program. Explain what to look at in each form; do not read every operand. QCO names successive quantum values explicitly. Classical MLIR remains present when the input requires it.",
+      energyChart((t ?? 1) * 3) +
+      `<div class="result-bottom"><div class="result-walkers">${walkerScene(t ?? 1)}</div><div><p><b>Blue:</b> quantum-shadow trial<br><b>Dashed:</b> Hartree–Fock trial<br><b>Zero:</b> exact active-space reference</p><p class="note">Band: ±1 walker standard error.<br>Shadow error and systematic biases are separate.</p></div><img class="energy-equation" src="${assets["eq-afqmc-energy"]}" alt="Energy is the importance-weighted walker average"/></div>`,
+    "Imaginary time is a projection parameter, not wall time. Circle area is recorded importance weight. The exact reference applies only to this active space; the band is conditional on the shared quantum shadows. Do not imply quantum advantage or scalable dense post-processing.",
+    { 0: { duration: 12000, loop: true } },
   );
   add(
     "routing",
-    "03 · Device-aware compilation",
-    "Placement, routing and native gates",
+    "03 · Compiling for a device",
+    "From a circuit to a physical target",
     3,
     (s, t = null) =>
-      heading("Placement, routing and native gates") +
+      heading(
+        "From a circuit to a physical target",
+        "One LiH measurement program · IQM Emerald gate set and connectivity",
+      ) +
       routingScene(s, t) +
+      `<div class="routing-ref">${qr("iqm", "iqm-finland.github.io/QDMI-on-IQM", "IQM devices through QDMI")}</div>` +
       sourceNote(
-        "Recorded traversal endpoints; movement interpolated · emitted gate operands in the routing replay · local SC target",
+        "Captured target model via local SC QDMI · execution on DDSIM · search movement interpolates recorded endpoints",
       ),
-    "Place logical qubits, replay actual forward and backward search traversals, then walk the routed circuit beside its physical operands. SWAP counts refer to the displayed compiler traversal or selected output. Native synthesis follows routing; the diagram is derived from captured operations.",
-    { 1: { duration: 18000 }, 2: { duration: 16000 }, 3: { duration: 14000 } },
+    "A simulator accepts the original circuit. A physical target constrains placement, connectivity and native gates. Follow real mapping refinement, routed operations and native synthesis. Counters are compiler introspection, not estimated timings. SWAP count during search refers to the displayed trial. Highlighted operands come from emitted operations.",
+    { 1: { duration: 10000 }, 2: { duration: 10000 }, 3: { duration: 8000 } },
   );
   add(
     "device-switch",
     "03 · One device interface",
     "Change the target, recompile the program",
     2,
+    (s, t = null) =>
+      heading("Change the target, recompile the program") +
+      targetSwitchScene(s, t) +
+      sourceNote(
+        "Captured provider models · local SC compiler target · identical input · unchanged compiled payload executes on DDSIM",
+      ),
+    "Each forward build selects a different device ID, changes its topology, and replays compilation before revealing the resulting circuit and introspection. IBM is the official public Miami Nighthawk snapshot. IonQ uses fixed equatorial pulses and bounded RZZ interactions; the capture records the exact constraints. No physical hardware jobs are submitted.",
+    {
+      0: { duration: 5500, transition: 700 },
+      1: { duration: 6500, transition: 700 },
+      2: { duration: 6500, transition: 700 },
+    },
+  );
+  add(
+    "compiler-stages",
+    "03 · Inside the MQT Compiler Collection",
+    "Inside the compiler",
+    3,
     (s) => {
-      const target = targets[Math.min(s, targets.length - 1)] || {},
-        a = targetStage(target, "openqasm3");
-      const firstGate = Math.max(
-        0,
-        (a?.code || "").split("\n").findIndex((l) => /^[a-z].*\$\d/.test(l)),
-      );
+      const ids = ["source", "qc", "qco", "optimized"],
+        a = appStage(ids[s]);
+      const labels = [
+        "OpenQASM input",
+        "QC · quantum references",
+        "QCO · quantum values",
+        "Optimized QCO",
+      ];
+      const descriptions = [
+        "The complete captured circuit enters through OpenQASM.",
+        "Mutable quantum references sit alongside standard classical MLIR.",
+        "Every operation produces new quantum values: dependencies become explicit.",
+        "Canonicalization, cancellation and fusion transform that value graph.",
+      ];
+      const start = s
+        ? focus(a, s === 1 ? "qc.h" : "qco.h", 2)
+        : focus(a, "qreg", 0);
       return (
-        heading("Change the target, recompile the program") +
-        `<div class="architecture-grid target-switch"><div><div class="device-id" data-morph="device-id">device_id = <b>"${esc(target.id || "iqm.emerald")}"</b></div><h3>${esc(target.label || "IQM Emerald")}</h3>${targetSummary(target)}${code(a, { start: firstGate, count: 6, compact: true, columns: 49, title: s === 2 ? "Actual QIS interface OpenQASM" : "Actual target-native OpenQASM" })}<p class="calibration">${calibrationSummary(target)}</p></div><div>${deviceView(target, target.compilation?.layout?.initial || [], target.compilation?.layout?.initial)}<p class="target-status">${esc(target.metadata?.basis_note || "Captured provider metadata; compilation uses local SC target.")}</p></div></div>` +
-        sourceNote(
-          "Identical input program · target-specific gate set and topology · execution on DDSIM; no hardware submissions",
-        )
+        heading("Inside the compiler") +
+        stageFlow(labels, s) +
+        `<div class="compiler-caption"><h3>${labels[s]}</h3><p>${descriptions[s]}</p></div><div class="compiler-source">${code(a, { start, count: 17, compact: true, title: `Actual ${a?.label || labels[s]} · consecutive source lines` })}</div><div class="compiler-underlay">${programMetrics(targets[0], ids[s])}<p><b>MLIR</b> reusable infrastructure<br><b>QC / QCO</b> quantum semantics<br><b>arith · scf · func</b> classical semantics</p></div>`
       );
     },
-    "Switch the ID from IQM to the authentic public IBM Nighthawk snapshot, then IonQ. Device metadata, topology and actual compiled program change together. The IBM calibration is dated; these are offline captures, not live network queries.",
+    "The same LiH circuit is shown in a wider consecutive source window. Long generated programs are not represented as complete snippets. Original line numbers identify the view and full artifacts are bundled. Highlight the quantum references becoming SSA values, then the actual optimization changes.",
   );
   add(
     "structured",
-    "04 · Beyond static circuits",
-    "Structured quantum programs",
-    3,
-    (s) =>
-      heading(
-        "Structured quantum programs",
-        "Syndrome extraction combines repetition, reset and measurement feedback.",
-      ) +
-      `<div class="structured-grid"><div>${code(artifact("source"), { count: 12, hot: s === 1 ? [5, 10] : s === 2 ? [8, 9] : [], title: "Actual OpenQASM 3.1 input", compact: true })}</div><div>${circuit(artifact("source")?.circuit, { active: [-1, 2, 5, 6][s], limit: 12, key: "structured" })}<div class="concepts"><p class="${s >= 1 ? "selected" : ""}">Bounded repetition</p><p class="${s >= 2 ? "selected" : ""}">Measurement → conditional correction</p><p class="${s >= 3 ? "selected" : ""}">Structured control survives compilation</p></div></div></div>`,
-    "Move from the near-term chemistry circuit to a small recognizable feedback program for fault-tolerant workloads. This is a toy syndrome-extraction pattern, not a complete error-correcting code. The meter feeds the conditional gate; the loop body is shown once.",
-  );
-  add(
-    "preserve-structure",
-    "04 · Structure through compilation",
-    "Preserve structure all the way to the executable",
+    "04 · Structured quantum programs",
+    "Preserving quantum program structure",
     4,
     (s) => {
-      if (s === 4)
-        return (
-          heading("Expand bounded loops when a target requires it") +
-          `<div class="split unroll-comparison"><div><span class="tag">Structured program</span>${circuit(artifact("optimized")?.circuit, { limit: 14, key: "loop-preserved" })}</div><div><span class="tag">Bounded loop unrolled</span>${circuit(artifact("unrolled", true)?.circuit || artifact("optimized", true)?.circuit, { limit: 20, key: "loop-expanded", label: "Two rounds expanded · measurement feedback retained" })}</div></div><p class="statement unroll-statement">Measurement-dependent corrections<br>remain adaptive in both outputs.</p><div class="reference-corner">${qr("unrolling", "arxiv.org/abs/2609.16171", "Why are we unrolling? · structured compilation")}</div>`
+      const labels = [
+        "Program & feedback",
+        "Native OpenQASM",
+        "Adaptive QIR",
+        "Bounded unrolling",
+        "Repeat until success",
+      ];
+      let body = "";
+      if (s === 0)
+        body = `<div class="structured-grid"><div>${code(artifact("source"), { count: 30, title: "Complete OpenQASM 3.1 input", compact: true })}</div><div>${circuit(artifact("source")?.circuit, { limit: 14, key: "structured" })}<p class="statement">Repetition · reset<br>measurement → feedback</p></div></div>`;
+      if (s === 1)
+        body = `<div class="structured-native"><div>${structureCode(artifact("openqasm3"), "Actual target-native OpenQASM 3.1")}</div><div>${circuit(artifact("source")?.circuit, { limit: 14, key: "structured" })}<p class="statement">Change gates and placement.<br>Preserve loops and feedback.</p><p class="note">All control boundaries are visible.<br>Only gate runs are folded for projection.</p></div></div>`;
+      if (s === 2)
+        body = structureCode(
+          artifact("qir-adaptive"),
+          "Actual QIR 2.1 Adaptive Profile · complete entry-point control flow",
+          true,
         );
-      const ids = [
-          "qco",
-          "target-native-synthesis",
-          "openqasm3",
-          "qir-adaptive",
-        ],
-        a = artifact(ids[s]),
-        needle =
-          s < 2 ? "scf.for" : s === 2 ? "for " : "__quantum__rt__read_result";
+      if (s === 3)
+        body = `<div class="split unroll-comparison"><div><span class="tag">Loop retained</span>${circuit(artifact("optimized")?.circuit, { limit: 14, key: "loop-preserved" })}</div><div><span class="tag">Bounded loop expanded</span>${circuit(artifact("unrolled", true)?.circuit || artifact("optimized", true)?.circuit, { limit: 20, key: "loop-expanded" })}</div></div><p class="statement">Both outputs still need measurement-dependent feedback.</p>`;
+      if (s === 4) {
+        const v = variant("rus"),
+          a = v.stages.find((a) => a.id === "source");
+        body = `<div class="structured-grid"><div>${code(a, { count: 30, title: "Complete repeat-until-success program", compact: true })}</div><div>${circuit(a.circuit, { limit: 14, key: "rus" })}<p class="statement">A runtime condition determines<br>how often the body executes.</p><p class="note">The actual compiled QIR executes through DDSIM.</p></div></div>`;
+      }
       return (
-        heading("Preserve structure all the way to the executable") +
-        `<div class="format-tabs">${["QCO", "Native QCO", "OpenQASM 3.1", "QIR 2.1 Adaptive"].map((l, i) => `<span class="${i === s ? "selected" : ""}">${l}</span>`).join("")}</div><div class="compiler-source">${code(a, { start: focus(a, needle, 0), count: 9, compact: true, title: a?.label })}</div><div class="dialect-key"><span><b>Keep</b> loops and measurement feedback</span><span><b>Change</b> gates and physical placement</span><span><b>Execute</b> through the DDSIM QDMI device</span></div>`
+        heading("Preserving quantum program structure") +
+        stageFlow(labels, s) +
+        body +
+        `<div class="reference-strip">${qr("unrolling", "arxiv.org/abs/2609.16171", "Why are we unrolling? · structured quantum compilation")}</div>`
       );
     },
-    "Each excerpt is compiler output for the same program. Both supported output formats retain the required adaptive control. QIR 2.1 Adaptive Profile includes the classical computations and dynamic features needed by supported programs. Broad support is not a claim that every construct is supported.",
-  );
-  add(
-    "dynamic-primitives",
-    "04 · Dynamic programs",
-    "Loops, feedback and repeat-until-success",
-    2,
-    (s) => {
-      const rus = variant("rus"),
-        a = [...(rus.stages || []), ...(rus.exports || [])].find(
-          (a) => a.id === (s === 2 ? "qir-adaptive" : "source"),
-        );
-      return (
-        heading("Loops, feedback and repeat-until-success") +
-        `<div class="dynamic-grid"><div>${code(a, { start: s === 2 ? Math.max(0, focus(a, "br i1", 0) - 2) : 0, count: 11, compact: true, columns: 49, title: s === 2 ? "Actual Adaptive QIR" : "Actual repeat-until-success input" })}</div><div><div class="dynamic-cycle">${svg(`<path d="M120 190C120 40 580 40 580 190C580 345 120 345 120 190" fill="none" stroke="#bad0e5" stroke-width="7"/><path class="flow-particles" d="M120 190C120 40 580 40 580 190C580 345 120 345 120 190" fill="none" stroke="#2f70b8" stroke-width="7" stroke-dasharray="20 180"/>${text(350, 155, "Attempt → measure", 38)}${text(350, 220, "Retry until success", 34, "#2f70b8")}`, "0 0 700 375", "Repeat-until-success control loop")}</div><p class="statement">A runtime condition<br>cannot be statically expanded.</p>${s >= 1 ? qr("unrolling", "arxiv.org/abs/2609.16171", "Why are we unrolling? · structured quantum compilation") : ""}</div></div>`
-      );
-    },
-    "Distinguish a known trip count from a measurement-dependent loop. If a target lacks counted iteration, a bounded loop can be expanded; this does not remove genuine adaptive feedback. The repeat-until-success source and QIR are actual artifacts.",
+    "A small recognizable syndrome-extraction pattern replaces the large static chemistry circuit. Read its complete source. Then retain all loop, reset, measurement and feedback boundaries in native output. Display folds are labelled and do not modify source. Adaptive QIR retains the control-flow graph. Bounded unrolling cannot remove genuine measurement-dependent feedback. Repeat-until-success illustrates why runtime structure matters.",
   );
   add(
     "adaptive-execution",
-    "04 · Executing adaptive QIR",
+    "04 · Adaptive QIR execution",
     "Adaptive execution through QDMI",
-    2,
+    0,
     (s, t = null) =>
       heading(
         "Adaptive execution through QDMI",
-        "Iterative QPE · four logical qubits · eight output bits · 2,048 shots",
+        "Iterative QPE · four logical qubits · eight output bits · phase 1/3",
       ) +
-      (s === 0
-        ? `<div class="qpe-intro"><div><p class="eyebrow">Estimate a non-exact binary phase</p><img src="${assets["eq-qpe-phase"]}" alt="Eigenphase relation and its finite binary estimate"/><p>Eight measured bits resolve the phase on a grid.<br>Repeated shots reveal a distribution around 1/3.</p><div class="metric-row">${metric("QIR 2.1", "Adaptive Profile")}${metric("DDSIM", "QDMI device")}</div></div><div>${histogram(run)}</div></div>`
-        : executionScene(
-            t === null ? totalTime() : t * totalTime(),
-            s === 1
-              ? "Recorded time · 1×"
-              : "Measured timeline · slowed for inspection",
-          )),
-    "Use a richer execution workload to make the distribution visible. First play the observed runtime, then the same trace slowed down. Measurement counts change only at real recorded shot-completion timestamps. No hardware is contacted.",
-    { 1: { duration: totalTime() }, 2: { duration: 18000 } },
+      executionScene(
+        (t ?? 1) * totalTime(),
+        "Measured timeline · slowed for inspection",
+      ),
+    "One moderate-speed replay replaces the fast and slow versions. Follow API calls and shot completions on the same recorded clock. The non-exact phase gives a real distribution over eight output bits. Every histogram increment corresponds to recorded shot completion.",
+    { 0: { duration: 9500 } },
   );
   add(
     "mqt-core",
     "05 · The software behind the workflow",
     "MQT Core",
-    3,
-    (s) =>
+    0,
+    () =>
       heading(
         "MQT Core",
         "Open infrastructure for quantum programs, compilers and execution.",
       ) +
-      `<div class="core-overview"><div class="core-stack">${coreStack(s)}</div><div>${logo("mqt")}<div data-morph="core-impact" class="core-impact ${s >= 3 ? "" : "muted-impact"}"><div class="metric-row">${metric(references.core_stats?.github?.stargazers_count ?? "—", "GitHub stars")}${metric(references.core_stats?.dashboard_snapshot?.total_downloads ?? "—", "PyPI downloads", true)}</div><p class="note">Dashboard snapshot: 9 October 2026 · downloads, not users</p><div class="core-qr">${qr("core-repo", "github.com/munich-quantum-toolkit/core", "Source & contributions")}${qr("core", "mqt.readthedocs.io/projects/core", "Documentation & examples")}</div></div></div></div>`,
-    "Zoom out from the demonstrated compiler and DDSIM into the whole Core. The stack also includes IR, decision diagrams, ZX, language integrations and device adapters. Stars and cumulative downloads are sourced snapshots, not adoption claims about unique users.",
+      `<div class="scene core-world" data-morph="world">${viz.architecture("core")}</div><div class="core-impact-row"><div class="metric-row">${metric(references.core_stats?.github?.stargazers_count ?? "—", "GitHub stars")}${metric(references.core_stats?.dashboard_snapshot?.total_downloads ?? "—", "PyPI downloads", true)}</div>${qr("core-repo", "github.com/munich-quantum-toolkit/core", "Source & contributions")}${qr("core", "mqt.readthedocs.io/projects/core", "Documentation & examples")}</div>`,
+    "Zoom out from the demonstrated paths to the library: quantum IR, decision diagrams, ZX, languages, compilation, QDMI and execution. Stars and cumulative downloads are recorded snapshots, not unique-user counts.",
   );
   add(
     "ecosystem",
     "05 · From the metal to the user",
     "System software for quantum computing",
-    1,
-    (s) =>
+    0,
+    () =>
       heading("System software for quantum computing") +
-      `<div class="scene closing-stack" data-morph="world">${viz.ecosystem(3)}</div><div class="closing-resources">${s ? `${qr("company", "mq.sc", "From the Metal to the User")}${qr("compiler", "mqt.readthedocs.io/projects/core", "Try the compiler and device interfaces")}` : `<div class="closing-logos">${logo("mqt")}${logo("qdmi")}${logo("mqss")}${logo("mqv")}${logo("tum-cda")}</div>`}</div>`,
-    "Return to the architecture with evidence behind every layer: a complete hybrid application, portable device access, hardware-aware compilation and preserved dynamic structure. Credit MQT, QDMI, MQSS, Munich Quantum Valley and TUM CDA. Leave the short URL and QR codes visible for discussion.",
+      `<div class="scene core-world closing-world" data-morph="world">${viz.architecture("ecosystem")}</div><div class="closing-resources"><div class="closing-logos">${logo("mqt")}${logo("qdmi")}${logo("mqss")}${logo("mqv")}${logo("tum-cda")}</div>${qr("company", "mq.sc", "From the Metal to the User")}</div>`,
+    "Let Core morph into the larger system. Users, classical infrastructure and quantum devices connect through a shared stack. End with practical hybrid computation, device-aware compilation and preserved quantum program structure. Credit the participating projects and TUM colleagues.",
   );
 
   function resize() {
@@ -1164,22 +1019,14 @@
       Math.min(innerWidth / 1920, innerHeight / 1080),
     );
   }
-  function render(progress = null) {
+  function render(progress = null, transition = 0) {
     state.token++;
+    state.animation?.cancel();
     state.animation = null;
-    draw(progress, true);
-  }
-  function draw(progress = null, morph = false) {
+    if (progress !== null && !transition) window.MQSF_MOTION.finish();
+    draw(progress, progress === null ? 950 : transition);
     const slide = slides[state.slide];
     $("section-label").textContent = slide.section;
-    window.MQSF_MOTION.replace(
-      $("slide"),
-      slide.render(state.step, progress),
-      morph ? 1000 : 0,
-    );
-    $("slide").dataset.slide = String(state.slide + 1);
-    $("slide").dataset.step = String(state.step);
-    $("slide").dataset.progress = progress === null ? "" : String(progress);
     $("slide-number").innerHTML =
       `${String(state.slide + 1).padStart(2, "0")} / ${slides.length}<span class="build-dots" aria-label="Build ${state.step + 1} of ${slide.builds + 1}">${Array.from({ length: slide.builds + 1 }, (_, i) => (i === state.step ? "<b>•</b>" : "•")).join("")}</span>`;
     $("build-progress").style.width =
@@ -1188,35 +1035,63 @@
       `${state.slide + 1}. ${slide.title} — ${slide.notes}`;
     history.replaceState(null, "", `#${state.slide + 1}.${state.step}`);
   }
+  function draw(progress = null, morph = 0) {
+    const html = slides[state.slide].render(state.step, progress);
+    if (morph) window.MQSF_MOTION.replace($("slide"), html, morph);
+    else window.MQSF_MOTION.update($("slide"), html);
+    $("slide").dataset.slide = String(state.slide + 1);
+    $("slide").dataset.step = String(state.step);
+    $("slide").dataset.progress = progress === null ? "" : String(progress);
+  }
   function animateTimeline(playback) {
     const token = state.token,
-      begin = performance.now(),
       duration = playback.duration;
-    let last = 0;
+    let begin, pending;
+    let transitioning = !!playback.transition;
+    const cancel = () => cancelAnimationFrame(pending);
     const end = () => {
       if (token !== state.token) return;
+      cancel();
+      window.MQSF_MOTION.finish();
       state.animation = null;
-      draw(null, false);
+      draw();
     };
-    state.animation = { end, loop: !!playback.loop };
+    state.animation = { end, cancel, loop: !!playback.loop };
     function frame(now) {
       if (token !== state.token || !state.animation) return;
-      const elapsed = now - begin,
-        cycle = playback.loop ? elapsed % (duration + 2400) : elapsed;
-      const progress = Math.min(1, cycle / duration);
-      if (now - last > 30 || progress === 1) {
-        draw(progress, false);
-        last = now;
+      // RAF timestamps share a frame clock; performance.now() may be ahead of it.
+      begin ??= now;
+      if (transitioning) {
+        // Let shared geometry reach the initial frame before replay updates it.
+        if (now - begin < playback.transition) {
+          pending = requestAnimationFrame(frame);
+          return;
+        }
+        window.MQSF_MOTION.finish();
+        transitioning = false;
+        begin = now;
       }
-      if (playback.loop || elapsed < duration) requestAnimationFrame(frame);
+      const elapsed = Math.max(0, now - begin),
+        cycle = playback.loop ? elapsed % (duration + 2400) : elapsed;
+      draw(Math.min(1, cycle / duration));
+      if (playback.loop || elapsed < duration)
+        pending = requestAnimationFrame(frame);
       else end();
     }
-    requestAnimationFrame(frame);
+    pending = requestAnimationFrame(frame);
   }
-  function go(slide, step = 0) {
+  function play(playback) {
+    if (!playback || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      render();
+      return;
+    }
+    render(0, playback.transition || 0);
+    animateTimeline(playback);
+  }
+  function go(slide, step = 0, forward = false) {
     state.slide = Math.max(0, Math.min(slide, slides.length - 1));
     state.step = Math.max(0, Math.min(step, slides[state.slide].builds));
-    render();
+    play(forward ? slides[state.slide].playbacks[state.step] : null);
   }
   function next() {
     if (state.animation) {
@@ -1227,10 +1102,8 @@
     const current = slides[state.slide];
     if (state.step < current.builds) {
       state.step++;
-      const playback = current.playbacks[state.step];
-      render(playback ? 0 : null);
-      if (playback) animateTimeline(playback);
-    } else if (state.slide < slides.length - 1) go(state.slide + 1);
+      play(current.playbacks[state.step]);
+    } else if (state.slide < slides.length - 1) go(state.slide + 1, 0, true);
   }
   function previous() {
     if (state.step > 0) go(state.slide, state.step - 1);

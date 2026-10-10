@@ -132,5 +132,10 @@
     "encoded_url": "https://github.com/munich-quantum-toolkit/core",
     "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
     "sha256": "cd1966c2de7374f46be568e785befd315d24030d1ce0fb4e1bd8c50cbf07a66c"
+  },
+  "qr-braket": {
+    "encoded_url": "https://amazon-braket-qdmi-device.readthedocs.io/en/stable/",
+    "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+    "sha256": "04ee18cfb43b24dfc7c02c06e2120a59a738609d9f6c3e4b47de4bf18390e5f7"
   }
 }

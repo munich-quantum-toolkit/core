@@ -331,6 +331,43 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
       << diagnostics;
 }
 
+TEST_F(TargetSynthesisTest, FixedEquatorialPulsesPreserveFullUnitary) {
+  const auto pulse = [](const char* name, double theta) {
+    return valid(OperationCapability::create(name, 1, 2, {}, std::nullopt,
+                                             std::nullopt,
+                                             {theta, std::nullopt}, "r"));
+  };
+  const std::vector operations{
+      pulse("gpi", std::numbers::pi),
+      pulse("gpi2", std::numbers::pi / 2.),
+      valid(OperationCapability::create(
+          "rzz", 2, 1, {}, std::nullopt, std::nullopt, {}, std::nullopt,
+          {std::pair{0., std::numbers::pi / 2.}})),
+      valid(OperationCapability::create("gphase", 0, 1)),
+  };
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations(operations)));
+  ASSERT_TRUE(target.synthesisBasis());
+  for (double theta : {0., .37, std::numbers::pi / 2., std::numbers::pi}) {
+    const auto circuit = [&](QCOProgramBuilder& builder) {
+      auto q0 = builder.u(theta, .42, -.31, builder.staticQubit(0));
+      auto q1 = builder.rx(-.73, builder.staticQubit(1));
+      auto [control, targetQubit] = builder.cx(q0, q1);
+      builder.sink(control);
+      builder.sink(builder.ry(theta, targetQubit));
+      return builder.intConstant(0);
+    };
+    auto expected = build(circuit);
+    auto actual = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *actual, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+    expectEquivalent(expected, actual);
+  }
+}
+
 TEST_F(TargetSynthesisTest, ZSXXSynthesisPreservesFullUnitary) {
   for (const auto* rotation : {"rx", "ry", "r"}) {
     SCOPED_TRACE(rotation);

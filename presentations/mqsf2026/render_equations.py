@@ -109,16 +109,19 @@ def main() -> None:
             "scope": scope,
             "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
         }
-    target = ASSETS / "qr-core-repo.svg"
-    url = "https://github.com/munich-quantum-toolkit/core"
-    segno.make(url, error="m", micro=False).save(
-        target, border=4, scale=1, dark="#142b45", light="white", xmldecl=False
-    )
-    sources["qr-core-repo"] = {
-        "encoded_url": url,
-        "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
-        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-    }
+    for name, url in {
+        "qr-core-repo": "https://github.com/munich-quantum-toolkit/core",
+        "qr-braket": "https://amazon-braket-qdmi-device.readthedocs.io/en/stable/",
+    }.items():
+        target = ASSETS / f"{name}.svg"
+        segno.make(url, error="m", micro=False).save(
+            target, border=4, scale=1, dark="#142b45", light="white", xmldecl=False
+        )
+        sources[name] = {
+            "encoded_url": url,
+            "generator": "render_equations.py; Segno 1.6.6; micro=False, error=m, border=4, navy on white",
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        }
     (ASSETS / "sources.json").write_text(json.dumps(sources, indent=2) + "\n")
 
 

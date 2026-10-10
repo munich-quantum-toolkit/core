@@ -23,10 +23,16 @@ import statistics
 import subprocess
 import sys
 from datetime import UTC, datetime
+from math import pi, remainder
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from capture_programs import ROOT, capture_circuit, capture_variant, stage
+
+if TYPE_CHECKING:
+    from qiskit import QuantumCircuit
+
+    from mqt.core.mlir import CompilerTarget
 
 IBM_REVISION = "fa4cecc76321f9559456b132cfdfc7d06999f802"
 MAPPING = {"trials": 3, "iterations": 2, "lookahead": 8, "search-memory-limit": 4194304}
@@ -88,18 +94,17 @@ def braket_target(raw: dict[str, Any], *, ionq: bool = False) -> dict[str, Any]:
             name: summary([fidelities[key]["mean"]], "Provider-reported mean")
             for name, key in (("one_qubit", "1Q"), ("two_qubit", "2Q"), ("readout", "spam"))
         }
-        # Core has no GPI/GPI2 target basis. These are actual supported QIS gates;
-        # the physical native gate names remain separate metadata.
-        supported = capabilities["action"]["braket.ir.openqasm.program"]["supportedOperations"]
-        assert all(name in supported for name in ("rx", "ry", "rz", "cnot"))
-        model["operations"] = [{"name": name, "numQubits": 1, "numParameters": 1} for name in ("rx", "ry", "rz")]
+        assert {name.lower() for name in paradigm["nativeGateSet"]} == {"gpi", "gpi2", "zz"}
+        model["operations"] = [{"name": name, "numQubits": 1, "numParameters": 1} for name in ("gpi", "gpi2")]
         model["operations"].extend((
-            {"name": "cx", "numQubits": 2, "numParameters": 0},
+            {"name": "rzz", "numQubits": 2, "numParameters": 1},
             {"name": "measure", "numQubits": 1, "numParameters": 0},
         ))
         basis_note = (
-            "Compiles to the provider's supported RX/RY/RZ/CNOT QIS interface; "
-            "GPI/GPI2/ZZ hardware synthesis remains provider-owned."
+            "Native GPI/GPI2/RZZ synthesis. Angles are radians, as in Amazon Braket. "
+            "MLIR and QIR represent the pulses by R(pi, phi) and R(pi/2, phi); "
+            "the native OpenQASM export gives their exact GPI/GPI2 definitions. "
+            "RZZ angles are restricted to [0, pi/2]."
         )
     else:
         properties = provider["properties"]
@@ -175,6 +180,81 @@ def braket_target(raw: dict[str, Any], *, ionq: bool = False) -> dict[str, Any]:
         },
         "compiler_model": model,
     }
+
+
+def ionq_compiler_target(snapshot: CompilerTarget) -> CompilerTarget:
+    """Add documented pulse constraints absent from the QDMI metadata API.
+
+    Returns:
+        A target retaining the QDMI sites, topology, and operation calibration.
+    """
+    from mqt.core.mlir import CompilerTarget  # ruff: ignore[import-outside-top-level]
+
+    operations = []
+    for operation in snapshot.operations:
+        fixed = [pi if operation.name == "gpi" else pi / 2, None] if operation.name in {"gpi", "gpi2"} else []
+        operations.append(
+            CompilerTarget.OperationCapability(
+                operation.name,
+                operation.arity,
+                2 if fixed else operation.num_parameters,
+                operation.site_tuples,
+                operation.duration,
+                operation.fidelity,
+                fixed_parameters=fixed,
+                canonical_name="r" if fixed else operation.canonical_name,
+                parameter_bounds=[(0, pi / 2)] if operation.name == "rzz" else [],
+            )
+        )
+    return CompilerTarget(
+        snapshot.name or "IonQ Forte",
+        snapshot.sites,
+        connectivity=(
+            CompilerTarget.Connectivity.all_to_all()
+            if snapshot.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
+            else CompilerTarget.Connectivity(snapshot.couplings)
+        ),
+        native_operations=CompilerTarget.NativeOperations(operations),
+        duration_unit=snapshot.duration_unit,
+    )
+
+
+def normalize_ionq_phases(circuit: QuantumCircuit) -> QuantumCircuit:
+    """Return exact native pulses with phases in [-pi, pi] radians."""
+    from qiskit import QuantumCircuit  # ruff: ignore[import-outside-top-level]
+    from qiskit.circuit import Gate  # ruff: ignore[import-outside-top-level]
+
+    native = circuit.copy()
+    for index, instruction in enumerate(native.data):
+        name = instruction.operation.name
+        if name not in {"gpi", "gpi2"}:
+            continue
+        phase = remainder(float(instruction.operation.params[0]), 2 * pi)
+        gate = Gate(name, 1, [phase])
+        gate.definition = QuantumCircuit(1, global_phase=pi / 2 if name == "gpi" else 0)
+        gate.definition.r(pi if name == "gpi" else pi / 2, phase, 0)
+        native.data[index] = instruction.replace(operation=gate)
+    return native
+
+
+def ionq_openqasm3(circuit: QuantumCircuit) -> str:
+    """Export native pulses with exact definitions and the circuit global phase.
+
+    Returns:
+        Portable OpenQASM 3 using the Braket convention of radians.
+    """
+    from qiskit import qasm3  # ruff: ignore[import-outside-top-level]
+
+    source = qasm3.dumps(circuit, basis_gates=["gpi", "gpi2", "rzz"])
+    definitions = (
+        "gate gpi(phi) q { rz(-phi) q; x q; rz(phi) q; }\n"
+        "gate gpi2(phi) q { rz(-phi) q; rx(pi/2) q; rz(phi) q; }\n"
+        "gate rzz(theta) a, b { cx a, b; rz(theta) b; cx a, b; }\n"
+    )
+    # Qiskit's OpenQASM serializer omits circuit and custom-definition phases.
+    return source.replace('include "stdgates.inc";\n', 'include "stdgates.inc";\n' + definitions, 1) + (
+        f"gphase({float(circuit.global_phase)!r});\n"
+    )
 
 
 def ibm_target(configuration: dict[str, Any], properties: dict[str, Any]) -> dict[str, Any]:
@@ -261,6 +341,7 @@ def circuit_metrics(circuit: dict[str, Any]) -> dict[str, Any]:
     """
     depth = dict.fromkeys((q["id"] for q in circuit["qubits"]), 0)
     counts: dict[str, int] = {}
+    two_qubit_operations = 0
     for operation in circuit["operations"]:
         if operation.get("blocks"):
             msg = "Application target comparison expects a straight-line circuit"
@@ -268,6 +349,7 @@ def circuit_metrics(circuit: dict[str, Any]) -> dict[str, Any]:
         wires = operation["qubits"]
         if not wires:
             continue
+        two_qubit_operations += len(wires) == 2
         counts[operation["name"]] = counts.get(operation["name"], 0) + 1
         next_depth = max(depth[q] for q in wires) + 1
         for q in wires:
@@ -277,12 +359,13 @@ def circuit_metrics(circuit: dict[str, Any]) -> dict[str, Any]:
         "counts": counts,
         "depth": max(depth.values(), default=0),
         "active_qubits": len(depth),
+        "two_qubit_operations": two_qubit_operations,
     }
 
 
 def compile_device(target: dict[str, Any], source: str, compiler: Path, library: Path, shots: int) -> None:
     """Capture real compiler stages, then execute the unchanged QIR on DDSIM."""
-    from mqt.core.mlir import CompilerTarget, QCProgram  # ruff: ignore[import-outside-top-level]
+    from mqt.core.mlir import CompilerTarget, QCOProgram, QCProgram  # ruff: ignore[import-outside-top-level]
 
     model = target["compiler_model"]
     model.setdefault("durationUnit", {"unit": "ns", "scaleFactor": 1.0})
@@ -299,10 +382,49 @@ def compile_device(target: dict[str, Any], source: str, compiler: Path, library:
             os.environ["MQT_CORE_QDMI_SC_CONFIG_JSON"] = old_json
         if old_file is not None:
             os.environ["MQT_CORE_QDMI_SC_CONFIG_FILE"] = old_file
+    target_attribute = None
+    if target["id"] == "aws.ionq.forte-1":
+        compiler_target = ionq_compiler_target(compiler_target)
+        target_attribute = str(compiler_target)
+        target["compiler_target_derivation"] = {
+            "attribute": target_attribute,
+            "constraints": "Author-supplied native pulse definitions and conservative RZZ interval [0, pi/2]",
+            "parameter_units": "radians; IonQ direct API turns equal radians / (2*pi)",
+            "phase_normalization": (
+                "Native GPi/GPi2 exports reduce phases modulo 2*pi to [-pi, pi], with exact unitary equality"
+            ),
+            "sources": [
+                "https://docs.ionq.com/guides/getting-started-with-native-gates",
+                "https://amazon-braket-sdk-python.readthedocs.io/en/stable/_modules/braket/circuits/gates.html",
+            ],
+        }
     qc = QCProgram.from_openqasm_str(source)
     result = capture_variant(
-        qc, compiler_target, model, compiler, unroll=False, timeout=600, mapping=MAPPING, trace=True
+        qc,
+        compiler_target,
+        model,
+        compiler,
+        unroll=False,
+        timeout=600,
+        mapping=MAPPING,
+        trace=True,
+        target_attribute=target_attribute,
     )
+    if target_attribute:
+        native_stage = next(item for item in result["stages"] if item["id"] == "target-native-synthesis")
+        native_stage["representation_note"] = (
+            "The circuit is the exact target-aware GPI/GPI2/RZZ export. "
+            "Its MLIR and QIR use equivalent fixed-angle R pulses, with GPI phase correction."
+        )
+        native = normalize_ionq_phases(QCOProgram.from_mlir_str(native_stage["code"]).to_qiskit(target=compiler_target))
+        native_stage["circuit"] = capture_circuit(native, [site.id for site in compiler_target.sites])
+        assert set(native.count_ops()) <= {"gpi", "gpi2", "rzz", "measure"}
+        assert all(0 <= float(op.operation.params[0]) <= pi / 2 for op in native.data if op.operation.name == "rzz")
+        for exported in result["exports"]:
+            if exported["id"] == "openqasm3":
+                exported["id"] = "openqasm3-core"
+                exported["label"] = "OpenQASM 3 · compiler R pulse representation"
+        result["exports"].append(stage("openqasm3", "OpenQASM 3 · native GPI/GPI2/RZZ", "qasm", ionq_openqasm3(native)))
     artifact = stage("source", "Actual LiH shadow circuit · OpenQASM 2.0", "qasm", source)
     artifact["circuit"] = capture_circuit(qc.to_qiskit())
     result["stages"].insert(0, artifact)

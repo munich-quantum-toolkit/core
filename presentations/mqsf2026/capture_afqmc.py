@@ -233,7 +233,9 @@ def propagate_one_walker(label: str, walker_id: int, seed: int, steps: int, dtau
     }
 
 
-def capture_lih_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed: int, processes: int) -> dict:
+def capture_lih_afqmc(
+    compact: dict, walkers: int, steps: int, dtau: float, seed: int, processes: int, bond_length: float = 1.6
+) -> dict:
     """Run a genuine LiH CAS(2,3) calculation with four local classical worker processes.
 
     The trial amplitudes come only from the measured matchgate shadows. Dense
@@ -254,7 +256,7 @@ def capture_lih_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed
     quantum_trial = importlib.import_module("afqmc.trial_wavefunction.quantum_ovlp")
     pyscf.lib.num_threads(1)
     begin = perf_counter_ns()
-    molecule = pyscf.gto.M(atom="Li 0 0 0; H 0 0 1.6", basis="sto-3g", verbose=0)
+    molecule = pyscf.gto.M(atom=f"Li 0 0 0; H 0 0 {bond_length}", basis="sto-3g", verbose=0)
     hf = molecule.RHF().run()
     active = [2, 3, 6]
     cas = mcscf.CASCI(hf, 3, (1, 1))
@@ -391,7 +393,7 @@ def capture_lih_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed
         "chemistry": {
             "molecule": "LiH",
             "elements": ["Li", "H"],
-            "geometry_angstrom": [[0, 0, 0], [0, 0, 1.6]],
+            "geometry_angstrom": [[0, 0, 0], [0, 0, bond_length]],
             "basis": "STO-3G",
             "electrons": 2,
             "total_electrons": 4,
@@ -410,7 +412,8 @@ def capture_lih_afqmc(compact: dict, walkers: int, steps: int, dtau: float, seed
             "energy_unit": "Ha",
             "trial_parameters": TRIAL_PARAMETERS.tolist(),
             "trial_method": (
-                "Fixed parameters tuned classically in the 15-state model; not a quantum VQE or advantage claim"
+                "Fixed parameters tuned classically at 1.6 angstrom in the 15-state model; "
+                "reused at the recorded geometry, not a quantum VQE or advantage claim"
             ),
         },
         "overlap": {
@@ -483,13 +486,17 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=240)
     parser.add_argument("--dtau", type=float, default=0.02)
     parser.add_argument("--processes", type=int, default=4)
+    parser.add_argument("--bond-length", type=float, default=1.6, help="Li-H distance in angstrom")
     args = parser.parse_args()
     if (
         min(args.snapshots, args.shots, args.steps, args.processes) <= 0
         or args.walkers < 2
         or not 0 < args.dtau <= 0.05
+        or not 0 < args.bond_length <= 10
     ):
-        msg = "Counts must be positive, walkers at least two, and the imaginary-time step in (0, 0.05]"
+        msg = (
+            "Positive counts, at least two walkers, a time step in (0, 0.05], and a bond length in (0, 10] are required"
+        )
         raise ValueError(msg)
     for name, expected in SOURCE_HASHES.items():
         if hashlib.sha256((args.source / name).read_bytes()).hexdigest() != expected:
@@ -737,7 +744,9 @@ def main() -> None:
             },
         })
     validate_native_batch(device.submitted_jobs, args.snapshots, snapshots)
-    science = capture_lih_afqmc(compact, args.walkers, args.steps, args.dtau, args.seed, args.processes)
+    science = capture_lih_afqmc(
+        compact, args.walkers, args.steps, args.dtau, args.seed, args.processes, args.bond_length
+    )
     data = {
         "schema_version": 1,
         "title": "Lithium hydride quantum-classical AFQMC",

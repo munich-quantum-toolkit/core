@@ -348,6 +348,7 @@ def compile_target(
     *,
     mapping: dict[str, int] | None = None,
     trace: bool = False,
+    target_attribute: str | None = None,
 ) -> tuple[str, str]:
     """Run the production target pipeline and capture its actual pass output.
 
@@ -372,7 +373,7 @@ def compile_target(
         command = [
             str(compiler),
             str(source),
-            "--qdmi-device=mqt.sc.default",
+            f"--target={target_attribute}" if target_attribute else "--qdmi-device=mqt.sc.default",
             f"--payload-spec={payload_specification()}",
             "--emit=qco-optimized",
             "--seed=7",
@@ -417,6 +418,7 @@ def capture_variant(
     timeout: int,
     mapping: dict[str, int] | None = None,
     trace: bool = False,
+    target_attribute: str | None = None,
 ) -> dict[str, Any]:
     """Capture both compiler stages and independently attempted export formats.
 
@@ -444,7 +446,9 @@ def capture_variant(
         qco.unroll_quantum_loops()
         qco.cleanup()
         variant["stages"].append(program_stage("unrolled", "Unroll bounded quantum loops", qco))
-    native_ir, dumps = compile_target(qco, compiler, model, timeout, mapping=mapping, trace=trace)
+    native_ir, dumps = compile_target(
+        qco, compiler, model, timeout, mapping=mapping, trace=trace, target_attribute=target_attribute
+    )
     if trace:
         variant["routing_trace"] = [
             json.loads(line.removeprefix("MQSF_MAPPING_TRACE "))

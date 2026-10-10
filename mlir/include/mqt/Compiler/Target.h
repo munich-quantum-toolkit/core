@@ -322,13 +322,14 @@ public:
 
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
-    U,    ///< `U(θ, φ, λ)`.
-    ZSXX, ///< RZ and fixed quarter turns, with optional half turns.
-    R,    ///< At most two equatorial rotations `R(θ, φ)`.
-    XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
-    XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
-    ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
-    ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
+    U,      ///< `U(θ, φ, λ)`.
+    ZSXX,   ///< RZ and fixed quarter turns, with optional half turns.
+    R,      ///< At most two equatorial rotations `R(θ, φ)`.
+    XZX,    ///< `RX(φ) * RZ(θ) * RX(λ)`.
+    XYX,    ///< `RX(φ) * RY(θ) * RX(λ)`.
+    ZYZ,    ///< `RZ(φ) * RY(θ) * RZ(λ)`.
+    ZXZ,    ///< `RZ(φ) * RX(θ) * RZ(λ)`.
+    RFixed, ///< Equatorial pulses with fixed angles π and π/2.
   };
 
   /// Native RX, RY, or R(theta, 0) quarter turns for the ZSXX Euler recipe.

@@ -957,6 +957,19 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     }
   }
 
+  if (!singleQubit && llvm::all_of(siteIds, [&](SiteId site) {
+        return llvm::all_of(
+            std::array{std::numbers::pi, std::numbers::pi / 2.},
+            [&](double angle) {
+              return supportsOperation(
+                  "r", 1, 2, ArrayRef<SiteId>(&site, 1), false,
+                  [angle](size_t parameter) -> std::optional<double> {
+                    return parameter == 0 ? std::optional{angle} : std::nullopt;
+                  });
+            });
+      })) {
+    singleQubit = SingleQubitBasis::RFixed;
+  }
   if (!singleQubit) {
     return std::nullopt;
   }

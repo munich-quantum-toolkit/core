@@ -88,11 +88,15 @@ window.MQSF_CIRCUIT = (() => {
       (o) => o.column >= firstColumn && o.column < firstColumn + limit,
     );
     const columns = Math.min(limit, maximum - firstColumn + 1);
+    const structured = all.some((o) => o.region.length);
     const width = 1100,
       pitch = Math.min(102, 900 / columns),
-      top = 85,
-      dy = 70;
-    const height = Math.max(320, top + c.qubits.length * dy + 85);
+      top = structured ? 75 : 40,
+      dy = 60;
+    const height = Math.max(
+      260,
+      top + (c.qubits.length - 1) * dy + (structured ? 120 : 70),
+    );
     const row = new Map(c.qubits.map((q, i) => [q.id, i]));
     const y = (q) => top + row.get(q) * dy;
     const x = (o) => 155 + (o.column - firstColumn) * pitch;
@@ -116,7 +120,7 @@ window.MQSF_CIRCUIT = (() => {
       }),
     );
     regions.forEach(({ first, last, r }) => {
-      body += `<g data-morph="${key}-region-${r.id}"><rect x="${first - 35}" y="39" width="${last - first + 70}" height="${c.qubits.length * dy}" rx="12" fill="#eaf2fa" fill-opacity=".35" stroke="#87acd0" stroke-width="2" stroke-dasharray="7 5"/>${txt((first + last) / 2, 25, r.name === "while_loop" ? "repeat until success" : `${r.iterations} rounds`, 24, "#2f70b8")}</g>`;
+      body += `<g data-morph="${key}-region-${r.id}"><rect x="${first - 35}" y="${top - 46}" width="${last - first + 70}" height="${(c.qubits.length - 1) * dy + 70}" rx="12" fill="#eaf2fa" fill-opacity=".35" stroke="#87acd0" stroke-width="2" stroke-dasharray="7 5"/>${txt((first + last) / 2, top - 60, r.name === "while_loop" ? "repeat until success" : `${r.iterations} rounds`, 24, "#2f70b8")}</g>`;
     });
     const measured = new Map();
     operations.forEach((o) => {
@@ -165,7 +169,7 @@ window.MQSF_CIRCUIT = (() => {
                 gpi2: "GPI₂",
                 ms: "MS",
               }[o.name] || o.name.toUpperCase();
-            return box + txt(0, yy + 9, name, name.length > 3 ? 18 : 25);
+            return box + txt(0, yy + 9, name, name.length > 3 ? 23 : 27);
           })
           .join("");
       }

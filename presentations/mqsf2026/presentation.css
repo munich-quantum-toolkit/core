@@ -261,16 +261,6 @@ h3 {
   font-size: 22px;
   color: var(--muted);
 }
-.title-layout {
-  display: grid;
-  grid-template-columns: 1.35fr 0.65fr;
-  gap: 40px;
-  align-items: center;
-  height: 660px;
-}
-.title-layout h1 {
-  max-width: 1180px;
-}
 .title-layout .byline {
   margin-top: 42px;
   font-size: 35px;
@@ -315,12 +305,6 @@ h3 {
   padding: 20px 24px;
   overflow: hidden;
 }
-.code-title {
-  font-size: 25px;
-  color: var(--blue);
-  font-weight: 650;
-  margin-bottom: 17px;
-}
 .code-frame pre {
   font:
     27px/1.52 "Liberation Mono",
@@ -331,30 +315,10 @@ h3 {
   tab-size: 2;
   letter-spacing: -0.5px;
 }
-.code-frame .code-line {
-  display: block;
-  white-space: pre;
-  min-height: 1.52em;
-  padding: 0 8px;
-  margin: 0 -8px;
-  transition: background 0.2s;
-}
 .code-frame .code-line.hot {
   background: #d3e6fa;
   border-radius: 3px;
   color: #092c57;
-}
-.line-no {
-  display: inline-block;
-  width: 48px;
-  color: #8293a5;
-  font-size: 20px;
-  user-select: none;
-}
-.code-foot {
-  font-size: 21px;
-  color: var(--muted);
-  margin-top: 10px;
 }
 .code-frame.compact pre {
   font-size: 25px;
@@ -430,12 +394,6 @@ h3 {
 .pipeline .arrow {
   color: #9ab3ce;
   font-size: 36px;
-}
-.architecture-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.97fr) minmax(0, 1.03fr);
-  gap: 45px;
-  margin-top: 18px;
 }
 .architecture-grid .code-frame {
   margin-top: 20px;
@@ -566,15 +524,6 @@ h3 {
   margin-top: 20px;
   line-height: 1.35;
 }
-.execution-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.83fr) minmax(0, 1.17fr);
-  gap: 38px;
-  margin-top: 30px;
-}
-.execution-grid .code-frame {
-  margin-bottom: 15px;
-}
 .sequence-svg {
   width: 100%;
   height: 320px;
@@ -613,10 +562,6 @@ h3 {
 .result-summary {
   font-size: 31px;
   margin-top: 20px;
-}
-.energy-chart {
-  height: 480px;
-  width: 100%;
 }
 .energy-chart .series {
   stroke: #2f70b8;
@@ -788,7 +733,6 @@ dialog p {
     bottom: 33px;
   }
 }
-
 .split > *,
 .architecture-grid > *,
 .execution-grid > *,
@@ -826,26 +770,12 @@ dialog p {
 .code-focus .big {
   font-size: 46px;
 }
-.execution-grid .code-frame pre {
-  font-size: 23px;
-  line-height: 1.4;
-}
-.execution-grid .code-frame {
-  padding: 15px 19px;
-  height: 296px;
-}
 .execution-grid .code-title {
   font-size: 23px;
   margin-bottom: 10px;
 }
-.execution-grid .sequence-svg {
-  height: 300px;
-}
 .execution-grid .result-summary {
   font-size: 28px;
-}
-.architecture-grid .circuit {
-  height: 365px;
 }
 .architecture-grid .note {
   font-size: 25px;
@@ -856,40 +786,8 @@ dialog p {
   stroke-width: 2.5;
   stroke-dasharray: 7 5;
 }
-
-.code-frame .code-line {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-}
-.code-text {
-  white-space: pre;
-  overflow-wrap: anywhere;
-}
 /* Hosted preview controls obscure the slides and require mouse interaction. */
-readthedocs-flyout,
-readthedocs-notification,
-readthedocs-search,
-readthedocs-hotkeys,
-readthedocs-filetreediff,
-readthedocs-docdiff {
-  display: none !important;
-}
-
 /* Fixed scene geometry keeps the clicker narrative spatially continuous. */
-.title-layout {
-  grid-template-columns: 1.03fr 1fr;
-  gap: 18px;
-}
-.title-layout h1 {
-  font-size: 72px;
-  letter-spacing: -2.8px;
-}
-.title-animation {
-  width: 910px;
-  height: 620px;
-  display: flex;
-  align-items: center;
-}
 .title-animation svg {
   width: 100%;
   height: 100%;
@@ -911,19 +809,12 @@ readthedocs-docdiff {
 .reference-corner .qr-block {
   gap: 18px;
 }
-.reference-corner .qr-block img {
-  width: 120px;
-  height: 120px;
-}
 .reference-corner .url {
   font-size: 23px;
 }
 .reference-corner .caption {
   font-size: 21px;
   max-width: 640px;
-}
-.chemistry-scene {
-  height: 545px;
 }
 .workflow-scene {
   height: 615px;
@@ -982,24 +873,8 @@ readthedocs-docdiff {
 .batch-grid .metric .value {
   font-size: 57px;
 }
-.device-id {
-  font:
-    30px/1.4 "Liberation Mono",
-    Consolas,
-    monospace;
-  padding: 18px 24px;
-  background: #eef5fc;
-  margin: 16px 0 24px;
-  border-left: 5px solid var(--blue);
-}
 .device-id b {
   color: var(--blue);
-}
-.device-properties {
-  display: flex;
-  gap: 34px;
-  flex-wrap: wrap;
-  margin: 22px 0 28px;
 }
 .device-properties > div {
   display: flex;
@@ -1016,10 +891,6 @@ readthedocs-docdiff {
 }
 .device-properties .gate-set {
   max-width: 520px;
-}
-.device-properties .gate-set b {
-  font-size: 26px;
-  line-height: 1.3;
 }
 .device-questions {
   font-size: 30px;
@@ -1079,26 +950,9 @@ readthedocs-docdiff {
 .target-switch .code-frame {
   padding: 16px 18px;
 }
-.compiler-caption {
-  display: flex;
-  align-items: baseline;
-  gap: 35px;
-  margin: 18px 0 23px;
-}
 .compiler-caption h3 {
   min-width: 460px;
   color: var(--blue);
-}
-.compiler-caption p {
-  font-size: 28px;
-  line-height: 1.4;
-}
-.compiler-source .code-frame {
-  padding: 18px 28px;
-}
-.compiler-source .code-frame pre {
-  font-size: 28px;
-  line-height: 1.5;
 }
 .compiler-source .code-title {
   font-size: 23px;
@@ -1133,9 +987,6 @@ readthedocs-docdiff {
   border-color: var(--blue);
   background: var(--pale);
 }
-.architecture-grid .circuit {
-  height: 365px;
-}
 .architecture-grid .mapping-legend {
   gap: 7px;
   flex-wrap: wrap;
@@ -1144,15 +995,6 @@ readthedocs-docdiff {
 }
 .architecture-grid .mapping-legend span {
   padding: 8px 10px;
-}
-.telemetry {
-  margin-top: 28px;
-  background: #edf5fc;
-  padding: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 18px;
 }
 .telemetry b {
   color: var(--blue);
@@ -1177,12 +1019,6 @@ readthedocs-docdiff {
   gap: 28px;
   margin-top: 35px;
   align-items: center;
-}
-.structured-grid .code-frame {
-  padding: 18px;
-}
-.structured-grid .code-frame pre {
-  font-size: 25px;
 }
 .structured-grid .circuit {
   height: 355px;
@@ -1293,32 +1129,11 @@ readthedocs-docdiff {
   height: 510px;
   margin-top: 5px;
 }
-.closing-resources {
-  height: 160px;
-  margin-top: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-}
-.closing-resources .qr-block img {
-  width: 160px;
-  height: 160px;
-}
 .closing-resources .qr-block .url {
   font-size: 28px;
 }
 .closing-resources .qr-block .caption {
   font-size: 24px;
-}
-.closing-logos {
-  display: flex;
-  align-items: center;
-  gap: 65px;
-}
-.closing-logos .logo {
-  width: 235px;
-  height: 110px;
-  object-fit: contain;
 }
 @media (prefers-reduced-motion: reduce) {
   .flow-particles {
@@ -1333,11 +1148,6 @@ readthedocs-docdiff {
 .code-frame .highlight .err {
   border: 0;
 }
-.code-foot {
-  color: #708499;
-  margin-top: 10px;
-  font-size: 19px;
-}
 readthedocs-flyout,
 readthedocs-notification,
 readthedocs-search,
@@ -1345,34 +1155,6 @@ readthedocs-hotkeys,
 readthedocs-filetreediff,
 readthedocs-docdiff {
   display: none !important;
-}
-.title-layout {
-  display: block;
-  height: 780px;
-}
-.title-layout h1 {
-  max-width: none;
-  font-size: 68px;
-  line-height: 1.17;
-}
-.title-byline {
-  display: flex;
-  gap: 40px;
-  align-items: baseline;
-  font-size: 27px;
-  color: var(--muted);
-  margin-top: 25px;
-}
-.title-byline b {
-  font-size: 32px;
-  color: var(--navy);
-}
-.title-animation {
-  position: absolute;
-  width: 1690px;
-  height: 540px;
-  left: 35px;
-  top: 242px;
 }
 .chemistry-scene {
   height: 455px;
@@ -1393,12 +1175,6 @@ readthedocs-docdiff {
   height: 91px;
   object-fit: contain;
 }
-.unroll-comparison {
-  margin-top: 85px;
-}
-.unroll-comparison .circuit {
-  height: 390px;
-}
 .reference-corner .qr-block img {
   width: 160px;
   height: 160px;
@@ -1411,10 +1187,6 @@ readthedocs-docdiff {
 .batch-grid .code-frame {
   height: 235px;
 }
-.hpc-lanes {
-  height: 340px;
-  margin-top: 25px;
-}
 .hpc-lanes svg {
   width: 100%;
   height: 100%;
@@ -1426,9 +1198,6 @@ readthedocs-docdiff {
   margin-top: 18px;
   align-items: center;
 }
-.hpc-details .code-frame pre {
-  font-size: 22px;
-}
 .hpc-details .metric-row {
   margin-top: 0;
 }
@@ -1438,8 +1207,8 @@ readthedocs-docdiff {
 .hpc-details .note {
   font-size: 22px;
 }
-
 .hpc-lanes {
+  margin-top: 25px;
   height: 310px;
 }
 .hpc-details .code-frame {
@@ -1479,4 +1248,772 @@ readthedocs-docdiff {
 }
 .qpe-intro .histogram {
   height: 460px;
+}
+/* Large, persistent scenes: content changes within a stable projection canvas. */
+.code-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.code-frame .code-line {
+  padding: 0 8px;
+  margin: 0 -8px;
+  transition: background 0.2s;
+  grid-template-columns: 48px minmax(0, 1fr);
+  display: flex;
+  align-items: baseline;
+  white-space: normal;
+  line-height: 1.35;
+  min-height: 1.35em;
+}
+.line-no {
+  display: inline-block;
+  width: 48px;
+  color: #8293a5;
+  user-select: none;
+  flex: 0 0 48px;
+  font-size: 17px;
+}
+.code-frame pre,
+.code-frame.compact pre {
+  font-size: 24px;
+  line-height: 1.35;
+  letter-spacing: -0.55px;
+}
+.code-title {
+  color: var(--blue);
+  font-weight: 650;
+  margin-bottom: 12px;
+  font-size: 24px;
+}
+.code-foot {
+  color: #708499;
+  margin-top: 10px;
+  font-size: 18px;
+}
+.world-scene {
+  height: 575px;
+  margin-top: 18px;
+}
+.reference-strip {
+  position: absolute;
+  bottom: -2px;
+  right: 0;
+  display: flex;
+}
+.reference-strip .qr-block {
+  gap: 16px;
+}
+.reference-strip .qr-block img {
+  width: 108px;
+  height: 108px;
+}
+.reference-strip .url {
+  font-size: 22px;
+}
+.reference-strip .caption {
+  font-size: 20px;
+}
+.title-layout {
+  align-items: center;
+  gap: 18px;
+  grid-template-columns: 1fr;
+  display: block;
+  height: 794px;
+  position: relative;
+}
+.title-layout h1 {
+  letter-spacing: -2.8px;
+  max-width: none;
+  width: 1750px;
+  font-size: 66px;
+  line-height: 1.12;
+}
+.title-byline {
+  color: var(--muted);
+  margin-top: 25px;
+  position: absolute;
+  left: 0;
+  gap: 12px;
+  font-size: 27px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  top: 210px;
+  width: 340px;
+  line-height: 1.4;
+}
+.title-byline b {
+  color: var(--navy);
+  font-size: 36px;
+}
+.title-animation {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  top: 185px;
+  left: 360px;
+  width: 1390px;
+  height: 590px;
+}
+.application-scene {
+  height: 530px;
+  margin-top: 10px;
+}
+.application-code {
+  display: grid;
+  margin-top: 20px;
+  position: relative;
+  grid-template-columns: 1.3fr 1fr;
+  grid-template-rows: 310px auto;
+  height: 520px;
+  gap: 20px 35px;
+}
+.application-code .code-frame {
+  padding: 14px 18px;
+  margin-bottom: 0;
+}
+.application-code .code-frame pre {
+  font-size: 22px;
+  line-height: 1.28;
+}
+.application-mini > svg {
+  width: 100%;
+  height: 235px;
+}
+.application-mini .metric-row {
+  margin-top: 0;
+}
+.application-mini .metric .value {
+  font-size: 40px;
+}
+.application-mini .metric .label {
+  font-size: 22px;
+}
+.location-label {
+  color: var(--blue);
+  font-size: 26px;
+  font-weight: 650;
+  margin-bottom: 12px;
+}
+.hybrid-execution {
+  display: grid;
+  grid-template-columns: 1280px 430px;
+  gap: 40px;
+  margin-top: 25px;
+}
+.hybrid-execution .execution-grid {
+  display: grid;
+  grid-template-columns: 1.12fr 1fr;
+  gap: 26px;
+  margin-top: 10px;
+  height: auto;
+}
+.hybrid-execution .code-frame {
+  height: auto;
+  padding: 14px;
+}
+.hybrid-execution .code-frame pre {
+  font-size: 20px;
+}
+.hybrid-execution .code-title {
+  font-size: 20px;
+}
+.hybrid-execution .line-no {
+  flex-basis: 34px;
+  font-size: 15px;
+}
+.hybrid-execution .batch-phase {
+  font-size: 24px;
+  margin: 16px 0 0;
+}
+.hybrid-execution .sequence-svg {
+  height: 185px;
+}
+.hybrid-execution .runtime-strip {
+  font-size: 21px;
+}
+.hybrid-execution .batch-result {
+  height: 325px;
+}
+.hybrid-execution .metric-row {
+  margin-top: 10px;
+  gap: 25px;
+}
+.hybrid-execution .metric .value {
+  font-size: 48px;
+}
+.hybrid-execution .metric .label {
+  font-size: 23px;
+}
+.cpu-pane {
+  background: #f1f7fc;
+  padding: 22px;
+  border-radius: 16px;
+}
+.cpu-pane > svg {
+  width: 100%;
+  height: 200px;
+}
+.cpu-algorithm {
+  font-size: 25px;
+  line-height: 1.5;
+}
+.cpu-pane .metric .value {
+  font-size: 46px;
+}
+.cpu-pane .metric .label {
+  font-size: 23px;
+}
+.cpu-pane .note {
+  margin-top: 14px;
+  font-size: 22px;
+}
+.cpu-focus {
+  overflow: hidden;
+  height: 215px;
+}
+.cpu-focus .quantum-pane .execution-grid {
+  grid-template-columns: 1fr;
+}
+.cpu-focus .batch-grid > div:first-child {
+  display: none;
+}
+.cpu-focus .batch-grid > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.cpu-focus .runtime-strip,
+.cpu-focus .clock-line {
+  display: none;
+}
+.cpu-focus .batch-result {
+  width: 460px;
+  height: 200px;
+}
+.cpu-focus .cpu-pane {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding: 15px;
+}
+.cpu-focus .cpu-pane > svg {
+  height: 145px;
+  width: 215px;
+}
+.cpu-focus .cpu-algorithm,
+.cpu-focus .cpu-pane .note,
+.cpu-focus .cpu-pane .metric {
+  display: none;
+}
+.integrated-hpc .hpc-lanes {
+  margin-top: 5px;
+  height: 165px;
+}
+.integrated-hpc .hpc-details {
+  margin-top: 0;
+  gap: 30px;
+}
+.integrated-hpc .hpc-details .code-frame {
+  padding: 12px;
+}
+.integrated-hpc .hpc-details .code-frame pre {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.integrated-hpc .hpc-details .note {
+  font-size: 20px;
+}
+.integrated-hpc .hpc-details .metric .value {
+  font-size: 38px;
+}
+.energy-chart {
+  width: 100%;
+  margin-top: 18px;
+  height: 440px;
+}
+.result-bottom {
+  display: grid;
+  grid-template-columns: 420px 610px 1fr;
+  gap: 30px;
+  align-items: center;
+}
+.result-bottom p {
+  font-size: 24px;
+  line-height: 1.4;
+}
+.result-bottom .note {
+  margin-top: 12px;
+  font-size: 20px;
+}
+.result-walkers {
+  height: 165px;
+}
+.result-walkers svg {
+  height: 100%;
+  width: 100%;
+}
+.energy-equation {
+  width: 100%;
+  height: 135px;
+}
+.program-metrics {
+  display: flex;
+  gap: 30px;
+  align-items: baseline;
+  padding: 10px 0;
+}
+.program-metrics > div {
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+}
+.program-metrics b {
+  font-size: 40px;
+  color: var(--blue);
+  font-weight: 600;
+}
+.program-metrics span {
+  font-size: 22px;
+  color: var(--muted);
+}
+.stage-flow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  margin: 25px 0 22px;
+  gap: 8px;
+  padding-bottom: 9px;
+  border-bottom: 3px solid #dfebf5;
+}
+.stage-flow > div {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 10px;
+  font-size: 25px;
+  color: #6d849a;
+  background: #f3f7fb;
+  border-radius: 8px;
+}
+.stage-flow > div > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e0ebf5;
+  font-size: 20px;
+}
+.stage-flow .selected {
+  background: #dcecf9;
+  color: #184c7d;
+  font-weight: 650;
+}
+.stage-flow .selected > span {
+  background: var(--blue);
+  color: white;
+}
+.stage-flow .complete {
+  color: var(--blue);
+}
+.stage-flow > i {
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 4px;
+  background: var(--blue);
+  transition: width 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.architecture-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 40px;
+  margin-top: 30px;
+}
+.architecture-grid .circuit {
+  height: 340px;
+}
+.architecture-grid .target-map {
+  height: 510px;
+}
+.telemetry {
+  margin-top: 28px;
+  background: #edf5fc;
+  padding: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  min-height: 70px;
+}
+.routing-ref {
+  position: absolute;
+  bottom: 18px;
+  right: 0;
+}
+.routing-ref .qr-block img {
+  width: 105px;
+  height: 105px;
+}
+.routing-ref .url {
+  font-size: 22px;
+}
+.routing-ref .caption {
+  font-size: 20px;
+}
+.device-recompile {
+  margin-top: 0;
+}
+.device-recompile .target-map {
+  height: 390px;
+}
+.device-recompile .circuit {
+  height: 340px;
+}
+.device-id {
+  font:
+    30px/1.4 "Liberation Mono",
+    Consolas,
+    monospace;
+  background: #eef5fc;
+  margin: 16px 0 24px;
+  border-left: 5px solid var(--blue);
+  margin-top: 18px;
+  font-size: 32px;
+  padding: 12px 24px;
+}
+.device-links {
+  display: flex;
+  justify-content: center;
+}
+.device-links .qr-block img {
+  width: 110px;
+  height: 110px;
+}
+.device-links .url {
+  font-size: 20px;
+}
+.device-links .caption {
+  font-size: 20px;
+}
+.device-properties {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 15px;
+  gap: 24px;
+  margin: 12px 0 8px;
+}
+.device-properties .gate-set b {
+  line-height: 1.3;
+  font-size: 25px;
+}
+.compiler-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 35px;
+  margin: 8px 0 10px;
+}
+.compiler-caption p {
+  line-height: 1.4;
+  font-size: 27px;
+  margin-top: 6px;
+}
+.compiler-source .code-frame {
+  padding: 14px 24px;
+  height: 467px;
+}
+.compiler-source .code-frame pre {
+  font-size: 21px;
+  line-height: 1.15;
+}
+.compiler-underlay {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.compiler-underlay p {
+  line-height: 1.3;
+  font-size: 21px;
+}
+.structured-grid,
+.structured-native {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 38px;
+  margin-top: 15px;
+}
+.structured-grid .code-frame {
+  padding: 18px;
+  height: auto;
+  min-height: 450px;
+}
+.structured-grid .code-frame pre {
+  font-size: 27px;
+  line-height: 1.45;
+}
+.structured-grid .circuit,
+.structured-native .circuit {
+  height: 270px;
+}
+.structured-grid .statement,
+.structured-native .statement {
+  font-size: 33px;
+  margin-top: 30px;
+  line-height: 1.4;
+}
+.structured-native .note {
+  font-size: 25px;
+  margin-top: 20px;
+}
+.structure-code {
+  padding: 14px 18px;
+}
+.structure-code pre {
+  font-size: 21px;
+  line-height: 1.15;
+}
+.structure-code .code-line {
+  line-height: 1.15;
+  min-height: 1.15em;
+}
+.structure-code .line-no {
+  flex-basis: 68px;
+}
+.folded {
+  color: #6e8396;
+  font-style: italic;
+}
+.code-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 25px;
+}
+.qir-structure {
+  height: auto;
+}
+.qir-structure pre {
+  font-size: 20px;
+}
+.unroll-comparison {
+  margin-top: 30px;
+}
+.unroll-comparison .circuit {
+  height: 340px;
+}
+.execution-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 38px;
+  margin-top: 28px;
+}
+.execution-grid .code-frame {
+  margin-bottom: 15px;
+  padding: 15px 19px;
+  height: 365px;
+}
+.execution-grid .code-frame pre {
+  line-height: 1.25;
+  font-size: 23px;
+}
+.execution-grid .sequence-svg {
+  height: 245px;
+}
+.execution-grid .histogram {
+  height: 460px;
+}
+.core-world {
+  margin-top: 22px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 145px;
+  height: 500px;
+  margin: 0;
+}
+.core-impact-row {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+  position: absolute;
+  top: 665px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  gap: 40px;
+}
+.core-impact-row .metric-row {
+  margin: 0;
+  gap: 40px;
+}
+.core-impact-row .metric .value {
+  font-size: 50px;
+}
+.core-impact-row .metric .label {
+  font-size: 23px;
+}
+.core-impact-row .qr-block {
+  gap: 18px;
+}
+.core-impact-row .qr-block img {
+  width: 115px;
+  height: 115px;
+}
+.core-impact-row .url {
+  font-size: 20px;
+}
+.core-impact-row .caption {
+  font-size: 20px;
+}
+.closing-world {
+  height: 500px;
+}
+.closing-resources {
+  display: flex;
+  align-items: center;
+  margin-top: 15px;
+  justify-content: space-between;
+  position: absolute;
+  top: 665px;
+  left: 0;
+  right: 0;
+  height: 115px;
+  margin: 0;
+}
+.closing-logos {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+.closing-logos .logo {
+  width: 235px;
+  object-fit: contain;
+  max-width: 175px;
+  height: 95px;
+}
+.closing-resources .qr-block img {
+  width: 115px;
+  height: 115px;
+}
+.application-code > div:first-child {
+  display: contents;
+}
+.application-code > div:first-child > .code-frame:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+}
+.application-code > div:first-child > .code-frame:nth-child(2) {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+}
+.application-mini {
+  grid-column: 2;
+  grid-row: 1;
+}
+.application-code .code-frame .code-line {
+  line-height: 1.28;
+  min-height: 1.28em;
+}
+.hybrid-execution .execution-grid .code-frame pre {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.hybrid-execution .execution-grid .code-frame .code-line {
+  line-height: 1.25;
+  min-height: 1.25em;
+}
+.hybrid-execution .execution-grid .sequence-svg {
+  height: 185px;
+}
+.integrated-hpc .code-frame .code-line {
+  line-height: 1.25;
+  min-height: 1.25em;
+}
+.compiler-source .code-frame .code-line {
+  line-height: 1.15;
+  min-height: 1.15em;
+}
+.code-frame.structure-code pre {
+  font-size: 21px;
+  line-height: 1.15;
+}
+.code-frame.qir-structure pre {
+  font-size: 19px;
+  line-height: 1.18;
+}
+.code-frame.qir-structure .code-line {
+  line-height: 1.18;
+  min-height: 1.18em;
+}
+.code-frame.qir-structure .code-title {
+  font-size: 23px;
+}
+.code-frame.qir-structure .code-foot {
+  font-size: 18px;
+}
+.structured-native .structure-code pre {
+  font-size: 20px;
+}
+.device-recompile .note {
+  margin-top: 0;
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+.execution-grid .code-frame .code-line {
+  line-height: 1.25;
+  min-height: 1.25em;
+}
+.device-recompile .program-metrics {
+  padding: 0;
+}
+
+#slide:has(.device-recompile) .stage-flow {
+  margin: 12px 0;
+  padding-bottom: 6px;
+}
+#slide:has(.device-recompile) .stage-flow > div {
+  padding: 8px 10px;
+}
+#slide:has(.device-recompile) .device-id {
+  padding: 8px 24px;
+  font-size: 28px;
+}
+.device-recompile h3 {
+  font-size: 30px;
+  line-height: 1.1;
+}
+.device-recompile .device-properties {
+  margin: 4px 0;
+  align-items: center;
+  gap: 26px;
+}
+.device-recompile .device-properties > div {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.device-recompile .device-properties b {
+  font-size: 36px;
+}
+.device-recompile .device-properties span {
+  font-size: 21px;
+  margin-top: 0;
+}
+.device-recompile .device-properties .gate-set {
+  flex-direction: column;
+  gap: 0;
+}
+.device-recompile .device-properties .gate-set b {
+  font-size: 23px;
+}
+.device-recompile .program-metrics b {
+  font-size: 34px;
+  line-height: 1.1;
+}
+.device-recompile .program-metrics span {
+  font-size: 21px;
 }

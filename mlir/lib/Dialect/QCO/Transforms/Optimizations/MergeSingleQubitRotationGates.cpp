@@ -532,6 +532,7 @@ struct MergeSingleQubitRotationGatesPattern final
     case decomposition::SingleQubitBasis::ZXZ:
     case decomposition::SingleQubitBasis::XZX:
     case decomposition::SingleQubitBasis::XYX:
+    case decomposition::SingleQubitBasis::RFixed:
       return 3;
     case decomposition::SingleQubitBasis::R:
       return 2;
