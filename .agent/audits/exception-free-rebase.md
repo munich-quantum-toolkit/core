@@ -1,70 +1,59 @@
-# Exception-free API audit
+# Exception-free API reassessment
 
-Status: applied; validation is recorded in the
-[execution plan](../plans/exception-free-core.md). Reassessed on main
-`d3fbd39e0`, with PR #2545 rebased as `b94419052`, on October 10, 2026.
+Rebased PR #2545 on main `da9ce44fc` after #2731. Validation of the rebased
+implementation is recorded in the
+[execution plan](../plans/exception-free-core.md).
 
-## Findings addressed
+## Next separations
 
-1. **Diagnostic formatting must survive allocation failure.**
-   `diagnostics::detail::emitFormatted` now shares the allocation-free stderr
-   writer with unhandled diagnostics. The fallback neither constructs an owning
-   diagnostic nor invokes handlers. A regression disables allocations while
-   formatting a long message: the original code aborts; the fix writes the raw
-   format string and returns. The test compiles the production sources into its
-   executable so allocation replacement also covers shared-library builds.
+1. **Require LLVM/MLIR for native development.** Remove the compiler-disabled
+   option, presets, CI row, and conditional build graph. Replace the private
+   SHA-256 implementation and QDMI unreachable helper with LLVM facilities. Keep
+   existing native throwing APIs and exception settings. Link the targets that
+   use LLVM directly; do not add CoreSupport as a dependency wrapper. Installed
+   Development consumers need SDK discovery, while wheel Runtime consumers must
+   remain SDK-free. This is a small build-contract change with independent
+   value.
 
-2. **Relative library loads must retain their own resource directory.**
-   `qdmi::detail::moduleDirectory` identifies the executable image before using
-   the executable-path fallback on Linux and macOS. Other relative paths remain
-   library paths. The Linux regression loads the existing driver fixture by
-   absolute and relative paths; an actual-source probe fails before the fix and
-   passes afterwards. Executable-path probes also pass after changing directory,
-   including a non-PIE build. Windows is unchanged. This defect also exists on
-   main. Resolving a relatively loaded DSO after a later process `chdir` remains
-   a pre-existing limitation; this change does not broaden that contract.
+2. **Use upstream results for compiler Program APIs.** Change failing
+   `optional<T>` and status `bool` returns to `FailureOr<T>` and `LogicalResult`
+   in Programs, Pipeline, and ParameterBinding, then adapt their consumers.
+   Retain existing MLIR diagnostics, Python exception classes, successful
+   absence, predicates, and infallible accessors. These targets already require
+   LLVM/MLIR, so this split does not depend on the first one. Most of its file
+   count comes from existing tests and bindings.
 
-3. **Private driver APIs need only scoped diagnostics.** Removed
-   diagnostic-output parameters from seven private factory, registry, and driver
-   methods, their local capture guards, and the test helper's special invocation
-   branch. Driver tests link the same static CoreSupport as their handlers. They
-   still check message, category, original status, and silent success.
-   Independently loaded libraries retain C-status translation and hidden
-   support; no C++ diagnostic object crosses that boundary.
+Do not extract the compiler directory wholesale. Target and TargetEnvironment
+currently own errors through `llvm::Expected`; converting them to status-only
+results changes diagnostic ownership. QDMI compilation adapters also depend on
+native exception boundaries. Both belong with the remaining error migration.
 
-4. **DD numerical warnings must reach diagnostic handlers.**
-   `Package::measureAll` emits a numerical warning through the shared
-   dispatcher. `CorruptedBellState` now checks warning capture while preserving
-   successful measurement and its existing invalid-state cases. The capture
-   assertion fails against the former direct stderr write.
+## Remaining PR scope
 
-## Selected refactors
+- Native DD, benchmark, QDMI client, and private driver result APIs, including
+  fallible factories and explicitly infallible owned-state operations.
+- Scoped diagnostics, original QDMI statuses, shared Python invocation, and test
+  capture.
+- Private JSON exception boundaries and exception-disabled algorithm targets.
+- QCO DD and QIR integration, allocation-output recovery, and fatal unhandled
+  QIR runtime errors.
+- Structured diagnostic transport through the existing DDSIM worker boundary.
+  Worker isolation, reuse, cancellation, and packaging already exist on main.
 
-- Benchmark evaluation counts shots once and lets probability functions validate
-  outcomes, including zero-count entries. Shor validates its own outcomes
-  because it has no probability callback. Public width, encoding, and overflow
-  checks stay.
-- Generic benchmark JSON parsing uses one validated envelope, then dispatches
-  directly to parameter parsers. Manifest generation supplies the existing case
-  ID without a second hash; checked owned strings move into options.
-- QDMI bindings reuse nanobind optional casting and `bindResult`. Python
-  fallback diagnostics are constructed only when failure provides no captured
-  error.
-- The MLIR DD adapter drops an unused qubit-count argument. QCO yield binding
-  uses the verifier-defined result order once; it retains mapping checks and
-  atomic updates. Parallel sampling moves its completed map after all futures
-  are drained.
+The merged fixes retain their coverage after adaptation: malformed and skipped
+DD levels, zero-count invalid benchmark outcomes, scalar DD cleanup, compiler
+stream failures, pass-parser details, relative module lookup, and QIR native ABI
+checks. DD deserialization remains out of line. The benchmark generator no
+longer needs exception unwinding because JSON failures return at their boundary.
 
-## Retained checks and limits
+## Open compatibility and acceptance work
 
-DD capacity, operands, numerical measurement, serialized inputs, and C ABI
-status handling protect public contracts. They remain checked. A blanket
-checked/unchecked API split or propagation macro would add machinery without
-removing those needs. Preinitializing Python's fallback would allocate on
-successful calls and remains rejected. Broader benchmark evaluation JSON changes
-would alter diagnostic order or require a larger redesign; they are outside this
-cleanup.
-
-The final independent source review found no further required changes. It traced
-validation, ownership, result ordering, and binding conversions; it did not run
-tests. Current Windows/macOS execution and performance need separate evidence.
+- `submit_program` changes an unsupported QIR-output request from `ValueError`
+  to `RuntimeError` in `test/python/qdmi/test_compilation.py`. This conflicts
+  with the intended Python compatibility contract. Preserve the existing
+  category before accepting #2545; do not carry this change into the Program
+  result PR.
+- Matched success-path performance measurements, including cold and reused DDSIM
+  workers and state transfer, remain outstanding for the final revision.
+- Windows/macOS packaging and hosted checks must validate the published head.
+  Local Linux results do not establish those platform contracts.

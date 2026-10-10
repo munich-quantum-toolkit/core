@@ -61,8 +61,9 @@ TEST(GenerateProgramTest, ResolvesInstanceMetadata) {
   EXPECT_EQ(generated->benchmarkId, "ghz");
   EXPECT_EQ(generated->caseId, caseId(benchmark));
   EXPECT_EQ(generated->manifestJSON, toManifestJSON(benchmark));
-  EXPECT_EQ(::mqt::test::value(ghzFromManifestJSON(generated->manifestJSON)).output(),
-            benchmark.output());
+  EXPECT_EQ(
+      ::mqt::test::value(ghzFromManifestJSON(generated->manifestJSON)).output(),
+      benchmark.output());
 }
 
 TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {

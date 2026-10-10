@@ -1,8 +1,9 @@
 # Exception-free Core APIs
 
-Status: complete. The LLVM 23 audit findings are addressed and locally
-validated. Compiler and native APIs share upstream results and scoped
-diagnostics; public Python exception categories remain unchanged.
+Status: rebased on main `da9ce44fc` after #2731 and locally validated. The
+[current reassessment](../audits/exception-free-rebase.md) defines two
+independent follow-up extractions and the remaining acceptance work. Python
+exception compatibility still needs the identified submission-category fix.
 
 ## Contract
 
@@ -67,24 +68,21 @@ SIGALRM handler and may reap another child on timeout.
 
 ## Validation
 
-Current checks on Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
+Validation on Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
 
-- Release build and CTest pass: 4,034 tests pass and
-  `ScQDMIJobSpecificationTest.QueryJobId` is the one expected skip.
-- `uv run --no-sync pytest -n 0 test/python`: all 1,974 tests pass, including
-  QDMI, Qiskit, MLIR, and QIR-runner integration.
-- Stub generation passes with no generated stub changes.
+- Release build with LTO passes. CTest passes 4,043 runnable tests, with the
+  expected `ScQDMIJobSpecificationTest.QueryJobId` skip.
+- The rebuilt Python package passes all 1,974 tests.
+- Stub generation passes with no generated API changes.
 - Repository lint passes.
-- Executable documentation and internal documentation links pass.
-- Whole-file C++ lint checked all 179 changed source files. Its four JIT test
-  findings are fixed. Five complete source files changed during validation were
-  rechecked with the same clang-tidy 23.1.2 configuration; no source findings
-  remain.
-- Installed Development consumers build and run with GCC and Clang with
-  exceptions disabled.
-- The successful scalar QDMI query probe records zero diagnostic-only
-  allocations, compared with one before the fix. This is an allocation check,
-  not an end-to-end latency measurement.
+- Whole-file C++ lint covers all 179 changed source files. Its findings are
+  fixed; the three source files touched during validation pass complete-file
+  clang-tidy checks with the same configuration.
+- The 231 DD/compiler regression checks pass after the integration fixes. All
+  127 DD package tests pass again after the final parser lint cleanup.
+
+Documentation execution and installed Development consumer probes passed on the
+previous head; they were not repeated for this rebase.
 
 Windows/macOS packaging and hosted checks for the published revision remain
 unverified. No new packaging test framework is introduced here.

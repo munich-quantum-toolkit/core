@@ -12,7 +12,6 @@
 #include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
-#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
@@ -28,6 +27,7 @@
 #include <fstream>
 #include <ios>
 #include <istream>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -105,8 +105,8 @@ llvm::FailureOr<Edge> Package::deserialize(std::istream& is,
     if (input.empty()) {
       return false;
     }
-    const auto parsed =
-        std::from_chars(input.data(), input.data() + input.size(), value);
+    const auto parsed = std::from_chars(std::to_address(input.begin()),
+                                        std::to_address(input.end()), value);
     if (parsed.ec != std::errc{}) {
       return false;
     }

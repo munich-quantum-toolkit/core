@@ -152,10 +152,13 @@ TEST(CompilerProgramDiagnosticsTest, KeepsNotesAndNativeMetadata) {
   const auto integer = IntegerType::get(context.get(), 64);
   diagnostic.getMetadata().emplace_back(DictionaryAttr::get(
       context.get(),
-      {NamedAttribute("mqt.error_category",
-                      IntegerAttr::get(integer, static_cast<int64_t>(
-                                                    ::mqt::ErrorCategory::IO))),
-       NamedAttribute("mqt.qdmi_status", IntegerAttr::get(integer, -7))}));
+      {
+          NamedAttribute(
+              "mqt.error_category",
+              IntegerAttr::get(integer,
+                               static_cast<int64_t>(::mqt::ErrorCategory::IO))),
+          NamedAttribute("mqt.qdmi_status", IntegerAttr::get(integer, -7)),
+      }));
   const auto native = toNativeDiagnostic(diagnostic);
   EXPECT_EQ(native.category, ::mqt::ErrorCategory::IO);
   EXPECT_EQ(native.severity, ::mqt::DiagnosticSeverity::Error);
@@ -1595,11 +1598,11 @@ TEST_F(CompilerPipelineTest, InvalidPipelineIncludesParserDiagnostic) {
   auto program = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q;");
   ASSERT_TRUE(mlir::succeeded(program));
   std::string message;
-  ScopedDiagnosticHandler handler(program->module().getContext(),
-                                  [&](Diagnostic& diagnostic) {
-                                    message += diagnostic.str();
-                                    return success();
-                                  });
+  mlir::ScopedDiagnosticHandler handler(program->module().getContext(),
+                                        [&](mlir::Diagnostic& diagnostic) {
+                                          message += diagnostic.str();
+                                          return success();
+                                        });
   EXPECT_TRUE(failed(runPassPipeline(program->module(), "not-a-pass")));
   EXPECT_NE(message.find("does not refer to a registered pass"),
             std::string::npos)
