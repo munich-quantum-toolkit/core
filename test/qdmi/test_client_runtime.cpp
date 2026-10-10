@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/QDMI.hpp"
+#include "qdmi/common/DeviceConfiguration.hpp"
 
 #include "TestUtils.hpp"
 
@@ -20,14 +21,41 @@
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+
 namespace qdmi {
 namespace {
 using mqt::test::ScopedEnvironmentVariable;
+
+#ifndef _WIN32
+TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
+  const mqt::test::TemporaryDirectory directory;
+  const std::filesystem::path fixture{MQT_CORE_QDMI_INCOMPLETE_DRIVER};
+  const auto libraryPath = directory.path() / fixture.filename();
+  std::filesystem::copy_file(fixture, libraryPath);
+  // Load relative first; the loader may retain the image after dlclose.
+  for (const auto& path :
+       {std::filesystem::relative(libraryPath), libraryPath}) {
+    SCOPED_TRACE(path);
+    const std::unique_ptr<void, decltype(&dlclose)> library(
+        dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL), dlclose);
+    ASSERT_NE(library.get(), nullptr) << dlerror();
+    const auto* anchor =
+        dlsym(library.get(), "QDMI_driver_get_client_abi_version");
+    ASSERT_NE(anchor, nullptr) << dlerror();
+    EXPECT_EQ(detail::moduleDirectory(anchor),
+              std::filesystem::canonical(directory.path()));
+  }
+}
+#endif
 
 TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
   const ScopedEnvironmentVariable config{"QDMI_CONF",
