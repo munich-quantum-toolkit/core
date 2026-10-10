@@ -29,6 +29,7 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
