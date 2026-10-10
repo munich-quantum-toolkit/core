@@ -7,6 +7,5 @@
 #
 # Licensed under the MIT License
 
-set -eu
-
-exec python3 /workspace/test/slurm/sc_job.py
+export VIRTUAL_ENV=/opt/venv
+export PATH="$VIRTUAL_ENV/bin:$PATH"

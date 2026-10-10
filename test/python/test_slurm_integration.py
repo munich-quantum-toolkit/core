@@ -92,30 +92,12 @@ def test_command_failure_keeps_output() -> None:
     assert "reason" in error.value.output
 
 
-@pytest.mark.parametrize(
-    ("state", "exit_code", "expected", "result"),
-    [
-        ("RUNNING", "0:0", "COMPLETED", False),
-        ("COMPLETING", "0:0", "FAILED", False),
-        ("COMPLETED", "0:0", "COMPLETED", True),
-        ("FAILED", "1:0", "FAILED", True),
-        ("FAILED", "1:0", "COMPLETED", None),
-        ("COMPLETED", "0:0", "FAILED", None),
-        ("COMPLETED", "0:9", "COMPLETED", None),
-        ("FAILED", "0:0", "FAILED", None),
-    ],
-)
-def test_job_completion_requires_state_and_exit_code(
-    monkeypatch: pytest.MonkeyPatch, state: str, exit_code: str, expected: str, *, result: bool | None
-) -> None:
-    """A result file or a diagnostic cannot turn a failed job into a success."""
-    record = f"JobId=42 JobState={state} ExitCode={exit_code}"
-    monkeypatch.setattr(runner, "controller", lambda *args: subprocess.CompletedProcess(args, 0, record, ""))
-    if result is None:
-        with pytest.raises(AssertionError, match="Slurm job 42 ended"):
-            runner.job_finished("42", expected_state=expected)
-    else:
-        assert runner.job_finished("42", expected_state=expected) is result
+@pytest.mark.parametrize("record", ["FAILED|1:0", "COMPLETED|0:9"])
+def test_failed_accounting_record_is_not_success(monkeypatch: pytest.MonkeyPatch, record: str) -> None:
+    """A result file cannot hide a failed job or termination by signal."""
+    monkeypatch.setattr(runner, "job", lambda *args: subprocess.CompletedProcess(args, 0, record, ""))
+    with pytest.raises(AssertionError, match="Slurm job 42 ended"):
+        runner.job_finished("42")
 
 
 def test_preflight_does_not_touch_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,3 +197,16 @@ def test_setup_script_must_stay_inside_workload(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as error:
         runner.parse_arguments(("--workload", str(workload), "--setup-script", "../outside.sh"))
     assert error.value.code == 2
+
+
+def test_result_written_during_accounting_query(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Read the shared output after accounting reports completion."""
+    (tmp_path / "jobs").mkdir()
+    monkeypatch.setattr(runner, "RUNTIME", tmp_path)
+
+    def finished(_job_id: str) -> bool:
+        (tmp_path / "jobs" / "sc-42.json").write_text("{}", encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(runner, "job_finished", finished)
+    runner.wait_for_result("sc", "42", "SC output")

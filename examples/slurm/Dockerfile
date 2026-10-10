@@ -22,6 +22,7 @@ RUN apt-get update \
         dbus \
         munge \
         slurm-wlm \
+        slurmdbd \
         systemd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -36,11 +37,13 @@ COPY --chmod=755 start.sh /usr/local/sbin/mqt-slurm-start
 COPY --chmod=755 admission.sh /usr/local/sbin/mqt-qdmi-admission
 COPY --chmod=755 monitor.sh /usr/local/sbin/mqt-qdmi-monitor
 COPY --chmod=755 update_availability.py /usr/local/libexec/mqt-qdmi-availability.py
-COPY qdmi-*.service /etc/systemd/system/
-COPY node.conf /etc/systemd/system/slurmd.service.d/mqt-node.conf
+COPY qdmi-*.service slurm-accounting.service /etc/systemd/system/
+COPY --chmod=755 accounting.sh /usr/local/sbin/mqt-slurm-accounting
+COPY node.conf qan.conf slurmdbd.conf /usr/local/share/mqt-slurm/
+COPY profile.sh /etc/profile.d/mqt-qdmi.sh
 
 RUN useradd --uid 10000 --user-group --create-home mqt-test \
-    && systemctl disable slurmctld.service slurmd.service
+    && systemctl disable slurmctld.service slurmd.service slurmdbd.service
 
 FROM scratch AS provider-source
 

@@ -12,8 +12,8 @@ admission; they do not authorize access or reserve capacity at a remote service.
 ## Submit a workload
 
 The administrator provides the quantum software environment and device catalogue
-on the submission and compute nodes. With that environment selected, save this
-script as `job.sh` and submit it with `sbatch job.sh`:
+on the login and compute nodes. Log in, then save this script as `job.sh` and
+submit it with `sbatch job.sh`:
 
 ```bash
 #!/bin/bash
@@ -43,6 +43,13 @@ if not job.wait(60):
     raise TimeoutError("The quantum job did not finish within 60 seconds")
 print(job.get_counts())
 ```
+
+For a remote device, select the site's quantum access partition as well as its
+license, for example
+`sbatch --partition=iqm --licenses=iqm.emerald.mock job.sh`. Partitions choose
+where the classical part of a quantum workload runs; licenses are cluster-wide.
+See the {doc}`workflow playground <slurm_cluster>` for a login node, classical
+nodes, quantum access nodes, and persistent accounting.
 
 The same `device` can be passed to a {doc}`Qiskit <qdmi_backend>` or
 {doc}`PennyLane <pennylane_device>` adapter. The Slurm convenience function
@@ -79,7 +86,7 @@ users' jobs.
 Use matching software paths and numeric user/group IDs across nodes. A shared
 filesystem or identical per-node installations both work. The
 {doc}`example cluster <slurm_cluster>` supplies this environment and includes
-submission, scheduling, and availability checks.
+login submission, device partitions, availability checks, and accounting.
 
 ## Schedule available devices
 
@@ -98,11 +105,12 @@ timed-out checks leave new jobs pending with reason `Licenses`; running jobs and
 other devices continue.
 
 Run monitors outside Slurm daemons, with the shared QDMI environment and
-site-owned credentials. Initialize reservations before opening the queue. The
-example's systemd units enforce this order, bound checks, restart failed
-monitors, and close admission when a monitor stops. Investigate controller
-communication errors: an unreachable controller cannot receive reservation
-updates. Availability is a snapshot, so a device can fail after allocation.
+site-owned credentials, with one monitor per device ID across the cluster.
+Initialize reservations before opening the queue. The example's systemd units
+enforce this order, bound checks, restart failed monitors, and close admission
+when a monitor stops. Investigate controller communication errors: failed
+reservation updates can leave the last scheduler state in effect. Availability
+is a snapshot, so a device can fail after allocation.
 
 Slurm licenses, reservations, and environment export provide this integration;
 no Slurm plugin is required. `SLURM_JOB_LICENSES` is mutable process data: MQT

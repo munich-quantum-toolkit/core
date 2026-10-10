@@ -7,6 +7,8 @@
 # Licensed under the MIT License
 
 x-cluster: &cluster
+  image: ${COMPOSE_PROJECT_NAME:-slurm}-controller
+  pull_policy: never
   privileged: true
   cgroup: host
   tmpfs:
@@ -16,19 +18,75 @@ x-cluster: &cluster
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
     - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
     - ${MQT_CORE_SLURM_WORKLOAD:-.}:/workload:ro
-    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}:/runtime
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/munge.key:/runtime/munge.key:ro
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/jobs:/jobs
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/slurm.conf:/etc/slurm/slurm.conf:ro
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.json:/etc/mqt-core/qdmi.json:ro
     - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
+  networks:
+    - cluster
 
 x-healthcheck: &healthcheck
   interval: 2s
   timeout: 2s
-  retries: 30
+  retries: 60
   start_period: 5s
 
+x-compute: &compute
+  <<: *cluster
+  depends_on:
+    controller:
+      condition: service_started
+  healthcheck:
+    <<: *healthcheck
+    test: [CMD, systemctl, is-active, --quiet, munge.service, slurmd.service]
+
 services:
+  database:
+    image: mariadb:12.3
+    environment:
+      MARIADB_DATABASE: slurm_acct_db
+      MARIADB_USER: slurm
+      MARIADB_PASSWORD_FILE: /run/secrets/accounting_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/database_password
+    secrets:
+      - accounting_password
+      - database_password
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --innodb-log-file-size=64M
+      - --innodb-lock-wait-timeout=900
+      - --innodb-snapshot-isolation=OFF
+      - --max-allowed-packet=16M
+    volumes:
+      - accounting-data:/var/lib/mysql
+    networks:
+      - cluster
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+
+  accounting:
+    <<: *cluster
+    hostname: accounting
+    command: [/usr/local/sbin/mqt-slurm-start, accounting]
+    secrets:
+      - accounting_password
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          CMD,
+          systemctl,
+          is-active,
+          --quiet,
+          slurmdbd.service,
+          slurm-accounting.service,
+        ]
+
   controller:
     <<: *cluster
     build:
@@ -41,6 +99,24 @@ services:
         SETUP_SCRIPT: ${MQT_CORE_SLURM_SETUP_SCRIPT:-}
     hostname: controller
     command: [/usr/local/sbin/mqt-slurm-start, controller]
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+      - ${MQT_CORE_SLURM_WORKLOAD:-.}:/workload:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/munge.key:/runtime/munge.key:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/jobs:/jobs
+      - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/slurm.conf:/etc/slurm/slurm.conf:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.json:/etc/mqt-core/qdmi.json:ro
+      - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.env:/runtime/qdmi.env:ro
+      - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
+      - controller-state:/var/spool/slurmctld
+    networks:
+      cluster:
+        aliases: [controller-cluster]
+      egress:
+    depends_on:
+      accounting:
+        condition: service_healthy
     healthcheck:
       <<: *healthcheck
       test:
@@ -54,13 +130,55 @@ services:
           qdmi-admission.service,
         ]
 
-  node:
+  login:
     <<: *cluster
-    image: ${COMPOSE_PROJECT_NAME:-slurm}-controller
-    pull_policy: never
+    hostname: login
+    command: [/usr/local/sbin/mqt-slurm-start, login]
+    working_dir: /jobs
+    networks:
+      - cluster
+      - egress
     depends_on:
       controller:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck
-      test: [CMD, systemctl, is-active, --quiet, munge.service, slurmd.service]
+      test: [CMD, systemctl, is-active, --quiet, munge.service]
+
+  node:
+    <<: *compute
+    scale: 2
+    command: [/usr/local/sbin/mqt-slurm-start, node]
+
+  qan-iqm:
+    <<: *compute
+    hostname: qan-iqm
+    command: [/usr/local/sbin/mqt-slurm-start, qan]
+    networks:
+      cluster:
+        aliases: [qan-iqm-cluster]
+      egress:
+
+  qan-braket:
+    <<: *compute
+    hostname: qan-braket
+    command: [/usr/local/sbin/mqt-slurm-start, qan]
+    networks:
+      cluster:
+        aliases: [qan-braket-cluster]
+      egress:
+
+networks:
+  cluster:
+    internal: true
+  egress:
+
+volumes:
+  accounting-data:
+  controller-state:
+
+secrets:
+  accounting_password:
+    file: ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/accounting-password
+  database_password:
+    file: ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/database-password

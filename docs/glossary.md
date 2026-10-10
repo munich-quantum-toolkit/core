@@ -123,6 +123,13 @@ quantum assembly language
   QASM. A generic category of assembly-like languages for quantum programs. Do
   not use QASM as an alias for a specific OpenQASM version.
 
+QAN
+quantum access node
+  **Preferred term:** quantum access node. **Accepted abbreviation:** QAN. A
+  cluster node from which jobs can reach a quantum device service. Its Slurm
+  partition determines job placement; device credentials and site network
+  policies determine access.
+
 QDMI
 Quantum Device Management Interface
   **Preferred term:** Quantum Device Management Interface. **Accepted

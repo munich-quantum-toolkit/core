@@ -19,3 +19,7 @@ cp "$(dirname "$0")/slurm.conf" "$runtime/slurm.conf"
 chmod 644 "$runtime/slurm.conf"
 printf '%s\n' '{"schema-version":1,"qdmi":{"devices":[]}}' > "$runtime/qdmi.json"
 chmod 644 "$runtime/qdmi.json"
+touch "$runtime/qdmi.env"
+for secret in accounting-password database-password; do
+    od -An -N24 -tx1 /dev/urandom | tr -d ' \n' > "$runtime/$secret"
+done
