@@ -29,19 +29,19 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <functional>
+#include <iosfwd>
 #include <iostream>
 #include <limits>
 #include <random>
 #include <ranges>
-#include <regex>
 #include <span>
 #include <stack>
 #include <stdexcept>
@@ -1542,157 +1542,22 @@ public:
   /// architectures/platforms
   ///
 
+  /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a stream.
   template <class Node, class Edge = Edge<Node>,
             std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  Edge deserialize(std::istream& is, const bool readBinary = false) {
-    auto result = CachedEdge<Node>::one();
-    ComplexValue rootweight{};
+  Edge deserialize(std::istream& is, bool readBinary = false);
 
-    std::unordered_map<std::int64_t, Node*> nodes{};
-    std::int64_t nodeIndex{};
-    Qubit v{};
-    std::array<ComplexValue, N> edgeWeights{};
-    std::array<std::int64_t, N> edgeIndices{};
-    edgeIndices.fill(-2);
-
-    if (readBinary) {
-      std::remove_const_t<decltype(SERIALIZATION_VERSION)> version{};
-      is.read(reinterpret_cast<char*>(&version),
-              sizeof(decltype(SERIALIZATION_VERSION)));
-      if (version != SERIALIZATION_VERSION) {
-        throw std::runtime_error(
-            "Wrong Version of serialization file version. version of file: " +
-            std::to_string(version) +
-            "; current version: " + std::to_string(SERIALIZATION_VERSION));
-      }
-
-      if (!is.eof()) {
-        rootweight.readBinary(is);
-      }
-
-      while (is.read(reinterpret_cast<char*>(&nodeIndex),
-                     sizeof(decltype(nodeIndex)))) {
-        is.read(reinterpret_cast<char*>(&v), sizeof(decltype(v)));
-        for (std::size_t i = 0U; i < N; i++) {
-          is.read(reinterpret_cast<char*>(&edgeIndices[i]),
-                  sizeof(decltype(edgeIndices[i])));
-          edgeWeights[i].readBinary(is);
-        }
-        result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-      }
-    } else {
-      std::string version;
-      std::getline(is, version);
-      if (std::cmp_not_equal(std::stoi(version), SERIALIZATION_VERSION)) {
-        throw std::runtime_error(
-            "Wrong Version of serialization file version. version of file: " +
-            version +
-            "; current version: " + std::to_string(SERIALIZATION_VERSION));
-      }
-
-      const std::string complexRealRegex =
-          R"(([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![ \d\.]*(?:[eE][+-])?\d*[iI]))?)";
-      const std::string complexImagRegex =
-          R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
-      const std::string edgeRegex =
-          " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-      const std::regex complexWeightRegex(complexRealRegex + complexImagRegex);
-
-      std::string lineConstruct = "(\\d+) (\\d+)";
-      for (std::size_t i = 0U; i < N; ++i) {
-        lineConstruct += "(?:" + edgeRegex + ")";
-      }
-      lineConstruct += " *(?:#.*)?";
-      const std::regex lineRegex(lineConstruct);
-      std::smatch m;
-
-      std::string line;
-      if (std::getline(is, line)) {
-        if (!std::regex_match(line, m, complexWeightRegex)) {
-          throw std::runtime_error("Regex did not match second line: " + line);
-        }
-        rootweight.fromString(m.str(1), m.str(2));
-      }
-
-      while (std::getline(is, line)) {
-        if (line.empty() || line.size() == 1) {
-          continue;
-        }
-
-        if (!std::regex_match(line, m, lineRegex)) {
-          throw std::runtime_error("Regex did not match line: " + line);
-        }
-
-        // match 1: node_idx
-        // match 2: qubit_idx
-
-        // repeats for every edge
-        // match 3: edge content
-        // match 4: edge_target_idx
-        // match 5: real + imag (without i)
-        // match 6: real
-        // match 7: imag (without i)
-        nodeIndex = std::stoi(m.str(1));
-        v = static_cast<Qubit>(std::stoi(m.str(2)));
-
-        for (auto edgeIdx = 3U, i = 0U; i < N; i++, edgeIdx += 5) {
-          if (m.str(edgeIdx).empty()) {
-            continue;
-          }
-
-          edgeIndices[i] = std::stoi(m.str(edgeIdx + 1));
-          edgeWeights[i].fromString(m.str(edgeIdx + 3), m.str(edgeIdx + 4));
-        }
-
-        result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-      }
-    }
-    return cn.lookup(CachedEdge<Node>{result.p, result.w * rootweight});
-  }
-
+  /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a file.
   template <class Node, class Edge = Edge<Node>>
-  Edge deserialize(const std::string& inputFilename, const bool readBinary) {
-    auto ifs = std::ifstream(inputFilename, std::ios::binary);
-
-    if (!ifs.good()) {
-      throw std::invalid_argument("Cannot open serialized file: " +
-                                  inputFilename);
-    }
-
-    return deserialize<Node>(ifs, readBinary);
-  }
+  Edge deserialize(const std::string& inputFilename, bool readBinary);
 
 private:
   template <class Node, std::size_t N = std::tuple_size_v<decltype(Node::e)>>
   CachedEdge<Node>
-  deserializeNode(const std::int64_t index, const Qubit v,
+  deserializeNode(std::int64_t index, Qubit v,
                   std::array<std::int64_t, N>& edgeIdx,
                   const std::array<ComplexValue, N>& edgeWeight,
-                  std::unordered_map<std::int64_t, Node*>& nodes) {
-    if (index == -1) {
-      return CachedEdge<Node>::zero();
-    }
-
-    std::array<CachedEdge<Node>, N> edges{};
-    for (auto i = 0U; i < N; ++i) {
-      if (edgeIdx[i] == -2) {
-        edges[i] = CachedEdge<Node>::zero();
-      } else {
-        if (edgeIdx[i] == -1) {
-          edges[i] = CachedEdge<Node>::one();
-        } else {
-          edges[i].p = nodes[edgeIdx[i]];
-        }
-        edges[i].w = edgeWeight[i];
-      }
-    }
-    // reset
-    edgeIdx.fill(-2);
-
-    auto r = makeDDNode(v, edges);
-    nodes[index] = r.p;
-    return r;
-  }
+                  std::unordered_map<std::int64_t, Node*>& nodes);
 };
 
 } // namespace dd

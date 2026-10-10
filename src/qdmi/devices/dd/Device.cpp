@@ -835,7 +835,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             if (response.state) {
               result->dd_ = std::make_unique<dd::Package>(
                   response.qubits, RESULT_PACKAGE_CONFIG);
-              std::istringstream bytes(*response.state, std::ios::binary);
+              std::istringstream bytes(std::move(*response.state),
+                                       std::ios::binary);
               result->stateVecDD_ =
                   result->dd_->deserialize<dd::vNode>(bytes, true);
               const auto root = result->stateVecDD_;

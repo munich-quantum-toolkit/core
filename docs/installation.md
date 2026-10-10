@@ -143,6 +143,15 @@ link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
 to test IPO explicitly. Builds without native tests and release wheels retain
 IPO.
 
+With CMake 3.29 or newer, Clang with LLD on Linux and Apple Clang with Apple's
+linker cache ThinLTO results under `thinlto-cache-<configuration>` in the build
+directory. The linkers prune this cache automatically; Linux uses a 1 GiB size
+policy. Linux LLD builds also fold identical code outside Debug builds.
+`-DENABLE_CACHE=OFF` disables automatic compiler and linker caching. Explicit
+`CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` settings take
+precedence over compiler-cache detection, including an empty value to disable it
+for one language.
+
 Native tuning and LTO apply to the Core code being compiled. Prebuilt LLVM/MLIR
 SDK libraries retain their own build settings, and LTO does not optimize across
 separate shared libraries. Benchmark your application before changing the
