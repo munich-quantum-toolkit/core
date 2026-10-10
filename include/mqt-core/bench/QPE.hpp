@@ -13,7 +13,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -26,7 +26,7 @@ namespace mqt::bench {
 class MQT_CORE_BENCH_EXPORT Phase final {
 public:
   /// Construct \f$\phi=\mathrm{numerator}/\mathrm{denominator}\f$ turns.
-  [[nodiscard]] static mlir::FailureOr<Phase> create(uint64_t numerator,
+  [[nodiscard]] static llvm::FailureOr<Phase> create(uint64_t numerator,
                                                      uint64_t denominator);
 
   /// Return the reduced numerator of φ.
@@ -67,15 +67,15 @@ struct QPEOptions {
 /// A validated QPE benchmark.
 class MQT_CORE_BENCH_EXPORT QPE final {
 public:
-  [[nodiscard]] static mlir::FailureOr<QPE> create(QPEOptions options);
+  [[nodiscard]] static llvm::FailureOr<QPE> create(QPEOptions options);
 
   [[nodiscard]] const QPEOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] mlir::FailureOr<double>
+  [[nodiscard]] llvm::FailureOr<double>
   probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] mlir::FailureOr<Evaluation>
+  [[nodiscard]] llvm::FailureOr<Evaluation>
   evaluate(const Counts& counts) const;
 
 private:

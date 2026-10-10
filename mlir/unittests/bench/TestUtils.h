@@ -77,7 +77,7 @@ generateQCO(const Benchmark& benchmark) {
   auto program = generate(benchmark);
   if (failed(program)) {
     ADD_FAILURE() << "Benchmark generation failed";
-    return std::nullopt;
+    return mlir::failure();
   }
   auto compiled = mlir::runDefaultPipeline(
       mlir::CompilerInput{std::move(*program)}, mlir::ProgramFormat::QCO);

@@ -20,6 +20,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Support/Diagnostics.h"
 #include "mqt/bench/Generate.h"
 #include "qdmi/QDMI.hpp"
 
@@ -139,7 +140,8 @@ template <class ProgramType>
 namespace {
 template <auto Method> struct ProgramMethodAdapter;
 
-template <class Class, class... Args, bool (Class::*Method)(Args...)>
+template <class Class, class... Args,
+          mlir::LogicalResult (Class::*Method)(Args...)>
 struct ProgramMethodAdapter<Method> {
   static void call(Class& self, Args... args) {
     if constexpr (std::is_base_of_v<mlir::Program, Class>) {
@@ -149,7 +151,8 @@ struct ProgramMethodAdapter<Method> {
   }
 };
 
-template <class Class, class... Args, bool (Class::*Method)(Args...) const>
+template <class Class, class... Args,
+          mlir::LogicalResult (Class::*Method)(Args...) const>
 struct ProgramMethodAdapter<Method> {
   static void call(const Class& self, Args... args) {
     if constexpr (std::is_base_of_v<mlir::Program, Class>) {
@@ -177,37 +180,21 @@ entryFunc(const mlir::QCOProgram& program) {
   return std::mt19937_64(seed);
 }
 
-/// Run @p fn under a diagnostic handler and raise the chosen Python exception,
-/// appending any emitted MLIR diagnostics to @p message.
+/// Forward MLIR diagnostics at the Python boundary, preserving error metadata.
 template <::mqt::ErrorCategory Category = ::mqt::ErrorCategory::InvalidArgument,
           typename Fn>
 static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
                             Fn&& fn) {
-  std::string diagnostics;
   const mlir::ScopedDiagnosticHandler handler(
-      context, [&](mlir::Diagnostic& diag) {
-        if (!diagnostics.empty()) {
-          diagnostics.push_back('\n');
+      context, [message](mlir::Diagnostic& diagnostic) {
+        auto native = mlir::toNativeDiagnostic(diagnostic, Category);
+        if (native.severity == ::mqt::DiagnosticSeverity::Error) {
+          native.message = std::string(message) + ": " + native.message;
         }
-        llvm::raw_string_ostream os(diagnostics);
-        if (!llvm::isa<mlir::UnknownLoc>(diag.getLocation())) {
-          os << diag.getLocation() << ": ";
-        }
-        os << diag;
+        ::mqt::emitDiagnostic(native);
         return mlir::success();
       });
-  auto result = std::forward<Fn>(fn)();
-  if (mlir::failed(result)) {
-    std::string full = message;
-    if (!diagnostics.empty()) {
-      full.append(": ").append(diagnostics);
-    }
-    ::mqt::bindings::raiseDiagnostic(
-        {.message = std::move(full), .category = Category});
-  }
-  if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
-    return *std::move(result);
-  }
+  return ::mqt::bindings::invoke(std::forward<Fn>(fn));
 }
 
 template <class T>
@@ -1826,7 +1813,7 @@ further compilation.)pb");
               views.emplace_back(data, size);
             }
             return ::mqt::bindings::invoke([&] {
-              std::optional<mlir::JeffProgram> program;
+              mlir::FailureOr<mlir::JeffProgram> program = mlir::failure();
               auto exception = kj::runCatchingExceptions([&] {
                 capnp::SegmentArrayMessageReader reader(
                     kj::arrayPtr(views.data(), views.size()));

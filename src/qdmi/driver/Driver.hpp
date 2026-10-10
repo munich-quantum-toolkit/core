@@ -18,7 +18,7 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <condition_variable>
 #include <cstddef>
@@ -173,14 +173,14 @@ class LoadedDeviceAPI final : public DeviceAPI {
   void* libHandle_;
   bool initialized_ = false;
   explicit LoadedDeviceAPI(void* handle) : libHandle_(handle) {}
-  mlir::LogicalResult initialize(const std::string& prefix);
+  llvm::LogicalResult initialize(const std::string& prefix);
   friend auto loadDeviceAPI(const std::string& libName,
                             const std::string& prefix)
-      -> mlir::FailureOr<std::shared_ptr<LoadedDeviceAPI>>;
+      -> llvm::FailureOr<std::shared_ptr<LoadedDeviceAPI>>;
 
 public:
   /// Load and initialize a provider, releasing partial resources on failure.
-  [[nodiscard]] static mlir::FailureOr<std::shared_ptr<LoadedDeviceAPI>>
+  [[nodiscard]] static llvm::FailureOr<std::shared_ptr<LoadedDeviceAPI>>
   create(const std::string& libName, const std::string& prefix);
 
   /// Destructor for the LoadedDeviceAPI.
@@ -220,14 +220,14 @@ private:
 
   explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceAPI> library)
       : api_(std::move(library)) {}
-  mlir::LogicalResult initialize(const qdmi::DeviceSessionConfig& config,
+  llvm::LogicalResult initialize(const qdmi::DeviceSessionConfig& config,
                                  QDMI_Child_Device childDevice, bool strict);
 
 public:
   /// Open a device session and its children.
   ///
   /// Failure releases partial sessions.
-  [[nodiscard]] static mlir::FailureOr<std::unique_ptr<QDMI_Device_impl_d>>
+  [[nodiscard]] static llvm::FailureOr<std::unique_ptr<QDMI_Device_impl_d>>
   create(std::shared_ptr<qdmi::DeviceAPI> library,
          const qdmi::DeviceSessionConfig& config = {},
          QDMI_Child_Device childDevice = nullptr, std::string id = {},
@@ -431,7 +431,7 @@ class Driver final : public Singleton<Driver> {
   Driver() = default;
 
   /// Called with stateMutex_ held. A failed discovery can be retried.
-  mlir::LogicalResult initialize();
+  llvm::LogicalResult initialize();
   bool initialized_ = false;
 
   /// Guards all mutable driver state below.
@@ -473,7 +473,7 @@ class Driver final : public Singleton<Driver> {
   /// Opens a fresh device session with per-call overrides.
   auto openFresh(std::string_view id, const DeviceSessionConfig& overrides,
                  bool strict = false)
-      -> mlir::FailureOr<std::shared_ptr<QDMI_Device_impl_d>>;
+      -> llvm::FailureOr<std::shared_ptr<QDMI_Device_impl_d>>;
 
 public:
   /// Returns the instance owned by this driver library.
@@ -488,7 +488,7 @@ public:
   /// @param replace Whether an existing unopened definition may be replaced.
   /// Reports QDMI_ERROR_INVALIDARGUMENT if the definition is incomplete or its
   /// ID is already registered. Replacing an opened definition also fails.
-  [[nodiscard]] mlir::LogicalResult registerDevice(DeviceDefinition definition,
+  [[nodiscard]] llvm::LogicalResult registerDevice(DeviceDefinition definition,
                                                    bool replace = false);
 
   /// Registers a device definition unless its ID is already present.
@@ -500,7 +500,7 @@ public:
   /// Existing and explicitly disabled IDs are not inserted. The
   /// complete definition is validated before checking for either condition.
   auto registerDeviceIfAbsent(DeviceDefinition definition)
-      -> mlir::FailureOr<bool>;
+      -> llvm::FailureOr<bool>;
 
   /// Lists the stable IDs of all registered devices.
   ///
@@ -509,14 +509,14 @@ public:
   /// This query includes runtime registrations and does not load device
   /// libraries or expose their definitions.
   [[nodiscard]] auto registeredDeviceIds()
-      -> mlir::FailureOr<std::vector<std::string>>;
+      -> llvm::FailureOr<std::vector<std::string>>;
 
   /// Opens the registered device with the given stable ID.
   ///
   /// @returns The existing device handle when the ID is already open.
   /// Reports QDMI_ERROR_NOTFOUND if the ID is unknown.
   /// Loading or session initialization can also fail.
-  auto open(std::string_view id) -> mlir::FailureOr<QDMI_Device>;
+  auto open(std::string_view id) -> llvm::FailureOr<QDMI_Device>;
 
   /// Allocates a new session.
   ///

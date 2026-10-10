@@ -19,7 +19,7 @@
 
 #include "qdmi/constants.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <filesystem>
 #include <optional>
@@ -72,7 +72,7 @@ mergeSessionConfig(DeviceSessionConfig merged,
     std::optional<std::string> custom1, std::optional<std::string> custom2,
     std::optional<std::string> custom3, std::optional<std::string> custom4,
     std::optional<std::string> custom5)
-    -> mlir::FailureOr<DeviceSessionConfig> {
+    -> llvm::FailureOr<DeviceSessionConfig> {
   if (deviceConfig && deviceConfigFile) {
     return qdmi::emitError(
         QDMI_ERROR_INVALIDARGUMENT,

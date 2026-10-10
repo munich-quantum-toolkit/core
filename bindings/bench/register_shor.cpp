@@ -22,7 +22,7 @@
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -125,12 +125,12 @@ void registerShor(nb::module_& m) {
           auto result =
               bench::factor(number,
                             [&](const bench::Shor& benchmark)
-                                -> mlir::FailureOr<bench::Counts> {
+                                -> llvm::FailureOr<bench::Counts> {
                               try {
                                 return run(benchmark);
                               } catch (...) {
                                 error = std::current_exception();
-                                return mlir::failure();
+                                return llvm::failure();
                               }
                             },
                             {.maxAttempts = maxAttempts, .seed = seed});

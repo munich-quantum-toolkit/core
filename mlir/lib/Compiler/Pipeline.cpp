@@ -24,6 +24,8 @@
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 
+#include "support/Diagnostics.hpp"
+
 #include "capnp/common.h"
 #include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
@@ -438,9 +440,9 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
                        const CompilationOptions& options) {
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
-    llvm::errs() << "a custom QCO pass pipeline cannot be used with an output "
-                    "that stops before QCO optimization.\n";
-    return failure();
+    return ::mqt::emitError(
+        "a custom QCO pass pipeline cannot be used with an output "
+        "that stops before QCO optimization.");
   }
   if (output == ProgramFormat::QCImport) {
     if (std::holds_alternative<QCProgram>(program)) {
@@ -453,9 +455,8 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
         return CompilerProgram(std::move(*qc));
       }
     }
-    llvm::errs() << "QCImport output is only available for QC or OpenQASM "
-                    "input.\n";
-    return failure();
+    return ::mqt::emitError(
+        "QCImport output is only available for QC or OpenQASM input.");
   }
 
   auto qco = std::visit(
@@ -555,7 +556,7 @@ runDefaultPipeline(CompilerInput&& program,
                    const CompilationOptions& options) {
   auto output = environment.payloadSpecification().compilerOutput();
   if (failed(output)) {
-    return std::nullopt;
+    return failure();
   }
   return runDefaultPipelineImpl(std::move(program), *output, &environment,
                                 "mqt-qco-default", options);

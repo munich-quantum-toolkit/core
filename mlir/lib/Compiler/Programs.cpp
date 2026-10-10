@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "jeff/IR/JeffDialect.h"
 
@@ -81,6 +82,10 @@ std::shared_ptr<MLIRContext> createCompilerContext() {
   registerLLVMDialectTranslation(registry);
 
   auto context = std::make_shared<MLIRContext>(registry);
+  context->getDiagEngine().registerHandler([](Diagnostic& diagnostic) {
+    ::mqt::emitDiagnostic(toNativeDiagnostic(diagnostic));
+    return success();
+  });
   ensureInlinerExtensions(context.get());
   context->loadAllAvailableDialects();
   return context;
@@ -208,16 +213,15 @@ LogicalResult OpenQASMProgram::write(const std::filesystem::path& path) const {
   std::error_code error;
   llvm::raw_fd_ostream stream(path.string(), error, llvm::sys::fs::OF_Text);
   if (error) {
-    llvm::errs() << "failed to open OpenQASM output file '" << path.string()
-                 << "': " << error.message() << '\n';
-    return failure();
+    return ::mqt::emitError("failed to open OpenQASM output file '" +
+                            path.string() + "': " + error.message());
   }
   stream << source_;
   stream.flush();
   if (stream.has_error()) {
     stream.clear_error();
-    llvm::errs() << "failed to write OpenQASM file '" << path.string() << "'\n";
-    return failure();
+    return ::mqt::emitError("failed to write OpenQASM file '" + path.string() +
+                            "'");
   }
   return success();
 }

@@ -33,6 +33,7 @@
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Diagnostics.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Support/RandomSeed.h"
 
@@ -65,8 +66,10 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -126,6 +129,82 @@ using QCProgramBuilderFn = NamedMLIRBuilder<QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedMLIRBuilder<QIRProgramBuilder>;
 
 namespace {
+
+TEST(CompilerProgramDiagnosticsTest, CapturesParserDetailsByDefault) {
+  const auto error = ::mqt::test::diagnostic(
+      [] { return QCProgram::fromMLIRString("not an MLIR module"); });
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->category, ::mqt::ErrorCategory::Runtime);
+  EXPECT_NE(error->message.find("custom op 'not'"), std::string::npos);
+  EXPECT_NE(error->message.find(":1:1"), std::string::npos);
+}
+
+TEST(CompilerProgramDiagnosticsTest, KeepsNotesAndNativeMetadata) {
+  auto context = createCompilerContext();
+  mlir::Diagnostic diagnostic(
+      FileLineColLoc::get(context.get(), "input.mlir", 2, 3),
+      mlir::DiagnosticSeverity::Error);
+  diagnostic << "invalid operation";
+  diagnostic.attachNote(
+      FileLineColLoc::get(context.get(), "definition.mlir", 4, 5))
+      << "defined here";
+  diagnostic.attachNote() << "additional detail";
+  const auto integer = IntegerType::get(context.get(), 64);
+  diagnostic.getMetadata().emplace_back(DictionaryAttr::get(
+      context.get(),
+      {NamedAttribute("mqt.error_category",
+                      IntegerAttr::get(integer, static_cast<int64_t>(
+                                                    ::mqt::ErrorCategory::IO))),
+       NamedAttribute("mqt.qdmi_status", IntegerAttr::get(integer, -7))}));
+  const auto native = toNativeDiagnostic(diagnostic);
+  EXPECT_EQ(native.category, ::mqt::ErrorCategory::IO);
+  EXPECT_EQ(native.severity, ::mqt::DiagnosticSeverity::Error);
+  EXPECT_EQ(native.status, -7);
+  EXPECT_NE(native.message.find("input.mlir\":2:3"), std::string::npos);
+  EXPECT_NE(native.message.find("definition.mlir\":4:5"), std::string::npos);
+  EXPECT_NE(native.message.find("defined here"), std::string::npos);
+  EXPECT_NE(native.message.find("additional detail"), std::string::npos);
+}
+
+TEST(CompilerProgramDiagnosticsTest,
+     RespectsContextHandlersAndForwardsWarnings) {
+  std::vector<::mqt::Diagnostic> native;
+  const ::mqt::ScopedDiagnosticHandler capture(
+      [&](const ::mqt::Diagnostic& diagnostic) {
+        native.push_back(diagnostic);
+        return success();
+      });
+  auto context = createCompilerContext();
+  bool handled = false;
+  {
+    const mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          handled = diagnostic.str() == "handled by caller";
+          return success();
+        });
+    emitError(UnknownLoc::get(context.get()), "handled by caller");
+  }
+  EXPECT_TRUE(handled);
+  EXPECT_TRUE(native.empty());
+  emitWarning(UnknownLoc::get(context.get()), "forwarded warning");
+  ASSERT_EQ(native.size(), 1);
+  EXPECT_EQ(native.front().message, "forwarded warning");
+  EXPECT_EQ(native.front().severity, ::mqt::DiagnosticSeverity::Warning);
+}
+
+TEST(CompilerProgramDiagnosticsTest, KeepsCallerOwnedContextPolicy) {
+  auto context = std::make_shared<MLIRContext>();
+  ::mqt::test::DiagnosticCapture native;
+  bool handled = false;
+  const mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](mlir::Diagnostic& diagnostic) {
+        handled = diagnostic.str().find("null module") != std::string::npos;
+        return success();
+      });
+  EXPECT_TRUE(failed(QCProgram::fromModule(context, {})));
+  EXPECT_TRUE(handled);
+  EXPECT_FALSE(native.error);
+}
 
 struct CompilerPipelineTestCase {
   std::string name;
@@ -324,7 +403,7 @@ makeControlPayloadSpecification(std::vector<ProgramCapability> capabilities,
                              CompilerTarget::NativeOperations::unrestricted()));
 }
 
-[[nodiscard]] static bool
+[[nodiscard]] static LogicalResult
 compileForTargetWithDiagnostics(QCOProgram& program,
                                 const PayloadSpecification& payload,
                                 std::string& diagnostics) {
@@ -2312,7 +2391,7 @@ c = measure q;
 )");
   ASSERT_TRUE(mlir::succeeded(qc));
   auto input = std::move(*qc).intoQCO();
-  ASSERT_TRUE(input);
+  ASSERT_TRUE(mlir::succeeded(input));
   const auto target = ::mqt::test::value(
       CompilerTarget::create(6,
                              CompilerTarget::Connectivity::fromCouplings(
@@ -2453,7 +2532,7 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
       auto qc = QCProgram::fromOpenQASMString(source);
       ASSERT_TRUE(mlir::succeeded(qc));
       auto program = std::move(*qc).intoQCO();
-      ASSERT_TRUE(program);
+      ASSERT_TRUE(mlir::succeeded(program));
       auto package = ::mqt::test::value(dd::Package::create(4));
       const auto expectedDD = qco::buildFunctionality(
           mlir::mqt::getEntryPoint(program->module()), *package);
@@ -2531,8 +2610,8 @@ TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
         body + "return } }");
     ASSERT_TRUE(mlir::succeeded(program));
     std::string diagnostics;
-    EXPECT_FALSE(compileForTargetWithDiagnostics(
-        *program, makePayloadSpecification(), diagnostics));
+    EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
+        *program, makePayloadSpecification(), diagnostics)));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
     EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
   }
@@ -2562,7 +2641,7 @@ TEST_F(CompilerPipelineTest, TargetSynthesisRecordsInitialLayout) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q; x q;");
   ASSERT_TRUE(mlir::succeeded(qc));
   auto program = std::move(*qc).intoQCO();
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   const auto target = ::mqt::test::value(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -2698,8 +2777,8 @@ TEST_F(CompilerPipelineTest,
     auto program = QCOProgram::fromMLIRString(source.str());
     ASSERT_TRUE(mlir::succeeded(program));
     std::string diagnostics;
-    EXPECT_FALSE(
-        compileForTargetWithDiagnostics(*program, payload, diagnostics));
+    EXPECT_TRUE(failed(
+        compileForTargetWithDiagnostics(*program, payload, diagnostics)));
     EXPECT_TRUE(StringRef(diagnostics).contains(operation)) << diagnostics;
   }
 
@@ -2719,8 +2798,8 @@ TEST_F(CompilerPipelineTest,
     auto program = QCOProgram::fromMLIRString(forwardBranch.str());
     ASSERT_TRUE(mlir::succeeded(program));
     std::string diagnostics;
-    EXPECT_FALSE(compileForTargetWithDiagnostics(
-        *program, makeControlPayloadSpecification({capability}), diagnostics));
+    EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
+        *program, makeControlPayloadSpecification({capability}), diagnostics)));
     EXPECT_TRUE(StringRef(diagnostics).contains("qco.if")) << diagnostics;
   }
 }
@@ -2969,7 +3048,7 @@ c[1] = measure q[3];
     auto qc = QCProgram::fromOpenQASMString(source);
     ASSERT_TRUE(mlir::succeeded(qc));
     auto program = std::move(*qc).intoQCO();
-    ASSERT_TRUE(program);
+    ASSERT_TRUE(mlir::succeeded(program));
     const auto target = ::mqt::test::value(CompilerTarget::create(
         2,
         routing ? CompilerTarget::Connectivity::fromCouplings({{0, 1}})
@@ -3003,7 +3082,7 @@ TEST_F(CompilerPipelineTest, OverCapacityInputsCompileWithoutLayout) {
       return
     }
   })mlir");
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   const auto target = ::mqt::test::value(
       CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -3024,7 +3103,7 @@ TEST_F(CompilerPipelineTest, PreplacedQubitWithoutIndexedPlacementHasNoLayout) {
       return
     }
   })mlir");
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   const auto target = ::mqt::test::value(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -3122,7 +3201,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
       return %bit : i1
     }
   })mlir");
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   const auto target = ::mqt::test::value(CompilerTarget::create(
       {
           ::mqt::test::value(CompilerTarget::Site::create(7)),
@@ -3211,7 +3290,8 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
                                             diagnostics += diagnostic.str();
                                             return mlir::success();
                                           });
-    EXPECT_FALSE(program->compileForTarget(TargetEnvironment(target, payload)));
+    EXPECT_TRUE(mlir::failed(
+        program->compileForTarget(TargetEnvironment(target, payload))));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
   }
   const auto target = targetWith(2, {u, measure});
@@ -3222,7 +3302,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
         TargetEnvironment(
             target,
             ::mqt::test::value(payloadSpecificationForProgramFormat(format))));
-    ASSERT_TRUE(result);
+    ASSERT_TRUE(mlir::succeeded(result));
     if (format == QDMI_PROGRAM_FORMAT_QASM3) {
       EXPECT_TRUE(mlir::succeeded(QCProgram::fromOpenQASMString(
           std::get<OpenQASMProgram>(*result).source())));
@@ -3253,8 +3333,8 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(mlir::succeeded(program));
   std::string diagnostics;
-  EXPECT_FALSE(compileForTargetWithDiagnostics(
-      *program, makeControlPayloadSpecification({}, true), diagnostics));
+  EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
+      *program, makeControlPayloadSpecification({}, true), diagnostics)));
   EXPECT_TRUE(
       StringRef(diagnostics).contains("1000000000 loop-body operations"))
       << diagnostics;
@@ -3278,8 +3358,8 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   )mlir";
   auto unsafe = QCOProgram::fromMLIRString(nonconstantBounds.str());
   ASSERT_TRUE(mlir::succeeded(unsafe));
-  EXPECT_FALSE(compileForTargetWithDiagnostics(
-      *unsafe, makeControlPayloadSpecification({}, true), diagnostics));
+  EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
+      *unsafe, makeControlPayloadSpecification({}, true), diagnostics)));
   EXPECT_TRUE(StringRef(diagnostics).contains("scf.for")) << diagnostics;
 
   constexpr llvm::StringLiteral overflowingRange = R"mlir(
@@ -3302,10 +3382,10 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   auto overflowing = QCOProgram::fromMLIRString(overflowingRange.str());
   ASSERT_TRUE(mlir::succeeded(overflowing));
   diagnostics.clear();
-  ASSERT_TRUE(compileForTargetWithDiagnostics(
+  ASSERT_TRUE(succeeded(compileForTargetWithDiagnostics(
       *overflowing,
       makeControlPayloadSpecification({{.id = "counted-iteration"}}),
-      diagnostics));
+      diagnostics)));
   size_t largeLoops = 0U;
   overflowing->module().walk([&](scf::ForOp loop) {
     const auto trips = loop.getStaticTripCount();
@@ -3492,10 +3572,10 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
                                             diagnostics += diagnostic.str();
                                             return success();
                                           });
-    EXPECT_EQ(
-        program->runPassPipeline("unroll-loops-for-payload{max-operations=" +
-                                 std::to_string(budget) + "}"),
-        accepted)
+    EXPECT_EQ(succeeded(program->runPassPipeline(
+                  "unroll-loops-for-payload{max-operations=" +
+                  std::to_string(budget) + "}")),
+              accepted)
         << diagnostics;
     EXPECT_TRUE(succeeded(verify(program->module())));
     EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
@@ -3534,8 +3614,8 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsUnrepresentableTripCount) {
                                           diagnostics += diagnostic.str();
                                           return success();
                                         });
-  EXPECT_FALSE(program->runPassPipeline(
-      "unroll-loops-for-payload{max-operations=18446744073709551615}"));
+  EXPECT_TRUE(mlir::failed(program->runPassPipeline(
+      "unroll-loops-for-payload{max-operations=18446744073709551615}")));
   EXPECT_TRUE(StringRef(diagnostics).contains("cannot safely apply MLIR"));
 }
 
@@ -3593,9 +3673,9 @@ switch (selector) {
 
   auto tooDeep = input->copy();
   std::string diagnostics;
-  EXPECT_FALSE(compileForTargetWithDiagnostics(
+  EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
       tooDeep, makeControlPayloadSpecification({multiway(1), forward(1)}),
-      diagnostics));
+      diagnostics)));
   EXPECT_TRUE(StringRef(diagnostics).contains("qco.index_switch"))
       << diagnostics;
 }
@@ -3700,7 +3780,8 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
       mlir::ScopedDiagnosticHandler handler(
           program->module()->getContext(),
           [](mlir::Diagnostic&) { return mlir::success(); });
-      EXPECT_EQ(program->runPassPipeline("legalize-control-flow"), expected);
+      EXPECT_EQ(succeeded(program->runPassPipeline("legalize-control-flow")),
+                expected);
       EXPECT_TRUE(succeeded(verify(program->module())));
       EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
       if (expected) {
@@ -3763,7 +3844,8 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksMovedCaseDepthByCapability) {
       mlir::ScopedDiagnosticHandler handler(
           program->module()->getContext(),
           [](mlir::Diagnostic&) { return mlir::success(); });
-      EXPECT_EQ(program->runPassPipeline("legalize-control-flow"), loop);
+      EXPECT_EQ(succeeded(program->runPassPipeline("legalize-control-flow")),
+                loop);
       EXPECT_TRUE(succeeded(verify(program->module())));
       EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
       if (!loop) {
@@ -3830,7 +3912,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsMovedCaseDepth) {
       mlir::ScopedDiagnosticHandler handler(
           program->module()->getContext(),
           [](mlir::Diagnostic&) { return mlir::success(); });
-      EXPECT_EQ(program->runPassPipeline("legalize-control-flow"),
+      EXPECT_EQ(succeeded(program->runPassPipeline("legalize-control-flow")),
                 cases == 255);
       EXPECT_TRUE(succeeded(verify(program->module())));
       EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
@@ -3973,8 +4055,8 @@ TEST_F(CompilerPipelineTest,
     auto program = QCOProgram::fromMLIRString(source.str());
     ASSERT_TRUE(mlir::succeeded(program));
     std::string diagnostics;
-    EXPECT_FALSE(
-        compileForTargetWithDiagnostics(*program, payload, diagnostics));
+    EXPECT_TRUE(failed(
+        compileForTargetWithDiagnostics(*program, payload, diagnostics)));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
   }
 
@@ -4002,7 +4084,7 @@ TEST_F(CompilerPipelineTest,
                                               diagnostics += diagnostic.str();
                                               return mlir::success();
                                             });
-      EXPECT_FALSE(program->runPassPipeline(pass));
+      EXPECT_TRUE(mlir::failed(program->runPassPipeline(pass)));
       EXPECT_TRUE(StringRef(diagnostics).contains("iteration arguments"))
           << diagnostics;
       EXPECT_EQ(program->str(), before);
@@ -4031,13 +4113,13 @@ TEST_F(CompilerPipelineTest,
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(mlir::succeeded(program));
   std::string diagnostics;
-  EXPECT_FALSE(compileForTargetWithDiagnostics(
+  EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
       *program,
       makeControlPayloadSpecification(
           {{.id = "forward-branching",
             .constraints = {{.id = "max-control-flow-nesting-depth",
                              .value = 2}}}}),
-      diagnostics));
+      diagnostics)));
   EXPECT_TRUE(StringRef(diagnostics).contains("scf.while")) << diagnostics;
 }
 
@@ -4069,7 +4151,8 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsUnstructuredCFG) {
   std::string diagnostics;
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(mlir::succeeded(program));
-  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, payload, diagnostics));
+  EXPECT_TRUE(
+      failed(compileForTargetWithDiagnostics(*program, payload, diagnostics)));
   EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
       << diagnostics;
 }
@@ -4086,8 +4169,8 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsConstantCFGBeforeCleanup) {
   )mlir");
   ASSERT_TRUE(mlir::succeeded(program));
   std::string diagnostics;
-  EXPECT_FALSE(compileForTargetWithDiagnostics(
-      *program, makeControlPayloadSpecification({}), diagnostics));
+  EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
+      *program, makeControlPayloadSpecification({}), diagnostics)));
   EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
       << diagnostics;
 }
@@ -4167,12 +4250,12 @@ TEST_F(CompilerPipelineTest,
   auto constrained = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(mlir::succeeded(constrained));
   std::string diagnostics;
-  EXPECT_FALSE(compileForTargetWithDiagnostics(
+  EXPECT_TRUE(failed(compileForTargetWithDiagnostics(
       *constrained,
       makeControlPayloadSpecification(
           {{.id = "conditional-loop",
             .constraints = {{.id = "max-iteration-count", .value = 4}}}}),
-      diagnostics));
+      diagnostics)));
   EXPECT_TRUE(StringRef(diagnostics).contains("scf.while")) << diagnostics;
 }
 
@@ -4702,8 +4785,8 @@ gphase(0.5);
 
   const auto target =
       ::mqt::test::value(compilerTargetFromDeviceId("mqt.ddsim.default"));
-  ASSERT_TRUE(qco->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification())));
+  ASSERT_TRUE(mlir::succeeded(qco->compileForTarget(
+      TargetEnvironment(target, makePayloadSpecification()))));
 
   auto compiled = parseRecordedModule(qco->str());
   ASSERT_TRUE(compiled);

@@ -13,7 +13,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <string_view>
@@ -37,15 +37,15 @@ struct MagicStateDistillationOptions {
 /// Each shot executes 15^levels leaf rotations with five qubits per level.
 class MQT_CORE_BENCH_EXPORT MagicStateDistillation final {
 public:
-  [[nodiscard]] static mlir::FailureOr<MagicStateDistillation>
+  [[nodiscard]] static llvm::FailureOr<MagicStateDistillation>
   create(MagicStateDistillationOptions options = {});
   [[nodiscard]] const MagicStateDistillationOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] mlir::FailureOr<double>
+  [[nodiscard]] llvm::FailureOr<double>
   probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] mlir::FailureOr<Evaluation>
+  [[nodiscard]] llvm::FailureOr<Evaluation>
   evaluate(const Counts& counts) const;
 
 private:

@@ -18,7 +18,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <bit>
 #include <cstddef>
@@ -39,7 +39,7 @@ public:
 
   UnaryComputeTable() : UnaryComputeTable(DEFAULT_NUM_BUCKETS) {}
 
-  [[nodiscard]] static mlir::FailureOr<UnaryComputeTable>
+  [[nodiscard]] static llvm::FailureOr<UnaryComputeTable>
   create(const size_t numBuckets) {
     if (!std::has_single_bit(numBuckets)) {
       return ::mqt::emitError("Number of buckets must be a power of two.",

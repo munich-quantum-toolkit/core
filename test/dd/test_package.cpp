@@ -32,7 +32,7 @@
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -383,7 +383,7 @@ TEST(DDPackageTest, CorruptedBellState) {
     const mqt::ScopedDiagnosticHandler capture(
         [&](const mqt::Diagnostic& diagnostic) {
           diagnostics.push_back(diagnostic);
-          return mlir::success();
+          return llvm::success();
         });
     EXPECT_EQ(::mqt::test::value(dd->measureAll(bellState, false, mt)).size(),
               2);
@@ -842,8 +842,8 @@ TEST(DDPackageTest, SerializationErrors) {
 }
 
 TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
-  Package package(2);
-  const auto state = makeZeroState(2, package);
+  auto package = ::mqt::test::value(Package::create(2));
+  const auto state = ::mqt::test::value(makeZeroState(2, *package));
   std::ostringstream binary;
   serialize(state, binary, true);
   const auto bytes = binary.str();
@@ -859,16 +859,20 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
        }) {
     SCOPED_TRACE(length);
     std::istringstream input(bytes.substr(0, length));
-    EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(input, true); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   }
   for (const auto* text : {"", "\n", "1\n"}) {
     std::istringstream input(text);
-    EXPECT_ANY_THROW(package.deserialize<vNode>(input));
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(input); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   }
 }
 
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
-  Package package(2);
+  auto package = ::mqt::test::value(Package::create(2));
   for (const auto* text : {
            "1x\n1\n",
            "1\n\n",
@@ -891,16 +895,19 @@ TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
        }) {
     SCOPED_TRACE(text);
     std::istringstream input(text);
-    EXPECT_ANY_THROW(package.deserialize<vNode>(input));
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(input); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   }
   std::istringstream valid("1\n1\n2147483648 0 (-1 1) ()\n9223372036854775807 "
                            "1 (2147483648 1) ()\n");
-  EXPECT_EQ(package.deserialize<vNode>(valid), makeZeroState(2, package));
+  EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(valid)),
+            ::mqt::test::value(makeZeroState(2, *package)));
 }
 
 TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
-  Package package(2);
-  const auto state = makeZeroState(2, package);
+  auto package = ::mqt::test::value(Package::create(2));
+  const auto state = ::mqt::test::value(makeZeroState(2, *package));
   std::ostringstream binary;
   serialize(state, binary, true);
   const auto bytes = binary.str();
@@ -916,7 +923,9 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     auto invalid = bytes;
     std::memcpy(&invalid.at(offset), &value, sizeof(value));
     std::istringstream input(invalid);
-    EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
+    EXPECT_EQ(::mqt::test::errorKind(
+                  [&] { return package->deserialize<vNode>(input, true); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   };
   reject(nodeOffset, int64_t{-1});
   reject(nodeOffset, int64_t{-2});
@@ -942,36 +951,41 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
   for (const bool isBinary : {false, true}) {
     std::stringstream stream;
     serialize(state, stream, isBinary);
-    EXPECT_EQ(package.deserialize<vNode>(stream, isBinary), state);
+    EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(stream, isBinary)),
+              state);
   }
 }
 
 TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
-  Package package(3);
-  const auto oneQubit = makeZeroState(1, package);
+  auto package = ::mqt::test::value(Package::create(3));
+  const auto oneQubit = ::mqt::test::value(makeZeroState(1, *package));
   for (const bool binary : {false, true}) {
     for (const auto& child : {vEdge::one(), oneQubit}) {
-      SCOPED_TRACE(::testing::Message() << binary << child.isTerminal());
+      SCOPED_TRACE(::testing::Message() << "binary=" << binary
+                                        << ", terminal=" << child.isTerminal());
       vNode node{};
       node.v = 2;
       node.e = {child, vEdge::zero()};
       std::stringstream stream;
       serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
-      EXPECT_THROW(package.deserialize<vNode>(stream, binary),
-                   std::runtime_error);
+      EXPECT_EQ(::mqt::test::errorKind([&] {
+                  return package->deserialize<vNode>(stream, binary);
+                }),
+                ::mqt::ErrorCategory::InvalidArgument);
     }
   }
 }
 
 TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
-  Package package(3);
-  const auto high = package.makeGateDD(X_MAT, 2);
-  const auto low = package.makeGateDD(X_MAT, 0);
-  for (const auto& matrix : {high, package.multiply(high, low)}) {
+  auto package = ::mqt::test::value(Package::create(3));
+  const auto high = ::mqt::test::value(package->makeGateDD(X_MAT, 2));
+  const auto low = ::mqt::test::value(package->makeGateDD(X_MAT, 0));
+  for (const auto& matrix : {high, package->multiply(high, low)}) {
     for (const bool binary : {false, true}) {
       std::stringstream stream;
       serialize(matrix, stream, binary);
-      EXPECT_EQ(package.deserialize<mNode>(stream, binary), matrix);
+      EXPECT_EQ(::mqt::test::value(package->deserialize<mNode>(stream, binary)),
+                matrix);
     }
   }
 }
@@ -3607,40 +3621,6 @@ TEST(DDPackageTest, RejectsMalformedSerializationAndRecovers) {
     serialize(state, stream, isBinary);
     EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(stream, isBinary)),
               state);
-  }
-}
-
-TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
-  auto package = ::mqt::test::value(Package::create(3));
-  const auto oneQubit = ::mqt::test::value(makeZeroState(1, *package));
-  for (const bool binary : {false, true}) {
-    for (const auto& child : {vEdge::one(), oneQubit}) {
-      SCOPED_TRACE(::testing::Message() << "binary=" << binary
-                                        << ", terminal=" << child.isTerminal());
-      vNode node{};
-      node.v = 2;
-      node.e = {child, vEdge::zero()};
-      std::stringstream stream;
-      serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
-      EXPECT_EQ(::mqt::test::errorKind([&] {
-                  return package->deserialize<vNode>(stream, binary);
-                }),
-                ::mqt::ErrorCategory::InvalidArgument);
-    }
-  }
-}
-
-TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
-  auto package = ::mqt::test::value(Package::create(3));
-  const auto high = ::mqt::test::value(package->makeGateDD(X_MAT, 2));
-  const auto low = ::mqt::test::value(package->makeGateDD(X_MAT, 0));
-  for (const auto& matrix : {high, package->multiply(high, low)}) {
-    for (const bool binary : {false, true}) {
-      std::stringstream stream;
-      serialize(matrix, stream, binary);
-      EXPECT_EQ(::mqt::test::value(package->deserialize<mNode>(stream, binary)),
-                matrix);
-    }
   }
 }
 

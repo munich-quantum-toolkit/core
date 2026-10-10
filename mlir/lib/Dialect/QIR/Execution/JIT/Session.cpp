@@ -18,6 +18,7 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
@@ -29,8 +30,13 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
@@ -57,6 +63,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -67,6 +74,43 @@ namespace qir {
 
 static auto isEntryPoint(const llvm::Function& function) -> bool {
   return function.hasFnAttribute(ENTRY_POINT_ATTR);
+}
+
+static auto validateNativeABI(llvm::CallingConv::ID convention,
+                              llvm::AttributeList attributes,
+                              const llvm::Twine& description)
+    -> mlir::LogicalResult {
+  if (convention != llvm::CallingConv::C) {
+    return ::mqt::emitError(
+        (description + " must use the C calling convention").str());
+  }
+  for (const auto index : attributes.indexes()) {
+    if (index == llvm::AttributeList::FunctionIndex) {
+      continue;
+    }
+    const auto attributeSet = attributes.getAttributes(index);
+    for (const auto kind : {
+             llvm::Attribute::StructRet,
+             llvm::Attribute::ByVal,
+             llvm::Attribute::InAlloca,
+             llvm::Attribute::InReg,
+             llvm::Attribute::StackAlignment,
+             llvm::Attribute::SwiftSelf,
+             llvm::Attribute::SwiftAsync,
+             llvm::Attribute::SwiftError,
+             llvm::Attribute::Preallocated,
+             llvm::Attribute::ByRef,
+             llvm::Attribute::Nest,
+         }) {
+      if (attributeSet.hasAttribute(kind)) {
+        return ::mqt::emitError((description +
+                                 " has unsupported ABI attribute " +
+                                 attributeSet.getAttribute(kind).getAsString())
+                                    .str());
+      }
+    }
+  }
+  return mlir::success();
 }
 
 static auto selectEntryPoint(llvm::Module& moduleOp)
@@ -84,6 +128,11 @@ static auto selectEntryPoint(llvm::Module& moduleOp)
     return ::mqt::emitError("No QIR entry point was found");
   }
   auto& entryPoint = *selected;
+  if (mlir::failed(validateNativeABI(
+          entryPoint.getCallingConv(), entryPoint.getAttributes(),
+          "QIR entry point '" + entryPoint.getName() + "'"))) {
+    return mlir::failure();
+  }
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
@@ -321,11 +370,11 @@ static auto createRuntimeRegistry() -> RuntimeRegistry {
   return registry;
 }
 
-static auto selectRuntimeSymbols(const llvm::Module& module)
+static auto selectRuntimeSymbols(const llvm::Module& moduleOp)
     -> mlir::FailureOr<std::vector<std::pair<std::string, void*>>> {
   static const auto REGISTRY = createRuntimeRegistry();
   std::vector<std::pair<std::string, void*>> selected;
-  for (const auto& function : module) {
+  for (const auto& function : moduleOp) {
     if (!function.isDeclaration() || function.use_empty() ||
         !function.getName().starts_with("__quantum__")) {
       continue;
@@ -334,6 +383,11 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
     if (it == REGISTRY.end()) {
       return ::mqt::emitError("Unsupported QIR runtime declaration '" +
                               function.getName().str() + "'");
+    }
+    if (mlir::failed(validateNativeABI(
+            function.getCallingConv(), function.getAttributes(),
+            "QIR runtime declaration '" + function.getName() + "'"))) {
+      return mlir::failure();
     }
     const auto& symbol = it->second;
     if (!matches(*function.getFunctionType(), symbol)) {
@@ -347,6 +401,30 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
       return ::mqt::emitError(message.str());
     }
     selected.emplace_back(function.getName().str(), symbol.address);
+  }
+  for (const auto& function : moduleOp) {
+    for (const auto& instruction : llvm::instructions(function)) {
+      const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+      const auto* callee =
+          call == nullptr
+              ? nullptr
+              : llvm::dyn_cast<llvm::Function>(
+                    call->getCalledOperand()->stripPointerCastsAndAliases());
+      if (callee == nullptr || !callee->isDeclaration() ||
+          !callee->getName().starts_with("__quantum__")) {
+        continue;
+      }
+      if (mlir::failed(validateNativeABI(
+              call->getCallingConv(), call->getAttributes(),
+              "QIR runtime call to '" + callee->getName() + "'"))) {
+        return mlir::failure();
+      }
+      if (call->getFunctionType() != callee->getFunctionType()) {
+        return ::mqt::emitError("QIR runtime call to '" +
+                                callee->getName().str() +
+                                "' must match its declaration");
+      }
+    }
   }
   return selected;
 }
@@ -707,6 +785,9 @@ JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
     return ::mqt::emitError(expectedJit.takeError());
   }
   jit_ = std::move(*expectedJit);
+  jit_->getExecutionSession().setErrorReporter([](llvm::Error error) {
+    std::ignore = ::mqt::emitError(std::move(error));
+  });
 
   // Register QIR runtime symbols.
   auto& jd = jit_->getMainJITDylib();
@@ -769,8 +850,7 @@ void JitSession::deinitialize() const {
     return;
   }
   if (auto err = jit_->deinitialize(jit_->getMainJITDylib())) {
-    llvm::errs() << "JitSession deinitialize failed: "
-                 << llvm::toString(std::move(err)) << "\n";
+    std::ignore = ::mqt::emitError(std::move(err));
   }
 }
 

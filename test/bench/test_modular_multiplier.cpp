@@ -230,6 +230,12 @@ TEST(ModularMultiplier, ScoresTheArithmeticRelationByShotCount) {
   EXPECT_EQ(::mqt::test::errorKind(
                 [&] { return benchmark.evaluate({{"00000000", 0}}); }),
             ::mqt::ErrorCategory::InvalidArgument);
+  for (const auto* invalid : {"1001001", "100100x1"}) {
+    EXPECT_EQ(::mqt::test::errorKind([&] {
+                return benchmark.evaluate({{"10010011", 1}, {invalid, 0}});
+              }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
 }
 
 TEST(ModularMultiplier, SeparatesRelationSuccessFromDistributionFit) {

@@ -24,9 +24,8 @@
 #include "WorkerProtocol.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
-
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 
@@ -840,7 +839,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             if (response.state) {
               auto package =
                   dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
-              if (mlir::failed(package)) {
+              if (llvm::failed(package)) {
                 result.reset();
                 reusable = false;
                 return;
@@ -849,7 +848,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
               std::istringstream bytes(std::move(*response.state),
                                        std::ios::binary);
               auto state = result->dd_->deserialize<dd::vNode>(bytes, true);
-              if (mlir::failed(state)) {
+              if (llvm::failed(state)) {
                 result.reset();
                 reusable = false;
                 return;

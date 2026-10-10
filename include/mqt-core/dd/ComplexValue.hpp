@@ -15,7 +15,7 @@
 
 #include "dd/DDDefinitions.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
 #include <complex>
@@ -92,7 +92,7 @@ struct ComplexValue {
   void readBinary(std::istream& is);
 
   /// Parse the finite real/imaginary notation used in serialized DDs.
-  [[nodiscard]] static mlir::FailureOr<ComplexValue>
+  [[nodiscard]] static llvm::FailureOr<ComplexValue>
   parse(std::string_view text);
 
   /// Get the closest fraction to the given number.

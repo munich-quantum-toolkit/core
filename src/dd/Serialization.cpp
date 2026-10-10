@@ -18,7 +18,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <charconv>
@@ -37,7 +37,7 @@
 namespace dd {
 
 template <class Node, size_t N>
-mlir::FailureOr<CachedEdge<Node>>
+llvm::FailureOr<CachedEdge<Node>>
 Package::deserializeNode(const int64_t index, const Qubit v,
                          const std::array<int64_t, N>& edgeIdx,
                          const std::array<ComplexValue, N>& edgeWeight,
@@ -87,7 +87,7 @@ Package::deserializeNode(const int64_t index, const Qubit v,
 }
 
 template <class Node, class Edge, size_t N>
-mlir::FailureOr<Edge> Package::deserialize(std::istream& is,
+llvm::FailureOr<Edge> Package::deserialize(std::istream& is,
                                            const bool readBinary) {
   if (is.exceptions() != std::ios::goodbit) {
     return ::mqt::emitError(
@@ -144,8 +144,8 @@ mlir::FailureOr<Edge> Package::deserialize(std::istream& is,
         return invalid();
       }
       auto node = deserializeNode(index, wire, indices, weights, nodes);
-      if (mlir::failed(node)) {
-        return mlir::failure();
+      if (llvm::failed(node)) {
+        return llvm::failure();
       }
       result = (*node);
     }
@@ -164,8 +164,8 @@ mlir::FailureOr<Edge> Package::deserialize(std::istream& is,
       return invalid();
     }
     auto weight = ComplexValue::parse(line);
-    if (mlir::failed(weight)) {
-      return mlir::failure();
+    if (llvm::failed(weight)) {
+      return llvm::failure();
     }
     rootweight = (*weight);
     while (std::getline(is, line)) {
@@ -207,8 +207,8 @@ mlir::FailureOr<Edge> Package::deserialize(std::istream& is,
           return invalid();
         }
         auto edgeWeight = ComplexValue::parse(edge);
-        if (mlir::failed(edgeWeight)) {
-          return mlir::failure();
+        if (llvm::failed(edgeWeight)) {
+          return llvm::failure();
         }
         weights[i] = (*edgeWeight);
       }
@@ -220,8 +220,8 @@ mlir::FailureOr<Edge> Package::deserialize(std::istream& is,
       }
       auto node = deserializeNode(index, static_cast<Qubit>(wire), indices,
                                   weights, nodes);
-      if (mlir::failed(node)) {
-        return mlir::failure();
+      if (llvm::failed(node)) {
+        return llvm::failure();
       }
       result = (*node);
     }
@@ -234,7 +234,7 @@ mlir::FailureOr<Edge> Package::deserialize(std::istream& is,
 }
 
 template <class Node, class Edge>
-mlir::FailureOr<Edge> Package::deserialize(const std::string& inputFilename,
+llvm::FailureOr<Edge> Package::deserialize(const std::string& inputFilename,
                                            const bool readBinary) {
   auto input = std::ifstream(inputFilename, std::ios::binary);
   if (!input) {
@@ -244,13 +244,13 @@ mlir::FailureOr<Edge> Package::deserialize(const std::string& inputFilename,
   return deserialize<Node>(input, readBinary);
 }
 
-template mlir::FailureOr<vEdge> Package::deserialize<vNode>(std::istream&,
+template llvm::FailureOr<vEdge> Package::deserialize<vNode>(std::istream&,
                                                             bool);
-template mlir::FailureOr<mEdge> Package::deserialize<mNode>(std::istream&,
+template llvm::FailureOr<mEdge> Package::deserialize<mNode>(std::istream&,
                                                             bool);
-template mlir::FailureOr<vEdge> Package::deserialize<vNode>(const std::string&,
+template llvm::FailureOr<vEdge> Package::deserialize<vNode>(const std::string&,
                                                             bool);
-template mlir::FailureOr<mEdge> Package::deserialize<mNode>(const std::string&,
+template llvm::FailureOr<mEdge> Package::deserialize<mNode>(const std::string&,
                                                             bool);
 
 } // namespace dd

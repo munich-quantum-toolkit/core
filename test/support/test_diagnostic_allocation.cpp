@@ -13,7 +13,7 @@
 
 #include "gtest/gtest.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdlib>
@@ -53,7 +53,7 @@ TEST(DiagnosticFormatting, ReportsPersistentAllocationFailure) {
   bool handled = false;
   const mqt::ScopedDiagnosticHandler handler([&](const mqt::Diagnostic&) {
     handled = true;
-    return mlir::success();
+    return llvm::success();
   });
   testing::internal::CaptureStderr();
   failedAllocations = 0;

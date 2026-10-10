@@ -12,7 +12,7 @@
 
 #include "support/mqt_core_support_export.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstdint>
 #include <functional>
@@ -49,7 +49,7 @@ MQT_CORE_SUPPORT_EXPORT void emitDiagnostic(const Diagnostic& diagnostic);
 class MQT_CORE_SUPPORT_EXPORT ScopedDiagnosticHandler {
 public:
   explicit ScopedDiagnosticHandler(
-      std::function<mlir::LogicalResult(const Diagnostic&)> handler);
+      std::function<llvm::LogicalResult(const Diagnostic&)> handler);
   ~ScopedDiagnosticHandler();
   ScopedDiagnosticHandler(const ScopedDiagnosticHandler&) = delete;
   ScopedDiagnosticHandler& operator=(const ScopedDiagnosticHandler&) = delete;
@@ -57,12 +57,12 @@ public:
 private:
   friend void emitDiagnostic(const Diagnostic& diagnostic);
   ScopedDiagnosticHandler* previous_;
-  std::function<mlir::LogicalResult(const Diagnostic&)> handler_;
+  std::function<llvm::LogicalResult(const Diagnostic&)> handler_;
 };
 
 /// Emit a diagnostic and return failure without putting a message in the
 /// result.
-[[nodiscard]] MQT_CORE_SUPPORT_EXPORT mlir::LogicalResult
+[[nodiscard]] MQT_CORE_SUPPORT_EXPORT llvm::LogicalResult
 emitError(std::string message, ErrorCategory category = ErrorCategory::Runtime,
           std::optional<int> status = std::nullopt);
 } // namespace mqt

@@ -21,7 +21,7 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -2116,7 +2116,7 @@ TEST(LoadedDeviceAPIDeathTest,
     }));
     static_cast<void>(driver.open("mqt.sc.default"));
     auto first = std::async(std::launch::async, [&driver] {
-      return mlir::failed(driver.open("cache.slow"));
+      return llvm::failed(driver.open("cache.slow"));
     });
     if (entered.get_future().wait_for(std::chrono::seconds(5)) !=
         std::future_status::ready) {

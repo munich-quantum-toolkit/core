@@ -15,14 +15,14 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <numbers>
 #include <string_view>
 
 namespace mqt::bench {
 
-mlir::FailureOr<RepeatUntilSuccess>
+llvm::FailureOr<RepeatUntilSuccess>
 RepeatUntilSuccess::create(RepeatUntilSuccessOptions options) {
   if (options.dataQubits == 0 ||
       options.dataQubits > RepeatUntilSuccessOptions::MAX_DATA_QUBITS) {
@@ -42,16 +42,16 @@ const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
 
 const Output& RepeatUntilSuccess::output() const noexcept { return output_; }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 RepeatUntilSuccess::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   constexpr auto bias = std::numbers::sqrt2 / 3.;
   return outcome == "0" ? 0.5 + bias : 0.5 - bias;
 }
 
-mlir::FailureOr<Evaluation>
+llvm::FailureOr<Evaluation>
 RepeatUntilSuccess::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }

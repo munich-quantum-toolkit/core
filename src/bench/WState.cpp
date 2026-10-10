@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -25,7 +25,7 @@
 
 namespace mqt::bench {
 
-mlir::FailureOr<WState> WState::create(const WStateOptions options) {
+llvm::FailureOr<WState> WState::create(const WStateOptions options) {
   if (options.qubits == 0 ||
       options.qubits >
           static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
@@ -39,16 +39,16 @@ WState::WState(const WStateOptions options)
     : options_(options), output_{.name = "result", .width = options.qubits} {}
 const WStateOptions& WState::options() const noexcept { return options_; }
 const Output& WState::output() const noexcept { return output_; }
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 WState::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   return std::ranges::count(outcome, '1') == 1
              ? 1. / static_cast<double>(options_.qubits)
              : 0.;
 }
-mlir::FailureOr<Evaluation> WState::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> WState::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

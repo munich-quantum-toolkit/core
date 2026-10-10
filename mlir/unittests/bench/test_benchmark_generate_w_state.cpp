@@ -84,7 +84,7 @@ TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   auto restored = mlir::JeffProgram::fromBytes(jeff->toBytes());
   ASSERT_TRUE(mlir::succeeded(restored));
   qco = std::move(*restored).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   auto package = ::mqt::test::value(dd::Package::create(0));
   const auto root = mlir::qco::simulateStatevector(
       mlir::mqt::getEntryPoint(qco->module()), *package);

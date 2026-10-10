@@ -161,7 +161,7 @@ TEST(GenerateProgramTest, VerifiesSmallInPlaceMultiplierBasisStates) {
         continue;
       }
       auto program = inPlaceMultiplier(number, multiplier);
-      ASSERT_TRUE(program);
+      ASSERT_TRUE(mlir::succeeded(program));
       auto package = ::mqt::test::value(dd::Package::create(qubits));
       auto functionality = qco::buildFunctionality(
           mlir::mqt::getEntryPoint(program->module()), *package);

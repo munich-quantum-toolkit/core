@@ -931,7 +931,7 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Adaptive);
   ASSERT_TRUE(mlir::succeeded(qir));
   auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
+  ASSERT_TRUE(mlir::succeeded(ir));
   const auto device =
       ::mqt::test::value(qdmi::Session::openDevice("mqt.ddsim.default"));
   auto job = ::mqt::test::value(
@@ -949,7 +949,7 @@ TEST(CompilerQDMIAdapterTest, ValidatesCompiledEntryPointSignature) {
     module {
       func.func @main() attributes {mqt.entry_point} { return }
     })");
-  ASSERT_TRUE(noResult);
+  ASSERT_TRUE(mlir::succeeded(noResult));
   const auto compiled = ::mqt::test::value(
       mlir::CompiledProgram::compile(std::move(*noResult), environment));
   EXPECT_NE(compiled.payload().find("define i64 @main()"), std::string::npos);
@@ -961,13 +961,37 @@ TEST(CompilerQDMIAdapterTest, ValidatesCompiledEntryPointSignature) {
         return %zero : i32
       }
     })");
-  ASSERT_TRUE(narrowExitCode);
+  ASSERT_TRUE(mlir::succeeded(narrowExitCode));
   const auto error = ::mqt::test::errorMessage([&] {
     return mlir::CompiledProgram::compile(std::move(*narrowExitCode),
                                           environment);
   });
   EXPECT_NE(error.find("requires an i64 () entry point"), std::string::npos)
       << error;
+}
+
+TEST(CompilerQDMIAdapterTest, PayloadFailureRetainsCategoryAndDetails) {
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto error = ::mqt::test::diagnostic([&] {
+    return mlir::compileProgram(mlir::OpenQASMProgram(R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+bit result = measure q;
+while (result) {
+  x q;
+  result = measure q;
+}
+)"),
+                                device, QDMI_PROGRAM_FORMAT_QIRBASEMODULE);
+  });
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->category, ::mqt::ErrorCategory::InvalidArgument);
+  EXPECT_EQ(error->severity, ::mqt::DiagnosticSeverity::Error);
+  EXPECT_NE(error->message.find("scf.while"), std::string::npos);
+  EXPECT_NE(error->message.find("see current operation"), std::string::npos);
+  EXPECT_NE(error->message.find("<input>"), std::string::npos);
 }
 
 TEST(CompilerQDMIAdapterTest,

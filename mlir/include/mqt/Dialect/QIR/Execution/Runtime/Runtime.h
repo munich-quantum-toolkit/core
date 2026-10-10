@@ -21,6 +21,7 @@
 #include "support/Diagnostics.hpp"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <complex>
@@ -134,23 +135,23 @@ private:
   std::vector<std::pair<std::string, std::string>> metadata;
 
   auto enlargeState(size_t maxQubit) -> void;
-  mlir::LogicalResult configureStaticResources(std::optional<size_t> qubits,
+  llvm::LogicalResult configureStaticResources(std::optional<size_t> qubits,
                                                std::optional<size_t> results);
   auto sampleMeasurements(std::span<const uintptr_t> qubits, size_t shots,
                           std::vector<std::string>& results)
-      -> mlir::LogicalResult;
+      -> llvm::LogicalResult;
   static auto bind(Runtime* runtime) noexcept -> Runtime*;
-  auto resolveAddress(const Qubit* qubit) -> mlir::FailureOr<dd::Qubit>;
+  auto resolveAddress(const Qubit* qubit) -> llvm::FailureOr<dd::Qubit>;
   auto translateAddresses(std::span<Qubit* const> qubits,
                           std::span<Qubit* const> additionalQubits = {})
-      -> mlir::FailureOr<llvm::SmallVector<dd::Qubit, 5>>;
+      -> llvm::FailureOr<llvm::SmallVector<dd::Qubit, 5>>;
 
   // Helper function to output a type (bool, int...) to @c os, honoring the
   // active @c outputSchema.
   // The label is included only in Labeled mode.
   // Tab separator between fields, newline at end.
-  mlir::LogicalResult checkOutput() const;
-  mlir::LogicalResult outputType(const char* type, std::string_view value,
+  llvm::LogicalResult checkOutput() const;
+  llvm::LogicalResult outputType(const char* type, std::string_view value,
                                  const char* label) const;
 
 public:
@@ -179,17 +180,17 @@ public:
   /// Apply a row-major matrix with a runtime-sized control set.
   auto apply(std::span<const std::complex<dd::fp>> matrix,
              std::span<Qubit* const> controls, std::span<Qubit* const> targets)
-      -> mlir::LogicalResult;
+      -> llvm::LogicalResult;
   template <typename Matrix>
     requires requires(const Matrix& matrix) { matrix.entries(); }
   auto apply(const Matrix& matrix, std::span<Qubit* const> controls,
-             std::span<Qubit* const> targets) -> mlir::LogicalResult {
+             std::span<Qubit* const> targets) -> llvm::LogicalResult {
     return apply(matrix.entries(), controls, targets);
   }
   auto applyGlobalPhase(dd::fp phase) -> void;
-  auto measure(Qubit* qubit, Result* result) -> mlir::LogicalResult;
+  auto measure(Qubit* qubit, Result* result) -> llvm::LogicalResult;
   template <typename... Args>
-  auto measure(Args... args) -> mlir::LogicalResult {
+  auto measure(Args... args) -> llvm::LogicalResult {
     const auto qubits = packOfType<Qubit*>(args...);
     const auto results = packOfType<Result*>(args...);
     static_assert(
@@ -201,19 +202,19 @@ public:
         "Number of qubits and results must match the number of arguments. "
         "First, all qubits followed then by all results.");
     for (size_t i = 0; i < qubits.size(); ++i) {
-      if (mlir::failed(measure(qubits[i], results[i]))) {
-        return mlir::failure();
+      if (llvm::failed(measure(qubits[i], results[i]))) {
+        return llvm::failure();
       }
     }
-    return mlir::success();
+    return llvm::success();
   }
-  auto reset(std::span<Qubit* const> qubits) -> mlir::LogicalResult;
-  auto swap(Qubit* qubit1, Qubit* qubit2) -> mlir::LogicalResult;
-  auto qAlloc() -> mlir::FailureOr<Qubit*>;
-  auto qFree(Qubit* qubit) -> mlir::LogicalResult;
-  auto rAlloc() -> mlir::FailureOr<Result*>;
-  auto deref(Result* result) -> mlir::FailureOr<ResultStruct*>;
-  auto rFree(Result* result) -> mlir::LogicalResult;
+  auto reset(std::span<Qubit* const> qubits) -> llvm::LogicalResult;
+  auto swap(Qubit* qubit1, Qubit* qubit2) -> llvm::LogicalResult;
+  auto qAlloc() -> llvm::FailureOr<Qubit*>;
+  auto qFree(Qubit* qubit) -> llvm::LogicalResult;
+  auto rAlloc() -> llvm::FailureOr<Result*>;
+  auto deref(Result* result) -> llvm::FailureOr<ResultStruct*>;
+  auto rFree(Result* result) -> llvm::LogicalResult;
 
   /// Append a measurement bit to the measurement string.
   auto appendMeasurementBit(bool result) -> void;
@@ -239,41 +240,41 @@ public:
   }
 
   /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
-  auto outputResult(bool value, const char* label) const -> mlir::LogicalResult;
+  auto outputResult(bool value, const char* label) const -> llvm::LogicalResult;
 
   /// Emit `OUTPUT\tRESULT_ARRAY\t<bits>[\tlabel]\n` in memory order.
   auto outputResultArray(std::string_view values, const char* label) const
-      -> mlir::LogicalResult;
+      -> llvm::LogicalResult;
 
   /// Emit `OUTPUT\tBOOL\t<true|false>[\tlabel]\n` to the output stream.
-  auto outputBool(bool value, const char* label) const -> mlir::LogicalResult;
+  auto outputBool(bool value, const char* label) const -> llvm::LogicalResult;
 
   /// Emit `OUTPUT\tINT\t<value>[\tlabel]\n` to the output stream.
-  auto outputInt(int64_t value, const char* label) const -> mlir::LogicalResult;
+  auto outputInt(int64_t value, const char* label) const -> llvm::LogicalResult;
 
   /// Emit `OUTPUT\tDOUBLE\t<value>[\tlabel]\n` to the output stream.
   auto outputFloat(double value, const char* label) const
-      -> mlir::LogicalResult;
+      -> llvm::LogicalResult;
 
   /// Emit `OUTPUT\tTUPLE\t<elementCount>[\tlabel]\n` to the output stream.
   auto outputTuple(int64_t elementCount, const char* label) const
-      -> mlir::LogicalResult;
+      -> llvm::LogicalResult;
 
   /// Emit `OUTPUT\tARRAY\t<elementCount>[\tlabel]\n` to the output stream.
   auto outputArray(int64_t elementCount, const char* label) const
-      -> mlir::LogicalResult;
+      -> llvm::LogicalResult;
 
   /// Emit the HEADER records (once per submitted program):
   /// `HEADER\tschema_id\t<labeled|ordered>`
   /// `HEADER\tschema_version\t2.1`
-  auto outputProgramHeader() const -> mlir::LogicalResult;
+  auto outputProgramHeader() const -> llvm::LogicalResult;
 
   /// Emit `START\n` followed by
   /// `METADATA\toutput_labeling_schema\t<labeled|ordered>\n` (one per shot).
-  auto outputShotStart() const -> mlir::LogicalResult;
+  auto outputShotStart() const -> llvm::LogicalResult;
 
   /// Emit `END\t<exitCode>\n` (one per shot).
-  auto outputShotEnd(int64_t exitCode = 0) const -> mlir::LogicalResult;
+  auto outputShotEnd(int64_t exitCode = 0) const -> llvm::LogicalResult;
 
   [[nodiscard]] auto getOutputSchema() const -> OutputSchema;
   auto setOutputSchema(OutputSchema schema) -> void;

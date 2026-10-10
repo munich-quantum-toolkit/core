@@ -17,7 +17,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <complex>
@@ -113,7 +113,7 @@ template <class Node> struct Edge {
   /// Returns an error if the path is too short
   /// Returns an error if a used path digit is outside the radix
   /// @return the complex amplitude of the specified element
-  [[nodiscard]] mlir::FailureOr<std::complex<fp>>
+  [[nodiscard]] llvm::FailureOr<std::complex<fp>>
   getValueByPath(std::size_t numQubits, const std::string& decisions) const;
 
   /// Get the size of the DD
@@ -155,7 +155,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
 /// @param i index of the element
 /// Returns an error if the index is outside the vector
 /// @return the complex value of the amplitude
-[[nodiscard]] mlir::FailureOr<std::complex<fp>>
+[[nodiscard]] llvm::FailureOr<std::complex<fp>>
 getValueByIndex(const Edge<vNode>& edge, size_t i);
 
 /// Get the vector represented by the DD
@@ -219,7 +219,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 /// @param j column index of the element
 /// Returns an error if either index is outside the matrix
 /// @return the complex value of the entry
-[[nodiscard]] mlir::FailureOr<std::complex<fp>>
+[[nodiscard]] llvm::FailureOr<std::complex<fp>>
 getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
 
 /// Get the matrix represented by the DD

@@ -11,13 +11,14 @@
 #include "qdmi/QDMI.hpp"
 #include "qdmi/common/Common.hpp"
 
+#include "support/Diagnostics.hpp"
 #include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 #include "qdmi/client.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -265,14 +266,14 @@ TEST(StandardPropertyTest, ReturnsValuesUnsupportedPropertiesAndDiagnostics) {
   const auto bytes = bytesOf(size_t{42});
   auto value =
       detail::queryProperty<size_t>(queryBytes(bytes), "value", "size");
-  ASSERT_TRUE(mlir::succeeded(value));
+  ASSERT_TRUE(llvm::succeeded(value));
   EXPECT_EQ(*value, 42);
   const auto unsupported = [](size_t, void*, size_t*) {
     return QDMI_ERROR_NOTSUPPORTED;
   };
   auto optional = detail::queryProperty<std::optional<size_t>>(unsupported,
                                                                "value", "size");
-  ASSERT_TRUE(mlir::succeeded(optional));
+  ASSERT_TRUE(llvm::succeeded(optional));
   EXPECT_FALSE(*optional);
   auto error = mqt::test::diagnostic([&] {
     return detail::queryProperty<size_t>(unsupported, "value", "size");
@@ -579,18 +580,36 @@ TEST(QDMITest, DeviceSessionParameterToString) {
 }
 
 TEST(QDMITest, CheckErrorPreservesStatuses) {
-  EXPECT_TRUE(mlir::succeeded(qdmi::checkError(QDMI_SUCCESS, "Test")));
-  EXPECT_TRUE(mlir::succeeded(qdmi::checkError(QDMI_WARN_GENERAL, "Test")));
+  std::optional<mqt::Diagnostic> warning;
+  {
+    const mqt::ScopedDiagnosticHandler handler(
+        [&](const mqt::Diagnostic& diagnostic) {
+          warning = diagnostic;
+          return llvm::success();
+        });
+    EXPECT_TRUE(llvm::succeeded(qdmi::checkError(QDMI_SUCCESS, "Test")));
+    EXPECT_FALSE(warning);
+    EXPECT_TRUE(llvm::succeeded(qdmi::checkError(QDMI_WARN_GENERAL, "Test")));
+  }
+  ASSERT_TRUE(warning);
+  EXPECT_EQ(warning->message, "Test");
+  EXPECT_EQ(warning->severity, mqt::DiagnosticSeverity::Warning);
+  EXPECT_EQ(warning->category, mqt::ErrorCategory::Runtime);
+  EXPECT_EQ(warning->status, QDMI_WARN_GENERAL);
   for (int code = QDMI_ERROR_TIMEOUT; code <= QDMI_ERROR_FATAL; ++code) {
     const auto error =
         mqt::test::diagnostic([&] { return qdmi::checkError(code, "Test"); });
     ASSERT_TRUE(error);
     EXPECT_EQ(error->status, code);
-    EXPECT_THAT(error->message, testing::HasSubstr("Test"));
+    EXPECT_EQ(error->message, std::string("Test: ") +
+                                  toString(static_cast<QDMI_STATUS>(code)) +
+                                  ".");
   }
-  EXPECT_EQ(
-      mqt::test::errorStatus([] { return qdmi::checkError(-99, "Test"); }),
-      -99);
+  const auto unknown =
+      mqt::test::diagnostic([] { return qdmi::checkError(-99, "Test"); });
+  ASSERT_TRUE(unknown);
+  EXPECT_EQ(unknown->status, -99);
+  EXPECT_EQ(unknown->message, "Unknown QDMI error code -99. Test");
 }
 
 TEST(QDMITest, BinaryProgramFormatClassification) {
@@ -1196,7 +1215,7 @@ TEST_F(JobTest, GetShotsReturnsValidShots) {
   EXPECT_TRUE(::mqt::test::value(job.wait()));
   mqt::test::DiagnosticCapture diagnostics;
   auto result = job.getShots();
-  if (mlir::failed(result)) {
+  if (llvm::failed(result)) {
     ASSERT_TRUE(diagnostics.error);
     EXPECT_EQ(diagnostics.error->status, QDMI_ERROR_NOTSUPPORTED);
     return;
@@ -1223,7 +1242,7 @@ c[0] = measure q[0];
   mqt::test::DiagnosticCapture capture;
   const auto error = jobToCancel.cancel();
   const auto status = ::mqt::test::value(jobToCancel.check());
-  if (mlir::failed(error)) {
+  if (llvm::failed(error)) {
     ASSERT_TRUE(capture.error);
     EXPECT_EQ(capture.error->status, QDMI_ERROR_INVALIDARGUMENT);
     EXPECT_THAT(status,

@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
 #include <cstddef>
@@ -23,7 +23,7 @@
 
 namespace mqt::bench {
 
-mlir::FailureOr<GHZ> GHZ::create(GHZOptions options) {
+llvm::FailureOr<GHZ> GHZ::create(GHZOptions options) {
   if (options.qubits == 0 || options.qubits > GHZOptions::MAX_QUBITS) {
     return ::mqt::emitError("GHZ qubits must be between 1 and 1000000",
                             ::mqt::ErrorCategory::InvalidArgument);
@@ -52,9 +52,9 @@ const GHZOptions& GHZ::options() const noexcept { return options_; }
 
 const Output& GHZ::output() const noexcept { return output_; }
 
-mlir::FailureOr<double> GHZ::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+llvm::FailureOr<double> GHZ::probability(const std::string_view outcome) const {
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
 
   if (options_.basis == GHZBasis::Z) {
@@ -73,7 +73,7 @@ mlir::FailureOr<double> GHZ::probability(const std::string_view outcome) const {
   return std::ldexp(1., 1 - static_cast<int>(options_.qubits));
 }
 
-mlir::FailureOr<Evaluation> GHZ::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> GHZ::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

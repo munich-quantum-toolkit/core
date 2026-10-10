@@ -17,7 +17,7 @@
 
 #include "qdmi/constants.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cctype>
@@ -55,7 +55,7 @@ namespace {
 }
 
 [[nodiscard]] auto parseLicense(const std::string_view licenseSpec)
-    -> mlir::FailureOr<std::string> {
+    -> llvm::FailureOr<std::string> {
   if (licenseSpec.empty()) {
     return qdmi::emitError(
         QDMI_ERROR_BADSTATE,
@@ -128,35 +128,35 @@ namespace {
 
 } // namespace
 
-mlir::FailureOr<Device> openDeviceFromLicense() {
+llvm::FailureOr<Device> openDeviceFromLicense() {
   // The job can modify its environment. Use this value only to select a
   // registered device; the provider or operating system must authorize access.
   const auto* environmentValue = std::getenv("SLURM_JOB_LICENSES");
   auto id = parseLicense(environmentValue == nullptr ? "" : environmentValue);
-  if (mlir::failed(id)) {
-    return mlir::failure();
+  if (llvm::failed(id)) {
+    return llvm::failure();
   }
   const auto& deviceId = (*id);
   auto result = [&] {
     ::mqt::ScopedDiagnosticHandler const context(
         [&](const ::mqt::Diagnostic& diagnostic) {
           if (diagnostic.status != QDMI_ERROR_OUTOFRANGE) {
-            return mlir::failure();
+            return llvm::failure();
           }
           std::ignore = qdmi::emitError(
               QDMI_ERROR_BADSTATE, "Slurm license '" + deviceId +
                                        "' is not a registered QDMI device ID");
-          return mlir::success();
+          return llvm::success();
         });
     return Session::openDevice(deviceId);
   }();
-  if (mlir::failed(result)) {
-    return mlir::failure();
+  if (llvm::failed(result)) {
+    return llvm::failure();
   }
   auto& device = (*result);
   auto statusResult = device.getStatus();
-  if (mlir::failed(statusResult)) {
-    return mlir::failure();
+  if (llvm::failed(statusResult)) {
+    return llvm::failure();
   }
   const auto status = (*statusResult);
   if (status != QDMI_DEVICE_STATUS_IDLE && status != QDMI_DEVICE_STATUS_BUSY) {

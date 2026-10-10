@@ -12,7 +12,7 @@
 
 #include "support/DiagnosticFormatting.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
 #include <cstdio>
@@ -31,7 +31,7 @@ thread_local ScopedDiagnosticHandler* currentHandler = nullptr;
 } // namespace
 
 ScopedDiagnosticHandler::ScopedDiagnosticHandler(
-    std::function<mlir::LogicalResult(const Diagnostic&)> handler)
+    std::function<llvm::LogicalResult(const Diagnostic&)> handler)
     : previous_(currentHandler), handler_(std::move(handler)) {
   currentHandler = this;
 }
@@ -46,7 +46,7 @@ void emitDiagnostic(const Diagnostic& diagnostic) {
   for (auto const* handler = installed; handler != nullptr;
        handler = handler->previous_) {
     currentHandler = handler->previous_;
-    const auto consumed = mlir::succeeded(handler->handler_(diagnostic));
+    const auto consumed = llvm::succeeded(handler->handler_(diagnostic));
     currentHandler = installed;
     if (consumed) {
       return;
@@ -73,7 +73,7 @@ void diagnostics::detail::emitToStderr(DiagnosticSeverity level,
   std::fflush(stderr);
 }
 
-mlir::LogicalResult emitError(std::string message, ErrorCategory category,
+llvm::LogicalResult emitError(std::string message, ErrorCategory category,
                               std::optional<int> status) {
   emitDiagnostic({
       .message = std::move(message),
@@ -81,6 +81,6 @@ mlir::LogicalResult emitError(std::string message, ErrorCategory category,
       .severity = DiagnosticSeverity::Error,
       .status = status,
   });
-  return mlir::failure();
+  return llvm::failure();
 }
 } // namespace mqt

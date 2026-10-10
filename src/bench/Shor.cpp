@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <bit>
@@ -131,7 +131,7 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
 
 } // namespace
 
-mlir::FailureOr<Shor> Shor::create(ShorOptions options) {
+llvm::FailureOr<Shor> Shor::create(ShorOptions options) {
   if (options.number < 3 || options.number > ShorOptions::MAX_NUMBER ||
       options.number % 2 == 0) {
     return ::mqt::emitError(
@@ -157,16 +157,16 @@ Shor::Shor(ShorOptions options)
 const ShorOptions& Shor::options() const noexcept { return options_; }
 const Output& Shor::output() const noexcept { return output_; }
 
-mlir::FailureOr<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
+llvm::FailureOr<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
   const auto total = detail::countShots(counts);
-  if (mlir::failed(total)) {
-    return mlir::failure();
+  if (llvm::failed(total)) {
+    return llvm::failure();
   }
   size_t successes = 0;
   ShorEvaluation result;
   for (const auto& [outcome, count] : counts) {
-    if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-      return mlir::failure();
+    if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+      return llvm::failure();
     }
     if (count == 0) {
       continue;
@@ -187,9 +187,9 @@ mlir::FailureOr<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
   return result;
 }
 
-mlir::FailureOr<FactorResult>
+llvm::FailureOr<FactorResult>
 factor(uint64_t number,
-       const std::function<mlir::FailureOr<Counts>(const Shor&)>& run,
+       const std::function<llvm::FailureOr<Counts>(const Shor&)>& run,
        const FactorOptions& options) {
   if (number < 2 || number > ShorOptions::MAX_NUMBER) {
     return ::mqt::emitError("factoring number must be between 2 and 2^31 - 1",
@@ -228,16 +228,16 @@ factor(uint64_t number,
       };
     }
     const auto benchmark = Shor::create({.number = number, .base = base});
-    if (mlir::failed(benchmark)) {
-      return mlir::failure();
+    if (llvm::failed(benchmark)) {
+      return llvm::failure();
     }
     const auto counts = run(*benchmark);
-    if (mlir::failed(counts)) {
-      return mlir::failure();
+    if (llvm::failed(counts)) {
+      return llvm::failure();
     }
     const auto evaluation = benchmark->evaluate(*counts);
-    if (mlir::failed(evaluation)) {
-      return mlir::failure();
+    if (llvm::failed(evaluation)) {
+      return llvm::failure();
     }
     if (evaluation->factors) {
       return FactorResult{

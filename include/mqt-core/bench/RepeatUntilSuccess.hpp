@@ -13,7 +13,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <string_view>
@@ -34,17 +34,17 @@ struct RepeatUntilSuccessOptions {
 /// \f$(I+i\sqrt{2}X^{\otimes n})/\sqrt{3}\f$.
 class MQT_CORE_BENCH_EXPORT RepeatUntilSuccess final {
 public:
-  [[nodiscard]] static mlir::FailureOr<RepeatUntilSuccess>
+  [[nodiscard]] static llvm::FailureOr<RepeatUntilSuccess>
   create(RepeatUntilSuccessOptions options = {});
 
   [[nodiscard]] const RepeatUntilSuccessOptions& options() const noexcept;
 
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] mlir::FailureOr<double>
+  [[nodiscard]] llvm::FailureOr<double>
   probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] mlir::FailureOr<Evaluation>
+  [[nodiscard]] llvm::FailureOr<Evaluation>
   evaluate(const Counts& counts) const;
 
 private:

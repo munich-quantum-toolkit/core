@@ -21,7 +21,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -348,7 +348,7 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
                      bool writeBinary = false);
 void serialize(const mEdge& basic, std::ostream& os, bool writeBinary = false);
 template <class Node>
-[[nodiscard]] static mlir::LogicalResult
+[[nodiscard]] static llvm::LogicalResult
 serialize(const Edge<Node>& basic, const std::string& outputFilename,
           bool writeBinary = false) {
   std::ofstream ofs = std::ofstream(outputFilename, std::ios::binary);
@@ -364,7 +364,7 @@ serialize(const Edge<Node>& basic, const std::string& outputFilename,
     return ::mqt::emitError("Cannot write file: " + outputFilename,
                             ::mqt::ErrorCategory::IO);
   }
-  return mlir::success();
+  return llvm::success();
 }
 
 template <typename Node>

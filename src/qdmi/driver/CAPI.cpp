@@ -16,7 +16,7 @@
 
 #include "qdmi/client.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -56,13 +56,13 @@ extern "C" QDMI_DRIVER_EXPORT int MQT_CORE_QDMI_driver_registered_device_ids_v1(
   try {
     std::string buffer;
     std::vector<std::string> idsValue;
-    const auto status = qdmi::invokeStatus([&]() -> mlir::LogicalResult {
+    const auto status = qdmi::invokeStatus([&]() -> llvm::LogicalResult {
       auto result = qdmi::Driver::get().registeredDeviceIds();
-      if (mlir::failed(result)) {
-        return mlir::failure();
+      if (llvm::failed(result)) {
+        return llvm::failure();
       }
       idsValue = std::move(*result);
-      return mlir::success();
+      return llvm::success();
     });
     if (status != QDMI_SUCCESS) {
       return status;

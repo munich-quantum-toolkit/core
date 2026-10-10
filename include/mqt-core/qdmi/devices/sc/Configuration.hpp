@@ -73,10 +73,10 @@ struct Device {
 };
 
 /// Parse and validate a device description and report errors with @p source.
-[[nodiscard]] mlir::FailureOr<Device> readJSON(std::string_view json,
+[[nodiscard]] llvm::FailureOr<Device> readJSON(std::string_view json,
                                                std::string_view source);
-[[nodiscard]] mlir::FailureOr<Device>
+[[nodiscard]] llvm::FailureOr<Device>
 readJSON(std::istream& stream, std::string_view source = "input");
-[[nodiscard]] mlir::FailureOr<Device> readJSON(const std::string& path);
+[[nodiscard]] llvm::FailureOr<Device> readJSON(const std::string& path);
 
 } // namespace sc

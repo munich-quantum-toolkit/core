@@ -94,7 +94,7 @@ TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
 TEST(GenerateProgramTest, SamplesWeakMeasurementGroverAgainstReference) {
   auto program = test::generateQCO(::mqt::test::value(
       WeakMeasurementGrover::create({.markedBitstring = "110"})));
-  ASSERT_TRUE(program);
+  ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));

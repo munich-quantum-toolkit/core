@@ -27,7 +27,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -56,7 +56,7 @@
 
 namespace dd {
 namespace {
-mlir::LogicalResult checkCapacity(const size_t nq) {
+llvm::LogicalResult checkCapacity(const size_t nq) {
   if (nq > Package::MAX_POSSIBLE_QUBITS) {
     return ::mqt::emitError(
         "Requested too many qubits from package. Qubit datatype only "
@@ -67,19 +67,19 @@ mlir::LogicalResult checkCapacity(const size_t nq) {
             "Qubit type!",
         ::mqt::ErrorCategory::InvalidArgument);
   }
-  return mlir::success();
+  return llvm::success();
 }
 } // namespace
 
-mlir::FailureOr<std::unique_ptr<Package>>
+llvm::FailureOr<std::unique_ptr<Package>>
 Package::create(const size_t nq, const DDPackageConfig& config) {
-  if (mlir::failed(checkCapacity(nq))) {
-    return mlir::failure();
+  if (llvm::failed(checkCapacity(nq))) {
+    return llvm::failure();
   }
   for (const auto initial : {config.utVecNumBucket, config.utMatNumBucket}) {
-    if (mlir::failed(
+    if (llvm::failed(
             UniqueTable::checkCapacity(initial, config.utMaxNumBucket))) {
-      return mlir::failure();
+      return llvm::failure();
     }
   }
   const std::array buckets{
@@ -109,14 +109,14 @@ Package::Package(const size_t nq, const DDPackageConfig& config)
   mUniqueTable.resize(nqubits);
 }
 
-mlir::LogicalResult Package::resize(const size_t nq) {
-  if (mlir::failed(checkCapacity(nq))) {
-    return mlir::failure();
+llvm::LogicalResult Package::resize(const size_t nq) {
+  if (llvm::failed(checkCapacity(nq))) {
+    return llvm::failure();
   }
   nqubits = nq;
   vUniqueTable.resize(nqubits);
   mUniqueTable.resize(nqubits);
-  return mlir::success();
+  return llvm::success();
 }
 
 void Package::reset() {
@@ -220,7 +220,7 @@ Package::ActiveCounts Package::computeActiveCounts() {
 
 namespace {
 
-[[nodiscard]] mlir::LogicalResult
+[[nodiscard]] llvm::LogicalResult
 gateQubitOutOfRange(const std::size_t nqubits) {
   if (nqubits == 0U) {
     return ::mqt::emitError(
@@ -236,13 +236,13 @@ gateQubitOutOfRange(const std::size_t nqubits) {
       ::mqt::ErrorCategory::InvalidArgument);
 }
 
-[[nodiscard]] mlir::LogicalResult gateQubitsNotDistinct() {
+[[nodiscard]] llvm::LogicalResult gateQubitsNotDistinct() {
   return ::mqt::emitError(
       "Requested gate has duplicate or overlapping control/target qubits.",
       ::mqt::ErrorCategory::InvalidArgument);
 }
 
-mlir::LogicalResult
+llvm::LogicalResult
 ensureGateQubitsInRange(const std::size_t nqubits, const Controls& controls,
                         const std::span<const Qubit> targets) {
   if (nqubits == 0U ||
@@ -273,7 +273,7 @@ ensureGateQubitsInRange(const std::size_t nqubits, const Controls& controls,
       })) {
     return gateQubitsNotDistinct();
   }
-  return mlir::success();
+  return llvm::success();
 }
 
 template <std::size_t Dim>
@@ -376,12 +376,12 @@ void wrapControlsAbove(Package& dd, Controls::const_iterator& it,
 }
 
 template <typename Matrix>
-[[nodiscard]] mlir::FailureOr<mEdge>
+[[nodiscard]] llvm::FailureOr<mEdge>
 buildSingleQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                        const Qubit target) {
   const std::array targets{target};
-  if (mlir::failed(ensureGateQubitsInRange(dd.qubits(), controls, targets))) {
-    return mlir::failure();
+  if (llvm::failed(ensureGateQubitsInRange(dd.qubits(), controls, targets))) {
+    return llvm::failure();
   }
 
   std::array<mCachedEdge, NEDGE> em{};
@@ -401,12 +401,12 @@ buildSingleQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 }
 
 template <typename Matrix>
-[[nodiscard]] mlir::FailureOr<mEdge>
+[[nodiscard]] llvm::FailureOr<mEdge>
 buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                     const Qubit target0, const Qubit target1) {
   const std::array targets{target0, target1};
-  if (mlir::failed(ensureGateQubitsInRange(dd.qubits(), controls, targets))) {
-    return mlir::failure();
+  if (llvm::failed(ensureGateQubitsInRange(dd.qubits(), controls, targets))) {
+    return llvm::failure();
   }
 
   std::array<std::array<mCachedEdge, NEDGE>, NEDGE> em{};
@@ -449,7 +449,7 @@ buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 }
 
 template <typename Matrix>
-[[nodiscard]] mlir::FailureOr<mEdge>
+[[nodiscard]] llvm::FailureOr<mEdge>
 buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                       const Qubit target0, const Qubit target1,
                       const Qubit target2) {
@@ -457,8 +457,8 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
   // controls between target levels. Matrix bits are MSB-first; DD levels
   // follow ascending qubit indices.
   const std::array targets{target0, target1, target2};
-  if (mlir::failed(ensureGateQubitsInRange(dd.qubits(), controls, targets))) {
-    return mlir::failure();
+  if (llvm::failed(ensureGateQubitsInRange(dd.qubits(), controls, targets))) {
+    return llvm::failure();
   }
 
   std::array<std::array<mCachedEdge, THREE_QUBIT_GATE_DIM>,
@@ -528,69 +528,69 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 
 } // namespace
 
-mlir::FailureOr<mEdge> Package::makeGateDD(const GateMatrix& mat,
+llvm::FailureOr<mEdge> Package::makeGateDD(const GateMatrix& mat,
                                            const Qubit target) {
   return makeGateDD(mat, Controls{}, target);
 }
-mlir::FailureOr<mEdge> Package::makeGateDD(const GateMatrix& mat,
+llvm::FailureOr<mEdge> Package::makeGateDD(const GateMatrix& mat,
                                            const Control& control,
                                            const Qubit target) {
   return makeGateDD(mat, Controls{control}, target);
 }
-mlir::FailureOr<mEdge> Package::makeGateDD(const GateMatrix& mat,
+llvm::FailureOr<mEdge> Package::makeGateDD(const GateMatrix& mat,
                                            const Controls& controls,
                                            const Qubit target) {
   return buildSingleQubitGateDD(*this, mat, controls, target);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeGateDD(const std::span<const std::complex<fp>, NEDGE> mat,
                     const Controls& controls, const Qubit target) {
   return buildSingleQubitGateDD(*this, mat, controls, target);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, const Qubit target0,
                             const Qubit target1) {
   return makeTwoQubitGateDD(mat, Controls{}, target0, target1);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
                             const Control& control, const Qubit target0,
                             const Qubit target1) {
   return makeTwoQubitGateDD(mat, Controls{control}, target0, target1);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
                             const Controls& controls, const Qubit target0,
                             const Qubit target1) {
   return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
 }
-mlir::FailureOr<mEdge> Package::makeTwoQubitGateDD(
+llvm::FailureOr<mEdge> Package::makeTwoQubitGateDD(
     const std::span<const std::complex<fp>,
                     static_cast<std::size_t>(NEDGE) * NEDGE>
         mat,
     const Controls& controls, const Qubit target0, const Qubit target1) {
   return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
                               const Qubit target0, const Qubit target1,
                               const Qubit target2) {
   return makeThreeQubitGateDD(mat, Controls{}, target0, target1, target2);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
                               const Control& control, const Qubit target0,
                               const Qubit target1, const Qubit target2) {
   return makeThreeQubitGateDD(mat, Controls{control}, target0, target1,
                               target2);
 }
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
                               const Controls& controls, const Qubit target0,
                               const Qubit target1, const Qubit target2) {
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
-mlir::FailureOr<mEdge> Package::makeThreeQubitGateDD(
+llvm::FailureOr<mEdge> Package::makeThreeQubitGateDD(
     const std::span<const std::complex<fp>,
                     static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
                         THREE_QUBIT_GATE_DIM>
@@ -600,7 +600,7 @@ mlir::FailureOr<mEdge> Package::makeThreeQubitGateDD(
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
 
-mlir::FailureOr<mEdge>
+llvm::FailureOr<mEdge>
 Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
                     const std::span<const Qubit> targets,
                     const Controls& controls) {
@@ -655,7 +655,7 @@ Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
   return toMatrixDD(*this, root);
 }
 
-mlir::FailureOr<mEdge> Package::makeDDFromMatrix(const CMat& matrix) {
+llvm::FailureOr<mEdge> Package::makeDDFromMatrix(const CMat& matrix) {
   if (std::ranges::any_of(matrix, [&matrix](const auto& row) {
         return row.size() != matrix.size();
       })) {
@@ -681,7 +681,7 @@ void Package::clearComputeTables() {
   matrixKronecker.clear();
   matrixTrace.clear();
 }
-mlir::FailureOr<std::string> Package::measureAll(vEdge& rootEdge,
+llvm::FailureOr<std::string> Package::measureAll(vEdge& rootEdge,
                                                  const bool collapse,
                                                  std::mt19937_64& mt,
                                                  const fp epsilon) {
@@ -831,7 +831,7 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
 
   return std::pair{pzero, pone};
 }
-mlir::FailureOr<char> Package::measureOneCollapsing(vEdge& rootEdge,
+llvm::FailureOr<char> Package::measureOneCollapsing(vEdge& rootEdge,
                                                     const Qubit index,
                                                     std::mt19937_64& mt,
                                                     const fp epsilon) {
@@ -989,7 +989,7 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
 fp Package::fidelity(const vEdge& x, const vEdge& y) {
   return innerProduct(x, y).mag2();
 }
-mlir::FailureOr<fp>
+llvm::FailureOr<fp>
 Package::fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
                                        const Permutation& permutation) {
   const auto numQubits =
@@ -1092,7 +1092,7 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
 
   return top * (leftContribution + rightContribution);
 }
-mlir::FailureOr<fp> Package::expectationValue(const mEdge& x, const vEdge& y) {
+llvm::FailureOr<fp> Package::expectationValue(const mEdge& x, const vEdge& y) {
   assert(!x.isZeroTerminal() && !y.isTerminal());
   if (!x.isTerminal() && x.p->v > y.p->v) {
     return ::mqt::emitError(

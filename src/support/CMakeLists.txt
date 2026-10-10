@@ -15,9 +15,8 @@ if(support_library_type STREQUAL "STATIC_LIBRARY")
                                                                    VISIBILITY_INLINES_HIDDEN ON)
 endif()
 target_link_libraries(${MQT_CORE_TARGET_NAME}-support PUBLIC LLVMSupport)
-target_include_directories(
-  ${MQT_CORE_TARGET_NAME}-support SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>"
-                                                "$<BUILD_INTERFACE:${MLIR_INCLUDE_DIRS}>")
+target_include_directories(${MQT_CORE_TARGET_NAME}-support SYSTEM
+                           PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>")
 mqt_target_disable_exceptions(${MQT_CORE_TARGET_NAME}-support)
 target_sources(${MQT_CORE_TARGET_NAME}-support PRIVATE Diagnostics.cpp DiagnosticFormatting.cpp)
 mqt_source_enable_exceptions(DiagnosticFormatting.cpp)

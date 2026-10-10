@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <bitset>
@@ -66,7 +66,7 @@ binaryValue(const std::string_view bitstring) {
 
 } // namespace
 
-mlir::FailureOr<ModularMultiplier>
+llvm::FailureOr<ModularMultiplier>
 ModularMultiplier::create(ModularMultiplierOptions options) {
   const auto width = options.multiplier.size();
   if (width < 2U || width > ModularMultiplierOptions::MAX_BITS) {
@@ -143,10 +143,10 @@ ModularMultiplier::expectedResult() const noexcept {
   return expectedResult_;
 }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 ModularMultiplier::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   const auto width = options_.multiplier.size();
   const auto control = outcome.front();
@@ -174,7 +174,7 @@ ModularMultiplier::probability(const std::string_view outcome) const {
                             (options_.control == '+' ? 1 : 0)));
 }
 
-mlir::FailureOr<Evaluation>
+llvm::FailureOr<Evaluation>
 ModularMultiplier::evaluate(const Counts& counts) const {
   size_t totalShots = 0;
   size_t successShots = 0;
@@ -182,13 +182,13 @@ ModularMultiplier::evaluate(const Counts& counts) const {
       counts, [&](const std::string_view outcome, const size_t count) {
         auto reference = probability(outcome);
         totalShots += count;
-        if (mlir::succeeded(reference) && *reference > 0.) {
+        if (llvm::succeeded(reference) && *reference > 0.) {
           successShots += count;
         }
         return reference;
       });
-  if (mlir::failed(result)) {
-    return mlir::failure();
+  if (llvm::failed(result)) {
+    return llvm::failure();
   }
   result->successProbability =
       static_cast<double>(successShots) / static_cast<double>(totalShots);

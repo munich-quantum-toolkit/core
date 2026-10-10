@@ -29,7 +29,7 @@
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/client.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <cstddef>
@@ -291,10 +291,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
       "device_ids",
       [] {
         return ::mqt::bindings::invoke(
-            []() -> mlir::FailureOr<std::vector<std::string>> {
+            []() -> llvm::FailureOr<std::vector<std::string>> {
               auto session = qdmi::Session::create();
-              if (mlir::failed(session)) {
-                return mlir::failure();
+              if (llvm::failed(session)) {
+                return llvm::failure();
               }
               return session->getDeviceIds();
             });

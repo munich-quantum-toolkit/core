@@ -1,17 +1,17 @@
 # Exception-free Core APIs
 
-Status: rebased and locally validated on main `d3fbd39e0`. The reassessed
-[audit findings](../audits/exception-free-rebase.md) are addressed. Result
-handling reuses invariants established at the owning boundary.
+Status: complete. The LLVM 23 audit findings are addressed and locally
+validated. Compiler and native APIs share upstream results and scoped
+diagnostics; public Python exception categories remain unchanged.
 
 ## Contract
 
 All Core libraries require LLVM/MLIR 23.1 or newer. Native fallible APIs use
-upstream `FailureOr<T>` and `LogicalResult`; infallible APIs return ordinary
-values or `void`. Successful absence remains `optional<T>`, and borrowed results
-use pointers. Scoped thread-local diagnostics preserve severity, category,
-message, and QDMI status. Binding invocation and test capture each share one
-implementation. See
+`llvm::FailureOr<T>` and `llvm::LogicalResult`; MLIR-facing APIs use the same
+types through MLIR aliases. Infallible APIs return ordinary values or `void`.
+Successful absence remains `optional<T>`, and borrowed results use pointers.
+Scoped thread-local diagnostics preserve severity, category, message, and QDMI
+status. Binding invocation and test capture each share one implementation. See
 [native error handling](../../docs/cpp_api.md#handle-native-errors).
 
 Standalone driver and device builds embed diagnostic support. QDMI C interfaces
@@ -34,10 +34,13 @@ construction and operations on already-validated owned state need no repeated
 checks. Benchmark evaluation validates outcomes once through its probability
 callback; hashing uses LLVM SHA-256.
 
-QIR allocation failures with explicit error outputs remain recoverable and
-release partial allocations. Other runtime failures diagnose and terminate. The
-thin `noexcept` ABI facade retains exception support; algorithms do not. Setup
-and compilation errors remain recoverable.
+The JIT validates C calling conventions, native ABI attributes, and runtime call
+signatures before binding host functions. ORC errors use scoped diagnostics. QIR
+resource-allocation failures with explicit error outputs remain recoverable and
+release partial allocations. Host allocation failures and other unhandled
+runtime failures diagnose and terminate. The thin `noexcept` ABI facade retains
+exception support; algorithms do not. Setup and compilation errors remain
+recoverable.
 
 DDSIM worker isolation and concurrency are supplied by the parent multi-program
 change. This layer adapts worker compilation and compact DD reconstruction to
@@ -66,20 +69,22 @@ SIGALRM handler and may reap another child on timeout.
 
 Current checks on Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
 
-- `cmake --build --preset release` and `ctest --preset release`: 4,023 native
-  tests pass; `ScQDMIJobSpecificationTest.QueryJobId` is the one expected skip.
-- `uv run --no-sync pytest -n 0 test/python`: all 1,966 tests pass, including
+- Release build and CTest pass: 4,034 tests pass and
+  `ScQDMIJobSpecificationTest.QueryJobId` is the one expected skip.
+- `uv run --no-sync pytest -n 0 test/python`: all 1,974 tests pass, including
   QDMI, Qiskit, MLIR, and QIR-runner integration.
-- `uvx nox -s stubs`: passes with no generated stub changes.
-- `uvx nox -s lint`: passes.
-- `uvx nox --non-interactive -s docs`: passes, including executable examples and
-  internal documentation links.
-- `uvx nox -s cpp-lint`: checked all 179 changed C++ files. Fixed its two
-  include diagnostics and rechecked both complete source files with the same
-  clang-tidy 23.1.2 configuration; no source findings remain.
-
-Installed Development consumers passed with GCC and Clang before this cleanup;
-those probes have not been repeated.
+- Stub generation passes with no generated stub changes.
+- Repository lint passes.
+- Executable documentation and internal documentation links pass.
+- Whole-file C++ lint checked all 179 changed source files. Its four JIT test
+  findings are fixed. Five complete source files changed during validation were
+  rechecked with the same clang-tidy 23.1.2 configuration; no source findings
+  remain.
+- Installed Development consumers build and run with GCC and Clang with
+  exceptions disabled.
+- The successful scalar QDMI query probe records zero diagnostic-only
+  allocations, compared with one before the fix. This is an allocation check,
+  not an end-to-end latency measurement.
 
 Windows/macOS packaging and hosted checks for the published revision remain
 unverified. No new packaging test framework is introduced here.

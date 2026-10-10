@@ -15,7 +15,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
 #include <cmath>
@@ -61,7 +61,7 @@ void ComplexValue::readBinary(std::istream& is) {
   RealNumber::readBinary(i, is);
 }
 
-mlir::FailureOr<ComplexValue> ComplexValue::parse(std::string_view text) {
+llvm::FailureOr<ComplexValue> ComplexValue::parse(std::string_view text) {
   ComplexValue value;
   auto const readPart = [](std::string_view& input, fp& part) {
     std::istringstream stream{std::string(input)};

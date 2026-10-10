@@ -15,7 +15,7 @@
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <optional>
 #include <string>
@@ -24,7 +24,7 @@
 
 namespace mqt::detail {
 /// JSON dependency exceptions never cross into exception-free callers.
-[[nodiscard]] inline mlir::FailureOr<nlohmann::json>
+[[nodiscard]] inline llvm::FailureOr<nlohmann::json>
 parseJSON(std::string_view text, std::string_view source,
           nlohmann::json::parser_callback_t callback = nullptr,
           std::optional<int> status = std::nullopt) {

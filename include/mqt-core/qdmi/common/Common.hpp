@@ -17,9 +17,9 @@
 
 #include "qdmi/client.h"
 
-#include "mlir/Support/LogicalResult.h"
-
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -62,11 +62,11 @@ namespace detail {
 } // namespace detail
 
 /// Emit a diagnostic retaining the provider's original status.
-[[nodiscard]] mlir::LogicalResult emitError(int status, std::string message);
+[[nodiscard]] llvm::LogicalResult emitError(int status, std::string message);
 
 /// Report failures and warnings, leaving the successful path allocation-free.
-[[nodiscard]] mlir::LogicalResult checkError(int result,
-                                             std::string_view message);
+[[nodiscard]] llvm::LogicalResult checkError(int result,
+                                             const llvm::Twine& message);
 
 /// Convert a diagnosed operation to its C status at the immediate ABI boundary.
 /// Forward diagnostics while preserving provider-specific codes.
@@ -77,9 +77,9 @@ template <class Function> int invokeStatus(Function&& function) {
         if (diagnostic.severity == ::mqt::DiagnosticSeverity::Error) {
           status = diagnostic.status.value_or(QDMI_ERROR_FATAL);
         }
-        return mlir::failure();
+        return llvm::failure();
       });
-  return mlir::succeeded(std::forward<Function>(function)()) ? QDMI_SUCCESS
+  return llvm::succeeded(std::forward<Function>(function)()) ? QDMI_SUCCESS
                                                              : status;
 }
 

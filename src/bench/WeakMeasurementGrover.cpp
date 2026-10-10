@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
 #include <cstddef>
@@ -31,7 +31,7 @@ namespace {
 
 } // namespace
 
-mlir::FailureOr<WeakMeasurementGrover>
+llvm::FailureOr<WeakMeasurementGrover>
 WeakMeasurementGrover::create(WeakMeasurementGroverOptions options) {
   const auto width = options.markedBitstring.size();
   if (width < 2 || width > WeakMeasurementGroverOptions::MAX_QUBITS) {
@@ -40,8 +40,8 @@ WeakMeasurementGrover::create(WeakMeasurementGroverOptions options) {
         "through 2044",
         ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (mlir::failed(detail::validateOutcome(options.markedBitstring, width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(options.markedBitstring, width))) {
+    return llvm::failure();
   }
 
   const auto maximumStrength = defaultMeasurementStrength(width);
@@ -73,15 +73,15 @@ size_t WeakMeasurementGrover::qubits() const noexcept { return output_.width; }
 
 const Output& WeakMeasurementGrover::output() const noexcept { return output_; }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 WeakMeasurementGrover::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   return outcome == options_.markedBitstring ? 1. : 0.;
 }
 
-mlir::FailureOr<Evaluation>
+llvm::FailureOr<Evaluation>
 WeakMeasurementGrover::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, options_.markedBitstring);
 }

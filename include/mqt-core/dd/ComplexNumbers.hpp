@@ -20,7 +20,7 @@
 #include "dd/Edge.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <complex>
 #include <cstddef>
@@ -45,7 +45,7 @@ public:
   ///
   /// @param tol The new positive, normal tolerance.
   /// Return failure if the tolerance is not positive and normal.
-  [[nodiscard]] static mlir::LogicalResult setTolerance(fp tol);
+  [[nodiscard]] static llvm::LogicalResult setTolerance(fp tol);
 
   /// Compute the squared magnitude of a complex number.
   ///

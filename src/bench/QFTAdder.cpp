@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cmath>
@@ -47,7 +47,7 @@ namespace {
 
 } // namespace
 
-mlir::FailureOr<QFTAdder> QFTAdder::create(QFTAdderOptions options) {
+llvm::FailureOr<QFTAdder> QFTAdder::create(QFTAdderOptions options) {
   if (options.method != QFTAdderMethod::Register &&
       options.method != QFTAdderMethod::Constant) {
     return ::mqt::emitError("QFT adder method must be register or constant",
@@ -100,10 +100,10 @@ const std::optional<std::string>& QFTAdder::expectedResult() const noexcept {
   return expectedResult_;
 }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 QFTAdder::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   if (expectedResult_) {
     return outcome == *expectedResult_ ? 1. : 0.;
@@ -122,7 +122,7 @@ QFTAdder::probability(const std::string_view outcome) const {
       1., -static_cast<int>(std::ranges::count(options_.addend, '+')));
 }
 
-mlir::FailureOr<Evaluation> QFTAdder::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> QFTAdder::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, expectedResult_);
 }
 

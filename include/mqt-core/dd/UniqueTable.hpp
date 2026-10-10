@@ -18,9 +18,8 @@
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
-
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -66,7 +65,7 @@ public:
   ///
   /// The manager must allocate the node type used in lookup and outlive the
   /// table.
-  [[nodiscard]] static mlir::FailureOr<UniqueTable>
+  [[nodiscard]] static llvm::FailureOr<UniqueTable>
   create(MemoryManager& manager, const UniqueTableConfig& config);
 
   void resize(std::size_t nVars);
@@ -199,7 +198,7 @@ public:
 private:
   friend class Package;
   UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
-  [[nodiscard]] static mlir::LogicalResult checkCapacity(size_t initial,
+  [[nodiscard]] static llvm::LogicalResult checkCapacity(size_t initial,
                                                          size_t maximum);
 
   /// Typedef for a bucket in the table

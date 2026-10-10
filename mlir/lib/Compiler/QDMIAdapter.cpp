@@ -904,12 +904,24 @@ FailureOr<CompiledProgram>
 CompiledProgram::compile(CompilerInput&& program,
                          const TargetEnvironment& environment,
                          const CompilationOptions& options) {
+  // Generic compiler failures reject the selected source/payload contract.
+  const ::mqt::ScopedDiagnosticHandler diagnostics(
+      [](const ::mqt::Diagnostic& diagnostic) {
+        if (diagnostic.severity != ::mqt::DiagnosticSeverity::Error ||
+            diagnostic.category != ::mqt::ErrorCategory::Runtime) {
+          return failure();
+        }
+        auto invalidInput = diagnostic;
+        invalidInput.category = ::mqt::ErrorCategory::InvalidArgument;
+        ::mqt::emitDiagnostic(invalidInput);
+        return success();
+      });
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (failed(format)) {
     return failure();
   }
   auto result = runDefaultPipeline(std::move(program), environment, options);
-  if (!result) {
+  if (failed(result)) {
     return ::mqt::emitError(
         "Compilation failed for selected payload " +
             environment.payloadSpecification().format().id + " " +

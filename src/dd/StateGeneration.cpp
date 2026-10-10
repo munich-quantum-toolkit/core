@@ -20,7 +20,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <cmath>
@@ -33,7 +33,7 @@ namespace {
 /// Validate that @p n qubits starting at @p start fit in the package.
 ///
 /// @returns An error if the qubit interval exceeds the capacity.
-mlir::LogicalResult suitablePackage(const size_t n, const Package& dd,
+llvm::LogicalResult suitablePackage(const size_t n, const Package& dd,
                                     const size_t start = 0) {
   const std::size_t nqubits = dd.qubits();
   if (start > nqubits || n > nqubits - start) {
@@ -45,15 +45,15 @@ mlir::LogicalResult suitablePackage(const size_t n, const Package& dd,
             " qubits. Please allocate a larger package instance.",
         ::mqt::ErrorCategory::InvalidArgument);
   }
-  return mlir::success();
+  return llvm::success();
 }
 
 template <class BasisEntry>
-mlir::FailureOr<VectorDD>
+llvm::FailureOr<VectorDD>
 buildBasisState(const size_t n, const size_t available, const BasisEntry& entry,
                 Package& dd, const size_t start) {
-  if (mlir::failed(suitablePackage(n, dd, start))) {
-    return mlir::failure();
+  if (llvm::failed(suitablePackage(n, dd, start))) {
+    return llvm::failure();
   }
   if (available < n) {
     return ::mqt::emitError("Insufficient qubit states provided. Requested " +
@@ -96,13 +96,13 @@ buildBasisState(const size_t n, const size_t available, const BasisEntry& entry,
 
 } // namespace
 
-mlir::FailureOr<VectorDD> makeZeroState(const size_t n, Package& dd,
+llvm::FailureOr<VectorDD> makeZeroState(const size_t n, Package& dd,
                                         const size_t start) {
   return buildBasisState(
       n, n, [](size_t) { return BasisStates::zero; }, dd, start);
 }
 
-mlir::FailureOr<VectorDD> makeBasisState(const size_t n,
+llvm::FailureOr<VectorDD> makeBasisState(const size_t n,
                                          const std::vector<bool>& state,
                                          Package& dd, const size_t start) {
   return buildBasisState(
@@ -113,7 +113,7 @@ mlir::FailureOr<VectorDD> makeBasisState(const size_t n,
       dd, start);
 }
 
-mlir::FailureOr<VectorDD> makeBasisState(const size_t n,
+llvm::FailureOr<VectorDD> makeBasisState(const size_t n,
                                          const std::vector<BasisStates>& state,
                                          Package& dd, const size_t start) {
   return buildBasisState(
@@ -121,9 +121,9 @@ mlir::FailureOr<VectorDD> makeBasisState(const size_t n,
       start);
 }
 
-mlir::FailureOr<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
-  if (mlir::failed(suitablePackage(n, dd))) {
-    return mlir::failure();
+llvm::FailureOr<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
+  if (llvm::failed(suitablePackage(n, dd))) {
+    return llvm::failure();
   }
 
   if (n == 0U) {
@@ -158,9 +158,9 @@ mlir::FailureOr<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
   return e;
 }
 
-mlir::FailureOr<VectorDD> makeWState(const std::size_t n, Package& dd) {
-  if (mlir::failed(suitablePackage(n, dd))) {
-    return mlir::failure();
+llvm::FailureOr<VectorDD> makeWState(const std::size_t n, Package& dd) {
+  if (llvm::failed(suitablePackage(n, dd))) {
+    return llvm::failure();
   }
 
   if (n == 0U) {
@@ -192,7 +192,7 @@ mlir::FailureOr<VectorDD> makeWState(const std::size_t n, Package& dd) {
   return leftSubtree;
 }
 
-mlir::FailureOr<VectorDD> makeStateFromVector(const CVec& vec, Package& dd) {
+llvm::FailureOr<VectorDD> makeStateFromVector(const CVec& vec, Package& dd) {
   return makeStateFromVector(
       vec.size(), [&vec](const size_t index) { return vec[index]; }, dd);
 }

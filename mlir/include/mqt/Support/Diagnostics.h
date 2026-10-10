@@ -17,10 +17,11 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/Support/LogicalResult.h"
+#include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstdint>
@@ -73,6 +74,13 @@ inline ::mqt::Diagnostic toNativeDiagnostic(
     stream << diagnostic.getLocation() << ": ";
   }
   diagnostic.print(stream);
+  for (auto& note : diagnostic.getNotes()) {
+    stream << "\nnote: ";
+    if (!llvm::isa<UnknownLoc>(note.getLocation())) {
+      stream << note.getLocation() << ": ";
+    }
+    note.print(stream);
+  }
   if (diagnostic.getSeverity() == DiagnosticSeverity::Warning) {
     native.severity = ::mqt::DiagnosticSeverity::Warning;
   } else if (diagnostic.getSeverity() != DiagnosticSeverity::Error) {

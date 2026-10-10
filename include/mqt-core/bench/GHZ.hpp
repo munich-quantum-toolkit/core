@@ -13,7 +13,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -56,15 +56,15 @@ struct GHZOptions {
 /// A validated GHZ benchmark.
 class MQT_CORE_BENCH_EXPORT GHZ final {
 public:
-  [[nodiscard]] static mlir::FailureOr<GHZ> create(GHZOptions options);
+  [[nodiscard]] static llvm::FailureOr<GHZ> create(GHZOptions options);
 
   [[nodiscard]] const GHZOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] mlir::FailureOr<double>
+  [[nodiscard]] llvm::FailureOr<double>
   probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] mlir::FailureOr<Evaluation>
+  [[nodiscard]] llvm::FailureOr<Evaluation>
   evaluate(const Counts& counts) const;
 
 private:

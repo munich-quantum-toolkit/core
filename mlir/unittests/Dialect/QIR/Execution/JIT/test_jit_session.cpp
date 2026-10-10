@@ -36,7 +36,6 @@
 #include <iterator>
 #include <ostream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -67,12 +66,12 @@ static void expectOpenQASMSampling(std::string_view source,
   auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
   ASSERT_TRUE(mlir::succeeded(qir));
   const auto ir = qir->llvmIR();
-  ASSERT_TRUE(ir);
+  ASSERT_TRUE(mlir::succeeded(ir));
   auto session = ::mqt::test::value(qir::JitSession::create(
       *ir, "openqasm-slices", qir::Execution::Sampling, 42));
   session->runtime().disableOutput();
   std::vector<std::string> shots;
-  ASSERT_EQ(session->sample(1, shots), 0);
+  ASSERT_EQ(::mqt::test::value(session->sample(1, shots)), 0);
   // The JIT exposes recording order; DD strings put output bit zero on the
   // right.
   EXPECT_EQ(shots, std::vector<std::string>(
@@ -514,9 +513,10 @@ TEST(JitSessionErrors, RejectsNonCEntryPointCallingConvention) {
 define preserve_allcc i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "entry-convention"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("C calling convention")));
+  EXPECT_THAT(::mqt::test::errorMessage([&] {
+                return qir::JitSession::create(ir, "entry-convention");
+              }),
+              ::testing::HasSubstr("C calling convention"));
 }
 
 TEST(JitSessionErrors, RejectsEntryPointABIAttributes) {
@@ -524,9 +524,10 @@ TEST(JitSessionErrors, RejectsEntryPointABIAttributes) {
 define inreg i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "entry-attribute"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("unsupported ABI attribute inreg")));
+  EXPECT_THAT(::mqt::test::errorMessage([&] {
+                return qir::JitSession::create(ir, "entry-attribute");
+              }),
+              ::testing::HasSubstr("unsupported ABI attribute inreg"));
 }
 
 TEST(JitSessionErrors, RejectsNonCRuntimeCallingConventions) {
@@ -545,9 +546,10 @@ TEST(JitSessionErrors, RejectsNonCRuntimeCallingConventions) {
                     "void @__quantum__qis__h__body(ptr null)\nret i64 0 }\n"
                     "attributes #0 = { \"entry_point\" }";
     SCOPED_TRACE(ir);
-    EXPECT_THAT([&] { qir::JitSession(ir, "runtime-convention"); },
-                testing::ThrowsMessage<std::runtime_error>(
-                    testing::HasSubstr("C calling convention")));
+    EXPECT_THAT(::mqt::test::errorMessage([&] {
+                  return qir::JitSession::create(ir, "runtime-convention");
+                }),
+                ::testing::HasSubstr("C calling convention"));
   }
 }
 
@@ -571,9 +573,10 @@ TEST(JitSessionErrors, RejectsRuntimeABIAttributes) {
           " %q)\nret i64 0 }\n"
           "attributes #0 = { \"entry_point\" }";
       SCOPED_TRACE(ir);
-      EXPECT_THAT([&] { qir::JitSession(ir, "runtime-attribute"); },
-                  testing::ThrowsMessage<std::runtime_error>(
-                      testing::HasSubstr("unsupported ABI attribute")));
+      EXPECT_THAT(::mqt::test::errorMessage([&] {
+                    return qir::JitSession::create(ir, "runtime-attribute");
+                  }),
+                  ::testing::HasSubstr("unsupported ABI attribute"));
     }
   }
 }
@@ -587,25 +590,10 @@ define i64 @main() #0 {
 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "runtime-call-type"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("must match its declaration")));
-}
-
-TEST(JitSessionErrors, RejectsInvalidModulesBeforeExecution) {
-  constexpr std::string_view ir = R"(
-define i64 @main() #0 {
-entry:
-  br label %exit
-exit:
-  %x = phi i64 [0, %exit]
-  ret i64 %x
-}
-attributes #0 = { "entry_point" }
-)";
-  EXPECT_THAT([&] { qir::JitSession(ir, "invalid-module"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("Invalid QIR module")));
+  EXPECT_THAT(::mqt::test::errorMessage([&] {
+                return qir::JitSession::create(ir, "runtime-call-type");
+              }),
+              ::testing::HasSubstr("must match its declaration"));
 }
 
 TEST(QIRJIT, AcceptsInternalCallingConventionsAndSemanticAttributes) {
@@ -620,8 +608,9 @@ define noundef i64 @main() #0 {
 define internal fastcc i64 @helper() { ret i64 7 }
 attributes #0 = { nounwind alignstack=16 "entry_point" }
 )";
-  qir::JitSession session(ir, "internal-convention");
-  EXPECT_EQ(session.run(), 7);
+  auto session =
+      ::mqt::test::value(qir::JitSession::create(ir, "internal-convention"));
+  EXPECT_EQ(session->run(), 7);
 }
 
 TEST(JitSessionErrors, RejectsMultipleEntryPoints) {
@@ -651,12 +640,12 @@ TEST(JitSessionErrors, RejectsInvalidModulesBeforeExecution) {
                },
                {
                    R"(define i64 @main() #0 {
-                 call void @unresolved_external_symbol()
+                 call void @missing_external()
                  ret i64 0
                }
-               declare void @unresolved_external_symbol()
+               declare void @missing_external()
                attributes #0 = { "entry_point" })",
-                   "Failed to materialize",
+                   "missing_external",
                },
            },
        }) {

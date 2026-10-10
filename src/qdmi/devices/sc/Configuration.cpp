@@ -21,7 +21,7 @@
 #include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -47,7 +47,7 @@ namespace {
 using Json = nlohmann::json;
 
 // Keep all schema diagnostics anchored to the selected configuration source.
-[[nodiscard]] mlir::LogicalResult fail(const std::string_view source,
+[[nodiscard]] llvm::LogicalResult fail(const std::string_view source,
                                        const std::string_view pointer,
                                        const std::string_view message) {
   return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
@@ -55,15 +55,15 @@ using Json = nlohmann::json;
                              " " + std::string(message));
 }
 
-mlir::LogicalResult object(const Json& value, const std::string_view source,
+llvm::LogicalResult object(const Json& value, const std::string_view source,
                            const std::string_view pointer) {
   if (!value.is_object()) {
     return fail(source, pointer, "must be an object");
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-mlir::LogicalResult keys(const Json& value,
+llvm::LogicalResult keys(const Json& value,
                          const std::initializer_list<std::string_view> known,
                          const std::string_view source,
                          const std::string_view pointer) {
@@ -73,11 +73,11 @@ mlir::LogicalResult keys(const Json& value,
       return fail(source, pointer, "contains unknown key '" + key + "'");
     }
   }
-  return mlir::success();
+  return llvm::success();
 }
 
 template <class T>
-[[nodiscard]] mlir::FailureOr<T>
+[[nodiscard]] llvm::FailureOr<T>
 required(const Json& value, const std::string& key,
          const std::string_view source, const std::string& pointer) {
   const auto found = value.find(key);
@@ -104,20 +104,20 @@ required(const Json& value, const std::string& key,
 }
 
 template <class T>
-[[nodiscard]] mlir::FailureOr<std::optional<T>>
+[[nodiscard]] llvm::FailureOr<std::optional<T>>
 optional(const Json& value, const std::string& key,
          const std::string_view source, const std::string& pointer) {
   if (!value.contains(key)) {
     return std::optional<T>{};
   }
   auto result = required<T>(value, key, source, pointer);
-  if (mlir::failed(result)) {
-    return mlir::failure();
+  if (llvm::failed(result)) {
+    return llvm::failure();
   }
   return std::optional<T>{std::in_place, std::move(*result)};
 }
 
-[[nodiscard]] mlir::FailureOr<std::vector<uint64_t>>
+[[nodiscard]] llvm::FailureOr<std::vector<uint64_t>>
 indices(const Json& value, const std::string_view source,
         const std::string& pointer) {
   if (!value.is_array()) {
@@ -137,24 +137,24 @@ indices(const Json& value, const std::string_view source,
   return result;
 }
 
-[[nodiscard]] mlir::FailureOr<Device::QubitCalibration>
+[[nodiscard]] llvm::FailureOr<Device::QubitCalibration>
 calibration(const Json& value, const std::string_view source,
             const std::string& pointer) {
-  if (mlir::failed(object(value, source, pointer))) {
-    return mlir::failure();
+  if (llvm::failed(object(value, source, pointer))) {
+    return llvm::failure();
   }
-  if (mlir::failed(keys(value, {"t1", "t2"}, source, pointer))) {
-    return mlir::failure();
+  if (llvm::failed(keys(value, {"t1", "t2"}, source, pointer))) {
+    return llvm::failure();
   }
   Device::QubitCalibration result;
   auto resultT1Result = optional<uint64_t>(value, "t1", source, pointer);
-  if (mlir::failed(resultT1Result)) {
-    return mlir::failure();
+  if (llvm::failed(resultT1Result)) {
+    return llvm::failure();
   }
   result.t1 = (*resultT1Result);
   auto resultT2Result = optional<uint64_t>(value, "t2", source, pointer);
-  if (mlir::failed(resultT2Result)) {
-    return mlir::failure();
+  if (llvm::failed(resultT2Result)) {
+    return llvm::failure();
   }
   result.t2 = (*resultT2Result);
   if ((result.t1 && *result.t1 == 0) || (result.t2 && *result.t2 == 0)) {
@@ -163,22 +163,22 @@ calibration(const Json& value, const std::string_view source,
   return result;
 }
 
-mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
+llvm::LogicalResult validateFidelity(const std::optional<double>& fidelity,
                                      const std::string_view source,
                                      const std::string& pointer) {
   if (fidelity &&
       (!std::isfinite(*fidelity) || *fidelity < 0. || *fidelity > 1.)) {
     return fail(source, pointer, "must be finite and in [0, 1]");
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-[[nodiscard]] mlir::FailureOr<Device> parse(const Json& root,
+[[nodiscard]] llvm::FailureOr<Device> parse(const Json& root,
                                             const std::string_view source) {
-  if (mlir::failed(object(root, source, "$"))) {
-    return mlir::failure();
+  if (llvm::failed(object(root, source, "$"))) {
+    return llvm::failure();
   }
-  if (mlir::failed(keys(root,
+  if (llvm::failed(keys(root,
                         {
                             "schema-version",
                             "name",
@@ -189,7 +189,7 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
                             "operations",
                         },
                         source, "$"))) {
-    return mlir::failure();
+    return llvm::failure();
   }
   for (const auto* const key : {
            "schema-version",
@@ -207,16 +207,16 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
   Device result;
   auto resultSchemaVersionResult =
       required<uint64_t>(root, "schema-version", source, "$");
-  if (mlir::failed(resultSchemaVersionResult)) {
-    return mlir::failure();
+  if (llvm::failed(resultSchemaVersionResult)) {
+    return llvm::failure();
   }
   result.schemaVersion = (*resultSchemaVersionResult);
   if (result.schemaVersion != 1) {
     return fail(source, "$/schema-version", "must be 1");
   }
   auto resultNameResult = required<std::string>(root, "name", source, "$");
-  if (mlir::failed(resultNameResult)) {
-    return mlir::failure();
+  if (llvm::failed(resultNameResult)) {
+    return llvm::failure();
   }
   result.name = (*std::move(resultNameResult));
   if (result.name.empty() || result.name.find('\0') != std::string::npos) {
@@ -224,8 +224,8 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
   }
   auto resultNumQubitsResult =
       required<uint64_t>(root, "numQubits", source, "$");
-  if (mlir::failed(resultNumQubitsResult)) {
-    return mlir::failure();
+  if (llvm::failed(resultNumQubitsResult)) {
+    return llvm::failure();
   }
   result.numQubits = (*resultNumQubitsResult);
   if (result.numQubits == 0 ||
@@ -234,23 +234,23 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
   }
 
   const auto& unit = root["durationUnit"];
-  if (mlir::failed(object(unit, source, "$/durationUnit"))) {
-    return mlir::failure();
+  if (llvm::failed(object(unit, source, "$/durationUnit"))) {
+    return llvm::failure();
   }
-  if (mlir::failed(
+  if (llvm::failed(
           keys(unit, {"unit", "scaleFactor"}, source, "$/durationUnit"))) {
-    return mlir::failure();
+    return llvm::failure();
   }
   auto resultDurationUnitUnitResult =
       required<std::string>(unit, "unit", source, "$/durationUnit");
-  if (mlir::failed(resultDurationUnitUnitResult)) {
-    return mlir::failure();
+  if (llvm::failed(resultDurationUnitUnitResult)) {
+    return llvm::failure();
   }
   result.durationUnit.unit = (*std::move(resultDurationUnitUnitResult));
   auto resultDurationUnitScaleFactorResult =
       required<double>(unit, "scaleFactor", source, "$/durationUnit");
-  if (mlir::failed(resultDurationUnitScaleFactorResult)) {
-    return mlir::failure();
+  if (llvm::failed(resultDurationUnitScaleFactorResult)) {
+    return llvm::failure();
   }
   result.durationUnit.scaleFactor = (*resultDurationUnitScaleFactorResult);
   constexpr std::array supportedUnits{"s", "ms", "us", "ns"};
@@ -264,12 +264,12 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
 
   {
     const auto& properties = root["qubitProperties"];
-    if (mlir::failed(object(properties, source, "$/qubitProperties"))) {
-      return mlir::failure();
+    if (llvm::failed(object(properties, source, "$/qubitProperties"))) {
+      return llvm::failure();
     }
-    if (mlir::failed(keys(properties, {"defaults", "overrides"}, source,
+    if (llvm::failed(keys(properties, {"defaults", "overrides"}, source,
                           "$/qubitProperties"))) {
-      return mlir::failure();
+      return llvm::failure();
     }
     for (const auto* const key : {"defaults", "overrides"}) {
       if (!properties.contains(key)) {
@@ -279,8 +279,8 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
     }
     auto resultQubitPropertiesDefaultsResult = calibration(
         properties["defaults"], source, "$/qubitProperties/defaults");
-    if (mlir::failed(resultQubitPropertiesDefaultsResult)) {
-      return mlir::failure();
+    if (llvm::failed(resultQubitPropertiesDefaultsResult)) {
+      return llvm::failure();
     }
     result.qubitProperties.defaults = (*resultQubitPropertiesDefaultsResult);
     {
@@ -292,34 +292,34 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
       for (size_t i = 0; i < overrides.size(); ++i) {
         const auto pointer = "$/qubitProperties/overrides/" + std::to_string(i);
         const auto& value = overrides[i];
-        if (mlir::failed(object(value, source, pointer))) {
-          return mlir::failure();
+        if (llvm::failed(object(value, source, pointer))) {
+          return llvm::failure();
         }
-        if (mlir::failed(
+        if (llvm::failed(
                 keys(value, {"qubit", "name", "t1", "t2"}, source, pointer))) {
-          return mlir::failure();
+          return llvm::failure();
         }
         Device::QubitOverride entry;
         auto entryQubitResult =
             required<uint64_t>(value, "qubit", source, pointer);
-        if (mlir::failed(entryQubitResult)) {
-          return mlir::failure();
+        if (llvm::failed(entryQubitResult)) {
+          return llvm::failure();
         }
         entry.qubit = (*entryQubitResult);
         auto entryNameResult =
             optional<std::string>(value, "name", source, pointer);
-        if (mlir::failed(entryNameResult)) {
-          return mlir::failure();
+        if (llvm::failed(entryNameResult)) {
+          return llvm::failure();
         }
         entry.name = (*std::move(entryNameResult));
         auto entryT1Result = optional<uint64_t>(value, "t1", source, pointer);
-        if (mlir::failed(entryT1Result)) {
-          return mlir::failure();
+        if (llvm::failed(entryT1Result)) {
+          return llvm::failure();
         }
         entry.t1 = (*entryT1Result);
         auto entryT2Result = optional<uint64_t>(value, "t2", source, pointer);
-        if (mlir::failed(entryT2Result)) {
-          return mlir::failure();
+        if (llvm::failed(entryT2Result)) {
+          return llvm::failure();
         }
         entry.t2 = (*entryT2Result);
         if (entry.qubit >= result.numQubits ||
@@ -350,8 +350,8 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
     }
     std::pair<uint64_t, uint64_t> coupling;
     auto parsedResult = indices(couplings[i], source, pointer);
-    if (mlir::failed(parsedResult)) {
-      return mlir::failure();
+    if (llvm::failed(parsedResult)) {
+      return llvm::failure();
     }
     auto& parsed = (*parsedResult);
     coupling = {parsed[0], parsed[1]};
@@ -373,10 +373,10 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
   for (size_t i = 0; i < operations.size(); ++i) {
     const auto pointer = "$/operations/" + std::to_string(i);
     const auto& value = operations[i];
-    if (mlir::failed(object(value, source, pointer))) {
-      return mlir::failure();
+    if (llvm::failed(object(value, source, pointer))) {
+      return llvm::failure();
     }
-    if (mlir::failed(keys(value,
+    if (llvm::failed(keys(value,
                           {
                               "name",
                               "numParameters",
@@ -387,42 +387,42 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
                               "siteOverrides",
                           },
                           source, pointer))) {
-      return mlir::failure();
+      return llvm::failure();
     }
     Device::Operation operation;
     auto operationNameResult =
         required<std::string>(value, "name", source, pointer);
-    if (mlir::failed(operationNameResult)) {
-      return mlir::failure();
+    if (llvm::failed(operationNameResult)) {
+      return llvm::failure();
     }
     operation.name = (*std::move(operationNameResult));
     auto operationNumParametersResult =
         required<uint64_t>(value, "numParameters", source, pointer);
-    if (mlir::failed(operationNumParametersResult)) {
-      return mlir::failure();
+    if (llvm::failed(operationNumParametersResult)) {
+      return llvm::failure();
     }
     operation.numParameters = (*operationNumParametersResult);
     auto operationNumQubitsResult =
         required<uint64_t>(value, "numQubits", source, pointer);
-    if (mlir::failed(operationNumQubitsResult)) {
-      return mlir::failure();
+    if (llvm::failed(operationNumQubitsResult)) {
+      return llvm::failure();
     }
     operation.numQubits = (*operationNumQubitsResult);
     auto operationDurationResult =
         optional<uint64_t>(value, "duration", source, pointer);
-    if (mlir::failed(operationDurationResult)) {
-      return mlir::failure();
+    if (llvm::failed(operationDurationResult)) {
+      return llvm::failure();
     }
     operation.duration = (*operationDurationResult);
     auto operationFidelityResult =
         optional<double>(value, "fidelity", source, pointer);
-    if (mlir::failed(operationFidelityResult)) {
-      return mlir::failure();
+    if (llvm::failed(operationFidelityResult)) {
+      return llvm::failure();
     }
     operation.fidelity = (*operationFidelityResult);
-    if (mlir::failed(validateFidelity(operation.fidelity, source,
+    if (llvm::failed(validateFidelity(operation.fidelity, source,
                                       pointer + "/fidelity"))) {
-      return mlir::failure();
+      return llvm::failure();
     }
     if (operation.name.empty() ||
         operation.name.find('\0') != std::string::npos ||
@@ -442,8 +442,8 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
       for (size_t j = 0; j < sites->size(); ++j) {
         auto tupleResult = indices((*sites)[j], source,
                                    pointer + "/sites/" + std::to_string(j));
-        if (mlir::failed(tupleResult)) {
-          return mlir::failure();
+        if (llvm::failed(tupleResult)) {
+          return llvm::failure();
         }
         auto& tuple = (*tupleResult);
         const auto supportedByTopology =
@@ -478,12 +478,12 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
         const auto overridePointer =
             pointer + "/siteOverrides/" + std::to_string(j);
         const auto& overrideJson = (*overrides)[j];
-        if (mlir::failed(object(overrideJson, source, overridePointer))) {
-          return mlir::failure();
+        if (llvm::failed(object(overrideJson, source, overridePointer))) {
+          return llvm::failure();
         }
-        if (mlir::failed(keys(overrideJson, {"sites", "duration", "fidelity"},
+        if (llvm::failed(keys(overrideJson, {"sites", "duration", "fidelity"},
                               source, overridePointer))) {
-          return mlir::failure();
+          return llvm::failure();
         }
         Device::SiteOverride override;
         const auto siteValues = overrideJson.find("sites");
@@ -492,25 +492,25 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
         }
         auto overrideSitesResult =
             indices(*siteValues, source, overridePointer + "/sites");
-        if (mlir::failed(overrideSitesResult)) {
-          return mlir::failure();
+        if (llvm::failed(overrideSitesResult)) {
+          return llvm::failure();
         }
         override.sites = (*std::move(overrideSitesResult));
         auto overrideDurationResult = optional<uint64_t>(
             overrideJson, "duration", source, overridePointer);
-        if (mlir::failed(overrideDurationResult)) {
-          return mlir::failure();
+        if (llvm::failed(overrideDurationResult)) {
+          return llvm::failure();
         }
         override.duration = (*overrideDurationResult);
         auto overrideFidelityResult =
             optional<double>(overrideJson, "fidelity", source, overridePointer);
-        if (mlir::failed(overrideFidelityResult)) {
-          return mlir::failure();
+        if (llvm::failed(overrideFidelityResult)) {
+          return llvm::failure();
         }
         override.fidelity = (*overrideFidelityResult);
-        if (mlir::failed(validateFidelity(override.fidelity, source,
+        if (llvm::failed(validateFidelity(override.fidelity, source,
                                           overridePointer + "/fidelity"))) {
-          return mlir::failure();
+          return llvm::failure();
         }
         const std::set<uint64_t> tupleSites(override.sites.begin(),
                                             override.sites.end());
@@ -545,17 +545,17 @@ mlir::LogicalResult validateFidelity(const std::optional<double>& fidelity,
 }
 } // namespace
 
-mlir::FailureOr<Device> readJSON(const std::string_view json,
+llvm::FailureOr<Device> readJSON(const std::string_view json,
                                  const std::string_view source) {
   auto result =
       mqt::detail::parseJSON(json, source, nullptr, QDMI_ERROR_INVALIDARGUMENT);
-  if (mlir::failed(result)) {
-    return mlir::failure();
+  if (llvm::failed(result)) {
+    return llvm::failure();
   }
   return parse(*result, source);
 }
 
-mlir::FailureOr<Device> readJSON(std::istream& stream,
+llvm::FailureOr<Device> readJSON(std::istream& stream,
                                  const std::string_view source) {
   const std::string json{std::istreambuf_iterator<char>(stream), {}};
   if (stream.bad()) {
@@ -565,7 +565,7 @@ mlir::FailureOr<Device> readJSON(std::istream& stream,
   return readJSON(json, source);
 }
 
-mlir::FailureOr<Device> readJSON(const std::string& path) {
+llvm::FailureOr<Device> readJSON(const std::string& path) {
   std::ifstream input(path);
   if (!input) {
     return qdmi::emitError(QDMI_ERROR_NOTFOUND,

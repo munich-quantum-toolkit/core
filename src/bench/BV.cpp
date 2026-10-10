@@ -15,14 +15,14 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <string_view>
 #include <utility>
 
 namespace mqt::bench {
 
-mlir::FailureOr<BV> BV::create(BVOptions options) {
+llvm::FailureOr<BV> BV::create(BVOptions options) {
   const auto width = options.hiddenBitstring.size();
   if (width == 0 || width > BVOptions::MAX_BITS) {
     return ::mqt::emitError(
@@ -31,8 +31,8 @@ mlir::FailureOr<BV> BV::create(BVOptions options) {
         "1000000",
         ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (mlir::failed(detail::validateOutcome(options.hiddenBitstring, width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(options.hiddenBitstring, width))) {
+    return llvm::failure();
   }
   if (options.method != BVMethod::Static &&
       options.method != BVMethod::Dynamic) {
@@ -50,14 +50,14 @@ const BVOptions& BV::options() const noexcept { return options_; }
 
 const Output& BV::output() const noexcept { return output_; }
 
-mlir::FailureOr<double> BV::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+llvm::FailureOr<double> BV::probability(const std::string_view outcome) const {
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   return outcome == options_.hiddenBitstring ? 1. : 0.;
 }
 
-mlir::FailureOr<Evaluation> BV::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> BV::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, options_.hiddenBitstring);
 }
 

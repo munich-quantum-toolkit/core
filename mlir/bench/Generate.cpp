@@ -13,6 +13,7 @@
 #include "bench/JSON.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Support/Diagnostics.h"
 
 #include "programs/Programs.h"
 
@@ -21,11 +22,9 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LogicalResult.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -37,30 +36,18 @@ using namespace mlir;
     const llvm::StringRef name,
     const llvm::function_ref<SmallVector<Value>(qc::QCProgramBuilder&)>& emit) {
   auto context = createCompilerContext();
-  std::string diagnostics;
   const mlir::ScopedDiagnosticHandler handler(
-      context.get(), [&](mlir::Diagnostic& diagnostic) {
-        if (!diagnostics.empty()) {
-          diagnostics.push_back('\n');
-        }
-        llvm::raw_string_ostream stream(diagnostics);
-        diagnostic.print(stream);
+      context.get(), [name](mlir::Diagnostic& diagnostic) {
+        auto native = toNativeDiagnostic(diagnostic,
+                                         ::mqt::ErrorCategory::InvalidArgument);
+        native.message = (name + ": " + native.message).str();
+        ::mqt::emitDiagnostic(native);
         return success();
       });
   auto moduleOp = qc::QCProgramBuilder::build(context.get(), emit);
-  if (!moduleOp) {
-    return ::mqt::emitError(
-        llvm::Twine(name + ": failed to build the module: " + diagnostics)
-            .str(),
-        ::mqt::ErrorCategory::InvalidArgument);
-  }
-
   auto program = QCProgram::fromModule(context, std::move(moduleOp));
-  if (!program || !program->cleanup()) {
-    return ::mqt::emitError(
-        llvm::Twine(name + ": failed to clean up the module: " + diagnostics)
-            .str(),
-        ::mqt::ErrorCategory::InvalidArgument);
+  if (failed(program) || failed(program->cleanup())) {
+    return failure();
   }
   return std::move(*program);
 }

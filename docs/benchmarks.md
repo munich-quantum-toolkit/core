@@ -221,17 +221,17 @@ manifests.
 
 ```cpp
 #include "bench/Grover.hpp"
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
 
 int main() {
   const auto created = mqt::bench::Grover::create({.markedBitstring = "101"});
-  if (mlir::failed(created)) {
+  if (llvm::failed(created)) {
     return 1;
   }
   const auto evaluated = created->evaluate({{"101", 1000}});
-  if (mlir::failed(evaluated)) {
+  if (llvm::failed(evaluated)) {
     return 1;
   }
   assert(evaluated->successProbability == 1.0);

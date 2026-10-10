@@ -14,7 +14,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,7 +25,7 @@
 
 namespace mqt::bench::detail {
 
-inline mlir::LogicalResult validateOutcome(const std::string_view outcome,
+inline llvm::LogicalResult validateOutcome(const std::string_view outcome,
                                            const size_t width) {
   if (outcome.size() != width) {
     return ::mqt::emitError("outcome width does not match the benchmark output",
@@ -36,10 +36,10 @@ inline mlir::LogicalResult validateOutcome(const std::string_view outcome,
     return ::mqt::emitError("outcome must contain only '0' and '1'",
                             ::mqt::ErrorCategory::InvalidArgument);
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-[[nodiscard]] inline mlir::FailureOr<size_t> countShots(const Counts& counts) {
+[[nodiscard]] inline llvm::FailureOr<size_t> countShots(const Counts& counts) {
   if (counts.empty()) {
     return ::mqt::emitError("counts must not be empty",
                             ::mqt::ErrorCategory::InvalidArgument);
@@ -62,12 +62,12 @@ inline mlir::LogicalResult validateOutcome(const std::string_view outcome,
 }
 
 template <class Probability>
-[[nodiscard]] mlir::FailureOr<Evaluation>
+[[nodiscard]] llvm::FailureOr<Evaluation>
 evaluate(const Counts& counts, const Probability& probability,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   const auto totalShots = countShots(counts);
-  if (mlir::failed(totalShots)) {
-    return mlir::failure();
+  if (llvm::failed(totalShots)) {
+    return llvm::failure();
   }
   size_t successShots = 0;
 
@@ -81,8 +81,8 @@ evaluate(const Counts& counts, const Probability& probability,
       successShots = count;
     }
     auto reference = probability(outcome, count);
-    if (mlir::failed(reference)) {
-      return mlir::failure();
+    if (llvm::failed(reference)) {
+      return llvm::failure();
     }
     const auto ideal = static_cast<long double>(*reference);
     const auto observed =
@@ -109,7 +109,7 @@ evaluate(const Counts& counts, const Probability& probability,
 }
 
 template <class Benchmark>
-[[nodiscard]] mlir::FailureOr<Evaluation>
+[[nodiscard]] llvm::FailureOr<Evaluation>
 evaluate(const Benchmark& benchmark, const Counts& counts,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   return evaluate(

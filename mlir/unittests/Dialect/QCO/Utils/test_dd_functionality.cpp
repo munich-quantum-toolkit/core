@@ -299,7 +299,10 @@ TEST(DDAdapterTest, NativeMetadataSurvivesMlirForwarding) {
                                          .status = status,
                                      });
       ASSERT_TRUE(received);
-      EXPECT_EQ(received->message, "provider diagnostic");
+      EXPECT_EQ(received->message.substr(0, received->message.find('\n')),
+                "provider diagnostic");
+      EXPECT_NE(received->message.find("note: see current operation"),
+                std::string::npos);
       EXPECT_EQ(received->category, ::mqt::ErrorCategory::IO);
       EXPECT_EQ(received->severity, severity);
       EXPECT_EQ(received->status, status);
@@ -828,7 +831,7 @@ TEST_F(QCODDFunctionalityTest, FailedScalarConstructionReleasesPhase) {
   )mlir",
                                          context.get());
   ASSERT_TRUE(mod);
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = ::mqt::test::value(dd::Package::create(0));
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   EXPECT_TRUE(dd->getRootSet<dd::mNode>().empty());
 }

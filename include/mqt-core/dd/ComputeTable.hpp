@@ -18,7 +18,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <bit>
 #include <cstddef>
@@ -41,7 +41,7 @@ public:
 
   ComputeTable() : ComputeTable(DEFAULT_NUM_BUCKETS) {}
 
-  [[nodiscard]] static mlir::FailureOr<ComputeTable>
+  [[nodiscard]] static llvm::FailureOr<ComputeTable>
   create(const size_t numBuckets) {
     if (!std::has_single_bit(numBuckets)) {
       return ::mqt::emitError("Number of buckets must be a power of two.",
@@ -145,16 +145,16 @@ public:
   ///
   /// The capacity must be a power of two. Invalidates lookup result pointers.
   /// Invalid capacity leaves the table unchanged.
-  [[nodiscard]] mlir::LogicalResult resize(const size_t numBuckets) {
+  [[nodiscard]] llvm::LogicalResult resize(const size_t numBuckets) {
     auto replacement = create(numBuckets);
-    if (mlir::failed(replacement)) {
-      return mlir::failure();
+    if (llvm::failed(replacement)) {
+      return llvm::failure();
     }
     table.swap(replacement->table);
     valid.swap(replacement->valid);
     stats.numBuckets = numBuckets;
     stats.reset();
-    return mlir::success();
+    return llvm::success();
   }
 
   /// Print the statistics of the compute table

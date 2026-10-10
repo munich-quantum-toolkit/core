@@ -25,7 +25,7 @@
 #include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <limits>
 #include <optional>
@@ -55,7 +55,7 @@ TEST(BenchmarkJSON, ReturnsNormalizedInstancesAndInputDiagnostics) {
   const auto benchmark = ::mqt::test::value(GHZ::create({.qubits = 3}));
   auto result = mqt::bench::parseInstanceSpecificationJSON(
       toInstanceSpecificationJSON(benchmark));
-  ASSERT_TRUE(mlir::succeeded(result));
+  ASSERT_TRUE(llvm::succeeded(result));
   const auto& parsed = *result;
   EXPECT_TRUE(std::holds_alternative<GHZ>(parsed.instance));
   EXPECT_EQ(parsed.benchmarkId, "ghz");

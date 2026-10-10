@@ -17,7 +17,7 @@
 
 #include "gtest/gtest.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <array>
 #include <bitset>
@@ -104,10 +104,12 @@ TEST(Shor, RejectsInvalidCounts) {
   EXPECT_EQ(::mqt::test::errorKind(
                 [&] { return benchmark.evaluate({{"000000000x", 1}}); }),
             ::mqt::ErrorCategory::InvalidArgument);
-  EXPECT_EQ(::mqt::test::errorKind([&] {
-              return benchmark.evaluate({{"0000000000", 1}, {"000000000x", 0}});
-            }),
-            ::mqt::ErrorCategory::InvalidArgument);
+  for (const auto* invalid : {"000000000", "000000000x"}) {
+    EXPECT_EQ(::mqt::test::errorKind([&] {
+                return benchmark.evaluate({{"0000000000", 1}, {invalid, 0}});
+              }),
+              ::mqt::ErrorCategory::InvalidArgument);
+  }
   EXPECT_EQ(::mqt::test::errorKind([&] {
               return benchmark.evaluate(
                   {{"0000000000", std::numeric_limits<size_t>::max()},
@@ -117,7 +119,7 @@ TEST(Shor, RejectsInvalidCounts) {
 }
 
 TEST(Shor, PerformsClassicalPrechecksWithoutQuantumRuns) {
-  const auto unused = [](const Shor&) -> mlir::FailureOr<Counts> {
+  const auto unused = [](const Shor&) -> llvm::FailureOr<Counts> {
     return ::mqt::emitError("unexpected quantum run");
   };
   for (const uint64_t number : {2ULL, 3ULL, 41ULL, 2147483647ULL}) {
@@ -187,7 +189,7 @@ TEST(Shor, SelectsRepeatableBasesAndUsesTheGcdShortcut) {
 }
 
 TEST(Shor, PropagatesCallbackFailuresAndRejectsInvalidDriverInputs) {
-  const auto run = [](const Shor&) -> mlir::FailureOr<Counts> {
+  const auto run = [](const Shor&) -> llvm::FailureOr<Counts> {
     return ::mqt::emitError("device failed");
   };
   EXPECT_EQ(::mqt::test::errorKind([&] { return factor(21, run); }),

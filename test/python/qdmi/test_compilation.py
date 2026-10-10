@@ -360,7 +360,7 @@ def test_payload_forward_branching(program_format: ProgramFormat) -> None:
     with pytest.raises(RuntimeError, match="Not supported"):
         job.get_dense_statevector()
     assert len(job.get_shots()) == 32
-    with pytest.raises(ValueError, match="Compilation failed"):
+    with pytest.raises(ValueError, match=r"failed to legalize operation 'qco\.if'"):
         compile_program(source, target=device, program_format=ProgramFormat.QIR_BASE_MODULE)
 
 

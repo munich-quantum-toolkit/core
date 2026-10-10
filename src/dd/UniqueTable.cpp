@@ -15,7 +15,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <bit>
 #include <cstddef>
@@ -23,7 +23,7 @@
 
 namespace dd {
 
-mlir::LogicalResult UniqueTable::checkCapacity(const size_t initial,
+llvm::LogicalResult UniqueTable::checkCapacity(const size_t initial,
                                                const size_t maximum) {
   if (!std::has_single_bit(initial) || !std::has_single_bit(maximum) ||
       maximum < initial) {
@@ -32,13 +32,13 @@ mlir::LogicalResult UniqueTable::checkCapacity(const size_t initial,
         "at least the initial capacity.",
         ::mqt::ErrorCategory::InvalidArgument);
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-mlir::FailureOr<UniqueTable>
+llvm::FailureOr<UniqueTable>
 UniqueTable::create(MemoryManager& manager, const UniqueTableConfig& config) {
-  if (mlir::failed(checkCapacity(config.nBuckets, config.maxBuckets))) {
-    return mlir::failure();
+  if (llvm::failed(checkCapacity(config.nBuckets, config.maxBuckets))) {
+    return llvm::failure();
   }
   return UniqueTable(manager, config);
 }

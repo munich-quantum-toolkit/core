@@ -52,11 +52,13 @@ enum class Execution : uint8_t { Sampling, StateExtraction };
 /// - runs the module function marked as its QIR entry point.
 /// A session owns a single LLJIT instance and is not meant to be reused across
 /// modules; create a new @ref JitSession for each program.
-/// Execution accepts ordinary calls, including host function pointers, and
-/// rejects escaping module function addresses, exception-handling calls,
-/// musttail calls and module initializers. A runtime failure returns an error,
-/// discards that run's state and releases its runtime allocations. The same
-/// session can then be executed again.
+/// Entry points and QIR runtime calls must use the native C ABI. Execution uses
+/// ordinary LLVM calls without runtime-error instrumentation. Setup errors emit
+/// diagnostics and return failure from create(). QIR runtime failures terminate
+/// the process, except QIR resource-allocation failures with an explicit error
+/// output that the program can check for recovery. Host allocation failures are
+/// fatal. DDSIM contains fatal runtime failures in worker processes so that its
+/// host and other jobs remain usable.
 class JitSession {
 public:
   /// QIR 2.1 Base and Adaptive Profile entry-point signature.
@@ -70,8 +72,8 @@ public:
   /// @param bufferName Identifier used in diagnostics.
   /// @param execution Execution mode.
   /// @param randomSeed Optional deterministic runtime seed.
-  /// Returns an error if the IR cannot be parsed or the JIT fails to
-  /// initialize.
+  /// Emits a diagnostic and returns failure if parsing, validation, or JIT
+  /// initialization fails.
   [[nodiscard]] static mlir::FailureOr<std::unique_ptr<JitSession>>
   create(llvm::StringRef irBytes, llvm::StringRef bufferName,
          Execution execution = Execution::Sampling,

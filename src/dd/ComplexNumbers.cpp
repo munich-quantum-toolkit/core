@@ -17,7 +17,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
 #include <complex>
@@ -25,13 +25,13 @@
 
 namespace dd {
 
-mlir::LogicalResult ComplexNumbers::setTolerance(fp tol) {
+llvm::LogicalResult ComplexNumbers::setTolerance(fp tol) {
   if (!std::isnormal(tol) || tol <= 0.) {
     return ::mqt::emitError("DD tolerance must be positive and normal",
                             ::mqt::ErrorCategory::InvalidArgument);
   }
   RealNumber::eps = tol;
-  return mlir::success();
+  return llvm::success();
 }
 
 fp ComplexNumbers::mag2(const Complex& a) noexcept {

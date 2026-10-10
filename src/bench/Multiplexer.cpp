@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
 #include <numbers>
@@ -23,7 +23,7 @@
 
 namespace mqt::bench {
 
-mlir::FailureOr<Multiplexer> Multiplexer::create(MultiplexerOptions options) {
+llvm::FailureOr<Multiplexer> Multiplexer::create(MultiplexerOptions options) {
   if (options.qubits < 2 || options.qubits > MultiplexerOptions::MAX_QUBITS) {
     return ::mqt::emitError("multiplexer qubits must be between 2 and 1024",
                             ::mqt::ErrorCategory::InvalidArgument);
@@ -40,10 +40,10 @@ const MultiplexerOptions& Multiplexer::options() const noexcept {
 
 const Output& Multiplexer::output() const noexcept { return output_; }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 Multiplexer::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
 
   double state = 0.;
@@ -59,7 +59,7 @@ Multiplexer::probability(const std::string_view outcome) const {
                     1 - static_cast<int>(options_.qubits));
 }
 
-mlir::FailureOr<Evaluation> Multiplexer::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> Multiplexer::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

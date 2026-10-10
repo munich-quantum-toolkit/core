@@ -13,7 +13,7 @@
 
 #include "gtest/gtest.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <format>
 #include <string>
@@ -30,12 +30,12 @@ TEST(Diagnostics, NestedHandlersAndMetadata) {
         EXPECT_EQ(diagnostic.category, mqt::ErrorCategory::IO);
         EXPECT_EQ(diagnostic.severity, mqt::DiagnosticSeverity::Warning);
         EXPECT_EQ(diagnostic.status, 31415);
-        return mlir::success();
+        return llvm::success();
       });
   {
     mqt::ScopedDiagnosticHandler const inner([&](const mqt::Diagnostic&) {
       order.push_back(2);
-      return mlir::failure();
+      return llvm::failure();
     });
     mqt::emitDiagnostic({
         .message = "original",
@@ -48,7 +48,7 @@ TEST(Diagnostics, NestedHandlersAndMetadata) {
   {
     mqt::ScopedDiagnosticHandler const consume([&](const mqt::Diagnostic&) {
       order.push_back(3);
-      return mlir::success();
+      return llvm::success();
     });
     std::ignore = mqt::emitError("consumed");
   }
@@ -60,14 +60,14 @@ TEST(Diagnostics, ThreadIsolationAndDefaultOutput) {
   int worker = 0;
   mqt::ScopedDiagnosticHandler const handler([&](const mqt::Diagnostic&) {
     ++parent;
-    return mlir::success();
+    return llvm::success();
   });
   testing::internal::CaptureStderr();
   std::thread thread([&] {
     std::ignore = mqt::emitError("unhandled on worker");
     mqt::ScopedDiagnosticHandler const installed([&](const mqt::Diagnostic&) {
       ++worker;
-      return mlir::success();
+      return llvm::success();
     });
     std::ignore = mqt::emitError("handled on worker");
   });
@@ -85,12 +85,12 @@ TEST(Diagnostics, ReemissionStartsAtPreviousHandler) {
   mqt::ScopedDiagnosticHandler const outer(
       [&](const mqt::Diagnostic& diagnostic) {
         message = diagnostic.message;
-        return mlir::success();
+        return llvm::success();
       });
   mqt::ScopedDiagnosticHandler const inner(
       [&](const mqt::Diagnostic& diagnostic) {
         std::ignore = mqt::emitError("source: " + diagnostic.message);
-        return mlir::success();
+        return llvm::success();
       });
   std::ignore = mqt::emitError("detail");
   EXPECT_EQ(message, "source: detail");
@@ -101,7 +101,7 @@ TEST(Diagnostics, FormattedMessageRetainsMetadata) {
   const mqt::ScopedDiagnosticHandler handler(
       [&](const mqt::Diagnostic& diagnostic) {
         received = diagnostic;
-        return mlir::success();
+        return llvm::success();
       });
   mqt::diagnostics::warn("value {}", 42);
   EXPECT_EQ(received.message, "value 42");

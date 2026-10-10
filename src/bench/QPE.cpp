@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cmath>
@@ -95,7 +95,7 @@ struct SignedMagnitude {
 
 } // namespace
 
-mlir::FailureOr<Phase> Phase::create(const uint64_t numerator,
+llvm::FailureOr<Phase> Phase::create(const uint64_t numerator,
                                      const uint64_t denominator) {
   if (denominator == 0) {
     return ::mqt::emitError("phase denominator must not be zero",
@@ -115,7 +115,7 @@ uint64_t Phase::numerator() const noexcept { return numerator_; }
 
 uint64_t Phase::denominator() const noexcept { return denominator_; }
 
-mlir::FailureOr<QPE> QPE::create(QPEOptions options) {
+llvm::FailureOr<QPE> QPE::create(QPEOptions options) {
   if (options.precision == 0 || options.precision > QPEOptions::MAX_PRECISION) {
     return ::mqt::emitError("QPE precision must be between 1 and 1000000",
                             ::mqt::ErrorCategory::InvalidArgument);
@@ -148,9 +148,9 @@ const QPEOptions& QPE::options() const noexcept { return options_; }
 
 const Output& QPE::output() const noexcept { return output_; }
 
-mlir::FailureOr<double> QPE::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+llvm::FailureOr<double> QPE::probability(const std::string_view outcome) const {
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   const auto difference = subtractModulo(lowerOutcome_, outcome);
   const auto integerBits = bitLength(difference.magnitude);
@@ -195,7 +195,7 @@ mlir::FailureOr<double> QPE::probability(const std::string_view outcome) const {
   return probability;
 }
 
-mlir::FailureOr<Evaluation> QPE::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> QPE::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

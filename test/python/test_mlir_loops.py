@@ -490,7 +490,7 @@ module {
 
 def test_loop_resource_allocation_is_rejected_at_import(capfd: pytest.CaptureFixture[str]) -> None:
     """Reject loop-local quantum allocations when constructing the program."""
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="dynamic quantum allocations must be in the entry block") as error:
         QCProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
@@ -507,9 +507,10 @@ module {
   }
 }
 """)
-    diagnostic = capfd.readouterr().err
-    assert "'qc.alloc' op dynamic quantum allocations must be in the entry block" in diagnostic
+    diagnostic = str(error.value)
+    assert "'qc.alloc' op" in diagnostic
     assert "of the 'mqt.entry_point' function" in diagnostic
+    assert not capfd.readouterr().err
 
 
 def test_first_measurement_initializes_do_while_output() -> None:

@@ -31,7 +31,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -88,7 +88,7 @@ public:
   /// @param nq The maximum number of qubits to allocate memory for. This can
   /// always be extended later using @ref resize.
   /// @param config The configuration of the package
-  [[nodiscard]] static mlir::FailureOr<std::unique_ptr<Package>>
+  [[nodiscard]] static llvm::FailureOr<std::unique_ptr<Package>>
   create(size_t nq = DEFAULT_QUBITS, const DDPackageConfig& config = {});
   ~Package() = default;
   Package(const Package& package) = delete;
@@ -101,7 +101,7 @@ public:
   /// that they can handle the new number of qubits.
   ///
   /// @param nq The new number of qubits
-  [[nodiscard]] mlir::LogicalResult resize(size_t nq);
+  [[nodiscard]] llvm::LogicalResult resize(size_t nq);
 
   /// Reset package state
   void reset();
@@ -349,7 +349,7 @@ public:
   /// @param mat The matrix representation of the gate
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  [[nodiscard]] mlir::FailureOr<mEdge> makeGateDD(const GateMatrix& mat,
+  [[nodiscard]] llvm::FailureOr<mEdge> makeGateDD(const GateMatrix& mat,
                                                   Qubit target);
 
   /// Construct the DD for a single-qubit controlled gate
@@ -358,7 +358,7 @@ public:
   /// @param control The control qubit
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
 
   /// Construct the DD for a multi-controlled single-qubit gate
@@ -367,11 +367,11 @@ public:
   /// @param controls The control qubits
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeGateDD(const GateMatrix& mat, const Controls& controls, Qubit target);
 
   /// Construct a single-qubit gate DD from a row-major matrix view.
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
              const Controls& controls, Qubit target);
 
@@ -383,7 +383,7 @@ public:
   /// @return DD representing the gate
   /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
                      Qubit target1);
 
@@ -396,7 +396,7 @@ public:
   /// @return DD representing the gate
   /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, const Control& control,
                      Qubit target0, Qubit target1);
 
@@ -409,12 +409,12 @@ public:
   /// @return DD representing the gate
   /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, const Controls& controls,
                      Qubit target0, Qubit target1);
 
   /// Construct a two-qubit gate DD from a row-major matrix view.
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeTwoQubitGateDD(std::span<const std::complex<fp>,
                                static_cast<std::size_t>(NEDGE) * NEDGE> mat,
                      const Controls& controls, Qubit target0, Qubit target1);
@@ -428,7 +428,7 @@ public:
   /// @return DD representing the gate
   /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
                        Qubit target1, Qubit target2);
 
@@ -442,7 +442,7 @@ public:
   /// @return DD representing the gate
   /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, const Control& control,
                        Qubit target0, Qubit target1, Qubit target2);
 
@@ -456,13 +456,13 @@ public:
   /// @return DD representing the gate
   /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
                        const Controls& controls, Qubit target0, Qubit target1,
                        Qubit target2);
 
   /// Construct a three-qubit gate DD from a row-major matrix view.
-  [[nodiscard]] mlir::FailureOr<mEdge> makeThreeQubitGateDD(
+  [[nodiscard]] llvm::FailureOr<mEdge> makeThreeQubitGateDD(
       std::span<const std::complex<fp>,
                 static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
                     THREE_QUBIT_GATE_DIM> mat,
@@ -475,7 +475,7 @@ public:
   /// Returns an error if the given matrix is not square or its
   /// length is not a power of two.
   /// Returns an error if the matrix exceeds the package capacity.
-  [[nodiscard]] mlir::FailureOr<mEdge> makeDDFromMatrix(const CMat& matrix);
+  [[nodiscard]] llvm::FailureOr<mEdge> makeDDFromMatrix(const CMat& matrix);
 
   /// Construct a matrix DD without copying its storage.
   ///
@@ -485,7 +485,7 @@ public:
   /// Returns an error if dimension is not a power of two.
   /// Returns an error if the matrix exceeds the package capacity.
   template <class MatrixEntry>
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
     if (dimension == 0) {
       return mEdge::one();
@@ -519,7 +519,7 @@ public:
   /// Returns an error if qubits exceed package capacity, targets are
   /// duplicated, controls have conflicting polarities, or controls overlap
   /// targets.
-  [[nodiscard]] mlir::FailureOr<mEdge>
+  [[nodiscard]] llvm::FailureOr<mEdge>
   makeGateDD(std::span<const std::complex<fp>> matrix,
              std::span<const Qubit> targets, const Controls& controls = {});
 
@@ -675,7 +675,7 @@ public:
   /// @return A string representing the measurement result.
   /// Returns an error if numerical instabilities are detected or if
   /// probabilities do not sum to 1.
-  [[nodiscard]] mlir::FailureOr<std::string> measureAll(vEdge& rootEdge,
+  [[nodiscard]] llvm::FailureOr<std::string> measureAll(vEdge& rootEdge,
                                                         bool collapse,
                                                         std::mt19937_64& mt,
                                                         fp epsilon = 0.001);
@@ -719,7 +719,7 @@ public:
   /// Returns an error if a numerical instability is detected during
   /// the measurement.
   /// @pre The measured qubit is present in the state.
-  [[nodiscard]] mlir::FailureOr<char> measureOneCollapsing(vEdge& rootEdge,
+  [[nodiscard]] llvm::FailureOr<char> measureOneCollapsing(vEdge& rootEdge,
                                                            Qubit index,
                                                            std::mt19937_64& mt,
                                                            fp epsilon = 0.001);
@@ -1162,7 +1162,7 @@ public:
   /// @param probs A map of probabilities for each measurement outcome.
   /// @param permutation Optional permutation matching the measurement order.
   /// @return The fidelity of the measurement outcomes.
-  [[nodiscard]] static mlir::FailureOr<fp>
+  [[nodiscard]] static llvm::FailureOr<fp>
   fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
                                 const Permutation& permutation = {});
 
@@ -1198,7 +1198,7 @@ public:
   /// the state.
   /// @pre The observable is not the zero terminal. Debug assertions also
   /// require a non-terminal state and an approximately zero imaginary part.
-  [[nodiscard]] mlir::FailureOr<fp> expectationValue(const mEdge& x,
+  [[nodiscard]] llvm::FailureOr<fp> expectationValue(const mEdge& x,
                                                      const vEdge& y);
 
   ///
@@ -1567,29 +1567,29 @@ public:
   /// Streams must report I/O failures through their state flags.
   template <class Node, class Edge = Edge<Node>,
             size_t N = std::tuple_size_v<decltype(Node::e)>>
-  [[nodiscard]] mlir::FailureOr<Edge> deserialize(std::istream& is,
+  [[nodiscard]] llvm::FailureOr<Edge> deserialize(std::istream& is,
                                                   bool readBinary = false);
 
   /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a file.
   template <class Node, class Edge = Edge<Node>>
-  [[nodiscard]] mlir::FailureOr<Edge>
+  [[nodiscard]] llvm::FailureOr<Edge>
   deserialize(const std::string& inputFilename, bool readBinary);
 
 private:
   template <class Node, size_t N = std::tuple_size_v<decltype(Node::e)>>
-  mlir::FailureOr<CachedEdge<Node>>
+  llvm::FailureOr<CachedEdge<Node>>
   deserializeNode(int64_t index, Qubit v, const std::array<int64_t, N>& edgeIdx,
                   const std::array<ComplexValue, N>& edgeWeight,
                   std::unordered_map<int64_t, Node*>& nodes);
 };
 
-extern template mlir::FailureOr<vEdge>
+extern template llvm::FailureOr<vEdge>
 Package::deserialize<vNode>(std::istream&, bool);
-extern template mlir::FailureOr<mEdge>
+extern template llvm::FailureOr<mEdge>
 Package::deserialize<mNode>(std::istream&, bool);
-extern template mlir::FailureOr<vEdge>
+extern template llvm::FailureOr<vEdge>
 Package::deserialize<vNode>(const std::string&, bool);
-extern template mlir::FailureOr<mEdge>
+extern template llvm::FailureOr<mEdge>
 Package::deserialize<mNode>(const std::string&, bool);
 
 } // namespace dd

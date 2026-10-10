@@ -18,6 +18,8 @@
 #include "qdmi/client.h"
 #include "qdmi/types.h"
 
+#include "llvm/ADT/Twine.h"
+
 #include <algorithm>
 #include <complex>
 #include <concepts>
@@ -105,7 +107,7 @@ struct JobDeleter {
   std::shared_ptr<DriverSession> session;
 };
 
-[[nodiscard]] inline mlir::FailureOr<std::string>
+[[nodiscard]] inline llvm::FailureOr<std::string>
 decodeText(std::string value, const std::string_view description) {
   if (value.empty() || value.back() != '\0') {
     return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
@@ -121,7 +123,7 @@ decodeText(std::string value, const std::string_view description) {
   return value;
 }
 
-[[nodiscard]] inline mlir::FailureOr<std::string>
+[[nodiscard]] inline llvm::FailureOr<std::string>
 decodeText(const std::span<const std::byte> value,
            const std::string_view description) {
   if (value.empty()) {
@@ -134,38 +136,38 @@ decodeText(const std::span<const std::byte> value,
       description);
 }
 
-[[nodiscard]] inline mlir::FailureOr<std::optional<size_t>>
+[[nodiscard]] inline llvm::FailureOr<std::optional<size_t>>
 queuePositionFromResult(const int result, const size_t queuePosition) {
   if (result == QDMI_ERROR_NOTSUPPORTED || result == QDMI_ERROR_BADSTATE) {
     return std::optional<size_t>{};
   }
-  if (mlir::failed(checkError(result, "Querying job queue position"))) {
-    return mlir::failure();
+  if (llvm::failed(checkError(result, "Querying job queue position"))) {
+    return llvm::failure();
   }
   return std::optional<size_t>{std::move(queuePosition)};
 }
 
-[[nodiscard]] mlir::FailureOr<std::vector<std::string>>
+[[nodiscard]] llvm::FailureOr<std::vector<std::string>>
 parseShots(std::string_view shots, size_t numShots);
 
 template <custom_property_value T, typename Query>
-[[nodiscard]] mlir::FailureOr<std::optional<T>>
+[[nodiscard]] llvm::FailureOr<std::optional<T>>
 queryCustomValue(Query query, const std::string_view description) {
   size_t size = 0;
   const auto sizeResult = query(0, nullptr, &size);
   if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
     return std::optional<T>{};
   }
-  if (mlir::failed(checkError(
-          sizeResult, "Querying " + std::string(description) + " size"))) {
-    return mlir::failure();
+  if (llvm::failed(checkError(
+          sizeResult, "Querying " + llvm::Twine(description) + " size"))) {
+    return llvm::failure();
   }
 
   std::vector<std::byte> bytes(size);
   if (size != 0) {
-    if (mlir::failed(checkError(query(size, bytes.data(), nullptr),
-                                "Querying " + std::string(description)))) {
-      return mlir::failure();
+    if (llvm::failed(checkError(query(size, bytes.data(), nullptr),
+                                "Querying " + llvm::Twine(description)))) {
+      return llvm::failure();
     }
   }
 
@@ -195,7 +197,7 @@ queryCustomValue(Query query, const std::string_view description) {
 }
 
 template <typename Element>
-mlir::LogicalResult validateArraySize(const size_t size,
+llvm::LogicalResult validateArraySize(const size_t size,
                                       const std::string_view description) {
   if (size % sizeof(Element) != 0U) {
     return qdmi::emitError(QDMI_ERROR_INVALIDARGUMENT,
@@ -204,37 +206,37 @@ mlir::LogicalResult validateArraySize(const size_t size,
                                " bytes, which is not a multiple of " +
                                std::to_string(sizeof(Element)));
   }
-  return mlir::success();
+  return llvm::success();
 }
 
 template <typename Handle, typename Query>
-[[nodiscard]] mlir::FailureOr<std::optional<std::vector<Handle>>>
+[[nodiscard]] llvm::FailureOr<std::optional<std::vector<Handle>>>
 queryHandleArray(Query query, const std::string_view description) {
   size_t size = 0;
   const auto sizeResult = query(0, nullptr, &size);
   if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
     return std::optional<std::vector<Handle>>{};
   }
-  if (mlir::failed(checkError(
-          sizeResult, "Querying " + std::string(description) + " size"))) {
-    return mlir::failure();
+  if (llvm::failed(checkError(
+          sizeResult, "Querying " + llvm::Twine(description) + " size"))) {
+    return llvm::failure();
   }
-  if (mlir::failed(validateArraySize<Handle>(size, description))) {
-    return mlir::failure();
+  if (llvm::failed(validateArraySize<Handle>(size, description))) {
+    return llvm::failure();
   }
 
   std::vector<Handle> handles(size / sizeof(Handle));
   if (size != 0) {
-    if (mlir::failed(
+    if (llvm::failed(
             checkError(query(size, static_cast<void*>(handles.data()), nullptr),
-                       "Querying " + std::string(description)))) {
-      return mlir::failure();
+                       "Querying " + llvm::Twine(description)))) {
+      return llvm::failure();
     }
   }
   return std::optional<std::vector<Handle>>{std::move(handles)};
 }
 
-[[nodiscard]] inline mlir::FailureOr<QDMI_Device_Property>
+[[nodiscard]] inline llvm::FailureOr<QDMI_Device_Property>
 toDeviceProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -252,7 +254,7 @@ toDeviceProperty(const CustomProperty property) {
                          "Invalid custom property selector");
 }
 
-[[nodiscard]] inline mlir::FailureOr<QDMI_Site_Property>
+[[nodiscard]] inline llvm::FailureOr<QDMI_Site_Property>
 toSiteProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -270,7 +272,7 @@ toSiteProperty(const CustomProperty property) {
                          "Invalid custom property selector");
 }
 
-[[nodiscard]] inline mlir::FailureOr<QDMI_Operation_Property>
+[[nodiscard]] inline llvm::FailureOr<QDMI_Operation_Property>
 toOperationProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -288,7 +290,7 @@ toOperationProperty(const CustomProperty property) {
                          "Invalid custom property selector");
 }
 
-[[nodiscard]] inline mlir::FailureOr<QDMI_Job_Property>
+[[nodiscard]] inline llvm::FailureOr<QDMI_Job_Property>
 toJobProperty(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -306,7 +308,7 @@ toJobProperty(const CustomProperty property) {
                          "Invalid custom property selector");
 }
 
-[[nodiscard]] inline mlir::FailureOr<QDMI_Job_Result>
+[[nodiscard]] inline llvm::FailureOr<QDMI_Job_Result>
 toJobResult(const CustomProperty property) {
   switch (property) {
   case CustomProperty::Custom1:
@@ -449,8 +451,8 @@ namespace detail {
 /// Decode a standard property while preserving optional support and
 /// diagnostics.
 template <maybe_optional_value_or_string_or_vector T, typename Query>
-[[nodiscard]] mlir::FailureOr<T>
-queryProperty(Query query, const std::string& msg, const std::string& sizeMsg) {
+[[nodiscard]] llvm::FailureOr<T>
+queryProperty(Query query, const llvm::Twine& msg, const llvm::Twine& sizeMsg) {
   if constexpr (string_or_optional_string<T>) {
     size_t size = 0;
     auto result = query(0, nullptr, &size);
@@ -461,21 +463,21 @@ queryProperty(Query query, const std::string& msg, const std::string& sizeMsg) {
       }
     }
 
-    if (mlir::failed(checkError(result, sizeMsg))) {
-      return mlir::failure();
+    if (llvm::failed(checkError(result, sizeMsg))) {
+      return llvm::failure();
     }
     if (size == 0) {
       return qdmi::emitError(QDMI_ERROR_FATAL,
-                             sizeMsg + ": missing string terminator");
+                             (sizeMsg + ": missing string terminator").str());
     }
     std::string value(size, '\0');
     result = query(size, value.data(), nullptr);
-    if (mlir::failed(checkError(result, msg))) {
-      return mlir::failure();
+    if (llvm::failed(checkError(result, msg))) {
+      return llvm::failure();
     }
     if (value.back() != '\0') {
       return qdmi::emitError(QDMI_ERROR_FATAL,
-                             msg + ": missing string terminator");
+                             (msg + ": missing string terminator").str());
     }
     value.pop_back();
     return T{std::move(value)};
@@ -489,20 +491,21 @@ queryProperty(Query query, const std::string& msg, const std::string& sizeMsg) {
       }
     }
 
-    if (mlir::failed(checkError(result, sizeMsg))) {
-      return mlir::failure();
+    if (llvm::failed(checkError(result, sizeMsg))) {
+      return llvm::failure();
     }
     if (size % sizeof(typename remove_optional_t<T>::value_type) != 0) {
       return qdmi::emitError(
           QDMI_ERROR_FATAL,
-          sizeMsg + ": byte count is not a multiple of the element size");
+          (sizeMsg + ": byte count is not a multiple of the element size")
+              .str());
     }
     remove_optional_t<T> value(
         size / sizeof(typename remove_optional_t<T>::value_type));
     if (size != 0) {
       result = query(size, value.data(), nullptr);
-      if (mlir::failed(checkError(result, msg))) {
-        return mlir::failure();
+      if (llvm::failed(checkError(result, msg))) {
+        return llvm::failure();
       }
     }
     return T{std::move(value)};
@@ -516,8 +519,8 @@ queryProperty(Query query, const std::string& msg, const std::string& sizeMsg) {
       }
     }
 
-    if (mlir::failed(checkError(result, msg))) {
-      return mlir::failure();
+    if (llvm::failed(checkError(result, msg))) {
+      return llvm::failure();
     }
     return T{std::move(value)};
   }
@@ -565,14 +568,14 @@ class Operation;
 
 namespace builtin_driver {
 /// Stage one device manifest in MQT Core's optional driver extension.
-mlir::LogicalResult addManifest(const std::filesystem::path& path);
+llvm::LogicalResult addManifest(const std::filesystem::path& path);
 
 /// List enabled stable IDs without loading devices or contacting device
 /// services.
 ///
 /// Uses the builtin MQT Core QDMI driver and makes its configuration immutable
 /// on the first call.
-[[nodiscard]] mlir::FailureOr<std::vector<std::string>> registeredDeviceIds();
+[[nodiscard]] llvm::FailureOr<std::vector<std::string>> registeredDeviceIds();
 
 /// Open one device through the builtin MQT Core QDMI driver with session
 /// overrides.
@@ -581,7 +584,7 @@ mlir::LogicalResult addManifest(const std::filesystem::path& path);
 /// @param deviceSessionJson JSON session overrides.
 /// @param driverPath Optional compatible extension path. By default, this call
 /// uses the MQT Core QDMI driver and ignores `MQT_CORE_QDMI_DRIVER`.
-[[nodiscard]] mlir::FailureOr<Device> openDevice(
+[[nodiscard]] llvm::FailureOr<Device> openDevice(
     std::string_view id, std::string_view deviceSessionJson = {},
     const std::optional<std::filesystem::path>& driverPath = std::nullopt);
 } // namespace builtin_driver
@@ -598,7 +601,7 @@ public:
   /// @param id Stable device ID.
   /// @param config QDMI driver and authentication configuration.
   /// @return A device wrapper that retains the fresh session.
-  [[nodiscard]] static mlir::FailureOr<Device>
+  [[nodiscard]] static llvm::FailureOr<Device>
   openDevice(std::string_view id, const SessionConfig& config = {});
 
   /// Constructs a new QDMI Session with optional authentication.
@@ -607,7 +610,7 @@ public:
   /// parameters. If not provided, uses default (no authentication).
   ///
   /// Creates, allocates, and initializes a new QDMI session.
-  [[nodiscard]] static mlir::FailureOr<Session>
+  [[nodiscard]] static llvm::FailureOr<Session>
   create(const SessionConfig& config = {});
 
   Session(const Session&) = delete;
@@ -616,14 +619,14 @@ public:
   Session& operator=(Session&&) noexcept = default;
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
-  [[nodiscard]] mlir::FailureOr<std::vector<Device>> getDevices();
+  [[nodiscard]] llvm::FailureOr<std::vector<Device>> getDevices();
 
   /// Returns the stable IDs of devices visible to this session.
-  [[nodiscard]] mlir::FailureOr<std::vector<std::string>> getDeviceIds();
+  [[nodiscard]] llvm::FailureOr<std::vector<std::string>> getDeviceIds();
 
   /// Returns the device with the given stable ID, or reports an error if it is
   /// absent.
-  [[nodiscard]] mlir::FailureOr<Device> getDevice(std::string_view id);
+  [[nodiscard]] llvm::FailureOr<Device> getDevice(std::string_view id);
 
 private:
   Session() = default;
@@ -631,15 +634,15 @@ private:
 
   /// Query a session property.
   template <size_constructible_contiguous_range T>
-  [[nodiscard]] mlir::FailureOr<T>
+  [[nodiscard]] llvm::FailureOr<T>
   queryProperty(const QDMI_Session_Property prop) const {
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
           return session_->api->session_query_session_property(
               session_->handle.get(), prop, size, value, sizeRet);
         },
-        std::string("Querying ") + qdmi::toString(prop),
-        std::string("Querying the size of ") + qdmi::toString(prop));
+        llvm::Twine("Querying ") + qdmi::toString(prop),
+        llvm::Twine("Querying the size of ") + qdmi::toString(prop));
   }
 
   std::shared_ptr<detail::DriverSession> session_;
@@ -664,25 +667,25 @@ public:
   operator QDMI_Device() const { return device_; }
 
   /// @see QDMI_DEVICE_PROPERTY_ID
-  [[nodiscard]] mlir::FailureOr<std::string> getId() const;
+  [[nodiscard]] llvm::FailureOr<std::string> getId() const;
 
   /// @see QDMI_DEVICE_PROPERTY_NAME
-  [[nodiscard]] mlir::FailureOr<std::string> getName() const;
+  [[nodiscard]] llvm::FailureOr<std::string> getName() const;
 
   /// @see QDMI_DEVICE_PROPERTY_VERSION
-  [[nodiscard]] mlir::FailureOr<std::string> getVersion() const;
+  [[nodiscard]] llvm::FailureOr<std::string> getVersion() const;
 
   /// @see QDMI_DEVICE_PROPERTY_STATUS
-  [[nodiscard]] mlir::FailureOr<QDMI_Device_Status> getStatus() const;
+  [[nodiscard]] llvm::FailureOr<QDMI_Device_Status> getStatus() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LIBRARYVERSION
-  [[nodiscard]] mlir::FailureOr<std::string> getLibraryVersion() const;
+  [[nodiscard]] llvm::FailureOr<std::string> getLibraryVersion() const;
 
   /// @see QDMI_DEVICE_PROPERTY_QUBITSNUM
-  [[nodiscard]] mlir::FailureOr<size_t> getQubitsNum() const;
+  [[nodiscard]] llvm::FailureOr<size_t> getQubitsNum() const;
 
   /// @see QDMI_DEVICE_PROPERTY_SITES
-  [[nodiscard]] mlir::FailureOr<std::vector<Site>> getSites() const;
+  [[nodiscard]] llvm::FailureOr<std::vector<Site>> getSites() const;
 
   /// Returns the list of regular sites (without zone sites) available
   /// on the device.
@@ -692,7 +695,7 @@ public:
   /// qubit locations on the device lattice.
   /// @returns vector of regular sites
   /// @see QDMI_DEVICE_PROPERTY_SITES
-  [[nodiscard]] mlir::FailureOr<std::vector<Site>> getRegularSites() const;
+  [[nodiscard]] llvm::FailureOr<std::vector<Site>> getRegularSites() const;
 
   /// Returns the list of zone sites (without regular sites) available
   /// on the device.
@@ -702,41 +705,41 @@ public:
   /// zoned operations can be performed, not individual qubit locations.
   /// @returns a vector of zone sites
   /// @see QDMI_DEVICE_PROPERTY_SITES
-  [[nodiscard]] mlir::FailureOr<std::vector<Site>> getZones() const;
+  [[nodiscard]] llvm::FailureOr<std::vector<Site>> getZones() const;
 
   /// @see QDMI_DEVICE_PROPERTY_OPERATIONS
-  [[nodiscard]] mlir::FailureOr<std::vector<Operation>> getOperations() const;
+  [[nodiscard]] llvm::FailureOr<std::vector<Operation>> getOperations() const;
 
   /// @see QDMI_DEVICE_PROPERTY_COUPLINGMAP
-  [[nodiscard]] mlir::FailureOr<
+  [[nodiscard]] llvm::FailureOr<
       std::optional<std::vector<std::pair<Site, Site>>>>
   getCouplingMap() const;
 
   /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
-  [[nodiscard]] mlir::FailureOr<std::optional<size_t>> getQueueLength() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<size_t>> getQueueLength() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
-  [[nodiscard]] mlir::FailureOr<std::optional<std::string>>
+  [[nodiscard]] llvm::FailureOr<std::optional<std::string>>
   getLengthUnit() const;
 
   /// @see QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR
-  [[nodiscard]] mlir::FailureOr<std::optional<double>>
+  [[nodiscard]] llvm::FailureOr<std::optional<double>>
   getLengthScaleFactor() const;
 
   /// @see QDMI_DEVICE_PROPERTY_DURATIONUNIT
-  [[nodiscard]] mlir::FailureOr<std::optional<std::string>>
+  [[nodiscard]] llvm::FailureOr<std::optional<std::string>>
   getDurationUnit() const;
 
   /// @see QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR
-  [[nodiscard]] mlir::FailureOr<std::optional<double>>
+  [[nodiscard]] llvm::FailureOr<std::optional<double>>
   getDurationScaleFactor() const;
 
   /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>>
   getMinAtomDistance() const;
 
   /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
-  [[nodiscard]] mlir::FailureOr<std::vector<QDMI_Program_Format>>
+  [[nodiscard]] llvm::FailureOr<std::vector<QDMI_Program_Format>>
   getSupportedProgramFormats() const;
 
   /// Returns the direct child devices managed by this device.
@@ -744,7 +747,7 @@ public:
   /// @return The child devices, or an empty vector if child devices are not
   /// supported.
   /// @see QDMI_DEVICE_PROPERTY_CHILDDEVICES
-  [[nodiscard]] mlir::FailureOr<std::vector<Device>> getChildDevices() const;
+  [[nodiscard]] llvm::FailureOr<std::vector<Device>> getChildDevices() const;
 
   /// Queries an implementation-defined custom device property.
   ///
@@ -754,11 +757,11 @@ public:
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] mlir::FailureOr<std::optional<T>>
+  [[nodiscard]] llvm::FailureOr<std::optional<T>>
   queryCustomProperty(const CustomProperty property) const {
     auto qdmiPropertyResult = detail::toDeviceProperty(property);
-    if (mlir::failed(qdmiPropertyResult)) {
-      return mlir::failure();
+    if (llvm::failed(qdmiPropertyResult)) {
+      return llvm::failure();
     }
     const auto qdmiProperty = (*qdmiPropertyResult);
     return detail::queryCustomValue<T>(
@@ -777,11 +780,11 @@ public:
   /// unsupported. A supported empty list is returned as an engaged optional.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned byte count is not a
   /// multiple of `sizeof(QDMI_Operation)`.
-  [[nodiscard]] mlir::FailureOr<std::optional<std::vector<Operation>>>
+  [[nodiscard]] llvm::FailureOr<std::optional<std::vector<Operation>>>
   queryCustomOperations(CustomProperty property) const;
 
   /// Submit one text program with the given format and job parameters.
-  [[nodiscard]] mlir::FailureOr<Job> submitJob(
+  [[nodiscard]] llvm::FailureOr<Job> submitJob(
       const std::string& program, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -791,7 +794,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Submit one exact-byte program with the given format and job parameters.
-  [[nodiscard]] mlir::FailureOr<Job> submitJob(
+  [[nodiscard]] llvm::FailureOr<Job> submitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -802,7 +805,7 @@ public:
 
   /// Returns no job only when the device rejects this text program before
   /// submission.
-  [[nodiscard]] mlir::FailureOr<std::optional<Job>> trySubmitJob(
+  [[nodiscard]] llvm::FailureOr<std::optional<Job>> trySubmitJob(
       const std::string& program, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -813,7 +816,7 @@ public:
 
   /// Returns no job only when the device rejects this binary program before
   /// submission.
-  [[nodiscard]] mlir::FailureOr<std::optional<Job>> trySubmitJob(
+  [[nodiscard]] llvm::FailureOr<std::optional<Job>> trySubmitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -825,7 +828,7 @@ public:
   /// Submits an ordered list of text programs with common job parameters.
   ///
   /// The required text terminator is included exactly once per payload.
-  [[nodiscard]] mlir::FailureOr<Job> submitJob(
+  [[nodiscard]] llvm::FailureOr<Job> submitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -835,7 +838,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Returns no job only when the device rejects this list before submission.
-  [[nodiscard]] mlir::FailureOr<std::optional<Job>> trySubmitJob(
+  [[nodiscard]] llvm::FailureOr<std::optional<Job>> trySubmitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -845,7 +848,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Submits an ordered list of exact-byte programs with common job parameters.
-  [[nodiscard]] mlir::FailureOr<Job> submitJob(
+  [[nodiscard]] llvm::FailureOr<Job> submitJob(
       std::span<const std::span<const std::byte>> programs,
       QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -855,7 +858,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Returns no job only when the device rejects this list before submission.
-  [[nodiscard]] mlir::FailureOr<std::optional<Job>> trySubmitJob(
+  [[nodiscard]] llvm::FailureOr<std::optional<Job>> trySubmitJob(
       std::span<const std::span<const std::byte>> programs,
       QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -872,7 +875,7 @@ public:
   /// Returns an error If the driver or device cannot retrieve the
   /// job.
   /// @see QDMI_session_retrieve_job_by_id
-  [[nodiscard]] mlir::FailureOr<Job>
+  [[nodiscard]] llvm::FailureOr<Job>
   retrieveJobById(std::string_view jobId) const;
 
   auto operator<=>(const Device&) const noexcept = default;
@@ -887,7 +890,7 @@ private:
   Device(QDMI_Device device, std::shared_ptr<detail::DriverSession> session)
       : device_(device), session_(std::move(session)) {}
 
-  friend mlir::FailureOr<Device>
+  friend llvm::FailureOr<Device>
   builtin_driver::openDevice(std::string_view, std::string_view,
                              const std::optional<std::filesystem::path>&);
 
@@ -897,18 +900,18 @@ private:
 
   /// Query a device property.
   template <maybe_optional_value_or_string_or_vector T>
-  [[nodiscard]] mlir::FailureOr<T>
+  [[nodiscard]] llvm::FailureOr<T>
   queryProperty(const QDMI_Device_Property prop) const {
-    const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     return detail::queryProperty<T>(
         [&](const size_t size, void* value, size_t* sizeRet) {
           return api().device_query_device_property(device_, prop, size, value,
                                                     sizeRet);
         },
-        msg, msg);
+        llvm::Twine("Querying ") + qdmi::toString(prop),
+        llvm::Twine("Querying ") + qdmi::toString(prop));
   }
 
-  [[nodiscard]] mlir::FailureOr<std::optional<Job>>
+  [[nodiscard]] llvm::FailureOr<std::optional<Job>>
   submitJobImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
                 std::span<const void* const> programs,
                 std::optional<size_t> numShots,
@@ -918,7 +921,7 @@ private:
                 const std::optional<CustomJobParameter>& custom4,
                 const std::optional<CustomJobParameter>& custom5) const;
 
-  mlir::LogicalResult setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
+  llvm::LogicalResult setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                                         const CustomJobParameter& value) const;
 
   /// The underlying device pointer.
@@ -945,46 +948,46 @@ public:
   operator QDMI_Job() const { return job_.get(); }
 
   /// @see QDMI_job_check
-  [[nodiscard]] mlir::FailureOr<QDMI_Job_Status> check() const;
+  [[nodiscard]] llvm::FailureOr<QDMI_Job_Status> check() const;
 
   /// @see QDMI_job_wait
   /// @param timeout The maximum time to wait in seconds. 0 (default) means
   /// wait indefinitely.
   /// @return true if the job completed successfully, false if it timed out
-  [[nodiscard]] mlir::FailureOr<bool> wait(size_t timeout = 0) const;
+  [[nodiscard]] llvm::FailureOr<bool> wait(size_t timeout = 0) const;
 
   /// @see QDMI_job_cancel
-  [[nodiscard]] mlir::LogicalResult cancel() const;
+  [[nodiscard]] llvm::LogicalResult cancel() const;
 
   /// Get the job ID
-  [[nodiscard]] mlir::FailureOr<std::string> getId() const;
+  [[nodiscard]] llvm::FailureOr<std::string> getId() const;
 
   /// Get the program format
-  [[nodiscard]] mlir::FailureOr<QDMI_Program_Format> getProgramFormat() const;
+  [[nodiscard]] llvm::FailureOr<QDMI_Program_Format> getProgramFormat() const;
 
   /// Gets a textual program without its terminating null byte.
   ///
   /// Returns QDMI_ERROR_INVALIDARGUMENT if the format is not textual or the
   /// device does not return a null-terminated payload.
-  [[nodiscard]] mlir::FailureOr<std::string>
+  [[nodiscard]] llvm::FailureOr<std::string>
   getProgram(size_t programIndex = 0) const;
 
   /// Gets the submitted program bytes exactly as returned by the device.
-  [[nodiscard]] mlir::FailureOr<std::vector<std::byte>>
+  [[nodiscard]] llvm::FailureOr<std::vector<std::byte>>
   getProgramBytes(size_t programIndex = 0) const;
 
   /// Get the number of shots
-  [[nodiscard]] mlir::FailureOr<size_t> getNumShots() const;
+  [[nodiscard]] llvm::FailureOr<size_t> getNumShots() const;
 
   /// Returns the number of programs in input order.
-  [[nodiscard]] mlir::FailureOr<size_t> getNumPrograms() const;
+  [[nodiscard]] llvm::FailureOr<size_t> getNumPrograms() const;
 
   /// Returns one program outcome, or no value when unsupported.
-  [[nodiscard]] mlir::FailureOr<std::optional<QDMI_Job_Status>>
+  [[nodiscard]] llvm::FailureOr<std::optional<QDMI_Job_Status>>
   getProgramStatus(size_t programIndex = 0) const;
 
   /// Returns a result without interpreting its bytes.
-  [[nodiscard]] mlir::FailureOr<std::vector<std::byte>>
+  [[nodiscard]] llvm::FailureOr<std::vector<std::byte>>
   getResults(QDMI_Job_Result result, size_t programIndex = 0) const;
 
   /// Gets the current number of jobs ahead of this job in its queue.
@@ -994,7 +997,7 @@ public:
   /// Returns an error If the provider status refresh or property
   /// query fails for another reason.
   /// @see QDMI_JOB_PROPERTY_QUEUEPOSITION
-  [[nodiscard]] mlir::FailureOr<std::optional<size_t>> getQueuePosition() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<size_t>> getQueuePosition() const;
 
   /// Queries an implementation-defined custom job property.
   ///
@@ -1004,11 +1007,11 @@ public:
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] mlir::FailureOr<std::optional<T>>
+  [[nodiscard]] llvm::FailureOr<std::optional<T>>
   queryCustomProperty(const CustomProperty property) const {
     auto qdmiPropertyResult = detail::toJobProperty(property);
-    if (mlir::failed(qdmiPropertyResult)) {
-      return mlir::failure();
+    if (llvm::failed(qdmiPropertyResult)) {
+      return llvm::failure();
     }
     const auto qdmiProperty = (*qdmiPropertyResult);
     return detail::queryCustomValue<T>(
@@ -1029,12 +1032,12 @@ public:
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] mlir::FailureOr<std::optional<T>>
+  [[nodiscard]] llvm::FailureOr<std::optional<T>>
   getCustomResult(const CustomProperty property,
                   const size_t programIndex = 0) const {
     const auto qdmiResultValue = detail::toJobResult(property);
-    if (mlir::failed(qdmiResultValue)) {
-      return mlir::failure();
+    if (llvm::failed(qdmiResultValue)) {
+      return llvm::failure();
     }
     const auto qdmiResult = *qdmiResultValue;
     return detail::queryCustomValue<T>(
@@ -1050,26 +1053,26 @@ public:
   /// Returns the measurement shots as a vector of bitstrings.
   ///
   /// @see QDMI_JOB_RESULT_SHOTS
-  [[nodiscard]] mlir::FailureOr<std::vector<std::string>>
+  [[nodiscard]] llvm::FailureOr<std::vector<std::string>>
   getShots(size_t programIndex = 0) const;
 
   /// Returns a map of measurement outcomes to their respective counts.
   ///
   /// @see QDMI_JOB_RESULT_HIST_KEYS
   /// @see QDMI_JOB_RESULT_HIST_VALUES
-  [[nodiscard]] mlir::FailureOr<std::map<std::string, size_t>>
+  [[nodiscard]] llvm::FailureOr<std::map<std::string, size_t>>
   getCounts(size_t programIndex = 0) const;
 
   /// Returns the dense state vector as a vector of complex numbers.
   ///
   /// @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
-  [[nodiscard]] mlir::FailureOr<std::vector<std::complex<double>>>
+  [[nodiscard]] llvm::FailureOr<std::vector<std::complex<double>>>
   getDenseStateVector(size_t programIndex = 0) const;
 
   /// Returns the dense probabilities as a vector of doubles.
   ///
   /// @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
-  [[nodiscard]] mlir::FailureOr<std::vector<double>>
+  [[nodiscard]] llvm::FailureOr<std::vector<double>>
   getDenseProbabilities(size_t programIndex = 0) const;
 
   /// Returns the sparse state vector as a map of bitstrings to complex
@@ -1077,14 +1080,14 @@ public:
   ///
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
-  [[nodiscard]] mlir::FailureOr<std::map<std::string, std::complex<double>>>
+  [[nodiscard]] llvm::FailureOr<std::map<std::string, std::complex<double>>>
   getSparseStateVector(size_t programIndex = 0) const;
 
   /// Returns the sparse probabilities as a map of bitstrings to probabilities.
   ///
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
-  [[nodiscard]] mlir::FailureOr<std::map<std::string, double>>
+  [[nodiscard]] llvm::FailureOr<std::map<std::string, double>>
   getSparseProbabilities(size_t programIndex = 0) const;
 
   auto operator<=>(const Job&) const noexcept = default;
@@ -1125,43 +1128,43 @@ public:
   operator QDMI_Site() const { return site_; }
 
   /// @see QDMI_SITE_PROPERTY_INDEX
-  [[nodiscard]] mlir::FailureOr<size_t> getIndex() const;
+  [[nodiscard]] llvm::FailureOr<size_t> getIndex() const;
 
   /// @see QDMI_SITE_PROPERTY_T1
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>> getT1() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>> getT1() const;
 
   /// @see QDMI_SITE_PROPERTY_T2
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>> getT2() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>> getT2() const;
 
   /// @see QDMI_SITE_PROPERTY_NAME
-  [[nodiscard]] mlir::FailureOr<std::optional<std::string>> getName() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<std::string>> getName() const;
 
   /// @see QDMI_SITE_PROPERTY_XCOORDINATE
-  [[nodiscard]] mlir::FailureOr<std::optional<int64_t>> getXCoordinate() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<int64_t>> getXCoordinate() const;
 
   /// @see QDMI_SITE_PROPERTY_YCOORDINATE
-  [[nodiscard]] mlir::FailureOr<std::optional<int64_t>> getYCoordinate() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<int64_t>> getYCoordinate() const;
 
   /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
-  [[nodiscard]] mlir::FailureOr<std::optional<int64_t>> getZCoordinate() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<int64_t>> getZCoordinate() const;
 
   /// @see QDMI_SITE_PROPERTY_ISZONE
-  [[nodiscard]] mlir::FailureOr<bool> isZone() const;
+  [[nodiscard]] llvm::FailureOr<bool> isZone() const;
 
   /// @see QDMI_SITE_PROPERTY_XEXTENT
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>> getXExtent() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>> getXExtent() const;
 
   /// @see QDMI_SITE_PROPERTY_YEXTENT
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>> getYExtent() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>> getYExtent() const;
 
   /// @see QDMI_SITE_PROPERTY_ZEXTENT
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>> getZExtent() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>> getZExtent() const;
 
   /// @see QDMI_SITE_PROPERTY_MODULEINDEX
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>> getModuleIndex() const;
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>> getModuleIndex() const;
 
   /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>>
   getSubmoduleIndex() const;
 
   /// Queries an implementation-defined custom site property.
@@ -1172,11 +1175,11 @@ public:
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] mlir::FailureOr<std::optional<T>>
+  [[nodiscard]] llvm::FailureOr<std::optional<T>>
   queryCustomProperty(const CustomProperty property) const {
     auto qdmiPropertyResult = detail::toSiteProperty(property);
-    if (mlir::failed(qdmiPropertyResult)) {
-      return mlir::failure();
+    if (llvm::failed(qdmiPropertyResult)) {
+      return llvm::failure();
     }
     const auto qdmiProperty = (*qdmiPropertyResult);
     return detail::queryCustomValue<T>(
@@ -1204,18 +1207,20 @@ private:
 
   /// Query a site property.
   template <maybe_optional_value_or_string T>
-  [[nodiscard]] mlir::FailureOr<T>
+  [[nodiscard]] llvm::FailureOr<T>
   queryProperty(const QDMI_Site_Property prop) const {
-    const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     const auto query = [&](const size_t size, void* value, size_t* sizeRet) {
       return api().device_query_site_property(device_, site_, prop, size, value,
                                               sizeRet);
     };
     if constexpr (string_or_optional_string<T>) {
       return detail::queryProperty<T>(
-          query, msg, std::string("Querying size") + qdmi::toString(prop));
+          query, llvm::Twine("Querying ") + qdmi::toString(prop),
+          llvm::Twine("Querying size") + qdmi::toString(prop));
     } else {
-      return detail::queryProperty<T>(query, msg, msg);
+      return detail::queryProperty<T>(
+          query, llvm::Twine("Querying ") + qdmi::toString(prop),
+          llvm::Twine("Querying ") + qdmi::toString(prop));
     }
   }
 
@@ -1244,50 +1249,50 @@ public:
   operator QDMI_Operation() const { return operation_; }
 
   /// @see QDMI_OPERATION_PROPERTY_NAME
-  [[nodiscard]] mlir::FailureOr<std::string>
+  [[nodiscard]] llvm::FailureOr<std::string>
   getName(const std::vector<Site>& sites = {},
           const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_QUBITSNUM
-  [[nodiscard]] mlir::FailureOr<std::optional<size_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<size_t>>
   getQubitsNum(const std::vector<Site>& sites = {},
                const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_PARAMETERSNUM
-  [[nodiscard]] mlir::FailureOr<size_t>
+  [[nodiscard]] llvm::FailureOr<size_t>
   getParametersNum(const std::vector<Site>& sites = {},
                    const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_DURATION
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>>
   getDuration(const std::vector<Site>& sites = {},
               const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_FIDELITY
-  [[nodiscard]] mlir::FailureOr<std::optional<double>>
+  [[nodiscard]] llvm::FailureOr<std::optional<double>>
   getFidelity(const std::vector<Site>& sites = {},
               const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>>
   getInteractionRadius(const std::vector<Site>& sites = {},
                        const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>>
   getBlockingRadius(const std::vector<Site>& sites = {},
                     const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
-  [[nodiscard]] mlir::FailureOr<std::optional<double>>
+  [[nodiscard]] llvm::FailureOr<std::optional<double>>
   getIdlingFidelity(const std::vector<Site>& sites = {},
                     const std::vector<double>& params = {}) const;
 
   /// @see QDMI_OPERATION_PROPERTY_ISZONED
-  [[nodiscard]] mlir::FailureOr<bool> isZoned() const;
+  [[nodiscard]] llvm::FailureOr<bool> isZoned() const;
 
   /// @see QDMI_OPERATION_PROPERTY_SITES
-  [[nodiscard]] mlir::FailureOr<std::optional<std::vector<Site>>>
+  [[nodiscard]] llvm::FailureOr<std::optional<std::vector<Site>>>
   getSites() const;
 
   /// Returns the list of site pairs the local 2-qubit operation can
@@ -1300,12 +1305,12 @@ public:
   /// @return Optional vector of site pairs if this is a local 2-qubit
   /// operation, std::nullopt otherwise.
   /// @see QDMI_OPERATION_PROPERTY_SITES
-  [[nodiscard]] mlir::FailureOr<
+  [[nodiscard]] llvm::FailureOr<
       std::optional<std::vector<std::pair<Site, Site>>>>
   getSitePairs() const;
 
   /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
-  [[nodiscard]] mlir::FailureOr<std::optional<uint64_t>>
+  [[nodiscard]] llvm::FailureOr<std::optional<uint64_t>>
   getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
                         const std::vector<double>& params = {}) const;
 
@@ -1319,13 +1324,13 @@ public:
   /// @return The decoded value, or `std::nullopt` if the slot is unsupported.
   /// Returns QDMI_ERROR_INVALIDARGUMENT If the returned bytes do not match `T`.
   template <custom_property_value T>
-  [[nodiscard]] mlir::FailureOr<std::optional<T>>
+  [[nodiscard]] llvm::FailureOr<std::optional<T>>
   queryCustomProperty(const CustomProperty property,
                       const std::vector<Site>& sites = {},
                       const std::vector<double>& params = {}) const {
     auto qdmiPropertyResult = detail::toOperationProperty(property);
-    if (mlir::failed(qdmiPropertyResult)) {
-      return mlir::failure();
+    if (llvm::failed(qdmiPropertyResult)) {
+      return llvm::failure();
     }
     const auto qdmiProperty = (*qdmiPropertyResult);
     std::vector<QDMI_Site> qdmiSites;
@@ -1359,11 +1364,10 @@ private:
 
   /// Query an operation property.
   template <maybe_optional_value_or_string_or_vector T>
-  [[nodiscard]] mlir::FailureOr<T>
+  [[nodiscard]] llvm::FailureOr<T>
   queryProperty(const QDMI_Operation_Property prop,
                 const std::vector<Site>& sites,
                 const std::vector<double>& params) const {
-    const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     std::vector<QDMI_Site> qdmiSites;
     qdmiSites.reserve(sites.size());
     std::ranges::transform(sites, std::back_inserter(qdmiSites),
@@ -1374,7 +1378,8 @@ private:
               device_, operation_, sites.size(), qdmiSites.data(),
               params.size(), params.data(), prop, size, value, sizeRet);
         },
-        msg, msg);
+        llvm::Twine("Querying ") + qdmi::toString(prop),
+        llvm::Twine("Querying ") + qdmi::toString(prop));
   }
 
   /// The QDMI device handle that owns the operation.

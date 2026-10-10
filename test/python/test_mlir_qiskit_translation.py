@@ -4243,7 +4243,7 @@ def test_bound_parameter_names_are_unique_across_scopes() -> None:
 
 def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
     """Reject duplicate program input names when parsing QC IR."""
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="duplicate program name 'theta'"):
         QCProgram.from_mlir_str(
             """module {
   func.func @main(
@@ -4274,7 +4274,7 @@ def test_parameter_and_register_names_must_be_unique() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="duplicate program name 'theta'"):
         QCProgram.from_mlir_str(
             """module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
@@ -4299,7 +4299,7 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="must not contain a null character"):
         QCProgram.from_mlir_str(
             r"""module {
   func.func @main(%theta: f64 {mqt.input_name = "before\00after"}) attributes {mqt.entry_point} {

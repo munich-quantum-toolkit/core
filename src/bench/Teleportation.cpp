@@ -14,7 +14,7 @@
 
 #include "EvaluationUtils.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <string_view>
 
@@ -24,15 +24,15 @@ Teleportation::Teleportation() : output_{.name = "result", .width = 1} {}
 
 const Output& Teleportation::output() const noexcept { return output_; }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 Teleportation::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   return outcome == "0" ? 1. : 0.;
 }
 
-mlir::FailureOr<Evaluation>
+llvm::FailureOr<Evaluation>
 Teleportation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "0");
 }

@@ -26,7 +26,6 @@
 
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -58,8 +57,8 @@
 namespace {
 [[nodiscard]] auto
 parseQASMToQCO(const std::string_view source,
-               llvm::function_ref<mlir::LogicalResult(const mqt::Diagnostic&)>
-                   diagnosticHandler) -> std::optional<mlir::QCOProgram> {
+               llvm::function_ref<llvm::LogicalResult(const mqt::Diagnostic&)>
+                   diagnosticHandler) -> llvm::FailureOr<mlir::QCOProgram> {
   auto context = mlir::createCompilerContext();
   context->getDiagEngine().registerHandler(
       [diagnosticHandler](mlir::Diagnostic& diagnostic) {
@@ -85,7 +84,7 @@ struct Execution {
   bool captureQIROutput_;
   size_t workerSlots_;
   bool automaticWorkers_;
-  llvm::function_ref<mlir::LogicalResult(const mqt::Diagnostic&)>
+  llvm::function_ref<llvm::LogicalResult(const mqt::Diagnostic&)>
       diagnosticHandler_;
   std::optional<std::string> qirOutput_;
   std::vector<std::string> shots_;
@@ -93,7 +92,7 @@ struct Execution {
   dd::VectorDD stateVecDD_{};
   bool qasmProgram() {
     auto qcoProgram = parseQASMToQCO(program_, diagnosticHandler_);
-    if (!qcoProgram) {
+    if (llvm::failed(qcoProgram)) {
       return false;
     }
     // NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
@@ -115,7 +114,7 @@ struct Execution {
       return true;
     }
     auto package = dd::Package::create();
-    if (mlir::failed(package)) {
+    if (llvm::failed(package)) {
       return false;
     }
     dd_ = std::move(*package);
@@ -134,7 +133,7 @@ struct Execution {
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
         sampling ? seed_ : std::nullopt);
-    if (mlir::failed(jitSession)) {
+    if (llvm::failed(jitSession)) {
       return false;
     }
     auto& runtime = (*jitSession)->runtime();
@@ -157,8 +156,8 @@ struct Execution {
     if (workers == 1) {
       auto rc = sampling
                     ? (*jitSession)->sample(numShots_, shots_, &stateAvailable)
-                    : mlir::FailureOr<int64_t>((*jitSession)->run());
-      if (mlir::failed(rc)) {
+                    : llvm::FailureOr<int64_t>((*jitSession)->run());
+      if (llvm::failed(rc)) {
         return false;
       }
       if (*rc != 0) {
@@ -174,27 +173,27 @@ struct Execution {
       }
       std::vector<std::vector<std::string>> parts(workers);
       std::vector<std::string> records(workers);
-      std::vector<std::future<mlir::FailureOr<int64_t>>> tasks;
+      std::vector<std::future<llvm::FailureOr<int64_t>>> tasks;
       tasks.reserve(workers);
       const bool shareCode = (*jitSession)->canShareCompiledCode();
       for (size_t i = 0; i < workers; ++i) {
         tasks.push_back(std::async(
-            std::launch::async, [&, i]() -> mlir::FailureOr<int64_t> {
+            std::launch::async, [&, i]() -> llvm::FailureOr<int64_t> {
               const mqt::ScopedDiagnosticHandler capture(diagnosticHandler_);
               std::unique_ptr<qir::JitSession> peer;
               std::unique_ptr<qir::Runtime> workerRuntime;
               if (i != 0 && shareCode) {
                 auto created = (*jitSession)->makeWorkerRuntime(workerSeeds[i]);
-                if (mlir::failed(created)) {
-                  return mlir::failure();
+                if (llvm::failed(created)) {
+                  return llvm::failure();
                 }
                 workerRuntime = std::move(*created);
               } else if (i != 0) {
                 auto created = qir::JitSession::create(irBytes, "QDMI job",
                                                        qir::Execution::Sampling,
                                                        workerSeeds[i]);
-                if (mlir::failed(created)) {
-                  return mlir::failure();
+                if (llvm::failed(created)) {
+                  return llvm::failure();
                 }
                 peer = std::move(*created);
               }
@@ -230,7 +229,7 @@ struct Execution {
       bool allSucceeded = true;
       for (size_t i = 0; i < workers; ++i) {
         const auto code = tasks[i].get();
-        if (mlir::failed(code)) {
+        if (llvm::failed(code)) {
           allSucceeded = false;
         } else if (firstError == 0 && *code != 0) {
           firstError = *code;
@@ -271,7 +270,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
                                  llvm::raw_socket_stream& stream) {
   qdmi::dd::WorkerResponse response;
   std::mutex diagnosticMutex;
-  const std::function<mlir::LogicalResult(const mqt::Diagnostic&)>
+  const std::function<llvm::LogicalResult(const mqt::Diagnostic&)>
       diagnosticHandler = [&](const mqt::Diagnostic& diagnostic) {
         const std::scoped_lock lock(diagnosticMutex);
         qdmi::dd::WorkerResponse notification;
@@ -280,7 +279,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
         if (!qdmi::dd::writeFrame(stream, qdmi::dd::encode(notification))) {
           std::exit(1);
         }
-        return mlir::success();
+        return llvm::success();
       };
   mqt::ScopedDiagnosticHandler const capture(diagnosticHandler);
   Execution execution{

@@ -33,6 +33,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/Diagnostics.hpp"
 #include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
@@ -43,7 +44,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -54,14 +54,14 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, ResolvesInstanceMetadata) {
-  const GHZ benchmark{{.qubits = 3}};
+  const auto benchmark = ::mqt::test::value(GHZ::create({.qubits = 3}));
   auto generated = generate(
       R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":3}})");
   ASSERT_TRUE(mlir::succeeded(generated));
   EXPECT_EQ(generated->benchmarkId, "ghz");
   EXPECT_EQ(generated->caseId, caseId(benchmark));
   EXPECT_EQ(generated->manifestJSON, toManifestJSON(benchmark));
-  EXPECT_EQ(ghzFromManifestJSON(generated->manifestJSON).output(),
+  EXPECT_EQ(::mqt::test::value(ghzFromManifestJSON(generated->manifestJSON)).output(),
             benchmark.output());
 }
 
@@ -72,8 +72,8 @@ TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
           R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})",
           R"({"schema_version":1,"benchmark":"unknown","parameters":{}})",
       }) {
-    EXPECT_THROW(static_cast<void>(generate(specification)),
-                 std::invalid_argument);
+    EXPECT_EQ(::mqt::test::errorKind([&] { return generate(specification); }),
+              ::mqt::ErrorCategory::InvalidArgument);
   }
 }
 
@@ -293,7 +293,7 @@ TEST(GenerateProgramTest, ExportsConstantAdderRuntimePhasesToOpenQASM) {
       .overflow = QFTAdderOverflow::Carry,
   })));
   ASSERT_TRUE(succeeded(program));
-  EXPECT_TRUE(program->toOpenQASM3());
+  EXPECT_TRUE(mlir::succeeded(program->toOpenQASM3()));
 }
 
 TEST(GenerateProgramTest, CompilesRuntimePhasesForStaticTargets) {

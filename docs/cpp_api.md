@@ -108,8 +108,8 @@ Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
 
 ## Handle native errors
 
-Fallible operations return `mlir::FailureOr<T>` or `mlir::LogicalResult` for
-status alone. Check `mlir::failed(result)` before dereferencing a value.
+Fallible operations return `llvm::FailureOr<T>` or `llvm::LogicalResult` for
+status alone. Check `llvm::failed(result)` before dereferencing a value.
 Infallible operations return ordinary values or `void`. An `optional<T>` can
 represent successful absence, such as an unsupported optional QDMI property.
 Borrowed results use pointers; keep their owner alive.
@@ -127,10 +127,10 @@ status when applicable. Install a handler **before** calling the operation:
 
 mqt::ScopedDiagnosticHandler handler([](const mqt::Diagnostic& diagnostic) {
   std::cerr << diagnostic.message << '\n';
-  return mlir::success();
+  return llvm::success();
 });
 auto package = dd::Package::create(2);
-if (mlir::failed(package)) {
+if (llvm::failed(package)) {
   return 1;
 }
 ```
@@ -139,6 +139,10 @@ Handlers run synchronously on their installing thread, newest first, and must
 not throw. Success consumes a diagnostic; failure forwards it to the previous
 handler. Unhandled diagnostics go to stderr. Install handlers on each worker
 thread. Diagnostics emitted inside a handler start at the previous handler.
+
+Compiler contexts created by Core forward MLIR diagnostics, including attached
+notes and locations, to these handlers. A later MLIR handler can consume a
+diagnostic before forwarding. Caller-owned contexts retain their handler policy.
 
 Standalone QDMI driver and device libraries embed their own diagnostic runtime.
 A caller's handler cannot capture messages from another runtime. QDMI C

@@ -14,7 +14,7 @@
 
 #include "gtest/gtest.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -32,12 +32,12 @@ public:
   std::optional<Diagnostic> error;
   ScopedDiagnosticHandler handler{[this](const Diagnostic& diagnostic) {
     if (diagnostic.severity != DiagnosticSeverity::Error) {
-      return mlir::failure();
+      return llvm::failure();
     }
     if (!error) {
       error = diagnostic;
     }
-    return mlir::success();
+    return llvm::success();
   }};
 };
 

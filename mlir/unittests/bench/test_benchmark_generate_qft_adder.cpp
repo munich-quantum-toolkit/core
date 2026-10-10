@@ -191,7 +191,7 @@ TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
         }));
         SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
         auto program = test::generateQCO(benchmark);
-        ASSERT_TRUE(program);
+        ASSERT_TRUE(mlir::succeeded(program));
         auto packageOwner = ::mqt::test::value(dd::Package::create(0));
         auto& package = *packageOwner;
         auto state = qco::simulateStatevector(

@@ -35,7 +35,7 @@ namespace dd {
 /// Returns an error if the qubit interval exceeds package
 /// capacity.
 /// @return A vector DD for the all-zero state.
-mlir::FailureOr<VectorDD> makeZeroState(std::size_t n, Package& dd,
+llvm::FailureOr<VectorDD> makeZeroState(std::size_t n, Package& dd,
                                         std::size_t start = 0);
 
 /// Construct a computational basis state \f$|b_{n-1}...b_0\rangle\f$
@@ -47,7 +47,7 @@ mlir::FailureOr<VectorDD> makeZeroState(std::size_t n, Package& dd,
 /// Returns an error if the qubit interval exceeds package capacity
 /// or `size(state) < n`.
 /// @return A vector DD for the computational basis state.
-mlir::FailureOr<VectorDD> makeBasisState(std::size_t n,
+llvm::FailureOr<VectorDD> makeBasisState(std::size_t n,
                                          const std::vector<bool>& state,
                                          Package& dd, std::size_t start = 0);
 
@@ -60,7 +60,7 @@ mlir::FailureOr<VectorDD> makeBasisState(std::size_t n,
 /// Returns an error if the qubit interval exceeds package capacity
 /// or `size(state) < n`.
 /// @return A vector DD for the product state.
-mlir::FailureOr<VectorDD> makeBasisState(std::size_t n,
+llvm::FailureOr<VectorDD> makeBasisState(std::size_t n,
                                          const std::vector<BasisStates>& state,
                                          Package& dd, std::size_t start = 0);
 
@@ -70,7 +70,7 @@ mlir::FailureOr<VectorDD> makeBasisState(std::size_t n,
 /// @param dd The DD package to use for making the vector DD.
 /// Returns an error if `dd.qubits() < n`.
 /// @return A vector DD for the GHZ state.
-mlir::FailureOr<VectorDD> makeGHZState(std::size_t n, Package& dd);
+llvm::FailureOr<VectorDD> makeGHZState(std::size_t n, Package& dd);
 
 /// Construct a W state.
 ///
@@ -83,7 +83,7 @@ mlir::FailureOr<VectorDD> makeGHZState(std::size_t n, Package& dd);
 /// Returns an error if `dd.qubits() < n` or the number of
 /// qubits and currently set tolerance would lead to an underflow.
 /// @return A vector DD for the W state.
-mlir::FailureOr<VectorDD> makeWState(std::size_t n, Package& dd);
+llvm::FailureOr<VectorDD> makeWState(std::size_t n, Package& dd);
 
 /// Construct a decision diagram from an arbitrary state vector.
 ///
@@ -93,7 +93,7 @@ mlir::FailureOr<VectorDD> makeWState(std::size_t n, Package& dd);
 /// `dd.qubits() < log2(vec.size())`.
 /// @return A vector DD representing the state with its reference count
 /// increased.
-mlir::FailureOr<VectorDD> makeStateFromVector(const CVec& vec, Package& dd);
+llvm::FailureOr<VectorDD> makeStateFromVector(const CVec& vec, Package& dd);
 
 namespace detail {
 /// Read successive halves of a state vector without copying its storage.
@@ -123,7 +123,7 @@ vCachedEdge buildStateFromVector(const VectorEntry& entry, const size_t level,
 /// Returns an error if length is not a power of two or exceeds
 /// the package qubit capacity.
 template <class VectorEntry>
-mlir::FailureOr<VectorDD> makeStateFromVector(const size_t length,
+llvm::FailureOr<VectorDD> makeStateFromVector(const size_t length,
                                               const VectorEntry& entry,
                                               Package& dd) {
   if (length == 0) {

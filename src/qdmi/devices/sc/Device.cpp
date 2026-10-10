@@ -22,7 +22,7 @@
 
 #include "support/DiagnosticFormatting.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cassert>
@@ -78,10 +78,10 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     if (!loaded) {
       return loadStatus;
     }
-    mlir::FailureOr<sc::Device> parsed;
+    llvm::FailureOr<sc::Device> parsed;
     const auto parseStatus = qdmi::invokeStatus([&] {
       parsed = sc::readJSON(loaded->json, loaded->source);
-      return mlir::LogicalResult(parsed);
+      return llvm::LogicalResult(parsed);
     });
     if (parseStatus != QDMI_SUCCESS) {
       return parseStatus;

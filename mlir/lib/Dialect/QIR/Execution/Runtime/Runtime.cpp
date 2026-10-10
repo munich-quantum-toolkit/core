@@ -21,6 +21,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -110,7 +111,7 @@ auto Runtime::reset() -> void {
   }
 }
 
-mlir::LogicalResult
+llvm::LogicalResult
 Runtime::configureStaticResources(std::optional<size_t> qubits,
                                   std::optional<size_t> results) {
   if (qubits && *qubits > dd::Package::MAX_POSSIBLE_QUBITS) {
@@ -127,7 +128,7 @@ Runtime::configureStaticResources(std::optional<size_t> qubits,
   staticResults_ = results;
   resultValues_.resize(results.value_or(0));
   reset();
-  return mlir::success();
+  return llvm::success();
 }
 
 auto Runtime::seed(const uint64_t randomSeed) -> void { mt.seed(randomSeed); }
@@ -177,7 +178,7 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
   qState.numQubits = numQubits;
 }
 
-auto Runtime::resolveAddress(const Qubit* qubit) -> mlir::FailureOr<dd::Qubit> {
+auto Runtime::resolveAddress(const Qubit* qubit) -> llvm::FailureOr<dd::Qubit> {
   if (qubitMode == ResourceMode::UNKNOWN) {
     qubitMode = ResourceMode::STATIC;
   }
@@ -208,20 +209,20 @@ auto Runtime::resolveAddress(const Qubit* qubit) -> mlir::FailureOr<dd::Qubit> {
 
 auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
                                  const std::span<Qubit* const> additionalQubits)
-    -> mlir::FailureOr<llvm::SmallVector<dd::Qubit, 5>> {
+    -> llvm::FailureOr<llvm::SmallVector<dd::Qubit, 5>> {
   llvm::SmallVector<dd::Qubit, 5> qubitIds;
   qubitIds.reserve(qubits.size() + additionalQubits.size());
   for (const auto* qubit : qubits) {
     auto id = resolveAddress(qubit);
-    if (mlir::failed(id)) {
-      return mlir::failure();
+    if (llvm::failed(id)) {
+      return llvm::failure();
     }
     qubitIds.push_back(*id);
   }
   for (const auto* qubit : additionalQubits) {
     auto id = resolveAddress(qubit);
-    if (mlir::failed(id)) {
-      return mlir::failure();
+    if (llvm::failed(id)) {
+      return llvm::failure();
     }
     qubitIds.push_back(*id);
   }
@@ -241,10 +242,10 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
 
 auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
                     std::span<Qubit* const> controls,
-                    std::span<Qubit* const> targets) -> mlir::LogicalResult {
+                    std::span<Qubit* const> targets) -> llvm::LogicalResult {
   auto addresses = translateAddresses(controls, targets);
-  if (mlir::failed(addresses)) {
-    return mlir::failure();
+  if (llvm::failed(addresses)) {
+    return llvm::failure();
   }
   if (!qState.dd) {
     qState.dd = std::move(*dd::Package::create(0));
@@ -258,11 +259,11 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
                                     mappedTargets.begin());
   auto gate =
       mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls);
-  if (mlir::failed(gate)) {
-    return mlir::failure();
+  if (llvm::failed(gate)) {
+    return llvm::failure();
   }
   qState.edge = qState.dd->applyOperation(*gate, qState.edge);
-  return mlir::success();
+  return llvm::success();
 }
 
 auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
@@ -272,37 +273,37 @@ auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
   dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
 }
 
-auto Runtime::measure(Qubit* qubit, Result* result) -> mlir::LogicalResult {
+auto Runtime::measure(Qubit* qubit, Result* result) -> llvm::LogicalResult {
   auto target = resolveAddress(qubit);
-  if (mlir::failed(target)) {
-    return mlir::failure();
+  if (llvm::failed(target)) {
+    return llvm::failure();
   }
   enlargeState(*target);
   auto value = deref(result);
-  if (mlir::failed(value)) {
-    return mlir::failure();
+  if (llvm::failed(value)) {
+    return llvm::failure();
   }
   if (extractState_) {
     measuredQubits_.insert(*target);
   } else if (!deferMeasurements_) {
     auto bit = qState.dd->measureOneCollapsing(qState.edge,
                                                qubitPermutation[*target], mt);
-    if (mlir::failed(bit)) {
-      return mlir::failure();
+    if (llvm::failed(bit)) {
+      return llvm::failure();
     }
     (*value)->r = *bit == '1';
   }
-  return mlir::success();
+  return llvm::success();
 }
 
 auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
                                  size_t shots,
                                  std::vector<std::string>& results)
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   measurements.clear();
   if (qubits.empty()) {
     results.resize(shots);
-    return mlir::success();
+    return llvm::success();
   }
   bool ascending = qubits.size() == qState.numQubits;
   for (size_t i = 0; ascending && i < qubits.size(); ++i) {
@@ -311,8 +312,8 @@ auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
   measurements.reserve(qubits.size());
   for (size_t i = 0; i < shots; ++i) {
     auto basis = qState.dd->measureAll(qState.edge, false, mt);
-    if (mlir::failed(basis)) {
-      return mlir::failure();
+    if (llvm::failed(basis)) {
+      return llvm::failure();
     }
     if (ascending) {
       std::ranges::reverse(*basis);
@@ -329,48 +330,48 @@ auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
   if (shots != 0) {
     measurements = results.back();
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-auto Runtime::reset(std::span<Qubit* const> qubits) -> mlir::LogicalResult {
+auto Runtime::reset(std::span<Qubit* const> qubits) -> llvm::LogicalResult {
   if (extractState_) {
     return ::mqt::emitError(
         "QIR state extraction cannot reset or operate on a measured qubit",
         ::mqt::ErrorCategory::InvalidArgument);
   }
   auto targets = translateAddresses(qubits);
-  if (mlir::failed(targets)) {
-    return mlir::failure();
+  if (llvm::failed(targets)) {
+    return llvm::failure();
   }
   const auto matrix = mlir::qco::XOp::getUnitaryMatrix();
   for (const auto target : *targets) {
     const auto mapped = qubitPermutation[target];
     auto bit = qState.dd->measureOneCollapsing(qState.edge, mapped, mt);
-    if (mlir::failed(bit)) {
-      return mlir::failure();
+    if (llvm::failed(bit)) {
+      return llvm::failure();
     }
     if (*bit == '1') {
       const std::array targetArray{mapped};
       auto gate = mlir::qco::makeGateDD(*qState.dd, matrix, targetArray);
-      if (mlir::failed(gate)) {
-        return mlir::failure();
+      if (llvm::failed(gate)) {
+        return llvm::failure();
       }
       qState.edge = qState.dd->applyOperation(*gate, qState.edge);
     }
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> mlir::LogicalResult {
+auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> llvm::LogicalResult {
   auto targets = translateAddresses(std::array{qubit1, qubit2});
-  if (mlir::failed(targets)) {
-    return mlir::failure();
+  if (llvm::failed(targets)) {
+    return llvm::failure();
   }
   std::swap(qubitPermutation[(*targets)[0]], qubitPermutation[(*targets)[1]]);
-  return mlir::success();
+  return llvm::success();
 }
 
-auto Runtime::qAlloc() -> mlir::FailureOr<Qubit*> {
+auto Runtime::qAlloc() -> llvm::FailureOr<Qubit*> {
   if (qubitMode == ResourceMode::STATIC) {
     return ::mqt::emitError(
         "Cannot dynamically allocate qubits after using static qubit IDs",
@@ -398,7 +399,7 @@ auto Runtime::qAlloc() -> mlir::FailureOr<Qubit*> {
   return qubit;
 }
 
-auto Runtime::qFree(Qubit* qubit) -> mlir::LogicalResult {
+auto Runtime::qFree(Qubit* qubit) -> llvm::LogicalResult {
   const auto it = qRegister.find(qubit);
   if (qubitMode != ResourceMode::DYNAMIC || it == qRegister.end()) {
     return ::mqt::emitError("QIR qubit was not dynamically allocated",
@@ -407,17 +408,17 @@ auto Runtime::qFree(Qubit* qubit) -> mlir::LogicalResult {
   const auto id = it->second;
   // Extraction retains released wires as part of the exported state.
   if (!extractState_) {
-    if ((id < qState.numQubits) && mlir::failed(reset(std::array{qubit}))) {
-      return mlir::failure();
+    if ((id < qState.numQubits) && llvm::failed(reset(std::array{qubit}))) {
+      return llvm::failure();
     }
 
     freeQubits_.push_back(id);
   }
   qRegister.erase(it);
-  return mlir::success();
+  return llvm::success();
 }
 
-auto Runtime::rAlloc() -> mlir::FailureOr<Result*> {
+auto Runtime::rAlloc() -> llvm::FailureOr<Result*> {
   if (resultMode == ResourceMode::STATIC) {
     return ::mqt::emitError(
         "Cannot dynamically allocate results after using static result IDs",
@@ -433,15 +434,15 @@ auto Runtime::rAlloc() -> mlir::FailureOr<Result*> {
   return result;
 }
 
-auto Runtime::rFree(Result* result) -> mlir::LogicalResult {
+auto Runtime::rFree(Result* result) -> llvm::LogicalResult {
   if (resultMode != ResourceMode::DYNAMIC || rRegister.erase(result) == 0) {
     return ::mqt::emitError("QIR result was not dynamically allocated",
                             ::mqt::ErrorCategory::OutOfRange);
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-auto Runtime::deref(Result* result) -> mlir::FailureOr<ResultStruct*> {
+auto Runtime::deref(Result* result) -> llvm::FailureOr<ResultStruct*> {
   if (staticResults_) {
     const auto id = reinterpret_cast<uintptr_t>(result);
     if (id >= *staticResults_) {
@@ -486,7 +487,7 @@ auto Runtime::takeState() -> QState {
       const auto other = qubitPermutation[q];
       const std::array targets{other, qubitPermutation[other]};
       auto gate = mlir::qco::makeGateDD(*qState.dd, matrix, targets);
-      assert(mlir::succeeded(gate));
+      assert(llvm::succeeded(gate));
       qState.edge = qState.dd->applyOperation(*gate, qState.edge);
       std::swap(qubitPermutation[q], qubitPermutation[other]);
     }
@@ -505,7 +506,7 @@ auto Runtime::resetOstream() -> void { os = &std::cout; }
 
 auto Runtime::disableOutput() -> void { os = nullptr; }
 
-mlir::LogicalResult Runtime::checkOutput() const {
+llvm::LogicalResult Runtime::checkOutput() const {
   if (os->exceptions() != std::ios::goodbit) {
     return ::mqt::emitError("QIR output streams must have exceptions disabled",
                             ::mqt::ErrorCategory::InvalidArgument);
@@ -514,17 +515,17 @@ mlir::LogicalResult Runtime::checkOutput() const {
     return ::mqt::emitError("Failed to write QIR output",
                             ::mqt::ErrorCategory::IO);
   }
-  return mlir::success();
+  return llvm::success();
 }
 
-mlir::LogicalResult Runtime::outputType(const char* type,
+llvm::LogicalResult Runtime::outputType(const char* type,
                                         std::string_view value,
                                         const char* label) const {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
-  if (mlir::failed(checkOutput())) {
-    return mlir::failure();
+  if (llvm::failed(checkOutput())) {
+    return llvm::failure();
   }
   *os << "OUTPUT\t" << type << "\t" << value;
   if (label != nullptr && outputSchema == OutputSchema::Labeled) {
@@ -535,33 +536,33 @@ mlir::LogicalResult Runtime::outputType(const char* type,
 }
 
 auto Runtime::outputResult(bool value, const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   return outputType("RESULT", value ? "1" : "0", label);
 }
 
 auto Runtime::outputResultArray(const std::string_view values,
                                 const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   return outputType("RESULT_ARRAY", values, label);
 }
 
 auto Runtime::outputBool(bool value, const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   return outputType("BOOL", value ? "true" : "false", label);
 }
 
 auto Runtime::outputInt(int64_t value, const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
   return outputType("INT", std::to_string(value), label);
 }
 
 auto Runtime::outputFloat(double value, const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
   // Use std::ostringstream rather than std::to_string.
   // std::to_string formats with six digits after the decimal point and
@@ -574,39 +575,39 @@ auto Runtime::outputFloat(double value, const char* label) const
 }
 
 auto Runtime::outputTuple(int64_t elementCount, const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
   return outputType("TUPLE", std::to_string(elementCount), label);
 }
 
 auto Runtime::outputArray(int64_t elementCount, const char* label) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
   return outputType("ARRAY", std::to_string(elementCount), label);
 }
 
-auto Runtime::outputProgramHeader() const -> mlir::LogicalResult {
+auto Runtime::outputProgramHeader() const -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
-  if (mlir::failed(checkOutput())) {
-    return mlir::failure();
+  if (llvm::failed(checkOutput())) {
+    return llvm::failure();
   }
   *os << "HEADER\tschema_id\t" << outputSchema << "\n";
   *os << "HEADER\tschema_version\t2.1\n";
   return checkOutput();
 }
 
-auto Runtime::outputShotStart() const -> mlir::LogicalResult {
+auto Runtime::outputShotStart() const -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
-  if (mlir::failed(checkOutput())) {
-    return mlir::failure();
+  if (llvm::failed(checkOutput())) {
+    return llvm::failure();
   }
   *os << "START\n";
   if (metadata.empty()) {
@@ -624,12 +625,12 @@ auto Runtime::outputShotStart() const -> mlir::LogicalResult {
 }
 
 auto Runtime::outputShotEnd(const int64_t exitCode) const
-    -> mlir::LogicalResult {
+    -> llvm::LogicalResult {
   if (!hasOutput()) {
-    return mlir::success();
+    return llvm::success();
   }
-  if (mlir::failed(checkOutput())) {
-    return mlir::failure();
+  if (llvm::failed(checkOutput())) {
+    return llvm::failure();
   }
   *os << "END\t" << exitCode << "\n";
   return checkOutput();

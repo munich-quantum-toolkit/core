@@ -16,9 +16,8 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
-
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -46,8 +45,8 @@ struct alignas(std::max_align_t) TupleHeader {
 } // namespace
 
 /// Runtime algorithms already emitted the diagnostic. Never unwind JIT frames.
-static void requireSuccess(mlir::LogicalResult result) {
-  if (mlir::failed(result)) {
+static void requireSuccess(llvm::LogicalResult result) {
+  if (llvm::failed(result)) {
     std::abort();
   }
 }
@@ -146,8 +145,8 @@ static auto applyControlledTuple(Array* controls, Tuple* tuple) -> void {
 
 /// Only explicit allocation error outputs permit recovery across the QIR ABI.
 template <typename T>
-static T abiResult(mlir::FailureOr<T> result, bool* outError = nullptr) {
-  const bool failed = mlir::failed(result);
+static T abiResult(llvm::FailureOr<T> result, bool* outError = nullptr) {
+  const bool failed = llvm::failed(result);
   if (outError != nullptr) {
     *outError = failed;
   }

@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,15 +49,15 @@ namespace {
 
 } // namespace
 
-mlir::FailureOr<Grover> Grover::create(GroverOptions options) {
+llvm::FailureOr<Grover> Grover::create(GroverOptions options) {
   const auto width = options.markedBitstring.size();
   if (width < 2 || width > 62) {
     return ::mqt::emitError(
         "Grover requires a marked bitstring of width 2 through 62",
         ::mqt::ErrorCategory::InvalidArgument);
   }
-  if (mlir::failed(detail::validateOutcome(options.markedBitstring, width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(options.markedBitstring, width))) {
+    return llvm::failure();
   }
 
   if (!options.iterations) {
@@ -93,16 +93,16 @@ size_t Grover::qubits() const noexcept { return output_.width; }
 
 const Output& Grover::output() const noexcept { return output_; }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 Grover::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   return outcome == options_.markedBitstring ? markedProbability_
                                              : otherProbability_;
 }
 
-mlir::FailureOr<Evaluation> Grover::evaluate(const Counts& counts) const {
+llvm::FailureOr<Evaluation> Grover::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, options_.markedBitstring);
 }
 

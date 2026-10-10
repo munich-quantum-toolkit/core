@@ -22,7 +22,7 @@
 
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <array>
@@ -110,7 +110,7 @@ void traverseMatrixImpl(const mEdge& edge, const std::complex<fp>& amp,
 template <class Node>
 auto Edge<Node>::getValueByPath(const std::size_t numQubits,
                                 const std::string& decisions) const
-    -> mlir::FailureOr<std::complex<fp>> {
+    -> llvm::FailureOr<std::complex<fp>> {
   if (decisions.size() < numQubits) {
     return ::mqt::emitError(
         "Decision path is shorter than the number of qubits.",
@@ -271,7 +271,7 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
 }
 
 auto getValueByIndex(const vEdge& edge, const size_t i)
-    -> mlir::FailureOr<std::complex<fp>> {
+    -> llvm::FailureOr<std::complex<fp>> {
   const auto numQubits =
       edge.isTerminal() ? 0U : static_cast<size_t>(edge.p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
@@ -437,7 +437,7 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 }
 
 auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
-                     const size_t j) -> mlir::FailureOr<std::complex<fp>> {
+                     const size_t j) -> llvm::FailureOr<std::complex<fp>> {
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
     return ::mqt::emitError("Matrix index is out of range.",

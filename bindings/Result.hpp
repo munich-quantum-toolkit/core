@@ -14,7 +14,7 @@
 
 #include "nanobind/nanobind.h"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <functional>
 #include <optional>
@@ -59,23 +59,16 @@ auto invoke(Function&& function, Args&&... args) {
   std::optional<Diagnostic> error;
   ScopedDiagnosticHandler handler([&](const Diagnostic& diagnostic) {
     if (diagnostic.severity != DiagnosticSeverity::Error) {
-      return mlir::failure();
+      return llvm::failure();
     }
     if (!error) {
       error = diagnostic;
     }
-    return mlir::success();
+    return llvm::success();
   });
   auto result = std::invoke(std::forward<Function>(function),
                             std::forward<Args>(args)...);
-  const bool failedResult = [&] {
-    if constexpr (requires { failed(result); }) {
-      return failed(result);
-    } else {
-      return !result;
-    }
-  }();
-  if (failedResult) {
+  if (llvm::failed(result)) {
     if (error) {
       raiseDiagnostic(*error);
     }

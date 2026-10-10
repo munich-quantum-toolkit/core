@@ -33,6 +33,6 @@ namespace qdmi::slurm {
 /// Returns an error if the license value is missing, malformed,
 /// compound, remote, has a non-unit count, names an unknown device, or names a
 /// device in another state.
-[[nodiscard]] mlir::FailureOr<Device> openDeviceFromLicense();
+[[nodiscard]] llvm::FailureOr<Device> openDeviceFromLicense();
 
 } // namespace qdmi::slurm

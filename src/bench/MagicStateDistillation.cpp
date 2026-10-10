@@ -15,7 +15,7 @@
 #include "EvaluationUtils.hpp"
 #include "support/Diagnostics.hpp"
 
-#include "mlir/Support/LogicalResult.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +24,7 @@
 
 namespace mqt::bench {
 
-mlir::FailureOr<MagicStateDistillation>
+llvm::FailureOr<MagicStateDistillation>
 MagicStateDistillation::create(MagicStateDistillationOptions options) {
   if (options.levels == 0 ||
       options.levels >
@@ -49,15 +49,15 @@ const Output& MagicStateDistillation::output() const noexcept {
   return output_;
 }
 
-mlir::FailureOr<double>
+llvm::FailureOr<double>
 MagicStateDistillation::probability(const std::string_view outcome) const {
-  if (mlir::failed(detail::validateOutcome(outcome, output_.width))) {
-    return mlir::failure();
+  if (llvm::failed(detail::validateOutcome(outcome, output_.width))) {
+    return llvm::failure();
   }
   return outcome == "00" ? 1. : 0.;
 }
 
-mlir::FailureOr<Evaluation>
+llvm::FailureOr<Evaluation>
 MagicStateDistillation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "00");
 }
