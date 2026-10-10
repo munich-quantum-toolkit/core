@@ -155,8 +155,8 @@ quantizeAngleMagnitude(const uint64_t significand, const int32_t binaryExponent,
           magnitude.shl(static_cast<unsigned>(scaledExponent)), modulus);
     } else {
       const auto denominatorShift = static_cast<unsigned>(-scaledExponent);
-      /// The numerator has at most 53 bits and the odd denominator has 50.
-      /// Five more denominator bits put even the largest numerator below half.
+      // The numerator has at most 53 bits and the odd denominator has 50.
+      // Five more denominator bits put even the largest numerator below half.
       if (denominatorShift >= 5U) {
         return 0;
       }
@@ -183,7 +183,7 @@ quantizeAngle(const double radians, const uint32_t bitWidth) {
 
   const auto significand =
       exponent == 0 ? fraction : fraction | (uint64_t{1} << 52U);
-  /// The binary64 value of 2*π is TWO_PI_ODD_SIGNIFICAND * 2^-47.
+  // The binary64 value of 2*π is TWO_PI_ODD_SIGNIFICAND * 2^-47.
   const auto binaryExponent =
       exponent == 0 ? -1027 : static_cast<int32_t>(exponent) - 1028;
   auto result = quantizeAngleMagnitude(significand, binaryExponent, bitWidth);
@@ -294,8 +294,9 @@ belongsToStdGates(const GateAvailability availability) {
 }
 
 /// Qiskit emits untyped integer literals in otherwise typed bitwise
-/// expressions. Accept a nonnegative constant when its value fits the chosen
-/// unsigned width.
+/// expressions.
+///
+/// Accept a nonnegative constant when its value fits the chosen unsigned width.
 static bool coerceUnsignedConstant(Constant& constant, unsigned width) {
   if (constant.type != ScalarType::Uint && constant.type != ScalarType::Int) {
     return false;
@@ -669,7 +670,7 @@ private:
 
   [[nodiscard]] std::optional<AffineForm>
   buildAffineForm(ExpressionId expression) const {
-    /// Facts depend on the active scope and induction domains.
+    // Facts depend on the active scope and induction domains.
     llvm::DenseMap<ExpressionId, std::optional<AffineForm>> cache;
     return buildAffineForm(expression, cache, 0);
   }
@@ -2901,7 +2902,7 @@ private:
           .integerWidth = width,
       });
     }
-    /// Integer arithmetic applies machine-width promotion before computation.
+    // Integer arithmetic applies machine-width promotion before computation.
     if (isInteger(lhsType) && program.expressions[lhs].integerWidth < 64 &&
         program.expressions[lhs].integerWidth != 0) {
       MQT_OQ3_TRY_ASSIGN(
@@ -3145,9 +3146,10 @@ private:
     });
   }
 
-  /// Expand a bounded affine selection with a known length. Bounds and
-  /// distinctness remain frontend proof obligations, including nonconstant
-  /// indices.
+  /// Expand a bounded affine selection with a known length.
+  ///
+  /// Bounds and distinctness remain frontend proof obligations, including
+  /// nonconstant indices.
   [[nodiscard]] FailureOr<std::vector<ExpressionId>>
   resolveSliceIndices(const Slice& slice, uint64_t width, SMLoc location) {
     bool positive = true;
@@ -3177,7 +3179,7 @@ private:
       } else {
         const auto step = std::get<int64_t>(constant.value);
         positive = step > 0;
-        /// Unsigned magnitude also handles INT64_MIN without signed overflow.
+        // Unsigned magnitude also handles INT64_MIN without signed overflow.
         stride = positive ? static_cast<uint64_t>(step)
                           : uint64_t{0} - static_cast<uint64_t>(step);
       }

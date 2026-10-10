@@ -24,6 +24,7 @@
 namespace dd {
 
 /// Data structure for caching computed results of unary operations
+///
 /// @tparam OperandType type of the operation's operand
 /// @tparam ResultType type of the operation's result
 template <class OperandType, class ResultType> class UnaryComputeTable {
@@ -78,6 +79,7 @@ public:
   }
 
   /// Look up a result in the compute table
+  ///
   /// @param operand The operand
   /// @return A pointer to the result if it is found, otherwise nullptr.
   ResultType* lookup(const OperandType& operand) {

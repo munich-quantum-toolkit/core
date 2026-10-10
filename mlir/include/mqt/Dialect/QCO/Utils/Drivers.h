@@ -59,26 +59,26 @@ struct PendingItem {
 } // namespace impl
 
 /// Walk the graph-like circuit IR of QCO dialect programs.
+///
 /// Depending on the template parameter, the function walks the IR in
 /// topological order in forward or backward direction, respectively. Towards
 /// that end, the function traverses the def-use chain of each qubit until a
 /// ready operation is found. A multi-qubit gate is considered ready, if each
-/// input (backward: output) qubit has been visited.
-/// The traversal considers only qubit def-use dependencies. It does not order
-/// operations by classical values or side effects.
-/// The signature of the callback function is:
+/// input (backward: output) qubit has been visited. The traversal considers
+/// only qubit def-use dependencies. It does not order operations by classical
+/// values or side effects. The signature of the callback function is:
 ///
 /// ```c++
 /// (const Frontier& frontier, SmallVectorImpl<Operation*>& released) ->
 /// WalkResult
 /// ```
 ///
-/// The frontier preserves deterministic wire traversal order.
-/// The operations inserted into the "released" vector determine which
-/// operations are released in the next iteration. The function returns if the
-/// callback does not release any operations or there are no more ready
-/// operations and thus each wire points at the default sentinel.
-/// The function modifies the given wires in-place.
+/// The frontier preserves deterministic wire traversal order. The operations
+/// inserted into the "released" vector determine which operations are released
+/// in the next iteration. The function returns if the callback does not release
+/// any operations or there are no more ready operations and thus each wire
+/// points at the default sentinel. The function modifies the given wires
+/// in-place.
 template <WireDirection Direction>
 void walkProgramGraph(MutableArrayRef<WireIterator> wires,
                       WalkProgramGraphFn fn) {

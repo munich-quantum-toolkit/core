@@ -27,6 +27,7 @@ public:
   bool start();
   bool execute(const WorkerRequest& request, WorkerResponse& response);
   /// Close a completed session and allow bounded process cleanup.
+  ///
   /// No execute call may be active.
   void shutdown();
   void terminate();

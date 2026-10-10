@@ -28,6 +28,7 @@
 namespace dd {
 namespace {
 /// Validate that @p n qubits starting at @p start fit in the package.
+///
 /// @throws std::invalid_argument If the qubit interval exceeds the capacity.
 void suitablePackage(const size_t n, const Package& dd,
                      const size_t start = 0) {

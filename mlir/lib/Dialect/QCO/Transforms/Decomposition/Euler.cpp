@@ -108,6 +108,7 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
 }
 
 /// Whether `angle` is numerically zero for gate-emission purposes.
+///
 /// Use matrix precision here; fixed target capabilities remain exact.
 ///
 /// @param angle Rotation angle in radians.
@@ -367,8 +368,10 @@ static bool isConstantParameter(const RotationParameter& value,
   return scalar && isNearZeroRotationAngle(*scalar - expected);
 }
 
-/// A finite rotation angle has an exact additive identity. Keep this policy
-/// outside scalar arithmetic, where signed zero and nonfinite values matter.
+/// A finite rotation angle has an exact additive identity.
+///
+/// Keep this policy outside scalar arithmetic, where signed zero and nonfinite
+/// values matter.
 static RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
                                                const RotationParameter& lhs,
                                                const RotationParameter& rhs) {
@@ -406,7 +409,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
     RotationParameter normalized = angle;
     if (const auto value = mqt::parameterToConstantDouble(angle)) {
       const double wrapped = mod2pi(*value);
-      /// Removing a full Pauli turn contributes a minus sign.
+      // Removing a full Pauli turn contributes a minus sign.
       plan.phase = add(plan.phase, 0.5 * (*value - wrapped));
       normalized = wrapped;
     }
@@ -426,7 +429,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
       plan.phase = add(plan.phase, *sum / 2.);
       rotation(Kind::R, theta, add(phi, pi / 2.));
     } else {
-      /// RZ(phi) RY(theta) RZ(lambda) is a product of two equatorial rotations.
+      // RZ(phi) RY(theta) RZ(lambda) is a product of two equatorial rotations.
       const auto negativeLambda =
           mqt::scaleParameter(builder, loc, lambda, -1.);
       const auto axis = mqt::scaleParameter(
@@ -488,7 +491,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
     constexpr double halfPi = pi / 2.;
     const bool inverse =
         basis.quarterTurnGates && basis.quarterTurnGates->quarterTurnAngle < 0.;
-    /// RY(t) = RZ(pi/2) RX(t) RZ(-pi/2); absorb this frame in the outer RZs.
+    // RY(t) = RZ(pi/2) RX(t) RZ(-pi/2); absorb this frame in the outer RZs.
     const double azimuth =
         basis.quarterTurnGates &&
                 basis.quarterTurnGates->gate == CompilerTarget::GateKind::RY
@@ -505,7 +508,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
       break;
     }
     if (basis.hasHalfTurn && isConstantParameter(theta, pi)) {
-      /// A half turn reverses the Z axis, so the outer rotations combine.
+      // A half turn reverses the Z axis, so the outer rotations combine.
       plan.steps.push_back({.kind = Kind::X});
       rotation(Kind::RZ,
                add(add(phi, mqt::scaleParameter(builder, loc, lambda, -1.)),
@@ -622,8 +625,8 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                                angles.phase,
                            },
                            basis);
-    /// K(phi) A(theta) K(lambda) = K(phi+pi) A(-theta) K(lambda-pi).
-    /// Keep the alternate Euler representative only when it removes gates.
+    // K(phi) A(theta) K(lambda) = K(phi+pi) A(-theta) K(lambda-pi).
+    // Keep the alternate Euler representative only when it removes gates.
     constexpr double pi = std::numbers::pi;
     if (basis.singleQubit != SingleQubitBasis::U && plan.steps.size() > 1 &&
         (isNearZeroRotationAngle(mod2pi(angles.phi + pi)) ||
@@ -719,8 +722,8 @@ Value synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
   if (axis == PauliAxis::Z && supportsZ) {
     return RZOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
   }
-  /// Pick a native rotation and a constant frame; rotationAngle remains
-  /// untouched.
+  // Pick a native rotation and a constant frame; rotationAngle remains
+  // untouched.
   const auto nativeAxis = supportsY || basis.singleQubit == SingleQubitBasis::R
                               ? PauliAxis::Y
                           : supportsX ? PauliAxis::X
@@ -789,7 +792,7 @@ directEulerAngles(OpBuilder& builder, Location loc,
     phi = add(phi, halfPi);
     lambda = add(lambda, -halfPi);
   } else if (basis == SingleQubitBasis::U) {
-    /// P/U2 already have U's phase; R/RX/RY have cancelling outer angles.
+    // P/U2 already have U's phase; R/RX/RY have cancelling outer angles.
     phase = isa<RZOp>(op) ? scale(lambda, -0.5) : RotationParameter{0.};
   }
   return result;

@@ -19,6 +19,7 @@
 namespace qdmi::slurm {
 
 /// Opens the QDMI device named by the Slurm license environment.
+///
 /// @return A fresh device session using the registered device definition.
 ///
 /// The @c SLURM_JOB_LICENSES value must contain exactly one local

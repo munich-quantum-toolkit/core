@@ -61,7 +61,7 @@ void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
     try {
       return std::stod(text);
     } catch (const std::out_of_range&) {
-      /// stod may report underflow for a representable subnormal value.
+      // stod may report underflow for a representable subnormal value.
       const auto value = std::strtod(text.c_str(), nullptr);
       if (std::fpclassify(value) == FP_SUBNORMAL) {
         return value;
@@ -295,7 +295,7 @@ ComplexValue operator/(const ComplexValue& c1, fp r) {
 }
 
 ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
-  /// Avoid squaring a scalar denominator outside the squared floating range.
+  // Avoid squaring a scalar denominator outside the squared floating range.
   if (c2.i == 0.) {
     return c1 / c2.r;
   }

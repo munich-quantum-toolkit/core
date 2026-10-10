@@ -188,7 +188,7 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
 
   const llvm::DominatorTree dominators(entryPoint);
   auto* boundary = irreversibleCalls.front();
-  /// An all-dominating call replaces any candidate that cannot dominate it.
+  // An all-dominating call replaces any candidate that cannot dominate it.
   for (auto* call : irreversibleCalls) {
     if (boundary != call && !dominators.dominates(boundary, call)) {
       boundary = call;

@@ -55,8 +55,8 @@ bool areModulesStructurallyEquivalent(ModuleOp lhs, ModuleOp rhs) {
     mapping.map(lhsValue, rhsValue);
     return success();
   };
-  /// A use can precede its definition in region order. Check that each later
-  /// definition agrees with the correspondence established by its uses.
+  // A use can precede its definition in region order. Check that each later
+  // definition agrees with the correspondence established by its uses.
   const auto markValue = [&](Value lhsValue, Value rhsValue) {
     consistent &= succeeded(matchValue(lhsValue, rhsValue));
   };
@@ -87,9 +87,10 @@ struct TensorMapping {
     return equivGroupMapping.at(i) == rhsEquivGroups.at(rhs);
   }
 
-  /// Return true if the given lhs value takes part in the equivalence
-  /// tracking. Only tensors reachable from a `qtensor` allocation are tracked;
-  /// builtin tensors of qubits are compared through the regular SSA mapping.
+  /// Return true if the given lhs value takes part in the equivalence tracking.
+  ///
+  /// Only tensors reachable from a `qtensor` allocation are tracked; builtin
+  /// tensors of qubits are compared through the regular SSA mapping.
   [[nodiscard]] bool tracksLhs(Value lhs) const {
     return lhsEquivGroups.contains(lhs);
   }
@@ -190,8 +191,9 @@ static DenseMap<Value, size_t> getEquivGroup(ModuleOp mod) {
 }
 
 /// Map all results from one op to another using the given permutation.
-/// Assumes that `lhs->getNumResults() == rhs->getNumResults()`.
-/// Assumes that the two operations are equivalent to each other.
+///
+/// Assumes that `lhs->getNumResults() == rhs->getNumResults()`. Assumes that
+/// the two operations are equivalent to each other.
 static void mapResults(Operation* lhs, Operation* rhs,
                        ArrayRef<size_t> permutation, IRMapping& m) {
   for (const auto& [i, lhsResult] : llvm::enumerate(lhs->getResults())) {
@@ -216,8 +218,9 @@ static void mapSegmentedResults(ValueRange lhsClassical,
 }
 
 /// Map arguments from one block to another using the given permutation.
-/// Assumes that `lhs.getNumArguments() == rhs.getNumArguments()`.
-/// Assumes that `permutation.size() == lhs.getNumArguments()`.
+///
+/// Assumes that `lhs.getNumArguments() == rhs.getNumArguments()`. Assumes that
+/// `permutation.size() == lhs.getNumArguments()`.
 static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
                          IRMapping& m) {
   for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {
@@ -353,7 +356,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
       return false;
     }
   } else if (isa<qco::YieldOp>(lhs)) {
-    /// Controls are the only parent results not supplied by qco.yield.
+    // Controls are the only parent results not supplied by qco.yield.
     auto parentResults =
         lhs->getParentOp()->getResults().take_back(lhs->getNumOperands());
     const auto rhsOffset =
@@ -378,6 +381,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
 }
 
 /// Extract and return "ready" operations.
+///
 /// These are operations that are independent from each other.
 static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
                                          const SetVector<Operation*>& closed) {
@@ -396,10 +400,10 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
       continue;
     }
 
-    /// SSA dependencies do not order writes to QC references or other memory.
-    /// Fresh QC/CBit/QCO allocations and independently owned linear quantum
-    /// disposal can commute; SSA dependencies preserve their lifetimes.
-    /// Module symbols are definitions, not execution-order dependencies.
+    // SSA dependencies do not order writes to QC references or other memory.
+    // Fresh QC/CBit/QCO allocations and independently owned linear quantum
+    // disposal can commute; SSA dependencies preserve their lifetimes.
+    // Module symbols are definitions, not execution-order dependencies.
     if (!isMemoryEffectFree(op) &&
         !(isa<SymbolOpInterface>(op) && isa<ModuleOp>(op->getParentOp())) &&
         !isa<cbit::AllocOp, qc::AllocOp, qco::AllocOp, qco::SinkOp,
@@ -421,9 +425,9 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
     }
 
     if (isa<qtensor::InsertOp, qtensor::ExtractOp>(op)) {
-      /// Accesses can commute only after their input tensor is available.
-      /// Both operations thread the tensor through result zero and put the
-      /// index last; insert also consumes a scalar before its tensor operand.
+      // Accesses can commute only after their input tensor is available.
+      // Both operations thread the tensor through result zero and put the
+      // index last; insert also consumes a scalar before its tensor operand.
       const bool isInsert = isa<qtensor::InsertOp>(op);
       if (!isReady(op->getOperand(isInsert ? 1 : 0))) {
         continue;
@@ -434,8 +438,8 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
            access = *access->getResult(0).user_begin()) {
         auto indexValue = access->getOperands().back();
         auto index = getConstantIntValue(indexValue);
-        /// ponytail: only distinct constant slots commute; use an alias proof
-        /// if a future test needs to reorder dynamic accesses.
+        // Only distinct constant slots commute; dynamic accesses need an alias
+        // proof.
         if ((access != op && !index) ||
             (index && !indices.insert(*index).second)) {
           break;
@@ -682,7 +686,7 @@ static bool compareRegions(Region& lhs, Region& rhs,
     return false;
   }
 
-  /// Map CFG destinations and block arguments before comparing operations.
+  // Map CFG destinations and block arguments before comparing operations.
   for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
     if (lhsBlock.getArgumentTypes() != rhsBlock.getArgumentTypes()) {
       return false;

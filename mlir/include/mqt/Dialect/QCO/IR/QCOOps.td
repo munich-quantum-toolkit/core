@@ -1491,6 +1491,20 @@ def PowOp
         std::optional<double> getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
+        /// Computes the unitary matrix of `pow(p) { U }`, i.e. `U^p`.
+        ///
+        /// Short-circuits `U^1` and `U^0`; otherwise uses the
+        /// eigendecomposition `U = V D V^{-1}` so that `U^p = V D^p V^{-1}`,
+        /// with each eigenvalue raised to `p` on the principal branch. Since
+        /// the body is unitary, `V` is unitary and `V^{-1} = V†`; this is
+        /// verified before use because the eigensolver does not orthogonalize
+        /// degenerate eigenspaces.
+        ///
+        /// The body matrix `U` comes from @ref composeBodyMatrix over all
+        /// targets.
+        ///
+        /// @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body
+        /// is not fully compile-time known, or `V` is not unitary.
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
         /// Evaluate the constant body with a concrete runtime exponent.
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix(double exponent);
@@ -1630,11 +1644,12 @@ def IfOp
         /// Return the values populated when branching to the successor.
         ValueRange getSuccessorInputs(RegionSuccessor successor);
 
-        /// Append the specified additional "qubit" operands: replace this
-        /// if-op with a new if-op that has the additional qubit operands.
-        /// The operands can be of qubit or qtensor type.
-        /// The branch bodies of this if-op are moved over to the new if-op.
-        /// The newly added qubits are yielded from each branch.
+        /// Append the specified additional "qubit" operands: replace this if-op
+        /// with a new if-op that has the additional qubit operands.
+        ///
+        /// The operands can be of qubit or qtensor type. The branch bodies of
+        /// this if-op are moved over to the new if-op. The newly added qubits
+        /// are yielded from each branch.
         IfOp replaceWithAdditionalQubits(RewriterBase& rewriter, ValueRange addons);
     }];
 
@@ -1785,10 +1800,12 @@ def IndexSwitchOp
         ValueRange getSuccessorInputs(RegionSuccessor successor);
 
         /// Append the specified additional linear operands: replace this
-        /// index_switch with a new index_switch that has the additional linear operands.
-        /// The operands can be of qubit or qtensor type.
-        /// The branch bodies of this index_switch are moved over to the new index_switch.
-        /// The newly added qubits are yielded from each branch.
+        /// index_switch with a new index_switch that has the additional linear
+        /// operands.
+        ///
+        /// The operands can be of qubit or qtensor type. The branch bodies of
+        /// this index_switch are moved over to the new index_switch. The newly
+        /// added qubits are yielded from each branch.
         IndexSwitchOp replaceWithAdditionalTargets(RewriterBase& rewriter, ValueRange addons);
     }];
 

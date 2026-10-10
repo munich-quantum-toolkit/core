@@ -36,12 +36,14 @@ namespace mlir::qco {
 using DDArgumentBindings = DenseMap<Value, Attribute>;
 
 /// Execution budget shared by nested while loops and calls in one simulation.
+///
 /// Counted loops and the total number of gates are not bounded by this budget.
 struct DDExecutionOptions {
   size_t maxWhileIterations = 1'000'000'000;
 };
 
 /// An uncollapsed sampling state and the package that owns its DD nodes.
+///
 /// A null package means that sampling did not retain a state.
 struct DDSamplingState {
   std::unique_ptr<dd::Package> dd;

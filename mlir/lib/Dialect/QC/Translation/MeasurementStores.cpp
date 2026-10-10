@@ -78,7 +78,7 @@ DenseMap<Operation*, cbit::StoreOp> findMeasurementStores(func::FuncOp function,
       operation.walk<WalkOrder::PreOrder>([&](Operation* candidate) {
         return TypeSwitch<Operation*, WalkResult>(candidate)
             .Case([](qc::UnitaryOpInterface) {
-              /// Verified unitary regions cannot access classical memory.
+              // Verified unitary regions cannot access classical memory.
               return WalkResult::skip();
             })
             .Case([&](MemoryEffectOpInterface mem) {
@@ -113,8 +113,8 @@ DenseMap<Operation*, cbit::StoreOp> findMeasurementStores(func::FuncOp function,
     llvm::SmallBitVector moved(positions.size());
     const auto conflicts = [&](Accesses& accesses, size_t measurement,
                                size_t destination) {
-      /// Queries follow block order. Relocated stores precede every later
-      /// query.
+      // Queries follow block order. Relocated stores precede every later
+      // query.
       while (accesses.next < accesses.positions.size() &&
              (accesses.positions[accesses.next] <= measurement ||
               moved[accesses.positions[accesses.next]])) {

@@ -29,19 +29,19 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <functional>
+#include <iosfwd>
 #include <iostream>
 #include <limits>
 #include <random>
 #include <ranges>
-#include <regex>
 #include <span>
 #include <stack>
 #include <stdexcept>
@@ -117,12 +117,14 @@ public:
       MemoryManager::create<mNode>(config_.utMatInitialAllocationSize),
   };
   /// The memory manager for complex numbers
+  ///
   /// @note The real and imaginary part of complex numbers are treated
   /// separately. Hence, it suffices for the manager to only manage real
   /// numbers.
   MemoryManager cMemoryManager{MemoryManager::create<RealNumber>()};
 
   /// Get the memory manager for a given type
+  ///
   /// @tparam T The type to get the manager for
   /// @return A reference to the manager
   template <class T> [[nodiscard]] auto& getMemoryManager() {
@@ -138,6 +140,7 @@ public:
   /// Reset all memory managers
   /// @arg resizeToTotal If set to true, each manager allocates one chunk of
   /// memory as large as all chunks combined before the reset.
+  ///
   /// @see MemoryManager::reset
   void resetMemoryManagers(bool resizeToTotal = false);
 
@@ -160,6 +163,7 @@ public:
       },
   };
   /// The unique table used for complex numbers
+  ///
   /// @note The table actually only stores real numbers in the interval [0, 1],
   /// but is used to manages all complex numbers throughout the package.
   /// @see RealNumberUniqueTable
@@ -167,6 +171,7 @@ public:
   ComplexNumbers cn{cUniqueTable};
 
   /// Get the unique table for a given type
+  ///
   /// @tparam T The type to get the unique table for
   /// @return A reference to the unique table
   template <class T> [[nodiscard]] auto& getUniqueTable() {
@@ -180,11 +185,13 @@ public:
   }
 
   /// Clear all unique tables
+  ///
   /// @see UniqueTable::clear
   /// @see RealNumberUniqueTable::clear
   void clearUniqueTables();
 
   /// Add the DD to a tracking hashset and update its reference count.
+  ///
   /// @tparam Node The node type of the edge.
   /// @param e The edge to increase the reference count of.
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
@@ -193,8 +200,9 @@ public:
     }
   }
 
-  /// Decrease the DD's reference count and remove it from the tracking
-  /// hashset if the count hits zero.
+  /// Decrease the DD's reference count and remove it from the tracking hashset
+  /// if the count hits zero.
+  ///
   /// @tparam Node The node type of the edge.
   /// @param e The edge to decrease the reference count of.
   /// @throws std::invalid_argument If the edge is not part of the tracking
@@ -324,6 +332,7 @@ public:
     std::size_t reals = 0U;
   };
   /// Compute the active number of nodes and numbers
+  ///
   /// @note This traverses every currently tracked DD twice.
   [[nodiscard]] ActiveCounts computeActiveCounts();
 
@@ -332,12 +341,14 @@ public:
   //
 
   /// Construct the DD for a single-qubit gate
+  ///
   /// @param mat The matrix representation of the gate
   /// @param target The target qubit
   /// @return A decision diagram for the gate
   mEdge makeGateDD(const GateMatrix& mat, Qubit target);
 
   /// Construct the DD for a single-qubit controlled gate
+  ///
   /// @param mat The matrix representation of the gate
   /// @param control The control qubit
   /// @param target The target qubit
@@ -345,6 +356,7 @@ public:
   mEdge makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
 
   /// Construct the DD for a multi-controlled single-qubit gate
+  ///
   /// @param mat The matrix representation of the gate
   /// @param controls The control qubits
   /// @param target The target qubit
@@ -357,6 +369,7 @@ public:
                    const Controls& controls, Qubit target);
 
   /// Creates the DD for a two-qubit gate
+  ///
   /// @param mat Matrix representation of the gate
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
@@ -367,6 +380,7 @@ public:
                            Qubit target1);
 
   /// Creates the DD for a two-qubit gate
+  ///
   /// @param mat Matrix representation of the gate
   /// @param control Control qubit of the two-qubit gate
   /// @param target0 First target qubit
@@ -379,6 +393,7 @@ public:
                            Qubit target1);
 
   /// Creates the DD for a two-qubit gate
+  ///
   /// @param mat Matrix representation of the gate
   /// @param controls Control qubits of the two-qubit gate
   /// @param target0 First target qubit
@@ -397,6 +412,7 @@ public:
       const Controls& controls, Qubit target0, Qubit target1);
 
   /// Creates the DD for a three-qubit gate
+  ///
   /// @param mat Matrix representation of the gate
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
@@ -408,6 +424,7 @@ public:
                              Qubit target1, Qubit target2);
 
   /// Creates the DD for a three-qubit gate
+  ///
   /// @param mat Matrix representation of the gate
   /// @param control Control qubit of the three-qubit gate
   /// @param target0 First target qubit
@@ -421,6 +438,7 @@ public:
                              Qubit target1, Qubit target2);
 
   /// Creates the DD for a three-qubit gate
+  ///
   /// @param mat Matrix representation of the gate
   /// @param controls Control qubits of the three-qubit gate
   /// @param target0 First target qubit
@@ -442,6 +460,7 @@ public:
       const Controls& controls, Qubit target0, Qubit target1, Qubit target2);
 
   /// Converts a given matrix to a decision diagram
+  ///
   /// @param matrix A complex matrix to convert to a DD.
   /// @return A decision diagram representing the matrix.
   /// @throws std::invalid_argument If the given matrix is not square or its
@@ -450,6 +469,7 @@ public:
   mEdge makeDDFromMatrix(const CMat& matrix);
 
   /// Construct a matrix DD without copying its storage.
+  ///
   /// @param dimension Number of rows and columns; zero yields the identity.
   /// @param entry Callable returning the complex entry at (row, column).
   /// @pre entry is valid for all indices smaller than dimension.
@@ -479,8 +499,10 @@ public:
   }
 
   /// Embed a row-major local matrix on targets in most-significant-bit order.
+  ///
   /// Missing DD levels represent identity wires. An empty target list takes a
   /// single scalar entry. Controls are supported for one to three targets.
+  ///
   /// @throws std::invalid_argument If the matrix size does not match the target
   /// count or controls accompany zero or more than three targets.
   /// @throws std::runtime_error If qubits exceed package capacity, targets are
@@ -670,8 +692,11 @@ public:
   static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
 
-  /// Measures the qubit with the given index in the given state vector
-  /// decision diagram. Collapses the state according to the measurement result.
+  /// Measures the qubit with the given index in the given state vector decision
+  /// diagram.
+  ///
+  /// Collapses the state according to the measurement result.
+  ///
   /// @param rootEdge the root edge of the state vector decision diagram
   /// @param index the index of the qubit to be measured
   /// @param mt the random number generator
@@ -685,7 +710,10 @@ public:
                             fp epsilon = 0.001);
 
   /// Performs a specific measurement on the given state vector decision
-  /// diagram. Collapses the state according to the measurement result.
+  /// diagram.
+  ///
+  /// Collapses the state according to the measurement result.
+  ///
   /// @param rootEdge the root edge of the state vector decision diagram
   /// @param index the index of the qubit to be measured
   /// @param probability the probability of the measurement result (required for
@@ -800,9 +828,9 @@ public:
       return {x.p, rWeight};
     }
 
-    /// Keep a common incoming scale outside recursion so small amplitudes do
-    /// not disappear before their normalized parent is reconstructed. Making
-    /// the largest component exactly one also preserves canonical subgraphs.
+    // Keep a common incoming scale outside recursion so small amplitudes do
+    // not disappear before their normalized parent is reconstructed. Making
+    // the largest component exactly one also preserves canonical subgraphs.
     const auto scale = std::max(
         {std::abs(x.w.r), std::abs(x.w.i), std::abs(y.w.r), std::abs(y.w.i)});
     const CachedEdge<Node> left{x.p, x.w / scale};
@@ -1033,7 +1061,7 @@ private:
 
     std::array<ResultEdge, n> edge{};
     if (x.p->v < var && !y.isTerminal() && y.p->v == var) {
-      /// The left operand acts as identity at this level.
+      // The left operand acts as identity at this level.
       for (std::size_t i = 0; i < n; ++i) {
         edge[i] = multiply2(LEdge{x.p, Complex::one()}, y.p->e[i], var - 1);
       }
@@ -1514,157 +1542,22 @@ public:
   /// architectures/platforms
   ///
 
+  /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a stream.
   template <class Node, class Edge = Edge<Node>,
             std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  Edge deserialize(std::istream& is, const bool readBinary = false) {
-    auto result = CachedEdge<Node>::one();
-    ComplexValue rootweight{};
+  Edge deserialize(std::istream& is, bool readBinary = false);
 
-    std::unordered_map<std::int64_t, Node*> nodes{};
-    std::int64_t nodeIndex{};
-    Qubit v{};
-    std::array<ComplexValue, N> edgeWeights{};
-    std::array<std::int64_t, N> edgeIndices{};
-    edgeIndices.fill(-2);
-
-    if (readBinary) {
-      std::remove_const_t<decltype(SERIALIZATION_VERSION)> version{};
-      is.read(reinterpret_cast<char*>(&version),
-              sizeof(decltype(SERIALIZATION_VERSION)));
-      if (version != SERIALIZATION_VERSION) {
-        throw std::runtime_error(
-            "Wrong Version of serialization file version. version of file: " +
-            std::to_string(version) +
-            "; current version: " + std::to_string(SERIALIZATION_VERSION));
-      }
-
-      if (!is.eof()) {
-        rootweight.readBinary(is);
-      }
-
-      while (is.read(reinterpret_cast<char*>(&nodeIndex),
-                     sizeof(decltype(nodeIndex)))) {
-        is.read(reinterpret_cast<char*>(&v), sizeof(decltype(v)));
-        for (std::size_t i = 0U; i < N; i++) {
-          is.read(reinterpret_cast<char*>(&edgeIndices[i]),
-                  sizeof(decltype(edgeIndices[i])));
-          edgeWeights[i].readBinary(is);
-        }
-        result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-      }
-    } else {
-      std::string version;
-      std::getline(is, version);
-      if (std::cmp_not_equal(std::stoi(version), SERIALIZATION_VERSION)) {
-        throw std::runtime_error(
-            "Wrong Version of serialization file version. version of file: " +
-            version +
-            "; current version: " + std::to_string(SERIALIZATION_VERSION));
-      }
-
-      const std::string complexRealRegex =
-          R"(([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![ \d\.]*(?:[eE][+-])?\d*[iI]))?)";
-      const std::string complexImagRegex =
-          R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
-      const std::string edgeRegex =
-          " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-      const std::regex complexWeightRegex(complexRealRegex + complexImagRegex);
-
-      std::string lineConstruct = "(\\d+) (\\d+)";
-      for (std::size_t i = 0U; i < N; ++i) {
-        lineConstruct += "(?:" + edgeRegex + ")";
-      }
-      lineConstruct += " *(?:#.*)?";
-      const std::regex lineRegex(lineConstruct);
-      std::smatch m;
-
-      std::string line;
-      if (std::getline(is, line)) {
-        if (!std::regex_match(line, m, complexWeightRegex)) {
-          throw std::runtime_error("Regex did not match second line: " + line);
-        }
-        rootweight.fromString(m.str(1), m.str(2));
-      }
-
-      while (std::getline(is, line)) {
-        if (line.empty() || line.size() == 1) {
-          continue;
-        }
-
-        if (!std::regex_match(line, m, lineRegex)) {
-          throw std::runtime_error("Regex did not match line: " + line);
-        }
-
-        // match 1: node_idx
-        // match 2: qubit_idx
-
-        // repeats for every edge
-        // match 3: edge content
-        // match 4: edge_target_idx
-        // match 5: real + imag (without i)
-        // match 6: real
-        // match 7: imag (without i)
-        nodeIndex = std::stoi(m.str(1));
-        v = static_cast<Qubit>(std::stoi(m.str(2)));
-
-        for (auto edgeIdx = 3U, i = 0U; i < N; i++, edgeIdx += 5) {
-          if (m.str(edgeIdx).empty()) {
-            continue;
-          }
-
-          edgeIndices[i] = std::stoi(m.str(edgeIdx + 1));
-          edgeWeights[i].fromString(m.str(edgeIdx + 3), m.str(edgeIdx + 4));
-        }
-
-        result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-      }
-    }
-    return cn.lookup(CachedEdge<Node>{result.p, result.w * rootweight});
-  }
-
+  /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a file.
   template <class Node, class Edge = Edge<Node>>
-  Edge deserialize(const std::string& inputFilename, const bool readBinary) {
-    auto ifs = std::ifstream(inputFilename, std::ios::binary);
-
-    if (!ifs.good()) {
-      throw std::invalid_argument("Cannot open serialized file: " +
-                                  inputFilename);
-    }
-
-    return deserialize<Node>(ifs, readBinary);
-  }
+  Edge deserialize(const std::string& inputFilename, bool readBinary);
 
 private:
   template <class Node, std::size_t N = std::tuple_size_v<decltype(Node::e)>>
   CachedEdge<Node>
-  deserializeNode(const std::int64_t index, const Qubit v,
+  deserializeNode(std::int64_t index, Qubit v,
                   std::array<std::int64_t, N>& edgeIdx,
                   const std::array<ComplexValue, N>& edgeWeight,
-                  std::unordered_map<std::int64_t, Node*>& nodes) {
-    if (index == -1) {
-      return CachedEdge<Node>::zero();
-    }
-
-    std::array<CachedEdge<Node>, N> edges{};
-    for (auto i = 0U; i < N; ++i) {
-      if (edgeIdx[i] == -2) {
-        edges[i] = CachedEdge<Node>::zero();
-      } else {
-        if (edgeIdx[i] == -1) {
-          edges[i] = CachedEdge<Node>::one();
-        } else {
-          edges[i].p = nodes[edgeIdx[i]];
-        }
-        edges[i].w = edgeWeight[i];
-      }
-    }
-    // reset
-    edgeIdx.fill(-2);
-
-    auto r = makeDDNode(v, edges);
-    nodes[index] = r.p;
-    return r;
-  }
+                  std::unordered_map<std::int64_t, Node*>& nodes);
 };
 
 } // namespace dd

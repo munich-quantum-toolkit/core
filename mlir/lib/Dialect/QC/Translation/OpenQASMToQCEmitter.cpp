@@ -163,7 +163,7 @@ public:
       }
       scalarValues[id] = entry.getArgument(index);
     }
-    /// Semantic analysis requires gate definitions to precede their callers.
+    // Semantic analysis requires gate definitions to precede their callers.
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);
       scalarUpdates_.clear();
@@ -798,8 +798,8 @@ private:
         if (expression.kind == frontend::ExpressionKind::Power) {
           return emitIntegerPower(opBuilder, loc, lhs, rhs);
         }
-        /// Like explicit integer casts, runtime integer arithmetic wraps at its
-        /// width.
+        // Like explicit integer casts, runtime integer arithmetic wraps at its
+        // width.
         switch (expression.kind) {
         case frontend::ExpressionKind::Add:
           return arith::AddIOp::create(opBuilder, loc, lhs, rhs);
@@ -1709,8 +1709,8 @@ private:
     } else if (statement.conditionInitializer) {
       value = emitCondition(*statement.conditionInitializer, {}, gateQubits);
     } else {
-      /// Definite initialization rejects reads until an assignment; a loop may
-      /// carry this unobservable placeholder before its first assignment.
+      // Definite initialization rejects reads until an assignment; a loop may
+      // carry this unobservable placeholder before its first assignment.
       const auto& scalar = program.scalars.at(statement.scalar);
       auto type = scalarType(scalar.type, scalar.integerWidth);
       value =
@@ -1791,8 +1791,8 @@ private:
       cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
       return;
     }
-    /// Read the complete RHS before storing any bit, including overlapping
-    /// slices.
+    // Read the complete RHS before storing any bit, including overlapping
+    // slices.
     auto type = cast<IntegerType>(value.getType());
     for (const auto& [ordinal, target] :
          llvm::enumerate(assignment.selection)) {
@@ -1889,7 +1889,7 @@ private:
     assignState(slots, join->getArguments());
     builder.setInsertionPointToEnd(join);
     if (!flowReachable) {
-      /// Unreachable joins still need a terminator before CFG normalization.
+      // Unreachable joins still need a terminator before CFG normalization.
       auto state = breakPrefix;
       llvm::append_range(state, stateValues(breakSlots));
       activeLoop->branch(false, state);
@@ -2058,8 +2058,10 @@ private:
     return arith::SelectOp::create(builder, ascending, forward, backward);
   }
 
-  /// The unsigned distance fits in 64 bits even across zero. A wrapping final
-  /// increment is unused when the remaining distance is smaller than the step.
+  /// The unsigned distance fits in 64 bits even across zero.
+  ///
+  /// A wrapping final increment is unused when the remaining distance is
+  /// smaller than the step.
   [[nodiscard]] std::array<Value, 2> advanceRange(Value current, Value step,
                                                   Value stop, Value ascending) {
     auto forward = arith::SubIOp::create(builder, stop, current);

@@ -1005,9 +1005,9 @@ TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  /// These shared gate fixtures have no source register names. The dedicated
-  /// RetainsClassicalRegisterName/RetainsQubitRegisterName tests check
-  /// metadata.
+  // These shared gate fixtures have no source register names. The dedicated
+  // RetainsClassicalRegisterName/RetainsQubitRegisterName tests check
+  // metadata.
   translated->walk([](Operation* op) {
     op->removeAttr(mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   });

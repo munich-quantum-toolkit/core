@@ -60,7 +60,7 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.09.25
+    rev: 2026.10.02
     hooks:
       - id: validate-pyproject
         priority: 0
@@ -94,7 +94,7 @@ repos:
         name: Use LLVM-style C++ documentation comments
         language: pygrep
         # Continued macros require block comments to preserve declarations.
-        entry: '(/\*\*|[\\@](brief|details)\b)(?!.*\\$)'
+        entry: '(/\*\*|[\\@](brief|details)\b)(?!.*\\$)|///.*\bNOLINT(?:BEGIN|END|NEXTLINE)?\b'
         files: ^(include|src|mlir|bindings|test)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|cu|cuh)$
         priority: 0
 
@@ -153,7 +153,7 @@ repos:
 
   ## Format pyproject.toml with pyproject-fmt
   - repo: https://github.com/tox-dev/pyproject-fmt
-    rev: v2.29.4
+    rev: v2.30.0
     hooks:
       - id: pyproject-fmt
         priority: 5

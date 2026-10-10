@@ -280,7 +280,7 @@ SmallVector<Value, 2> TwoQubitBasisDecomposer::emitCartan(
     RewriterBase& rewriter, Location loc, Value qubit0, Value qubit1,
     std::array<Value, 3> angles, const std::array<Matrix2x2, 2>& frames,
     const CompilerTarget::SynthesisBasis& basis) const {
-  /// Split the same three-gate template at its parameterized RZ factors.
+  // Split the same three-gate template at its parameterized RZ factors.
   const std::array<TwoQubitNativeDecomposition, 3> stages{
       {
           {

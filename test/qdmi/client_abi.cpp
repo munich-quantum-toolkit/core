@@ -12,8 +12,8 @@
 
 #include <cstdint>
 
-/// Only the ABI query is exported, to exercise validation before allocation.
-/// NOLINTNEXTLINE(readability-identifier-naming)
+// Only the ABI query is exported, to exercise validation before allocation.
+// NOLINTNEXTLINE(readability-identifier-naming)
 uint32_t QDMI_driver_get_client_abi_version() {
 #ifdef TEST_INCOMPATIBLE_DRIVER
   return QDMI_MAKE_VERSION(0, 0, 0);

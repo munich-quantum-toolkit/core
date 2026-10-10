@@ -131,7 +131,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  /// Cleanup may reorder independent classical constants.
+  // Cleanup may reorder independent classical constants.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -1177,8 +1177,8 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
         auto moduleOp = buildInvalidNestedModifierProgram(
             context.get(), modifier, forbiddenOperation, nested);
         ASSERT_TRUE(moduleOp);
-        /// Check the modifier contract independently of program allocation
-        /// scope.
+        // Check the modifier contract independently of program allocation
+        // scope.
         mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
 
         bool sawExpectedDiagnostic = false;

@@ -74,10 +74,14 @@ Value staticQubitsCanonical(QIRProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
+/// Builds an invalid program that mixes static and dynamic allocation.
+///
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
 Value mixedStaticThenDynamicQubit(QIRProgramBuilder& b);
 
+/// Builds an invalid program that mixes static and dynamic allocation.
+///
 /// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
 /// static.
 Value mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);

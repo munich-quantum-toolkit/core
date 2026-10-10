@@ -39,8 +39,8 @@ size_t RealNumberUniqueTable::hash(const fp val) const noexcept {
   static_assert(std::numeric_limits<fp>::is_iec559 &&
                 std::numeric_limits<fp>::digits == 53 &&
                 std::numeric_limits<fp>::max_exponent == 1024);
-  /// Mask mantissa bits instead of converting val / cellWidth to an integer:
-  /// that quotient can overflow for large finite values or tiny tolerances.
+  // Mask mantissa bits instead of converting val / cellWidth to an integer:
+  // that quotient can overflow for large finite values or tiny tolerances.
   const auto bits = std::bit_cast<uint64_t>(val);
   const auto exponent = static_cast<int>((bits >> 52U) & 2047U);
   const auto shift = cellExponent + 1075 - std::max(1, exponent);
@@ -179,7 +179,7 @@ void RealNumberUniqueTable::updateTolerance() {
     return;
   }
   assert(std::isnormal(RealNumber::eps) && RealNumber::eps > 0.);
-  /// Eight to sixteen tolerances per cell keeps clustered chains short.
+  // Eight to sixteen tolerances per cell keeps clustered chains short.
   const auto exponent = std::ilogb(RealNumber::eps) + 4;
   if (exponent != cellExponent && stats.numEntries != 0) {
     rehash(table.size(), exponent);
@@ -232,8 +232,8 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
     }
   }
 
-  /// Adapt the threshold to live entries so a mostly full table does not
-  /// trigger a complete scan on every subsequent collection request.
+  // Adapt the threshold to live entries so a mostly full table does not
+  // trigger a complete scan on every subsequent collection request.
   if (stats.numEntries > gcLimit / 10 * 9) {
     gcLimit = stats.numEntries + initialGCLimit;
   } else if (stats.numEntries < gcLimit / 128) {

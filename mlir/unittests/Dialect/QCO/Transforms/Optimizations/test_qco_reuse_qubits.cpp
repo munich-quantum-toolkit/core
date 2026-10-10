@@ -96,8 +96,8 @@ protected:
 // Test qubit reuse only.
 // ==========================================================================
 
-/// A simple case where qubit reuse can be applied directly to go from 2
-/// to 1 qubit.
+// A simple case where qubit reuse can be applied directly to go from 2
+// to 1 qubit.
 TEST_F(QCOQubitReuseTest, simpleReuse) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -140,7 +140,7 @@ TEST_F(QCOQubitReuseTest, simpleReuse) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// A simple case where qubit reuse cannot be applied.
+// A simple case where qubit reuse cannot be applied.
 TEST_F(QCOQubitReuseTest, noReuse) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -186,7 +186,7 @@ TEST_F(QCOQubitReuseTest, noReuse) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Qubit reuse must not reorder effectful users of independent qubits.
+// Qubit reuse must not reorder effectful users of independent qubits.
 TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
   module = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -254,7 +254,7 @@ TEST_F(QCOQubitReuseTest, PreservesHelpersInsideNestedSymbolTables) {
   ASSERT_TRUE(succeeded(verify(*module)));
   size_t constants = 0;
   module->walk([&](arith::ConstantOp) { ++constants; });
-  /// Even unused classical operations in summarized helpers stay unchanged.
+  // Even unused classical operations in summarized helpers stay unchanged.
   EXPECT_EQ(constants, 1);
 }
 
@@ -328,7 +328,7 @@ TEST_F(QCOQubitReuseTest, ReuseAcrossTransitivePhaseFreeUnitaryCalls) {
   }
 }
 
-/// Qubit reuse must skip allocations with users in another block.
+// Qubit reuse must skip allocations with users in another block.
 TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
   module = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -363,8 +363,8 @@ TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
   EXPECT_EQ(resetCount, 0);
 }
 
-/// Test that partial qubit reuse is applied correctly in a context with
-/// three qubits.
+// Test that partial qubit reuse is applied correctly in a context with
+// three qubits.
 TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
   programBuilder.initialize({
       programBuilder.getI1Type(),
@@ -427,8 +427,8 @@ TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Test that qubit reuse is applied correctly in a context with three
-/// qubits that can all be reused.
+// Test that qubit reuse is applied correctly in a context with three
+// qubits that can all be reused.
 TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
   programBuilder.initialize({
       programBuilder.getI1Type(),
@@ -486,8 +486,8 @@ TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Test that qubit reuse can be applied even if the qubits are indirectly
-/// connected.
+// Test that qubit reuse can be applied even if the qubits are indirectly
+// connected.
 TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
   programBuilder.initialize({
       programBuilder.getI1Type(),
@@ -550,7 +550,7 @@ TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
 // Test qubit reuse with measurement lifting and control replacement.
 // ==========================================================================
 
-/// Test that qubit reuse can be applied after measurement lifting.
+// Test that qubit reuse can be applied after measurement lifting.
 TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -596,8 +596,8 @@ TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Test that qubit reuse can be applied after lifting measurements and
-/// replacing controls.
+// Test that qubit reuse can be applied after lifting measurements and
+// replacing controls.
 TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
   programBuilder.initialize({
       programBuilder.getI1Type(),
@@ -663,8 +663,8 @@ TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Test that qubit reuse can be applied with the help of measurement
-/// lifting.
+// Test that qubit reuse can be applied with the help of measurement
+// lifting.
 TEST_F(QCOQubitReuseTest, singleReuseThroughLift) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -709,8 +709,8 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughLift) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Test that qubit reuse can be applied with the help of multi-step
-/// measurement lifting.
+// Test that qubit reuse can be applied with the help of multi-step
+// measurement lifting.
 TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
@@ -760,9 +760,9 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
-/// Test that qubit reuse can be applied after lifting measurements over
-/// controlled gates if the qubit for which reuse should be applied was pulled
-/// into an if/else block.
+// Test that qubit reuse can be applied after lifting measurements over
+// controlled gates if the qubit for which reuse should be applied was pulled
+// into an if/else block.
 TEST_F(QCOQubitReuseTest, multiReuseLiftOutOfIf) {
   programBuilder.initialize({
       programBuilder.getI1Type(),

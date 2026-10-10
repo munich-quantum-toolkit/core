@@ -121,7 +121,7 @@ static void expectQIRSampling(const Benchmark& benchmark,
   ASSERT_EQ(outcomes.size(), shots);
   Counts qirCounts;
   for (const auto& outcome : outcomes) {
-    /// QIR records bit zero first; benchmark evaluators use big-endian strings.
+    // QIR records bit zero first; benchmark evaluators use big-endian strings.
     ++qirCounts[std::string(outcome.rbegin(), outcome.rend())];
   }
   expectReference(benchmark, qirCounts);
@@ -182,7 +182,7 @@ TEST(GenerateProgramTest, ExecutesRuntimePhasesThroughJeffAndAdaptiveQIR) {
 
 TEST(GenerateProgramTest, RoundTripsRuntimePhasesThroughOpenQASM) {
   for (auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
-    /// Direct import cannot prove nested QFT indices for larger registers.
+    // Direct import cannot prove nested QFT indices for larger registers.
     const size_t precision = method == QPEMethod::Standard ? 1U : 8U;
     const auto phase =
         method == QPEMethod::Standard

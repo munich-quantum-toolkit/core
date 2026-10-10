@@ -48,8 +48,10 @@ public:
   /// Return the operation the iterator points to.
   [[nodiscard]] Operation* operation() const;
 
-  /// Return the qubit the iterator points to. Terminal operations retain their
-  /// input qubit. Sentinel access reports a fatal internal error.
+  /// Return the qubit the iterator points to.
+  ///
+  /// Terminal operations retain their input qubit. Sentinel access reports a
+  /// fatal internal error.
   [[nodiscard]] Value qubit() const;
 
   /// Return the operation the iterator points to.

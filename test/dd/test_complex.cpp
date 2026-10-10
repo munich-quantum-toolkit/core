@@ -111,7 +111,7 @@ TEST_F(CNTest, NearestEntriesAcrossCellBoundaries) {
   EXPECT_EQ(ut.lookup(border - (tolerance / 4)), lower);
   EXPECT_EQ(ut.lookup(-border), RealNumber::getNegativePointer(lower));
 
-  /// Rounded endpoints must not skip a cell containing an existing match.
+  // Rounded endpoints must not skip a cell containing an existing match.
   auto* half = ut.lookup(0.5);
   EXPECT_EQ(ut.lookup(std::nextafter(0.5, 0.)), half);
   EXPECT_EQ(ut.lookup(std::nextafter(0.5, 1.)), half);
@@ -181,7 +181,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
   EXPECT_EQ(ut.lookup(first->value), first);
   EXPECT_TRUE(RealNumber::isMarked(first));
 
-  /// Compare against every retained entry, independently of index layout.
+  // Compare against every retained entry, independently of index layout.
   for (const fp tolerance : {
            1e-12,
            savedTolerance,

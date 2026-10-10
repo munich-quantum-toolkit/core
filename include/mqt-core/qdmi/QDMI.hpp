@@ -392,7 +392,7 @@ concept string_or_optional_string =
 
 /// @see remove_optional_t
 /// The name follows the standard-library type-trait convention.
-/// NOLINTNEXTLINE(readability-identifier-naming)
+// NOLINTNEXTLINE(readability-identifier-naming)
 template <typename T> struct remove_optional {
   using type = T;
 };
@@ -513,8 +513,9 @@ template <maybe_optional_value_or_string_or_vector T, typename Query>
 /// your authentication method. Parameters are validated when the session is
 /// constructed.
 struct SessionConfig {
-  /// QDMI driver library. Uses the environment or packaged driver when
-  /// omitted.
+  /// QDMI driver library.
+  ///
+  /// Uses the environment or packaged driver when omitted.
   std::optional<std::filesystem::path> driverPath;
   /// Authentication token
   std::optional<std::string> token;
@@ -550,12 +551,15 @@ namespace builtin_driver {
 void addManifest(const std::filesystem::path& path);
 
 /// List enabled stable IDs without loading devices or contacting device
-/// services. Uses the builtin MQT Core QDMI driver and makes its configuration
-/// immutable on the first call.
+/// services.
+///
+/// Uses the builtin MQT Core QDMI driver and makes its configuration immutable
+/// on the first call.
 [[nodiscard]] std::vector<std::string> registeredDeviceIds();
 
 /// Open one device through the builtin MQT Core QDMI driver with session
 /// overrides.
+///
 /// @param id Stable device ID.
 /// @param deviceSessionJson JSON session overrides.
 /// @param driverPath Optional compatible extension path. By default, this call
@@ -566,11 +570,14 @@ void addManifest(const std::filesystem::path& path);
 } // namespace builtin_driver
 
 /// One initialized session with a QDMI driver.
+///
 /// Devices and jobs retain the session and its driver library.
+///
 /// @see QDMI_Session
 class Session {
 public:
   /// Opens a client-visible QDMI device in a fresh session.
+  ///
   /// @param id Stable device ID.
   /// @param config QDMI driver and authentication configuration.
   /// @return A device wrapper that retains the fresh session.
@@ -578,6 +585,7 @@ public:
                                          const SessionConfig& config = {});
 
   /// Constructs a new QDMI Session with optional authentication.
+  ///
   /// @param config Optional session configuration containing authentication
   /// parameters. If not provided, uses default (no authentication).
   ///
@@ -705,12 +713,14 @@ public:
   getSupportedProgramFormats() const;
 
   /// Returns the direct child devices managed by this device.
+  ///
   /// @return The child devices, or an empty vector if child devices are not
   /// supported.
   /// @see QDMI_DEVICE_PROPERTY_CHILDDEVICES
   [[nodiscard]] std::vector<Device> getChildDevices() const;
 
   /// Queries an implementation-defined custom device property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
@@ -730,6 +740,7 @@ public:
   }
 
   /// Queries a custom device property containing operation handles.
+  ///
   /// @param property Custom property slot to query.
   /// @return Normal QDMI operation wrappers, or `std::nullopt` if the slot is
   /// unsupported. A supported empty list is returned as an engaged optional.
@@ -781,6 +792,7 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /// Submits an ordered list of text programs with common job parameters.
+  ///
   /// The required text terminator is included exactly once per payload.
   [[nodiscard]] Job submitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
@@ -918,6 +930,7 @@ public:
   [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
 
   /// Gets a textual program without its terminating null byte.
+  ///
   /// @throws std::invalid_argument If the format is not textual or the device
   /// does not return a null-terminated payload.
   [[nodiscard]] std::string getProgram(size_t programIndex = 0) const;
@@ -941,6 +954,7 @@ public:
   getResults(QDMI_Job_Result result, size_t programIndex = 0) const;
 
   /// Gets the current number of jobs ahead of this job in its queue.
+  ///
   /// @return The queue position, or `std::nullopt` if it is unavailable or not
   /// applicable in the job's current state.
   /// @throws std::runtime_error If the device status refresh or property
@@ -949,6 +963,7 @@ public:
   [[nodiscard]] std::optional<size_t> getQueuePosition() const;
 
   /// Queries an implementation-defined custom job property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
@@ -968,6 +983,7 @@ public:
   }
 
   /// Retrieves an implementation-defined custom job result.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom result slot to query.
@@ -989,35 +1005,40 @@ public:
   }
 
   /// Returns the measurement shots as a vector of bitstrings.
+  ///
   /// @see QDMI_JOB_RESULT_SHOTS
   [[nodiscard]] std::vector<std::string>
   getShots(size_t programIndex = 0) const;
 
   /// Returns a map of measurement outcomes to their respective counts.
+  ///
   /// @see QDMI_JOB_RESULT_HIST_KEYS
   /// @see QDMI_JOB_RESULT_HIST_VALUES
   [[nodiscard]] std::map<std::string, size_t>
   getCounts(size_t programIndex = 0) const;
 
   /// Returns the dense state vector as a vector of complex numbers.
+  ///
   /// @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
   [[nodiscard]] std::vector<std::complex<double>>
   getDenseStateVector(size_t programIndex = 0) const;
 
   /// Returns the dense probabilities as a vector of doubles.
+  ///
   /// @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
   [[nodiscard]] std::vector<double>
   getDenseProbabilities(size_t programIndex = 0) const;
 
   /// Returns the sparse state vector as a map of bitstrings to complex
   /// amplitudes.
+  ///
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
   [[nodiscard]] std::map<std::string, std::complex<double>>
   getSparseStateVector(size_t programIndex = 0) const;
 
-  /// Returns the sparse probabilities as a map of bitstrings to
-  /// probabilities.
+  /// Returns the sparse probabilities as a map of bitstrings to probabilities.
+  ///
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
   /// @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
   [[nodiscard]] std::map<std::string, double>
@@ -1100,6 +1121,7 @@ public:
   [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
 
   /// Queries an implementation-defined custom site property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.
@@ -1237,6 +1259,7 @@ public:
                         const std::vector<double>& params = {}) const;
 
   /// Queries an implementation-defined custom operation property.
+  ///
   /// @tparam T Expected value type. Use `std::vector<std::byte>` to retrieve
   /// the raw value without interpretation.
   /// @param property Custom property slot to query.

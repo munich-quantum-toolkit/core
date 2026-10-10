@@ -30,11 +30,13 @@ namespace mlir::qco {
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 /// Checks if the given operation is an inverting gate.
+///
 /// @param op The operation to check.
 /// @return True if the operation is an inverting gate, false otherwise.
 static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
 
 /// Checks if the given operation is a diagonal gate.
+///
 /// @param op The operation to check.
 /// @return True if the operation is a diagonal gate, false otherwise.
 static bool isDiagonal(Operation* op) {
@@ -49,6 +51,7 @@ static bool isDiagonal(Operation* op) {
 }
 
 /// This method swaps a gate with a measurement.
+///
 /// @param gate The gate to swap.
 /// @param measurement The measurement to swap.
 /// @param rewriter The used rewriter.

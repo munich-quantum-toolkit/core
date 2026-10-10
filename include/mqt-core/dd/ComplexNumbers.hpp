@@ -38,27 +38,33 @@ public:
   ~ComplexNumbers() = default;
 
   /// Set the numerical tolerance for comparisons of floats.
+  ///
   /// This is global to all packages. Existing DDs are not recanonicalized.
+  ///
   /// @param tol The new positive, normal tolerance.
   /// @throws std::invalid_argument If the tolerance is not positive and normal.
   static void setTolerance(fp tol);
 
   /// Compute the squared magnitude of a complex number.
+  ///
   /// @param a The complex number.
   /// @returns The squared magnitude.
   [[nodiscard]] static fp mag2(const Complex& a) noexcept;
 
   /// Compute the magnitude of a complex number.
+  ///
   /// @param a The complex number.
   /// @returns The magnitude.
   [[nodiscard]] static fp mag(const Complex& a) noexcept;
 
   /// Compute the argument of a complex number.
+  ///
   /// @param a The complex number.
   /// @returns The argument.
   [[nodiscard]] static fp arg(const Complex& a) noexcept;
 
   /// Compute the complex conjugate of a complex number.
+  ///
   /// @param a The complex number.
   /// @returns The complex conjugate.
   /// @note Conjugation is efficiently handled by just flipping the sign of the
@@ -66,6 +72,7 @@ public:
   [[nodiscard]] static Complex conj(const Complex& a) noexcept;
 
   /// Compute the negation of a complex number.
+  ///
   /// @param a The complex number.
   /// @returns The negation.
   /// @note Negation is efficiently handled by just flipping the sign of both
@@ -73,6 +80,7 @@ public:
   [[nodiscard]] static Complex neg(const Complex& a) noexcept;
 
   /// Lookup a complex value in the complex table; if not found add it.
+  ///
   /// @param c The complex number.
   /// @return The found or added complex number.
   [[nodiscard]] Complex lookup(const Complex& c);
@@ -84,12 +92,14 @@ public:
   [[nodiscard]] Complex lookup(const ComplexValue& c);
 
   /// Lookup a real value in the complex table; if not found add it.
+  ///
   /// @param r The real number.
   /// @return The found or added complex number with real part r and imaginary
   /// part zero.
   [[nodiscard]] Complex lookup(fp r);
 
   /// Lookup a complex value in the complex table; if not found add it.
+  ///
   /// @param r The real part.
   /// @param i The imaginary part.
   /// @return The found or added complex number.
@@ -97,6 +107,7 @@ public:
   [[nodiscard]] Complex lookup(fp r, fp i);
 
   /// Preserve matrix root components, including nonzero values below tolerance.
+  ///
   /// Nonzero special constants keep their existing tolerance priority.
   [[nodiscard]] Complex lookupRoot(const ComplexValue& c) {
     return {
@@ -106,7 +117,9 @@ public:
   }
 
   /// Turn a root CachedEdge into Edge via lookup.
+  ///
   /// Matrix roots preserve range; vector roots retain ordinary lookup.
+  ///
   /// @tparam Node The type of the node.
   /// @param ce The cached edge.
   /// @return The edge with looked-up weight. The zero terminal if the new
@@ -128,6 +141,7 @@ public:
   }
 
   /// Check whether a complex number is one of the static ones.
+  ///
   /// @param c The complex number.
   /// @return Whether the complex number is one of the static ones.
   [[nodiscard]] static constexpr bool isStaticComplex(const Complex& c) {
@@ -135,6 +149,7 @@ public:
   }
 
   /// Get the number of stored real numbers.
+  ///
   /// @return The number of stored real numbers.
   [[nodiscard]] std::size_t realCount() const noexcept;
 

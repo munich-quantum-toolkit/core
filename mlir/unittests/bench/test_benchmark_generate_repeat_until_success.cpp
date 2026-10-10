@@ -95,8 +95,8 @@ TEST(GenerateProgramTest, EmitsRepeatUntilSuccessAlgorithm) {
 }
 
 TEST(GenerateProgramTest, SamplesRepeatUntilSuccessAgainstReference) {
-  /// At 16,384 shots the binomial tail bound for a 0.01 error is below 7e-12.
-  /// An all-zero sampler has error 0.0286 and must fail this check.
+  // At 16,384 shots the binomial tail bound for a 0.01 error is below 7e-12.
+  // An all-zero sampler has error 0.0286 and must fail this check.
   for (const size_t width : {1U, 2U, 5U, 32U}) {
     SCOPED_TRACE(width);
     test::expectSamplingMatchesReference(

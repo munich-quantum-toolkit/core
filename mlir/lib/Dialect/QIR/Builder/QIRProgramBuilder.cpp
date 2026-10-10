@@ -337,7 +337,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   setInsertionPoint(entryBlock->getTerminator());
 
   if (profile == Profile::Adaptive) {
-    /// Adaptive Profile: Create a dynamic result array.
+    // Adaptive Profile: Create a dynamic result array.
     ensureResultAllocationMode(AllocationMode::Dynamic);
     auto fnSig =
         LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
@@ -354,7 +354,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     resultArrays.push_back(array);
     reg.array = array;
   } else {
-    /// Base Profile: Create static result pointers
+    // Base Profile: Create static result pointers
     reg.results.assign(size, Value{});
     for (int64_t i = 0; i < size; ++i) {
       // The results are recorded as part of the register
@@ -980,8 +980,8 @@ void QIRProgramBuilder::ensureResultAllocationMode(
 void QIRProgramBuilder::generateOutputRecording() {
   InsertionGuard guard(*this);
   setInsertionPoint(outputBlock->getTerminator());
-  /// Registers receive consecutive cN labels when allocated. Finalization
-  /// consumes their descriptors in that order without copying result vectors.
+  // Registers receive consecutive cN labels when allocated. Finalization
+  // consumes their descriptors in that order without copying result vectors.
   SmallVector<ClassicalRegister> registers;
   registers.reserve(cregs.size());
   for (size_t i = 0; i < cregs.size(); ++i) {
@@ -1003,7 +1003,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
 
   InsertionGuard guard(*this);
 
-  /// Release owned qubits at the finalization point, before leaving the body.
+  // Release owned qubits at the finalization point, before leaving the body.
   if (isAdaptive) {
     for (auto qubit : qubitPtrs) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});

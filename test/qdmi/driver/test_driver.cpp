@@ -566,7 +566,7 @@ TEST_P(DriverTest, JobSetPrograms) {
 }
 
 TEST_P(DriverJobTest, JobSetParameter) {
-  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(QDMI_job_set_parameter(job, static_cast<QDMI_Job_Parameter>(0), 0,
                                    nullptr),
             QDMI_ERROR_NOTSUPPORTED);
@@ -583,8 +583,8 @@ TEST_P(DriverJobTest, JobSetParameter) {
     EXPECT_THAT(QDMI_job_set_parameter(job, param, 0, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   }
-  /// Exercise the reserved former PROGRAM slot.
-  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  // Exercise the reserved former PROGRAM slot.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(QDMI_job_set_parameter(job, static_cast<QDMI_Job_Parameter>(1), 0,
                                    nullptr),
             QDMI_ERROR_NOTSUPPORTED);
@@ -1810,7 +1810,7 @@ TEST(DeviceSessionConfigTest, MovesAndBorrowsInlineConfiguration) {
           .json.data(),
       data);
   const QDMI_Device_impl_d device(library, merged);
-  /// The parent and both children borrow the same configuration buffer.
+  // The parent and both children borrow the same configuration buffer.
   EXPECT_THAT(library->custom1Data, testing::ElementsAre(data, data, data));
 }
 

@@ -199,7 +199,7 @@ TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
-  /// Supported program formats.
+  // Supported program formats.
   for (const QDMI_Program_Format fmt : {
            QDMI_PROGRAM_FORMAT_QASM2,
            QDMI_PROGRAM_FORMAT_QASM3,
@@ -213,7 +213,7 @@ TEST(JobParameters, ProgramFormatSupport) {
               QDMI_SUCCESS);
   }
 
-  /// A valid but unsupported format is rejected.
+  // A valid but unsupported format is rejected.
   constexpr QDMI_Program_Format unsupported = QDMI_PROGRAM_FORMAT_QPY;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, unsupported, 1U,
                                                    nullptr, nullptr),

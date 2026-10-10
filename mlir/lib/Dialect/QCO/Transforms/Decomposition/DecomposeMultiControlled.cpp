@@ -781,6 +781,7 @@ static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
 }
 
 /// Ancilla-free `C^4(Z)` (Barenco √Z peels + Maslov relative-phase toggles).
+///
 /// Controls 0..3, target 4.
 static CircuitPlan planMczRelativePhaseK4() {
   CircuitPlan plan;
@@ -921,8 +922,10 @@ synthesizeMultiControlledRotation(OpBuilder& builder, Location loc,
 static constexpr size_t K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS = 4;
 
 /// Vale24 Fig. 7 shell (arXiv:2302.06377): alternate half-MCX with target
-/// `p(±θ/4)`. Controls then target. Caller appends the residual.
-/// Only three or four controls reach this shell, so each half uses CX or CCX.
+/// `p(±θ/4)`.
+///
+/// Controls then target. Caller appends the residual. Only three or four
+/// controls reach this shell, so each half uses CX or CCX.
 static void appendValeFig7Shell(CircuitPlan& plan, double theta,
                                 size_t numControls) {
   const size_t target = numControls;
@@ -965,7 +968,9 @@ static CircuitPlan planMcpValeRelativeResidual(double theta,
   return plan;
 }
 
-/// Optimized ancilla-free `C^2(P(θ))`. Wires: `c0`, `c1`, target.
+/// Optimized ancilla-free `C^2(P(θ))`.
+///
+/// Wires: `c0`, `c1`, target.
 static CircuitPlan planMcpTwoControlled(double theta) {
   CircuitPlan plan;
   plan.ops.reserve(10);
@@ -1037,6 +1042,7 @@ static CircuitPlan buildSp22Q(size_t m) {
 }
 
 /// SP22 LDD MCP (arXiv:2203.11882 Them. 1): CP ladder + CRX `Q_n` conjugation.
+///
 /// Controls `0..n-1`, target `n`; requires `n >= 5`.
 static CircuitPlan planMcpSp22(double theta, size_t numControls) {
   CircuitPlan plan;

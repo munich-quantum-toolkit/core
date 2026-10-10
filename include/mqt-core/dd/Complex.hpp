@@ -37,12 +37,14 @@ struct Complex {
   RealNumber* i;
 
   /// The static constant for the complex number zero.
+  ///
   /// @return A complex number with real and imaginary part equal to zero.
   static constexpr Complex zero() noexcept {
     return {.r = &constants::zero, .i = &constants::zero};
   }
 
   /// The static constant for the complex number one.
+  ///
   /// @return A complex number with real part equal to one and imaginary part
   /// equal to zero.
   static constexpr Complex one() noexcept {
@@ -50,6 +52,7 @@ struct Complex {
   }
 
   /// Check whether the complex number is exactly equal to zero.
+  ///
   /// @returns True if the complex number is exactly equal to zero, false
   /// otherwise.
   /// @see RealNumber::exactlyZero
@@ -58,6 +61,7 @@ struct Complex {
   }
 
   /// Check whether the complex number is exactly equal to one.
+  ///
   /// @returns True if the complex number is exactly equal to one, false
   /// otherwise.
   /// @see RealNumber::exactlyOne
@@ -66,8 +70,9 @@ struct Complex {
     return RealNumber::exactlyOne(r) && RealNumber::exactlyZero(i);
   }
 
-  /// Check whether the complex number is approximately equal to the
-  /// given complex number.
+  /// Check whether the complex number is approximately equal to the given
+  /// complex number.
+  ///
   /// @param c The complex number to compare to.
   /// @returns True if the complex number is approximately equal to the given
   /// complex number, false otherwise.
@@ -75,6 +80,7 @@ struct Complex {
   [[nodiscard]] bool approximatelyEquals(const Complex& c) const noexcept;
 
   /// Check whether the complex number is approximately equal to zero.
+  ///
   /// @returns True if the complex number is approximately equal to zero, false
   /// otherwise.
   /// @see RealNumber::approximatelyZero
@@ -87,6 +93,7 @@ struct Complex {
   void unmark() const noexcept;
 
   /// Convert the complex number to a string.
+  ///
   /// @param formatted Whether to apply special formatting to the numbers.
   /// @param precision The precision to use for the numbers.
   /// @returns The string representation of the complex number.
@@ -95,20 +102,24 @@ struct Complex {
                                      int precision = -1) const;
 
   /// Write the complex number to a binary stream.
+  ///
   /// @param os The output stream to write to.
   /// @see RealNumber::writeBinary
   void writeBinary(std::ostream& os) const;
 
   /// Convert the Complex number to an std::complex<fp>.
+  ///
   /// @returns The std::complex<fp> representation of the Complex number.
   [[nodiscard]] explicit operator std::complex<fp>() const noexcept;
 
   /// Convert the Complex number to a ComplexValue.
+  ///
   /// @returns The ComplexValue representation of the Complex number.
   [[nodiscard]] explicit operator ComplexValue() const noexcept;
 };
 
 /// Print a complex number to a stream.
+///
 /// @param os The output stream to write to.
 /// @param c The complex number to print.
 /// @returns The output stream.

@@ -27,6 +27,7 @@
 
 namespace dd {
 /// Construct the all-zero state \f$|0...0\rangle\f$
+///
 /// @param n The number of qubits.
 /// @param dd The DD package to use for making the vector DD.
 /// @param start The starting qubit index. Default is 0.
@@ -36,6 +37,7 @@ namespace dd {
 VectorDD makeZeroState(std::size_t n, Package& dd, std::size_t start = 0);
 
 /// Construct a computational basis state \f$|b_{n-1}...b_0\rangle\f$
+///
 /// @param n The number of qubits.
 /// @param state The state to construct.
 /// @param dd The DD package to use for making the vector DD.
@@ -47,6 +49,7 @@ VectorDD makeBasisState(std::size_t n, const std::vector<bool>& state,
                         Package& dd, std::size_t start = 0);
 
 /// Construct a product state out of \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
+///
 /// @param n The number of qubits
 /// @param state The state to construct.
 /// @param dd The DD package to use for making the vector DD.
@@ -58,6 +61,7 @@ VectorDD makeBasisState(std::size_t n, const std::vector<BasisStates>& state,
                         Package& dd, std::size_t start = 0);
 
 /// Construct a GHZ state \f$|0...0\rangle + |1...1\rangle\f$.
+///
 /// @param n The number of qubits.
 /// @param dd The DD package to use for making the vector DD.
 /// @throws `std::invalid_argument`, if `dd.qubits() < n`.
@@ -78,6 +82,7 @@ VectorDD makeGHZState(std::size_t n, Package& dd);
 VectorDD makeWState(std::size_t n, Package& dd);
 
 /// Construct a decision diagram from an arbitrary state vector.
+///
 /// @param vec The state vector to convert to a DD.
 /// @param dd The DD package to use for making the vector DD.
 /// @throws `std::invalid_argument`, if `vec.size()` is not a power of two or
@@ -105,6 +110,7 @@ vCachedEdge buildStateFromVector(const VectorEntry& entry, const size_t level,
 } // namespace detail
 
 /// Construct a state DD from an indexed view without copying its storage.
+///
 /// @param length Number of amplitudes; zero yields the one-terminal.
 /// @param entry Callable returning the complex amplitude at an index.
 /// @param dd Package that owns the resulting DD.

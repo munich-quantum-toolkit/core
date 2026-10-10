@@ -10,13 +10,32 @@
 function(enable_project_options target_name)
   include(CheckCXXCompilerFlag)
 
+  # CMake records the linker ID when first enabling the language.
+  set(linker_id "${CMAKE_CXX_COMPILER_LINKER_ID}")
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.29 AND CMAKE_LINKER_TYPE)
+    set(linker_id "${CMAKE_LINKER_TYPE}")
+  endif()
+
   if(APPLE)
     target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:-dead_strip>")
   elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:--gc-sections>")
+    if(linker_id STREQUAL "LLD")
+      target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:--icf=safe>")
+    endif()
   endif()
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+    if(ENABLE_CACHE AND CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+      set(lto_cache "${PROJECT_BINARY_DIR}/thinlto-cache-$<CONFIG>")
+      if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND linker_id STREQUAL "LLD")
+        target_link_options(${target_name} INTERFACE "LINKER:--thinlto-cache-dir=${lto_cache}"
+                            "LINKER:--thinlto-cache-policy=cache_size_bytes=1g")
+      elseif(APPLE AND linker_id MATCHES "^(AppleClang|DEFAULT|SYSTEM|APPLE_CLASSIC)$")
+        target_link_options(${target_name} INTERFACE "LINKER:-cache_path_lto,${lto_cache}")
+      endif()
+    endif()
+
     option(ENABLE_BUILD_WITH_TIME_TRACE
            "Enable -ftime-trace to generate time tracing .json files on clang" OFF)
     if(ENABLE_BUILD_WITH_TIME_TRACE)
@@ -33,8 +52,8 @@ function(enable_project_options target_name)
       target_link_libraries(${target_name} INTERFACE --coverage)
     endif()
 
-    if(NOT DEPLOY)
-      # only include machine-specific optimizations when building for the host machine
+    if(NOT DEPLOY AND NOT DEFINED ENV{CI})
+      # CI caches can reuse object files on runners with different CPUs.
       check_cxx_compiler_flag(-mtune=native HAS_MTUNE_NATIVE)
       if(HAS_MTUNE_NATIVE)
         target_compile_options(${target_name} INTERFACE -mtune=native)

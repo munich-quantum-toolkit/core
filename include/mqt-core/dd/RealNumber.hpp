@@ -32,31 +32,36 @@ namespace dd {
 /// provide safe access to the value of a RealNumber* pointer.
 struct RealNumber final : LLBase {
   /// Read the aligned next pointer instead of the tagged base-class link.
-  /// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   [[nodiscard]] RealNumber* next() const noexcept;
 
   /// Relink an entry without discarding its collection flags.
+  ///
   /// Use LLBase::setNext to initialize a fresh or reused entry.
-  /// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
+  // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
   void setNext(LLBase* next) noexcept;
 
   /// Check whether the number points to the zero number.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number points to zero.
   [[nodiscard]] static constexpr bool exactlyZero(const RealNumber* e) noexcept;
 
   /// Check whether the number points to the one number.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number points to one.
   [[nodiscard]] static constexpr bool exactlyOne(const RealNumber* e) noexcept;
 
   /// Check whether the number points to the sqrt(2)/2 = 1/sqrt(2) number.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number points to negative one.
   [[nodiscard]] static constexpr bool
   exactlySqrt2over2(const RealNumber* e) noexcept;
 
   /// Get the value of the number.
+  ///
   /// @param e The number to get the value for.
   /// @returns The value of the number.
   /// @note This function accounts for the sign of the number embedded in the
@@ -88,27 +93,32 @@ struct RealNumber final : LLBase {
   approximatelyEquals(const RealNumber* left, const RealNumber* right) noexcept;
 
   /// Check whether a floating point number is approximately zero.
+  ///
   /// @param e The floating point number to check.
   /// @returns Whether the floating point number is approximately zero.
   [[nodiscard]] static bool approximatelyZero(fp e) noexcept;
 
   /// Check whether a number is approximately zero.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number is approximately zero.
   /// @see approximatelyZero(fp)
   [[nodiscard]] static bool approximatelyZero(const RealNumber* e) noexcept;
 
   /// Write a binary representation of the number to a stream.
+  ///
   /// @param e The number to write.
   /// @param os The stream to write to.
   static void writeBinary(const RealNumber* e, std::ostream& os);
 
   /// Write a binary representation of a floating point number to a
+  ///
   /// @param num The number to write.
   /// @param os The stream to write to.
   static void writeBinary(fp num, std::ostream& os);
 
   /// Read a binary representation of a number from a stream.
+  ///
   /// @param num The number to read into.
   /// @param is The stream to read from.
   static void readBinary(fp& num, std::istream& is);
@@ -135,6 +145,7 @@ struct RealNumber final : LLBase {
   getNegativePointer(const RealNumber* e) noexcept;
 
   /// Flip the sign of the number pointer.
+  ///
   /// @param e The number to flip the sign of.
   /// @returns The number with the sign flipped.
   /// @note This function does not change the sign of the value of the number.
@@ -163,16 +174,19 @@ struct RealNumber final : LLBase {
   static void immortalize(RealNumber* e) noexcept;
 
   /// Check whether the number is flagged as negative.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number is negative.
   [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
 
   /// Check whether the number is flagged as marked.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number is marked.
   [[nodiscard]] static bool isMarked(const RealNumber* e) noexcept;
 
   /// Check whether the number is flagged as immortal.
+  ///
   /// @param e The number to check.
   /// @returns Whether the number is immortal.
   [[nodiscard]] static bool isImmortal(const RealNumber* e) noexcept;
@@ -205,6 +219,7 @@ MQT_CORE_DD_EXPORT extern RealNumber sqrt2over2;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 /// Check whether a number is one of the static numbers.
+///
 /// @param e The number to check.
 /// @return Whether the number is one of the static numbers.
 [[nodiscard]] constexpr bool isStaticNumber(const RealNumber* e) noexcept {

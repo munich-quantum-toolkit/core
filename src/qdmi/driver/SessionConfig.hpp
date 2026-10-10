@@ -54,6 +54,7 @@ mergeSessionConfig(DeviceSessionConfig merged,
 } // namespace detail
 
 /// Construct a device session configuration from individual parameters.
+///
 /// @throws std::invalid_argument If both an inline device configuration and a
 /// device configuration file are set.
 [[nodiscard]] inline auto makeDeviceSessionConfig(

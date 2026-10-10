@@ -41,7 +41,7 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_BUSY);
   running.release();
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
-  /// Job completion is published just before the device busy count is cleared.
+  // Job completion is published just before the device busy count is cleared.
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(1);
   while (queryStatus(s.session) == QDMI_DEVICE_STATUS_BUSY &&
@@ -49,6 +49,6 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
     std::this_thread::yield();
   }
 
-  /// After completion, the status should be IDLE.
+  // After completion, the status should be IDLE.
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
 }

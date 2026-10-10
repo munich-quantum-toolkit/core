@@ -526,7 +526,7 @@ private:
       *output << ' ' << resource.name << ";\n";
     }
     if (outputs.empty()) {
-      /// Global classical declarations become implicit outputs on import.
+      // Global classical declarations become implicit outputs on import.
       *output << "if (true) {\n";
       output->indent();
     }
@@ -802,8 +802,8 @@ private:
     if (failed(defaultValue)) {
       return failure();
     }
-    /// tensor.extract requires an in-bounds index; remaining valid slots share
-    /// this value.
+    // tensor.extract requires an in-bounds index; remaining valid slots share
+    // this value.
     *output << "default { " << name << " = " << *defaultValue << "; }\n";
     output->unindent();
     *output << "}\n";
@@ -1022,12 +1022,12 @@ private:
         return failure();
       }
       if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp>(operation)) {
-        /// Unsigned machine arithmetic preserves every narrower modular result.
+        // Unsigned machine arithmetic preserves every narrower modular result.
         *lhs = "uint[64](" + *lhs + ")";
         *rhs = "uint[64](" + *rhs + ")";
       }
       if (isa<arith::ShRSIOp>(operation)) {
-        /// OpenQASM only has a zero-filling shift. Bias the sign bit around it.
+        // OpenQASM only has a zero-filling shift. Bias the sign bit around it.
         auto source = integer(operation->getOperand(0));
         if (failed(source)) {
           return failExpression(value,
@@ -1084,7 +1084,7 @@ private:
       } else if (cast<IntegerType>(count.getType()).getWidth() <= 64) {
         distance = integer(count);
         if (succeeded(distance)) {
-          /// OpenQASM rotations take signed counts; reduce before interpreting.
+          // OpenQASM rotations take signed counts; reduce before interpreting.
           *distance = (Twine("int[64](uint[64](") + *distance +
                        ") % uint[64](" + Twine(width) + "))")
                           .str();
@@ -1519,7 +1519,7 @@ private:
     }
     for (auto [argument, result] :
          llvm::zip_equal(forOp.getRegionIterArgs(), forOp.getResults())) {
-      /// Copy before inserting a key can invalidate the stored name.
+      // Copy before inserting a key can invalidate the stored name.
       valueNames[argument] = std::string(valueNames.at(result));
     }
     const auto lower = getConstantInteger(forOp.getLowerBound());
@@ -1546,12 +1546,12 @@ private:
       }
       first = uniqueName("lower", nextScalar);
       const auto end = uniqueName("upper", nextScalar);
-      /// Snapshot bounds before the body can change their source storage.
+      // Snapshot bounds before the body can change their source storage.
       *output << "int[64] " << first << " = " << boundType << '('
               << *lowerExpression << ");\n";
       *output << "int[64] " << end << " = " << boundType << '('
               << *upperExpression << ");\n";
-      /// A nonempty signed range has an upper bound greater than INT64_MIN.
+      // A nonempty signed range has an upper bound greater than INT64_MIN.
       *output << "if (" << first << " < " << end << ") {\n";
       output->indent();
       last = "(" + end + " - 1)";
@@ -1622,7 +1622,7 @@ private:
     }
     for (auto [argument, result] :
          llvm::zip_equal(after.getArguments(), whileOp.getResults())) {
-      /// Copy before inserting a key can invalidate the stored name.
+      // Copy before inserting a key can invalidate the stored name.
       valueNames[argument] = std::string(valueNames.at(result));
     }
     *output << "while (true) {\n";

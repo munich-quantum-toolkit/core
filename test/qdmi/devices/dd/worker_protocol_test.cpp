@@ -63,8 +63,8 @@ TEST(WorkerProtocol, SocketRoundTripAndDisconnect) {
   EXPECT_TRUE(client->has_error());
   client.reset();
   EXPECT_FALSE(readFrame(*server, received));
-  /// Writes may succeed locally after a peer disconnects, notably on Windows.
-  /// They must not signal or terminate the host.
+  // Writes may succeed locally after a peer disconnects, notably on Windows.
+  // They must not signal or terminate the host.
   std::ignore = writeFrame(*server, "closed");
   server.reset();
 }

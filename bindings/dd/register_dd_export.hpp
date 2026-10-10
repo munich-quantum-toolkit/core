@@ -15,11 +15,12 @@
 #include "dd/Package.hpp"
 
 #include "nanobind/nanobind.h"
-#include "nanobind/stl/string.h" /// NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)
 
 #include <ios>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
@@ -55,7 +56,7 @@ Notes:
         return p.deserialize<Node>(is, binary);
       },
       "dd_package"_a, "data"_a, "binary"_a = true,
-      /// keep the DD package alive while the returned DD is alive.
+      // keep the DD package alive while the returned DD is alive.
       nb::keep_alive<0, 1>(), R"pb(Deserialize a DD from bytes.
 
 Args:
@@ -77,7 +78,7 @@ Notes:
          const bool memory = false, const bool formatAsPolar = true) {
         std::ostringstream os;
         dd::toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
-        return os.str();
+        return std::move(os).str();
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
       "memory"_a = false, "format_as_polar"_a = true,
@@ -99,7 +100,7 @@ Returns:
          const bool colored = true, const bool edgeLabels = false,
          const bool classic = false, const bool memory = false,
          const bool formatAsPolar = true) {
-        /// replace the filename extension with .dot
+        // replace the filename extension with .dot
         const auto dotFilename =
             filename.substr(0, filename.find_last_of('.')) + ".dot";
         nb::object pygraphviz;

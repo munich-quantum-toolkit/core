@@ -623,8 +623,8 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     return failure();
   }
 
-  /// The first named input owns cross-argument checks. Register-name
-  /// verification owns collisions between inputs and registers.
+  // The first named input owns cross-argument checks. Register-name
+  // verification owns collisions between inputs and registers.
   for (unsigned index = 0; index < argIndex; ++index) {
     if (function.getArgAttr(index, attributeName)) {
       return success();

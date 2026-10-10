@@ -84,7 +84,8 @@ Separate further paragraphs with blank `///` lines. Do not use `\brief` or
 `\details` outside the macro exception below.
 
 Structural commands such as `@defgroup` and `@name` remain valid; marker-only
-blocks such as `@{` and `@}` need no summary.
+blocks such as `@{` and `@}` need no summary. Do not add a summary solely to
+precede an `@see` cross-reference.
 
 Preserve existing documentation when changing comment style. Inline `/* ... */`
 comments remain valid, including unused parameter names
@@ -105,7 +106,8 @@ expansion.
 
 The `cpp-documentation-style` lint hook checks project-owned C++ files. It
 rejects block documentation and explicit summary or detail commands, except on
-continued macro lines.
+continued macro lines. It also rejects lint directives written as documentation
+comments.
 
 Keep top-level `@file` documentation and put its summary on the next line,
 without `@brief`:

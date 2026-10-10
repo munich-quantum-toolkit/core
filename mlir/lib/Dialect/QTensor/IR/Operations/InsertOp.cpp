@@ -68,8 +68,8 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
       return failure();
     }
 
-    /// A bottom-up greedy walk may reach the last pair first. Include the
-    /// commuting prefix too, rather than normalizing every suffix separately.
+    // A bottom-up greedy walk may reach the last pair first. Include the
+    // commuting prefix too, rather than normalizing every suffix separately.
     auto firstInsert = insert;
     auto* block = insert->getBlock();
     auto tensor = insert.getDest();
@@ -123,8 +123,8 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
           break;
         }
         if (auto found = pending.find(*index); found != pending.end()) {
-          /// Forward a reused slot directly instead of repeatedly shuffling
-          /// its insert through the entire commuting suffix.
+          // Forward a reused slot directly instead of repeatedly shuffling
+          // its insert through the entire commuting suffix.
           auto& stored = inserts[found->second];
           auto qubit = stored.getScalar();
           rewriter.replaceOp(stored, stored.getDest());
@@ -144,8 +144,8 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
       previous = user;
     }
 
-    /// Leave trailing inserts in place: their operands may follow the last
-    /// extract. Earlier inserts' operands dominate their new positions.
+    // Leave trailing inserts in place: their operands may follow the last
+    // extract. Earlier inserts' operands dominate their new positions.
     inserts.resize(numInsertsToMove);
     llvm::erase_if(inserts, [](InsertOp op) { return !op; });
     if (extracts.empty() || inserts.empty()) {

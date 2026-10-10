@@ -25,7 +25,9 @@ namespace mqt::bench {
 struct ModularMultiplierOptions {
   static constexpr size_t MAX_BITS = 63;
 
-  /// Big-endian classical multiplier. Leading zeros define its width.
+  /// Big-endian classical multiplier.
+  ///
+  /// Leading zeros define its width.
   std::string multiplier;
   /// Big-endian canonical modulus with the same width as the multiplier.
   std::string modulus;

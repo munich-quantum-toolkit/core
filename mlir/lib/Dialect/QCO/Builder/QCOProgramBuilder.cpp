@@ -352,7 +352,7 @@ void QCOProgramBuilder::storeClassicalBit(
 }
 
 //===----------------------------------------------------------------------===//
-/// Linear Ownership Tracking Helpers
+// Linear Ownership Tracking Helpers
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {
@@ -415,6 +415,7 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 }
 
 /// Live values dominate the insertion point, so their blocks are nested.
+///
 /// Order definitions within a block, including argument and result positions.
 static bool isDefinedBefore(Value lhs, Value rhs) {
   if (lhs.getParentBlock() != rhs.getParentBlock()) {
@@ -1531,7 +1532,7 @@ Value QCOProgramBuilder::qcoIndexSwitch(
           return SmallVector<Value>{body(args.front())};
         };
       });
-  /// Keep the adapted callbacks alive until the range overload returns.
+  // Keep the adapted callbacks alive until the range overload returns.
   SmallVector<function_ref<SmallVector<Value>(ValueRange)>> callbacks(
       bodies.begin(), bodies.end());
   return qcoIndexSwitch(arg, ValueRange{target}, cases, callbacks,

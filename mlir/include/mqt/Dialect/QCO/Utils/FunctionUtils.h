@@ -38,7 +38,8 @@ namespace mlir::qco {
 [[nodiscard]] FailureOr<unsigned> traceQubitArgument(Block& block, Value value);
 
 /// Check that extracted tensor slots are restored at calls and region exits.
-/// Matching slot indices are a program precondition; correspondence is checked
-/// separately.
+///
+/// Slot identity and disjoint extractions are program preconditions; known
+/// violations and positional region correspondence are checked separately.
 [[nodiscard]] bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0);
 } // namespace mlir::qco

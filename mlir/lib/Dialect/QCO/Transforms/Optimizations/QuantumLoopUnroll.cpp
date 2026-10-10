@@ -47,6 +47,7 @@ static bool isQuantumLoop(scf::ForOp loop) {
 }
 
 /// Post-order collect all quantum loops in a function.
+///
 /// @param func The function to collect quantum loops from.
 /// @return A vector of quantum `scf.for` loops.
 static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {

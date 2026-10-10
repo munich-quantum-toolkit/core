@@ -573,7 +573,7 @@ Matrix4x4 unitaryMatrix(const TwoQubitNativeDecomposition& decomposition,
   for (std::uint8_t i = 0; i < decomposition.numBasisUses; ++i) {
     auto gate = basisGate;
     if (!decomposition.entanglerParameters.empty()) {
-      /// For a Pauli product P, R_P(theta) = I cos(theta/2) - i P sin(theta/2).
+      // For a Pauli product P, R_P(theta) = I cos(theta/2) - i P sin(theta/2).
       const auto halfAngle = decomposition.entanglerParameters[i] / 2.;
       const auto sine = std::sin(halfAngle);
       gate = basisGate * (std::numbers::sqrt2 * sine);
@@ -763,9 +763,9 @@ static void align(TwoQubitNativeDecomposition& result,
       circuit.k1r().adjoint() * factors[factors.size() - 2];
   factors.back() = circuit.k1l().adjoint() * factors.back();
   result.globalPhase -= circuit.globalPhase();
-  /// On x=π/4, opposite signs of z denote the same local class. Y on the left
-  /// qubit reverses XX and ZZ; i(XX) then shifts -π/4 back to π/4. Their
-  /// product is -(Z tensor X).
+  // On x=π/4, opposite signs of z denote the same local class. Y on the left
+  // qubit reverses XX and ZZ; i(XX) then shifts -π/4 back to π/4. Their
+  // product is -(Z tensor X).
   if (circuit.c() * target.c() < 0. &&
       std::abs(circuit.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE &&
       std::abs(target.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE) {
@@ -799,7 +799,7 @@ twoGates(const TwoQubitWeylDecomposition& target, uint64_t seed) {
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
                    std::sin(-x - y - z) * std::sin(-x + y + z);
   const auto split = 2. * std::sqrt(std::max(0., c));
-  /// Rationalize sin^2(α/2) to avoid cancellation near α=0.
+  // Rationalize sin^2(α/2) to avoid cancellation near α=0.
   const auto sinX = std::sin(x);
   const auto sinY = std::sin(y);
   const auto sinZ = std::sin(z);
@@ -809,7 +809,7 @@ twoGates(const TwoQubitWeylDecomposition& target, uint64_t seed) {
   const auto sinAlphaSquared = sum > 0. ? product * product / sum : 0.;
   const auto alpha =
       2. * std::asin(std::sqrt(std::clamp(sinAlphaSquared, 0., 1.)));
-  /// Use the half-angle form near zero without losing precision near π.
+  // Use the half-angle form near zero without losing precision near π.
   const auto beta =
       sum < .5 ? 2. * std::asin(std::sqrt(std::clamp(sum, 0., 1.)))
                : std::acos(std::clamp(std::cos(2. * x) - std::cos(2. * y) +
@@ -819,7 +819,7 @@ twoGates(const TwoQubitWeylDecomposition& target, uint64_t seed) {
   const auto numerator = t * t;
   const auto denominator =
       numerator + std::cos(2. * x) * std::cos(2. * y) * std::cos(2. * z);
-  /// At CNOT the ratio is 0/0. Either limiting phase gives the same class.
+  // At CNOT the ratio is 0/0. Either limiting phase gives the same class.
   const auto ratio = denominator > 0. ? numerator / denominator : 0.;
   const auto gamma =
       std::acos((z < 0. ? -1. : 1.) * std::sqrt(std::clamp(ratio, 0., 1.)));
@@ -879,7 +879,7 @@ decomposeSqrtISwap(const Matrix4x4& target, uint64_t seed) {
     return twoGates(kak, seed);
   }
 
-  /// Lemma 2 in the supplement puts this residual in the two-gate region.
+  // Lemma 2 in the supplement puts this residual in the two-gate region.
   const auto gate = TwoQubitWeylDecomposition::getCanonicalMatrix(
       kak.a() <= EIGHTH_PI ? -EIGHTH_PI : 0.,
       kak.a() <= EIGHTH_PI ? 0. : EIGHTH_PI,
@@ -933,8 +933,8 @@ decomposePauliRotations(const Matrix4x4& target,
     double angle = -2. * coordinate;
     if (entangler.angles == CompilerTarget::AngleSupport::ZeroToHalfPi &&
         angle < 0.) {
-      /// Cartan angles already lie in [-pi/2, pi/2]. A Pauli conjugation
-      /// changes the sign without changing the native interaction count.
+      // Cartan angles already lie in [-pi/2, pi/2]. A Pauli conjugation
+      // changes the sign without changing the native interaction count.
       const auto flip = axes[0] == PauliAxis::Z ? XOp::getUnitaryMatrix()
                                                 : ZOp::getUnitaryMatrix();
       left = left * flip;

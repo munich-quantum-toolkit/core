@@ -1715,7 +1715,7 @@ switch (int(choose)) {
   size_t switches = 0;
   moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
     ++switches;
-    /// Only the enclosing result is carried; branch locals must not escape.
+    // Only the enclosing result is carried; branch locals must not escape.
     EXPECT_EQ(switchOp.getNumResults(), 1);
   });
   EXPECT_EQ(switches, 1);

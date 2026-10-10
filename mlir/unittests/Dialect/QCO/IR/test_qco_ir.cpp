@@ -141,7 +141,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  /// Cleanup may permute independent gates and tensor operations.
+  // Cleanup may permute independent gates and tensor operations.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -263,7 +263,7 @@ TEST_F(QCOTest, BuilderDisposesScalarsInDefinitionOrder) {
   for (int i = 0; i < 16; ++i) {
     qubits.push_back(builder.h(builder.allocQubit()));
   }
-  /// Results of the same operation are ordered by result position.
+  // Results of the same operation are ordered by result position.
   auto [control, target] = builder.cx(qubits[14], qubits[15]);
   qubits[14] = control;
   qubits[15] = target;
@@ -272,7 +272,7 @@ TEST_F(QCOTest, BuilderDisposesScalarsInDefinitionOrder) {
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   SmallVector<Value> sunk;
   moduleOp->walk([&](SinkOp sink) { sunk.push_back(sink.getQubit()); });
-  /// Emission order is part of the reproducible builder output contract.
+  // Emission order is part of the reproducible builder output contract.
   EXPECT_EQ(sunk, qubits);
 }
 
@@ -2736,8 +2736,8 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   EXPECT_EQ(measurements[1].getQubitIn(), barriers[0].getOutputQubits()[0]);
 }
 
-/// Fractional H powers use the same rotation and phase lowering as runtime
-/// exponents. Full-matrix equivalence is covered by the DD functionality tests.
+// Fractional H powers use the same rotation and phase lowering as runtime
+// exponents. Full-matrix equivalence is covered by the DD functionality tests.
 TEST_F(QCOTest, NegPowHExpands) {
   auto program =
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));

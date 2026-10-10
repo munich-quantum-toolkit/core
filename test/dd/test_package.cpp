@@ -84,7 +84,7 @@ void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
 }
 
 template <class Node> void checkDotIds() {
-  /// Node IDs must distinguish addresses that differ by a multiple of 2 MiB.
+  // Node IDs must distinguish addresses that differ by a multiple of 2 MiB.
   constexpr size_t distance = std::lcm(size_t{1} << 21U, sizeof(Node));
   std::vector<Node> spaced((distance / sizeof(Node)) + 1);
   std::array<Node, 2> adjacent{};
@@ -1539,7 +1539,7 @@ TEST(DDPackageTest, NormalizationDominantPhaseIsIndependentOfScale) {
         EXPECT_NEAR(actual.i, expected.i, RealNumber::eps);
       }
     }
-    /// Tied magnitudes retain the leftmost phase at every input scale.
+    // Tied magnitudes retain the leftmost phase at every input scale.
     for (const auto delta : {0., RealNumber::eps / 4.}) {
       for (const auto scale : {0x1p-24, 1., 64.}) {
         const auto result = make({0., 1. + delta}, scale);
@@ -1636,8 +1636,8 @@ TEST(DDPackageTest, GroverRetainsCompactAccurateState) {
     apply(h, q);
   }
 
-  /// Contract the entire DD against Grover's analytic two-amplitude state.
-  /// Memoization keeps this check proportional to the reachable DD size.
+  // Contract the entire DD against Grover's analytic two-amplitude state.
+  // Memoization keeps this check proportional to the reachable DD size.
   using Number = std::complex<fp>;
   using Moments = std::pair<fp, Number>;
   std::unordered_map<const vNode*, Moments> memo;
@@ -2606,7 +2606,7 @@ TEST(DDPackageTest, ArithmeticAcrossSkippedMatrixLevels) {
       }
     }
   }
-  /// A scalar vector still needs zero extension through skipped matrix levels.
+  // A scalar vector still needs zero extension through skipped matrix levels.
   const auto vector = dd::getVector(package.multiply(x, vEdge::one()));
   const auto matrix = dd::getMatrix(x, qubits);
   ASSERT_EQ(vector.size(), dimension);
@@ -2645,8 +2645,8 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   EXPECT_NEAR(dd->expectationValue(op, evolvedState), -0.416, 0.001);
 }
 
-/// Normalization must return temporary nodes to the memory manager when
-/// multiplication produces the zero terminal.
+// Normalization must return temporary nodes to the memory manager when
+// multiplication produces the zero terminal.
 TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
@@ -2658,8 +2658,8 @@ TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
 }
 
-/// A cached terminal result has a null node pointer and must still count as a
-/// cache hit. Repeated zero products must not allocate or leak nodes.
+// A cached terminal result has a null node pointer and must still count as a
+// cache hit. Repeated zero products must not allocate or leak nodes.
 TEST(DDPackageTest, CTPerformanceRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
@@ -2771,7 +2771,7 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
         auto sum = package.add2(vCachedEdge{plus.p, SQRT2_2 * scale},
                                 vCachedEdge{minus.p, phase * (SQRT2_2 * scale)},
                                 static_cast<Qubit>(width - 1));
-        /// Compare the normalized result without losing a tiny vector root.
+        // Compare the normalized result without losing a tiny vector root.
         sum.w = sum.w / scale;
         auto state = package.cn.lookup(sum);
         package.incRef(state);
@@ -2781,8 +2781,8 @@ TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
           state = package.applyOperation(
               package.makeGateDD(H_MAT, static_cast<Qubit>(qubit)), state);
         }
-        /// H on every wire maps the two product states to distinct basis
-        /// states.
+        // H on every wire maps the two product states to distinct basis
+        // states.
         const auto zero = state.getValueByPath(width, std::string(width, '0'));
         const auto one = state.getValueByPath(width, std::string(width, '1'));
         EXPECT_NEAR(std::abs(zero - std::complex<fp>{SQRT2_2, 0.}), 0., 1e-11);
@@ -2826,7 +2826,7 @@ TEST(DDPackageTest, ConjugationAfterGarbageCollection) {
   const auto input = makeStateFromVector({SQRT2_2, {0., SQRT2_2}}, *dd);
   const auto expected = dd::getVector(dd->conjugate(input));
 
-  /// Cached results are unreferenced and may be collected and reused.
+  // Cached results are unreferenced and may be collected and reused.
   ASSERT_TRUE(dd->garbageCollect(true));
   const auto replacement = makeZeroState(1, *dd);
   EXPECT_EQ(dd::getVector(dd->conjugate(input)), expected);
