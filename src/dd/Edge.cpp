@@ -17,6 +17,9 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -38,7 +41,8 @@ namespace dd {
 namespace {
 
 void traverseVector(const vEdge& edge, const std::complex<fp>& amp,
-                    const size_t i, const AmplitudeFunc& f,
+                    const size_t i,
+                    llvm::function_ref<void(size_t, const std::complex<fp>&)> f,
                     const fp threshold) {
   const auto c = amp * static_cast<std::complex<fp>>(edge.w);
 
@@ -310,6 +314,8 @@ auto getSparseVector(const vEdge& edge, const fp threshold) -> SparseCVec {
 auto printVector(const vEdge& edge) -> void {
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
+  const auto restorePrecision =
+      llvm::scope_exit([oldPrecision] { std::cout.precision(oldPrecision); });
   std::cout << std::setprecision(precision);
 
   if (edge.isTerminal()) {
@@ -325,7 +331,6 @@ auto printVector(const vEdge& edge) -> void {
     }
     std::cout << ": " << amplitude << "\n";
   }
-  std::cout << std::setprecision(static_cast<int>(oldPrecision));
   std::cout << std::flush;
 }
 
@@ -491,6 +496,8 @@ auto getSparseMatrix(const mEdge& edge, const size_t numQubits,
 auto printMatrix(const mEdge& edge, const size_t numQubits) -> void {
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
+  const auto restorePrecision =
+      llvm::scope_exit([oldPrecision] { std::cout.precision(oldPrecision); });
   std::cout << std::setprecision(precision);
 
   if (numQubits == 0U) {
@@ -506,7 +513,6 @@ auto printMatrix(const mEdge& edge, const size_t numQubits) -> void {
     }
     std::cout << "\n";
   }
-  std::cout << std::setprecision(static_cast<int>(oldPrecision));
   std::cout << std::flush;
 }
 

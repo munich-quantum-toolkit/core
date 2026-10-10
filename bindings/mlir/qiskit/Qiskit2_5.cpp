@@ -26,6 +26,7 @@
 #include <qiskit/funcs_py.h>
 
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -1129,11 +1130,8 @@ public:
     }
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
-    struct InstructionGuard {
-      QkCircuitInstruction* instruction;
-      ~InstructionGuard() { qk_circuit_instruction_clear(instruction); }
-    };
-    const InstructionGuard guard{&native};
+    const auto guard =
+        llvm::scope_exit([&native] { qk_circuit_instruction_clear(&native); });
     Instruction result;
     result.kind = kind;
     result.name = native.name == nullptr ? "" : native.name;

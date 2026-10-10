@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -55,10 +54,6 @@ namespace detail {
   }
   return {utf8};
 }
-
-/// Read an environment value as UTF-8.
-[[nodiscard]] auto environment(std::string_view name)
-    -> std::optional<std::string>;
 } // namespace detail
 
 template <class Concrete> class Singleton {

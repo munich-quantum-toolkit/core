@@ -18,12 +18,17 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <variant>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -340,7 +345,8 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
     const ScopedCurrentPath currentPath(directory.path());
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                "config/device.json");
-    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
+    const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                               std::nullopt);
     const qdmi::detail::DeviceRegistry registry;
     const auto* definition = findDefinition(registry, "relative");
     ASSERT_NE(definition, nullptr);
@@ -362,7 +368,8 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
 TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const TemporaryDirectory directory;
   const auto configFile = emptyConfig(directory);
-  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                             std::nullopt);
 
   const qdmi::detail::DeviceRegistry registry;
   const std::vector<std::string> expectedIds{
@@ -406,8 +413,10 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
     ]}
   })");
   const ScopedCurrentPath currentPath(directory.path());
-  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
-  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
+  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
+                                             std::nullopt);
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                             std::nullopt);
 
   const qdmi::detail::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "json");
@@ -430,8 +439,10 @@ TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
     "qdmi": {"devices": [{"id": "layered", "prefix": "PROJECT"}]}
   })");
   const ScopedCurrentPath currentPath(directory.path() / "project");
-  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
-  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
+  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
+                                             std::nullopt);
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
+                                             std::nullopt);
 #ifdef _WIN32
   const ScopedEnvironmentVariable programData("PROGRAMDATA",
                                               directory.path().string());
@@ -471,6 +482,20 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
     EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
                  std::invalid_argument);
   }
+}
+
+TEST(DeviceRegistry, RejectsEmptyEnvironmentJson) {
+  const TemporaryDirectory directory;
+  const auto configFile = emptyConfig(directory);
+#ifdef _WIN32
+  // Keep a CRT entry so the guard also restores the Windows environment.
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "{}");
+  ASSERT_NE(SetEnvironmentVariableW(L"MQT_CORE_QDMI_CONFIG_JSON", L""), 0);
+#else
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
+#endif
+  EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+               std::invalid_argument);
 }
 
 TEST(DeviceRegistry, ReportsInvalidExplicitJson) {

@@ -20,6 +20,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -209,14 +210,18 @@ TEST(VectorFunctionality, GetSparseVectorTolerance) {
 }
 
 TEST(VectorFunctionality, PrintVectorTerminal) {
+  const auto oldPrecision = std::cout.precision(12);
   testing::internal::CaptureStdout();
   dd::printVector(vEdge::zero());
   const auto zeroStr = testing::internal::GetCapturedStdout();
   EXPECT_EQ(zeroStr, "0: (0,0)\n");
+  EXPECT_EQ(std::cout.precision(), 12);
   testing::internal::CaptureStdout();
   dd::printVector(vEdge::one());
   const auto oneStr = testing::internal::GetCapturedStdout();
   EXPECT_EQ(oneStr, "0: (1,0)\n");
+  EXPECT_EQ(std::cout.precision(), 12);
+  std::cout.precision(oldPrecision);
 }
 
 TEST(VectorFunctionality, PrintVector) {
@@ -437,14 +442,18 @@ TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
 }
 
 TEST(MatrixFunctionality, PrintMatrixTerminal) {
+  const auto oldPrecision = std::cout.precision(12);
   testing::internal::CaptureStdout();
   dd::printMatrix(mEdge::zero(), 0);
   const auto zeroStr = testing::internal::GetCapturedStdout();
   EXPECT_EQ(zeroStr, "(0,0)\n");
+  EXPECT_EQ(std::cout.precision(), 12);
   testing::internal::CaptureStdout();
   dd::printMatrix(mEdge::one(), 0);
   const auto oneStr = testing::internal::GetCapturedStdout();
   EXPECT_EQ(oneStr, "(1,0)\n");
+  EXPECT_EQ(std::cout.precision(), 12);
+  std::cout.precision(oldPrecision);
 }
 
 TEST(MatrixFunctionality, PrintMatrix) {
