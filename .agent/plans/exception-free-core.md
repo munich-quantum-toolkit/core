@@ -1,9 +1,10 @@
 # Exception-free Core APIs
 
-Status: rebased on main `715da0ee6` after #2732. The
-[current reassessment](../audits/exception-free-rebase.md) defines the compiler
-Program API extraction and the remaining acceptance work. Python exception
-compatibility still needs the identified submission-category fix.
+Status: rebased on main `b35d3334a` after #2733. The compiler Program result
+APIs, XDG fallback, and configuration documentation cleanup are merged. The
+[current audit](../audits/exception-free-rebase.md) records four open findings:
+QIR allocation lifetime, QDMI allocation recovery, Python exception categories,
+and DD documentation generation.
 
 ## Contract
 
@@ -72,18 +73,20 @@ Validation on Linux aarch64 with GCC 13.3 and LLVM/MLIR 23.1.0:
 
 - Release build with LTO passes. CTest passes 4,045 runnable tests, with the
   expected `ScQDMIJobSpecificationTest.QueryJobId` skip.
-- The rebuilt Python package passes all 1,974 tests. The final wheel passes all
-  433 QDMI tests after the XDG fallback fix.
+- The rebuilt wheel passes all 1,974 Python tests.
 - Stub generation passes with no generated API changes.
-- Repository lint passes. Whole-file C++ lint covered all 183 changed source
-  files. Both unused-include findings are fixed; complete-file checks and all
-  450 affected QDMI native tests pass after the cleanup.
-- Installed GCC Development and default consumers build and run. Runtime and
-  optional Development lookups work without the LLVM SDK; required Development
-  and default lookups report the missing SDK. The wheel's native shared
-  libraries, including CoreSupport, export no LLVM-owned definitions.
+- Repository lint passes. Whole-file C++ lint passes for all 179 selected source
+  files against main.
+- Documentation fails on four explicit template declarations in `Package.hpp`. A
+  copied-header probe passes Doxygen after removing those declarations;
+  production code remains unchanged pending the audit fixes.
 
-Documentation execution was not repeated for this rebase.
+Before this rebase, installed GCC Development and default consumers built and
+ran. Runtime and optional Development lookups worked without the LLVM SDK;
+required Development and default lookups reported the missing SDK. The wheel's
+native shared libraries, including CoreSupport, exported no LLVM-owned
+definitions. These installed-consumer and symbol checks were not repeated for
+this rebase.
 
 Windows/macOS packaging and hosted checks for the published revision remain
 unverified. No new packaging test framework is introduced here.
