@@ -19,9 +19,16 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
+#include "capnp/any.h"
+#include "capnp/blob.h"
+#include "capnp/list.h"
+#include "capnp/message.h"
+#include "jeff.capnp.h"
 #include "jeff/Conversion/JeffToNative/JeffToNative.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
+#include "jeff/Translation/Metadata.hpp"
+#include "kj/exception.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -48,6 +55,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +67,40 @@ using namespace qco;
 
 #define GEN_PASS_DEF_JEFFTOQCO
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
+
+/// Restore input names from jeff text metadata.
+static LogicalResult decodeInputNames(func::FuncOp function) {
+  auto* context = function.getContext();
+  const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  const llvm::StringMap<uint16_t> names{{key, 0}};
+  auto exception = kj::runCatchingExceptions([&] {
+    for (auto argument : function.getArguments()) {
+      auto metadata = jeff::getMetadata(argument);
+      if (!metadata) {
+        continue;
+      }
+      for (auto entry : metadata) {
+        if (cast<DictionaryAttr>(entry).getAs<StringAttr>("name").getValue() !=
+            key) {
+          continue;
+        }
+        capnp::MallocMessageBuilder message;
+        auto entries = message.initRoot<capnp::List<::jeff::Meta>>(1);
+        jeff::serializeMetadata(ArrayAttr::get(context, {entry}), entries,
+                                names);
+        auto name = entries[0].getValue().getAs<capnp::Text>();
+        function.setArgAttr(
+            argument.getArgNumber(), key,
+            StringAttr::get(context, StringRef(name.begin(), name.size())));
+      }
+    }
+  });
+  KJ_IF_MAYBE (error, exception) {
+    return function.emitError("failed to decode input name metadata: ")
+           << error->getDescription().cStr();
+  }
+  return success();
+}
 
 /// Returns whether @p op carries a jeff gate modifier
 template <typename JeffOpType>
@@ -1457,13 +1499,9 @@ protected:
     RewritePatternSet patterns(context);
 
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
-      for (unsigned index = 0; index < function.getNumArguments(); ++index) {
-        if (auto name = function.getArgAttrOfType<StringAttr>(
-                index, "jeff.input_name")) {
-          function.setArgAttr(
-              index, mqt::MQTDialect::InputNameAttrHelper::getNameStr(), name);
-          function.removeArgAttr(index, "jeff.input_name");
-        }
+      if (failed(decodeInputNames(function))) {
+        signalPassFailure();
+        return;
       }
       if (function == *entryPoint) {
         function.setPublic();

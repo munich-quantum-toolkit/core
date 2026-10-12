@@ -6,6 +6,9 @@
 #
 # Licensed under the MIT License
 
+set(LLVM_REQUIRES_EH ON)
+set(LLVM_REQUIRES_RTTI ON)
+
 file(GLOB CONVERSION_SOURCES *.cpp)
 
 add_mlir_conversion_library(
@@ -15,6 +18,7 @@ add_mlir_conversion_library(
   JeffToQCOIncGen
   LINK_LIBS
   MLIRJeff
+  MLIRJeffTranslation
   MLIRJeffToNative
   MLIRFuncTransforms
   MLIRMemRefDialect
@@ -23,3 +27,5 @@ add_mlir_conversion_library(
   MLIRMQTDialect
   MLIRQCODialect
   MLIRTransforms)
+
+mqt_mlir_target_use_project_options(MLIRJeffToQCO)

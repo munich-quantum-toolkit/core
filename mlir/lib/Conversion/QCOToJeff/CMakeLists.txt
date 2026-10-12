@@ -6,6 +6,9 @@
 #
 # Licensed under the MIT License
 
+set(LLVM_REQUIRES_EH ON)
+set(LLVM_REQUIRES_RTTI ON)
+
 file(GLOB CONVERSION_SOURCES *.cpp)
 
 add_mlir_conversion_library(
@@ -24,12 +27,15 @@ add_mlir_conversion_library(
   MLIRSupportMQT
   MLIRCBitDialect
   MLIRJeff
+  MLIRJeffTranslation
   MLIRNativeToJeff
   MLIRMQTDialect
   MLIRMQTTransforms
   MLIRMQTUtils
   MLIRQCODialect
   MLIRTransforms)
+
+mqt_mlir_target_use_project_options(MLIRQCOToJeff)
 
 if(TARGET MLIRQCOToJeff)
   target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")

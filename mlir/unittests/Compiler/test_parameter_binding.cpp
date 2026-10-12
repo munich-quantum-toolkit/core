@@ -18,6 +18,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Verifier.h"
 
 #include "llvm/Support/Casting.h"
@@ -121,6 +122,31 @@ rz(phi) q;
   EXPECT_EQ(exported->source().find("input float[64] theta;"),
             std::string::npos);
   EXPECT_NE(exported->source().find("input float[64] phi;"), std::string::npos);
+}
+
+TEST(ParameterBinding, RejectsMalformedJeffInputNameMetadata) {
+  auto qco = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @main(%theta: f64 {jeff.metadata = [
+        {name = "mqt.input_name", value = array<i8: 0>}
+      ]}) attributes {mqt.entry_point} {
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(qco);
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff);
+  std::string diagnostic;
+  mlir::ScopedDiagnosticHandler handler(jeff->module().getContext(),
+                                        [&](mlir::Diagnostic& error) {
+                                          diagnostic += error.str();
+                                          return mlir::success();
+                                        });
+  EXPECT_FALSE(std::move(*jeff).intoQCO());
+  EXPECT_NE(diagnostic.find("failed to decode input name metadata"),
+            std::string::npos)
+      << diagnostic;
 }
 
 TEST(ParameterBinding, MixedArrayBindingPreservesRemainingInputs) {
