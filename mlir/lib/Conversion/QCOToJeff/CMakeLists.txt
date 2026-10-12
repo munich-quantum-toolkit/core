@@ -42,5 +42,6 @@ if(TARGET MLIRQCOToJeff)
 endif()
 
 if(TARGET obj.MLIRQCOToJeff)
+  target_link_libraries(obj.MLIRQCOToJeff PRIVATE MLIRJeffTranslation)
   target_compile_definitions(obj.MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 endif()

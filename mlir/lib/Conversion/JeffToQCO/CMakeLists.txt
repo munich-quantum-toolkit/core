@@ -29,3 +29,7 @@ add_mlir_conversion_library(
   MLIRTransforms)
 
 mqt_mlir_target_use_project_options(MLIRJeffToQCO)
+
+if(TARGET obj.MLIRJeffToQCO)
+  target_link_libraries(obj.MLIRJeffToQCO PRIVATE MLIRJeffTranslation)
+endif()
