@@ -1,8 +1,8 @@
 # Source-ordered QC → QCO on boundary verification
 
 Status: complete. Source-ordered conversion and targeted normalization are
-implemented and locally validated against the pinned base. End-to-end
-performance is mixed; whole-file C++ lint and human review remain merge gates.
+implemented and locally validated. End-to-end performance is mixed; whole-file
+C++ lint and human review remain merge gates.
 
 ## Scope and decisions
 
@@ -12,6 +12,12 @@ patterns in explicit source order. Keep source reference identities alive until
 their users have been lowered; move nested regions without destroying their
 original children. Preserve type conversion, static normalization, supported
 input checks, and linear output validation.
+
+Append a complete converted function argument list, redirect classical uses, and
+retain the original quantum references until lowering finishes. Remove the old
+argument prefix in one operation. Individual middle insertions and erasures were
+quadratic for wide signatures; bulk replacement preserves interleaved argument
+order, attributes, and locations without that cost.
 
 Reusing preflight state only when normalization is skipped did not improve the
 selected workloads: OpenQASM register inputs always require normalization. That
@@ -23,28 +29,44 @@ greedy normalizer as a substantial cost. Use MLIR's existing
 `GreedySimplifyRegionLevel::Disabled` for normalization; this pass needs index
 folding and static-reference normalization, not control-flow optimization.
 
-The baseline is PR #2698 at `2cf5d436150a6fe953fbc6d8f0c44f126bba3c1f`. Keep its
-QCO → QC lowering, boundary-verification policy, mapping, and all other
-pipelines unchanged. Existing ordered reverse-conversion work is outside scope.
+The historical benchmark baseline is PR #2698 at
+`2cf5d436150a6fe953fbc6d8f0c44f126bba3c1f`. QCO → QC lowering,
+boundary-verification policy, mapping, and all other pipelines remain outside
+the scope of this patch. Existing ordered reverse-conversion work is not
+included.
 
 ## Validation
 
 Both variants use the Release preset, standalone native builds, and the same
 assertion-free LLVM/MLIR 23.1.0 toolchain. Run the QCToQCO, QCOToQC, and
 Compiler GoogleTest targets under `build/release/mlir/unittests/` to reproduce
-the native checks. All 602 baseline tests and 605 final candidate tests pass.
-The three added tests cover interleaved call signatures with owned results,
-unitary calls inside nested regions, and register aliasing exposed by index
-folding.
+the native checks. The current candidate passes 606 tests: 176 QCToQCO, 158
+QCOToQC, and 272 Compiler. Added tests cover interleaved call signatures with
+owned results, unitary calls inside nested regions, register aliasing exposed by
+index folding, wide interleaved signatures, and remapped register index
+arguments.
 
-AddressSanitizer with assertions passes all 174 forward-conversion tests. The
+AddressSanitizer with assertions passes all 176 forward-conversion tests. The
 converter and its test translation unit are instrumented; dependencies are not.
 Leak detection is disabled. Repository lint (`uvx nox -s lint`) and
 `git diff --check` pass.
 
-The performance comparison uses frozen Benchpress inputs from revision
-`045e7ca6a8e5302826d82f07d42b5689ca61db3c`: QFT with 18 and 160 qubits, QRAM
-with 20 qubits, Ising with 26 qubits, cat with 260 qubits, W-state with 380
+Bulk argument replacement also passes 138 differential comparisons against
+`0dde327c1`, with identical output for forward conversion and roundtrips. These
+cover nested structured control flow, register and scalar qubits, calls,
+attributes, and helper declaration order.
+
+For private helpers with 10,000, 20,000, and 40,000 unused borrowed qubit
+arguments, median whole-CLI time falls from 151/649/2156 ms to 24/37/67 ms. Each
+size uses three serial, alternating before/after pairs with identical output,
+running only `builtin.module(qc-to-qco)` through `mqt-cc --run-pipeline`. Both
+binaries use the same Release toolchain. These synthetic timings include parsing
+and output; they are not isolated pass timings or Benchpress results.
+
+The following historical performance comparison predates the bulk-argument fix
+and does not measure the current source. It uses frozen Benchpress inputs from
+revision `045e7ca6a8e5302826d82f07d42b5689ca61db3c`: QFT with 18 and 160 qubits,
+QRAM with 20 qubits, Ising with 26 qubits, cat with 260 qubits, W-state with 380
 qubits, and factor247 with 15 qubits. Seven unique circuits cover forward
 conversion; seven circuit/topology pairs cover full compilation, excluding
 QFT-160 and including QFT-18 on both all-to-all and linear connectivity.
@@ -67,7 +89,7 @@ phase rises from 47.344 s to 56.035 s while its forward conversion falls from
 10.561 s to 6.608 s. The cause of the end-to-end regression is not established.
 Keep all samples and do not claim a universal full-compilation speedup.
 
-A fresh isolated wheel passes 977 focused Python tests with no skips:
+The historical isolated wheel passed 977 focused Python tests with no skips:
 `test_mlir.py`, `test_mlir_loops.py`, `test_mlir_qiskit_translation.py`,
 `test_mlir_qiskit_target.py`, `test_mlir_parameter_binding.py`, and
 `test_mlir_integer_interchange.py`. Run them with `python -m pytest` and

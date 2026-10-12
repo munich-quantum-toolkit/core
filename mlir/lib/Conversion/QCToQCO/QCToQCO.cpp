@@ -979,20 +979,20 @@ struct ConvertFuncOp final : LoweringPattern<func::FuncOp> {
     if (op.isExternal()) {
       return success();
     }
-    // Retain source arguments until their QC users are lowered. Inserting
-    // each converted argument next to its source preserves interleaved order
-    // when the old arguments are erased at the end of the pass.
-    DenseMap<Value, Value> convertedArguments;
+    // Append the full signature to preserve interleaved order without shifting
+    // arguments. Keep source QC identities until their users are lowered.
     auto& block = op.getBody().front();
-    for (unsigned index : llvm::reverse(qubitArguments)) {
-      auto converted = block.insertArgument(index + 1, inputs[index],
-                                            originalArguments[index].getLoc());
-      convertedArguments[originalArguments[index]] = converted;
+    const auto numOriginalArguments = block.getNumArguments();
+    for (auto [source, type] : llvm::zip_equal(originalArguments, inputs)) {
+      auto converted = block.addArgument(type, source.getLoc());
+      if (source.getType() == type) {
+        rewriter.replaceAllUsesWith(source, converted);
+      }
     }
     auto& map = getState().qubitMap[&op.getBody()];
     auto& functionArguments = getState().functionQubitArguments[op];
     for (unsigned index : qubitArguments) {
-      Value converted = convertedArguments.lookup(originalArguments[index]);
+      Value converted = block.getArgument(numOriginalArguments + index);
       if (auto reg = getState().registerIds.find(originalArguments[index]);
           reg != getState().registerIds.end()) {
         const auto id = reg->second;
@@ -2002,7 +2002,8 @@ struct ConvertSCFConditionOp final : LoweringPattern<scf::ConditionOp> {
 /// Convert QC references to QCO values in source order, threading quantum state
 /// through functions and structured control flow.
 ///
-/// Lower terminators after preceding operations so they yield the final mapped values.
+/// Lower terminators after preceding operations so they yield the final mapped
+/// values.
 static LogicalResult lowerToQCO(ModuleOp moduleOp) {
   LoweringState preflight;
   if (failed(validateSupportedInput(moduleOp)) ||
@@ -2010,8 +2011,8 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
     return failure();
   }
   // Register indices still need normalization for alias validation.
-  const bool needsNormalization = !preflight.registerIds.empty() ||
-                                  !staticsAlreadyNormalized(moduleOp);
+  const bool needsNormalization =
+      !preflight.registerIds.empty() || !staticsAlreadyNormalized(moduleOp);
   if (needsNormalization && failed(normalizeStaticQubits(moduleOp))) {
     return failure();
   }
@@ -2057,7 +2058,7 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
   applicator.applyDefaultCostModel();
   PatternRewriter rewriter(ctx);
   SmallVector<Operation*> order, sources;
-  SmallVector<BlockArgument> sourceArguments;
+  SmallVector<std::pair<Block*, unsigned>> sourceArgumentBlocks;
   moduleOp.walk<WalkOrder::PreOrder>(
       [&](Operation* op) { order.push_back(op); });
   // Structural patterns move original children, never delete them. New ops
@@ -2090,13 +2091,9 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
         operation->getDialect() == ctx->getLoadedDialect<qc::QCDialect>();
     if (auto function = dyn_cast<func::FuncOp>(operation)) {
       required = !converter.isSignatureLegal(function.getFunctionType());
-      if (required) {
-        for (auto argument : function.getArguments()) {
-          if (isa<qc::QubitType>(argument.getType()) ||
-              isQubitMemrefType(argument.getType())) {
-            sourceArguments.push_back(argument);
-          }
-        }
+      if (required && !function.isExternal()) {
+        sourceArgumentBlocks.emplace_back(&function.getBody().front(),
+                                          function.getNumArguments());
       }
     }
     if (isa<func::CallOp>(operation)) {
@@ -2142,11 +2139,13 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
     }
     rewriter.eraseOp(op);
   }
-  for (auto argument : llvm::reverse(sourceArguments)) {
-    if (!argument.use_empty()) {
+  for (auto [block, count] : sourceArgumentBlocks) {
+    if (llvm::any_of(
+            block->getArguments().take_front(count),
+            [](BlockArgument argument) { return !argument.use_empty(); })) {
       return moduleOp.emitError("unconverted QC argument uses");
     }
-    argument.getOwner()->eraseArgument(argument.getArgNumber());
+    block->eraseArguments(0, count);
   }
   bool remains = false;
   moduleOp.walk([&](Operation* op) {

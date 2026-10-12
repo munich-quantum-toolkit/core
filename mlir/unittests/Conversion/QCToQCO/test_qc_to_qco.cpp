@@ -44,6 +44,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OperationSupport.h"
@@ -985,6 +986,87 @@ TEST_F(QCToQCORegressionTest,
   EXPECT_EQ(ret.getOperand(0), helper.getArgument(0));
   EXPECT_EQ(ret.getOperand(2), helper.getArgument(2));
   EXPECT_TRUE(ret.getOperand(1).getDefiningOp<func::CallOp>());
+}
+
+TEST_F(QCToQCORegressionTest, PreservesWideInterleavedSignatures) {
+  constexpr unsigned numQubits = 1024;
+  std::string source = "module { func.func private @wide(";
+  for (unsigned i = 0; i < numQubits; ++i) {
+    if (i != 0) {
+      source += ", ";
+    }
+    const auto suffix = std::to_string(i);
+    source +=
+        "%a" + suffix + ": f64 {test.position = " + std::to_string(2 * i) +
+        " : i32}, %q" + suffix +
+        ": !qc.qubit {test.position = " + std::to_string(2 * i + 1) + " : i32}";
+  }
+  source += ") -> (f64, f64) { return %a0, %a" + std::to_string(numQubits - 1) +
+            " : f64, f64 } }";
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("wide");
+  const auto originalType = function.getFunctionType();
+  const auto originalAttrs = function.getAllArgAttrs();
+  SmallVector<Location> originalLocations;
+  for (auto argument : function.getArguments()) {
+    originalLocations.push_back(argument.getLoc());
+  }
+
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_EQ(function.getNumArguments(), 2 * numQubits);
+  ASSERT_EQ(function.getNumResults(), numQubits + 2);
+  EXPECT_EQ(function.getAllArgAttrs(), originalAttrs);
+  auto ret = cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_EQ(ret.getOperand(0), function.getArgument(0));
+  EXPECT_EQ(ret.getOperand(1), function.getArgument(2 * (numQubits - 1)));
+  for (unsigned i = 0; i < numQubits; ++i) {
+    EXPECT_TRUE(function.getArgument(2 * i).getType().isF64());
+    EXPECT_TRUE(isa<qco::QubitType>(function.getArgument(2 * i + 1).getType()));
+    EXPECT_EQ(ret.getOperand(i + 2), function.getArgument(2 * i + 1));
+  }
+  for (auto [argument, location] :
+       llvm::zip_equal(function.getArguments(), originalLocations)) {
+    EXPECT_EQ(argument.getLoc(), location);
+  }
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(function.getFunctionType(), originalType);
+  EXPECT_EQ(function.getAllArgAttrs(), originalAttrs);
+}
+
+TEST_F(QCToQCORegressionTest, RemapsRegisterIndexArguments) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @helper(%i: index, %reg: memref<4x!qc.qubit>,
+                                %angle: f64, %q: !qc.qubit) -> index {
+        %slot = memref.load %reg[%i] : memref<4x!qc.qubit>
+        qc.ry(%angle) %slot : !qc.qubit
+        qc.swap %slot, %q : !qc.qubit, !qc.qubit
+        return %i : index
+      }
+    })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  const auto originalType = function.getFunctionType();
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  const auto extracts = llvm::to_vector(function.getOps<qtensor::ExtractOp>());
+  ASSERT_FALSE(extracts.empty());
+  for (auto extract : extracts) {
+    EXPECT_EQ(extract.getIndex(), function.getArgument(0));
+  }
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(function.getFunctionType(), originalType);
+  auto ret = cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_EQ(ret.getOperand(0), function.getArgument(0));
 }
 
 TEST_F(QCToQCORegressionTest, RoundTripsUnitaryCallInNestedRegions) {
