@@ -143,8 +143,8 @@ TEST(ParameterBinding, RejectsMalformedJeffInputNameMetadata) {
                                           diagnostic += error.str();
                                           return mlir::success();
                                         });
-  EXPECT_FALSE(std::move(*jeff).intoQCO());
-  EXPECT_NE(diagnostic.find("failed to decode input name metadata"),
+  EXPECT_TRUE(mlir::failed(std::move(*jeff).intoQCO()));
+  EXPECT_NE(diagnostic.find("Metadata payload size must be a multiple"),
             std::string::npos)
       << diagnostic;
 }

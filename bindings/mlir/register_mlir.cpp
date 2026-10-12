@@ -2141,7 +2141,9 @@ returned program does not retain the buffers.)pb")
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             auto message = std::make_unique<capnp::MallocMessageBuilder>();
-            value.toMessage(*message);
+            withDiagnostics<nb::exception_type::runtime_error>(
+                value.module().getContext(), "cannot serialize jeff program",
+                [&] { return value.toMessage(*message); });
             const nb::capsule owner(message.get(), [](void* pointer) noexcept {
               delete static_cast<capnp::MallocMessageBuilder*>(pointer);
             });
@@ -2164,7 +2166,9 @@ segment data is copied or flattened.)pb")
           [](const mlir::JeffProgram& value) {
             requireValid(value);
             capnp::MallocMessageBuilder message;
-            value.toMessage(message);
+            withDiagnostics<nb::exception_type::runtime_error>(
+                value.module().getContext(), "cannot serialize jeff program",
+                [&] { return value.toMessage(message); });
             const auto serialized = capnp::messageToFlatArray(message);
             const auto bytes = serialized.asBytes();
             return nb::bytes(bytes.begin(), bytes.size());

@@ -120,6 +120,7 @@ static LogicalResult encodeInputNames(func::FuncOp function) {
   auto* context = function.getContext();
   const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
   const std::array<std::string, 1> names{key.str()};
+  auto result = success();
   auto exception = kj::runCatchingExceptions([&] {
     for (auto argument : function.getArguments()) {
       auto name =
@@ -127,15 +128,24 @@ static LogicalResult encodeInputNames(func::FuncOp function) {
       if (!name) {
         continue;
       }
+      auto existing = jeff::getMetadata(argument);
+      if (failed(existing)) {
+        result = failure();
+        return;
+      }
       capnp::MallocMessageBuilder message;
       auto entries = message.initRoot<capnp::List<::jeff::Meta>>(1);
       entries[0].setName(0);
       entries[0].getValue().setAs<capnp::Text>(name.getValue().str());
-      auto encoded =
-          jeff::deserializeMetadata(context, entries.asReader(), names);
+      auto encoded = jeff::deserializeMetadata(argument.getLoc(),
+                                               entries.asReader(), names);
+      if (failed(encoded)) {
+        result = failure();
+        return;
+      }
       SmallVector<Attribute> metadata;
-      if (auto existing = jeff::getMetadata(argument)) {
-        for (auto entry : existing) {
+      if (*existing) {
+        for (auto entry : *existing) {
           if (cast<DictionaryAttr>(entry)
                   .getAs<StringAttr>("name")
                   .getValue() != key) {
@@ -143,15 +153,18 @@ static LogicalResult encodeInputNames(func::FuncOp function) {
           }
         }
       }
-      metadata.push_back(encoded[0]);
-      jeff::setMetadata(argument, ArrayAttr::get(context, metadata));
+      metadata.push_back((*encoded)[0]);
+      result = jeff::setMetadata(argument, ArrayAttr::get(context, metadata));
+      if (failed(result)) {
+        return;
+      }
     }
   });
   KJ_IF_MAYBE (error, exception) {
     return function.emitError("failed to encode input name metadata: ")
            << error->getDescription().cStr();
   }
-  return success();
+  return result;
 }
 
 namespace {

@@ -73,21 +73,30 @@ static LogicalResult decodeInputNames(func::FuncOp function) {
   auto* context = function.getContext();
   const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
   const llvm::StringMap<uint16_t> names{{key, 0}};
+  auto result = success();
   auto exception = kj::runCatchingExceptions([&] {
     for (auto argument : function.getArguments()) {
       auto metadata = jeff::getMetadata(argument);
-      if (!metadata) {
+      if (failed(metadata)) {
+        result = failure();
+        return;
+      }
+      if (!*metadata) {
         continue;
       }
-      for (auto entry : metadata) {
+      for (auto entry : *metadata) {
         if (cast<DictionaryAttr>(entry).getAs<StringAttr>("name").getValue() !=
             key) {
           continue;
         }
         capnp::MallocMessageBuilder message;
         auto entries = message.initRoot<capnp::List<::jeff::Meta>>(1);
-        jeff::serializeMetadata(ArrayAttr::get(context, {entry}), entries,
-                                names);
+        if (failed(jeff::serializeMetadata(argument.getLoc(),
+                                           ArrayAttr::get(context, {entry}),
+                                           entries, names))) {
+          result = failure();
+          return;
+        }
         auto name = entries[0].getValue().getAs<capnp::Text>();
         function.setArgAttr(
             argument.getArgNumber(), key,
@@ -99,7 +108,7 @@ static LogicalResult decodeInputNames(func::FuncOp function) {
     return function.emitError("failed to decode input name metadata: ")
            << error->getDescription().cStr();
   }
-  return success();
+  return result;
 }
 
 /// Returns whether @p op carries a jeff gate modifier
