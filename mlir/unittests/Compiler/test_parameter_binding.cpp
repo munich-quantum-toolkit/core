@@ -13,18 +13,26 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "capnp/any.h"
+#include "capnp/list.h"
+#include "capnp/message.h"
+#include "capnp/serialize.h"
 #include "gtest/gtest.h"
+#include "jeff/Translation/Metadata.hpp"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Verifier.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
+#include <cstdint>
 #include <limits>
 #include <map>
 #include <string>
@@ -145,6 +153,53 @@ TEST(ParameterBinding, RejectsMalformedJeffInputNameMetadata) {
                                         });
   EXPECT_TRUE(mlir::failed(std::move(*jeff).intoQCO()));
   EXPECT_NE(diagnostic.find("Metadata payload size must be a multiple"),
+            std::string::npos)
+      << diagnostic;
+}
+
+TEST(ParameterBinding, RejectsNonTextJeffInputNameMetadata) {
+  auto qco = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @main(%theta: f64) attributes {mqt.entry_point} {
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(mlir::succeeded(qco));
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(mlir::succeeded(jeff));
+  capnp::MallocMessageBuilder message;
+  auto list =
+      message.getRoot<capnp::AnyPointer>().initAs<capnp::List<uint32_t>>(1);
+  list.set(0, 42);
+  auto words = capnp::messageToFlatArray(message);
+  auto bytes = words.asBytes();
+  auto* context = jeff->module().getContext();
+  auto metadata = mlir::DictionaryAttr::get(
+      context,
+      {
+          {
+              mlir::StringAttr::get(context, "name"),
+              mlir::StringAttr::get(context, "mqt.input_name"),
+          },
+          {
+              mlir::StringAttr::get(context, "value"),
+              mlir::DenseI8ArrayAttr::get(
+                  context,
+                  llvm::ArrayRef(reinterpret_cast<const int8_t*>(bytes.begin()),
+                                 bytes.size())),
+          },
+      });
+  auto function = jeff->module().lookupSymbol<mlir::func::FuncOp>("main");
+  ASSERT_TRUE(mlir::succeeded(mlir::jeff::setMetadata(
+      function.getArgument(0), mlir::ArrayAttr::get(context, {metadata}))));
+  std::string diagnostic;
+  mlir::ScopedDiagnosticHandler handler(context, [&](mlir::Diagnostic& error) {
+    diagnostic += error.str();
+    return mlir::success();
+  });
+  EXPECT_TRUE(mlir::failed(std::move(*jeff).intoQCO()));
+  EXPECT_NE(diagnostic.find("failed to decode input name metadata"),
             std::string::npos)
       << diagnostic;
 }

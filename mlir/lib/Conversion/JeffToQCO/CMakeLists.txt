@@ -6,9 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(LLVM_REQUIRES_EH ON)
-set(LLVM_REQUIRES_RTTI ON)
-
 file(GLOB CONVERSION_SOURCES *.cpp)
 
 add_mlir_conversion_library(
@@ -29,7 +26,3 @@ add_mlir_conversion_library(
   MLIRTransforms)
 
 mqt_mlir_target_use_project_options(MLIRJeffToQCO)
-
-if(TARGET obj.MLIRJeffToQCO)
-  target_link_libraries(obj.MLIRJeffToQCO PRIVATE MLIRJeffTranslation)
-endif()

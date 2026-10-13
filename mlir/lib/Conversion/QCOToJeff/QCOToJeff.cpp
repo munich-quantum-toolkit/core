@@ -22,16 +22,16 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/IntegerExpressions.h"
 
+#include "../JeffToQCO/CapnpDiagnostics.h"
+
 #include "capnp/any.h"
 #include "capnp/blob.h"
-#include "capnp/list.h"
 #include "capnp/message.h"
-#include "jeff.capnp.h"
+#include "capnp/serialize.h"
 #include "jeff/Conversion/NativeToJeff/NativeToJeff.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
 #include "jeff/Translation/Metadata.hpp"
-#include "kj/exception.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -75,7 +75,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSwitch.h"
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -119,52 +118,53 @@ static std::optional<int64_t> arraySize(MemRefType type) {
 static LogicalResult encodeInputNames(func::FuncOp function) {
   auto* context = function.getContext();
   const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
-  const std::array<std::string, 1> names{key.str()};
-  auto result = success();
-  auto exception = kj::runCatchingExceptions([&] {
-    for (auto argument : function.getArguments()) {
-      auto name =
-          function.getArgAttrOfType<StringAttr>(argument.getArgNumber(), key);
-      if (!name) {
-        continue;
-      }
-      auto existing = jeff::getMetadata(argument);
-      if (failed(existing)) {
-        result = failure();
-        return;
-      }
+  for (auto argument : function.getArguments()) {
+    auto name =
+        function.getArgAttrOfType<StringAttr>(argument.getArgNumber(), key);
+    if (!name) {
+      continue;
+    }
+    auto existing = jeff::getMetadata(argument);
+    if (failed(existing)) {
+      return failure();
+    }
+    mqt::CapnpDiagnosticHandler handler(argument.getLoc(),
+                                        "encode input name metadata");
+    DenseI8ArrayAttr payload;
+    {
       capnp::MallocMessageBuilder message;
-      auto entries = message.initRoot<capnp::List<::jeff::Meta>>(1);
-      entries[0].setName(0);
-      entries[0].getValue().setAs<capnp::Text>(name.getValue().str());
-      auto encoded = jeff::deserializeMetadata(argument.getLoc(),
-                                               entries.asReader(), names);
-      if (failed(encoded)) {
-        result = failure();
-        return;
-      }
-      SmallVector<Attribute> metadata;
-      if (*existing) {
-        for (auto entry : *existing) {
-          if (cast<DictionaryAttr>(entry)
-                  .getAs<StringAttr>("name")
-                  .getValue() != key) {
-            metadata.push_back(entry);
-          }
+      message.getRoot<capnp::AnyPointer>().setAs<capnp::Text>(
+          name.getValue().str());
+      auto words = capnp::messageToFlatArray(message);
+      auto bytes = words.asBytes();
+      payload = DenseI8ArrayAttr::get(
+          context, ArrayRef(reinterpret_cast<const int8_t*>(bytes.begin()),
+                            bytes.size()));
+    }
+    if (failed(handler.result())) {
+      return failure();
+    }
+    SmallVector<Attribute> metadata;
+    if (*existing) {
+      for (auto entry : *existing) {
+        if (cast<DictionaryAttr>(entry).getAs<StringAttr>("name").getValue() !=
+            key) {
+          metadata.push_back(entry);
         }
       }
-      metadata.push_back((*encoded)[0]);
-      result = jeff::setMetadata(argument, ArrayAttr::get(context, metadata));
-      if (failed(result)) {
-        return;
-      }
     }
-  });
-  KJ_IF_MAYBE (error, exception) {
-    return function.emitError("failed to encode input name metadata: ")
-           << error->getDescription().cStr();
+    metadata.push_back(DictionaryAttr::get(
+        context,
+        {
+            {StringAttr::get(context, "name"), StringAttr::get(context, key)},
+            {StringAttr::get(context, "value"), payload},
+        }));
+    if (failed(
+            jeff::setMetadata(argument, ArrayAttr::get(context, metadata)))) {
+      return failure();
+    }
   }
-  return result;
+  return success();
 }
 
 namespace {
