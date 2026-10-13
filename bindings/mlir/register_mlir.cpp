@@ -339,7 +339,16 @@ Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
 
 Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
 visited once, without expanding calls. Region terminators
-such as ``scf.yield`` are excluded.)pb");
+such as ``scf.yield`` are excluded.)pb")
+      .def(
+          "depth",
+          [](const T& program) {
+            requireValid(program);
+            return program.depth();
+          },
+          R"pb(Depth.
+
+TBD)pb");
 }
 
 [[nodiscard]] static qdmi::Device openQDMIDevice(
@@ -1548,7 +1557,10 @@ excludes nested modules.)pb")
               "See :meth:`QCProgram.control_flow_counts`.")
       .def_ro("operation_counts", &mlir::QuantumProgramInfo::operationCounts,
               "Full module operation histogram.\n\n"
-              "See :meth:`Program.operation_counts`.");
+              "See :meth:`Program.operation_counts`.")
+      .def_ro("depth", &mlir::QuantumProgramInfo::depth,
+              "Depth.\n\n"
+              "See :meth:``.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.

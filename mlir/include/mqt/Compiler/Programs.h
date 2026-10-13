@@ -66,6 +66,8 @@ struct QuantumProgramInfo {
   std::map<std::string, size_t> controlFlowCounts;
   /// All operations in the module, as in Program::operationCounts().
   std::map<std::string, size_t> operationCounts;
+  /// Depth of the program
+  size_t depth = 0;
 };
 
 /// The QIR profile represented by a QIR program.
@@ -254,6 +256,9 @@ public:
   /// Uses the rules of numGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
+  /// Calculate the depth
+  [[nodiscard]] size_t depth() const;
+
   /// Count entry-point gates by name.
   ///
   /// Uses the rules of numGates(). Controls on a single primitive gate add a
@@ -383,6 +388,9 @@ public:
   ///
   /// Uses the rules of QCProgram::numTwoQubitGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
+
+  /// Calculate the depth
+  [[nodiscard]] size_t depth() const;
 
   /// Count entry-point gates by name.
   ///

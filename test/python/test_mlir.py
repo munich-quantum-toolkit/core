@@ -1927,6 +1927,7 @@ def test_program_inspection(*, qco: bool) -> None:
     assert info.num_qubits == 2
     assert info.static_qubits == []
     assert not info.has_control_flow
+    assert info.depth == program.depth() == 3
     if isinstance(program, QCOProgram):
         program.to_qc()
     else:
@@ -1939,6 +1940,7 @@ def test_program_inspection(*, qco: bool) -> None:
         "gate_counts",
         "control_flow_counts",
         "operation_counts",
+        "depth",
     ):
         with pytest.raises(RuntimeError, match="consumed"):
             getattr(program, query)()
@@ -1980,6 +1982,7 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
         assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
         assert not info.has_control_flow
         assert info.static_qubits == []
+        assert info.depth == representation.depth() == circuit.depth()
 
 
 def test_program_inspection_static_and_unknown_widths() -> None:

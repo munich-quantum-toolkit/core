@@ -18,11 +18,13 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -34,6 +36,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace mlir {
 template <class Gate> static std::string gateName(Gate op) {
@@ -113,6 +116,73 @@ static void forEachGate(ModuleOp moduleOp,
   });
 }
 
+// Identify a QC qubit loaded from a register by its register and index.
+static std::optional<std::pair<Value, int64_t>> getQubitKey(Value qubit) {
+  auto load = qubit.getDefiningOp<memref::LoadOp>();
+  if (!load || load.getIndices().size() != 1) {
+    return std::nullopt;
+  }
+  std::optional<int64_t> index = getConstantIntValue(load.getIndices().front());
+  if (!index) {
+    return std::nullopt;
+  }
+  return std::make_pair(load.getMemRef(), *index);
+}
+
+// Set all qubits to their highest current depth, plus one if `addLayer`.
+static void
+walkDepth(ValueRange qubits, bool addLayer,
+          llvm::DenseMap<std::pair<Value, int64_t>, size_t>& depthOf) {
+  size_t maxDepth = 0;
+  for (Value qubit : qubits) {
+    if (auto key = getQubitKey(qubit)) {
+      maxDepth = std::max(maxDepth, depthOf.lookup(*key));
+    }
+  }
+  const size_t newDepth = addLayer ? maxDepth + 1 : maxDepth;
+  for (Value qubit : qubits) {
+    if (auto key = getQubitKey(qubit)) {
+      depthOf[*key] = newDepth;
+    }
+  }
+}
+
+static size_t computeDepth(ModuleOp moduleOp) {
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return 0;
+  }
+  llvm::DenseMap<std::pair<Value, int64_t>, size_t> depthOf;
+
+  entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
+    // Barriers implement UnitaryOpInterface, so check them first.
+    if (auto barrier = dyn_cast<qc::BarrierOp>(op)) {
+      walkDepth(barrier.getQubits(), /*addLayer=*/false, depthOf);
+    } else if (auto gate = dyn_cast<qc::UnitaryOpInterface>(op)) {
+      walkDepth(gate.getQubits(), /*addLayer=*/true, depthOf);
+    } else if (auto measure = dyn_cast<qc::MeasureOp>(op)) {
+      walkDepth(measure.getQubit(), /*addLayer=*/true, depthOf);
+    } else if (auto reset = dyn_cast<qc::ResetOp>(op)) {
+      walkDepth(reset.getQubit(), /*addLayer=*/true, depthOf);
+    } else if (isa<qco::BarrierOp, qco::UnitaryOpInterface, qco::MeasureOp,
+                   qco::ResetOp>(op)) {
+      // TODO: Compute the depth of QCO programs.
+    } else {
+      return WalkResult::advance();
+    }
+    // Count each gate atomically, including modifiers.
+    return WalkResult::skip();
+  });
+
+  size_t depth = 0;
+  for (const auto& [key, _depth] : depthOf) {
+    if (_depth > depth) {
+      depth = _depth;
+    }
+  }
+  return depth;
+}
+
 static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   QuantumProgramInfo info;
   auto entry = mqt::getEntryPoint(moduleOp);
@@ -179,6 +249,9 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
     info.numTwoQubitGates += numQubits == 2;
     ++info.gateCounts[gateName(op)];
   });
+
+  info.depth = computeDepth(moduleOp);
+
   return info;
 }
 QuantumProgramInfo QCProgram::inspect() const { return inspectProgram(mod()); }
@@ -219,6 +292,8 @@ std::map<std::string, size_t> QCProgram::controlFlowCounts() const {
   return countOperationsIf(mqt::getEntryPoint(mod()), isControlFlow);
 }
 
+size_t QCProgram::depth() const { return computeDepth(mod()); }
+
 size_t QCOProgram::numGates() const {
   return countGatesIf(mod(), [](size_t) { return true; });
 }
@@ -238,4 +313,7 @@ std::map<std::string, size_t> QCOProgram::gateCounts() const {
 std::map<std::string, size_t> QCOProgram::controlFlowCounts() const {
   return countOperationsIf(mqt::getEntryPoint(mod()), isControlFlow);
 }
+
+size_t QCOProgram::depth() const { return computeDepth(mod()); }
+
 } // namespace mlir

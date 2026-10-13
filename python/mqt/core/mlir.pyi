@@ -761,6 +761,13 @@ class QuantumProgramInfo:
         See :meth:`Program.operation_counts`.
         """
 
+    @property
+    def depth(self) -> int:
+        """Depth.
+
+        See :meth:``.
+        """
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
@@ -880,6 +887,12 @@ class QCProgram(Program):
         Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
         visited once, without expanding calls. Region terminators
         such as ``scf.yield`` are excluded.
+        """
+
+    def depth(self) -> int:
+        """Depth.
+
+        TBD
         """
 
     @property
@@ -1033,6 +1046,12 @@ class QCOProgram(Program):
         Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
         visited once, without expanding calls. Region terminators
         such as ``scf.yield`` are excluded.
+        """
+
+    def depth(self) -> int:
+        """Depth.
+
+        TBD
         """
 
     @property
