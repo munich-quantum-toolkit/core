@@ -831,7 +831,7 @@ def test_backend_qasm_serialization_failure(
 
 
 def test_backend_submits_qpy_and_prefers_it_to_qasm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A QPY-capable device receives a real binary circuit with its metadata."""
+    """A device receives QPY 13 for older Qiskit 2.x readers, including metadata."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
@@ -847,6 +847,7 @@ def test_backend_submits_qpy_and_prefers_it_to_qasm(monkeypatch: pytest.MonkeyPa
     payload, fmt = submissions[0]
     assert fmt == ProgramFormat.QPY
     assert isinstance(payload, bytes)
+    assert qpy.get_qpy_version(BytesIO(payload)) == 13
     restored = qpy.load(BytesIO(payload))
     assert restored == [qc]
     assert restored[0].metadata == qc.metadata

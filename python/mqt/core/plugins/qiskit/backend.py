@@ -222,11 +222,12 @@ def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
         backend: The backend whose native placements constrain the circuit.
 
     Returns:
-        One circuit encoded with Qiskit's default QPY version.
+        One circuit encoded with QPY version 13.
     """
     backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     with BytesIO() as buffer:
-        qpy.dump(circuit, buffer)
+        # QDMI does not negotiate QPY versions; use the Qiskit 2.x compatibility baseline.
+        qpy.dump(circuit, buffer, version=13)
         return buffer.getvalue()
 
 

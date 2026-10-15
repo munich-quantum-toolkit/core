@@ -64,7 +64,7 @@ def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
             circuits = qpy.load(buffer)
         except ImportError:
             raise
-        except (QiskitError, struct.error, EOFError, ValueError) as error:
+        except (QiskitError, struct.error, EOFError, ValueError, TypeError) as error:
             msg = f"Invalid or unsupported QPY input: {error}"
             raise ValueError(msg) from error
     return [QCProgram.from_qiskit(circuit) for circuit in circuits]

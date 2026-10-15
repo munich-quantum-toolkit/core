@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
@@ -22,6 +22,7 @@ from qiskit import QuantumCircuit
 from qiskit import qpy as qiskit_qpy
 from qiskit.circuit import IfElseOp, ParameterVector
 from qiskit.exceptions import MissingOptionalLibraryError
+from qiskit.qpy import formats
 from qiskit.quantum_info import Operator
 from qiskit_support import supports_qiskit_translation
 
@@ -110,6 +111,23 @@ def test_invalid_qpy_is_rejected(payload: bytes) -> None:
     """Malformed data and future format versions produce a QPY-specific diagnostic."""
     with pytest.raises(ValueError, match="Invalid or unsupported QPY input"):
         qpy.load(BytesIO(payload))
+
+
+def test_invalid_qpy_program_type_is_rejected() -> None:
+    """A corrupt program type in an otherwise valid archive is malformed input."""
+    stream = BytesIO()
+    qiskit_qpy.dump(QuantumCircuit(1), stream, version=13)
+    payload = bytearray(stream.getvalue())
+    payload[formats.FILE_HEADER_V10_SIZE] = ord("z")
+    with pytest.raises(ValueError, match="Invalid or unsupported QPY input") as raised:
+        qpy.load(BytesIO(payload))
+    assert isinstance(raised.value.__cause__, TypeError)
+
+
+def test_text_stream_is_rejected_as_caller_error() -> None:
+    """A text stream is an API type error, not a malformed binary archive."""
+    with pytest.raises(TypeError):
+        qpy.load(StringIO("not binary"))  # ty: ignore[invalid-argument-type] Invalid public input.
 
 
 @requires_translation

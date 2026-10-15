@@ -478,10 +478,13 @@ other format belongs to the package that owns the device, which registers its
 serializer through the same registry.
 
 The QPY serializer writes one Qiskit circuit directly as binary data, without
-compiler translation. It uses the installed Qiskit's default QPY version, which
-the receiving device must support. A device package can replace this serializer
-to select an older version. This submission path preserves Qiskit metadata and
-is distinct from {py:mod}`mqt.core.qpy`, which translates compiler programs.
+compiler translation. It uses QPY version 13 for compatibility with older Qiskit
+2.x readers because QDMI does not negotiate QPY versions. The receiver must
+still support the circuit's instructions. Features that require a newer QPY
+version cause serialization to fail; a device package can register a custom
+serializer to select a newer version supported by its receiver. This submission
+path preserves Qiskit metadata and is distinct from {py:mod}`mqt.core.qpy`,
+which translates compiler programs.
 
 A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a serializer that returns `str`:
