@@ -394,6 +394,13 @@ result = (c == "0111") && (reversed == "10");
 
 TEST(OpenQASM3EmissionTest, RoundTripsClassicalArrayStorageAndCopies) {
   for (const auto* body : {
+           R"qasm(array[int, 1] a = {1};
+             for int i in [0:1] {
+               bit result = 0;
+               if (result) { x q; }
+               result = 1;
+             }
+             if (a[0] == 1) { x q; })qasm",
            R"qasm(array[int, 4] a = {1, 2, 3, 4};
              x q; bit choice = measure q; reset q;
              int i = int(choice);
@@ -482,6 +489,24 @@ TEST(OpenQASM3EmissionTest, ArrayExportRetainsStorage) {
   ASSERT_TRUE(succeeded(source));
   EXPECT_NE(source->find("array[int, 2]"), std::string::npos);
   EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
+}
+
+TEST(OpenQASM3EmissionTest, ArrayExportPreservesInputParameters) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.1; input float theta; array[float, 1] angles = {theta}; "
+      "qubit q; U(angles[0], 0, 0) q; output bit result; result = measure q;",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  auto source = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(source));
+  EXPECT_NE(source->find("input float[64] theta;"), std::string::npos);
+  auto restored = qc::translateOpenQASMToQC(*source, &context);
+  ASSERT_TRUE(restored) << *source;
+  EXPECT_TRUE(succeeded(verify(*restored)));
+  auto entry = restored->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(entry);
+  EXPECT_EQ(entry.getNumArguments(), 1U);
 }
 
 TEST(OpenQASM3EmissionTest, RejectsArrayStorageOutsideTheSourceLimits) {

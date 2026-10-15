@@ -930,9 +930,10 @@ private:
     if (operation.getName().getDialectNamespace() ==
             cbit::CBitDialect::getDialectNamespace() ||
         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
-            memref::CopyOp, tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
-            qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
-            scf::IndexSwitchOp, ub::PoisonOp, arith::SelectOp>(&operation)) {
+            memref::CopyOp, tensor::ExtractOp, memref::DeallocOp, qc::AllocOp,
+            qc::DeallocOp, qc::StaticOp, qc::MeasureOp, qc::ResetOp,
+            qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, ub::PoisonOp,
+            arith::SelectOp>(&operation)) {
       return false;
     }
     if (auto loop = dyn_cast<scf::ForOp>(&operation)) {
