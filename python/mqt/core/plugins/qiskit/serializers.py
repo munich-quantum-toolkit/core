@@ -18,7 +18,7 @@ A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
 kind a format carries.
 
-MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers here. Every
+MQT Core registers its own OpenQASM 2, OpenQASM 3, and QPY serializers here. Every
 other format belongs to the package that owns the device. Such a package
 advertises its serializer through the ``mqt.core.qiskit.program_serializers``
 entry point group. The entry point name is the
@@ -31,7 +31,9 @@ IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
 ```
 
 :func:`register_program_serializer` does the same at run time. A registration
-takes precedence over an entry point for the same format.
+takes precedence over an entry point for the same format. The built-in QPY
+serializer is a fallback; existing QPY registrations and entry points take
+precedence over it.
 
 A device usually accepts several formats. :data:`PROGRAM_FORMAT_PREFERENCE`
 records which one to use, from most to least preferred, and
@@ -178,7 +180,7 @@ class _ProgramSerializerRegistry:
         self._load_state = _LoadState.NOT_STARTED
 
     @cached_property
-    def _serializers(self) -> dict[ProgramFormat, ProgramSerializer]:
+    def _serializers(self) -> dict[ProgramFormat, ProgramSerializer | None]:
         """Initialize the built-in serializers on first use."""
         from mqt.core.plugins.qiskit.backend import (  # ruff:ignore[import-outside-top-level] Avoid a circular import
             _serialize_to_qasm2,
@@ -204,7 +206,7 @@ class _ProgramSerializerRegistry:
         Raises:
             ValueError: If the format already has a serializer and ``replace`` is false.
         """
-        if not replace and fmt in self._serializers:
+        if not replace and self._serializers.get(fmt) is not None:
             msg = f"A program serializer for {fmt.name} is already registered. Pass replace=True to override it."
             raise ValueError(msg)
         self._serializers[fmt] = serializer
@@ -218,6 +220,8 @@ class _ProgramSerializerRegistry:
         """
         self._load_entry_points()
         self._serializers.pop(fmt, None)
+        if fmt is ProgramFormat.QPY:
+            self._serializers[fmt] = None  # Suppress the fallback after explicit removal.
 
     def get(self, fmt: ProgramFormat) -> ProgramSerializer | None:
         """Return the serializer for one program format.
@@ -229,6 +233,12 @@ class _ProgramSerializerRegistry:
             The serializer, or ``None`` if no package provides one.
         """
         self._load_entry_points()
+        if fmt is ProgramFormat.QPY and fmt not in self._serializers:
+            from mqt.core.plugins.qiskit.backend import (  # ruff:ignore[import-outside-top-level] Avoid a circular import
+                _serialize_to_qpy,
+            )
+
+            return _serialize_to_qpy
         return self._serializers.get(fmt)
 
     def _load_entry_points(self) -> None:

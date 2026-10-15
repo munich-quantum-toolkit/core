@@ -59,6 +59,11 @@ intermediate representation
   IR. A program representation used between a source language and final output
   so compiler analyses and transformations can operate on explicit structure.
 
+QPY
+  **Preferred term:** QPY. **Accepted aliases:** none. Qiskit's versioned binary
+  format for storing one or more quantum circuits. Core's Python QPY helpers
+  translate the circuit subset supported by its Qiskit compiler bridge.
+
 jeff
   **Preferred term:** jeff. **Accepted aliases:** none. A structured, extensible
   [interchange format for quantum programs](https://github.com/unitaryfoundation/jeff).

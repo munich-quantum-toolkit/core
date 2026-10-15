@@ -458,23 +458,30 @@ When you run a circuit, the backend:
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
-The built-in OpenQASM serializers validate circuit width and ordered operation
-placements against native QDMI metadata after preprocessing. They reject an
-invalid circuit before any job in its batch is submitted. This check uses the
-native device sites because a backend extension may hide sites from its public
-Target or use preprocessing to address them. It does not route circuits.
+The built-in OpenQASM and QPY serializers validate circuit width and ordered
+operation placements against native QDMI metadata after preprocessing. They
+reject an invalid circuit before any job in its batch is submitted. This check
+uses the native device sites because a backend extension may hide sites from its
+public Target or use preprocessing to address them. It does not route circuits.
 
 Control-flow instructions require explicit support in the backend's Target;
 their bodies are checked recursively using the enclosing circuit's qubits.
-Advertising OpenQASM 3 alone does not enable control flow. Custom serializers
-retain responsibility for validating the native programs they produce.
+Advertising OpenQASM 3 or QPY alone does not enable control flow. Custom
+serializers retain responsibility for validating the native programs they
+produce.
 
 ### Program Serializers
 
 A _program serializer_ turns one circuit into one program in one program format.
-MQT Core provides the serializers for OpenQASM 2 and OpenQASM 3. Every other
-format belongs to the package that owns the device, which registers its
+MQT Core provides the serializers for OpenQASM 2, OpenQASM 3, and QPY. Every
+other format belongs to the package that owns the device, which registers its
 serializer through the same registry.
+
+The QPY serializer writes one Qiskit circuit directly as binary data, without
+compiler translation. It uses the installed Qiskit's default QPY version, which
+the receiving device must support. A device package can replace this serializer
+to select an older version. This submission path preserves Qiskit metadata and
+is distinct from {py:mod}`mqt.core.qpy`, which translates compiler programs.
 
 A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a serializer that returns `str`:
@@ -517,7 +524,9 @@ register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
 ```
 
 Pass `replace=True` to take over a format that already has a serializer,
-including OpenQASM 2 and OpenQASM 3.
+including OpenQASM 2 and OpenQASM 3. QPY uses a built-in fallback: a package's
+QPY entry point or first explicit registration takes precedence without
+`replace=True`. Removing QPY from the registry disables the fallback too.
 
 A device usually accepts several formats. The backend walks them in the order of
 {py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
