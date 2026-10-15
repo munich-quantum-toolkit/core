@@ -1181,15 +1181,15 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   for (auto source : programs) {
     SCOPED_TRACE(source.str());
     auto qc = QCProgram::fromOpenQASMString(source.str());
-    ASSERT_TRUE(qc);
+    ASSERT_TRUE(mlir::succeeded(qc));
     auto program = std::move(*qc).intoQCO();
-    ASSERT_TRUE(program);
+    ASSERT_TRUE(mlir::succeeded(program));
     const auto beforeCleanup =
         qco::sample(mlir::mqt::getEntryPoint(program->module()), 4, 42);
     ASSERT_TRUE(succeeded(beforeCleanup));
     EXPECT_EQ(*beforeCleanup, (std::map<std::string, size_t>{{"1", 4}}));
-    ASSERT_TRUE(program->cleanup());
-    ASSERT_TRUE(program->runPassPipeline("mqt-qco-default"));
+    ASSERT_TRUE(mlir::succeeded(program->cleanup()));
+    ASSERT_TRUE(mlir::succeeded(program->runPassPipeline("mqt-qco-default")));
     EXPECT_TRUE(succeeded(verify(program->module())));
     EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
     const auto outcomes =
@@ -1199,13 +1199,13 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
     EXPECT_EQ(outcomes->begin()->first, "1");
     EXPECT_EQ(outcomes->begin()->second, 4);
     auto restored = std::move(*program).intoQC();
-    ASSERT_TRUE(restored);
+    ASSERT_TRUE(mlir::succeeded(restored));
     EXPECT_TRUE(succeeded(verify(restored->module())));
     auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
-    ASSERT_TRUE(qir);
+    ASSERT_TRUE(mlir::succeeded(qir));
     EXPECT_TRUE(succeeded(verify(qir->module())));
     const auto llvmIR = qir->llvmIR();
-    ASSERT_TRUE(llvmIR);
+    ASSERT_TRUE(mlir::succeeded(llvmIR));
     for (const auto* forbidden : {"@malloc", "@free", "@puts", "@abort"}) {
       EXPECT_EQ(llvmIR->find(forbidden), std::string::npos);
     }
@@ -1214,6 +1214,40 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
     std::vector<std::string> samples;
     ASSERT_EQ(session.sample(4, samples), 0);
     EXPECT_EQ(samples, (std::vector<std::string>(4, "1")));
+  }
+}
+
+TEST_F(CompilerPipelineTest, ClassicalArraysPreserveInputParameters) {
+  for (const bool bindInQCO : {false, true}) {
+    SCOPED_TRACE(bindInQCO);
+    auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.1;
+      input float theta;
+      array[float, 2] angles = {0.0, theta};
+      qubit q;
+      for int i in [0:1] { U(angles[i], 0, 0) q; }
+      output bit result;
+      result = measure q;
+    )qasm");
+    ASSERT_TRUE(mlir::succeeded(qc));
+    EXPECT_EQ(qc->parameters(), (std::vector<std::string>{"theta"}));
+    if (!bindInQCO) {
+      ASSERT_TRUE(
+          mlir::succeeded(qc->bindParameters({{"theta", std::numbers::pi}})));
+    }
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(mlir::succeeded(qco));
+    if (bindInQCO) {
+      EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"theta"}));
+      ASSERT_TRUE(
+          mlir::succeeded(qco->bindParameters({{"theta", std::numbers::pi}})));
+    }
+    EXPECT_TRUE(qco->parameters().empty());
+    EXPECT_TRUE(succeeded(verify(qco->module())));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
+    const auto outcomes =
+        qco::sample(mlir::mqt::getEntryPoint(qco->module()), 4, 42);
+    ASSERT_TRUE(succeeded(outcomes));
+    EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{"1", 4}}));
   }
 }
 
@@ -1235,9 +1269,9 @@ TEST_F(CompilerPipelineTest, ClassicalArrayRuntimeBoundsAreCheckedByDD) {
                     "qubit q; output bit result; " + index + access +
                     "result = measure q;";
       auto qc = QCProgram::fromOpenQASMString(source);
-      ASSERT_TRUE(qc);
+      ASSERT_TRUE(mlir::succeeded(qc));
       auto qco = std::move(*qc).intoQCO();
-      ASSERT_TRUE(qco);
+      ASSERT_TRUE(mlir::succeeded(qco));
       std::string diagnostic;
       {
         ScopedDiagnosticHandler handler(qco->module().getContext(),
@@ -1262,9 +1296,9 @@ TEST_F(CompilerPipelineTest, EmptyArrayAccessIsRejectedByDD) {
     qubit q;
     U(empty[i], 0, 0) q;
   )qasm");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(mlir::succeeded(qc));
   auto native = std::move(qc->copy()).intoQCO();
-  ASSERT_TRUE(native);
+  ASSERT_TRUE(mlir::succeeded(native));
   EXPECT_TRUE(
       failed(qco::sample(mlir::mqt::getEntryPoint(native->module()), 1, 42)));
 }
@@ -1277,19 +1311,19 @@ TEST_F(CompilerPipelineTest, PromotedClassicalArraysExportAcrossBackends) {
     output bit result;
     result = measure $0;
   )qasm");
-  ASSERT_TRUE(qc);
-  ASSERT_TRUE(qc->cleanup());
+  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(mlir::succeeded(qc->cleanup()));
   qc->module().walk([](Operation* op) {
     EXPECT_NE(op->getName().getDialectNamespace(), "memref");
   });
-  EXPECT_TRUE(qc->toOpenQASM3());
+  EXPECT_TRUE(mlir::succeeded(qc->toOpenQASM3()));
   auto qco = std::move(qc->copy()).intoQCO();
-  ASSERT_TRUE(qco);
-  EXPECT_TRUE(std::move(*qco).intoJeff());
+  ASSERT_TRUE(mlir::succeeded(qco));
+  EXPECT_TRUE(mlir::succeeded(std::move(*qco).intoJeff()));
   auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
-  ASSERT_TRUE(qir);
+  ASSERT_TRUE(mlir::succeeded(qir));
   const auto llvmIR = qir->llvmIR();
-  ASSERT_TRUE(llvmIR);
+  ASSERT_TRUE(mlir::succeeded(llvmIR));
   for (const auto* forbidden :
        {"alloca", "load ", "store ", "fmul ", "@malloc", "@free", "@abort"}) {
     EXPECT_EQ(llvmIR->find(forbidden), std::string::npos);
@@ -1308,8 +1342,8 @@ TEST_F(CompilerPipelineTest, BaseRejectsResidualClassicalArrayStorage) {
       return
     }
   })mlir");
-  ASSERT_TRUE(qc);
-  EXPECT_FALSE(std::move(*qc).intoQIR(QIRProfile::Base));
+  ASSERT_TRUE(mlir::succeeded(qc));
+  EXPECT_TRUE(mlir::failed(std::move(*qc).intoQIR(QIRProfile::Base)));
 }
 
 TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
@@ -1320,10 +1354,10 @@ TEST_F(CompilerPipelineTest, ClassicalArraysDoNotChangeQIRAllocationMode) {
       output bit result;
       result = measure $0;
     )qasm");
-    ASSERT_TRUE(qc);
+    ASSERT_TRUE(mlir::succeeded(qc));
     auto qir = std::move(*qc).intoQIR(profile);
-    ASSERT_TRUE(qir);
-    EXPECT_TRUE(qir->llvmIR());
+    ASSERT_TRUE(mlir::succeeded(qir));
+    EXPECT_TRUE(mlir::succeeded(qir->llvmIR()));
   }
 }
 

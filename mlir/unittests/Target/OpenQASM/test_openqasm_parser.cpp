@@ -639,11 +639,10 @@ if (int[2](value) == -1) {}
 
 TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",        "cal",     "defcal", "extern",
-      "box",           "let",        "end",     "return", "pragma",
-      "readonly",      "mutable",    "complex", "void",
-      "stretch",       "durationof", "delay",   "im",     "#dim",
-      "#pragma",
+      "defcalgrammar", "def",     "cal",     "defcal", "extern",
+      "box",           "let",     "end",     "return", "pragma",
+      "readonly",      "mutable", "complex", "void",   "stretch",
+      "durationof",    "delay",   "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -655,7 +654,7 @@ TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
               std::string::npos);
   }
 
-  for (const auto keyword : {"input", "array"}) {
+  for (const auto* keyword : {"input", "array"}) {
     SCOPED_TRACE(keyword);
     auto parsed = openqasm::frontend::parseOpenQASM(
         std::string("OPENQASM 3.1; int ") + keyword + " = 0;");
