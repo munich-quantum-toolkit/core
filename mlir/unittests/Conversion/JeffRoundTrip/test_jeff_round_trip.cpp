@@ -451,7 +451,7 @@ TEST(JeffRoundTripRegressionTest, PreservesOpenQASMArrayStorage) {
 
 TEST(JeffRoundTripRegressionTest, PreservesLiteralArraySnapshots) {
   MLIRContext context;
-  context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
+  context.loadDialect<func::FuncDialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main() -> tensor<4xi1> {
@@ -511,7 +511,7 @@ TEST(JeffRoundTripRegressionTest, RejectsExplicitRuntimeAssertions) {
 
 TEST(JeffRoundTripRegressionTest, PreservesArrayFunctionInterfaces) {
   MLIRContext context;
-  context.loadDialect<func::FuncDialect, jeff::JeffDialect>();
+  context.loadDialect<func::FuncDialect, mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main(%input: tensor<2xf64>) -> (tensor<2xf64>, tensor<2xi32>, f64) {
@@ -1309,9 +1309,9 @@ TEST(JeffRoundTripRegressionTest, AcceptsArrayLengthAfterSwitchUpdate) {
 
 TEST(JeffRoundTripRegressionTest, AcceptsFloatArrayLengthAfterSwitchUpdate) {
   MLIRContext context;
-  context
-      .loadDialect<arith::ArithDialect, func::FuncDialect,
-                   memref::MemRefDialect, qco::QCODialect, jeff::JeffDialect>();
+  context.loadDialect<arith::ArithDialect, func::FuncDialect,
+                      memref::MemRefDialect, qco::QCODialect,
+                      mlir::jeff::JeffDialect>();
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
       func.func @main(%select: i1) -> i32 {
