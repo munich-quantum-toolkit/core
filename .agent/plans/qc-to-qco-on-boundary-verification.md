@@ -1,8 +1,7 @@
 # Source-ordered QC → QCO on boundary verification
 
-Status: complete. Source-ordered conversion and targeted normalization are
-implemented and locally validated. End-to-end performance is mixed; whole-file
-C++ lint and human review remain merge gates.
+Status: implementation complete; current-main rebase validated. Historical
+end-to-end performance is mixed. Human review remains a merge gate.
 
 ## Scope and decisions
 
@@ -19,10 +18,10 @@ argument prefix in one operation. Individual middle insertions and erasures were
 quadratic for wide signatures; bulk replacement preserves interleaved argument
 order, attributes, and locations without that cost.
 
-Reusing preflight state only when normalization is skipped did not improve the
-selected workloads: OpenQASM register inputs always require normalization. That
-experiment is not retained. Normalization can invalidate source identities, so
-eliminating post-normalization collection needs a stronger invariant.
+The rebase onto `575acd1b9` retains main's #2756 preflight-state reuse when
+normalization is skipped. Recollect register accesses after normalization
+because it can invalidate source identities. The historical selected OpenQASM
+register workloads always normalized, so they do not measure this reuse path.
 
 Sampling the factor247 conversion identified region liveness cleanup inside the
 greedy normalizer as a substantial cost. Use MLIR's existing
@@ -37,14 +36,22 @@ included.
 
 ## Validation
 
-Both variants use the Release preset, standalone native builds, and the same
-assertion-free LLVM/MLIR 23.1.0 toolchain. Run the QCToQCO, QCOToQC, and
-Compiler GoogleTest targets under `build/release/mlir/unittests/` to reproduce
-the native checks. The current candidate passes 606 tests: 176 QCToQCO, 158
-QCOToQC, and 272 Compiler. Added tests cover interleaved call signatures with
-owned results, unitary calls inside nested regions, register aliasing exposed by
-index folding, wide interleaved signatures, and remapped register index
-arguments.
+The 2026-10-15 rebase passes 619 native tests: 176 QCToQCO, 154 QCOToQC, and 289
+Compiler, with two expected macOS `/dev/full` skips. Executable docs, repository
+lint, and whole-file C++ lint pass. The wide-signature test's string
+construction was adjusted for current lint; all 176 forward-conversion tests
+passed again. No benchmarks or sanitizer runs were repeated for this rebase.
+
+### Historical validation and performance
+
+Both historical variants use the Release preset, standalone native builds, and
+the same assertion-free LLVM/MLIR 23.1.0 toolchain. Run the QCToQCO, QCOToQC,
+and Compiler GoogleTest targets under `build/release/mlir/unittests/` to
+reproduce the native checks. The pre-rebase candidate passed 606 tests: 176
+QCToQCO, 158 QCOToQC, and 272 Compiler. Added tests cover interleaved call
+signatures with owned results, unitary calls inside nested regions, register
+aliasing exposed by index folding, wide interleaved signatures, and remapped
+register index arguments.
 
 AddressSanitizer with assertions passes all 176 forward-conversion tests. The
 converter and its test translation unit are instrumented; dependencies are not.
@@ -107,8 +114,6 @@ This is a native API comparison on selected Benchpress inputs, not a run of the
 pytest-benchmark suite. Each fresh process performs one timed call, with no
 warmup or adaptive calibration and a 600-second whole-process deadline. Three
 fixed-seed rounds on a shared desktop do not establish statistical significance
-for small differences. Two-qubit depth is not independently measured.
-Whole-changed-file C++ lint was attempted against the pinned revision but
-stopped before checking any files because clang-tidy 23 is unavailable locally.
-The supported conversion subset is unchanged; this work does not add support for
+for small differences. Two-qubit depth is not independently measured. The
+supported conversion subset is unchanged; this work does not add support for
 unstructured control flow.

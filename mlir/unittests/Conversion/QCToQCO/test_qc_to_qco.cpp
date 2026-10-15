@@ -996,10 +996,15 @@ TEST_F(QCToQCORegressionTest, PreservesWideInterleavedSignatures) {
       source += ", ";
     }
     const auto suffix = std::to_string(i);
-    source +=
-        "%a" + suffix + ": f64 {test.position = " + std::to_string(2 * i) +
-        " : i32}, %q" + suffix +
-        ": !qc.qubit {test.position = " + std::to_string(2 * i + 1) + " : i32}";
+    source.append("%a")
+        .append(suffix)
+        .append(": f64 {test.position = ")
+        .append(std::to_string(2 * i))
+        .append(" : i32}, %q")
+        .append(suffix)
+        .append(": !qc.qubit {test.position = ")
+        .append(std::to_string(2 * i + 1))
+        .append(" : i32}");
   }
   source += ") -> (f64, f64) { return %a0, %a" + std::to_string(numQubits - 1) +
             " : f64, f64 } }";
