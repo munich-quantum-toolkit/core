@@ -937,26 +937,6 @@ struct ConvertIntegerExpression final : ConversionPattern {
         !isa<arith::CmpIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
       return failure();
     }
-    if (isa<arith::IndexCastOp, arith::IndexCastUIOp>(op)) {
-      auto sourceType = dyn_cast<IntegerType>(op->getOperand(0).getType());
-      auto resultType = dyn_cast<IntegerType>(op->getResult(0).getType());
-      auto convertedType = cast<IntegerType>(
-          getTypeConverter()->convertType(op->getResult(0).getType()));
-      const auto sourceWidth =
-          sourceType ? sourceType.getWidth()
-                     : cast<IntegerType>(operands[0].getType()).getWidth();
-      const auto resultWidth =
-          resultType ? resultType.getWidth() : convertedType.getWidth();
-      if (sourceWidth > 64 || resultWidth > 64) {
-        return op->emitError(
-            "jeff supports general integer expressions only up to 64 bits");
-      }
-      rewriter.replaceOp(op,
-                         castInteger(rewriter, op->getLoc(), operands[0],
-                                     sourceWidth, convertedType, resultWidth,
-                                     isa<arith::IndexCastOp>(op)));
-      return success();
-    }
     if (isa<arith::SIToFPOp>(op)) {
       auto sourceType = dyn_cast<IntegerType>(op->getOperand(0).getType());
       if (!sourceType) {
