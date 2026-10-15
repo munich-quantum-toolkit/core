@@ -41,7 +41,9 @@ still leave a partial file.
 The circuit translation contract below also applies to QPY. This is not a
 lossless archive of arbitrary Qiskit objects, circuit metadata, or annotations.
 QPY input is parsed by Qiskit, not sandboxed by Core; load only trusted files.
-The native C++ APIs and `mqt-cc` do not read QPY files.
+Native Qiskit panics during loading become `ValueError`, with the original
+exception retained as the cause. Other circuit translation errors propagate. The
+native C++ APIs and `mqt-cc` do not read QPY files.
 
 ## Compiler targets
 

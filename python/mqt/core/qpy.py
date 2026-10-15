@@ -14,22 +14,39 @@ a lossless archive of arbitrary Qiskit objects or metadata.
 
 from __future__ import annotations
 
-__lazy_modules__ = {"contextlib", "io", "pathlib", "struct"}
+__lazy_modules__ = {"io", "pathlib", "struct"}
 
 import struct
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Generator, Iterable
     from typing import BinaryIO
 
     from mqt.core.mlir import CompilerTarget, QCOProgram, QCProgram
 
 __all__ = ["dump", "load"]
+
+
+@contextmanager
+def _qpy_native_panics() -> Generator[None, None, None]:
+    """Make Qiskit's native panics catchable without swallowing unrelated failures.
+
+    Raises:
+        ValueError: If Qiskit raises a PyO3 panic exception.
+    """
+    try:
+        yield
+    except BaseException as error:
+        # PyO3 has no importable panic class; use it directly if Qiskit exposes one.
+        if type(error).__module__ != "pyo3_runtime" or type(error).__name__ != "PanicException":
+            raise
+        msg = f"Invalid or unsupported QPY input: {error}"
+        raise ValueError(msg) from error
 
 
 def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
@@ -38,7 +55,8 @@ def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
     Requires Qiskit in the compiler bridge's supported version range. Qiskit
     validates the QPY format and version; Core validates each circuit. If any
     circuit is unsupported, the call raises rather than returning a partial list.
-    Dependency, I/O, and circuit translation errors propagate to the caller.
+    Native Qiskit panics become ValueError with the original exception as cause.
+    Other dependency, I/O, and circuit translation errors propagate to the caller.
 
     Args:
         file: Path or open binary stream. Caller-owned streams remain open and
@@ -49,7 +67,8 @@ def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
 
     Raises:
         ImportError: If Qiskit or a required QPY decoder dependency is missing.
-        ValueError: If the QPY data is malformed or its version is unsupported.
+        ValueError: If the QPY data is malformed, its version is unsupported,
+            or Qiskit's native code panics during decoding or conversion.
     """
     from qiskit import qpy  # ruff: ignore[import-outside-top-level] Optional dependency.
     from qiskit.exceptions import QiskitError  # ruff: ignore[import-outside-top-level] Optional dependency.
@@ -59,15 +78,17 @@ def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
     with (
         Path(file).open("rb") if isinstance(file, (str, PathLike)) else nullcontext(file) as stream,
         BytesIO(stream.read()) as buffer,
+        _qpy_native_panics(),
     ):
         try:
             circuits = qpy.load(buffer)
         except ImportError:
             raise
-        except (QiskitError, struct.error, EOFError, ValueError, TypeError) as error:
+        except (QiskitError, struct.error, EOFError, ValueError, TypeError, LookupError, AttributeError) as error:
             msg = f"Invalid or unsupported QPY input: {error}"
             raise ValueError(msg) from error
-    return [QCProgram.from_qiskit(circuit) for circuit in circuits]
+    with _qpy_native_panics():
+        return [QCProgram.from_qiskit(circuit) for circuit in circuits]
 
 
 def dump(

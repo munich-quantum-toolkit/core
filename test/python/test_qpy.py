@@ -124,6 +124,104 @@ def test_invalid_qpy_program_type_is_rejected() -> None:
     assert isinstance(raised.value.__cause__, TypeError)
 
 
+@pytest.mark.parametrize("version", [12, 13, qiskit_qpy.QPY_VERSION])
+@pytest.mark.parametrize("corruption", ["qubit_index", "gate_name"])
+def test_corrupt_qpy_instruction_is_rejected(version: int, corruption: str) -> None:
+    """Invalid operands and instructions fail in both Python and native QPY readers."""
+    circuit = QuantumCircuit(1, name="corrupt_instruction")
+    circuit.x(0)
+    stream = BytesIO()
+    qiskit_qpy.dump(circuit, stream, version=max(version, 13))
+    payload = bytearray(stream.getvalue())
+    # This parameter-free circuit has the same layout in QPY 12 and 13.
+    payload[6] = version
+    assert qiskit_qpy.load(BytesIO(payload)) == [circuit]
+    original, replacement = (
+        (b"XGateq\x00\x00\x00\x00", b"XGateq\x00\x00\x00\x01") if corruption == "qubit_index" else (b"XGate", b"Zzzzz")
+    )
+    assert payload.count(original) == 1
+    source = BytesIO(payload.replace(original, replacement))
+    with pytest.raises(ValueError, match="Invalid or unsupported QPY input"):
+        qpy.load(source)
+    assert not source.closed
+
+
+@pytest.mark.parametrize("stage", ["decode", "translate"])
+def test_native_qpy_panic_is_recoverable(monkeypatch: pytest.MonkeyPatch, stage: str) -> None:
+    """PyO3 panics become ordinary errors at either native boundary, retaining their cause."""
+    panic_type = type("PanicException", (BaseException,), {"__module__": "pyo3_runtime"})
+    error = panic_type("native Qiskit failure")
+    source = BytesIO()
+    qiskit_qpy.dump(QuantumCircuit(1), source, version=13)
+    source.seek(0)
+
+    def fail(value: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
+        raise error
+
+    if stage == "decode":
+        monkeypatch.setattr(qiskit_qpy, "load", fail)
+    else:
+        monkeypatch.setattr(QCProgram, "from_qiskit", fail)
+    with pytest.raises(ValueError, match="Invalid or unsupported QPY input") as raised:
+        qpy.load(source)
+    assert raised.value.__cause__ is error
+    assert not source.closed
+
+
+@pytest.mark.parametrize("stage", ["decode", "translate"])
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        KeyboardInterrupt,
+        SystemExit,
+        GeneratorExit,
+        MemoryError,
+        RuntimeError,
+        OSError,
+        ImportError,
+        type("PanicException", (BaseException,), {"__module__": __name__}),
+    ],
+)
+def test_unrelated_qpy_errors_propagate(
+    monkeypatch: pytest.MonkeyPatch, stage: str, error_type: type[BaseException]
+) -> None:
+    """The native panic guard must not relabel interrupts, resource errors, or other failures."""
+    error = error_type("not malformed QPY")
+    source = BytesIO()
+    qiskit_qpy.dump(QuantumCircuit(1), source, version=13)
+    source.seek(0)
+
+    def fail(value: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
+        raise error
+
+    if stage == "decode":
+        monkeypatch.setattr(qiskit_qpy, "load", fail)
+    else:
+        monkeypatch.setattr(QCProgram, "from_qiskit", fail)
+    with pytest.raises(error_type) as raised:
+        qpy.load(source)
+    assert raised.value is error
+    assert not source.closed
+
+
+@pytest.mark.parametrize("error_type", [ValueError, TypeError, LookupError, AttributeError])
+def test_qpy_translation_errors_are_preserved(monkeypatch: pytest.MonkeyPatch, error_type: type[Exception]) -> None:
+    """Decoder-specific error normalization does not change ordinary compiler errors."""
+    error = error_type("circuit translation failed")
+    source = BytesIO()
+    qiskit_qpy.dump(QuantumCircuit(1), source, version=13)
+    source.seek(0)
+
+    def fail(value: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
+        raise error
+
+    monkeypatch.setattr(QCProgram, "from_qiskit", fail)
+    with pytest.raises(error_type) as raised:
+        qpy.load(source)
+    assert raised.value is error
+    assert not source.closed
+
+
 def test_text_stream_is_rejected_as_caller_error() -> None:
     """A text stream is an API type error, not a malformed binary archive."""
     with pytest.raises(TypeError):
