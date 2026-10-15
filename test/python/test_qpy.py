@@ -13,7 +13,8 @@ from __future__ import annotations
 import subprocess
 import sys
 from io import BytesIO, StringIO
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -154,14 +155,10 @@ def test_native_qpy_panic_is_recoverable(monkeypatch: pytest.MonkeyPatch, stage:
     source = BytesIO()
     qiskit_qpy.dump(QuantumCircuit(1), source, version=13)
     source.seek(0)
-
-    def fail(value: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
-        raise error
-
     if stage == "decode":
-        monkeypatch.setattr(qiskit_qpy, "load", fail)
+        monkeypatch.setattr(qiskit_qpy, "load", Mock(side_effect=error))
     else:
-        monkeypatch.setattr(QCProgram, "from_qiskit", fail)
+        monkeypatch.setattr(QCProgram, "from_qiskit", Mock(side_effect=error))
     with pytest.raises(ValueError, match="Invalid or unsupported QPY input") as raised:
         qpy.load(source)
     assert raised.value.__cause__ is error
@@ -190,14 +187,10 @@ def test_unrelated_qpy_errors_propagate(
     source = BytesIO()
     qiskit_qpy.dump(QuantumCircuit(1), source, version=13)
     source.seek(0)
-
-    def fail(value: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
-        raise error
-
     if stage == "decode":
-        monkeypatch.setattr(qiskit_qpy, "load", fail)
+        monkeypatch.setattr(qiskit_qpy, "load", Mock(side_effect=error))
     else:
-        monkeypatch.setattr(QCProgram, "from_qiskit", fail)
+        monkeypatch.setattr(QCProgram, "from_qiskit", Mock(side_effect=error))
     with pytest.raises(error_type) as raised:
         qpy.load(source)
     assert raised.value is error
@@ -211,11 +204,7 @@ def test_qpy_translation_errors_are_preserved(monkeypatch: pytest.MonkeyPatch, e
     source = BytesIO()
     qiskit_qpy.dump(QuantumCircuit(1), source, version=13)
     source.seek(0)
-
-    def fail(value: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
-        raise error
-
-    monkeypatch.setattr(QCProgram, "from_qiskit", fail)
+    monkeypatch.setattr(QCProgram, "from_qiskit", Mock(side_effect=error))
     with pytest.raises(error_type) as raised:
         qpy.load(source)
     assert raised.value is error
@@ -312,10 +301,7 @@ def test_qpy_dependency_errors_are_preserved(monkeypatch: pytest.MonkeyPatch) ->
     """A missing legacy decoder dependency must not be mislabeled as corrupt input."""
     error = MissingOptionalLibraryError("symengine", "QPY load", "pip install symengine")
 
-    def missing_dependency(stream: object) -> NoReturn:  # ruff: ignore[unused-function-argument]
-        raise error
-
-    monkeypatch.setattr(qiskit_qpy, "load", missing_dependency)
+    monkeypatch.setattr(qiskit_qpy, "load", Mock(side_effect=error))
     with pytest.raises(MissingOptionalLibraryError) as raised:
         qpy.load(BytesIO())
     assert raised.value is error

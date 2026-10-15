@@ -52,11 +52,9 @@ def _qpy_native_panics() -> Generator[None, None, None]:
 def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
     """Load every circuit in a QPY file as a QC program, in file order.
 
-    Requires Qiskit in the compiler bridge's supported version range. Qiskit
-    validates the QPY format and version; Core validates each circuit. If any
-    circuit is unsupported, the call raises rather than returning a partial list.
-    Native Qiskit panics become ValueError with the original exception as cause.
-    Other dependency, I/O, and circuit translation errors propagate to the caller.
+    Requires Qiskit in the compiler bridge's supported version range. Unsupported
+    circuits fail the call without returning a partial list. Dependency, I/O,
+    and ordinary circuit translation errors propagate unchanged.
 
     Args:
         file: Path or open binary stream. Caller-owned streams remain open and
@@ -69,6 +67,7 @@ def load(file: str | PathLike[str] | BinaryIO) -> list[QCProgram]:
         ImportError: If Qiskit or a required QPY decoder dependency is missing.
         ValueError: If the QPY data is malformed, its version is unsupported,
             or Qiskit's native code panics during decoding or conversion.
+            The original exception is retained as the cause.
     """
     from qiskit import qpy  # ruff: ignore[import-outside-top-level] Optional dependency.
     from qiskit.exceptions import QiskitError  # ruff: ignore[import-outside-top-level] Optional dependency.

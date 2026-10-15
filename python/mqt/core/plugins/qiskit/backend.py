@@ -215,14 +215,10 @@ def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
 
 
 def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
-    """Serialize a circuit into a QPY binary program.
-
-    Args:
-        circuit: The circuit to serialize.
-        backend: The backend whose native placements constrain the circuit.
+    """Serialize a circuit after validating native placements.
 
     Returns:
-        One circuit encoded with QPY version 13.
+        One circuit encoded as QPY 13 bytes.
     """
     backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     with BytesIO() as buffer:

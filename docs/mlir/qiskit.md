@@ -23,27 +23,19 @@ programs = qpy.load("circuits.qpy")
 qpy.dump(programs, "output.qpy")
 ```
 
-{py:func}`~mqt.core.qpy.load` returns a list of `QCProgram` objects in file
-order, even for a single circuit. It raises if any circuit is unsupported; it
-does not return a partial list. {py:func}`~mqt.core.qpy.dump` accepts one
-`QCProgram` or `QCOProgram`, or an iterable of either. Export preserves the
-source programs, including on failure. Pass `target=` when export needs target
-site mapping or gate names, and `version=` to select a QPY format version
-supported by the installed Qiskit release. A newer QPY file may require a newer
-Qiskit version than Core currently supports.
+{py:func}`~mqt.core.qpy.load` imports all circuits as a list of `QCProgram`
+objects or raises without returning partial results.
+{py:func}`~mqt.core.qpy.dump` exports QC/QCO programs without consuming them.
+See these API references for stream ownership, error handling, and the optional
+`target=` and `version=` arguments. Newer QPY files can require a Qiskit version
+outside Core's supported range.
 
-Both functions accept paths or open binary streams. Caller-owned streams stay
-open and use their current position. The helpers buffer QPY data in memory;
-export finishes translation and serialization before opening the destination, so
-those failures do not truncate an existing file. I/O failures during writing can
-still leave a partial file.
-
-The circuit translation contract below also applies to QPY. This is not a
-lossless archive of arbitrary Qiskit objects, circuit metadata, or annotations.
-QPY input is parsed by Qiskit, not sandboxed by Core; load only trusted files.
-Native Qiskit panics during loading become `ValueError`, with the original
-exception retained as the cause. Other circuit translation errors propagate. The
-native C++ APIs and `mqt-cc` do not read QPY files.
+The helpers buffer QPY data in memory. Export finishes translation and
+serialization before opening the destination; write-time I/O failures can still
+leave partial output. The compiler bridge's circuit subset applies, not
+arbitrary Qiskit metadata or annotations. Load only trusted files: Qiskit parses
+the input without a sandbox. The native C++ APIs and `mqt-cc` do not read QPY
+files.
 
 ## Compiler targets
 
