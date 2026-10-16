@@ -10,6 +10,15 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "mqt.core.ir",
+    "mqt.core.ir.operations",
+    "mqt.core.ir.symbolic",
+    "qiskit.circuit",
+    "qiskit.circuit.classical",
+    "warnings",
+}
+
 import re
 import warnings
 from typing import TYPE_CHECKING, cast
@@ -18,8 +27,8 @@ from qiskit.circuit import AncillaRegister, Clbit
 from qiskit.circuit import ClassicalRegister as QiskitClassicalRegister
 from qiskit.circuit.classical import expr
 
-from ...ir import QuantumComputation
-from ...ir.operations import (
+from mqt.core.ir import QuantumComputation
+from mqt.core.ir.operations import (
     ComparisonKind,
     CompoundOperation,
     Control,
@@ -29,15 +38,15 @@ from ...ir.operations import (
     StandardOperation,
     SymbolicOperation,
 )
-from ...ir.symbolic import Expression, Term, Variable
+from mqt.core.ir.symbolic import Expression, Term, Variable
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from qiskit.circuit import IfElseOp, Instruction, ParameterExpression, QuantumCircuit, Qubit
 
-    from ...ir.operations import Operation
-    from ...ir.registers import ClassicalRegister
+    from mqt.core.ir.operations import Operation
+    from mqt.core.ir.registers import ClassicalRegister
 
 
 __all__ = ["qiskit_to_mqt"]

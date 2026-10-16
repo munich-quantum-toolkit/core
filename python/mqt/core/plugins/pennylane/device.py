@@ -10,6 +10,19 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "contextlib",
+    "mqt.core.plugins.pennylane.converter",
+    "mqt.core.plugins.pennylane.exceptions",
+    "mqt.core.qdmi",
+    "mqt.core.qdmi.driver",
+    "numpy",
+    "operator",
+    "pennylane.devices.preprocess",
+    "pennylane.transforms",
+    "pennylane.transforms.core",
+}
+
 import operator
 from contextlib import suppress
 from time import monotonic
@@ -28,27 +41,16 @@ from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, Sampl
 from pennylane.transforms import broadcast_expand, defer_measurements, split_non_commuting
 from pennylane.transforms.core import CompilePipeline
 
+from mqt.core.plugins.pennylane.converter import _ConvertedProgram, _ProgramConverter
+from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError as ExecutionError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedFormatError as UnsupportedFormatError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedOperationError as UnsupportedOperationError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneValidationError as ValidationError
 from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
-
-from .converter import _ConvertedProgram, _ProgramConverter
-from .exceptions import (
-    PennyLaneConfigurationError as ConfigurationError,
-)
-from .exceptions import (
-    PennyLaneExecutionError as ExecutionError,
-)
-from .exceptions import (
-    PennyLaneUnsupportedFormatError as UnsupportedFormatError,
-)
-from .exceptions import (
-    PennyLaneUnsupportedOperationError as UnsupportedOperationError,
-)
-from .exceptions import (
-    PennyLaneValidationError as ValidationError,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping, Sequence

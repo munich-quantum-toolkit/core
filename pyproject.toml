@@ -269,7 +269,7 @@ test-sources = []
 
 [tool.ruff]
 line-length = 120
-namespace-packages = [ "mqt" ]
+namespace-packages = [ "python/mqt" ]
 src = [ "python" ]
 preview = true
 fix = true
@@ -281,7 +281,7 @@ preview = true
 docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
-"test/python/**" = [ "INP001", "T20" ]
+"test/python/**" = [ "INP001", "T20", "TID252" ]
 "test/slurm/**" = [ "DOC201", "DOC501", "INP001" ]
 "docs/**" = [ "INP001", "T20" ]
 "noxfile.py" = [ "PLC0415", "T20", "TID251" ]
@@ -292,6 +292,9 @@ docstring-code-format = true
   "I002", # Allow missing `from __future__ import annotations` import
 ]
 "python/mqt/core/__main__.py" = [ "T201" ]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
 
 [tool.ruff.lint.isort]
 known-first-party = [ "mqt.core" ]
@@ -308,7 +311,6 @@ ignore = [
   "PLR2004", # Magic value used in comparison
   "S101",    # Use of assert detected
   "S404",    # `subprocess` module is possibly insecure
-  "TID252"  # Prefer absolute imports over relative imports from parent modules
 ]
 future-annotations = true
 
@@ -404,6 +406,15 @@ exclude_also = [
   "if TYPE_CHECKING:",
   "raise AssertionError",
   "raise NotImplementedError"
+]
+
+
+[tool.flake8-lazy.standalone]
+# Keep function re-exports eager when their names match their submodules
+lazy-exclude-modules = [
+  "mqt.core.load",
+  "mqt.core.plugins.qiskit.mqt_to_qiskit",
+  "mqt.core.plugins.qiskit.qiskit_to_mqt",
 ]
 
 

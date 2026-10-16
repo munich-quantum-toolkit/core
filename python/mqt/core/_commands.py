@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"importlib.metadata", "pathlib"}
+
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 

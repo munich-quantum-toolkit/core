@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"mqt.core._version", "pathlib", "sysconfig"}
+
 import sys
 
 # On Windows, add MQT Core's DLL directory to the search path.
@@ -26,8 +28,8 @@ if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] This is actual
     del _dll_patch
 
 
-from ._version import version as __version__
-from ._version import version_tuple as version_info
-from .load import load
+from mqt.core._version import version as __version__
+from mqt.core._version import version_tuple as version_info
+from mqt.core.load import load
 
 __all__ = ["__version__", "load", "version_info"]

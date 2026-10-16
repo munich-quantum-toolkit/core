@@ -13,6 +13,8 @@ Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 
 from __future__ import annotations
 
+__lazy_modules__ = {"collections", "datetime", "mqt.core.qdmi", "numbers", "qiskit.result", "qiskit.result.models"}
+
 import datetime
 from collections import Counter
 from numbers import Integral
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
 
     from qiskit.circuit import QuantumCircuit
 
-    from .backend import QDMIBackend
+    from mqt.core.plugins.qiskit.backend import QDMIBackend
 
 __all__ = ["QDMIJob"]
 

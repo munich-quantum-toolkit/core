@@ -13,6 +13,22 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "inspect",
+    "mqt.core.plugins.qiskit.exceptions",
+    "mqt.core.plugins.qiskit.job",
+    "mqt.core.plugins.qiskit.serializers",
+    "mqt.core.qdmi",
+    "mqt.core.qdmi.driver",
+    "numbers",
+    "qiskit",
+    "qiskit.circuit",
+    "qiskit.circuit.library",
+    "qiskit.primitives",
+    "qiskit.transpiler",
+    "warnings",
+}
+
 import inspect
 import warnings
 from numbers import Integral
@@ -29,11 +45,7 @@ from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
-from ...qdmi import Device as QDMIDevice
-from ...qdmi import Job as QDMIJobHandle
-from ...qdmi import ProgramFormat, is_binary_program_format
-from ...qdmi.driver import open_device
-from .exceptions import (
+from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     JobSubmissionError,
     TranslationError,
@@ -41,8 +53,12 @@ from .exceptions import (
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from .job import QDMIJob, _cancel_jobs
-from .serializers import preferred_program_formats, program_serializer, register_program_serializer
+from mqt.core.plugins.qiskit.job import QDMIJob, _cancel_jobs
+from mqt.core.plugins.qiskit.serializers import preferred_program_formats, program_serializer
+from mqt.core.qdmi import Device as QDMIDevice
+from mqt.core.qdmi import Job as QDMIJobHandle
+from mqt.core.qdmi import ProgramFormat, is_binary_program_format
+from mqt.core.qdmi.driver import open_device
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
@@ -51,8 +67,8 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
-    from ...typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
-    from .provider import QDMIProvider
+    from mqt.core.plugins.qiskit.provider import QDMIProvider
+    from mqt.core.typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
 
     # Type alias for parameter values
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
@@ -853,12 +869,3 @@ class QDMIBackend(BackendV2):
         except BaseException:
             _cancel_jobs(qdmi_jobs)
             raise
-
-
-# MQT Core owns the two OpenQASM formats and registers them through the same
-# registry as everyone else, so the backend walks one ordered list of formats
-# with no format-specific branch. `mqt.core.plugins.qiskit.__init__` imports this
-# module whenever Qiskit is installed, so both formats are available as soon as
-# the adapter is.
-register_program_serializer(ProgramFormat.QASM3, _serialize_to_qasm3)
-register_program_serializer(ProgramFormat.QASM2, _serialize_to_qasm2)

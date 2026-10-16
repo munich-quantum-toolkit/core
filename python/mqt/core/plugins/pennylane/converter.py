@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"math", "mqt.core.plugins.pennylane.exceptions", "mqt.core.qdmi", "pennylane"}
+
 import math
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -17,18 +19,11 @@ from typing import TYPE_CHECKING
 
 import pennylane as qp
 
+from mqt.core.plugins.pennylane.exceptions import PennyLaneTranslationError as TranslationError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedOperationError as UnsupportedOperationError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneValidationError as ValidationError
 from mqt.core.qdmi import Device as QDMIDevice
 from mqt.core.qdmi import ProgramFormat
-
-from .exceptions import (
-    PennyLaneTranslationError as TranslationError,
-)
-from .exceptions import (
-    PennyLaneUnsupportedOperationError as UnsupportedOperationError,
-)
-from .exceptions import (
-    PennyLaneValidationError as ValidationError,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping

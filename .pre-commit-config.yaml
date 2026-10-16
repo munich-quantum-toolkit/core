@@ -167,10 +167,19 @@ repos:
         types_or: [python, pyi, jupyter, markdown]
         priority: 7
 
+  ## Keep deferred Python imports in sync with their uses
+  - repo: https://github.com/henryiii/flake8-lazy
+    rev: v0.10.1
+    hooks:
+      - id: flake8-lazy
+        files: ^python/
+        args: [--apply=set, --line-length=120]
+        priority: 8
+
   ## Check Python types with ty
   - repo: https://github.com/astral-sh/ty-pre-commit
     rev: v0.0.84
     hooks:
       - id: ty
         args: [--no-install-project]
-        priority: 8
+        priority: 9

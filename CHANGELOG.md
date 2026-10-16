@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- ♻️ Defer selected Python imports until first use on Python 3.15. Older Python
+  versions retain eager imports. ([#2760]) ([**@denialhaag**])
+
 ### Fixed
 
 - 🐛 Fix dynamic circuit detection for symbolic gates and barriers ([#2722])
@@ -907,6 +912,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2760]: https://github.com/munich-quantum-toolkit/core/pull/2760
 [#2722]: https://github.com/munich-quantum-toolkit/core/pull/2722
 [#2714]: https://github.com/munich-quantum-toolkit/core/pull/2714
 [#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710

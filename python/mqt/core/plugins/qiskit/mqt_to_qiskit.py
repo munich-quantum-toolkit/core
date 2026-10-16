@@ -10,6 +10,16 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "math",
+    "mqt.core.ir",
+    "mqt.core.ir.operations",
+    "qiskit.circuit",
+    "qiskit.circuit.classical",
+    "qiskit.circuit.library",
+    "qiskit.transpiler.layout",
+}
+
 from math import pi
 from typing import TYPE_CHECKING
 
@@ -54,8 +64,8 @@ from qiskit.circuit.library import (
 )
 from qiskit.transpiler.layout import Layout, TranspileLayout
 
-from ...ir import Permutation
-from ...ir.operations import (
+from mqt.core.ir import Permutation
+from mqt.core.ir.operations import (
     ComparisonKind,
     CompoundOperation,
     Control,
@@ -70,8 +80,8 @@ if TYPE_CHECKING:
 
     from qiskit.circuit import Clbit, Gate, Qubit
 
-    from ...ir import QuantumComputation
-    from ...ir.operations import Operation
+    from mqt.core.ir import QuantumComputation
+    from mqt.core.ir.operations import Operation
 
 __all__ = ["mqt_to_qiskit"]
 

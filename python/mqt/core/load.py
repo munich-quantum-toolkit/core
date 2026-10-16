@@ -10,11 +10,13 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"mqt.core.ir", "pathlib"}
+
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .ir import QuantumComputation
+from mqt.core.ir import QuantumComputation
 
 if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
@@ -51,6 +53,6 @@ def load(input_circuit: QuantumComputation | str | os.PathLike[str] | QuantumCir
             return QuantumComputation.from_qasm(input_str)
         case _:
             # At this point, we know that the input is a Qiskit QuantumCircuit
-            from .plugins.qiskit import qiskit_to_mqt  # ruff:ignore[import-outside-top-level] lazy import
+            from mqt.core.plugins.qiskit import qiskit_to_mqt  # ruff:ignore[import-outside-top-level] lazy import
 
             return qiskit_to_mqt(input_circuit)
