@@ -100,14 +100,15 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
+static mlir::LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
 }
 
-static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
+static mlir::LogicalResult
+runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
@@ -175,11 +176,13 @@ TEST(QCToQIRAdaptiveNativeTest, UsesSharedAllocationVerifierForStandalonePass) {
   ASSERT_TRUE(succeeded(verify(*module)));
   ASSERT_EQ(context.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
   bool diagnosed = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnosed |= diagnostic.str().find("dynamic quantum allocations must be") !=
-                 std::string::npos;
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |=
+            diagnostic.str().find("dynamic quantum allocations must be") !=
+            std::string::npos;
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(diagnosed);
   EXPECT_TRUE(module->lookupSymbol<func::FuncOp>("main"));
@@ -229,10 +232,12 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleReturnsBeforeOutputPreparation) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   bool diagnosed = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnosed |= diagnostic.str().find("single return") != std::string::npos;
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |=
+            diagnostic.str().find("single return") != std::string::npos;
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(diagnosed);
   size_t returns = 0;
@@ -455,12 +460,13 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsafeOutputStores) {
     ASSERT_TRUE(module);
     ASSERT_TRUE(succeeded(verify(*module)));
     bool diagnosed = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      diagnosed |=
-          diagnostic.str().find("cannot fuse this measurement/store pair") !=
-          std::string::npos;
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          diagnosed |= diagnostic.str().find(
+                           "cannot fuse this measurement/store pair") !=
+                       std::string::npos;
+          return success();
+        });
     EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
     EXPECT_TRUE(diagnosed);
     auto main = module->lookupSymbol<func::FuncOp>("main");
@@ -552,12 +558,13 @@ TEST(QCToQIRAdaptiveNativeTest, PreservesClassicalStoreFusionBarriers) {
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     bool diagnosed = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      diagnosed |=
-          diagnostic.str().find("cannot fuse this measurement/store pair") !=
-          std::string::npos;
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          diagnosed |= diagnostic.str().find(
+                           "cannot fuse this measurement/store pair") !=
+                       std::string::npos;
+          return success();
+        });
     LoweringState state;
     EXPECT_EQ(succeeded(prepareClassicalResults(*moduleOp, state)), accepted);
     EXPECT_EQ(diagnosed, !accepted);
@@ -818,14 +825,15 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsRegisterCallsAtTheSharedBoundary) {
     auto module = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(module);
     bool diagnosed = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      std::string message;
-      llvm::raw_string_ostream stream(message);
-      diagnostic.print(stream);
-      diagnosed |= StringRef(message).contains(
-          "does not support CBit registers in calls");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &context, [&](mlir::Diagnostic& diagnostic) {
+          std::string message;
+          llvm::raw_string_ostream stream(message);
+          diagnostic.print(stream);
+          diagnosed |= StringRef(message).contains(
+              "does not support CBit registers in calls");
+          return success();
+        });
     EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
     EXPECT_TRUE(diagnosed);
   }
@@ -884,15 +892,16 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
   ASSERT_TRUE(succeeded(verify(*module)));
 
   size_t mixedRepresentationDiagnostics = 0;
-  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    mixedRepresentationDiagnostics += StringRef(message).contains(
-        "adaptive QIR conversion cannot merge returned and local CBit "
-        "registers");
-    return success();
-  });
+  const mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        std::string message;
+        llvm::raw_string_ostream stream(message);
+        diagnostic.print(stream);
+        mixedRepresentationDiagnostics += StringRef(message).contains(
+            "adaptive QIR conversion cannot merge returned and local CBit "
+            "registers");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_EQ(mixedRepresentationDiagnostics, 4);
 }
@@ -964,7 +973,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
   ASSERT_TRUE(succeeded(verify(*module)));
 
   bool sawExpectedDiagnostic = false;
-  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+  const mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic&
+                                                                diagnostic) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
@@ -1198,14 +1208,15 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |=
-        StringRef(message).contains("only supports generic memrefs for");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        std::string message;
+        llvm::raw_string_ostream stream(message);
+        diagnostic.print(stream);
+        sawExpectedDiagnostic |=
+            StringRef(message).contains("only supports generic memrefs for");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }

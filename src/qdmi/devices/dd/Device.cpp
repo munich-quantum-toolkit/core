@@ -22,8 +22,10 @@
 
 #include "Worker.hpp"
 #include "WorkerProtocol.hpp"
+#include "support/Diagnostics.hpp"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 
@@ -40,7 +42,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <iostream>
+#include <ios>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -56,6 +58,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -795,8 +798,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             } catch (const std::exception& error) {
               result.reset();
               worker->terminate();
-              std::cerr << "Could not release DDSIM worker: " << error.what()
-                        << '\n';
+              std::ignore = mqt::emitError(
+                  std::string("Could not release DDSIM worker: ") +
+                  error.what());
             }
           }
           device.decreaseRunningJobs();
@@ -833,12 +837,23 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
               ++result->counts_[shot];
             }
             if (response.state) {
-              result->dd_ = std::make_unique<dd::Package>(
-                  response.qubits, RESULT_PACKAGE_CONFIG);
+              auto package =
+                  dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
+              if (llvm::failed(package)) {
+                result.reset();
+                reusable = false;
+                return;
+              }
+              result->dd_ = std::move(*package);
               std::istringstream bytes(std::move(*response.state),
                                        std::ios::binary);
-              result->stateVecDD_ =
-                  result->dd_->deserialize<dd::vNode>(bytes, true);
+              auto state = result->dd_->deserialize<dd::vNode>(bytes, true);
+              if (llvm::failed(state)) {
+                result.reset();
+                reusable = false;
+                return;
+              }
+              result->stateVecDD_ = *state;
               const auto root = result->stateVecDD_;
               const auto qubits =
                   root.isTerminal() ? 0U : static_cast<uint32_t>(root.p->v) + 1;
@@ -854,13 +869,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         } catch (const std::exception& error) {
           result.reset();
           reusable = false;
-          std::cerr << "DDSIM worker failed: " << error.what() << '\n';
+          std::ignore = mqt::emitError(std::string("DDSIM worker failed: ") +
+                                       error.what());
         }
       });
     } catch (const std::exception& error) {
       execution->programs[index].status = QDMI_JOB_STATUS_FAILED;
       execution->finish();
-      std::cerr << "Could not schedule DDSIM program: " << error.what() << '\n';
+      std::ignore = mqt::emitError(
+          std::string("Could not schedule DDSIM program: ") + error.what());
     }
   }
   return QDMI_SUCCESS;
@@ -1036,7 +1053,8 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
   }
   std::call_once(stateVecSparseOnce_, [this] {
     stateVecSparse_.clear();
-    ::dd::traverseVector(
+    // The width check above guarantees representable basis indices.
+    std::ignore = ::dd::traverseVector(
         stateVecDD_,
         [this](const size_t index, const std::complex<::dd::fp>& amplitude) {
           stateVecSparse_.emplace_back(index, amplitude);
@@ -1129,7 +1147,8 @@ auto qdmi::dd::ProgramResult::getProbabilities(const size_t size, void* data,
     }
     const std::span probabilities(static_cast<double*>(data), dimension);
     std::ranges::fill(probabilities, 0.);
-    ::dd::traverseVector(
+    // The dense result size check also bounds every basis index.
+    std::ignore = ::dd::traverseVector(
         stateVecDD_, [probabilities](const size_t index,
                                      const std::complex<::dd::fp>& amplitude) {
           probabilities[index] = std::norm(amplitude);

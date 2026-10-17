@@ -15,6 +15,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -87,14 +88,15 @@ static void evaluateResidueLoop(scf::ForOp loop,
 TEST(GenerateProgramTest, BoundsQPEPayloadAtMaximumPrecision) {
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     SCOPED_TRACE(static_cast<int>(method));
-    const QPE benchmark({
+    const auto benchmark = ::mqt::test::value(QPE::create({
         .precision = QPEOptions::MAX_PRECISION,
-        .phase = Phase(std::numeric_limits<uint64_t>::max() - 1,
-                       std::numeric_limits<uint64_t>::max()),
+        .phase = ::mqt::test::value(
+            Phase::create(std::numeric_limits<uint64_t>::max() - 1,
+                          std::numeric_limits<uint64_t>::max())),
         .method = method,
-    });
+    }));
     auto program = generate(benchmark);
-    ASSERT_TRUE(mlir::succeeded(program));
+    ASSERT_TRUE(succeeded(program));
     EXPECT_LT(program->str().size(), 4096U);
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::Jeff);
@@ -112,17 +114,18 @@ TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
   constexpr auto maximum = std::numeric_limits<uint64_t>::max();
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     for (const auto phase : {
-             Phase(uint64_t{1} << 63U, maximum),
-             Phase(maximum - 2, maximum - 1),
-             Phase((uint64_t{1} << 63U) - 1, uint64_t{1} << 63U),
-             Phase(5, 12),
+             ::mqt::test::value(Phase::create(uint64_t{1} << 63U, maximum)),
+             ::mqt::test::value(Phase::create(maximum - 2, maximum - 1)),
+             ::mqt::test::value(
+                 Phase::create((uint64_t{1} << 63U) - 1, uint64_t{1} << 63U)),
+             ::mqt::test::value(Phase::create(5, 12)),
          }) {
       SCOPED_TRACE(static_cast<int>(method));
       SCOPED_TRACE(phase.numerator());
       SCOPED_TRACE(phase.denominator());
-      auto program = generate(
-          QPE{{.precision = precision, .phase = phase, .method = method}});
-      ASSERT_TRUE(mlir::succeeded(program));
+      auto program = generate(::mqt::test::value(QPE::create(
+          {.precision = precision, .phase = phase, .method = method})));
+      ASSERT_TRUE(succeeded(program));
       DenseMap<Value, Attribute> arguments;
       std::vector<uint64_t> residues;
       std::vector<double> angles;
@@ -159,10 +162,13 @@ TEST(GenerateProgramTest, ComputesExactQPEResiduesAtRuntime) {
 
 TEST(GenerateProgramTest, SamplesQPEAgainstReference) {
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
-    for (const auto phase : {Phase(3, 8), Phase(1, 3)}) {
+    for (const auto phase : {
+             ::mqt::test::value(Phase::create(3, 8)),
+             ::mqt::test::value(Phase::create(1, 3)),
+         }) {
       SCOPED_TRACE(static_cast<int>(method));
-      test::expectSamplingMatchesReference(
-          QPE{{.precision = 8, .phase = phase, .method = method}});
+      test::expectSamplingMatchesReference(::mqt::test::value(
+          QPE::create({.precision = 8, .phase = phase, .method = method})));
     }
   }
 }

@@ -15,18 +15,23 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "support/Diagnostics.hpp"
+
+#include "llvm/Support/LogicalResult.h"
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <stdexcept>
 
 namespace dd {
 
-void ComplexNumbers::setTolerance(fp tol) {
+llvm::LogicalResult ComplexNumbers::setTolerance(fp tol) {
   if (!std::isnormal(tol) || tol <= 0.) {
-    throw std::invalid_argument("DD tolerance must be positive and normal");
+    return ::mqt::emitError("DD tolerance must be positive and normal",
+                            ::mqt::ErrorCategory::InvalidArgument);
   }
   RealNumber::eps = tol;
+  return llvm::success();
 }
 
 fp ComplexNumbers::mag2(const Complex& a) noexcept {

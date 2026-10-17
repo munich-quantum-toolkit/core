@@ -13,11 +13,16 @@
 
 #pragma once
 
+#include "qdmi/common/Common.hpp"
+
 #include "Driver.hpp"
+
+#include "qdmi/constants.h"
+
+#include "llvm/Support/LogicalResult.h"
 
 #include <filesystem>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -55,8 +60,8 @@ mergeSessionConfig(DeviceSessionConfig merged,
 
 /// Construct a device session configuration from individual parameters.
 ///
-/// @throws std::invalid_argument If both an inline device configuration and a
-/// device configuration file are set.
+/// Returns QDMI_ERROR_INVALIDARGUMENT if both an inline device configuration
+/// and a device configuration file are set.
 [[nodiscard]] inline auto makeDeviceSessionConfig(
     std::optional<std::string> baseUrl, std::optional<std::string> token,
     std::optional<std::filesystem::path> authFile,
@@ -66,9 +71,11 @@ mergeSessionConfig(DeviceSessionConfig merged,
     std::optional<std::filesystem::path> deviceConfigFile,
     std::optional<std::string> custom1, std::optional<std::string> custom2,
     std::optional<std::string> custom3, std::optional<std::string> custom4,
-    std::optional<std::string> custom5) -> DeviceSessionConfig {
+    std::optional<std::string> custom5)
+    -> llvm::FailureOr<DeviceSessionConfig> {
   if (deviceConfig && deviceConfigFile) {
-    throw std::invalid_argument(
+    return qdmi::emitError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "device_config and device_config_file are mutually exclusive");
   }
   std::optional<DeviceConfigurationSource> configuration;
@@ -78,7 +85,7 @@ mergeSessionConfig(DeviceSessionConfig merged,
     configuration =
         FileDeviceConfiguration{.path = std::move(*deviceConfigFile)};
   }
-  return {
+  return DeviceSessionConfig{
       .baseUrl = std::move(baseUrl),
       .token = std::move(token),
       .authFile = std::move(authFile),

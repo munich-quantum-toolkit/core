@@ -76,8 +76,8 @@ static LLVM::ModuleFlagAttr findModuleFlag(ModuleOp moduleOp,
   return result;
 }
 
-static LogicalResult attachQIRMetadata(ModuleOp module,
-                                       bool useAdaptive = false) {
+static mlir::LogicalResult attachQIRMetadata(ModuleOp module,
+                                             bool useAdaptive = false) {
   PassManager manager(module.getContext());
   manager.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
   return manager.run(module);

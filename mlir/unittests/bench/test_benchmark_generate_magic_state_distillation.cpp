@@ -17,6 +17,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -57,8 +58,9 @@ static void expectDistillationCounts(QCProgram program,
 static void expectDistillationFaults(size_t levels, uint32_t errors,
                                      const std::string& expected,
                                      size_t shots = 4) {
-  auto program = generate(MagicStateDistillation({.levels = levels}));
-  ASSERT_TRUE(mlir::succeeded(program));
+  auto program = generate(
+      ::mqt::test::value(MagicStateDistillation::create({.levels = levels})));
+  ASSERT_TRUE(succeeded(program));
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
   SmallVector<qc::TOp> rotations;
   program->module().walk([&](qc::TOp op) {
@@ -91,8 +93,9 @@ TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
 TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
   for (const size_t levels : {1U, 2U, 3U, 4U, 8U}) {
     SCOPED_TRACE(levels);
-    auto program = generate(MagicStateDistillation({.levels = levels}));
-    ASSERT_TRUE(mlir::succeeded(program));
+    auto program = generate(
+        ::mqt::test::value(MagicStateDistillation::create({.levels = levels})));
+    ASSERT_TRUE(succeeded(program));
     auto moduleOp = program->module();
     EXPECT_EQ(test::countOps<memref::AllocOp>(moduleOp), 1U);
     moduleOp.walk([&](memref::AllocOp op) {
@@ -152,8 +155,9 @@ TEST(GenerateProgramTest,
 TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
   // Reject only the first child, retaining its ideal output state, as with a
   // check-only fault. Subsequent accepting children must not clear rejection.
-  auto program = generate(MagicStateDistillation({.levels = 2}));
-  ASSERT_TRUE(mlir::succeeded(program));
+  auto program = generate(
+      ::mqt::test::value(MagicStateDistillation::create({.levels = 2})));
+  ASSERT_TRUE(succeeded(program));
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
   const auto injected = program->module().walk([&](func::CallOp op) {
     if (op->getParentOfType<func::FuncOp>() == entryPoint) {

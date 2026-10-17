@@ -109,15 +109,20 @@ after workers become available again. DDSIM requires an LLVM build with
 threading enabled.
 
 One failing or cancelled program does not discard completed siblings. Cancelling
-a job stops its active workers and removes its queued work. If a worker crashes,
-its assigned program fails. DDSIM starts a new worker for future submissions; it
+a job stops its active workers and removes its queued work; wait timeouts leave
+the job running. Worker crashes, communication errors, and startup failures fail
+the assigned program without publishing incomplete results. The host and other
+programs remain usable. DDSIM starts a new worker for future submissions and
 does not automatically retry the failed program. The worker executable is
-installed beside the device library and must move with it.
+installed beside the device library and must move with it; use
+`mqt_copy_qdmi_runtime` to copy both into a native application.
 
 A common explicit seed is applied independently to each program, matching
 separate submissions. QIR output capture is indexed by program, like shots,
 counts, and state results. Worker reuse supports ordinary QDMI programs; it does
 not isolate arbitrary native process-global side effects between executions.
+This boundary contains DDSIM crashes; it is not a hostile-code sandbox and does
+not isolate other QDMI providers.
 
 ## QIR output capture
 

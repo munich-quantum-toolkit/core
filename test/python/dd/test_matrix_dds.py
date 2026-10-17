@@ -242,3 +242,13 @@ def test_invalid_identity_path(decisions: str) -> None:
     with pytest.raises(ValueError, match="invalid digit"):
         identity.get_entry_by_path(1, decisions)
     assert identity.get_entry_by_path(1, "3ignored") == 1
+
+
+def test_untracked_release() -> None:
+    """Reject an unbalanced release at the Python boundary."""
+    package = DDPackage(1)
+    gate = package.single_qubit_gate(np.array([[0, 1], [1, 0]], dtype=np.complex128), 0)
+    package.inc_ref_mat(gate)
+    package.dec_ref_mat(gate)
+    with pytest.raises(ValueError, match="Edge is not part of the root set"):
+        package.dec_ref_mat(gate)

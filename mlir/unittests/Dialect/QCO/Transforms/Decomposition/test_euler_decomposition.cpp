@@ -264,7 +264,7 @@ static void bindLeadingArguments(func::FuncOp funcOp, ArrayRef<double> values) {
   }
 }
 
-static LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
+static mlir::LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
   PassManager pm(mlirModule.getContext());
   pm.addPass(createCanonicalizerPass());
   return pm.run(mlirModule);
@@ -563,7 +563,7 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
     return isa<ROp>(op);
   case GPI:
     if (auto gate = dyn_cast<ROp>(op)) {
-      const auto angle = mqt::valueToConstantDouble(gate.getTheta());
+      const auto angle = mlir::mqt::valueToConstantDouble(gate.getTheta());
       return angle &&
              (*angle == std::numbers::pi || *angle == std::numbers::pi / 2.);
     }
@@ -716,7 +716,7 @@ static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
   EXPECT_EQ(after, rzsx) << "basis=" << basis.str();
 }
 
-static LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
+static mlir::LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
   PassManager pm(mlirModule.getContext());
   qco::FuseSingleQubitUnitaryRunsOptions opts;
   opts.basis = basis.str();

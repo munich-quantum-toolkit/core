@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/QPE.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -24,6 +26,7 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 namespace {
 
@@ -45,7 +48,10 @@ namespace {
     throw nb::value_error("phase denominator must fit in 64 bits");
   }
   const auto numerator = value.attr("numerator").attr("__mod__")(denominator);
-  return {nb::cast<uint64_t>(numerator), denominatorValue};
+  return ::mqt::bindings::invoke([&] {
+    return bench::Phase::create(nb::cast<uint64_t>(numerator),
+                                denominatorValue);
+  });
 }
 
 [[nodiscard]] nb::object asFraction(const bench::Phase& phase) {
@@ -60,8 +66,13 @@ void registerQPE(const nb::module_& m) {
   nb::class_<bench::Phase>(
       m, "Phase",
       R"pb(An exact phase :math:`\phi=p/q` in turns, reduced modulo one turn.)pb")
-      .def(nb::init<uint64_t, uint64_t>(), nb::kw_only(), "numerator"_a,
-           "denominator"_a)
+      .def(
+          "__init__",
+          [](bench::Phase* self, uint64_t numerator, uint64_t denominator) {
+            new (self) bench::Phase(::mqt::bindings::invoke(
+                [&] { return bench::Phase::create(numerator, denominator); }));
+          },
+          nb::kw_only(), "numerator"_a, "denominator"_a)
       .def_prop_ro("numerator", &bench::Phase::numerator,
                    R"pb(The reduced numerator :math:`p`.)pb")
       .def_prop_ro("denominator", &bench::Phase::denominator,
@@ -101,16 +112,22 @@ void registerQPE(const nb::module_& m) {
       .def_ro("method", &bench::QPEOptions::method, "The circuit method.");
 
   auto qpe = nb::class_<bench::QPE>(m, "QPE", "A validated QPE benchmark.");
-  qpe.def(nb::init<bench::QPEOptions>(), "options"_a)
+  qpe.def(
+         "__init__",
+         [](bench::QPE* self, bench::QPEOptions options) {
+           new (self) bench::QPE(::mqt::bindings::invoke(
+               [&] { return bench::QPE::create(options); }));
+         },
+         "options"_a)
       .def_prop_ro("options", &bench::QPE::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::QPE::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::QPE::probability, "outcome"_a,
+      .def("probability", bindResult(&bench::QPE::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::QPE::evaluate, "counts"_a,
+      .def("evaluate", bindResult(&bench::QPE::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -136,11 +153,12 @@ void registerQPE(const nb::module_& m) {
           [](const bench::QPE& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::qpeFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
+                  bindResult(&bench::qpeFromInstanceSpecificationJSON),
+                  "json"_a, nb::kw_only(),
+                  "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::qpeFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
+      .def_static("from_manifest_json", bindResult(&bench::qpeFromManifestJSON),
+                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

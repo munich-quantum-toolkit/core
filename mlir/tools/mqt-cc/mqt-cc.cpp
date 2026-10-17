@@ -41,6 +41,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -338,7 +339,7 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     return {};
   }
   pm.addPass(createJeffToQCO());
-  if (pm.run(*mod).failed()) {
+  if (failed(pm.run(*mod))) {
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
@@ -458,35 +459,30 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if ((!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) ||
-      reportQDMIErrorIf(!qdmiDevice.empty() && hasExplicitTarget,
-                        "--qdmi-device and --target are mutually exclusive.")
-          .failed() ||
-      reportQDMIErrorIf(
+  if ((!qdmiConfig.empty() && failed(configureQDMIRegistry(qdmiConfig))) ||
+      failed(reportQDMIErrorIf(
+          !qdmiDevice.empty() && hasExplicitTarget,
+          "--qdmi-device and --target are mutually exclusive.")) ||
+      failed(reportQDMIErrorIf(
           qdmiListDevices && hasTarget,
-          "--qdmi-list-devices cannot be combined with target compilation.")
-          .failed() ||
-      reportQDMIErrorIf(hasTarget == payloadSpecification.empty(),
-                        "--qdmi-device or --target and --payload-spec must be "
-                        "provided together.")
-          .failed() ||
-      reportQDMIErrorIf(
+          "--qdmi-list-devices cannot be combined with target compilation.")) ||
+      failed(reportQDMIErrorIf(
+          hasTarget == payloadSpecification.empty(),
+          "--qdmi-device or --target and --payload-spec must be "
+          "provided together.")) ||
+      failed(reportQDMIErrorIf(
           hasTarget && outputFormat.getNumOccurrences() != 0 &&
               outputFormat != "qco-optimized",
           "Only --emit=qco-optimized can be combined with target compilation; "
-          "--payload-spec selects the executable output.")
-          .failed() ||
-      reportQDMIErrorIf(
+          "--payload-spec selects the executable output.")) ||
+      failed(reportQDMIErrorIf(
           !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
-          "--qdmi-config requires --qdmi-device or --qdmi-list-devices.")
-          .failed()) {
+          "--qdmi-config requires --qdmi-device or --qdmi-list-devices."))) {
     return 1;
   }
   if (qdmiListDevices) {
     auto deviceIds = registeredQDMIDeviceIds();
-    if (!deviceIds) {
-      llvm::errs() << "Failed to list configured QDMI devices: "
-                   << llvm::toString(deviceIds.takeError()) << '\n';
+    if (failed(deviceIds)) {
       return 1;
     }
     for (const auto& id : *deviceIds) {
@@ -513,25 +509,20 @@ static int runCompiler(int argc, char** argv) {
 
   std::optional<CompilerTarget> compilerTarget;
   if (hasTarget) {
-    if (reportQDMIErrorIf(
+    if (failed(reportQDMIErrorIf(
             passPipeline.getNumOccurrences() != 0,
-            "Target compilation cannot be combined with --pass-pipeline.")
-            .failed() ||
-        reportQDMIErrorIf(
+            "Target compilation cannot be combined with --pass-pipeline.")) ||
+        failed(reportQDMIErrorIf(
             enableDecomposeMultiControlled,
             "Target compilation cannot be combined with "
             "--decompose-multi-controlled; target compilation already "
-            "performs the required decomposition.")
-            .failed()) {
+            "performs the required decomposition."))) {
       return 1;
     }
   }
   if (!qdmiDevice.empty()) {
     auto target = compilerTargetFromDeviceId(qdmiDevice.getValue());
-    if (!target) {
-      llvm::errs() << "Failed to create compiler target from QDMI device '"
-                   << qdmiDevice << "': " << llvm::toString(target.takeError())
-                   << '\n';
+    if (failed(target)) {
       return 1;
     }
     compilerTarget.emplace(std::move(*target));
@@ -552,16 +543,14 @@ static int runCompiler(int argc, char** argv) {
                                ? Attribute{}
                                : parseAttribute(targetText, context.get());
     const auto targetAttr =
-        dyn_cast_if_present<mqt::CompilationTargetAttr>(attribute);
+        dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(attribute);
     if (!targetAttr) {
       llvm::errs()
           << "--target must be a valid #mqt.compilation_target attribute.\n";
       return 1;
     }
     auto target = CompilerTarget::create(targetAttr);
-    if (!target) {
-      llvm::errs() << "Invalid --target: " << llvm::toString(target.takeError())
-                   << '\n';
+    if (failed(target)) {
       return 1;
     }
     compilerTarget.emplace(std::move(*target));
@@ -571,16 +560,14 @@ static int runCompiler(int argc, char** argv) {
   if (!payloadSpecification.empty()) {
     const auto attribute = parseAttribute(payloadSpecification, context.get());
     const auto payloadAttr =
-        dyn_cast_if_present<mqt::PayloadSpecAttr>(attribute);
+        dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(attribute);
     if (!payloadAttr) {
       llvm::errs()
           << "--payload-spec must be a valid #mqt.payload_spec attribute.\n";
       return 1;
     }
     auto payload = PayloadSpecification::create(payloadAttr);
-    if (!payload) {
-      llvm::errs() << "Invalid --payload-spec: "
-                   << llvm::toString(payload.takeError()) << '\n';
+    if (failed(payload)) {
       return 1;
     }
     selectedPayload.emplace(std::move(*payload));
@@ -589,8 +576,7 @@ static int runCompiler(int argc, char** argv) {
   std::optional<TargetEnvironment> targetEnvironment;
   if (compilerTarget) {
     auto compilerOutput = selectedPayload->compilerOutput();
-    if (!compilerOutput) {
-      llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
+    if (failed(compilerOutput)) {
       return 1;
     }
     if (outputFormat.getNumOccurrences() == 0) {
@@ -756,7 +742,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        pm.addPass(mlir::mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -828,12 +814,11 @@ static int runCompiler(int argc, char** argv) {
             ? std::optional(
                   targetEnvironment->payloadSpecification().format().encoding)
             : std::nullopt;
-    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename, qirEncoding)
-            .failed()) {
+    if (failed(writeOutput<llvm::Module*>(llvmMod.get(), outputFilename,
+                                          qirEncoding))) {
       return 1;
     }
-  } else if (writeOutput<ModuleOp>(program.mod.get(), outputFilename)
-                 .failed()) {
+  } else if (failed(writeOutput<ModuleOp>(program.mod.get(), outputFilename))) {
     return 1;
   }
 

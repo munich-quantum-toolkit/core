@@ -19,6 +19,8 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -321,7 +323,7 @@ TEST(WeylDecompositionStandalone, Random) {
 TEST(WeylDecompositionStandalone, NearUnitaryNonconvergenceReturnsFailure) {
   auto target = Matrix4x4::identity();
   target(0, 3) = 4e-11;
-  ASSERT_TRUE(isUnitaryMatrix(target, mqt::DENSE_UNITARY_TOLERANCE));
+  ASSERT_TRUE(isUnitaryMatrix(target, mlir::mqt::DENSE_UNITARY_TOLERANCE));
 
   EXPECT_FALSE(TwoQubitWeylDecomposition::create(target, std::nullopt));
   EXPECT_FALSE(
@@ -337,7 +339,7 @@ TEST(WeylDecompositionStandalone,
      NearUnitaryReconstructionFailureReturnsFailure) {
   auto target = Matrix4x4::identity();
   target(0, 0) += 4e-11;
-  ASSERT_TRUE(isUnitaryMatrix(target, mqt::DENSE_UNITARY_TOLERANCE));
+  ASSERT_TRUE(isUnitaryMatrix(target, mlir::mqt::DENSE_UNITARY_TOLERANCE));
 
   // Its real symmetric M2 can be diagonalized, but the normalized local
   // factors cannot reconstruct the input within the Weyl tolerance.
@@ -552,7 +554,7 @@ struct Synthesized2QCircuit {
 
 [[nodiscard]] static FailureOr<Matrix4x4>
 computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
-  auto dd = std::make_unique<dd::Package>(2);
+  auto dd = ::mqt::test::value(dd::Package::create(2));
   auto u = buildFunctionality(funcOp, *dd);
   if (failed(u)) {
     return failure();

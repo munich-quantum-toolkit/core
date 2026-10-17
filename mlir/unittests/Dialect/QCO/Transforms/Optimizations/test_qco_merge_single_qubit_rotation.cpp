@@ -259,7 +259,7 @@ protected:
   }
 
   /// Adds the mergeRotationGates Pass to the current context and runs it.
-  static LogicalResult runMergePass(ModuleOp module) {
+  static mlir::LogicalResult runMergePass(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(qco::createMergeSingleQubitRotationGates());
     return pm.run(module);

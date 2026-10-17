@@ -16,6 +16,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRSupport
+  MQT::CoreSupport
   MLIRIR
   MLIRArithDialect
   MLIRLLVMDialect

@@ -50,7 +50,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    memref::MemRefDialect, mqt::MQTDialect, scf::SCFDialect>();
+                    memref::MemRefDialect, mlir::mqt::MQTDialect,
+                    scf::SCFDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -97,7 +98,7 @@ TEST_F(CBitToMemRefTest, LowersInitializationLoadsAndStores) {
   moduleOp->walk([&](memref::AllocOp alloc) {
     ++allocations;
     if (const auto name = alloc->getAttrOfType<StringAttr>(
-            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+            mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
       registerName = name;
     }
   });

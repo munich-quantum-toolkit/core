@@ -67,14 +67,14 @@ protected:
     context.loadAllAvailableDialects();
   }
 
-  [[nodiscard]] LogicalResult runRoundTrip(ModuleOp moduleOp) {
+  [[nodiscard]] mlir::LogicalResult runRoundTrip(ModuleOp moduleOp) {
     PassManager pm(&context);
     pm.addPass(createQCToQCO());
     pm.addPass(createQCOToQC());
     return pm.run(moduleOp);
   }
 
-  [[nodiscard]] LogicalResult runReverseRoundTrip(ModuleOp moduleOp) {
+  [[nodiscard]] mlir::LogicalResult runReverseRoundTrip(ModuleOp moduleOp) {
     PassManager pm(&context);
     pm.addPass(createQCOToQC());
     pm.addPass(createQCToQCO());

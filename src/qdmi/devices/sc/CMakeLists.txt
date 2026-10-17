@@ -11,8 +11,12 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-config)
 if(NOT TARGET ${TARGET_NAME})
 
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig FORCE_STATIC HIDDEN_VISIBILITY)
+  mqt_target_disable_exceptions(${TARGET_NAME})
+  mqt_source_enable_exceptions(Configuration.cpp)
 
   target_sources(${TARGET_NAME} PRIVATE Configuration.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
+  target_link_libraries(${TARGET_NAME} PUBLIC qdmi::qdmi MQT::CoreQDMICommon)
 
   target_sources(
     ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
@@ -47,6 +51,14 @@ if(NOT TARGET ${TARGET_NAME})
                                        ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
+
+  # Keep embedded configuration and diagnostic code private to the provider.
+  if(APPLE)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_${QDMI_PREFIX}_QDMI_*")
+  elseif(UNIX)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
+  endif()
+  set_target_properties(${TARGET_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
 
   mqt_configure_qdmi_device(
     ${TARGET_NAME}

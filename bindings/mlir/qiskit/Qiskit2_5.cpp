@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "QiskitTranslation.h"
+#include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
@@ -2925,13 +2926,6 @@ public:
     return versionGate(gate) != nullptr;
   }
 
-  template <class T> static T takeTargetResult(llvm::Expected<T> result) {
-    if (!result) {
-      throw nb::value_error(llvm::toString(result.takeError()).c_str());
-    }
-    return std::move(*result);
-  }
-
   static nb::object targetObject(nb::handle source) {
     auto target = nb::borrow<nb::object>(source);
     if (nb::isinstance(
@@ -3090,22 +3084,26 @@ public:
         }
         std::ranges::sort(sites);
         for (auto& tuple : sites) {
-          siteTuples.push_back(
-              takeTargetResult(Target::SiteTuple::create(std::move(tuple))));
+          siteTuples.push_back(::mqt::bindings::invoke(
+              [&] { return Target::SiteTuple::create(std::move(tuple)); }));
         }
       }
-      auto capability = takeTargetResult(Target::OperationCapability::create(
-          operationName, arity, numParameters, std::move(siteTuples),
-          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
-          std::move(parameterBounds)));
+      auto capability = ::mqt::bindings::invoke([&] {
+        return Target::OperationCapability::create(
+            operationName, arity, numParameters, std::move(siteTuples),
+            std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
+            std::move(parameterBounds));
+      });
       operations.push_back(std::move(capability));
     }
     if (operations.empty()) {
       throw nb::value_error(
           "Qiskit target has no representable native operations");
     }
-    operations.push_back(takeTargetResult(Target::OperationCapability::create(
-        "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    operations.push_back(::mqt::bindings::invoke([&] {
+      return Target::OperationCapability::create(
+          "gphase", Target::OperationCapability::Arity::fixed(0), 1);
+    }));
     return Target::NativeOperations::fromOperations(operations);
   }
 
@@ -3154,10 +3152,12 @@ public:
             ? Target::Connectivity::allToAll()
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
-    return takeTargetResult(
-        targetName ? Target::create(*targetName, numQubits, connectivity,
-                                    nativeOperations)
-                   : Target::create(numQubits, connectivity, nativeOperations));
+    return ::mqt::bindings::invoke([&] {
+      return targetName
+                 ? Target::create(*targetName, numQubits, connectivity,
+                                  nativeOperations)
+                 : Target::create(numQubits, connectivity, nativeOperations);
+    });
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>

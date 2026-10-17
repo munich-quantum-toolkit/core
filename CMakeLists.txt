@@ -59,6 +59,12 @@ endif()
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
+if(BUILD_MQT_CORE_BINDINGS AND NOT BUILD_MQT_CORE_SHARED_LIBS)
+  message(
+    FATAL_ERROR
+      "BUILD_MQT_CORE_BINDINGS requires BUILD_MQT_CORE_SHARED_LIBS=ON to share diagnostic handlers across Python modules"
+  )
+endif()
 option(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE "Build the MQT Core DDSIM QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI device"
@@ -125,6 +131,9 @@ endif()
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
+  if(NOT BUILD_MQT_CORE_QDMI_SC_DEVICE OR NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
+    message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
+  endif()
   enable_testing()
   include(GoogleTest)
   add_subdirectory(test)

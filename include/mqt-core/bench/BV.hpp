@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -41,16 +43,20 @@ struct BVOptions {
 /// A validated Bernstein--Vazirani benchmark.
 class MQT_CORE_BENCH_EXPORT BV final {
 public:
-  explicit BV(BVOptions options);
+  [[nodiscard]] static llvm::FailureOr<BV> create(BVOptions options);
 
   [[nodiscard]] const BVOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] llvm::FailureOr<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit BV(BVOptions options);
+
   BVOptions options_;
   Output output_;
 };

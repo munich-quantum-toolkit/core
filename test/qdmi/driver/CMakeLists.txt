@@ -9,6 +9,11 @@
 set(TARGET_NAME mqt-core-qdmi-driver-test)
 
 if(TARGET MQT::CoreQDMIDriver)
+  # ELF interposition lets the executable inject failures into the shared driver.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    package_add_test(mqt-core-qdmi-driver-allocation-test MQT::CoreQDMIDriver test_allocation.cpp)
+  endif()
+
   # These fixtures use automatic DLL exports, which cannot read MSVC IPO objects.
   add_library(mqt-core-qdmi-metadata-device SHARED metadata_device.cpp)
   set_target_properties(

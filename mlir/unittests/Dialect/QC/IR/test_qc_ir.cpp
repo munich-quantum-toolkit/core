@@ -562,7 +562,8 @@ TEST_F(QCTest, UnitaryFunctionMarkerRejectsNonUnitaryBody) {
   auto moduleOp = builder.finalize();
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+  mlir::ScopedDiagnosticHandler handler(context.get(), [&](mlir::Diagnostic&
+                                                               diagnostic) {
     sawExpectedDiagnostic |=
         StringRef(diagnostic.str())
             .contains(
@@ -587,12 +588,14 @@ TEST_F(QCTest, UnitaryFunctionMarkerRequiresFunctionReturn) {
   returnOp.erase();
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains("unitary QC function must end in an empty func.return");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](mlir::Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains(
+                    "unitary QC function must end in an empty func.return");
+        return success();
+      });
   EXPECT_TRUE(failed(verify(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -773,12 +776,14 @@ TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
 
   for (const auto source : invalidPrograms) {
     bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |= StringRef(diagnostic.str())
-                                   .contains("constant parameter expression at "
-                                             "index 0 must be finite");
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          sawExpectedDiagnostic |=
+              StringRef(diagnostic.str())
+                  .contains("constant parameter expression at "
+                            "index 0 must be finite");
+          return success();
+        });
     EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
     EXPECT_TRUE(sawExpectedDiagnostic);
   }
@@ -828,8 +833,8 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
   auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   const auto expectRejected = [&](const ArrayRef<std::complex<double>> values) {
     auto unitary = UnitaryOp::create(
         builder, DenseElementsAttr::get(matrixType, values), ValueRange{qubit});
@@ -867,8 +872,8 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedShapeAndDimension) {
     EXPECT_TRUE(failed(unitary.verify()));
     unitary.erase();
   };
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
 
   expectRejected({2});
   expectRejected({3, 3});
@@ -901,8 +906,8 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsUnsupportedArityAndAttributes) {
       RankedTensorType::get({2, 2}, builder.getF64Type()), 0.0);
   auto realUnitary = UnitaryOp::create(builder, realMatrix, ValueRange{qubit});
 
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_TRUE(failed(zeroQubitUnitary.verify()));
   EXPECT_TRUE(failed(sparseUnitary.verify()));
   EXPECT_TRUE(failed(realUnitary.verify()));
@@ -948,8 +953,8 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   auto unitary = UnitaryOp::create(builder, identity, ValueRange{qubit, qubit});
 
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_TRUE(failed(unitary.verify()));
   unitary.erase();
 }
@@ -967,8 +972,8 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsMoreThanEightQubits) {
       DenseElementsAttr::get(matrixType, std::complex<double>{0.0, 0.0});
   auto unitary = UnitaryOp::create(builder, matrix, ValueRange{qubits});
 
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_TRUE(failed(unitary.verify()));
   unitary.erase();
 }
@@ -1202,8 +1207,8 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
         mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
 
         bool sawExpectedDiagnostic = false;
-        ScopedDiagnosticHandler handler(
-            context.get(), [&](Diagnostic& diagnostic) {
+        mlir::ScopedDiagnosticHandler handler(
+            context.get(), [&](mlir::Diagnostic& diagnostic) {
               sawExpectedDiagnostic |=
                   StringRef(diagnostic.str())
                       .contains(
@@ -1259,8 +1264,8 @@ static OwningOpRef<ModuleOp> buildInvalidModifierCaptureProgram(
 }
 
 TEST_F(QCTest, ModifierArgumentsMustMatchTargets) {
-  ScopedDiagnosticHandler handler(context.get(),
-                                  [](Diagnostic&) { return success(); });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [](mlir::Diagnostic&) { return success(); });
   EXPECT_FALSE(parseSourceString<ModuleOp>(R"mlir(
     func.func @test(%input: !qc.qubit) {
       "qc.inv"(%input) ({
@@ -1293,8 +1298,8 @@ TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
         ASSERT_TRUE(moduleOp);
 
         bool sawExpectedDiagnostic = false;
-        ScopedDiagnosticHandler handler(
-            context.get(), [&](Diagnostic& diagnostic) {
+        mlir::ScopedDiagnosticHandler handler(
+            context.get(), [&](mlir::Diagnostic& diagnostic) {
               sawExpectedDiagnostic |=
                   StringRef(diagnostic.str())
                       .contains("body must not capture qubits from above; use "
@@ -2328,7 +2333,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(emptyQC)}));
 
 // UnrollModifiers
-static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
+static mlir::LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   return pm.run(moduleOp);

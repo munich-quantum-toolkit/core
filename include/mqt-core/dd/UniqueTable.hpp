@@ -18,13 +18,16 @@
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LogicalResult.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <ranges>
-#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -58,14 +61,12 @@ public:
     size_t maxBuckets = 1048576U;
   };
 
-  /// The default constructor
+  /// Validate capacities and create a table.
   ///
-  /// @param manager The memory manager to use
-  /// @param config The configuration for the unique table
-  ///
-  /// The MemoryManager shall be constructed from the same type that the unique
-  /// table is then used for in the lookup method.
-  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  /// The manager must allocate the node type used in lookup and outlive the
+  /// table.
+  [[nodiscard]] static llvm::FailureOr<UniqueTable>
+  create(MemoryManager& manager, const UniqueTableConfig& config);
 
   void resize(std::size_t nVars);
 
@@ -125,7 +126,7 @@ public:
     // if node not found → add it to front of unique table bucket
     if (p->id == 0U) {
       if (nextId_ == std::numeric_limits<uint32_t>::max()) {
-        throw std::overflow_error("Unique table node IDs exhausted.");
+        llvm::report_fatal_error("Unique table node IDs exhausted.");
       }
       p->id = ++nextId_;
     }
@@ -195,6 +196,11 @@ public:
   }
 
 private:
+  friend class Package;
+  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  [[nodiscard]] static llvm::LogicalResult checkCapacity(size_t initial,
+                                                         size_t maximum);
+
   /// Typedef for a bucket in the table
   using Bucket = NodeBase*;
   /// Typedef for the table

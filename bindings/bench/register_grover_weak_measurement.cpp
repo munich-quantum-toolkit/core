@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/WeakMeasurementGrover.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/optional.h"    // NOLINT(misc-include-cleaner)
@@ -19,6 +21,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
@@ -52,7 +55,16 @@ loop; :math:`1` exits with the marked state.
 By default, the measurement strength is :math:`\kappa=2^{-n/2}` for :math:`n`
 search qubits. The accepted range :math:`0<\kappa\leq 2^{-n/2}` follows the
 paper's robustness bound.)pb");
-  grover.def(nb::init<bench::WeakMeasurementGroverOptions>(), "options"_a)
+  grover
+      .def(
+          "__init__",
+          [](bench::WeakMeasurementGrover* self,
+             bench::WeakMeasurementGroverOptions options) {
+            new (self) bench::WeakMeasurementGrover(bindings::invoke([&] {
+              return bench::WeakMeasurementGrover::create(std::move(options));
+            }));
+          },
+          "options"_a)
       .def_prop_ro("options", &bench::WeakMeasurementGrover::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -61,10 +73,12 @@ paper's robustness bound.)pb");
                    "The logical output register.")
       .def_prop_ro("qubits", &bench::WeakMeasurementGrover::qubits,
                    "The number of search qubits.")
-      .def("probability", &bench::WeakMeasurementGrover::probability,
+      .def("probability",
+           bindings::bindResult(&bench::WeakMeasurementGrover::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::WeakMeasurementGrover::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
+      .def("evaluate",
+           bindings::bindResult(&bench::WeakMeasurementGrover::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
           [](const bench::WeakMeasurementGrover& value) {
@@ -92,15 +106,17 @@ paper's robustness bound.)pb");
             return bench::caseId(value);
           },
           "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::weakMeasurementGroverFromInstanceSpecificationJSON,
-                  "json"_a, nb::kw_only(),
-                  "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json",
-                  &bench::weakMeasurementGroverFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def_static(
+          "from_instance_specification_json",
+          bindings::bindResult(
+              &bench::weakMeasurementGroverFromInstanceSpecificationJSON),
+          "json"_a, nb::kw_only(), "source"_a = "<instance-specification>",
+          "Parse a strict benchmark instance specification.")
+      .def_static(
+          "from_manifest_json",
+          bindings::bindResult(&bench::weakMeasurementGroverFromManifestJSON),
+          "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+          "Parse a strict benchmark manifest.");
 }
 
 } // namespace mqt

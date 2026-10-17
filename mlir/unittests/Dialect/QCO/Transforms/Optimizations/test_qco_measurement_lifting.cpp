@@ -60,7 +60,7 @@ protected:
   }
 
   /// Adds the measurementLiftingPass to the current context and runs it.
-  static LogicalResult runMeasurementLiftingPass(ModuleOp program) {
+  static mlir::LogicalResult runMeasurementLiftingPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createMeasurementLifting());
     pm.addPass(createRemoveDeadGates());
@@ -69,7 +69,7 @@ protected:
   }
 
   /// Removes dead gates, canonicalizes the program, and runs the passes.
-  static LogicalResult runCanonicalizerPass(ModuleOp program) {
+  static mlir::LogicalResult runCanonicalizerPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createRemoveDeadGates());
     pm.addPass(createCanonicalizerPass());

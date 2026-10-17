@@ -11,6 +11,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-jit)
 if(NOT TARGET ${TARGET_NAME})
   # Add internal QIR JIT library
   add_library(${TARGET_NAME} STATIC IRRewriter.cpp Session.cpp)
+  mqt_target_disable_exceptions(${TARGET_NAME})
   add_library(MQT::CoreQIRJIT ALIAS ${TARGET_NAME})
 
   target_include_directories(${TARGET_NAME}

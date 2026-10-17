@@ -15,8 +15,8 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
                               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
-
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
 
   target_link_libraries(
     ${TARGET_NAME}
@@ -36,6 +36,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   if(BUILD_MQT_CORE_TESTS)
     add_library(mqt-core-qdmi-driver-testing STATIC DeviceRegistry.cpp Driver.cpp)
+    target_include_directories(mqt-core-qdmi-driver-testing
+                               PRIVATE ${PROJECT_SOURCE_DIR}/src/common)
     target_compile_features(mqt-core-qdmi-driver-testing PUBLIC cxx_std_20)
     target_compile_definitions(mqt-core-qdmi-driver-testing PUBLIC QDMI_STATIC_DEFINE)
     target_link_libraries(

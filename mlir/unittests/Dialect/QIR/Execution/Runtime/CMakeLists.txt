@@ -32,6 +32,7 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
     add_executable(${target_name} ${circuit_name}.o)
     set_property(TARGET ${target_name} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
     target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
+    mqt_copy_runtime_dlls(${target_name})
     set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
   endif()
 endmacro()
@@ -69,3 +70,5 @@ string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
 
 # add all executables as initializer list of std::filesystem::path's
 target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})
+
+target_include_directories(${TARGET_NAME} PRIVATE ${MQT_MLIR_UNITTESTS_DIR})

@@ -10,6 +10,8 @@
 
 #include "mqt/Dialect/QIR/Execution/JIT/IRRewriter.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -21,6 +23,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -83,7 +86,7 @@ TEST_P(IRRewriterTest, TruncatesAtIrreversibleBoundary) {
   ASSERT_GT(countCallsTo(*llvmModule, "__quantum__rt__result_record_output"),
             0U);
 
-  EXPECT_TRUE(qir::prepareForStateExtraction(*entryPoint));
+  EXPECT_TRUE(::mqt::test::value(qir::prepareForStateExtraction(*entryPoint)));
   EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__qis__mz__body"), 0U);
   EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__rt__qubit_release"), 0U);
   EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__rt__result_record_output"),
@@ -114,7 +117,7 @@ attributes #1 = { "irreversible" }
   auto* entryPoint = module->getFunction("main");
   ASSERT_NE(entryPoint, nullptr);
 
-  EXPECT_TRUE(qir::prepareForStateExtraction(*entryPoint));
+  EXPECT_TRUE(::mqt::test::value(qir::prepareForStateExtraction(*entryPoint)));
   EXPECT_EQ(countCallsTo(*module, "prepare"), 1U);
   EXPECT_EQ(countCallsTo(*module, "measure"), 0U);
   EXPECT_EQ(countCallsTo(*module, "must_not_run"), 0U);
@@ -148,7 +151,8 @@ attributes #1 = { "irreversible" }
   ASSERT_NE(llvmModule, nullptr);
   ASSERT_FALSE(llvm::verifyModule(*llvmModule));
 
-  EXPECT_TRUE(qir::prepareForStateExtraction(*llvmModule->getFunction("main")));
+  EXPECT_TRUE(::mqt::test::value(
+      qir::prepareForStateExtraction(*llvmModule->getFunction("main"))));
   EXPECT_EQ(countCallsTo(*llvmModule, "prepare"), 1U);
   EXPECT_EQ(countCallsTo(*llvmModule, "measure"), 0U);
   EXPECT_FALSE(llvm::verifyModule(*llvmModule));
@@ -181,8 +185,9 @@ attributes #1 = { "irreversible" }
   std::string before;
   llvm::raw_string_ostream(before) << *module;
 
-  EXPECT_THROW(qir::prepareForStateExtraction(*entryPoint),
-               std::invalid_argument);
+  EXPECT_FALSE(::mqt::test::errorMessage([&] {
+                 return qir::prepareForStateExtraction(*entryPoint);
+               }).empty());
   std::string after;
   llvm::raw_string_ostream(after) << *module;
   EXPECT_EQ(after, before);
@@ -200,8 +205,9 @@ attributes #0 = { "entry_point" }
   auto* entryPoint = module->getFunction("main");
   ASSERT_NE(entryPoint, nullptr);
 
-  EXPECT_THROW(qir::prepareForStateExtraction(*entryPoint),
-               std::invalid_argument);
+  EXPECT_FALSE(::mqt::test::errorMessage([&] {
+                 return qir::prepareForStateExtraction(*entryPoint);
+               }).empty());
 }
 
 class QIRSamplingPlan : public testing::TestWithParam<const char*> {
@@ -354,9 +360,10 @@ attributes #1 = { "irreversible" }
     ASSERT_FALSE(llvm::verifyModule(*llvmModule));
     const auto measurements =
         countCallsTo(*llvmModule, "__quantum__qis__mz__body");
-    EXPECT_THROW(
-        qir::prepareForStateExtraction(*llvmModule->getFunction("main")),
-        std::invalid_argument);
+    EXPECT_FALSE(::mqt::test::errorMessage([&] {
+                   return qir::prepareForStateExtraction(
+                       *llvmModule->getFunction("main"));
+                 }).empty());
     EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__qis__mz__body"),
               measurements);
     EXPECT_FALSE(llvm::verifyModule(*llvmModule));

@@ -11,17 +11,21 @@
 #include "bench/GHZ.hpp"
 #include "bench/JSON.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
+#include <new>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+using bindings::bindResult;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerGHZ(const nb::module_& m) {
@@ -44,16 +48,22 @@ void registerGHZ(const nb::module_& m) {
       .def_ro("basis", &bench::GHZOptions::basis, "The measurement basis.");
 
   auto ghz = nb::class_<bench::GHZ>(m, "GHZ", "A validated GHZ benchmark.");
-  ghz.def(nb::init<bench::GHZOptions>(), "options"_a)
+  ghz.def(
+         "__init__",
+         [](bench::GHZ* self, bench::GHZOptions options) {
+           new (self) bench::GHZ(::mqt::bindings::invoke(
+               [&] { return bench::GHZ::create(options); }));
+         },
+         "options"_a)
       .def_prop_ro("options", &bench::GHZ::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::GHZ::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::GHZ::probability, "outcome"_a,
+      .def("probability", bindResult(&bench::GHZ::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::GHZ::evaluate, "counts"_a,
+      .def("evaluate", bindResult(&bench::GHZ::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.")
       .def(
           "generate",
@@ -79,11 +89,12 @@ void registerGHZ(const nb::module_& m) {
           [](const bench::GHZ& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
       .def_static("from_instance_specification_json",
-                  &bench::ghzFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
+                  bindResult(&bench::ghzFromInstanceSpecificationJSON),
+                  "json"_a, nb::kw_only(),
+                  "source"_a = "<instance-specification>",
                   "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::ghzFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
+      .def_static("from_manifest_json", bindResult(&bench::ghzFromManifestJSON),
+                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
 }
 

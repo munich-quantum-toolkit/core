@@ -17,6 +17,8 @@
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
+#include "mlir/Support/LogicalResult.h"
+
 #include "llvm/ADT/ArrayRef.h"
 
 #include <array>
@@ -47,22 +49,21 @@ getStandardGateMatrix(const std::array<double, N>& parameters) {
 /// @param matrix Local unitary in QCO operand order.
 /// @param targets Target wires in matrix-operand order.
 /// @param controls Sparse DD controls applied to the local matrix.
-/// @pre Every target and control is smaller than `package.qubits()`;
-/// targets are unique and disjoint from controls.
 /// @return A matrix decision diagram for the embedded operation.
-/// @throws std::invalid_argument If the matrix dimension and target count
-/// differ or sparse controls accompany a matrix with more than three targets.
+/// Returns an error if targets or controls are invalid, the matrix dimension
+/// and target count differ, or sparse controls have fewer than one or more
+/// than three targets.
 [[nodiscard]] auto
 makeGateDD(dd::Package& package, std::span<const Complex> matrix,
            llvm::ArrayRef<dd::Qubit> targets, const dd::Controls& controls = {})
-    -> dd::MatrixDD;
+    -> FailureOr<dd::MatrixDD>;
 
 template <typename Matrix>
   requires requires(const Matrix& matrix) { matrix.entries(); }
 [[nodiscard]] auto makeGateDD(dd::Package& package, const Matrix& matrix,
-                              const llvm::ArrayRef<dd::Qubit> targets,
+                              llvm::ArrayRef<dd::Qubit> targets,
                               const dd::Controls& controls = {})
-    -> dd::MatrixDD {
+    -> FailureOr<dd::MatrixDD> {
   return makeGateDD(package, matrix.entries(), targets, controls);
 }
 

@@ -52,7 +52,8 @@ public:
   ///
   /// @param initialAllocationSize The positive initial number of entries
   /// @tparam T The type of the entries
-  /// @throws std::invalid_argument If initialAllocationSize is zero.
+  /// @pre initialAllocationSize is positive; Package::create validates user
+  /// settings.
   template <class T>
   static MemoryManager
   create(const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE) {

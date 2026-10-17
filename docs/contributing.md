@@ -405,12 +405,13 @@ in the {code}`bindings` directory.
 
 :::{tip}
 
-To build only the Python bindings, pass {code}`-DBUILD_MQT_CORE_BINDINGS=ON` to
-the CMake configure step. CMake will then try to find Python and the necessary
-dependencies ({code}`nanobind`) on your system and configure the respective
-targets. In [CLion][clion], you can enable an option to pass the current Python
-interpreter to CMake. Go to {code}`Preferences` ->
-{code}`Build, Execution, Deployment` -> {code}`CMake` ->
+To build the Python bindings, pass {code}`-DBUILD_MQT_CORE_BINDINGS=ON` and
+{code}`-DBUILD_MQT_CORE_SHARED_LIBS=ON` to the CMake configure step. Shared Core
+libraries let the Python modules use the same diagnostic handlers. CMake will
+then try to find Python and the necessary dependencies ({code}`nanobind`) on
+your system and configure the respective targets. In [CLion][clion], you can
+enable an option to pass the current Python interpreter to CMake. Go to
+{code}`Preferences` -> {code}`Build, Execution, Deployment` -> {code}`CMake` ->
 {code}`Python Integration` and check the box
 {code}`Pass Python Interpreter to CMake`. Alternatively, you can pass
 {code}`-DPython_ROOT_DIR=<PATH_TO_PYTHON>` to the configure step to point CMake

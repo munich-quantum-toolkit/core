@@ -90,7 +90,7 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
+static mlir::LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRBase());
@@ -230,12 +230,13 @@ TEST(QCToQIRBaseNativeTest, RejectsReorderedOverlappingOutputStores) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   bool diagnosed = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnosed |=
-        diagnostic.str().find("cannot fuse this measurement/store pair") !=
-        std::string::npos;
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |=
+            diagnostic.str().find("cannot fuse this measurement/store pair") !=
+            std::string::npos;
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(diagnosed);
   EXPECT_TRUE(succeeded(verify(*module)));
@@ -259,14 +260,15 @@ TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "QIR Base Profile requires a single-block entry function");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        std::string message;
+        llvm::raw_string_ostream stream(message);
+        diagnostic.print(stream);
+        sawExpectedDiagnostic |= StringRef(message).contains(
+            "QIR Base Profile requires a single-block entry function");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
   EXPECT_EQ(entryPoint.getBlocks().size(), 2);
@@ -288,13 +290,15 @@ static void expectMeasurementOrderRejected(
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(expectedDiagnostic);
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        std::string message;
+        llvm::raw_string_ostream stream(message);
+        diagnostic.print(stream);
+        sawExpectedDiagnostic |=
+            StringRef(message).contains(expectedDiagnostic);
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -570,7 +574,8 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+  mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic&
+                                                          diagnostic) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
@@ -612,7 +617,8 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+  mlir::ScopedDiagnosticHandler handler(&context, [&](mlir::Diagnostic&
+                                                          diagnostic) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
@@ -637,14 +643,15 @@ TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |=
-        StringRef(message).contains("only supports generic memrefs for");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        std::string message;
+        llvm::raw_string_ostream stream(message);
+        diagnostic.print(stream);
+        sawExpectedDiagnostic |=
+            StringRef(message).contains("only supports generic memrefs for");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
@@ -666,14 +673,15 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "requires constant classical-register measurement indices");
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [&](mlir::Diagnostic& diagnostic) {
+        std::string message;
+        llvm::raw_string_ostream stream(message);
+        diagnostic.print(stream);
+        sawExpectedDiagnostic |= StringRef(message).contains(
+            "requires constant classical-register measurement indices");
+        return success();
+      });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }

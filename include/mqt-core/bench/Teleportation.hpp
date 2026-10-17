@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/LogicalResult.h"
+
 #include <string_view>
 
 namespace mqt::bench {
@@ -28,9 +30,11 @@ public:
 
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] llvm::FailureOr<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::FailureOr<Evaluation>
+  evaluate(const Counts& counts) const;
 
 private:
   Output output_;

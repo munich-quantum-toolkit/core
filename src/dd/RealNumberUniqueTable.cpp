@@ -84,18 +84,13 @@ RealNumber* RealNumberUniqueTable::lookupRoot(const fp val) {
     ++stats.hits;
     return it->second;
   }
-  try {
-    auto* entry = memoryManager->get<RealNumber>();
-    entry->value = val;
-    entry->LLBase::setNext(nullptr);
-    it->second = entry;
-    stats.trackInsert();
-    stats.numBuckets = table.size() + exactRoots.bucket_count();
-    return entry;
-  } catch (...) {
-    exactRoots.erase(it);
-    throw;
-  }
+  auto* entry = memoryManager->get<RealNumber>();
+  entry->value = val;
+  entry->LLBase::setNext(nullptr);
+  it->second = entry;
+  stats.trackInsert();
+  stats.numBuckets = table.size() + exactRoots.bucket_count();
+  return entry;
 }
 
 RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {

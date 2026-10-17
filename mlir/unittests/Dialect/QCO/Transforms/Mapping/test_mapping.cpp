@@ -27,6 +27,8 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Support/RandomSeed.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -262,7 +264,7 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
     }
   }
 
-  return llvm::cantFail(
+  return ::mqt::test::value(
       CompilerTarget::create(numTarget, Connectivity::fromCouplings(couplings),
                              NativeOperations::unrestricted()));
 }
@@ -271,13 +273,13 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
 static CompilerTarget withNativeBasis(const CompilerTarget& topology,
                                       const char* entangler) {
   using Capability = CompilerTarget::OperationCapability;
-  return llvm::cantFail(CompilerTarget::create(
+  return ::mqt::test::value(CompilerTarget::create(
       topology.numSites(), Connectivity::fromCouplings(topology.couplings()),
       NativeOperations::fromOperations({
-          llvm::cantFail(Capability::create("u", 1, 3)),
-          llvm::cantFail(Capability::create(entangler, 2, 0)),
-          llvm::cantFail(Capability::create("measure", 1, 0)),
-          llvm::cantFail(Capability::create("gphase", 0, 1)),
+          ::mqt::test::value(Capability::create("u", 1, 3)),
+          ::mqt::test::value(Capability::create(entangler, 2, 0)),
+          ::mqt::test::value(Capability::create("measure", 1, 0)),
+          ::mqt::test::value(Capability::create("gphase", 0, 1)),
       })));
 }
 
@@ -338,7 +340,7 @@ class MappingPassFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
+    registry.insert<mlir::mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
                     CBitDialect, scf::SCFDialect, arith::ArithDialect,
                     func::FuncDialect, cf::ControlFlowDialect>();
     context = std::make_unique<MLIRContext>();
@@ -352,7 +354,8 @@ protected:
       PayloadFormat format;
       format.id = "test.payload";
       format.version = "1.0.0";
-      return llvm::cantFail(PayloadSpecification::create(std::move(format)));
+      return ::mqt::test::value(
+          PayloadSpecification::create(std::move(format)));
     }();
     attachTargetEnvironment(moduleOp, TargetEnvironment(target, PAYLOAD));
   }
@@ -398,7 +401,7 @@ class MappingPassTest : public MappingPassFixture,
 }; // namespace
 
 TEST_F(MappingPassFixture, RouteBeforeLaterClassicalControl) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {0, 2}, {0, 3}}),
       NativeOperations::unrestricted()));
 
@@ -454,7 +457,7 @@ TEST_F(MappingPassFixture, RouteBeforeLaterClassicalControl) {
 }
 
 TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(1, Connectivity::fromCouplings({}),
                              NativeOperations::fromOperations({})));
   for (const bool placement : {false, true}) {
@@ -477,12 +480,13 @@ TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
     ASSERT_EQ(rawContext.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
     ASSERT_TRUE(succeeded(verify(*module)));
     bool diagnosed = false;
-    ScopedDiagnosticHandler handler(&rawContext, [&](Diagnostic& diagnostic) {
-      diagnosed |=
-          diagnostic.str().find("dynamic quantum allocations must be") !=
-          std::string::npos;
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        &rawContext, [&](mlir::Diagnostic& diagnostic) {
+          diagnosed |=
+              diagnostic.str().find("dynamic quantum allocations must be") !=
+              std::string::npos;
+          return success();
+        });
     PassManager pm(&rawContext);
     if (placement) {
       pm.addPass(createPlacementPass());
@@ -495,7 +499,7 @@ TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
 }
 
 TEST_F(MappingPassFixture, EmptyProgramNeedsNoPlacementWorkspace) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
       NativeOperations::unrestricted()));
   for (const bool placement : {false, true}) {
@@ -540,7 +544,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::fromOperations({})));
 
@@ -596,7 +600,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
 
 TEST_F(MappingPassFixture,
        KeepClassicallyDependentMeasurementBeforeRoutingSwaps) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::fromOperations({})));
 
@@ -633,7 +637,7 @@ TEST_F(MappingPassFixture,
 }
 
 TEST_F(MappingPassFixture, RouteIndependentControlAfterTerminalWire) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
       NativeOperations::unrestricted()));
 
@@ -663,7 +667,7 @@ TEST_F(MappingPassFixture, RouteIndependentControlAfterTerminalWire) {
 }
 
 TEST_F(MappingPassFixture, RouteControlAcrossTensorWireBoundaries) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
 
@@ -716,16 +720,16 @@ TEST_F(MappingPassFixture, RouteControlAcrossTensorWireBoundaries) {
 
 TEST_F(MappingPassFixture,
        PreserveTensorMeasurementTailsAcrossAdjacentRegions) {
-  const auto topology = llvm::cantFail(CompilerTarget::create(
+  const auto topology = ::mqt::test::value(CompilerTarget::create(
       5, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}}),
       NativeOperations::unrestricted()));
   using Capability = CompilerTarget::OperationCapability;
-  const auto unavailable = llvm::cantFail(CompilerTarget::create(
+  const auto unavailable = ::mqt::test::value(CompilerTarget::create(
       topology.numSites(), Connectivity::fromCouplings(topology.couplings()),
       NativeOperations::fromOperations({
-          llvm::cantFail(Capability::create("u", 1, 3)),
-          llvm::cantFail(Capability::create("cz", 2, 0)),
-          llvm::cantFail(Capability::create("gphase", 0, 1)),
+          ::mqt::test::value(Capability::create("u", 1, 3)),
+          ::mqt::test::value(Capability::create("cz", 2, 0)),
+          ::mqt::test::value(Capability::create("gphase", 0, 1)),
       })));
   for (const auto& target :
        {topology, withNativeBasis(topology, "cz"), unavailable}) {
@@ -793,7 +797,7 @@ TEST_F(MappingPassFixture,
 }
 
 TEST_F(MappingPassFixture, RouteControlAfterConsecutiveMeasurements) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
       NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
@@ -819,7 +823,7 @@ TEST_F(MappingPassFixture, RouteControlAfterConsecutiveMeasurements) {
 }
 
 TEST_F(MappingPassFixture, MapNestedControlWithIdleWire) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(2, Connectivity::fromCouplings({{0, 1}}),
                              NativeOperations::unrestricted()));
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
@@ -854,7 +858,7 @@ module {
 }
 
 TEST_F(MappingPassFixture, PreserveConditionalGateParameterDependency) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(2, Connectivity::fromCouplings({{0, 1}}),
                              NativeOperations::unrestricted()));
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
@@ -891,7 +895,7 @@ module {
 
 TEST_F(MappingPassFixture,
        KeepMeasurementsTerminalAfterEarlierRegisterControl) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
@@ -927,7 +931,7 @@ TEST_F(MappingPassFixture,
 }
 
 TEST_F(MappingPassFixture, RouteControlFromConsecutiveMeasurementResults) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(2, Connectivity::fromCouplings({{0, 1}}),
                              NativeOperations::unrestricted()));
   constexpr size_t numMeasurements = 128;
@@ -979,7 +983,7 @@ TEST_F(MappingPassFixture, RouteControlFromConsecutiveMeasurementResults) {
 }
 
 TEST_F(MappingPassFixture, KeepMeasurementStoreBeforeConditionalOverwrite) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
       NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
@@ -1015,7 +1019,7 @@ TEST_F(MappingPassFixture, KeepMeasurementStoreBeforeConditionalOverwrite) {
 }
 
 TEST_F(MappingPassFixture, KeepOutputOnlyRegisterMeasurementsTerminal) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
 
@@ -1067,11 +1071,11 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   constexpr int64_t size = 3;
 
   std::vector<CompilerTarget::Site> sites;
-  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
-  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
-  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
+  sites.emplace_back(::mqt::test::value(CompilerTarget::Site::create(7)));
+  sites.emplace_back(::mqt::test::value(CompilerTarget::Site::create(19)));
+  sites.emplace_back(::mqt::test::value(CompilerTarget::Site::create(42)));
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       std::move(sites), Connectivity::fromCouplings({{7, 19}, {19, 42}}),
       NativeOperations::fromOperations({})));
 
@@ -1112,10 +1116,10 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
 
 TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   std::vector<CompilerTarget::Site> sites;
-  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
-  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
-  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
-  const auto target = llvm::cantFail(
+  sites.emplace_back(::mqt::test::value(CompilerTarget::Site::create(7)));
+  sites.emplace_back(::mqt::test::value(CompilerTarget::Site::create(19)));
+  sites.emplace_back(::mqt::test::value(CompilerTarget::Site::create(42)));
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(std::move(sites), Connectivity::allToAll(),
                              NativeOperations::unrestricted()));
 
@@ -1143,12 +1147,12 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
 
 TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
   std::vector sites{
-      llvm::cantFail(CompilerTarget::Site::create(7)),
-      llvm::cantFail(CompilerTarget::Site::create(19)),
-      llvm::cantFail(CompilerTarget::Site::create(42)),
-      llvm::cantFail(CompilerTarget::Site::create(81)),
+      ::mqt::test::value(CompilerTarget::Site::create(7)),
+      ::mqt::test::value(CompilerTarget::Site::create(19)),
+      ::mqt::test::value(CompilerTarget::Site::create(42)),
+      ::mqt::test::value(CompilerTarget::Site::create(81)),
   };
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       std::move(sites), CompilerTarget::Connectivity::allToAll(),
       NativeOperations::unrestricted()));
 
@@ -1190,7 +1194,7 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
 }
 
 TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       2, Connectivity::allToAll(), NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -1213,7 +1217,7 @@ TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
 }
 
 TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       1, Connectivity::allToAll(), NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -1270,7 +1274,7 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
     couplings.emplace_back(0, static_cast<int64_t>(site));
   }
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       numTargetQubits, Connectivity::fromCouplings(couplings),
       NativeOperations::unrestricted()));
 
@@ -1305,7 +1309,7 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
 }
 
 TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
 
@@ -1361,7 +1365,7 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
 
-  auto func = mqt::getEntryPoint(*moduleOp);
+  auto func = mlir::mqt::getEntryPoint(*moduleOp);
   auto alloc = *func.getOps<cbit::AllocOp>().begin();
   auto measure = *func.getOps<MeasureOp>().begin();
   auto store = *func.getOps<StoreOp>().begin();
@@ -1448,7 +1452,7 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
 }
 
 TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
-  const auto target = llvm::cantFail(
+  const auto target = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
@@ -2596,7 +2600,7 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
 }
 
 TEST_F(MappingPassFixture, EmbedInteractionHubWithIdleQubitAndSpareSite) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       6, Connectivity::fromCouplings({{2, 0}, {2, 1}, {2, 3}, {2, 4}, {2, 5}}),
       NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
@@ -2626,12 +2630,12 @@ TEST_F(MappingPassFixture, EmbedInteractionHubWithIdleQubitAndSpareSite) {
 
 TEST_F(MappingPassFixture, KeepExecutableIdentityAcrossTrialOptions) {
   std::vector sites{
-      llvm::cantFail(CompilerTarget::Site::create(7)),
-      llvm::cantFail(CompilerTarget::Site::create(19)),
-      llvm::cantFail(CompilerTarget::Site::create(42)),
-      llvm::cantFail(CompilerTarget::Site::create(81)),
+      ::mqt::test::value(CompilerTarget::Site::create(7)),
+      ::mqt::test::value(CompilerTarget::Site::create(19)),
+      ::mqt::test::value(CompilerTarget::Site::create(42)),
+      ::mqt::test::value(CompilerTarget::Site::create(81)),
   };
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       std::move(sites),
       Connectivity::fromCouplings({{7, 19}, {19, 42}, {42, 81}}),
       NativeOperations::unrestricted()));
@@ -2692,7 +2696,7 @@ TEST_F(MappingPassFixture, EmbedShuffledInteractionPathWithoutSwaps) {
   for (size_t i = 1; i < numQubits; ++i) {
     line.emplace_back(i - 1, i);
   }
-  const auto lineTarget = llvm::cantFail(
+  const auto lineTarget = ::mqt::test::value(
       CompilerTarget::create(numQubits, Connectivity::fromCouplings(line),
                              NativeOperations::unrestricted()));
   auto order = llvm::to_vector(llvm::seq<size_t>(0, numQubits));
@@ -2741,15 +2745,15 @@ TEST_F(MappingPassFixture, EmbedShuffledInteractionPathWithoutSwaps) {
 }
 
 TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
-  const auto lineTarget = llvm::cantFail(CompilerTarget::create(
+  const auto lineTarget = ::mqt::test::value(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
       NativeOperations::unrestricted()));
-  const auto cycleTarget = llvm::cantFail(CompilerTarget::create(
+  const auto cycleTarget = ::mqt::test::value(CompilerTarget::create(
       8,
       Connectivity::fromCouplings(
           {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 0}}),
       NativeOperations::unrestricted()));
-  const auto starTarget = llvm::cantFail(CompilerTarget::create(
+  const auto starTarget = ::mqt::test::value(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}}),
       NativeOperations::unrestricted()));
   const SmallVector<size_t> order{5, 0, 3, 1, 4, 2};
@@ -2861,7 +2865,7 @@ static OwningOpRef<ModuleOp> makeRoutingBasisProgram(MLIRContext* context,
 
 TEST_F(MappingPassFixture, PreserveBasisStatesWithTinySearchMemory) {
   context->disableMultithreading();
-  const auto lineTarget = llvm::cantFail(CompilerTarget::create(
+  const auto lineTarget = ::mqt::test::value(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
       NativeOperations::unrestricted()));
   for (bool structured : {false, true}) {
@@ -3469,10 +3473,12 @@ module {
     attachTestEnvironment(*module, target);
     const auto before = printModule(*module);
     bool diagnosed = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      diagnosed |= diagnostic.str().find("flat qtensor") != std::string::npos;
-      return success();
-    });
+    mlir::ScopedDiagnosticHandler handler(
+        context.get(), [&](mlir::Diagnostic& diagnostic) {
+          diagnosed |=
+              diagnostic.str().find("flat qtensor") != std::string::npos;
+          return success();
+        });
     PassManager pm(context.get());
     pm.addPass(placement ? createPlacementPass()
                          : createMappingPass(MappingPassOptions{.ntrials = 1}));
@@ -3503,12 +3509,13 @@ TEST_F(MappingPassFixture, RejectOpaqueClassicalEffectsBeforeMutation) {
   attachTestEnvironment(*moduleOp, getSquareGridTarget(2));
   const auto before = printModule(*moduleOp);
   bool diagnosed = false;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnosed |=
-        diagnostic.str().find("classical side effects only through CBit") !=
-        std::string::npos;
-    return success();
-  });
+  mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |=
+            diagnostic.str().find("classical side effects only through CBit") !=
+            std::string::npos;
+        return success();
+      });
   PassManager pm(context.get());
   pm.addPass(createMappingPass(MappingPassOptions{.ntrials = 1}));
   EXPECT_TRUE(failed(pm.run(*moduleOp)));
@@ -3517,7 +3524,7 @@ TEST_F(MappingPassFixture, RejectOpaqueClassicalEffectsBeforeMutation) {
 }
 
 TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
-  const auto topology = llvm::cantFail(CompilerTarget::create(
+  const auto topology = ::mqt::test::value(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
       NativeOperations::unrestricted()));
   const MappingPassOptions options{.ntrials = 4, .seed = 2023};
@@ -3564,7 +3571,7 @@ TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
 }
 
 TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
-  const auto topology = llvm::cantFail(CompilerTarget::create(
+  const auto topology = ::mqt::test::value(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
       NativeOperations::unrestricted()));
   const auto target = withNativeBasis(topology, "cz");
@@ -3662,7 +3669,7 @@ TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
 
 TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
   context->disableMultithreading();
-  const auto lineTarget = llvm::cantFail(CompilerTarget::create(
+  const auto lineTarget = ::mqt::test::value(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
       NativeOperations::unrestricted()));
   for (bool structured : {false, true}) {
@@ -3805,7 +3812,7 @@ TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
 }
 
 TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
-  const auto topology = llvm::cantFail(CompilerTarget::create(
+  const auto topology = ::mqt::test::value(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
       NativeOperations::unrestricted()));
   for (size_t shape = 0; shape < 3; ++shape) {
@@ -3914,7 +3921,7 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
 
 TEST_F(MappingPassFixture, RespectRegionBoundariesBeforeFrontierDiscovery) {
   const auto target = withNativeBasis(
-      llvm::cantFail(CompilerTarget::create(
+      ::mqt::test::value(CompilerTarget::create(
           5, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}}),
           NativeOperations::unrestricted())),
       "cz");
@@ -3996,17 +4003,17 @@ TEST_F(MappingPassFixture, NativeGuidancePreservesAlternatingPairs) {
   const auto topology = getSquareGridTarget(4);
   for (bool nonuniformSwap : {false, true}) {
     std::vector operations{
-        llvm::cantFail(Capability::create("u", 1, 3)),
-        llvm::cantFail(Capability::create("cz", 2, 0)),
-        llvm::cantFail(Capability::create("measure", 1, 0)),
-        llvm::cantFail(Capability::create("gphase", 0, 1)),
+        ::mqt::test::value(Capability::create("u", 1, 3)),
+        ::mqt::test::value(Capability::create("cz", 2, 0)),
+        ::mqt::test::value(Capability::create("measure", 1, 0)),
+        ::mqt::test::value(Capability::create("gphase", 0, 1)),
     };
     if (nonuniformSwap) {
       // Native SWAP on one edge disables uniform-cost search guidance.
-      operations.push_back(llvm::cantFail(Capability::create(
-          "swap", 2, 0, {llvm::cantFail(SiteTuple::create({0, 1}))})));
+      operations.push_back(::mqt::test::value(Capability::create(
+          "swap", 2, 0, {::mqt::test::value(SiteTuple::create({0, 1}))})));
     }
-    const auto target = llvm::cantFail(CompilerTarget::create(
+    const auto target = ::mqt::test::value(CompilerTarget::create(
         topology.numSites(), Connectivity::fromCouplings(topology.couplings()),
         NativeOperations::fromOperations(operations)));
     auto input =
@@ -4073,18 +4080,18 @@ TEST_F(MappingPassFixture, NativeGuidancePreservesAlternatingPairs) {
 TEST_F(MappingPassFixture, NativeScoringChecksTerminalMeasurementSites) {
   using Capability = CompilerTarget::OperationCapability;
   using SiteTuple = CompilerTarget::SiteTuple;
-  const auto target = llvm::cantFail(CompilerTarget::create(
+  const auto target = ::mqt::test::value(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
       NativeOperations::fromOperations({
-          llvm::cantFail(Capability::create("u", 1, 3)),
-          llvm::cantFail(Capability::create("cz", 2, 0)),
-          llvm::cantFail(Capability::create("gphase", 0, 1)),
-          llvm::cantFail(
+          ::mqt::test::value(Capability::create("u", 1, 3)),
+          ::mqt::test::value(Capability::create("cz", 2, 0)),
+          ::mqt::test::value(Capability::create("gphase", 0, 1)),
+          ::mqt::test::value(
               Capability::create("measure", 1, 0,
                                  {
-                                     llvm::cantFail(SiteTuple::create({0})),
-                                     llvm::cantFail(SiteTuple::create({1})),
-                                     llvm::cantFail(SiteTuple::create({2})),
+                                     ::mqt::test::value(SiteTuple::create({0})),
+                                     ::mqt::test::value(SiteTuple::create({1})),
+                                     ::mqt::test::value(SiteTuple::create({2})),
                                  })),
       })));
   for (size_t seed : {7U, 42U, 99U}) {
@@ -4123,7 +4130,7 @@ TEST_F(MappingPassFixture, NativeScoringChecksTerminalMeasurementSites) {
 }
 
 TEST_F(MappingPassFixture, NativeScoringFailureKeepsMappingContract) {
-  const auto topology = llvm::cantFail(
+  const auto topology = ::mqt::test::value(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
   const auto target = withNativeBasis(topology, "cz");

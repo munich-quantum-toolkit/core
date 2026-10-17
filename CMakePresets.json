@@ -45,6 +45,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_MQT_CORE_BINDINGS": "ON",
+        "BUILD_MQT_CORE_SHARED_LIBS": "ON",
         "CMAKE_UNITY_BUILD": "OFF",
         "CMAKE_VERIFY_INTERFACE_HEADER_SETS": "ON"
       }

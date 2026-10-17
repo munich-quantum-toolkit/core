@@ -287,5 +287,5 @@ def test_jeff_rejects_wider_general_integer_expressions() -> None:
         65,
         1,
     )
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="jeff supports general integer expressions only up to 64 bits"):
         program.to_qco().to_jeff()
