@@ -10,6 +10,33 @@ MQT Core exposes two distinct Qiskit interfaces:
 Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
 the narrower range above; the adapter checks it before inspecting a circuit.
 
+## QPY files
+
+{py:mod}`mqt.core.qpy` reads and writes {term}`QPY` through Qiskit and the
+compiler bridge. Install `mqt-core[qiskit]` with a Qiskit version in the
+compiler translation range above.
+
+```python
+from mqt.core import qpy
+
+programs = qpy.load("circuits.qpy")
+qpy.dump(programs, "output.qpy")
+```
+
+{py:func}`~mqt.core.qpy.load` imports all circuits as a list of `QCProgram`
+objects or raises without returning partial results.
+{py:func}`~mqt.core.qpy.dump` exports QC/QCO programs without consuming them.
+See these API references for stream ownership, error handling, and the optional
+`target=` and `version=` arguments. Newer QPY files can require a Qiskit version
+outside Core's supported range.
+
+The helpers buffer QPY data in memory. Export finishes translation and
+serialization before opening the destination; write-time I/O failures can still
+leave partial output. The compiler bridge's circuit subset applies, not
+arbitrary Qiskit metadata or annotations. Load only trusted files: Qiskit parses
+the input without a sandbox. The native C++ APIs and `mqt-cc` do not read QPY
+files.
+
 ## Compiler targets
 
 Use {py:meth}`~mqt.core.mlir.CompilerTarget.from_qiskit` to create a compiler

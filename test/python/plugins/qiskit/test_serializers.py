@@ -156,11 +156,29 @@ def test_module_functions_share_one_registry(monkeypatch: pytest.MonkeyPatch) ->
     assert serializers.program_serializer(ProgramFormat.CUSTOM1) is None
 
 
-def test_serializer_is_discovered_from_entry_point() -> None:
+@pytest.mark.parametrize("fmt", [ProgramFormat.CUSTOM2, ProgramFormat.QPY])
+def test_serializer_is_discovered_from_entry_point(fmt: ProgramFormat) -> None:
     """The registry loads a serializer advertised through the entry point group."""
-    registry = _registry([_entry_point("CUSTOM2", "pkg.mod:serializer", _serializer)])
+    registry = _registry([_entry_point(fmt.name, "pkg.mod:serializer", _serializer)])
 
-    assert registry.get(ProgramFormat.CUSTOM2) is _serializer
+    assert registry.get(fmt) is _serializer
+
+
+def test_qpy_registration_replaces_fallback() -> None:
+    """Existing QPY registration calls work even after the default is looked up."""
+    registry = _registry()
+    assert registry.get(ProgramFormat.QPY) is not None
+    registry.register(ProgramFormat.QPY, _serializer)
+    assert registry.get(ProgramFormat.QPY) is _serializer
+
+
+def test_qpy_fallback_can_be_removed() -> None:
+    """Explicit removal disables the fallback but allows later registration."""
+    registry = _registry()
+    registry.unregister(ProgramFormat.QPY)
+    assert registry.get(ProgramFormat.QPY) is None
+    registry.register(ProgramFormat.QPY, _serializer)
+    assert registry.get(ProgramFormat.QPY) is _serializer
 
 
 def test_entry_points_are_read_once() -> None:

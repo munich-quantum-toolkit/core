@@ -15,6 +15,7 @@ from __future__ import annotations
 
 __lazy_modules__ = {
     "inspect",
+    "io",
     "math",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
@@ -33,11 +34,12 @@ __lazy_modules__ = {
 import inspect
 import warnings
 from functools import cached_property
+from io import BytesIO
 from math import isfinite
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from qiskit import qasm2, qasm3
+from qiskit import qasm2, qasm3, qpy
 from qiskit.circuit import ControlFlowOp, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
@@ -210,6 +212,19 @@ def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     """
     backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     return qasm2.dumps(circuit)
+
+
+def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
+    """Serialize a circuit after validating native placements.
+
+    Returns:
+        One circuit encoded as QPY 13 bytes.
+    """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
+    with BytesIO() as buffer:
+        # QDMI does not negotiate QPY versions; use the Qiskit 2.x compatibility baseline.
+        qpy.dump(circuit, buffer, version=13)
+        return buffer.getvalue()
 
 
 def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
@@ -665,7 +680,7 @@ class QDMIBackend(BackendV2):
     def _validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
         """Check supported operations, including operations inside control flow.
 
-        Built-in QASM serializers also check native width and placements after
+        Built-in serializers also check native width and placements after
         preprocessing. Custom serializers can perform further compilation and
         therefore retain responsibility for validating their output placements.
 
