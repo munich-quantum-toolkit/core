@@ -9,6 +9,7 @@
 add_mlir_library(
   MLIRSupportMQT
   IntegerExpressions.cpp
+  MemRefCopy.cpp
   Passes.cpp
   PrettyPrinting.cpp
   ADDITIONAL_HEADER_DIRS
@@ -21,6 +22,8 @@ add_mlir_library(
   MLIRLLVMDialect
   MLIRMathDialect
   MLIRMemRefDialect
+  MLIRMemRefUtils
+  MLIRSCFDialect
   MLIRPass
   MLIRTransforms
   MLIRControlFlowInterfaces

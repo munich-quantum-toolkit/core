@@ -22,6 +22,8 @@ target_link_libraries(
           MLIRTransforms
           MLIRJeffToQCO
           MLIRQCOToJeff
+          MLIRQCToQCO
+          MLIRQCOpenQASMTranslation
           MLIRJeffTranslation
           MLIRMQTTransforms)
 
