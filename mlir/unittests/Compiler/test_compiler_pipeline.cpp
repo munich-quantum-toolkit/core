@@ -2131,7 +2131,7 @@ TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughSegmentedMessages) {
   {
     capnp::MallocMessageBuilder message(1,
                                         capnp::AllocationStrategy::FIXED_SIZE);
-    program->toMessage(message);
+    ASSERT_TRUE(succeeded(program->toMessage(message)));
     const auto segments = message.getSegmentsForOutput();
     ASSERT_GT(segments.size(), 1U);
     fromRoot = JeffProgram::fromMessage(message.getRoot<::jeff::Module>());

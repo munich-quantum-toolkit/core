@@ -432,7 +432,7 @@ public:
   /// Keep the message alive and unchanged while using its root or the views
   /// returned by `getSegmentsForOutput()`. Discard the message if encoding
   /// fails.
-  void toMessage(capnp::MessageBuilder& message) const;
+  [[nodiscard]] LogicalResult toMessage(capnp::MessageBuilder& message) const;
 
   /// Serialize this program to a binary `jeff` buffer.
   ///

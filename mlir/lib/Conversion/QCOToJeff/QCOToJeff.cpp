@@ -22,9 +22,16 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/IntegerExpressions.h"
 
+#include "../JeffToQCO/CapnpDiagnostics.h"
+
+#include "capnp/any.h"
+#include "capnp/blob.h"
+#include "capnp/message.h"
+#include "capnp/serialize.h"
 #include "jeff/Conversion/NativeToJeff/NativeToJeff.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
+#include "jeff/Translation/Metadata.hpp"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -74,6 +81,59 @@ using namespace qco;
 
 #define GEN_PASS_DEF_QCOTOJEFF
 #include "mqt/Conversion/QCOToJeff/QCOToJeff.h.inc"
+
+/// Encode input names as jeff text metadata.
+static LogicalResult encodeInputNames(func::FuncOp function) {
+  auto* context = function.getContext();
+  const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  for (auto argument : function.getArguments()) {
+    auto name =
+        function.getArgAttrOfType<StringAttr>(argument.getArgNumber(), key);
+    if (!name) {
+      continue;
+    }
+    auto existing = jeff::getMetadata(argument);
+    if (failed(existing)) {
+      return failure();
+    }
+    mqt::CapnpDiagnosticHandler handler(argument.getLoc(),
+                                        "encode input name metadata");
+    DenseI8ArrayAttr payload;
+    {
+      capnp::MallocMessageBuilder message;
+      message.getRoot<capnp::AnyPointer>().setAs<capnp::Text>(
+          name.getValue().str());
+      auto words = capnp::messageToFlatArray(message);
+      auto bytes = words.asBytes();
+      payload = DenseI8ArrayAttr::get(
+          context, ArrayRef(reinterpret_cast<const int8_t*>(bytes.begin()),
+                            bytes.size()));
+    }
+    if (failed(handler.result())) {
+      return failure();
+    }
+    SmallVector<Attribute> metadata;
+    if (*existing) {
+      for (auto entry : *existing) {
+        if (cast<DictionaryAttr>(entry).getAs<StringAttr>("name").getValue() !=
+            key) {
+          metadata.push_back(entry);
+        }
+      }
+    }
+    metadata.push_back(DictionaryAttr::get(
+        context,
+        {
+            {StringAttr::get(context, "name"), StringAttr::get(context, key)},
+            {StringAttr::get(context, "value"), payload},
+        }));
+    if (failed(
+            jeff::setMetadata(argument, ArrayAttr::get(context, metadata)))) {
+      return failure();
+    }
+  }
+  return success();
+}
 
 namespace {
 
@@ -2149,6 +2209,11 @@ protected:
         return;
       }
       function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+      // Input identities and parameter groups still need the MQT name.
+      if (failed(encodeInputNames(function))) {
+        signalPassFailure();
+        return;
+      }
     }
     state.cbitState.recordRegisterUses(moduleOp);
 

@@ -19,9 +19,17 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
+#include "CapnpDiagnostics.h"
+
+#include "capnp/any.h"
+#include "capnp/blob.h"
+#include "capnp/message.h"
+#include "capnp/serialize.h"
 #include "jeff/Conversion/JeffToNative/JeffToNative.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
+#include "jeff/Translation/Metadata.hpp"
+#include "kj/array.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -49,6 +57,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 
 namespace mlir {
@@ -57,6 +66,60 @@ using namespace qco;
 
 #define GEN_PASS_DEF_JEFFTOQCO
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
+
+/// Restore input names from jeff text metadata.
+static LogicalResult decodeInputNames(func::FuncOp function) {
+  auto* context = function.getContext();
+  const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  for (auto argument : function.getArguments()) {
+    auto metadata = jeff::getMetadata(argument);
+    if (failed(metadata)) {
+      return failure();
+    }
+    if (!*metadata) {
+      continue;
+    }
+    for (auto entry : *metadata) {
+      auto fields = cast<DictionaryAttr>(entry);
+      if (fields.getAs<StringAttr>("name").getValue() != key) {
+        continue;
+      }
+      auto bytes = fields.getAs<DenseI8ArrayAttr>("value").asArrayRef();
+      if (bytes.size() % sizeof(capnp::word) != 0) {
+        return emitError(argument.getLoc(),
+                         "Metadata payload size must be a multiple of the "
+                         "Cap'n Proto word size");
+      }
+      mqt::CapnpDiagnosticHandler handler(argument.getLoc(),
+                                          "decode input name metadata");
+      StringAttr name;
+      {
+        auto words =
+            kj::heapArray<capnp::word>(bytes.size() / sizeof(capnp::word));
+        if (!bytes.empty()) {
+          std::memcpy(words.begin(), bytes.data(), bytes.size());
+        }
+        capnp::FlatArrayMessageReader message(words);
+        if (succeeded(handler.result())) {
+          if (message.getEnd() != words.end()) {
+            return emitError(argument.getLoc(),
+                             "Metadata payload contains trailing data");
+          }
+          auto text = message.getRoot<capnp::AnyPointer>().getAs<capnp::Text>();
+          if (succeeded(handler.result())) {
+            name =
+                StringAttr::get(context, StringRef(text.begin(), text.size()));
+          }
+        }
+      }
+      if (failed(handler.result())) {
+        return failure();
+      }
+      function.setArgAttr(argument.getArgNumber(), key, name);
+    }
+  }
+  return success();
+}
 
 /// Returns whether @p op carries a jeff gate modifier
 template <typename JeffOpType>
@@ -1298,6 +1361,10 @@ protected:
     JeffToQCOTypeConverter typeConverter(context);
 
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (failed(decodeInputNames(function))) {
+        signalPassFailure();
+        return;
+      }
       if (function == *entryPoint) {
         function.setPublic();
         continue;

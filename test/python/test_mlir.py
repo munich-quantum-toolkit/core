@@ -335,6 +335,22 @@ def test_jeff_rejects_invalid_segment_message(segment: bytes) -> None:
 
 
 @pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
+def test_jeff_serialization_rejects_invalid_metadata(method: str) -> None:
+    """Raise on malformed metadata instead of returning a partial message."""
+    program = QCOProgram.from_mlir_str("""
+        module {
+          func.func @main(%theta: f64 {jeff.metadata = [
+            {name = "mqt.input_name", value = array<i8: 0>}
+          ]}) attributes {mqt.entry_point} {
+            return
+          }
+        }
+    """).to_jeff()
+    with pytest.raises(RuntimeError, match="Metadata payload size must be a multiple"):
+        getattr(program, method)()
+
+
+@pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
 def test_consumed_jeff_serialization_raises(method: str) -> None:
     """Reject serialization after consuming the program."""
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco().to_jeff()

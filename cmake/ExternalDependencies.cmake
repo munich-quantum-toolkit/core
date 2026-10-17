@@ -25,7 +25,7 @@ endif()
 FetchContent_Declare(
   jeff-mlir
   GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-  GIT_TAG 89866ea924214f3961adbd31c4c582593dcac221
+  GIT_TAG 4157e6f2cd16ce7a04eb09556a01c3b07548c26a
   EXCLUDE_FROM_ALL)
 block()
 # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option and

@@ -307,8 +307,8 @@ LogicalResult JeffProgram::cleanup() {
                             "failed to run the jeff cleanup pipeline");
 }
 
-void JeffProgram::toMessage(capnp::MessageBuilder& message) const {
-  serialize(mod(), message);
+LogicalResult JeffProgram::toMessage(capnp::MessageBuilder& message) const {
+  return serialize(mod(), message);
 }
 
 std::vector<std::byte> JeffProgram::toBytes() const {

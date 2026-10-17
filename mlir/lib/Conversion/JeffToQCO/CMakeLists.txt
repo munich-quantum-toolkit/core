@@ -15,9 +15,12 @@ add_mlir_conversion_library(
   JeffToQCOIncGen
   LINK_LIBS
   MLIRJeff
+  MLIRJeffTranslation
   MLIRJeffToNative
   MLIRFuncTransforms
   MLIRCBitDialect
   MLIRMQTDialect
   MLIRQCODialect
   MLIRTransforms)
+
+mqt_mlir_target_use_project_options(MLIRJeffToQCO)
