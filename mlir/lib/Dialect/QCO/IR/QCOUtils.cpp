@@ -178,4 +178,9 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
   return acc;
 }
 
+size_t countIfQubit(ValueRange values) {
+  return llvm::count_if(
+      values, [](Value value) { return isLinearQubitType(value.getType()); });
+}
+
 } // namespace mlir::qco

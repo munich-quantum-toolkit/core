@@ -162,6 +162,41 @@ mapped = compile_program(
 print(mapped.ir)
 ```
 
+The C++ `CompilerTarget::topologyPatterns()` API exposes reusable topology
+patterns grouped by `TopologyPatterns::Type`: `FourCycle`, `QubitPair` (M2),
+then `Star` (M4-1). Four-cycles allow chords. Stars store the center followed by
+three sorted neighbors; edges between the neighbors are allowed. Each neighbor
+triple produces one star, so high-degree vertices can produce many occurrences.
+Qubit pairs represent each undirected edge once, smaller vertex first. They
+reuse the normalized adjacency lists; hardware site-ID couplings cannot be
+directly viewed as dense vertex indices. Each group stores packed rows; use
+`group[i]` to access one occurrence. Explicit topologies enumerate lazily into a
+thread-safe cache shared by target copies. Storage grows with the number of
+occurrences, without a separate allocation for each row. For all-to-all targets,
+`topologyPatterns()` returns `std::nullopt`. Otherwise it returns an `ArrayRef`
+of groups. An explicit topology retains a group for each selected type even when
+it has no occurrences. These patterns describe connectivity only, not native
+gate availability or direction. No architecture classification is performed.
+Placement and mapping do not consume this cache yet.
+
+The C++ placement helpers in `Mapping/Placement.h` build a circuit connectivity
+graph from a verified, single-block QCO region and decompose its edges into
+these pattern types. The graph retains idle qubits and records each logical
+qubit's root value and tensor slot. Repeated interactions add one undirected
+edge; barriers add none. Region operations use MLIR's `RegionBranchOpInterface`
+to propagate qubit identities along control-flow edges. Traversal uses an
+explicit stack and visits each reachable single-block region once, without
+evaluating conditions or unrolling loops. Incoming paths at joins and loop
+backedges must agree on wire identities, including tensor slots.
+`RegionConnectivityAnalysis` caches the graph for a single-region operation
+through MLIR's analysis manager; passes must explicitly preserve it to retain
+the cache across transformations. VF2 matches are non-induced, so extra edges
+are allowed. Decomposition prefers four-cycles, then stars, then pairs; shared
+vertex IDs identify the overlap between slices. The caller selects the available
+types. Dynamic tensor sizes or indices, unsupported region operations, quantum
+calls, and gates with more than two qubits require lowering first. These helpers
+do not yet join target occurrences or choose a start layout.
+
 The CLI also accepts a saved target as a typed MLIR attribute. Serialize a
 Python target with `str(target)`, or pass the attribute directly:
 

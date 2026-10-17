@@ -36,11 +36,20 @@ public:
   /// Implicitly adds nodes.
   void addEdge(size_t u, size_t v);
 
+  /// Remove all directed edges from u to v, keeping both nodes.
+  void removeEdge(size_t u, size_t v);
+
+  /// Return whether a directed edge from u to v exists.
+  [[nodiscard]] bool hasEdge(size_t u, size_t v) const;
+
   /// Return the neighbours of a node.
   [[nodiscard]] ArrayRef<size_t> getNeighbours(size_t id) const;
 
   /// Return the nodes.
   [[nodiscard]] SmallVector<size_t> getNodes() const;
+
+  /// Return the number of nodes, including isolated nodes.
+  [[nodiscard]] size_t getNumNodes() const { return adj_.size(); }
 
   /// Return the degree of a node.
   [[nodiscard]] size_t getDegree(const size_t id) const {

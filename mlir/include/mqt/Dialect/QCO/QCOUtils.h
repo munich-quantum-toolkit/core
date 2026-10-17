@@ -18,9 +18,11 @@
 
 #include "mlir/IR/Block.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <cstddef>
@@ -55,6 +57,14 @@ inline bool checkDeadGate(Operation* op) {
   const auto shapedType = dyn_cast<ShapedType>(type);
   return isa<RankedTensorType, VectorType>(type) && shapedType.getRank() == 1 &&
          isa<QubitType>(shapedType.getElementType());
+}
+
+/// View the linear quantum values in order, without allocating storage.
+///
+/// The caller must keep the underlying values alive while using the view.
+[[nodiscard]] inline auto quantumValues(ValueRange values) {
+  return llvm::make_filter_range(
+      values, [](Value value) { return isLinearQubitType(value.getType()); });
 }
 
 /// Verify linear uses, static roots, and positional quantum state flow.
@@ -385,5 +395,8 @@ inline LogicalResult tryEliminateDeadGateValue(Value qubit,
   }
   return mlir::success(success);
 }
+
+/// Count the number of linear qubit types in a value range.
+[[nodiscard]] size_t countIfQubit(ValueRange values);
 
 } // namespace mlir::qco

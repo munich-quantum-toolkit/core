@@ -11,6 +11,7 @@
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
 #include "gtest/gtest.h"
@@ -18,14 +19,18 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
@@ -37,6 +42,30 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+
+TEST(QuantumValues, FiltersInOrderAndCountsValuesNotTensorSlots) {
+  MLIRContext context;
+  context.loadDialect<QCODialect>();
+  Block block;
+  auto qubit = QubitType::get(&context);
+  auto location = UnknownLoc::get(&context);
+  block.addArguments(
+      {
+          IntegerType::get(&context, 1),
+          qubit,
+          RankedTensorType::get({3}, qubit),
+          IndexType::get(&context),
+          qubit,
+      },
+      SmallVector<Location>(5, location));
+  EXPECT_EQ(llvm::to_vector(quantumValues(block.getArguments())),
+            (SmallVector<Value>{block.getArgument(1), block.getArgument(2),
+                                block.getArgument(4)}));
+  EXPECT_EQ(countIfQubit(block.getArguments()), 3);
+  EXPECT_EQ(countIfQubit(ValueRange{}), 0);
+  EXPECT_TRUE(quantumValues(ValueRange{}).empty());
+  EXPECT_EQ(countIfQubit(block.getArguments().take_front(1)), 0);
+}
 
 namespace {
 class WireIteratorFixture : public testing::Test {

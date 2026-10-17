@@ -203,34 +203,24 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
     auto known = origins.lookup(value);
     return known ? known : value;
   };
-  const auto quantum = [](ValueRange values) {
-    SmallVector<Value> result;
-    llvm::copy_if(values, std::back_inserter(result), [](Value value) {
-      return isLinearQubitType(value.getType());
-    });
-    return result;
-  };
   const auto corresponds = [&](ValueRange inputs, ValueRange outputs) {
-    auto quantumInputs = quantum(inputs);
-    auto quantumOutputs = quantum(outputs);
-    if (quantumInputs.size() != quantumOutputs.size()) {
+    if (countIfQubit(inputs) != countIfQubit(outputs)) {
       return false;
     }
-    return llvm::all_of(llvm::zip_equal(quantumInputs, quantumOutputs),
-                        [&](auto pair) {
-                          auto [input, output] = pair;
-                          return input.getType() == output.getType() &&
-                                 origin(input) == origin(output);
-                        });
+    return llvm::all_of(
+        llvm::zip_equal(quantumValues(inputs), quantumValues(outputs)),
+        [&](auto pair) {
+          auto [input, output] = pair;
+          return input.getType() == output.getType() &&
+                 origin(input) == origin(output);
+        });
   };
   const auto tie = [&](ValueRange inputs, ValueRange outputs) {
-    auto quantumInputs = quantum(inputs);
-    auto quantumOutputs = quantum(outputs);
-    if (quantumInputs.size() != quantumOutputs.size()) {
+    if (countIfQubit(inputs) != countIfQubit(outputs)) {
       return;
     }
     for (auto [input, output] :
-         llvm::zip_equal(quantumInputs, quantumOutputs)) {
+         llvm::zip_equal(quantumValues(inputs), quantumValues(outputs))) {
       origins[output] = origin(input);
     }
   };
