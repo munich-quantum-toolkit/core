@@ -144,11 +144,12 @@ result = measure q;
   });
 }
 
-TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
+TEST(OpenQASMTargetTest,
+     ConstantArrayAccessAndCopiesNeedNoRuntimeBoundsChecks) {
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(
       "OPENQASM 3.0; array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; "
-      "a[-1, -1] = a[0, 0];",
+      "array[int, 2, 3] b = a; a[-1, -1] = a[0, 0]; a = b; b = b;",
       &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -157,7 +158,11 @@ TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
     ++arrays;
     EXPECT_EQ(alloc.getType().getShape(), (ArrayRef<int64_t>{2, 3}));
   });
-  EXPECT_EQ(arrays, 1);
+  EXPECT_EQ(arrays, 2);
+  size_t copies = 0;
+  moduleOp->walk([&](memref::CopyOp) { ++copies; });
+  // Whole-array copies stay compact; self-assignment needs no operation.
+  EXPECT_EQ(copies, 2);
   moduleOp->walk(
       [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
 }
