@@ -653,6 +653,7 @@ TEST_F(MappingPassFixture, RouteIndependentControlAfterTerminalWire) {
     builder.sink(q1);
     builder.sink(q2);
     auto moduleOp = builder.finalize();
+    attachTestEnvironment(*moduleOp, target);
 
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(runMapping(
@@ -694,6 +695,7 @@ TEST_F(MappingPassFixture, RouteControlAcrossTensorWireBoundaries) {
     tensor = builder.qtensorInsert(q2, tensor, 2);
     builder.qtensorDealloc(tensor);
     auto moduleOp = builder.finalize();
+    attachTestEnvironment(*moduleOp, target);
 
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -810,6 +812,7 @@ TEST_F(MappingPassFixture, RouteControlAfterConsecutiveMeasurements) {
   builder.sink(q1);
   builder.sink(q2);
   auto moduleOp = builder.finalize();
+  attachTestEnvironment(*moduleOp, target);
 
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runMapping(
@@ -845,6 +848,7 @@ module {
 }
   )mlir",
                                               context.get());
+  attachTestEnvironment(*moduleOp, target);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runMapping(
@@ -881,6 +885,7 @@ module {
 }
   )mlir",
                                               context.get());
+  attachTestEnvironment(*moduleOp, target);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runMapping(
@@ -957,6 +962,7 @@ TEST_F(MappingPassFixture, RouteControlFromConsecutiveMeasurementResults) {
       builder.sink(q0);
       builder.sink(q1);
       auto moduleOp = builder.finalize(reg);
+      attachTestEnvironment(*moduleOp, target);
 
       ASSERT_TRUE(succeeded(verify(*moduleOp)));
       ASSERT_TRUE(succeeded(runMapping(
@@ -1002,6 +1008,7 @@ TEST_F(MappingPassFixture, KeepMeasurementStoreBeforeConditionalOverwrite) {
   builder.sink(q1);
   builder.sink(q2);
   auto moduleOp = builder.finalize();
+  attachTestEnvironment(*moduleOp, target);
 
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runMapping(
@@ -1048,6 +1055,7 @@ TEST_F(MappingPassFixture, KeepOutputOnlyRegisterMeasurementsTerminal) {
       output = cbit::ReadOp::create(builder, builder.getI1Type(), reg);
     }
     auto moduleOp = builder.finalize(output);
+    attachTestEnvironment(*moduleOp, target);
 
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(runMapping(
@@ -1168,8 +1176,9 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
   tensor = builder.qtensorInsert(second, tensor, 1);
   builder.qtensorDealloc(tensor);
   auto moduleOp = builder.finalize({firstBit, secondBit});
+  attachTestEnvironment(moduleOp.get(), target);
 
-  ASSERT_TRUE(runPlacement(moduleOp.get(), target).succeeded());
+  ASSERT_TRUE(runPlacement(moduleOp.get()).succeeded());
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
 
@@ -1473,6 +1482,7 @@ TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
   builder.sink(q1);
   builder.sink(conditionalResults[1]);
   auto moduleOp = builder.finalize();
+  attachTestEnvironment(*moduleOp, target);
 
   ASSERT_TRUE(
       runMapping(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
@@ -2145,6 +2155,7 @@ TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
+  attachTestEnvironment(moduleOp.get(), target);
   ASSERT_TRUE(
       runMapping(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
           .succeeded());
@@ -2216,6 +2227,7 @@ TEST_P(MappingPassTest, MapIndexSwitchRegions) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
+  attachTestEnvironment(moduleOp.get(), target);
   ASSERT_TRUE(
       runMapping(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
           .succeeded());
@@ -3776,6 +3788,7 @@ TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
             auto moduleOp = builder.finalize(bits);
             ASSERT_TRUE(succeeded(verify(*moduleOp)));
             ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            attachTestEnvironment(moduleOp.get(), target);
             const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
             ASSERT_TRUE(succeeded(expected));
             ASSERT_TRUE(succeeded(
@@ -4108,6 +4121,7 @@ TEST_F(MappingPassFixture, NativeScoringChecksTerminalMeasurementSites) {
           }
           return bits;
         });
+    attachTestEnvironment(moduleOp.get(), target);
     const auto expected = qco::sample(getEntryPoint(*moduleOp), 1, 42);
     ASSERT_TRUE(succeeded(expected));
     ASSERT_TRUE(succeeded(runMapping(
@@ -4165,4 +4179,58 @@ module {
   populateTargetNativeSynthesisPipeline(native);
   EXPECT_TRUE(failed(native.run(*moduleOp)));
   EXPECT_GT(count, 0);
+}
+
+TEST_F(MappingPassFixture, PreserveSerialRoutingCompatibility) {
+  constexpr size_t width = 29;
+  std::vector<CompilerTarget::Coupling> edges;
+  for (size_t i = 1; i < width; ++i) {
+    edges.emplace_back(i - 1, i);
+  }
+  const auto topology = llvm::cantFail(
+      CompilerTarget::create(width, Connectivity::fromCouplings(edges),
+                             NativeOperations::unrestricted()));
+  const auto target = withNativeBasis(topology, "cz");
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (size_t i = 0; i < width; ++i) {
+    qubits.push_back(builder.allocQubit());
+  }
+  for (size_t i = 0; i < width; ++i) {
+    for (size_t j = 0; j < i; ++j) {
+      const auto angle = 0.125 / static_cast<double>(i - j);
+      qubits[i] = builder.p(angle, qubits[i]);
+      std::tie(qubits[i], qubits[j]) = builder.cx(qubits[i], qubits[j]);
+      qubits[j] = builder.p(-angle, qubits[j]);
+      std::tie(qubits[i], qubits[j]) = builder.cx(qubits[i], qubits[j]);
+      qubits[j] = builder.p(angle, qubits[j]);
+    }
+    qubits[i] = builder.h(qubits[i]);
+  }
+  for (Value qubit : qubits) {
+    builder.sink(qubit);
+  }
+  auto input = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*input)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+  std::string expected;
+  for (bool multithreading : {false, true}) {
+    context->enableMultithreading(multithreading);
+    OwningOpRef<ModuleOp> moduleOp = input->clone();
+    ASSERT_TRUE(succeeded(runMapping(
+        *moduleOp, target, MappingPassOptions{.ntrials = 10, .seed = 42})));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+    size_t swaps = 0;
+    moduleOp->walk([&](SWAPOp) { ++swaps; });
+    // This count protects compatibility when policy arithmetic is refactored.
+    EXPECT_EQ(swaps, 402U);
+    if (multithreading) {
+      EXPECT_EQ(printModule(*moduleOp), expected);
+    } else {
+      expected = printModule(*moduleOp);
+    }
+  }
 }

@@ -212,24 +212,33 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     layout. For `scf.while`, the before-region exit places the after region
     and loop results; the after region restores the loop-entry layout.
 
-    For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
-    or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
-    sequence of `SWAP` operations that makes these two-qubit operations executable. The A* search also considers
-    subsequent layers, which are determined by the `nlookahead` parameter.
+    Routing collects a lookahead horizon of ready two-qubit interactions,
+    skipping consecutive blocks on the same qubit pair. It contains at most
+    `1 + nlookahead` interactions, grouped by dependency layer. Traversal order
+    depends on physical wire positions; it is not a global program-order rank.
 
-    The cost function of the A* search is defined as follows:
+    Each search fixes one objective from the front layer. For each candidate,
+    count later horizon interactions that reuse either endpoint, counting an
+    interaction only once. Divide this demand by the candidate's one-based
+    front position. The largest score wins; ties retain the earlier candidate.
+    This requires more reuse to bypass earlier ready interactions. The objective
+    is fixed during the search, which ends when that pair becomes adjacent;
+    it need not make the entire front layer executable.
 
-    - `f(n) = g(n) + h(n)`
-    - `g(n) = alpha * depth(n)`
-    - `h(n) = sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
+    The search priority is `f(n) = g(n) + h(n)`, where:
 
-    Where:
+    - `g(n) = alpha * accumulated_cost(n)`.
+    - `h(n) = swap_cost * sum(weight(i) * (dist(p[a], p[b]) - 1))`, summing
+      over each interaction `(a,b)` in horizon layer `i`.
+    - `p` is the logical-to-physical mapping associated with search node `n`.
+    - `dist` is shortest-path distance on the target's coupling graph.
+    - `weight(0) = 1`; for `i >= 1`,
+      `weight(i) = lambda / (lambda + (1 - lambda) * i)`.
 
-    - `p` is the dynamic-to-static mapping associated with search node `n`.
-    - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
-    - `depth(n)` returns the distance from the node `n` to the root node.
-    - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
+    Default `lambda = 0.5` gives layer weights `1, 1/2, 1/3, ...`, including
+    empty layers. Preserve per-interaction Float accumulation in horizon order:
+    regrouping additions can change queue ties and routing decisions. Without
+    native-cost guidance, `swap_cost = 1` and accumulated cost is SWAP depth.
 
     When a native-cost estimate is available and standalone SWAP cost is uniform
     across target edges, refinement, scoring, and final routing measure both terms in native
@@ -251,7 +260,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     At least the root node is retained; zero disables node expansion.
     The pass stops allocating nodes at the limit, checks the remaining queue,
     and, if no solution is queued, completes the route with SWAPs that reduce
-    the leading pair's distance. This always makes progress on a connected
+    the fixed objective pair's distance. This always makes progress on a connected
     target. Changing the budget can change the selected initial layout and
     final gate count or depth; more memory does not guarantee fewer gates.
     Queue, visited-map, allocator, and linear fallback workspace overhead are
