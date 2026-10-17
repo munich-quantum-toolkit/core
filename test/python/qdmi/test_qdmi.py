@@ -18,7 +18,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from packaging import version
+from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompiledProgram,
@@ -551,10 +551,7 @@ c = measure q;
 def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -> None:
     """Keep DDSIM-native controlled gates and their global phase."""
     qiskit = pytest.importorskip("qiskit")
-    if not (
-        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
-        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-    ):
+    if not supports_qiskit_translation(qiskit.__version__):
         pytest.skip(f"no Qiskit translation is registered for {qiskit.__version__}")
     circuit_library = pytest.importorskip("qiskit.circuit.library")
     quantum_info = pytest.importorskip("qiskit.quantum_info")

@@ -10,3 +10,4 @@
 
 // major, minor, source suffix, minimum patch, vendored release, supported range
 MQT_QISKIT_VERSION(2, 5, 2_5, 0, 2.5.0, ">=2.5.0,<2.6.0")
+MQT_QISKIT_VERSION(2, 6, 2_6, 0, 2.6.0, ">=2.6.0,<2.7.0")

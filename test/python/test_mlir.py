@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from functools import partial
@@ -21,10 +20,10 @@ from threading import Event, Thread
 import numpy as np
 import pytest
 import qiskit
-from packaging import version
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qasm3
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import DensityMatrix, Operator
+from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompilationOptions,
@@ -49,12 +48,22 @@ from mqt.core.mlir import (
 from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
-    not (
-        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
-        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-    ),
+    not supports_qiskit_translation(qiskit.__version__),
     reason=f"no Qiskit translation is registered for {qiskit.__version__}",
 )
+
+
+@pytest.mark.skipif(
+    not qiskit.__version__.startswith(("2.5.", "2.6.")),
+    reason="translation requires a supported Qiskit minor",
+)
+def test_supported_qiskit_minor_round_trip() -> None:
+    """Check promised minors independently of registry-based test selection."""
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
 
 MLIR_STRING = r"""module {
   func.func @main() -> memref<2xi1> attributes {mqt.entry_point} {

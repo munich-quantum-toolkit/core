@@ -214,6 +214,20 @@ static void checkExitCode(const QkExitCode code,
   return OperationKind::Unknown;
 }
 
+#if QISKIT_VERSION_MAJOR > 2 || QISKIT_VERSION_MINOR >= 6
+[[nodiscard]] static std::optional<Parameter>
+normalizeNativeNumber(const QkParam* parameter) {
+  if (qk_param_kind(parameter) != QkParamKind_Real) {
+    return std::nullopt;
+  }
+  const auto value = qk_param_as_real(parameter);
+  if (!std::isfinite(value)) {
+    throw std::runtime_error("Qiskit returned a non-finite parameter");
+  }
+  return Parameter::number(value);
+}
+#endif
+
 [[nodiscard]] static Parameter
 normalizePythonParameterLeaf(const nb::handle parameter) {
   double number = 0.0;
@@ -991,6 +1005,9 @@ public:
 
   [[nodiscard]] std::vector<Parameter> parameters() const override {
     std::vector<Parameter> result;
+    if (qk_circuit_num_param_symbols(circuit_) == 0U) {
+      return result;
+    }
     const auto parameters =
         pythonAttribute(pythonCircuit_, "parameters",
                         "Qiskit circuit does not expose its free parameters");
@@ -1006,6 +1023,13 @@ public:
   }
 
   [[nodiscard]] Parameter globalPhase() const override {
+#if QISKIT_VERSION_MAJOR > 2 || QISKIT_VERSION_MINOR >= 6
+    auto* phase = qk_circuit_global_phase(circuit_);
+    const auto guard = llvm::scope_exit([phase] { qk_param_free(phase); });
+    if (auto number = normalizeNativeNumber(phase)) {
+      return std::move(*number);
+    }
+#endif
     return normalizePythonParameter(
         pythonAttribute(pythonCircuit_, "global_phase",
                         "Qiskit circuit does not expose its global phase"));
@@ -1056,43 +1080,16 @@ public:
   [[nodiscard]] Instruction instruction(const size_t index) const override {
     const auto kind = instructionKind(index);
     if (kind == OperationKind::Delay) {
-      return {
-          .kind = kind,
-          .name = "delay",
-          .qubits = {},
-          .clbits = {},
-          .parameters = {},
-          .modifiers = {},
-          .standardGate = {},
-      };
+      return {.kind = kind, .name = "delay"};
     }
     if (kind == OperationKind::ControlFlow) {
-      return {
-          .kind = kind,
-          .name = "control_flow",
-          .qubits = {},
-          .clbits = {},
-          .parameters = {},
-          .modifiers = {},
-          .standardGate = {},
-      };
-    }
-    const auto operation = pythonOperation(index);
-    if (pythonStringAttribute(operation, "name",
-                              "Qiskit operation has an invalid name") ==
-            "store" &&
-        isPythonStore(operation)) {
-      return {
-          .kind = OperationKind::Store,
-          .name = "store",
-          .qubits = {},
-          .clbits = {},
-          .parameters = {},
-          .modifiers = {},
-          .standardGate = {},
-      };
+      return {.kind = kind, .name = "control_flow"};
     }
     if (kind == OperationKind::Unknown) {
+      const auto operation = pythonOperation(index);
+      if (isPythonStore(operation)) {
+        return {.kind = OperationKind::Store, .name = "store"};
+      }
       // The C API's scalar parameter accessor aborts on Python objects such as
       // PermutationGate's array. Read custom operations through Python and let
       // their definitions supply the scalar call signature.
@@ -1128,13 +1125,19 @@ public:
       }
       return result;
     }
+    Instruction result;
+    result.kind = kind;
+#if QISKIT_VERSION_MAJOR > 2 || QISKIT_VERSION_MINOR >= 6
+    QkCircuitInstructionView native{};
+    qk_circuit_view_instruction(circuit_, index, &native);
+    result.name.assign(native.name, native.name_len);
+#else
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
     const auto guard =
         llvm::scope_exit([&native] { qk_circuit_instruction_clear(&native); });
-    Instruction result;
-    result.kind = kind;
     result.name = native.name == nullptr ? "" : native.name;
+#endif
     if (native.num_qubits != 0U) {
       result.qubits.resize(native.num_qubits);
       std::copy_n(native.qubits, native.num_qubits, result.qubits.begin());
@@ -1143,11 +1146,48 @@ public:
       result.clbits.resize(native.num_clbits);
       std::copy_n(native.clbits, native.num_clbits, result.clbits.begin());
     }
-    result.parameters.reserve(native.num_params);
-    if (result.kind == OperationKind::Gate) {
+    if (native.num_params != 0U) {
+      if (result.kind != OperationKind::Gate) {
+        throw std::runtime_error(
+            "Qiskit non-gate instruction has unexpected scalar parameters");
+      }
+#if QISKIT_VERSION_MAJOR > 2 || QISKIT_VERSION_MINOR >= 6
+      std::vector<size_t> symbolic;
+      result.parameters.resize(native.num_params);
+      const auto stride = qk_param_stride();
+      for (size_t parameter = 0U; parameter < native.num_params; ++parameter) {
+        // Qiskit specifies byte offsets for its opaque contiguous QkParam
+        // array. NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto* value = reinterpret_cast<const QkParam*>(
+            reinterpret_cast<const std::byte*>(native.params) +
+            parameter * stride);
+        // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+        if (auto number = normalizeNativeNumber(value)) {
+          result.parameters[parameter] = std::move(*number);
+        } else {
+          symbolic.push_back(parameter);
+        }
+      }
+      // Keep native numeric values: Python's cached parameters can be stale.
+      // Finish reading the borrowed view before invoking Python fallbacks.
+      if (!symbolic.empty()) {
+        const auto parameters =
+            pythonAttribute(pythonOperation(index), "params",
+                            "Qiskit operation does not expose its parameters");
+        if (nb::len(parameters) != native.num_params) {
+          throw std::runtime_error(
+              "Qiskit Python and native parameter counts do not match");
+        }
+        for (const auto parameter : symbolic) {
+          result.parameters[parameter] =
+              normalizePythonParameter(parameters[parameter]);
+        }
+      }
+#else
       const auto parameters =
-          pythonAttribute(operation, "params",
+          pythonAttribute(pythonOperation(index), "params",
                           "Qiskit operation does not expose its parameters");
+      result.parameters.reserve(native.num_params);
       try {
         for (const nb::handle parameter : nb::iter(parameters)) {
           result.parameters.push_back(normalizePythonParameter(parameter));
@@ -1159,9 +1199,7 @@ public:
         throw std::runtime_error(
             "Qiskit Python and native parameter counts do not match");
       }
-    } else if (native.num_params != 0U) {
-      throw std::runtime_error(
-          "Qiskit non-gate instruction has unexpected scalar parameters");
+#endif
     }
     result.standardGate = standardGateMapping(result.name);
     return result;
@@ -2264,6 +2302,17 @@ public:
   }
 
   void setGlobalPhase(const Parameter& phase) override {
+    if (const auto* number = phase.getNumber()) {
+      if (!std::isfinite(number->value)) {
+        throw std::runtime_error(
+            "cannot construct a non-finite Qiskit parameter");
+      }
+      auto* native = qk_param_from_double(number->value);
+      const auto guard = llvm::scope_exit([native] { qk_param_free(native); });
+      checkExitCode(qk_circuit_set_global_phase(nativeCircuit(), native),
+                    "setting global phase");
+      return;
+    }
     pythonCircuit_.attr("global_phase") = pythonParameter(phase);
   }
 

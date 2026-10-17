@@ -346,12 +346,12 @@ def populate_vendor_tree(target: Path, version: str, wheel: Path, artifact: Json
         RuntimeError: If the wheel does not contain the required exact release files.
     """
     target.mkdir(parents=True)
-    prefix = "qiskit/include/"
     hashes: dict[str, str] = {}
     with zipfile.ZipFile(wheel) as archive:
+        prefix = "qiskit/capi/include/" if "qiskit/capi/include/qiskit.h" in archive.namelist() else "qiskit/include/"
         header_names = sorted(name for name in archive.namelist() if name.startswith(prefix) and name.endswith(".h"))
-        if "qiskit/include/qiskit.h" not in header_names:
-            msg = "wheel does not contain qiskit/include/qiskit.h"
+        if f"{prefix}qiskit.h" not in header_names:
+            msg = "wheel does not contain Qiskit C API headers"
             raise RuntimeError(msg)
         for archive_name in header_names:
             data = archive.read(archive_name)

@@ -5,7 +5,7 @@ MQT Core exposes two distinct Qiskit interfaces:
 | Interface                                                | Supported Qiskit versions | Purpose                                                          |
 | -------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------- |
 | {doc}`QDMI backend <../qdmi/qdmi_backend>`               | 2.1 and newer             | Execute circuits through device-specific serializers.            |
-| {doc}`MQT Compiler Collection <mqt_compiler_collection>` | `>=2.5.0,<2.6.0`          | Import and export circuits through the versioned native adapter. |
+| {doc}`MQT Compiler Collection <mqt_compiler_collection>` | `>=2.5.0,<2.7.0`          | Import and export circuits through the versioned native adapter. |
 
 Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
 the narrower range above; the adapter checks it before inspecting a circuit.
@@ -248,5 +248,13 @@ Loop lists with jumps and switch cases with variables are supported within the
 without changing the source object or exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
-accepts versions in the registered {code}`>=2.5.0,<2.6.0` range and verifies the
+accepts versions in the registered {code}`>=2.5.0,<2.7.0` range and verifies the
 native API version before reading a circuit.
+
+Qiskit 2.6 uses borrowed C API instruction views and reads numeric gate
+parameters and global phases natively. Symbolic expressions retain the Python
+fallback because the C API does not expose their expression trees or parameter
+identities. Custom Python gates and classical expressions also retain their
+Python fallbacks. The new native custom-operation API defines operations; it
+does not inspect existing Python gate definitions. Delay instructions remain
+unsupported because the compiler does not represent their timing semantics.

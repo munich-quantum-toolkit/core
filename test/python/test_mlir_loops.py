@@ -22,7 +22,7 @@ from qiskit_support import supports_qiskit_translation
 from mqt.core.dd import DDPackage
 from mqt.core.mlir import JeffProgram, QCProgram
 
-if not supports_qiskit_translation():
+if not supports_qiskit_translation(qiskit.__version__):
     pytest.skip(f"No registered Qiskit adapter for {qiskit.__version__}", allow_module_level=True)
 
 

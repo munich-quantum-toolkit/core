@@ -21,7 +21,9 @@ from qiskit_support import supports_qiskit_translation
 from mqt.core.mlir import QCProgram
 
 
-@pytest.mark.skipif(not supports_qiskit_translation(), reason=f"No registered Qiskit adapter for {qiskit.__version__}")
+@pytest.mark.skipif(
+    not supports_qiskit_translation(qiskit.__version__), reason=f"No registered Qiskit adapter for {qiskit.__version__}"
+)
 @pytest.mark.parametrize("qco", [False, True])
 def test_partial_binding_preserves_identity_and_expression(*, qco: bool) -> None:
     """Binding stays native while preserving remaining Qiskit parameter identity."""
@@ -48,7 +50,9 @@ def test_partial_binding_preserves_identity_and_expression(*, qco: bool) -> None
     assert original.parameters == ["a", "b"]
 
 
-@pytest.mark.skipif(not supports_qiskit_translation(), reason=f"No registered Qiskit adapter for {qiskit.__version__}")
+@pytest.mark.skipif(
+    not supports_qiskit_translation(qiskit.__version__), reason=f"No registered Qiskit adapter for {qiskit.__version__}"
+)
 def test_scalar_parameters_round_trip_through_openqasm() -> None:
     """Named float inputs connect Qiskit and OpenQASM parameter workflows."""
     theta, phi = Parameter("theta"), Parameter("phi")

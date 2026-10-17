@@ -282,7 +282,7 @@ test-sources = [
   "test/circuits",
   "test/python",
   "test/slurm/run_integration.py",
-  "vendor/qiskit-c-api/2.5.0",
+  "vendor/qiskit-c-api",
 ]
 
 [tool.cibuildwheel.windows]

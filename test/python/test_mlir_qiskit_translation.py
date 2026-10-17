@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
     from qiskit.circuit.annotated_operation import Modifier
 
-if not supports_qiskit_translation():
+if not supports_qiskit_translation(qiskit.__version__):
     pytest.skip(f"No registered Qiskit adapter for {qiskit.__version__}", allow_module_level=True)
 
 
@@ -284,7 +284,7 @@ def test_symbolic_multi_controlled_rotations_decompose_and_bind() -> None:
     assert {parameter.name for parameter in restored.parameters} == {theta.name}
     assert all(item.operation.num_qubits <= 2 for item in restored.data)
     expected = circuit.assign_parameters({theta: -0.61})
-    actual = _assign_parameter_values(restored, {theta.name: -0.61})
+    actual = restored.assign_parameters({theta: -0.61})
     assert np.allclose(Operator(actual).data, Operator(expected).data, atol=1e-10, rtol=0)
 
 
@@ -366,30 +366,31 @@ for operation in operations:
 
 
 @pytest.mark.parametrize(
-    ("modifier", "expected"),
+    ("base", "modifier", "expected", "round_trip"),
     [
-        (InverseModifier(), "qc.inv"),
-        (PowerModifier(0.5), "qc.pow"),
-        (ControlModifier(2), "qc.ctrl"),
+        ("unitary", InverseModifier(), "qc.inv", True),
+        ("unitary", PowerModifier(0.5), "qc.pow", False),
+        ("unitary", ControlModifier(2), "qc.ctrl", True),
+        ("rotation", InverseModifier(), "qc.inv", True),
+        ("rotation", PowerModifier(0.5), "qc.pow", False),
+        ("rotation", PowerModifier(-1.0), "qc.pow", True),
+        ("rotation", ControlModifier(1), "qc.ctrl", True),
+        ("rotation", ControlModifier(2), "qc.ctrl", False),
     ],
-    ids=["inverse", "power", "control"],
 )
-def test_dense_unitary_modifiers_are_imported(
-    modifier: InverseModifier | PowerModifier | ControlModifier, expected: str
-) -> None:
-    """Preserve supported Qiskit modifiers around dense unitary operations."""
-    operation = AnnotatedOperation(
-        library.UnitaryGate(np.asarray([[1.0, 0.0], [0.0, 1.0j]])),
-        modifier,
-    )
+def test_numeric_modifiers_round_trip(base: str, modifier: Modifier, expected: str, *, round_trip: bool) -> None:
+    """Import numeric modifiers and export their constructible Qiskit equivalents."""
+    gate = library.UnitaryGate(np.diag([1.0, 1.0j])) if base == "unitary" else library.RYGate(0.25)
+    operation = AnnotatedOperation(gate, modifier)
     circuit = QuantumCircuit(operation.num_qubits)
     circuit.append(operation, circuit.qubits)
 
     program = QCProgram.from_qiskit(circuit)
 
-    assert "qc.unitary" in program.ir
     assert expected in program.ir
-    if not isinstance(modifier, PowerModifier):
+    if base == "unitary":
+        assert "qc.unitary" in program.ir
+    if round_trip:
         restored = program.to_qiskit()
         assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
@@ -426,27 +427,6 @@ def test_inverse_controlled_dense_unitary_round_trip() -> None:
     assert "qc.ctrl" in program.ir
     assert "qc.inv" in program.ir
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
-
-
-@pytest.mark.parametrize(
-    ("modifier", "expected"),
-    [
-        (InverseModifier(), "qc.inv"),
-        (PowerModifier(0.5), "qc.pow"),
-        (ControlModifier(2), "qc.ctrl"),
-    ],
-    ids=["inverse", "power", "control"],
-)
-def test_numeric_modifiers_are_imported(
-    modifier: InverseModifier | PowerModifier | ControlModifier, expected: str
-) -> None:
-    """Represent supported numeric Qiskit modifiers in QC."""
-    circuit = QuantumCircuit(AnnotatedOperation(library.RYGate(0.25), modifier).num_qubits)
-    circuit.append(AnnotatedOperation(library.RYGate(0.25), modifier), circuit.qubits)
-
-    program = QCProgram.from_qiskit(circuit)
-
-    assert expected in program.ir
 
 
 def test_excessively_nested_annotated_operation_is_rejected() -> None:
@@ -495,24 +475,6 @@ def test_multi_target_controlled_gate_round_trip(
         gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])
     circuit = QuantumCircuit(gate.num_qubits)
     circuit.append(gate, list(reversed(range(gate.num_qubits))))
-
-    restored = QCProgram.from_qiskit(circuit).to_qiskit()
-
-    assert np.allclose(Operator(restored).data, Operator(circuit).data)
-
-
-@pytest.mark.parametrize(
-    "modifier",
-    [InverseModifier(), PowerModifier(-1.0), ControlModifier(1)],
-    ids=["inverse", "inverse-power", "control"],
-)
-def test_constructible_numeric_modifiers_round_trip(
-    modifier: InverseModifier | PowerModifier | ControlModifier,
-) -> None:
-    """Export modifiers that have a Qiskit standard-gate equivalent."""
-    operation = AnnotatedOperation(library.RYGate(0.25), modifier)
-    circuit = QuantumCircuit(operation.num_qubits)
-    circuit.append(operation, circuit.qubits)
 
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
@@ -1942,7 +1904,7 @@ def test_float_castable_custom_gate_argument_keeps_its_symbol(*, cleanup: bool) 
     expected.rx(0, 0)
     for theta in (-0.5, 0.0, 1.25):
         assert np.allclose(
-            Operator(_assign_parameter_values(restored, {"theta": theta})).data,
+            Operator(restored.assign_parameters({"theta": theta})).data,
             Operator(expected).data,
         )
     assert program.ir == source_ir
@@ -1965,10 +1927,10 @@ def test_distinct_custom_gate_specializations_round_trip() -> None:
     assert program.ir.count("mqt.unitary") == 4
     assert 'mqt.source_name = "custom"' in program.ir
     assert [item.operation.name for item in restored.data] == ["custom"] * 4
-    values = {"x": 0.3, "y": -0.2}
+    values = {x: 0.3, y: -0.2}
     assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
     )
 
 
@@ -3558,7 +3520,6 @@ def test_classical_expression_clbit_captures_import() -> None:
     assert _cbit_load_indices(ir) == [1, 0]
     assert "arith.xori" in ir
     assert "scf.if" in ir
-    assert "scf.if" in ir
 
 
 def test_classical_expression_register_captures_round_trip_on_import() -> None:
@@ -3649,8 +3610,7 @@ def test_condition_only_switch_expression_imports() -> None:
     default = QuantumCircuit(1)
     default.h(0)
     circuit = QuantumCircuit(1, 2)
-    # Qiskit's overload omits expression targets although its runtime accepts them.
-    circuit.switch(  # ty: ignore[no-matching-overload]
+    circuit.switch(
         expr.bit_xor(circuit.cregs[0], 1),
         [(0, zero), (CASE_DEFAULT, default)],
         [circuit.qubits[0]],
@@ -3832,6 +3792,7 @@ def test_original_parameter_vector_binds_after_mlir_round_trip() -> None:
     restored = QCProgram.from_mlir_str(program.to_qc().ir).to_qiskit()
 
     assert restored.parameters == {vector[0], vector[2], vector[10]}
+    assert [parameter.index for parameter in restored.parameters] == [0, 2, 10]
     restored_vector = next(iter(restored.parameters)).vector
     assert restored_vector.uuid == vector.uuid
     assert list(restored_vector) == list(vector)
@@ -3867,24 +3828,6 @@ def test_vector_input_id_consistency(second_identity: int) -> None:
     else:
         with pytest.raises(RuntimeError, match="inconsistent parameter-vector input identities"):
             program.to_qiskit()
-
-
-def test_sparse_parameter_vector_round_trip_preserves_order_and_binding() -> None:
-    """Preserve a sparse vector's grouping, size, and numeric element order."""
-    vector = ParameterVector("theta", 12)
-    circuit = QuantumCircuit(1, global_phase=vector[0])
-    circuit.rx(vector[10] + vector[2], 0)
-
-    restored = QCProgram.from_qiskit(circuit).to_qiskit()
-
-    parameters = list(restored.parameters)
-    assert [parameter.index for parameter in parameters] == [0, 2, 10]
-    restored_vector = parameters[0].vector
-    assert len(restored_vector) == len(vector)
-    values = [0.01 * index for index in range(12)]
-    assert Operator(restored.assign_parameters({restored_vector: values}, strict=False)).equiv(
-        Operator(circuit.assign_parameters({vector: values}, strict=False))
-    )
 
 
 def test_parameter_vector_is_shared_across_sibling_blocks() -> None:
@@ -4020,15 +3963,6 @@ def test_parameter_vector_metadata_is_preflighted(sizes: list[int], shared_group
         program.to_qiskit()
 
 
-def _assign_parameter_values(circuit: QuantumCircuit, values: dict[str, float]) -> QuantumCircuit:
-    """Bind a circuit using parameter names after an import/export round trip.
-
-    Returns:
-        A copy of the circuit with all parameters bound.
-    """
-    return circuit.assign_parameters({parameter: values[parameter.name] for parameter in circuit.parameters})
-
-
 def test_nested_symbolic_arithmetic_round_trip_with_shared_global_phase() -> None:
     """Preserve nested arithmetic and shared symbols in gates and global phase."""
     theta = Parameter("theta")
@@ -4043,10 +3977,10 @@ def test_nested_symbolic_arithmetic_round_trip_with_shared_global_phase() -> Non
 
     assert {parameter.name for parameter in restored.parameters} == {"phi", "theta"}
     assert len(restored.parameters) == 2
-    values = {"phi": 0.4, "theta": -0.3}
+    values = {phi: 0.4, theta: -0.3}
     assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
     )
 
 
@@ -4058,29 +3992,6 @@ def test_nested_symbolic_arithmetic_round_trip_with_shared_global_phase() -> Non
         (lambda parameter: 2 * parameter, 0.25),
         (lambda parameter: 2 / parameter, 0.75),
         (lambda parameter: 2**parameter, -0.5),
-    ],
-    ids=["reverse-add", "reverse-subtract", "reverse-multiply", "reverse-divide", "reverse-power"],
-)
-def test_reverse_symbolic_arithmetic_round_trip(
-    operation: Callable[[Parameter], ParameterExpression], value: float
-) -> None:
-    """Preserve Qiskit's reflected arithmetic operators."""
-    theta = Parameter("theta")
-    circuit = QuantumCircuit(1)
-    circuit.rz(operation(theta), 0)
-
-    restored = QCProgram.from_qiskit(circuit).to_qiskit()
-
-    values = {"theta": value}
-    assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
-    )
-
-
-@pytest.mark.parametrize(
-    ("operation", "value"),
-    [
         (lambda parameter: parameter.sin(), 0.2),
         (lambda parameter: parameter.cos(), 0.2),
         (lambda parameter: parameter.tan(), 0.2),
@@ -4092,22 +4003,36 @@ def test_reverse_symbolic_arithmetic_round_trip(
         (abs, -0.2),
         (lambda parameter: parameter.conjugate(), 0.2),
     ],
-    ids=["sin", "cos", "tan", "arcsin", "arccos", "arctan", "exp", "log", "abs", "conjugate"],
+    ids=[
+        "reverse-add",
+        "reverse-subtract",
+        "reverse-multiply",
+        "reverse-divide",
+        "reverse-power",
+        "sin",
+        "cos",
+        "tan",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "exp",
+        "log",
+        "abs",
+        "conjugate",
+    ],
 )
-def test_symbolic_unary_function_round_trip(
-    operation: Callable[[Parameter], ParameterExpression], value: float
-) -> None:
-    """Preserve supported unary Qiskit parameter functions."""
+def test_symbolic_operations_round_trip(operation: Callable[[Parameter], ParameterExpression], value: float) -> None:
+    """Preserve reflected arithmetic and supported unary parameter functions."""
     theta = Parameter("theta")
     circuit = QuantumCircuit(1)
     circuit.rx(operation(theta), 0)
 
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
-    values = {"theta": value}
+    values = {theta: value}
     assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
     )
 
 
@@ -4122,10 +4047,10 @@ def test_partially_bound_symbolic_expression_round_trip() -> None:
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
     assert {parameter.name for parameter in restored.parameters} == {"phi"}
-    values = {"phi": 0.4}
+    values = {phi: 0.4}
     assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
     )
 
 
@@ -4148,10 +4073,10 @@ def test_float_castable_symbolic_expression_keeps_parameter_identity(*, cleanup:
     assert 'mqt.input_name = "theta"' in program.ir
     assert {parameter.name for parameter in restored.parameters} == {"theta"}
     for value in (-0.5, 0.0, 1.25):
-        values = {"theta": value}
+        values = {theta: value}
         assert np.allclose(
-            Operator(_assign_parameter_values(restored, values)).data,
-            Operator(_assign_parameter_values(circuit, values)).data,
+            Operator(restored.assign_parameters(values)).data,
+            Operator(circuit.assign_parameters(values)).data,
         )
     assert program.ir == source_ir
 
@@ -4170,10 +4095,10 @@ def test_parameterized_custom_definition_round_trip() -> None:
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
     assert {parameter.name for parameter in restored.parameters} == {"theta"}
-    values = {"theta": -0.2}
+    values = {theta: -0.2}
     assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
     )
 
 
@@ -4563,9 +4488,23 @@ def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> N
 
 def test_unknown_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unsupported Qiskit versions."""
-    monkeypatch.setattr(qiskit, "__version__", "2.6.0")
-    with pytest.raises(RuntimeError, match=r"installed version '2\.6\.0'.*>=2\.5\.0,<2\.6\.0"):
+    monkeypatch.setattr(qiskit, "__version__", "9.0.0")
+    with pytest.raises(RuntimeError, match=r"installed version '9\.0\.0'.*>=2\.5\.0,<2\.6\.0"):
         QCProgram.from_qiskit(QuantumCircuit(1))
+
+
+def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject another minor's capsule before reading it, then reuse the right one."""
+    other = "2.6.0" if qiskit.__version__.startswith("2.5.") else "2.5.0"
+    circuit = QuantumCircuit(1)
+    circuit.rx(0.25, 0)
+    with monkeypatch.context() as patched:
+        patched.setattr(qiskit, "__version__", other)
+        with pytest.raises(RuntimeError, match="C API capsule version does not match"):
+            QCProgram.from_qiskit(circuit)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
 def test_mlir_binding_import_does_not_import_qiskit() -> None:
@@ -4638,6 +4577,30 @@ def test_shallow_list_loop_with_jump_exports(values: list[int]) -> None:
     assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
+@pytest.mark.parametrize("symbol_position", range(3))
+def test_mixed_native_and_symbolic_gate_parameters(symbol_position: int) -> None:
+    """Preserve parameter order and identity across native and Python access."""
+    theta = Parameter("theta")
+    parameters: list[float | Parameter] = [0.125, 0.25, 0.5]
+    parameters[symbol_position] = theta
+    circuit = QuantumCircuit(1, global_phase=theta / 2)
+    circuit.u(parameters[0], parameters[1], parameters[2], 0)
+    if qiskit.__version__.startswith("2.6."):
+        # Editing this Python cache does not update Qiskit's native circuit data.
+        for position, value in enumerate(parameters):
+            if isinstance(value, float):
+                circuit.data[0].operation.params[position] = value + 1
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert restored.parameters == circuit.parameters
+    assert restored.data[0].operation.params == parameters
+    assert np.allclose(
+        Operator(restored.assign_parameters({theta: 0.75})).data,
+        Operator(circuit.assign_parameters({theta: 0.75})).data,
+    )
+
+
 def test_numeric_import_decodes_parameters_at_most_twice(monkeypatch: pytest.MonkeyPatch) -> None:
     """Expansion counting must not repeat primitive parameter decoding."""
     circuit = QuantumCircuit(1)
@@ -4653,7 +4616,7 @@ def test_numeric_import_decodes_parameters_at_most_twice(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(Instruction, "params", property(parameters, original.fset))
     assert QCProgram.from_qiskit(circuit).is_valid
-    assert reads <= 2 * len(circuit)
+    assert reads <= (0 if tuple(map(int, qiskit.__version__.split(".")[:2])) >= (2, 6) else 2 * len(circuit))
 
 
 @pytest.mark.parametrize("selected", [0, 69, 100])
