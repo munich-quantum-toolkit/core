@@ -23,11 +23,13 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -41,6 +43,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -102,6 +105,53 @@ barrier q[first:step:0], r[1:2];
     }
   });
   EXPECT_EQ(barriers, 1);
+}
+
+TEST(OpenQASMTargetTest, ArraysUseTypedStackStorage) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+array[bool, 2] flags = {true, false};
+array[int[8], 2] signedValues = {1, -1};
+array[uint[16], 2] unsignedValues = {1, 2};
+array[float, 2] floats = {0.5, 1};
+array[angle[8], 2] angles = {pi, 0.0};
+int i = -1;
+signedValues[i] = int[8](unsignedValues[i]);
+if (flags[i]) { floats[i] = 2; }
+qubit q;
+U(angles[i], floats[i], 0) q;
+output bit result;
+result = measure q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<Type> types;
+  moduleOp->walk([&](memref::AllocaOp allocation) {
+    types.push_back(allocation.getType().getElementType());
+  });
+  moduleOp->walk([](memref::DeallocOp) {
+    ADD_FAILURE() << "stack storage must not be explicitly freed";
+  });
+  Builder builder(&context);
+  EXPECT_EQ(types,
+            (SmallVector<Type>{builder.getI1Type(), builder.getI8Type(),
+                               builder.getI16Type(), builder.getF64Type(),
+                               builder.getF64Type()}));
+  moduleOp->walk([](cf::AssertOp) {
+    ADD_FAILURE() << "runtime bounds are a precondition, as for bit registers";
+  });
+}
+
+TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 2] a = {1, 2}; a[-1] = a[0];", &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  moduleOp->walk(
+      [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
 }
 
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {

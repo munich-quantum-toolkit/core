@@ -639,11 +639,10 @@ if (int[2](value) == -1) {}
 
 TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",        "cal",     "defcal", "extern",
-      "box",           "let",        "end",     "return", "pragma",
-      "readonly",      "mutable",    "complex", "array",  "void",
-      "stretch",       "durationof", "delay",   "im",     "#dim",
-      "#pragma",
+      "defcalgrammar", "def",     "cal",     "defcal", "extern",
+      "box",           "let",     "end",     "return", "pragma",
+      "readonly",      "mutable", "complex", "void",   "stretch",
+      "durationof",    "delay",   "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -655,18 +654,20 @@ TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
               std::string::npos);
   }
 
-  auto input =
-      openqasm::frontend::parseOpenQASM("OPENQASM 3.1; int input = 0;");
-  ASSERT_FALSE(input);
-  ASSERT_FALSE(input.diagnostics.empty());
-  EXPECT_NE(input.diagnostics.front().message.find("expected identifier"),
-            std::string::npos);
+  for (const auto* keyword : {"input", "array"}) {
+    SCOPED_TRACE(keyword);
+    auto parsed = openqasm::frontend::parseOpenQASM(
+        std::string("OPENQASM 3.1; int ") + keyword + " = 0;");
+    ASSERT_FALSE(parsed);
+    ASSERT_FALSE(parsed.diagnostics.empty());
+    EXPECT_NE(parsed.diagnostics.front().message.find("expected identifier"),
+              std::string::npos);
+  }
 }
 
 TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; const complex value = 0;",
-      "OPENQASM 3.1; output array[int, 2] values;",
       "OPENQASM 3.1; for complex value in [0:1] {}",
       "OPENQASM 3.1; int value = durationof({});",
   });

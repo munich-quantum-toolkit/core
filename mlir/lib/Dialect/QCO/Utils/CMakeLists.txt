@@ -97,6 +97,7 @@ function(mqt_add_dd_adapter suffix dd_target)
     MLIRSCFDialect
     PRIVATE
     MLIRCBitDialect
+    MLIRControlFlowDialect
     MLIRMemRefDialect
     MLIRMQTUtils
     MLIRTensorDialect

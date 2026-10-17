@@ -215,6 +215,14 @@ struct SyntaxAssignment {
   SyntaxExpressionId value = 0;
 };
 
+struct SyntaxArrayDeclaration {
+  ScalarKind kind = ScalarKind::Int;
+  StringRef identifier;
+  std::optional<SyntaxExpressionId> elementWidth;
+  SyntaxExpressionId length = 0;
+  std::optional<std::vector<SyntaxExpressionId>> initializer;
+};
+
 struct SyntaxQubitDeclaration {
   StringRef identifier;
   std::optional<SyntaxExpressionId> size;
@@ -292,7 +300,8 @@ struct SyntaxStandardLibraryInclude {
 
 using SyntaxStatementData =
     std::variant<SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
-                 SyntaxAssignment, SyntaxQubitDeclaration, SyntaxBitDeclaration,
+                 SyntaxArrayDeclaration, SyntaxAssignment,
+                 SyntaxQubitDeclaration, SyntaxBitDeclaration,
                  SyntaxMeasurement, SyntaxReset, SyntaxBarrier, SyntaxGateCall,
                  SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
                  SyntaxSwitch, SyntaxBreak, SyntaxContinue>;
@@ -347,6 +356,8 @@ public:
   [[nodiscard]] LogicalResult assignment(SMLoc location,
                                          const BitReference& target,
                                          SyntaxExpressionId value);
+  [[nodiscard]] LogicalResult arrayDecl(SMLoc location,
+                                        SyntaxArrayDeclaration declaration);
   [[nodiscard]] LogicalResult
   qubitRegister(SMLoc location, StringRef identifier,
                 std::optional<SyntaxExpressionId> size);
