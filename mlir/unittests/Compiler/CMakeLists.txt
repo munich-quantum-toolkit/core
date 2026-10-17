@@ -11,8 +11,9 @@ add_executable(
   test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp test_compiler_target.cpp
   test_parameter_binding.cpp test_program_inspection.cpp)
 set_target_properties(mqt-core-mlir-unittests-compiler PROPERTIES UNITY_BUILD OFF)
-target_include_directories(mqt-core-mlir-unittests-compiler
-                           PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
+target_include_directories(
+  mqt-core-mlir-unittests-compiler PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver
+                                           ${PROJECT_SOURCE_DIR}/test/qdmi)
 
 target_link_libraries(
   mqt-core-mlir-unittests-compiler

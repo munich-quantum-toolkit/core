@@ -31,12 +31,16 @@
 #include "llvm/Support/raw_socket_stream.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <span>
@@ -107,16 +111,37 @@ struct Execution {
   bool qirProgram() {
     const llvm::StringRef irBytes(program_.data(), program_.size());
     const bool sampling = numShots_ != 0;
+    std::ofstream trace;
+    if (const auto* path = std::getenv("MQT_MQSF_SHOT_TRACE");
+        sampling && path != nullptr) {
+      trace.open(path);
+      if (!trace) {
+        std::cerr << "Cannot open MQSF shot trace" << '\n';
+        return false;
+      }
+    }
+    const auto record = [&](const std::string_view kind,
+                            const std::string_view value) {
+      if (trace.is_open()) {
+        const auto now =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        trace << now << '\t' << kind << '\t' << value << '\n';
+      }
+    };
     std::optional<std::ostringstream> output;
     const auto captureOutput = llvm::scope_exit([&] {
       if (output) {
         qirOutput_ = std::move(*output).str();
       }
     });
+    record("runtime", "JIT compilation begins");
     auto jitSession = qir::JitSession(
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
         sampling ? seed_ : std::nullopt);
+    record("runtime", "JIT runtime ready");
     auto& runtime = jitSession.runtime();
     if (sampling && captureQIROutput_) {
       runtime.setOstream(output.emplace());
@@ -134,10 +159,51 @@ struct Execution {
       workers =
           automaticWorkers_ ? std::min(workerSlots_, automatic) : workerSlots_;
     }
+    std::mutex traceMutex;
+    const auto sample = [&](qir::JitSession& session, qir::Runtime& worker,
+                            const size_t count, const size_t workerIndex,
+                            const size_t offset,
+                            std::vector<std::string>& results,
+                            const bool emitHeader, bool* available) {
+      if (!trace.is_open()) {
+        return session.sampleWithRuntime(worker, count, results, emitHeader,
+                                         available);
+      }
+      // Record actual batch completions without replacing parallel sampling.
+      constexpr size_t batchSize = 64;
+      results.reserve(count);
+      std::vector<std::string> batch;
+      for (size_t begin = 0; begin < count; begin += batchSize) {
+        const auto rc = session.sampleWithRuntime(
+            worker, std::min(batchSize, count - begin), batch,
+            emitHeader && begin == 0, available);
+        if (rc != 0) {
+          return rc;
+        }
+        results.insert(results.end(), batch.begin(), batch.end());
+        const std::scoped_lock lock(traceMutex);
+        const auto now =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        trace << now << "\tworker\t" << workerIndex << '\t' << results.size()
+              << '\t' << count << '\n';
+        for (size_t j = 0; j < batch.size(); ++j) {
+          std::ranges::reverse(batch[j]);
+          trace << now << "\tshot\t" << offset + begin + j << '\t'
+                << workerIndex << '\t' << batch[j] << '\n';
+        }
+      }
+      return int64_t{0};
+    };
+    if (sampling) {
+      record("runtime", "Adaptive sampling begins: " + std::to_string(workers) +
+                            " workers");
+    }
     if (workers == 1) {
-      const auto rc =
-          sampling ? jitSession.sample(numShots_, shots_, &stateAvailable)
-                   : jitSession.run();
+      const auto rc = sampling ? sample(jitSession, runtime, numShots_, 0, 0,
+                                        shots_, true, &stateAvailable)
+                               : jitSession.run();
       if (rc != 0) {
         std::cerr << "QIR program returned exit code " << rc << '\n';
         return false;
@@ -179,11 +245,11 @@ struct Execution {
           }
           const size_t count = (numShots_ / workers) +
                                static_cast<size_t>(i < numShots_ % workers);
-          const auto code = workerRuntime
-                                ? jitSession.sampleWithRuntime(*worker, count,
-                                                               parts[i], false)
-                                : (i == 0 ? jitSession : *peer)
-                                      .sample(count, parts[i], nullptr, i == 0);
+          const size_t offset =
+              ((numShots_ / workers) * i) + std::min(i, numShots_ % workers);
+          auto& session = peer ? *peer : jitSession;
+          const auto code = sample(session, *worker, count, i, offset, parts[i],
+                                   i == 0, nullptr);
           peer.reset();
           if (i != 0 && captureQIROutput_) {
             records[i] = std::move(localOutput).str();
@@ -207,6 +273,15 @@ struct Execution {
         for (size_t i = 1; i < workers; ++i) {
           *output << records[i];
         }
+      }
+    }
+    if (sampling) {
+      record("runtime", "Sampling complete");
+    }
+    if (trace.is_open()) {
+      trace.flush();
+      if (!trace) {
+        return false;
       }
     }
     for (auto& shot : shots_) {

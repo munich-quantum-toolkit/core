@@ -37,6 +37,7 @@
     "py\\.typed",
     ".*build.*",
     "(^|/)LICENSE$",
-    "patterns.txt"
+    "patterns.txt",
+    "^presentations/mqsf2026/assets/"
   ]
 }

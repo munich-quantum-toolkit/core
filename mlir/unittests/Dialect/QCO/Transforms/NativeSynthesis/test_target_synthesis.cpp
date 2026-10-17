@@ -57,8 +57,14 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
@@ -66,6 +72,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -764,6 +771,119 @@ TEST_F(TargetSynthesisTest, NativeSynthesisFusesSwapWithCx) {
       // four.
       EXPECT_EQ(countOps<CtrlOp>(*optimized), 2U);
       expectEquivalent(expected, optimized);
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, AcceptedFusionTracePreservesIRAndGateIndices) {
+  llvm::SmallString<128> path;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-synthesis-trace", "jsonl", path));
+  const llvm::FileRemover cleanup(path);
+  const auto* oldValue = std::getenv("MQT_MQSF_SYNTHESIS_TRACE");
+  const auto previous =
+      oldValue == nullptr ? std::nullopt : std::optional<std::string>(oldValue);
+  const auto setTrace = [](const char* value) {
+#ifdef _WIN32
+    return _putenv_s("MQT_MQSF_SYNTHESIS_TRACE", value == nullptr ? "" : value);
+#else
+    // NOLINTNEXTLINE(misc-include-cleaner): POSIX environment functions.
+    return value == nullptr ? unsetenv("MQT_MQSF_SYNTHESIS_TRACE")
+                            : setenv("MQT_MQSF_SYNTHESIS_TRACE", value, 1);
+#endif
+  };
+  const auto restore = llvm::make_scope_exit(
+      [&] { EXPECT_EQ(setTrace(previous ? previous->c_str() : nullptr), 0); });
+  ASSERT_EQ(setTrace(path.c_str()), 0);
+  context->disableMultithreading();
+  auto source = build([](QCOProgramBuilder& builder) {
+    builder.gphase(0.125);
+    auto inputs =
+        builder.barrier({builder.staticQubit(0), builder.staticQubit(1)});
+    auto [a, b] = builder.swap(inputs[0], inputs[1]);
+    std::tie(a, b) = builder.cx(a, b);
+    static_cast<void>(builder.barrier({a, b}));
+    return builder.intConstant(0);
+  });
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*source)));
+  OwningOpRef<ModuleOp> synthesized(source->clone());
+  ASSERT_TRUE(
+      mlir::succeeded(runTargetPass(*synthesized, makeOneWayUCxTarget(),
+                                    mlir::qco::createTargetNativeSynthesis())));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  expectEquivalent(source, synthesized);
+
+  auto trace = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(trace);
+  auto value = llvm::json::parse((*trace)->getBuffer().trim());
+  ASSERT_TRUE(static_cast<bool>(value)) << llvm::toString(value.takeError());
+  const auto* event = value->getAsObject();
+  ASSERT_NE(event, nullptr);
+  EXPECT_EQ(event->getInteger("two_qubit_before"), 2);
+  EXPECT_EQ(event->getInteger("basis_uses_after"), 2);
+  EXPECT_EQ(event->getBoolean("reverse_entangler"), true);
+  const auto* operations = event->getArray("operations");
+  ASSERT_NE(operations, nullptr);
+  ASSERT_EQ(operations->size(), 2U);
+  EXPECT_EQ((*operations)[0].getAsString(), "qco.swap");
+  EXPECT_EQ((*operations)[1].getAsString(), "qco.ctrl");
+  const auto* inputs = event->getArray("input_indices");
+  ASSERT_NE(inputs, nullptr);
+  ASSERT_EQ(inputs->size(), 2U);
+  EXPECT_EQ((*inputs)[0].getAsInteger(), 1);
+  EXPECT_EQ((*inputs)[1].getAsInteger(), 2);
+
+  ASSERT_TRUE(event->getString("before_ir"));
+  ASSERT_TRUE(event->getString("after_ir"));
+  auto before = mlir::parseSourceString<ModuleOp>(
+      *event->getString("before_ir"), context.get());
+  auto after = mlir::parseSourceString<ModuleOp>(*event->getString("after_ir"),
+                                                 context.get());
+  ASSERT_TRUE(before);
+  ASSERT_TRUE(after);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*before)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*after)));
+  expectEquivalent(source, before);
+  expectEquivalent(before, after);
+  EXPECT_EQ(countOps<SWAPOp>(*before), 1U);
+  EXPECT_EQ(countOps<CtrlOp>(*before), 1U);
+  EXPECT_EQ(countOps<SWAPOp>(*after), 0U);
+  EXPECT_EQ(countOps<CtrlOp>(*after), 2U);
+  EXPECT_EQ(countOps<mlir::qco::BarrierOp>(*after), 2U);
+  // The two barriers stay outside the highlighted replacement; constants,
+  // static-qubit declarations and global phase do not occupy circuit columns.
+  const auto* outputs = event->getArray("output_indices");
+  ASSERT_NE(outputs, nullptr);
+  size_t emitted = 0;
+  for (auto gate :
+       mainFunction(*after).getOps<mlir::qco::UnitaryOpInterface>()) {
+    emitted +=
+        static_cast<size_t>(!mlir::isa<GPhaseOp, mlir::qco::BarrierOp>(gate));
+  }
+  ASSERT_EQ(outputs->size(), emitted);
+  for (size_t i = 0; i < emitted; ++i) {
+    EXPECT_EQ((*outputs)[i].getAsInteger(), static_cast<int64_t>(i + 1));
+  }
+
+  const auto expectedMatrix =
+      mlir::qco::Matrix4x4{CX_MATRIX} * SWAPOp::getUnitaryMatrix();
+  const auto* matrix = event->getArray("matrix");
+  ASSERT_NE(matrix, nullptr);
+  ASSERT_EQ(matrix->size(), 4U);
+  for (size_t row = 0; row < 4; ++row) {
+    const auto* entries = (*matrix)[row].getAsArray();
+    ASSERT_NE(entries, nullptr);
+    ASSERT_EQ(entries->size(), 4U);
+    for (size_t col = 0; col < 4; ++col) {
+      const auto* entry = (*entries)[col].getAsArray();
+      ASSERT_NE(entry, nullptr);
+      ASSERT_EQ(entry->size(), 2U);
+      ASSERT_TRUE((*entry)[0].getAsNumber());
+      ASSERT_TRUE((*entry)[1].getAsNumber());
+      EXPECT_NEAR(*(*entry)[0].getAsNumber(), expectedMatrix(row, col).real(),
+                  mlir::qco::MATRIX_TOLERANCE);
+      EXPECT_NEAR(*(*entry)[1].getAsNumber(), expectedMatrix(row, col).imag(),
+                  mlir::qco::MATRIX_TOLERANCE);
     }
   }
 }

@@ -78,6 +78,7 @@ repos:
       - id: disallow-caps
         name: Disallow improper capitalization
         language: pygrep
+        types: [text]
         entry: \b(Nanobind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum)\b
         exclude: ^(\.pre-commit-config\.yaml|vendor/)
         priority: 0

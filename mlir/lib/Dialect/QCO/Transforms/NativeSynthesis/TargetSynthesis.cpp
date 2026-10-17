@@ -58,6 +58,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
 
 #include <algorithm>
@@ -65,10 +68,12 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <optional>
 #include <span>
+#include <system_error>
 #include <utility>
 
 namespace mlir::qco {
@@ -1215,6 +1220,55 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
     return false;
   }
 
+  // Opt-in evidence capture; the presentation compiler disables threading.
+  const auto* tracePath = std::getenv("MQT_MQSF_SYNTHESIS_TRACE");
+  llvm::json::Object event;
+  auto moduleOp = head->getParentOfType<ModuleOp>();
+  auto* block = head->getBlock();
+  auto* previous = head->getPrevNode();
+  const auto text = [](Operation* operation) {
+    std::string result;
+    llvm::raw_string_ostream stream(result);
+    operation->print(stream);
+    return result;
+  };
+  const auto visible = [](Operation* operation) {
+    return !isa<GPhaseOp>(operation) &&
+           isa<UnitaryOpInterface, MeasureOp, ResetOp, BarrierOp>(operation);
+  };
+  if (tracePath != nullptr) {
+    llvm::json::Array matrix;
+    for (size_t row = 0; row < 4; ++row) {
+      llvm::json::Array entries;
+      for (size_t col = 0; col < 4; ++col) {
+        const auto value = run.composed(row, col);
+        entries.push_back(llvm::json::Array{value.real(), value.imag()});
+      }
+      matrix.push_back(std::move(entries));
+    }
+    llvm::json::Array operations;
+    llvm::json::Array indices;
+    size_t index = 0;
+    for (auto& operation : *block) {
+      if (llvm::is_contained(run.ops, &operation)) {
+        indices.push_back(index);
+      }
+      if (visible(&operation)) {
+        ++index;
+      }
+    }
+    for (auto* operation : run.ops) {
+      operations.push_back(operation->getName().getStringRef());
+    }
+    event["matrix"] = std::move(matrix);
+    event["operations"] = std::move(operations);
+    event["input_indices"] = std::move(indices);
+    event["before_ir"] = text(moduleOp);
+    event["two_qubit_before"] = run.numTwoQ;
+    event["basis_uses_after"] = native->numBasisUses;
+    event["reverse_entangler"] = reverseEntangler;
+  }
+
   Value input0 = head.getInputQubit(0);
   Value input1 = head.getInputQubit(1);
   if (reverseEntangler) {
@@ -1229,7 +1283,39 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                                           : synthesized.qubit0);
   rewriter.replaceAllUsesWith(run.tailB, reverseEntangler ? synthesized.qubit0
                                                           : synthesized.qubit1);
+  SmallVector<Operation*> emitted;
+  if (tracePath != nullptr) {
+    for (auto* operation = previous != nullptr ? previous->getNextNode()
+                                               : &block->front();
+         operation != head; operation = operation->getNextNode()) {
+      if (visible(operation)) {
+        emitted.push_back(operation);
+      }
+    }
+  }
   eraseFusableRun(rewriter, run);
+  if (tracePath != nullptr) {
+    llvm::json::Array indices;
+    size_t index = 0;
+    for (auto& operation : *block) {
+      if (llvm::is_contained(emitted, &operation)) {
+        indices.push_back(index);
+      }
+      if (visible(&operation)) {
+        ++index;
+      }
+    }
+    event["output_indices"] = std::move(indices);
+    event["after_ir"] = text(moduleOp);
+    std::error_code error;
+    llvm::raw_fd_ostream stream(tracePath, error, llvm::sys::fs::OF_Append);
+    if (!error) {
+      stream << llvm::json::Value(std::move(event)) << '\n';
+    } else {
+      llvm::errs() << "Cannot write MQSF synthesis trace: " << error.message()
+                   << '\n';
+    }
+  }
   return true;
 }
 

@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -727,6 +728,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
        format_ == QDMI_PROGRAM_FORMAT_QASM3)) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
+  std::shared_ptr<std::ofstream> programTrace;
+  if (const auto* path = std::getenv("MQT_MQSF_PROGRAM_TRACE")) {
+    // shortcut: one isolated presentation job owns this path, not a shared log.
+    programTrace = std::make_shared<std::ofstream>(path);
+    if (!*programTrace) {
+      return QDMI_ERROR_FATAL;
+    }
+  }
   auto& executor = qdmi::dd::executor();
   const size_t perProgramLimit =
       std::max(size_t{1}, executor.limit / programs_.size());
@@ -759,7 +768,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           .automaticWorkers = maxWorkers_ == 0,
       };
       executor.threads.async([execution, index, request = std::move(request),
-                              desired, &executor]() mutable {
+                              desired, programTrace, &executor]() mutable {
         executor.slots.acquire();
         size_t grant = 1;
         const llvm::scope_exit releaseSlots(
@@ -808,6 +817,16 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             program.status =
                 result ? QDMI_JOB_STATUS_DONE : QDMI_JOB_STATUS_FAILED;
             program.result = std::move(result);
+          }
+          if (programTrace) {
+            const auto now =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count();
+            // The job mutex orders complete lines from concurrent programs.
+            *programTrace << now << '\t' << index << '\t' << program.status
+                          << '\t' << executor.limit << '\t' << grant << '\n';
+            programTrace->flush();
           }
           execution->finish();
         });
