@@ -144,6 +144,25 @@ result = measure q;
   });
 }
 
+TEST(OpenQASMTargetTest, ArrayIterationDoesNotCopyOrUnrollTheArray) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 3] a = {1, 2, 3}; "
+      "int sum = 0; for int x in a[:-1:] { sum += x; }",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0, loops = 0, loads = 0;
+  moduleOp->walk([&](memref::AllocaOp) { ++arrays; });
+  moduleOp->walk([&](scf::ForOp) { ++loops; });
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  EXPECT_EQ(arrays, 1);
+  EXPECT_EQ(loops, 1);
+  EXPECT_EQ(loads, 1);
+  moduleOp->walk(
+      [](memref::CopyOp) { ADD_FAILURE() << "iteration uses a view"; });
+}
+
 TEST(OpenQASMTargetTest, RangeCopiesStayCompactAndSnapshotAliases) {
   MLIRContext context;
   auto moduleOp =
