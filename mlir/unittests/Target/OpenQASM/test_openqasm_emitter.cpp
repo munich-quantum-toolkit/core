@@ -111,12 +111,12 @@ TEST(OpenQASMTargetTest, ArraysUseTypedStackStorage) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
 array[bool, 2] flags = {true, false};
-array[int[8], 2] signedValues = {1, -1};
+array[int[8], 2, 1] signedValues = {{1}, {-1}};
 array[uint[16], 2] unsignedValues = {1, 2};
 array[float, 2] floats = {0.5, 1};
 array[angle[8], 2] angles = {pi, 0.0};
 int i = -1;
-signedValues[i] = int[8](unsignedValues[i]);
+signedValues[i, i] = int[8](unsignedValues[i]);
 if (flags[i]) { floats[i] = 2; }
 qubit q;
 U(angles[i], floats[i], 0) q;
@@ -147,9 +147,17 @@ result = measure q;
 TEST(OpenQASMTargetTest, ConstantArrayIndicesNeedNoRuntimeBoundsChecks) {
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(
-      "OPENQASM 3.0; array[int, 2] a = {1, 2}; a[-1] = a[0];", &context);
+      "OPENQASM 3.0; array[int, 2, 3] a = {{1, 2, 3}, {4, 5, 6}}; "
+      "a[-1, -1] = a[0, 0];",
+      &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0;
+  moduleOp->walk([&](memref::AllocaOp alloc) {
+    ++arrays;
+    EXPECT_EQ(alloc.getType().getShape(), (ArrayRef<int64_t>{2, 3}));
+  });
+  EXPECT_EQ(arrays, 1);
   moduleOp->walk(
       [&](cf::AssertOp) { ADD_FAILURE() << "index is statically safe"; });
 }
