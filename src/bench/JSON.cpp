@@ -68,7 +68,7 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
-  [[nodiscard]] llvm::Expected<ParsedBenchmark> parse##TYPE##Instance(         \
+  [[nodiscard]] llvm::Expected<BenchmarkInstance> parse##TYPE##Instance(       \
       const Json& parameters, std::string_view source);
 #include "bench/BenchmarkFamilies.inc"
 
@@ -77,7 +77,7 @@ struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
-  llvm::Expected<ParsedBenchmark> (*parse)(const Json&, std::string_view);
+  llvm::Expected<BenchmarkInstance> (*parse)(const Json&, std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
@@ -699,7 +699,7 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
       {.K = "model", .V = std::string(model)},
       {.K = "outcome_order", .V = "big_endian"},
       {.K = "output", .V = output.name},
-      {.K = "version", .V = 1},
+      {.K = "version", .V = uint64_t{1}},
   };
   if (successOutcome) {
     reference["success_outcome"] = std::string(*successOutcome);
@@ -713,7 +713,7 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
       {.K = "model", .V = "qaoa_max_cut_cycle"},
       {.K = "outcome_order", .V = "big_endian"},
       {.K = "output", .V = benchmark.output().name},
-      {.K = "version", .V = 1},
+      {.K = "version", .V = uint64_t{1}},
   };
 }
 
@@ -723,7 +723,7 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
       {.K = "model", .V = "shor_factors"},
       {.K = "outcome_order", .V = "big_endian"},
       {.K = "output", .V = benchmark.output().name},
-      {.K = "version", .V = 1},
+      {.K = "version", .V = uint64_t{1}},
   };
 }
 
@@ -845,6 +845,18 @@ template <class Benchmark>
   };
 }
 
+template <class Benchmark>
+[[nodiscard]] bool matchesManifest(const Json& root,
+                                   const Benchmark& benchmark) {
+  if (root != manifestJSON(benchmark)) {
+    return false;
+  }
+  // LLVM equality can round distinct unsigned integers to the same double.
+  const auto& output = root.getAsObject()->getArray("outputs")->front();
+  return output.getAsObject()->get("width")->getAsUINT64() ==
+         benchmark.output().width;
+}
+
 template <class Benchmark, class ParseParameters>
 [[nodiscard]] llvm::Expected<Benchmark>
 parseBenchmark(const std::string_view text, const std::string_view source,
@@ -864,8 +876,7 @@ parseBenchmark(const std::string_view text, const std::string_view source,
   if (!benchmark) {
     return benchmark.takeError();
   }
-  if (manifest && mqt::json::serialize(*root) !=
-                      mqt::json::serialize(manifestJSON(*benchmark))) {
+  if (manifest && !matchesManifest(*root, *benchmark)) {
     return fail(source, "$",
                 "does not match its resolved benchmark instance and case ID");
   }
@@ -1615,12 +1626,12 @@ template <class Benchmark>
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  llvm::Expected<ParsedBenchmark> parse##TYPE##Instance(                       \
+  llvm::Expected<BenchmarkInstance> parse##TYPE##Instance(                     \
       const Json& parameters, const std::string_view source) {                 \
     auto parsed = parse##TYPE##Parameters(parameters, source);                 \
     if (!parsed)                                                               \
       return parsed.takeError();                                               \
-    return resolveInstance(std::move(*parsed));                                \
+    return std::move(*parsed);                                                 \
   }
 #include "bench/BenchmarkFamilies.inc"
 
@@ -1644,8 +1655,14 @@ parseInstanceSpecificationJSON(const std::string_view json,
     return root.takeError();
   }
   const auto id = *root->getAsObject()->getString("benchmark");
-  return findBenchmark(id)->parse(*root->getAsObject()->get("parameters"),
-                                  source);
+  auto parsed =
+      findBenchmark(id)->parse(*root->getAsObject()->get("parameters"), source);
+  if (!parsed) {
+    return parsed.takeError();
+  }
+  return std::visit(
+      [](auto& benchmark) { return resolveInstance(std::move(benchmark)); },
+      *parsed);
 }
 
 llvm::Expected<std::string>
@@ -1772,20 +1789,21 @@ llvm::Expected<std::string> evaluateJSON(const std::string_view manifest,
   if (!parsed) {
     return parsed.takeError();
   }
-  if (mqt::json::serialize(*root) != parsed->manifestJSON) {
-    return fail(manifestSource, "$",
-                "does not match its resolved benchmark instance and case ID");
-  }
   const auto shots = std::accumulate(
       parsedCounts->begin(), parsedCounts->end(), size_t{0},
       [](size_t sum, const auto& item) { return sum + item.second; });
   try {
     return std::visit(
-        [&](const auto& benchmark) {
-          return evaluationToJSON(parsed->caseId, shots,
-                                  benchmark.evaluate(*parsedCounts));
+        [&](const auto& benchmark) -> llvm::Expected<std::string> {
+          if (!matchesManifest(*root, benchmark)) {
+            return fail(
+                manifestSource, "$",
+                "does not match its resolved benchmark instance and case ID");
+          }
+          return evaluationToJSON(*root->getAsObject()->getString("case_id"),
+                                  shots, benchmark.evaluate(*parsedCounts));
         },
-        parsed->instance);
+        *parsed);
   } catch (const std::invalid_argument& error) {
     return fail(countsSource, "$/counts", error.what());
   }

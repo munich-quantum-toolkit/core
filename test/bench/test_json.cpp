@@ -11,6 +11,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/JSON.hpp"
+#include "bench/WState.hpp"
 
 #include "JSONTestUtils.hpp"
 #include "support/JSON.hpp"
@@ -165,6 +166,49 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
                             "counts.json");
       },
       "counts.json.schema_version");
+}
+
+TEST(BenchmarkJSON, ComparesReferenceVersionByValue) {
+  const GHZ ghz{{.qubits = 3}};
+  auto manifest = llvm::cantFail(mqt::json::parse(toManifestJSON(ghz)));
+  auto& version = (*manifest.getAsObject()->getObject("reference"))["version"];
+  version = 1.0;
+  const auto equivalent = mqt::json::serialize(manifest);
+  auto parsed = ghzFromManifestJSON(equivalent);
+  ASSERT_TRUE(static_cast<bool>(parsed)) << llvm::toString(parsed.takeError());
+  EXPECT_EQ(parsed->output(), ghz.output());
+  constexpr std::string_view counts =
+      R"({"schema_version":1,"counts":{"000":1}})";
+  EXPECT_EQ(llvm::cantFail(evaluateJSON(equivalent, counts)),
+            llvm::cantFail(evaluateJSON(toManifestJSON(ghz), counts)));
+
+  for (const auto invalid : {1.5, 0x1p63}) {
+    version = invalid;
+    const auto changed = mqt::json::serialize(manifest);
+    expectInvalidJSON([&] { return ghzFromManifestJSON(changed); },
+                      "does not match");
+    expectInvalidJSON([&] { return evaluateJSON(changed, counts); },
+                      "does not match");
+  }
+}
+
+TEST(BenchmarkJSON, RejectsRoundedOutputWidths) {
+  const WState benchmark{{.qubits = uint64_t{1} << 53U}};
+  auto manifest = llvm::cantFail(mqt::json::parse(toManifestJSON(benchmark)));
+  EXPECT_EQ(llvm::cantFail(wStateFromManifestJSON(toManifestJSON(benchmark)))
+                .output(),
+            benchmark.output());
+  auto& output = manifest.getAsObject()->getArray("outputs")->front();
+  (*output.getAsObject())["width"] = benchmark.output().width + 1;
+  const auto changed = mqt::json::serialize(manifest);
+  expectInvalidJSON([&] { return wStateFromManifestJSON(changed); },
+                    "does not match");
+  expectInvalidJSON(
+      [&] {
+        return evaluateJSON(changed,
+                            R"({"schema_version":1,"counts":{"0":1}})");
+      },
+      "does not match");
 }
 
 TEST(BenchmarkJSON, EvaluatesAResolvedManifest) {

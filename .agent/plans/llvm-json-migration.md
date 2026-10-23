@@ -64,12 +64,13 @@ APIs must match the SDK's RTTI setting, while DD-only consumers retain RTTI.
 
 ## Validation and limits
 
-The optimized native suite passed 4,101 tests; Python passed 2,017 tests.
-Installed CMake consumers, LLVM error handling, stub generation, whole-file C++
-lint, and repository lint passed. Executable documentation and local links
-passed; rendered documentation was inspected. External linkcheck failed on two
-unchanged QIR specification anchors. Hosted CI, Windows, and macOS execution
-remain unverified.
+The initial migration passed 4,101 native tests and 2,017 Python tests. The
+manifest-equality follow-up passed 4,103 native tests and 82 affected Python
+tests after reinstalling the extension. Installed CMake consumers, LLVM error
+handling, stub generation, whole-file C++ lint, and repository lint passed.
+Executable documentation and local links passed; rendered documentation was
+inspected. External linkcheck failed on two unchanged QIR specification anchors.
+Hosted CI, Windows, and macOS execution remain unverified.
 
 `test/support/test_json.cpp` covers grammar, Unicode, duplicates, depth, numeric
 limits, locale-independent output, and round trips. Deliberately broken locale
@@ -96,8 +97,21 @@ accounted for about 94% of the deeper workload's measured phase CPU time; IQM
 export accounted for less than 1%. Profiling separated cumulative allocations,
 tracked live memory, and process peak RSS.
 
-Rejected direct LLVM JSON equality for manifest validation: it equates integer
-and floating representations and can equate distinct large unsigned integers.
-Canonical serialization preserves those required distinctions. Removing the
-second object-key lookup while retaining early duplicate rejection adds state
-without a demonstrated benefit. No further change had sufficient justification.
+Manifest validation uses LLVM value equality and an exact unsigned output-width
+check. Numeric spelling is incidental for reference versions; widths and typed
+integer parameters retain integer tokens. W-state descriptors support widths
+above 2^53, where LLVM equality alone can equate distinct unsigned integers.
+Generated reference versions use unsigned values to avoid LLVM's signed/double
+conversion at the INT64_MAX boundary. Canonical serialization still owns emitted
+manifests and case IDs; evaluation no longer serializes a manifest just to
+compare it. The registry constructs serialized metadata only for callers that
+request it.
+
+Against `f689b8aac8a79a9857b79b4bea7be2df04689eda`, nine alternating public-API
+pairs showed 36-37% lower manifest-read CPU time and 29% lower GHZ evaluation
+CPU time. Manifest writing and instance resolution controls stayed within 1%.
+These are warmed CPU measurements on a shared host, not compiler-wide speedups.
+Removing the width guard and restoring serialization comparison each fail their
+targeted regression. A specialist reviewed the changed data flow and found no
+further issues. The second object-key lookup remains: no measured benefit
+justifies changing early duplicate rejection.
