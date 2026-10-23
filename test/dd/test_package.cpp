@@ -24,9 +24,8 @@
 #include "dd/UniqueTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
-#include "support/JSON.hpp"
-
 #include "../qdmi/TestUtils.hpp"
+#include "support/JSON.hpp"
 
 #include "gtest/gtest.h"
 

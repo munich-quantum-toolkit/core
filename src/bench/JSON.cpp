@@ -35,6 +35,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/SHA256.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
@@ -822,7 +823,9 @@ template <class Benchmark>
 [[nodiscard]] std::string semanticCaseId(const Json& semantic) {
   auto input = std::string(CASE_DOMAIN);
   input.push_back('\0');
-  input += mqt::json::serialize(semantic);
+  llvm::raw_string_ostream raw(input);
+  llvm::json::OStream stream(raw);
+  mqt::json::value(stream, semantic);
   return "sha256-" +
          llvm::toHex(llvm::SHA256::hash(llvm::arrayRefFromStringRef(input)),
                      true);
@@ -851,9 +854,13 @@ template <class Benchmark>
   if (root != manifestJSON(benchmark)) {
     return false;
   }
-  // LLVM equality can round distinct unsigned integers to the same double.
   const auto& output = root.getAsObject()->getArray("outputs")->front();
-  return output.getAsObject()->get("width")->getAsUINT64() ==
+  const auto& width = *output.getAsObject()->get("width");
+  if (const auto integer = width.getAsUINT64()) {
+    return *integer == benchmark.output().width;
+  }
+  // Equality and signed-64-bit output dimensions bound this double by 2^63.
+  return static_cast<uint64_t>(*width.getAsNumber()) ==
          benchmark.output().width;
 }
 

@@ -276,11 +276,13 @@ list, a generic option map, or a public base class.
 Instance specifications reject unknown fields and invalid values. The case ID
 does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
-Output widths, parameters, and envelope versions use exact integer tokens where
-their types require integers. Other manifest fields use JSON value equality; for
-example, reference versions `1` and `1.0` are equivalent. Canonical output and
-case IDs are generated from the resolved benchmark. Before evaluation, normalize
-backend results to the manifest's big-endian `result` order.
+Parameters and envelope versions use exact integer tokens where their types
+require integers. Output widths and reference versions compare by numeric value,
+so widths `3`, `3.0`, and `3e0` are equivalent. Integer tokens retain 64-bit
+precision; decimal and exponent forms are parsed as `double` values. Canonical
+output and case IDs are generated from the resolved benchmark. Before
+evaluation, normalize backend results to the manifest's big-endian `result`
+order.
 
 Manifests use `schema_version: 2`. Case IDs hash sorted, compact semantic JSON
 with the domain prefix `mqt-core:benchmark-case:v2` followed by a NUL byte.

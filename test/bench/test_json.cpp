@@ -135,13 +135,6 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
                         "\"width\":2");
   reject(changedOutput, "does not match");
 
-  auto changedNumericKind = manifest;
-  const auto integerWidth = changedNumericKind.find(R"("width":3)");
-  ASSERT_NE(integerWidth, std::string::npos);
-  changedNumericKind.replace(integerWidth, std::string(R"("width":3)").size(),
-                             R"("width":3.0)");
-  reject(changedNumericKind, "does not match");
-
   auto changedId = manifest;
   const auto digest = changedId.find("sha256-");
   ASSERT_NE(digest, std::string::npos);
@@ -192,23 +185,64 @@ TEST(BenchmarkJSON, ComparesReferenceVersionByValue) {
   }
 }
 
+TEST(BenchmarkJSON, AcceptsEquivalentOutputWidths) {
+  const GHZ benchmark{{.qubits = 3}};
+  constexpr std::string_view field = R"("width":3)";
+  for (const auto* spelling : {"3", "3.0", "3e0"}) {
+    SCOPED_TRACE(spelling);
+    auto manifest = toManifestJSON(benchmark);
+    const auto position = manifest.find(field);
+    ASSERT_NE(position, std::string::npos);
+    manifest.replace(position, field.size(),
+                     std::string(R"("width":)") + spelling);
+    auto parsed = ghzFromManifestJSON(manifest);
+    ASSERT_TRUE(static_cast<bool>(parsed))
+        << llvm::toString(parsed.takeError());
+    EXPECT_EQ(toManifestJSON(*parsed), toManifestJSON(benchmark));
+    constexpr std::string_view counts =
+        R"({"schema_version":1,"counts":{"000":1}})";
+    EXPECT_EQ(llvm::cantFail(evaluateJSON(manifest, counts)),
+              llvm::cantFail(evaluateJSON(toManifestJSON(benchmark), counts)));
+  }
+}
+
 TEST(BenchmarkJSON, RejectsRoundedOutputWidths) {
-  const WState benchmark{{.qubits = uint64_t{1} << 53U}};
-  auto manifest = llvm::cantFail(mqt::json::parse(toManifestJSON(benchmark)));
-  EXPECT_EQ(llvm::cantFail(wStateFromManifestJSON(toManifestJSON(benchmark)))
-                .output(),
-            benchmark.output());
-  auto& output = manifest.getAsObject()->getArray("outputs")->front();
-  (*output.getAsObject())["width"] = benchmark.output().width + 1;
-  const auto changed = mqt::json::serialize(manifest);
-  expectInvalidJSON([&] { return wStateFromManifestJSON(changed); },
-                    "does not match");
-  expectInvalidJSON(
-      [&] {
-        return evaluateJSON(changed,
-                            R"({"schema_version":1,"counts":{"0":1}})");
-      },
-      "does not match");
+  for (const auto size : {
+           uint64_t{1} << 53U,
+           (uint64_t{1} << 53U) + 1,
+           uint64_t{std::numeric_limits<int64_t>::max()},
+       }) {
+    SCOPED_TRACE(size);
+    const WState benchmark{{.qubits = size}};
+    auto manifest = llvm::cantFail(mqt::json::parse(toManifestJSON(benchmark)));
+    auto& output = manifest.getAsObject()->getArray("outputs")->front();
+    auto& width = (*output.getAsObject())["width"];
+    EXPECT_EQ(llvm::cantFail(wStateFromManifestJSON(toManifestJSON(benchmark)))
+                  .output(),
+              benchmark.output());
+    const auto reject = [&] {
+      const auto changed = mqt::json::serialize(manifest);
+      expectInvalidJSON([&] { return wStateFromManifestJSON(changed); },
+                        "does not match");
+      expectInvalidJSON(
+          [&] {
+            return evaluateJSON(changed,
+                                R"({"schema_version":1,"counts":{"0":1}})");
+          },
+          "does not match");
+    };
+    width = size + 1;
+    reject();
+    width = static_cast<double>(size);
+    if (size == uint64_t{1} << 53U) {
+      EXPECT_EQ(
+          llvm::cantFail(wStateFromManifestJSON(mqt::json::serialize(manifest)))
+              .output(),
+          benchmark.output());
+    } else {
+      reject();
+    }
+  }
 }
 
 TEST(BenchmarkJSON, EvaluatesAResolvedManifest) {
