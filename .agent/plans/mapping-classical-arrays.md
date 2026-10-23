@@ -28,13 +28,13 @@ does not order unknown or value-less effects; callers must exclude them.
 
 On main revision `04de176835af9dfc2c78f9f201cce932bfc0bc4d`, a two-element angle
 array in a counted loop failed mapping. Repeating upstream promotion left its
-runtime-indexed load intact. New regressions failed before the fix and pass
+runtime-indexed load intact. The added cases fail before the fix and pass
 afterward. They verify the measured result, feedback through copies with and
 without aliases, and store/load ordering through aliased handles. The existing
 opaque-call failure-before-mutation regression still passes.
 
 Build with the `release` preset and run the mapping, QCO utility, and compiler
-unit-test executables. All 132 mapping and 255 utility tests pass. The compiler
+unit-test executables. All 130 mapping and 255 utility tests pass. The compiler
 suite passes 315 tests; two `/dev/full` tests skip on macOS. Repository lint
 passes. Clang-tidy 23 reports no findings in the complete changed C++ files or
 changed sorting header; generated and unchanged included headers emit warnings.
