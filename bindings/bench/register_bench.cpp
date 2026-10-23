@@ -34,6 +34,7 @@ void registerQPE(const nb::module_& m);
 void registerRepeatUntilSuccess(const nb::module_& m);
 void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
+void registerVQEAnsatz(const nb::module_& m);
 void registerWState(const nb::module_& m);
 
 // The nanobind module macro requires its module handle by value.
@@ -120,6 +121,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ teleportation = m.def_submodule(
       "teleportation", "Quantum teleportation benchmark instance.");
   registerTeleportation(teleportation);
+
+  const nb::module_ vqeAnsatz = m.def_submodule(
+      "vqe_ansatz", "VQE ansatz benchmark instances and options.");
+  registerVQEAnsatz(vqeAnsatz);
 
   registerWState(
       m.def_submodule("w_state", "W-state benchmark instances and options."));

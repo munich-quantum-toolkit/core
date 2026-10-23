@@ -9,10 +9,11 @@ mystnb:
 # Structured quantum benchmarks
 
 MQT Core defines each structured quantum benchmark by benchmark-specific
-parameters and an analytic or verification reference. A benchmark instance can
-produce a structured QC program, a resolved manifest, and a stable case ID. The
-generated program returns one classical register named `result`. Outcome strings
-are big-endian: the highest-index result bit is the leftmost character.
+parameters and, when available, an analytic or verification reference. A
+benchmark instance can produce a structured QC program, a resolved manifest, and
+a stable case ID. The generated program returns one classical register named
+`result`. Outcome strings are big-endian: the highest-index result bit is the
+leftmost character.
 
 For an end-to-end device example, start with {doc}`getting_started`, which
 factors 21 with Shor's algorithm. The
@@ -121,6 +122,10 @@ print(
 Total variation distance zero and squared Hellinger fidelity one identify an
 exact distribution. Some benchmark families also report a success probability
 for a distinguished success outcome.
+
+Families without a built-in reference use `{"kind": "none"}` in the manifest.
+They do not expose `probability` or `evaluate`; the CLI's `evaluate` command
+rejects those families.
 
 ## Generate structured IR
 
@@ -249,10 +254,10 @@ Adding a family requires five extension points:
    `include/mqt-core/bench/BenchmarkFamilies.inc`. Its expansions provide the
    public JSON declarations and the synchronized semantic and MLIR registry
    glue.
-2. Add the typed instance, any options and validation, a reference, and
-   evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
-   family-specific parameter JSON, reference JSON, parser, and schema body to
-   `src/bench/JSON.cpp`.
+2. Add the typed instance, any options and validation, and a reference and
+   evaluation when available under `include/mqt-core/bench/` and `src/bench/`.
+   Add the family-specific parameter JSON, reference JSON, parser, and schema
+   body to `src/bench/JSON.cpp`.
 3. Implement the structured emitter under `mlir/bench/` and add its source to
    the program library. The catalog supplies the emitter declaration, typed
    `generate(...)` overload, generation wrapper, and JSON dispatch row.
@@ -668,6 +673,50 @@ distribution, TVD, or Hellinger fidelity. An unsuccessful phase is valid data;
 invalid outcomes and empty counts are rejected. The input limit bounds classical
 recovery, not simulation cost. See {doc}`getting_started` for phase
 interpretation, execution, and the callback-based factoring workflow.
+
+### VQE ansatz
+
+The `vqe-ansatz` family provides a fixed-repetition ansatz for the
+{term}`variational quantum eigensolver <VQE>` introduced by
+[Peruzzo et al.](https://arxiv.org/html/1304.3061). The paper allows a choice of
+ansatz; this benchmark uses the standard
+[real-amplitudes circuit](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.circuit.library.real_amplitudes)
+with linear entanglement, not the paper's two-qubit photonic experiment.
+
+Starting from $|0\rangle^{\otimes n}$, each repetition applies an $R_y$ rotation
+to every qubit, then the CNOT chain $0\to1,1\to2,\ldots,n-2\to n-1$ in that
+order. A final rotation layer precedes computational-basis measurement. Set
+`qubits` to a positive width and `depth` to the number of repetitions (default
+one). The program takes one array, `thetas`, with $n(d+1)$ angles in radians.
+Entry `thetas[layer * n + qubit]` controls that qubit's rotation.
+
+```{code-cell} ipython3
+import numpy as np
+
+from mqt.core.bench import vqe_ansatz
+from mqt.core.mlir import sample
+
+ansatz = vqe_ansatz.VQEAnsatz(vqe_ansatz.Options(qubits=3, depth=1))
+template = ansatz.generate()
+angles = np.zeros(ansatz.num_parameters)
+angles[0] = np.pi / 2
+program = template.copy()
+program.bind_parameters({"thetas": angles})
+counts = sample(program, shots=1024, seed=17)
+assert set(counts) == {"000", "111"}
+print(counts)
+```
+
+The manifest and case ID identify the template; record bound angles separately
+to reproduce a run. Store named templates as QC and bind before binary `jeff`
+serialization. Structured loops keep generation compact as width and depth grow;
+execution still requires work proportional to their product. The angle count
+must fit the compiler's signed 64-bit input dimension. The current `jeff`
+conversion requires indices to fit signed 32-bit integers.
+
+This family does not select a Hamiltonian, estimate energy, or run an optimizer.
+It has no built-in evaluation reference. Use bound programs in an external VQE
+workflow or compare their output against an independently computed reference.
 
 ### W-state preparation
 

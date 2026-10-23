@@ -26,6 +26,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/VQEAnsatz.hpp"
 #include "bench/WState.hpp"
 
 #include "nlohmann/json.hpp"
@@ -604,6 +605,21 @@ parseTeleportationParameters(const Json& parameters,
   return Teleportation{};
 }
 
+[[nodiscard]] VQEAnsatz
+parseVQEAnsatzParameters(const Json& parameters,
+                         const std::string_view source) {
+  rejectUnknownKeys(parameters, {"qubits", "depth"}, source, "$/parameters");
+  VQEAnsatzOptions options{
+      .qubits =
+          sizeValue(required(parameters, "qubits", source, "$/parameters"),
+                    source, "$/parameters/qubits"),
+  };
+  if (const auto depth = parameters.find("depth"); depth != parameters.end()) {
+    options.depth = sizeValue(*depth, source, "$/parameters/depth");
+  }
+  return constructBenchmark(source, [&options] { return VQEAnsatz(options); });
+}
+
 [[nodiscard]] WState parseWStateParameters(const Json& parameters,
                                            const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
@@ -765,6 +781,13 @@ parseTeleportationParameters(const Json& parameters,
   return Json::object();
 }
 
+[[nodiscard]] Json parametersJSON(const VQEAnsatz& benchmark) {
+  return {
+      {"depth", benchmark.options().depth},
+      {"qubits", benchmark.options().qubits},
+  };
+}
+
 [[nodiscard]] Json parametersJSON(const WState& benchmark) {
   return {{"qubits", benchmark.options().qubits}};
 }
@@ -861,6 +884,10 @@ parseTeleportationParameters(const Json& parameters,
 
 [[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "teleportation", "0");
+}
+
+[[nodiscard]] Json referenceJSON(const VQEAnsatz& /*unused*/) {
+  return {{"kind", "none"}};
 }
 
 [[nodiscard]] Json referenceJSON(const WState& benchmark) {
@@ -1478,6 +1505,37 @@ template <class Benchmark>
   });
 }
 
+[[nodiscard]] Json vqeAnsatzInstanceSpecificationSchema() {
+  const VQEAnsatzOptions defaults{.qubits = 1};
+  return baseInstanceSpecificationSchema<VQEAnsatz>({
+      {"description", "The product qubits * (depth + 1) must fit a signed "
+                      "64-bit circuit input dimension."},
+      {
+          "properties",
+          {
+              {
+                  "depth",
+                  {
+                      {"default", defaults.depth},
+                      {"maximum", std::numeric_limits<int64_t>::max() - 1},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+              {
+                  "qubits",
+                  {
+                      {"maximum", std::numeric_limits<int64_t>::max() / 2},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
+      {"required", {"qubits"}},
+  });
+}
+
 [[nodiscard]] Json wStateInstanceSpecificationSchema() {
   return baseInstanceSpecificationSchema<WState>({
       {
@@ -1639,9 +1697,14 @@ std::string evaluateJSON(const std::string_view manifest,
       parsedCounts.begin(), parsedCounts.end(), size_t{0},
       [](const size_t sum, const auto& item) { return sum + item.second; });
   return std::visit(
-      [&](const auto& benchmark) {
-        return evaluationToJSON(parsed.caseId, shots,
-                                benchmark.evaluate(parsedCounts));
+      [&](const auto& benchmark) -> std::string {
+        if constexpr (requires { benchmark.evaluate(parsedCounts); }) {
+          return evaluationToJSON(parsed.caseId, shots,
+                                  benchmark.evaluate(parsedCounts));
+        } else {
+          throw std::invalid_argument(
+              "benchmark '" + id + "' does not define a built-in evaluation");
+        }
       },
       parsed.instance);
 }

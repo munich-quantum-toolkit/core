@@ -24,6 +24,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/VQEAnsatz.hpp"
 #include "bench/WState.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
@@ -119,6 +120,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectQCAndJeff(RepeatUntilSuccess{});
   expectQCAndJeff(Shor{{.number = 15}});
   expectQCAndJeff(Teleportation{});
+  expectQCAndJeff(VQEAnsatz{{.qubits = 3}});
   expectQCAndJeff(WState{{.qubits = 3}});
 }
 

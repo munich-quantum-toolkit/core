@@ -24,6 +24,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_repeat_until_success.cpp
       register_shor.cpp
       register_teleportation.cpp
+      register_vqe_ansatz.cpp
       register_w_state.cpp)
 
   add_mqt_python_binding(

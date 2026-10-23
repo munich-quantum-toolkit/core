@@ -27,6 +27,7 @@ add_library(
     RepeatUntilSuccess.cpp
     Shor.cpp
     Teleportation.cpp
+    VQEAnsatz.cpp
     WState.cpp)
 target_link_libraries(
   MQTBenchmarkPrograms
