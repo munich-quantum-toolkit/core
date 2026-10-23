@@ -32,11 +32,13 @@
 
 #include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/Location.h"
@@ -236,10 +238,18 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
             !isa<QCODialect, qtensor::QTensorDialect, cbit::CBitDialect>(
                 op->getDialect()) &&
             !isMemoryEffectFree(op)) {
-          op->emitError(
-              "mapping supports classical side effects only through CBit "
-              "operations; lower other side effects before mapping");
-          return WalkResult::interrupt();
+          const auto effects = getEffectsRecursively(op);
+          if (!isa<memref::MemRefDialect>(op->getDialect()) || !effects ||
+              llvm::any_of(*effects, [](const auto& effect) {
+                auto value = effect.getValue();
+                return !value || !isa<BaseMemRefType>(value.getType());
+              })) {
+            op->emitError(
+                "mapping supports classical side effects only through CBit "
+                "operations or value-associated MemRef effects; lower other "
+                "side effects before mapping");
+            return WalkResult::interrupt();
+          }
         }
 
         if (auto unitary = dyn_cast<UnitaryOpInterface>(op);
@@ -1850,7 +1860,7 @@ private:
 
     SetVector<Operation*> worklist;
 
-    DenseSet<TypedValue<cbit::RegisterType>> processed;
+    DenseSet<Value> processed;
 
     size_t cursor = 0;
     const auto resultNeedsRouting = [&](MeasureOp next) {
@@ -1867,7 +1877,7 @@ private:
           return true;
         }
 
-        // Captures and nested register accesses also constrain their enclosing
+        // Captures and nested memory accesses also constrain their enclosing
         // composite, whose placement threads every physical wire through it.
 
         if (op->getBlock() != block) {
@@ -1884,17 +1894,16 @@ private:
 
         for (const auto& effect : *effects) {
           auto value = effect.getValue();
-          auto reg = dyn_cast_if_present<TypedValue<cbit::RegisterType>>(value);
-          if (!reg) {
+          if (!value ||
+              !isa<cbit::RegisterType, BaseMemRefType>(value.getType())) {
             continue;
           }
 
-          auto [it, inserted] = processed.insert(reg);
-          if (!inserted) {
+          if (!processed.insert(value).second) {
             continue;
           }
 
-          for (Operation* user : reg.getUsers()) {
+          for (Operation* user : value.getUsers()) {
             Operation* ancestor = block->findAncestorOpInBlock(*user);
             if (user == op ||
                 (ancestor && !measurement->isBeforeInBlock(ancestor))) {
@@ -1930,7 +1939,7 @@ private:
     // inserts SWAPs or replaces composites.
     DenseMap<Operation*, bool> measurementRouting;
     const auto needsRouting = [&](MeasureOp measurement) {
-      // Aliases can hide feedback from the register's SSA use chain.
+      // Aliases can hide feedback from the storage handle's SSA use chain.
       return classicalAliases ||
              measurementNeedsRouting(measurement, measurementRouting);
     };

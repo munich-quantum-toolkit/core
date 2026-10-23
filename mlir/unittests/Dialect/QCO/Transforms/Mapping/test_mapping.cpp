@@ -32,6 +32,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -340,7 +341,8 @@ protected:
     DialectRegistry registry;
     registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
                     CBitDialect, scf::SCFDialect, arith::ArithDialect,
-                    func::FuncDialect, cf::ControlFlowDialect>();
+                    func::FuncDialect, cf::ControlFlowDialect,
+                    memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -500,6 +502,102 @@ TEST_F(MappingPassFixture, PreservesAliasedRegisterFeedback) {
         EXPECT_EQ(counts->begin()->first, expected);
       }
     }
+  }
+}
+
+TEST_F(MappingPassFixture, PreservesRuntimeIndexedAngleArrays) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %two = arith.constant 2 : index
+    %pi = arith.constant 3.141592653589793 : f64
+    %nil = arith.constant 0.0 : f64
+    %angles = memref.alloca() : memref<2xf64>
+    memref.store %pi, %angles[%zero] : memref<2xf64>
+    memref.store %nil, %angles[%one] : memref<2xf64>
+    %q = qco.alloc : !qco.qubit
+    %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+    %final = scf.for %i = %zero to %two step %one iter_args(%wire = %q) -> !qco.qubit {
+      %angle = memref.load %angles[%i] : memref<2xf64>
+      %next = qco.rx(%angle) %wire : !qco.qubit
+      scf.yield %next : !qco.qubit
+    }
+    %done, %bit = qco.measure %final : !qco.qubit
+    cbit.store %bit, %out[%zero] : !cbit.reg<1>
+    qco.sink %done : !qco.qubit
+    return %out : !cbit.reg<1>
+  }
+}
+)mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  ASSERT_TRUE(succeeded(
+      runMapping(*moduleOp, target, MappingPassOptions{.ntrials = 1})));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  const auto counts = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1U);
+  EXPECT_EQ(counts->begin()->first, "1");
+}
+
+TEST_F(MappingPassFixture, PreservesMemRefMeasurementFeedback) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  for (bool canonicalize : {false, true}) {
+    SCOPED_TRACE(canonicalize);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+      func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : i64
+        %storage = memref.alloca() : memref<1xi64>
+        %copy = memref.alloca() : memref<1xi64>
+        %alias = memref.cast %storage : memref<1xi64> to memref<?xi64>
+        %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %a = qco.alloc : !qco.qubit
+        %b = qco.alloc : !qco.qubit
+        %flipped = qco.x %a : !qco.qubit
+        %measured, %bit = qco.measure %flipped : !qco.qubit
+        %number = arith.extui %bit : i1 to i64
+        memref.store %number, %alias[%zero] : memref<?xi64>
+        qco.sink %measured : !qco.qubit
+        memref.copy %storage, %copy : memref<1xi64> to memref<1xi64>
+        %loaded = memref.load %copy[%zero] : memref<1xi64>
+        %condition = arith.cmpi eq, %loaded, %one : i64
+        %changed = qco.if %condition args(%wire = %b) -> !qco.qubit {
+          %result = qco.x %wire : !qco.qubit
+          qco.yield %result : !qco.qubit
+        } else args(%wire = %b) { qco.yield %wire : !qco.qubit }
+        %finished, %result = qco.measure %changed : !qco.qubit
+        cbit.store %result, %out[%zero] : !cbit.reg<1>
+        qco.sink %finished : !qco.qubit
+        return %out : !cbit.reg<1>
+      }
+    )mlir",
+                                                context.get());
+    ASSERT_TRUE(moduleOp);
+    if (canonicalize) {
+      PassManager pm(context.get());
+      pm.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    }
+    auto function = getEntryPoint(*moduleOp);
+    EXPECT_EQ(hasPotentialClassicalAliases(function.getBody().front()),
+              !canonicalize);
+    ASSERT_TRUE(succeeded(
+        runMapping(*moduleOp, target, MappingPassOptions{.ntrials = 1})));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    const auto counts = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(counts->size(), 1U);
+    EXPECT_EQ(counts->begin()->first, "1");
   }
 }
 
