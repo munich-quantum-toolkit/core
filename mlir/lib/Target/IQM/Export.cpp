@@ -14,7 +14,7 @@
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
-#include "nlohmann/json.hpp"
+#include "support/JSON.hpp"
 
 #include "mlir/Support/LLVM.h"
 
@@ -115,45 +115,59 @@ public:
       siteNames_.try_emplace(static_cast<uint64_t>(site.id()), *name);
     }
 
+    std::string output;
+    llvm::raw_string_ostream raw(output);
+    llvm::json::OStream stream(raw);
     DenseSet<const llvm::BasicBlock*> visited;
-    const auto* block = &entry->getEntryBlock();
-    while (block != nullptr) {
-      if (!visited.insert(block).second) {
-        return fail("control flow must be an acyclic unconditional chain");
-      }
-      const llvm::BasicBlock* next = nullptr;
-      for (const auto& instruction : *block) {
-        if (const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction)) {
-          if (auto error = emitCall(*call)) {
-            return std::move(error);
-          }
-        } else if (const auto* branch =
-                       llvm::dyn_cast<llvm::BranchInst>(&instruction);
-                   branch != nullptr && branch->isUnconditional()) {
-          next = branch->getSuccessor(0);
-        } else if (const auto* result =
-                       llvm::dyn_cast<llvm::ReturnInst>(&instruction)) {
-          const auto* value = result->getReturnValue();
-          const auto* integer =
-              llvm::dyn_cast_or_null<llvm::ConstantInt>(value);
-          if (value != nullptr && (integer == nullptr || !integer->isZero())) {
-            return fail("entry point may only return a zero exit code");
-          }
-        } else {
-          return fail("unsupported LLVM instruction");
+    stream.objectBegin();
+    stream.attribute("name", entry->getName());
+    stream.attributeBegin("instructions");
+    stream.arrayBegin();
+    auto error = [&]() -> llvm::Error {
+      const auto* block = &entry->getEntryBlock();
+      while (block != nullptr) {
+        if (!visited.insert(block).second) {
+          return fail("control flow must be an acyclic unconditional chain");
         }
+        const llvm::BasicBlock* next = nullptr;
+        for (const auto& instruction : *block) {
+          if (const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction)) {
+            if (auto error = emitCall(*call, stream)) {
+              return std::move(error);
+            }
+          } else if (const auto* branch =
+                         llvm::dyn_cast<llvm::BranchInst>(&instruction);
+                     branch != nullptr && branch->isUnconditional()) {
+            next = branch->getSuccessor(0);
+          } else if (const auto* result =
+                         llvm::dyn_cast<llvm::ReturnInst>(&instruction)) {
+            const auto* value = result->getReturnValue();
+            const auto* integer =
+                llvm::dyn_cast_or_null<llvm::ConstantInt>(value);
+            if (value != nullptr &&
+                (integer == nullptr || !integer->isZero())) {
+              return fail("entry point may only return a zero exit code");
+            }
+          } else {
+            return fail("unsupported LLVM instruction");
+          }
+        }
+        block = next;
       }
-      block = next;
+      return llvm::Error::success();
+    }();
+    stream.arrayEnd();
+    stream.attributeEnd();
+    stream.objectEnd();
+    if (error) {
+      return std::move(error);
     }
     if (visited.size() != entry->size() || pendingArrayElements_ != 0 ||
         measuredQubits_.empty() || !measurements_.empty()) {
       return fail("every measurement must be recorded exactly once in a "
                   "complete output sequence");
     }
-    nlohmann::json circuit;
-    circuit["name"] = entry->getName().str();
-    circuit["instructions"] = std::move(instructions_);
-    return circuit.dump();
+    return output;
   }
 
 private:
@@ -166,7 +180,7 @@ private:
   uint64_t registerSize_ = 0;
   uint64_t registerCount_ = 0;
   std::string registerName_;
-  nlohmann::json instructions_ = nlohmann::json::array();
+  bool hasInstructions_ = false;
 
   llvm::Error beginRegister(const llvm::Value* label, const uint64_t size) {
     if (llvm::isa<llvm::ConstantPointerNull>(label)) {
@@ -185,7 +199,8 @@ private:
     return llvm::Error::success();
   }
 
-  llvm::Error emitCall(const llvm::CallInst& call) {
+  llvm::Error emitCall(const llvm::CallInst& call,
+                       llvm::json::OStream& stream) {
     const auto* function = call.getCalledFunction();
     if (function == nullptr || !function->isDeclaration() ||
         !call.getType()->isVoidTy()) {
@@ -195,7 +210,7 @@ private:
     const auto arity = call.arg_size();
     if (name == QIR_INITIALIZE && arity == 1 &&
         llvm::isa<llvm::ConstantPointerNull>(call.getArgOperand(0)) &&
-        instructions_.empty() && measuredQubits_.empty()) {
+        !hasInstructions_ && measuredQubits_.empty()) {
       return llvm::Error::success();
     }
     if (name == QIR_ARRAY_RECORD_OUTPUT && arity == 2) {
@@ -221,10 +236,14 @@ private:
                         "_" + Twine(registerCount_ - 1) + "_" +
                         Twine(registerSize_ - pendingArrayElements_))
                            .str();
-      auto& instruction = instructions_.emplace_back();
-      instruction["name"] = "measure";
-      instruction["locus"] = {siteNames_.at(measurements_.at(*result)).str()};
-      instruction["args"]["key"] = key;
+      stream.object([&] {
+        stream.attribute("name", "measure");
+        stream.attributeArray("locus", [&] {
+          stream.value(siteNames_.at(measurements_.at(*result)));
+        });
+        stream.attributeObject("args", [&] { stream.attribute("key", key); });
+      });
+      hasInstructions_ = true;
       measurements_.erase(*result);
       --pendingArrayElements_;
       return llvm::Error::success();
@@ -251,12 +270,20 @@ private:
       if (!angle || !phase || !qubit || !siteNames_.contains(*qubit)) {
         return fail("PRX requires finite constant angles and a target qubit");
       }
-      auto& instruction = instructions_.emplace_back();
-      instruction["name"] = "prx";
-      instruction["locus"] = {siteNames_.at(*qubit).str()};
-      auto& args = instruction["args"];
-      args["angle"] = *angle;
-      args["phase"] = *phase;
+      stream.object([&] {
+        stream.attribute("name", "prx");
+        stream.attributeArray("locus",
+                              [&] { stream.value(siteNames_.at(*qubit)); });
+        stream.attributeObject("args", [&] {
+          stream.attributeBegin("angle");
+          ::mqt::json::number(stream, *angle);
+          stream.attributeEnd();
+          stream.attributeBegin("phase");
+          ::mqt::json::number(stream, *phase);
+          stream.attributeEnd();
+        });
+      });
+      hasInstructions_ = true;
       return llvm::Error::success();
     }
     if (name == QIR_CZ && arity == 2) {
@@ -266,13 +293,15 @@ private:
           !siteNames_.contains(*control) || !siteNames_.contains(*qubit)) {
         return fail("CZ requires two distinct target qubits");
       }
-      auto& instruction = instructions_.emplace_back();
-      instruction["name"] = "cz";
-      instruction["locus"] = {
-          siteNames_.at(*control).str(),
-          siteNames_.at(*qubit).str(),
-      };
-      instruction["args"] = nlohmann::json::object();
+      stream.object([&] {
+        stream.attribute("name", "cz");
+        stream.attributeArray("locus", [&] {
+          stream.value(siteNames_.at(*control));
+          stream.value(siteNames_.at(*qubit));
+        });
+        stream.attributeObject("args", [] {});
+      });
+      hasInstructions_ = true;
       return llvm::Error::success();
     }
     return fail(Twine("unsupported call '") + name + "'");

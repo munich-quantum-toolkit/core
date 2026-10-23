@@ -14,8 +14,9 @@
 
 #include "JSONTestUtils.hpp"
 
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -109,7 +110,7 @@ TEST(QAOA, KeepsRoundedOptimalScoresWithinTheirBounds) {
   EXPECT_LE(evaluation.meanCut, 2.);
   EXPECT_DOUBLE_EQ(evaluation.approximationRatio, 1.);
   EXPECT_LE(evaluation.approximationRatio, 1.);
-  EXPECT_NO_THROW(static_cast<void>(evaluationToJSON(
+  static_cast<void>(llvm::cantFail(evaluationToJSON(
       caseId(benchmark), (maximum / 3) + (2 * (maximum / 5)), evaluation)));
 }
 
@@ -132,16 +133,17 @@ TEST(QAOA, ValidatesEveryCountKey) {
 }
 
 TEST(QAOA, RoundTripsJSON) {
-  const auto parsed = qaoaFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":5,"depth":2}})");
+  const auto parsed = llvm::cantFail(qaoaFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":5,"depth":2}})"));
   EXPECT_EQ(parsed.options().qubits, 5);
   EXPECT_EQ(parsed.options().depth, 2);
   EXPECT_EQ(
       toInstanceSpecificationJSON(parsed),
       R"({"benchmark":"qaoa","parameters":{"depth":2,"qubits":5},"schema_version":1})");
   const auto manifest = toManifestJSON(parsed);
-  EXPECT_EQ(toManifestJSON(qaoaFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qaoa");
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(qaoaFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)), "qaoa");
   EXPECT_NE(manifest.find(R"("kind":"verification")"), std::string::npos);
   EXPECT_NE(manifest.find(R"("model":"qaoa_max_cut_cycle")"),
             std::string::npos);
@@ -152,8 +154,8 @@ TEST(QAOA, RoundTripsJSON) {
 }
 
 TEST(QAOA, ResolvesDefaultDepth) {
-  const auto parsed = qaoaFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":3}})");
+  const auto parsed = llvm::cantFail(qaoaFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":3}})"));
   const QAOA defaults{{.qubits = 3}};
   EXPECT_EQ(toInstanceSpecificationJSON(parsed),
             toInstanceSpecificationJSON(defaults));
@@ -161,7 +163,7 @@ TEST(QAOA, ResolvesDefaultDepth) {
 }
 
 TEST(QAOA, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("qaoa");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("qaoa"));
   EXPECT_NE(schema.find(R"("minimum":3)"), std::string::npos);
   EXPECT_NE(schema.find(R"("maximum":9223372036854775807)"), std::string::npos);
   EXPECT_NE(schema.find(R"("depth":{"default":1,"maximum":)" +
@@ -182,41 +184,38 @@ TEST(QAOA, RejectsInvalidJSONParameters) {
     const auto specification =
         std::string(R"({"schema_version":1,"benchmark":"qaoa","parameters":)") +
         parameters + "}";
-    EXPECT_THROW(
-        static_cast<void>(qaoaFromInstanceSpecificationJSON(specification)),
-        std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] { return qaoaFromInstanceSpecificationJSON(specification); }, "");
   }
   expectInvalidJSON(
       [] {
-        static_cast<void>(qaoaFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":3,"gammas":[1]}})"));
+        return qaoaFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":3,"gammas":[1]}})");
       },
-      "unknown key 'gammas'");
+      "gammas");
 }
 
 TEST(QAOA, ReportsTheParameterLocationOnce) {
-  EXPECT_THAT(
+  expectInvalidJSON(
       [] {
-        static_cast<void>(qaoaFromInstanceSpecificationJSON(
+        return qaoaFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qaoa","parameters":{}})",
-            "case.json"));
+            "case.json");
       },
-      testing::ThrowsMessage<std::invalid_argument>(
-          testing::StartsWith("case.json:$/parameters/qubits ")));
-  EXPECT_THAT(
+      "case.json:$/parameters.qubits");
+  expectInvalidJSON(
       [] {
-        static_cast<void>(qaoaFromInstanceSpecificationJSON(
+        return qaoaFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qaoa","parameters":{"qubits":3,"depth":"x"}})",
-            "case.json"));
+            "case.json");
       },
-      testing::ThrowsMessage<std::invalid_argument>(
-          testing::StartsWith("case.json:$/parameters/depth ")));
+      "case.json:$/parameters.depth");
 }
 
 TEST(QAOA, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(QAOA{{.qubits = 4}}),
-                   R"({"schema_version":1,"counts":{"0000":1,"0101":3}})");
+                   R"({"schema_version":1,"counts":{"0000":1,"0101":3}})"));
   EXPECT_NE(evaluation.find(R"("mean_cut":3.0)"), std::string::npos);
   EXPECT_NE(evaluation.find(R"("approximation_ratio":0.75)"),
             std::string::npos);
@@ -226,23 +225,28 @@ TEST(QAOA, EvaluatesCountsFromJSON) {
 
 TEST(QAOA, RejectsInvalidEvaluationMetrics) {
   const auto id = caseId(QAOA{{.qubits = 3}});
-  EXPECT_THROW(static_cast<void>(evaluationToJSON(id, 0, QAOAEvaluation{})),
-               std::invalid_argument);
-  EXPECT_THROW(
-      static_cast<void>(evaluationToJSON("invalid", 1, QAOAEvaluation{})),
-      std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(
-                   evaluationToJSON(id, 1, QAOAEvaluation{.meanCut = -1.})),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(evaluationToJSON(
-                   id, 1, QAOAEvaluation{.approximationRatio = 1.1})),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(evaluationToJSON(
-                   id, 1,
-                   QAOAEvaluation{
-                       .meanCut = std::numeric_limits<double>::quiet_NaN(),
-                   })),
-               std::invalid_argument);
+  test::expectInvalidJSON(
+      [&] { return evaluationToJSON(id, 0, QAOAEvaluation{}); }, "");
+  test::expectInvalidJSON(
+      [&] { return evaluationToJSON("invalid", 1, QAOAEvaluation{}); }, "");
+  test::expectInvalidJSON(
+      [&] { return evaluationToJSON(id, 1, QAOAEvaluation{.meanCut = -1.}); },
+      "");
+  test::expectInvalidJSON(
+      [&] {
+        return evaluationToJSON(id, 1,
+                                QAOAEvaluation{.approximationRatio = 1.1});
+      },
+      "");
+  test::expectInvalidJSON(
+      [&] {
+        return evaluationToJSON(
+            id, 1,
+            QAOAEvaluation{
+                .meanCut = std::numeric_limits<double>::quiet_NaN(),
+            });
+      },
+      "");
 }
 
 } // namespace mqt::bench

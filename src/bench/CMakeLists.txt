@@ -12,27 +12,25 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
   file(GLOB_RECURSE BENCH_SOURCES *.cpp)
 
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench HIDDEN_VISIBILITY)
-  set_target_properties(
-    ${MQT_CORE_TARGET_NAME}-bench-library
-    PROPERTIES OUTPUT_NAME ${MQT_CORE_TARGET_NAME}-bench)
+  set_target_properties(${MQT_CORE_TARGET_NAME}-bench-library
+                        PROPERTIES OUTPUT_NAME ${MQT_CORE_TARGET_NAME}-bench)
 
   target_sources(${MQT_CORE_TARGET_NAME}-bench-library PRIVATE ${BENCH_SOURCES})
-  target_link_libraries(
-    ${MQT_CORE_TARGET_NAME}-bench-library
-    PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json> LLVMSupport)
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-bench-library PUBLIC MQT::CoreJSON)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-bench-library
-    PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${BENCH_HEADERS})
+    PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${BENCH_HEADERS})
 
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-bench-library BASE_NAME mqt_core_bench)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-bench-library
-    PUBLIC
-    FILE_SET HEADERS
-      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
-      FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_bench_export.h)
+    PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
+           ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_bench_export.h)
 
-  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-bench-library PARENT_SCOPE)
+  mqt_llvm_target_disable_rtti(${MQT_CORE_TARGET_NAME}-bench-library)
+
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-bench-library
+      PARENT_SCOPE)
 endif()

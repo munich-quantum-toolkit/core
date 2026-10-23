@@ -12,7 +12,11 @@
 #include "bench/JSON.hpp"
 #include "bench/WState.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Error.h"
 
 #include <bit>
 #include <cstddef>
@@ -67,10 +71,11 @@ TEST(WState, RoundTripsJSON) {
   const WState benchmark{{.qubits = 2}};
   const auto instance = toInstanceSpecificationJSON(benchmark);
   EXPECT_EQ(toInstanceSpecificationJSON(
-                wStateFromInstanceSpecificationJSON(instance)),
+                llvm::cantFail(wStateFromInstanceSpecificationJSON(instance))),
             instance);
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(wStateFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(wStateFromManifestJSON(manifest))),
+            manifest);
   EXPECT_NE(manifest.find(R"("model":"w_state")"), std::string::npos);
 }
 
@@ -79,22 +84,24 @@ TEST(WState, UsesSemanticCaseIds) {
 }
 
 TEST(WState, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("w-state");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("w-state"));
   EXPECT_NE(schema.find(R"("minimum":1)"), std::string::npos);
   EXPECT_NE(schema.find(R"("required":["qubits"])"), std::string::npos);
 }
 
 TEST(WState, RejectsInvalidJSONParameters) {
-  EXPECT_THROW(
-      static_cast<void>(wStateFromInstanceSpecificationJSON(
-          R"({"schema_version":1,"benchmark":"w-state","parameters":{"qubits":0}})")),
-      std::invalid_argument);
+  test::expectInvalidJSON(
+      [&] {
+        return wStateFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"w-state","parameters":{"qubits":0}})");
+      },
+      "");
 }
 
 TEST(WState, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(WState{{.qubits = 2}}),
-                   R"({"schema_version":1,"counts":{"01":10,"10":10}})");
+                   R"({"schema_version":1,"counts":{"01":10,"10":10}})"));
   EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1.0)"),
             std::string::npos);
   EXPECT_NE(evaluation.find(R"("shots":20)"), std::string::npos);

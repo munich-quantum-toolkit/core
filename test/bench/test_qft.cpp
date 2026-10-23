@@ -14,6 +14,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -66,8 +68,8 @@ TEST(QFT, GivesFourPeaksForPeriodFour) {
 }
 
 TEST(QFT, RoundTripsJSON) {
-  const auto defaults = qftFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
+  const auto defaults = llvm::cantFail(qftFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})"));
   EXPECT_EQ(defaults.options().method, QFTMethod::Standard);
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
@@ -76,8 +78,9 @@ TEST(QFT, RoundTripsJSON) {
   const QFT benchmark{
       {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(qftFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qft");
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(qftFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)), "qft");
 }
 
 TEST(QFT, UsesSemanticCaseIds) {
@@ -88,8 +91,9 @@ TEST(QFT, UsesSemanticCaseIds) {
 }
 
 TEST(QFT, DescribesJSONSchema) {
-  EXPECT_NE(describeBenchmarkJSON("qft").find("\"period_exponent\""),
-            std::string::npos);
+  EXPECT_NE(
+      llvm::cantFail(describeBenchmarkJSON("qft")).find("\"period_exponent\""),
+      std::string::npos);
 }
 
 } // namespace mqt::bench

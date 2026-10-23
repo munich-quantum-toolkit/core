@@ -12,7 +12,7 @@ add_subdirectory(programs)
 add_library(MQTBenchmarkGenerate STATIC Generate.cpp)
 add_library(MQT::CoreBenchGenerate ALIAS MQTBenchmarkGenerate)
 target_link_libraries(MQTBenchmarkGenerate PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
-# JSON parsing errors must unwind through the generation library.
+# Native benchmark and compiler calls still need exception cleanup.
 set(LLVM_REQUIRES_EH ON)
 set(LLVM_REQUIRES_RTTI ON)
 mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)

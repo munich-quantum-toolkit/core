@@ -16,6 +16,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
@@ -111,8 +113,8 @@ TEST(GHZ, ValidatesOutcomesAndShotCounts) {
 }
 
 TEST(GHZ, RoundTripsJSON) {
-  const auto defaults = ghzFromInstanceSpecificationJSON(
-      R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
+  const auto defaults = llvm::cantFail(ghzFromInstanceSpecificationJSON(
+      R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})"));
   EXPECT_EQ(defaults.options().topology, GHZTopology::Linear);
   EXPECT_EQ(defaults.options().basis, GHZBasis::Z);
   EXPECT_EQ(
@@ -122,22 +124,24 @@ TEST(GHZ, RoundTripsJSON) {
   const GHZ configured{
       {.qubits = 4, .topology = GHZTopology::Star, .basis = GHZBasis::X}};
   const auto manifest = toManifestJSON(configured);
-  EXPECT_EQ(toManifestJSON(ghzFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "ghz");
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(ghzFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)), "ghz");
 }
 
 TEST(GHZ, UsesSemanticCaseIds) {
-  const auto defaults = ghzFromInstanceSpecificationJSON(
-      R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
+  const auto defaults = llvm::cantFail(ghzFromInstanceSpecificationJSON(
+      R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})"));
   EXPECT_EQ(caseId(defaults), caseId(GHZ{{.qubits = 3}}));
   EXPECT_NE(caseId(defaults),
             caseId(GHZ{{.qubits = 3, .topology = GHZTopology::Star}}));
-  EXPECT_EQ(caseId(defaults), "sha256-a222c0c57bcecb4f5e7ea72bab439683"
-                              "92861a52c5cb7c9c13aeaffffa059a65");
+  EXPECT_EQ(caseId(defaults),
+            "sha256-"
+            "826ce9dbfb0533e6591e99b339bf702351d6dd98cb341b49f230b361e0e21466");
 }
 
 TEST(GHZ, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("ghz");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("ghz"));
   EXPECT_NE(schema.find("\"maximum\":1000000"), std::string::npos);
   EXPECT_NE(schema.find("\"maximum\":1075"), std::string::npos);
 }
@@ -145,20 +149,20 @@ TEST(GHZ, DescribesJSONSchema) {
 TEST(GHZ, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})");
       },
-      "unknown key 'extra'");
+      "extra");
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})");
       },
-      "encoded as an integer");
+      "expected uint64_t");
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})");
       },
       "between 1 and 1075");
 }

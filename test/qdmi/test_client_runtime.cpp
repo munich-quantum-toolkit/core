@@ -14,9 +14,11 @@
 #include "TestUtils.hpp"
 
 /// Required for JSON construction inside GoogleTest macro expansions.
-#include "nlohmann/json.hpp" // NOLINT(misc-include-cleaner)
-#include "nlohmann/json_fwd.hpp"
+#include "support/JSON.hpp"
+
 #include "qdmi/constants.h"
+
+#include "llvm/Support/JSON.h"
 
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
@@ -133,21 +135,32 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
   EXPECT_THROW(builtin_driver::openDevice(""), std::invalid_argument);
   const mqt::test::TemporaryDirectory directory;
   const auto definition = [](const std::string& id) {
-    return nlohmann::json::object({
-        {"id", id},
-        {"library", MQT_CORE_QDMI_SESSION_DEVICE},
-        {"prefix", "TEST_SESSION"},
-        {"session", {{"custom4", "idle"}}},
-    });
+    return llvm::json::Object{
+        {.K = "id", .V = id},
+        {.K = "library", .V = MQT_CORE_QDMI_SESSION_DEVICE},
+        {.K = "prefix", .V = "TEST_SESSION"},
+        {
+            .K = "session",
+            .V = llvm::json::Object{{.K = "custom4", .V = "idle"}},
+        },
+    };
   };
   const auto manifest = [&](const std::filesystem::path& name,
                             const std::string& id) {
-    return directory.write(name,
-                           nlohmann::json{
-                               {"schema-version", 1},
-                               {"qdmi", {{"devices", {definition(id)}}}},
-                           }
-                               .dump());
+    return directory.write(
+        name, mqt::json::serialize(llvm::json::Object{
+                  {.K = "schema-version", .V = 1},
+                  {
+                      .K = "qdmi",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "devices",
+                                  .V = llvm::json::Array{definition(id)},
+                              },
+                          },
+                  },
+              }));
   };
   const auto configured = manifest("device.qdmi.json", "test.session");
   const auto conflicting = manifest("duplicate.qdmi.json", "test.session");
@@ -157,13 +170,24 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
   const auto malformed = directory.write("malformed.qdmi.json", "{");
   auto missingLibrary = definition("test.missing-library");
   missingLibrary["library"] = (directory.path() / "missing-device").string();
-  const auto unavailable =
-      directory.write("unavailable.qdmi.json",
-                      nlohmann::json{
-                          {"schema-version", 1},
-                          {"qdmi", {{"devices", {missingLibrary}}}},
-                      }
-                          .dump());
+  const auto unavailable = directory.write(
+      "unavailable.qdmi.json",
+      mqt::json::serialize(llvm::json::Object{
+          {.K = "schema-version", .V = 1},
+          {
+              .K = "qdmi",
+              .V =
+                  llvm::json::Object{
+                      {
+                          .K = "devices",
+                          .V =
+                              llvm::json::Array{
+                                  llvm::json::Object(missingLibrary),
+                              },
+                      },
+                  },
+          },
+      }));
   EXPECT_THROW(builtin_driver::addManifest(directory.path() / "missing"),
                std::runtime_error);
   EXPECT_THROW(builtin_driver::addManifest(malformed), std::invalid_argument);

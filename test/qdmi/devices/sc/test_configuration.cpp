@@ -10,50 +10,48 @@
 
 #include "qdmi/devices/sc/Configuration.hpp"
 
+#include "support/JSON.hpp"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <functional>
+#include <ios>
+#include <istream>
 #include <limits>
-#include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace sc {
 namespace {
-using Json = nlohmann::json;
+using Json = llvm::json::Value;
 
 [[nodiscard]] Json bundledJson() {
-  std::ifstream input(SC_DEVICE_JSON);
-  if (!input) {
-    throw std::runtime_error("failed to open bundled SC configuration");
-  }
-  return Json::parse(input);
+  return llvm::cantFail(mqt::json::readFile(SC_DEVICE_JSON));
 }
 
 void expectInvalid(const std::function<void(Json&)>& mutate,
                    const std::string& diagnostic) {
   auto value = bundledJson();
   mutate(value);
-  try {
-    static_cast<void>(readJSON(value.dump(), "test-source"));
-    FAIL() << "Expected invalid SC configuration";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_THAT(error.what(), testing::HasSubstr("test-source:$"));
-    EXPECT_THAT(error.what(), testing::HasSubstr(diagnostic));
-  }
+  auto result = readJSON(mqt::json::serialize(value), "test-source");
+  ASSERT_FALSE(static_cast<bool>(result));
+  const auto error = llvm::toString(result.takeError());
+  EXPECT_THAT(error, testing::HasSubstr("test-source"));
+  EXPECT_THAT(error, testing::HasSubstr(diagnostic));
 }
 } // namespace
 
 TEST(ScConfigurationTest, ParsesBundledDeviceStrictly) {
-  const auto device = readJSON(SC_DEVICE_JSON);
+  const auto device = llvm::cantFail(readJSON(SC_DEVICE_JSON));
   EXPECT_EQ(device.schemaVersion, 1);
   EXPECT_EQ(device.name, "MQT SC Default QDMI Device");
   EXPECT_EQ(device.numQubits, 100);
@@ -105,7 +103,7 @@ TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
     }
   };
 
-  const auto garnet = readJSON(IQM_GARNET_JSON);
+  const auto garnet = llvm::cantFail(readJSON(IQM_GARNET_JSON));
   assertModel(garnet, "IQM Garnet", 20, 30, 30);
   EXPECT_EQ(std::ranges::count_if(
                 garnet.qubitProperties.overrides,
@@ -116,7 +114,7 @@ TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
                 [](const auto& qubit) { return qubit.t2.has_value(); }),
             20);
 
-  const auto emerald = readJSON(IQM_EMERALD_JSON);
+  const auto emerald = llvm::cantFail(readJSON(IQM_EMERALD_JSON));
   assertModel(emerald, "IQM Emerald", 54, 90, 81);
   EXPECT_EQ(std::ranges::count_if(
                 emerald.qubitProperties.overrides,
@@ -129,56 +127,86 @@ TEST(ScConfigurationTest, ParsesIqmDeviceModels) {
 }
 
 TEST(ScConfigurationTest, RejectsTopLevelSchemaErrors) {
-  expectInvalid([](auto& root) { root["unknown"] = true; }, "unknown");
-  expectInvalid([](auto& root) { root.erase("qubitProperties"); },
-                "qubitProperties");
-  expectInvalid([](auto& root) { root["schema-version"] = 2; },
+  expectInvalid([](auto& root) { (*root.getAsObject())["unknown"] = true; },
+                "unknown");
+  expectInvalid(
+      [](auto& root) { root.getAsObject()->erase("qubitProperties"); },
+      "qubitProperties");
+  expectInvalid([](auto& root) { (*root.getAsObject())["schema-version"] = 2; },
                 "schema-version");
-  expectInvalid([](auto& root) { root["name"] = ""; }, "name");
-  expectInvalid([](auto& root) { root["numQubits"] = 0; }, "numQubits");
-  expectInvalid([](auto& root) { root["numQubits"] = "100"; }, "numQubits");
+  expectInvalid([](auto& root) { (*root.getAsObject())["name"] = ""; }, "name");
+  expectInvalid([](auto& root) { (*root.getAsObject())["numQubits"] = 0; },
+                "numQubits");
+  expectInvalid([](auto& root) { (*root.getAsObject())["numQubits"] = "100"; },
+                "numQubits");
   expectInvalid(
       [](auto& root) {
-        root["numQubits"] = std::numeric_limits<uint64_t>::max();
+        (*root.getAsObject())["numQubits"] =
+            std::numeric_limits<uint64_t>::max();
       },
       "numQubits");
 }
 
 TEST(ScConfigurationTest, RejectsInvalidUnitsAndCalibration) {
-  expectInvalid([](auto& root) { root["durationUnit"]["unit"] = "fortnight"; },
-                "durationUnit");
-  expectInvalid([](auto& root) { root["durationUnit"]["scaleFactor"] = 0.; },
-                "durationUnit");
   expectInvalid(
       [](auto& root) {
-        root["qubitProperties"]["overrides"].push_back(
-            {{"qubit", 100}, {"t1", 1}});
+        (*root.getAsObject()->getObject("durationUnit"))["unit"] = "fortnight";
+      },
+      "durationUnit");
+  expectInvalid(
+      [](auto& root) {
+        (*root.getAsObject()->getObject("durationUnit"))["scaleFactor"] = 0.;
+      },
+      "durationUnit");
+  expectInvalid(
+      [](auto& root) {
+        (*root.getAsObject()->getObject("qubitProperties"))["overrides"]
+            .getAsArray()
+            ->push_back(llvm::json::Object{
+                {.K = "qubit", .V = 100},
+                {.K = "t1", .V = 1},
+            });
       },
       "qubitProperties/overrides");
   expectInvalid(
       [](auto& root) {
-        root["qubitProperties"]["overrides"].push_back(
-            {{"qubit", 8}, {"t1", 0}});
+        (*root.getAsObject()->getObject("qubitProperties"))["overrides"]
+            .getAsArray()
+            ->push_back(llvm::json::Object{
+                {.K = "qubit", .V = 8},
+                {.K = "t1", .V = 0},
+            });
       },
       "qubitProperties/overrides");
   expectInvalid(
       [](auto& root) {
-        root["qubitProperties"]["overrides"].push_back(
-            {{"qubit", 8}, {"name", ""}});
+        (*root.getAsObject()->getObject("qubitProperties"))["overrides"]
+            .getAsArray()
+            ->push_back(llvm::json::Object{
+                {.K = "qubit", .V = 8},
+                {.K = "name", .V = ""},
+            });
       },
       "qubitProperties/overrides");
   expectInvalid(
       [](auto& root) {
-        root["qubitProperties"]["overrides"].push_back({{"qubit", 8}});
+        (*root.getAsObject()->getObject("qubitProperties"))["overrides"]
+            .getAsArray()
+            ->push_back(llvm::json::Object{{.K = "qubit", .V = 8}});
       },
       "qubitProperties/overrides");
 }
 
 TEST(ScConfigurationTest, AcceptsOptionalSiteNames) {
   auto root = bundledJson();
-  root["qubitProperties"]["overrides"].push_back(
-      {{"qubit", 8}, {"name", "QB9"}});
-  const auto device = readJSON(root.dump(), "site-name");
+  (*root.getAsObject()->getObject("qubitProperties"))["overrides"]
+      .getAsArray()
+      ->push_back(llvm::json::Object{
+          {.K = "qubit", .V = 8},
+          {.K = "name", .V = "QB9"},
+      });
+  const auto device =
+      llvm::cantFail(readJSON(mqt::json::serialize(root), "site-name"));
   const auto& qubitOverride = device.qubitProperties.overrides.back();
   EXPECT_EQ(qubitOverride.qubit, 8);
   ASSERT_TRUE(qubitOverride.name);
@@ -190,30 +218,55 @@ TEST(ScConfigurationTest, AcceptsOptionalSiteNames) {
 TEST(ScConfigurationTest, RejectsNamesContainingNul) {
   for (const auto& name :
        {std::string("\0hidden", 7), std::string("x\0different", 11)}) {
-    expectInvalid([&name](auto& root) { root["name"] = name; }, "name");
+    expectInvalid([&name](auto& root) { (*root.getAsObject())["name"] = name; },
+                  "name");
     expectInvalid(
         [&name](auto& root) {
-          root["qubitProperties"]["overrides"].push_back(
-              {{"qubit", 8}, {"name", name}});
+          (*root.getAsObject()->getObject("qubitProperties"))["overrides"]
+              .getAsArray()
+              ->push_back(llvm::json::Object{
+                  {.K = "qubit", .V = 8},
+                  {.K = "name", .V = name},
+              });
         },
         "qubitProperties/overrides");
-    expectInvalid([&name](auto& root) { root["operations"][0]["name"] = name; },
-                  "operations");
+    expectInvalid(
+        [&name](auto& root) {
+          (*(*root.getAsObject()->getArray("operations"))[0]
+                .getAsObject())["name"] = name;
+        },
+        "operations");
   }
 }
 
 TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {
   expectInvalid(
-      [](auto& root) { root["couplings"].push_back(root["couplings"][0]); },
+      [](auto& root) {
+        root.getAsObject()
+            ->getArray("couplings")
+            ->push_back((*root.getAsObject()->getArray("couplings"))[0]);
+      },
       "couplings");
-  expectInvalid([](auto& root) { root["couplings"][0] = {0, 0}; }, "couplings");
-  expectInvalid([](auto& root) { root["couplings"][0] = {0, 100}; },
-                "couplings");
+  expectInvalid(
+      [](auto& root) {
+        (*root.getAsObject()->getArray("couplings"))[0] =
+            llvm::json::Array{0, 0};
+      },
+      "couplings");
+  expectInvalid(
+      [](auto& root) {
+        (*root.getAsObject()->getArray("couplings"))[0] =
+            llvm::json::Array{0, 100};
+      },
+      "couplings");
 
   auto root = bundledJson();
-  root["couplings"] = {{1, 0}, {0, 1}};
-  root["operations"][1]["siteOverrides"] = Json::array();
-  const auto parsed = readJSON(root.dump(), "ordered");
+  (*root.getAsObject())["couplings"] =
+      llvm::json::Array{llvm::json::Array{1, 0}, llvm::json::Array{0, 1}};
+  (*(*root.getAsObject()->getArray("operations"))[1]
+        .getAsObject())["siteOverrides"] = llvm::json::Array{};
+  const auto parsed =
+      llvm::cantFail(readJSON(mqt::json::serialize(root), "ordered"));
   EXPECT_EQ(parsed.couplings[0], (std::pair<uint64_t, uint64_t>{1, 0}));
   EXPECT_EQ(parsed.couplings[1], (std::pair<uint64_t, uint64_t>{0, 1}));
 }
@@ -221,68 +274,120 @@ TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {
 TEST(ScConfigurationTest, ValidatesOperationSupportAndCalibration) {
   expectInvalid(
       [](auto& root) {
-        root["operations"].push_back(root["operations"].front());
+        root.getAsObject()
+            ->getArray("operations")
+            ->push_back(root.getAsObject()->getArray("operations")->front());
       },
       "operations");
   expectInvalid(
       [](auto& root) {
-        root["operations"][0]["numQubits"] = 3;
-        root["operations"][0].erase("sites");
+        (*(*root.getAsObject()->getArray("operations"))[0]
+              .getAsObject())["numQubits"] = 3;
+        (*root.getAsObject()->getArray("operations"))[0].getAsObject()->erase(
+            "sites");
       },
       "sites");
   expectInvalid(
       [](auto& root) {
-        root["operations"][1]["sites"] = {{0, 2}};
-        root["operations"][1]["siteOverrides"] = Json::array();
+        (*(*root.getAsObject()->getArray("operations"))[1]
+              .getAsObject())["sites"] =
+            llvm::json::Array{llvm::json::Array{0, 2}};
+        (*(*root.getAsObject()->getArray("operations"))[1]
+              .getAsObject())["siteOverrides"] = llvm::json::Array{};
       },
       "device connectivity");
-  expectInvalid([](auto& root) { root["operations"][0]["fidelity"] = 1.1; },
-                "fidelity");
   expectInvalid(
       [](auto& root) {
-        root["operations"][1]["siteOverrides"][0]["sites"] = {1, 0};
+        (*(*root.getAsObject()->getArray("operations"))[0]
+              .getAsObject())["fidelity"] = 1.1;
+      },
+      "fidelity");
+  expectInvalid(
+      [](auto& root) {
+        (*(*(*root.getAsObject()->getArray("operations"))[1]
+                .getAsObject()
+                ->getArray("siteOverrides"))[0]
+              .getAsObject())["sites"] = llvm::json::Array{1, 0};
       },
       "siteOverrides");
   expectInvalid(
       [](auto& root) {
-        root["operations"][1]["siteOverrides"][0].erase("duration");
-        root["operations"][1]["siteOverrides"][0].erase("fidelity");
+        (*(*root.getAsObject()->getArray("operations"))[1]
+              .getAsObject()
+              ->getArray("siteOverrides"))[0]
+            .getAsObject()
+            ->erase("duration");
+        (*(*root.getAsObject()->getArray("operations"))[1]
+              .getAsObject()
+              ->getArray("siteOverrides"))[0]
+            .getAsObject()
+            ->erase("fidelity");
       },
       "siteOverrides");
 }
 
 TEST(ScConfigurationTest, AcceptsZeroDurationAndRejectsOverflowingJsonNumber) {
   auto root = bundledJson();
-  root["operations"][0]["duration"] = 0;
-  root["operations"][1]["siteOverrides"][0]["duration"] = 0;
-  EXPECT_NO_THROW(static_cast<void>(readJSON(root.dump(), "zero-duration")));
-  EXPECT_THROW(
-      static_cast<void>(readJSON(
+  (*(*root.getAsObject()->getArray("operations"))[0]
+        .getAsObject())["duration"] = 0;
+  (*(*(*root.getAsObject()->getArray("operations"))[1].getAsObject()->getArray(
+      "siteOverrides"))[0]
+        .getAsObject())["duration"] = 0;
+  EXPECT_NO_THROW(static_cast<void>(
+      llvm::cantFail(readJSON(mqt::json::serialize(root), "zero-duration"))));
+  EXPECT_TRUE(llvm::errorToBool(
+      readJSON(
           R"({"schema-version":1e400,"name":"x","numQubits":1,"durationUnit":{"unit":"ns","scaleFactor":1},"qubitProperties":{"defaults":{},"overrides":[]},"couplings":[],"operations":[]})",
-          "overflow")),
-      std::invalid_argument);
+          "overflow")
+          .takeError()));
 }
 
 TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
   auto root = bundledJson();
-  root["numQubits"] = 3;
-  root["couplings"] = Json::array();
-  root["qubitProperties"]["overrides"] = Json::array();
-  root["operations"] = Json::array({
-      {
-          {"name", "three"},
-          {"numParameters", 1},
-          {"numQubits", 3},
-          {"sites", {{2, 0, 1}}},
-          {"duration", 0},
-          {"siteOverrides", {{{"sites", {2, 0, 1}}, {"fidelity", 0.75}}}},
+  (*root.getAsObject())["numQubits"] = 3;
+  (*root.getAsObject())["couplings"] = llvm::json::Array{};
+  (*root.getAsObject()->getObject("qubitProperties"))["overrides"] =
+      llvm::json::Array{};
+  (*root.getAsObject())["operations"] = llvm::json::Array{
+      llvm::json::Object{
+          {.K = "name", .V = "three"},
+          {.K = "numParameters", .V = 1},
+          {.K = "numQubits", .V = 3},
+          {.K = "sites", .V = llvm::json::Array{llvm::json::Array{2, 0, 1}}},
+          {.K = "duration", .V = 0},
+          {
+              .K = "siteOverrides",
+              .V =
+                  llvm::json::Array{
+                      llvm::json::Object{
+                          {.K = "sites", .V = llvm::json::Array{2, 0, 1}},
+                          {.K = "fidelity", .V = 0.75},
+                      },
+                  },
+          },
       },
-  });
-  const auto parsed = readJSON(root.dump(), "higher-arity");
+  };
+  const auto parsed =
+      llvm::cantFail(readJSON(mqt::json::serialize(root), "higher-arity"));
   ASSERT_EQ(parsed.operations.size(), 1);
   ASSERT_TRUE(parsed.operations[0].sites.has_value());
   EXPECT_EQ(parsed.operations[0].sites->front(),
             (std::vector<uint64_t>{2, 0, 1}));
+}
+
+TEST(ScConfigurationTest, ReportsStreamReadFailures) {
+  class FailingBuffer final : public std::streambuf {
+  protected:
+    int_type underflow() override {
+      throw std::ios_base::failure("injected read failure");
+    }
+  } buffer;
+  std::istream stream(&buffer);
+  auto parsed = readJSON(stream, "failing-stream");
+  ASSERT_FALSE(static_cast<bool>(parsed));
+  const auto message = llvm::toString(parsed.takeError());
+  EXPECT_THAT(message, testing::HasSubstr("failing-stream"));
+  EXPECT_THAT(message, testing::HasSubstr("injected read failure"));
 }
 
 } // namespace sc

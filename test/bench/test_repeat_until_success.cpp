@@ -16,6 +16,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -64,23 +66,25 @@ TEST(RepeatUntilSuccess, EvaluatesTheReferenceWithoutASuccessOutcome) {
 }
 
 TEST(RepeatUntilSuccess, RoundTripsJSON) {
-  const auto defaults = repeatUntilSuccessFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{}})");
+  const auto defaults = llvm::cantFail(repeatUntilSuccessFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{}})"));
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"repeat-until-success","parameters":{"data_qubits":1},"schema_version":1})");
 
   const RepeatUntilSuccess benchmark;
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(repeatUntilSuccessFromManifestJSON(manifest)),
+  EXPECT_EQ(toManifestJSON(
+                llvm::cantFail(repeatUntilSuccessFromManifestJSON(manifest))),
             manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "repeat-until-success");
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)),
+            "repeat-until-success");
   EXPECT_NE(manifest.find("\"model\":\"repeat_until_success\""),
             std::string::npos);
   EXPECT_NE(manifest.find("\"parameters\":{\"data_qubits\":1}"),
             std::string::npos);
-  EXPECT_EQ(repeatUntilSuccessFromManifestJSON(
-                toManifestJSON(RepeatUntilSuccess({.dataQubits = 32})))
+  EXPECT_EQ(llvm::cantFail(repeatUntilSuccessFromManifestJSON(toManifestJSON(
+                               RepeatUntilSuccess({.dataQubits = 32}))))
                 .options()
                 .dataQubits,
             32U);
@@ -95,7 +99,7 @@ TEST(RepeatUntilSuccess, UsesSemanticCaseIds) {
 
 TEST(RepeatUntilSuccess, DescribesJSONSchema) {
   EXPECT_NE(
-      describeBenchmarkJSON("repeat-until-success")
+      llvm::cantFail(describeBenchmarkJSON("repeat-until-success"))
           .find(
               R"("data_qubits":{"default":1,"maximum":1000000,"minimum":1,"type":"integer"})"),
       std::string::npos);
@@ -103,25 +107,27 @@ TEST(RepeatUntilSuccess, DescribesJSONSchema) {
 
 TEST(RepeatUntilSuccess, RejectsInvalidJSONParameters) {
   for (const auto* width : {"0", "1000001", "-1", "1.5", "true", "\"5\""}) {
-    EXPECT_THROW(
-        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
-            std::string(
-                R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"data_qubits":)") +
-            width + "}}")),
-        std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] {
+          return repeatUntilSuccessFromInstanceSpecificationJSON(
+              std::string(
+                  R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"data_qubits":)") +
+              width + "}}");
+        },
+        "");
   }
   expectInvalidJSON(
       [] {
-        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})"));
+        return repeatUntilSuccessFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})");
       },
-      "unknown key 'attempts'");
+      "attempts");
 }
 
 TEST(RepeatUntilSuccess, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(RepeatUntilSuccess{}),
-                   R"({"schema_version":1,"counts":{"0":993,"1":7}})");
+                   R"({"schema_version":1,"counts":{"0":993,"1":7}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":"),
             std::string::npos);

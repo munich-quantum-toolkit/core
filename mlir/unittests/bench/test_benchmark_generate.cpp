@@ -41,12 +41,12 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -64,8 +64,9 @@ TEST(GenerateProgramTest, ResolvesInstanceMetadata) {
   EXPECT_EQ(generated->benchmarkId, "ghz");
   EXPECT_EQ(generated->caseId, caseId(benchmark));
   EXPECT_EQ(generated->manifestJSON, toManifestJSON(benchmark));
-  EXPECT_EQ(ghzFromManifestJSON(generated->manifestJSON).output(),
-            benchmark.output());
+  EXPECT_EQ(
+      llvm::cantFail(ghzFromManifestJSON(generated->manifestJSON)).output(),
+      benchmark.output());
 }
 
 TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
@@ -75,8 +76,7 @@ TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
           R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})",
           R"({"schema_version":1,"benchmark":"unknown","parameters":{}})",
       }) {
-    EXPECT_THROW(static_cast<void>(generate(specification)),
-                 std::invalid_argument);
+    EXPECT_TRUE(mlir::failed(generate(specification)));
   }
 }
 

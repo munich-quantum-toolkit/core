@@ -8,419 +8,323 @@
  * Licensed under the MIT License
  */
 
-/// @file Configuration.cpp
-/// Runtime configuration parsing for superconducting QDMI devices.
-
 #include "qdmi/devices/sc/Configuration.hpp"
 
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
+#include "support/JSON.hpp"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
 #include <initializer_list>
+#include <ios>
 #include <istream>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
-#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace sc {
 namespace {
-using Json = nlohmann::json;
+using llvm::json::ObjectMapper;
+using llvm::json::Path;
+using llvm::json::Value;
 
-// Keep all schema diagnostics anchored to the selected configuration source.
-[[noreturn]] void fail(const std::string_view source,
-                       const std::string_view pointer,
-                       const std::string_view message) {
-  throw std::invalid_argument(std::string(source) + ":" + std::string(pointer) +
-                              " " + std::string(message));
-}
-
-void object(const Json& value, const std::string_view source,
-            const std::string_view pointer) {
-  if (!value.is_object()) {
-    fail(source, pointer, "must be an object");
+bool keys(const Value& value, std::initializer_list<llvm::StringRef> known,
+          Path path) {
+  const auto* object = value.getAsObject();
+  if (object == nullptr) {
+    path.report("must be an object");
+    return false;
   }
-}
-
-void keys(const Json& value,
-          const std::initializer_list<std::string_view> known,
-          const std::string_view source, const std::string_view pointer) {
-  for (const auto& [key, unused] : value.items()) {
-    static_cast<void>(unused);
-    if (std::ranges::find(known, key) == known.end()) {
-      fail(source, pointer, "contains unknown key '" + key + "'");
+  return std::ranges::all_of(*object, [&](const auto& field) {
+    const llvm::StringRef key = field.first;
+    if (std::ranges::find(known, key) != known.end()) {
+      return true;
     }
-  }
+    path.field(key).report("unknown key");
+    return false;
+  });
 }
 
 template <class T>
-[[nodiscard]] T required(const Json& value, const std::string& key,
-                         const std::string_view source,
-                         const std::string& pointer) {
-  const auto found = value.find(key);
-  if (found == value.end()) {
-    fail(source, pointer + "/" + key, "is required");
-  }
-  if constexpr (std::is_same_v<T, uint64_t>) {
-    if (!found->is_number_unsigned() &&
-        (!found->is_number_integer() || found->get<int64_t>() < 0)) {
-      fail(source, pointer + "/" + key, "must be a non-negative integer");
+bool optional(const Value& value, llvm::StringRef key, std::optional<T>& out,
+              Path path) {
+  if (const auto* field = value.getAsObject()->get(key)) {
+    T parsed{};
+    if (!llvm::json::fromJSON(*field, parsed, path.field(key))) {
+      return false;
     }
+    out = std::move(parsed);
   }
-  try {
-    return found->get<T>();
-  } catch (const Json::exception&) {
-    fail(source, pointer + "/" + key, "has an invalid type");
-  }
+  return true;
+}
+} // namespace
+
+// ObjectMapper needs these conversions in sc for argument-dependent lookup.
+// NOLINTBEGIN(misc-use-anonymous-namespace)
+static bool fromJSON(const Value& value, Device::Unit& out, Path path) {
+  ObjectMapper object(value, path);
+  return object && keys(value, {"unit", "scaleFactor"}, path) &&
+         object.map("unit", out.unit) &&
+         object.map("scaleFactor", out.scaleFactor);
 }
 
-template <class T>
-[[nodiscard]] std::optional<T>
-optional(const Json& value, const std::string& key,
-         const std::string_view source, const std::string& pointer) {
-  const auto found = value.find(key);
-  if (found == value.end()) {
-    return std::nullopt;
-  }
-  if constexpr (std::is_same_v<T, uint64_t>) {
-    if (!found->is_number_unsigned() &&
-        (!found->is_number_integer() || found->get<int64_t>() < 0)) {
-      fail(source, pointer + "/" + key, "must be a non-negative integer");
-    }
-  }
-  try {
-    return found->get<T>();
-  } catch (const Json::exception&) {
-    fail(source, pointer + "/" + key, "has an invalid type");
-  }
+static bool fromJSON(const Value& value, Device::QubitCalibration& out,
+                     Path path) {
+  return keys(value, {"t1", "t2"}, path) &&
+         optional(value, "t1", out.t1, path) &&
+         optional(value, "t2", out.t2, path);
 }
 
-[[nodiscard]] std::vector<uint64_t> indices(const Json& value,
-                                            const std::string_view source,
-                                            const std::string& pointer) {
-  if (!value.is_array()) {
-    fail(source, pointer, "must be an array of unsigned integers");
-  }
-  std::vector<uint64_t> result;
-  result.reserve(value.size());
-  for (size_t i = 0; i < value.size(); ++i) {
-    const auto& item = value[i];
-    if (!item.is_number_unsigned() &&
-        (!item.is_number_integer() || item.get<int64_t>() < 0)) {
-      fail(source, pointer + "/" + std::to_string(i),
-           "must be a non-negative integer");
-    }
-    result.emplace_back(item.get<uint64_t>());
-  }
-  return result;
+static bool fromJSON(const Value& value, Device::QubitOverride& out,
+                     Path path) {
+  ObjectMapper object(value, path);
+  return object && keys(value, {"qubit", "name", "t1", "t2"}, path) &&
+         object.map("qubit", out.qubit) &&
+         optional(value, "name", out.name, path) &&
+         optional(value, "t1", out.t1, path) &&
+         optional(value, "t2", out.t2, path);
 }
 
-[[nodiscard]] Device::QubitCalibration
-calibration(const Json& value, const std::string_view source,
-            const std::string& pointer) {
-  object(value, source, pointer);
-  keys(value, {"t1", "t2"}, source, pointer);
-  auto result = Device::QubitCalibration{
-      .t1 = optional<uint64_t>(value, "t1", source, pointer),
-      .t2 = optional<uint64_t>(value, "t2", source, pointer),
-  };
-  if ((result.t1 && *result.t1 == 0) || (result.t2 && *result.t2 == 0)) {
-    fail(source, pointer, "t1 and t2 must be positive when present");
-  }
-  return result;
+static bool fromJSON(const Value& value, Device::QubitProperties& out,
+                     Path path) {
+  ObjectMapper object(value, path);
+  return object && keys(value, {"defaults", "overrides"}, path) &&
+         object.map("defaults", out.defaults) &&
+         object.map("overrides", out.overrides);
 }
 
-void validateFidelity(const std::optional<double>& fidelity,
-                      const std::string_view source,
-                      const std::string& pointer) {
-  if (fidelity &&
-      (!std::isfinite(*fidelity) || *fidelity < 0. || *fidelity > 1.)) {
-    fail(source, pointer, "must be finite and in [0, 1]");
-  }
+static bool fromJSON(const Value& value, Device::SiteOverride& out, Path path) {
+  ObjectMapper object(value, path);
+  return object && keys(value, {"sites", "duration", "fidelity"}, path) &&
+         object.map("sites", out.sites) &&
+         optional(value, "duration", out.duration, path) &&
+         optional(value, "fidelity", out.fidelity, path);
 }
 
-[[nodiscard]] Device parse(const Json& root, const std::string_view source) {
-  object(root, source, "$");
-  keys(root,
-       {
-           "schema-version",
-           "name",
-           "numQubits",
-           "durationUnit",
-           "qubitProperties",
-           "couplings",
-           "operations",
-       },
-       source, "$");
-  for (const auto* const key : {
-           "schema-version",
-           "name",
-           "numQubits",
-           "durationUnit",
-           "qubitProperties",
-           "couplings",
-           "operations",
-       }) {
-    if (!root.contains(key)) {
-      fail(source, "$/" + std::string(key), "is required");
-    }
-  }
+static bool fromJSON(const Value& value, Device::Operation& out, Path path) {
+  ObjectMapper object(value, path);
+  return object &&
+         keys(value,
+              {
+                  "name",
+                  "numParameters",
+                  "numQubits",
+                  "sites",
+                  "duration",
+                  "fidelity",
+                  "siteOverrides",
+              },
+              path) &&
+         object.map("name", out.name) &&
+         object.map("numParameters", out.numParameters) &&
+         object.map("numQubits", out.numQubits) &&
+         optional(value, "sites", out.sites, path) &&
+         optional(value, "duration", out.duration, path) &&
+         optional(value, "fidelity", out.fidelity, path) &&
+         object.mapOptional("siteOverrides", out.siteOverrides);
+}
+
+// NOLINTEND(misc-use-anonymous-namespace)
+namespace {
+llvm::Error fail(std::string_view source, std::string_view pointer,
+                 std::string_view message) {
+  return llvm::createStringError(llvm::StringRef(source) + ":" +
+                                 llvm::StringRef(pointer) + " " +
+                                 llvm::StringRef(message));
+}
+
+bool positiveCalibration(const Device::QubitCalibration& value) {
+  return (!value.t1 || *value.t1 > 0) && (!value.t2 || *value.t2 > 0);
+}
+
+bool validFidelity(const std::optional<double>& value) {
+  return !value || (std::isfinite(*value) && *value >= 0. && *value <= 1.);
+}
+
+llvm::Expected<Device> parse(const Value& root, std::string_view source) {
+  Path::Root diagnostic(source);
+  ObjectMapper object(root, diagnostic);
   Device result;
-  result.schemaVersion =
-      required<uint64_t>(root, "schema-version", source, "$");
+  std::vector<std::vector<uint64_t>> couplings;
+  if (!object ||
+      !keys(root,
+            {
+                "schema-version",
+                "name",
+                "numQubits",
+                "durationUnit",
+                "qubitProperties",
+                "couplings",
+                "operations",
+            },
+            diagnostic) ||
+      !object.map("schema-version", result.schemaVersion) ||
+      !object.map("name", result.name) ||
+      !object.map("numQubits", result.numQubits) ||
+      !object.map("durationUnit", result.durationUnit) ||
+      !object.map("qubitProperties", result.qubitProperties) ||
+      !object.map("couplings", couplings) ||
+      !object.map("operations", result.operations)) {
+    return diagnostic.getError();
+  }
   if (result.schemaVersion != 1) {
-    fail(source, "$/schema-version", "must be 1");
+    return fail(source, "$/schema-version", "must be 1");
   }
-  result.name = required<std::string>(root, "name", source, "$");
   if (result.name.empty() || result.name.find('\0') != std::string::npos) {
-    fail(source, "$/name", "must be non-empty and contain no NUL bytes");
+    return fail(source, "$/name", "must be non-empty and contain no NUL bytes");
   }
-  result.numQubits = required<uint64_t>(root, "numQubits", source, "$");
   if (result.numQubits == 0 ||
       result.numQubits > std::vector<void*>{}.max_size()) {
-    fail(source, "$/numQubits", "must be positive and representable");
+    return fail(source, "$/numQubits", "must be positive and representable");
   }
-
-  const auto& unit = root.at("durationUnit");
-  object(unit, source, "$/durationUnit");
-  keys(unit, {"unit", "scaleFactor"}, source, "$/durationUnit");
-  result.durationUnit.unit =
-      required<std::string>(unit, "unit", source, "$/durationUnit");
-  result.durationUnit.scaleFactor =
-      required<double>(unit, "scaleFactor", source, "$/durationUnit");
-  constexpr std::array supportedUnits{"s", "ms", "us", "ns"};
-  if (std::ranges::find(supportedUnits, result.durationUnit.unit) ==
-          supportedUnits.end() ||
+  constexpr std::array units{"s", "ms", "us", "ns"};
+  if (std::ranges::find(units, result.durationUnit.unit) == units.end() ||
       !std::isfinite(result.durationUnit.scaleFactor) ||
       result.durationUnit.scaleFactor <= 0.) {
-    fail(source, "$/durationUnit",
-         "must use s, ms, us, or ns and a positive finite scaleFactor");
+    return fail(source, "$/durationUnit",
+                "must use s, ms, us, or ns and a positive finite scaleFactor");
   }
-
-  {
-    const auto& properties = root.at("qubitProperties");
-    object(properties, source, "$/qubitProperties");
-    keys(properties, {"defaults", "overrides"}, source, "$/qubitProperties");
-    for (const auto* const key : {"defaults", "overrides"}) {
-      if (!properties.contains(key)) {
-        fail(source, "$/qubitProperties/" + std::string(key), "is required");
-      }
-    }
-    result.qubitProperties.defaults = calibration(
-        properties.at("defaults"), source, "$/qubitProperties/defaults");
-    {
-      const auto& overrides = properties.at("overrides");
-      if (!overrides.is_array()) {
-        fail(source, "$/qubitProperties/overrides", "must be an array");
-      }
-      std::set<uint64_t> overridden;
-      for (size_t i = 0; i < overrides.size(); ++i) {
-        const auto pointer = "$/qubitProperties/overrides/" + std::to_string(i);
-        const auto& value = overrides[i];
-        object(value, source, pointer);
-        keys(value, {"qubit", "name", "t1", "t2"}, source, pointer);
-        Device::QubitOverride entry;
-        entry.qubit = required<uint64_t>(value, "qubit", source, pointer);
-        entry.name = optional<std::string>(value, "name", source, pointer);
-        entry.t1 = optional<uint64_t>(value, "t1", source, pointer);
-        entry.t2 = optional<uint64_t>(value, "t2", source, pointer);
-        if (entry.qubit >= result.numQubits ||
-            (entry.name && (entry.name->empty() ||
-                            entry.name->find('\0') != std::string::npos)) ||
-            (entry.t1 && *entry.t1 == 0) || (entry.t2 && *entry.t2 == 0) ||
-            (!entry.name && !entry.t1 && !entry.t2) ||
-            !overridden.emplace(entry.qubit).second) {
-          fail(source, pointer,
-               "must select one unique valid qubit and override name, t1, or "
-               "t2 with valid values");
-        }
-        result.qubitProperties.overrides.emplace_back(entry);
-      }
-    }
+  if (!positiveCalibration(result.qubitProperties.defaults)) {
+    return fail(source, "$/qubitProperties/defaults",
+                "t1 and t2 must be positive when present");
   }
-
-  const auto& couplings = root.at("couplings");
-  if (!couplings.is_array()) {
-    fail(source, "$/couplings", "must be an array");
+  std::set<uint64_t> overridden;
+  for (size_t i = 0; i < result.qubitProperties.overrides.size(); ++i) {
+    const auto& entry = result.qubitProperties.overrides[i];
+    if (entry.qubit >= result.numQubits ||
+        !overridden.emplace(entry.qubit).second ||
+        (!entry.name && !entry.t1 && !entry.t2) ||
+        !positiveCalibration(entry) ||
+        (entry.name && (entry.name->empty() ||
+                        entry.name->find('\0') != std::string::npos))) {
+      return fail(source, "$/qubitProperties/overrides/" + std::to_string(i),
+                  "must select one unique valid qubit and override name, t1, "
+                  "or t2 with valid values");
+    }
   }
   std::set<std::pair<uint64_t, uint64_t>> uniqueCouplings;
   for (size_t i = 0; i < couplings.size(); ++i) {
+    const auto& coupling = couplings[i];
     const auto pointer = "$/couplings/" + std::to_string(i);
-    if (!couplings[i].is_array() || couplings[i].size() != 2) {
-      fail(source, pointer, "must contain exactly two qubit indices");
+    if (coupling.size() != 2) {
+      return fail(source, pointer, "must contain exactly two qubit indices");
     }
-    std::pair<uint64_t, uint64_t> coupling;
-    const auto parsed = indices(couplings[i], source, pointer);
-    coupling = {parsed[0], parsed[1]};
-    if (coupling.first >= result.numQubits ||
-        coupling.second >= result.numQubits ||
-        coupling.first == coupling.second ||
-        !uniqueCouplings.emplace(coupling).second) {
-      fail(source, pointer, "must be a unique, non-self tuple of valid qubits");
+    if (coupling[0] >= result.numQubits || coupling[1] >= result.numQubits ||
+        coupling[0] == coupling[1] ||
+        !uniqueCouplings.emplace(coupling[0], coupling[1]).second) {
+      return fail(source, pointer,
+                  "must be a unique, non-self tuple of valid qubits");
     }
-    result.couplings.emplace_back(coupling);
-  }
-
-  const auto& operations = root.at("operations");
-  if (!operations.is_array()) {
-    fail(source, "$/operations", "must be an array");
+    result.couplings.emplace_back(coupling[0], coupling[1]);
   }
   std::set<std::string> names;
-  for (size_t i = 0; i < operations.size(); ++i) {
+  for (size_t i = 0; i < result.operations.size(); ++i) {
     const auto pointer = "$/operations/" + std::to_string(i);
-    const auto& value = operations[i];
-    object(value, source, pointer);
-    keys(value,
-         {
-             "name",
-             "numParameters",
-             "numQubits",
-             "sites",
-             "duration",
-             "fidelity",
-             "siteOverrides",
-         },
-         source, pointer);
-    Device::Operation operation;
-    operation.name = required<std::string>(value, "name", source, pointer);
-    operation.numParameters =
-        required<uint64_t>(value, "numParameters", source, pointer);
-    operation.numQubits =
-        required<uint64_t>(value, "numQubits", source, pointer);
-    operation.duration = optional<uint64_t>(value, "duration", source, pointer);
-    operation.fidelity = optional<double>(value, "fidelity", source, pointer);
-    validateFidelity(operation.fidelity, source, pointer + "/fidelity");
+    const auto& operation = result.operations[i];
+    if (!validFidelity(operation.fidelity)) {
+      return fail(source, pointer + "/fidelity",
+                  "must be finite and in [0, 1]");
+    }
     if (operation.name.empty() ||
         operation.name.find('\0') != std::string::npos ||
         operation.numQubits == 0 || operation.numQubits > result.numQubits ||
         operation.numParameters > std::numeric_limits<size_t>::max() ||
         !names.emplace(operation.name).second) {
-      fail(source, pointer,
-           "must have a unique non-empty name without NUL bytes and "
-           "representable counts");
+      return fail(source, pointer,
+                  "must have a unique non-empty name without NUL bytes and "
+                  "representable counts");
     }
+    const auto validTuple = [&](const std::vector<uint64_t>& tuple) {
+      return tuple.size() == operation.numQubits &&
+             std::set<uint64_t>(tuple.begin(), tuple.end()).size() ==
+                 tuple.size() &&
+             std::ranges::all_of(tuple, [&](uint64_t qubit) {
+               return qubit < result.numQubits;
+             });
+    };
     std::set<std::vector<uint64_t>> uniqueSites;
-    if (const auto sites = value.find("sites"); sites != value.end()) {
-      if (!sites->is_array()) {
-        fail(source, pointer + "/sites", "must be an array");
-      }
-      operation.sites.emplace();
-      for (size_t j = 0; j < sites->size(); ++j) {
-        auto tuple = indices((*sites)[j], source,
-                             pointer + "/sites/" + std::to_string(j));
-        const auto supportedByTopology =
-            operation.numQubits != 2 ||
-            (tuple.size() == 2 &&
-             uniqueCouplings.contains(std::pair{tuple[0], tuple[1]}));
-        if (const std::set<uint64_t> tupleSites(tuple.begin(), tuple.end());
-            tuple.size() != operation.numQubits ||
-            tupleSites.size() != tuple.size() ||
-            std::ranges::any_of(
-                tuple,
-                [&](const auto qubit) { return qubit >= result.numQubits; }) ||
-            !supportedByTopology || !uniqueSites.emplace(tuple).second) {
-          fail(source, pointer + "/sites/" + std::to_string(j),
-               "must be a unique tuple matching the operation arity and "
-               "device connectivity");
+    if (operation.sites) {
+      for (size_t j = 0; j < operation.sites->size(); ++j) {
+        const auto& tuple = (*operation.sites)[j];
+        if (!validTuple(tuple) ||
+            (operation.numQubits == 2 &&
+             !uniqueCouplings.contains({tuple[0], tuple[1]})) ||
+            !uniqueSites.emplace(tuple).second) {
+          return fail(source, pointer + "/sites/" + std::to_string(j),
+                      "must be a unique tuple matching the operation arity and "
+                      "device connectivity");
         }
-        operation.sites->emplace_back(std::move(tuple));
+      }
+    } else if (operation.numQubits > 2) {
+      return fail(source, pointer + "/sites",
+                  "is required for operations with arity greater than two");
+    }
+    std::set<std::vector<uint64_t>> overriddenSites;
+    for (size_t j = 0; j < operation.siteOverrides.size(); ++j) {
+      const auto& override = operation.siteOverrides[j];
+      const auto overridePointer =
+          pointer + "/siteOverrides/" + std::to_string(j);
+      if (!validFidelity(override.fidelity)) {
+        return fail(source, overridePointer + "/fidelity",
+                    "must be finite and in [0, 1]");
+      }
+      const auto supported =
+          validTuple(override.sites) &&
+          (operation.sites ? uniqueSites.contains(override.sites)
+                           : operation.numQubits == 1 ||
+                                 uniqueCouplings.contains(
+                                     {override.sites[0], override.sites[1]}));
+      if (!supported || !overriddenSites.emplace(override.sites).second ||
+          (!override.duration && !override.fidelity)) {
+        return fail(
+            source, overridePointer,
+            "must be one unique supported tuple and override a valid value");
       }
     }
-    if (!operation.sites && operation.numQubits > 2) {
-      fail(source, pointer + "/sites",
-           "is required for operations with arity greater than two");
-    }
-    if (const auto overrides = value.find("siteOverrides");
-        overrides != value.end()) {
-      if (!overrides->is_array()) {
-        fail(source, pointer + "/siteOverrides", "must be an array");
-      }
-      std::set<std::vector<uint64_t>> overriddenSites;
-      for (size_t j = 0; j < overrides->size(); ++j) {
-        const auto overridePointer =
-            pointer + "/siteOverrides/" + std::to_string(j);
-        const auto& overrideJson = (*overrides)[j];
-        object(overrideJson, source, overridePointer);
-        keys(overrideJson, {"sites", "duration", "fidelity"}, source,
-             overridePointer);
-        Device::SiteOverride override;
-        const auto siteValues = overrideJson.find("sites");
-        if (siteValues == overrideJson.end()) {
-          fail(source, overridePointer + "/sites", "is required");
-        }
-        override.sites =
-            indices(*siteValues, source, overridePointer + "/sites");
-        override.duration = optional<uint64_t>(overrideJson, "duration", source,
-                                               overridePointer);
-        override.fidelity =
-            optional<double>(overrideJson, "fidelity", source, overridePointer);
-        validateFidelity(override.fidelity, source,
-                         overridePointer + "/fidelity");
-        const std::set<uint64_t> tupleSites(override.sites.begin(),
-                                            override.sites.end());
-        auto supported = false;
-        if (override.sites.size() == operation.numQubits) {
-          if (operation.sites) {
-            supported = uniqueSites.contains(override.sites);
-          } else if (operation.numQubits == 1) {
-            supported = true;
-          } else if (operation.numQubits == 2) {
-            supported = uniqueCouplings.contains(
-                std::pair{override.sites[0], override.sites[1]});
-          }
-        }
-        if (override.sites.size() != operation.numQubits ||
-            tupleSites.size() != override.sites.size() ||
-            std::ranges::any_of(
-                override.sites,
-                [&](const auto qubit) { return qubit >= result.numQubits; }) ||
-            !supported || !overriddenSites.emplace(override.sites).second ||
-            (!override.duration && !override.fidelity)) {
-          fail(source, overridePointer,
-               "must be one unique supported tuple and override a valid value");
-        }
-        operation.siteOverrides.emplace_back(std::move(override));
-      }
-    }
-    result.operations.emplace_back(std::move(operation));
   }
   return result;
 }
 } // namespace
 
-Device readJSON(const std::string_view json, const std::string_view source) {
+llvm::Expected<Device> readJSON(std::string_view json,
+                                std::string_view source) {
+  auto value = mqt::json::parse(json, source);
+  if (!value) {
+    return value.takeError();
+  }
+  return parse(*value, source);
+}
+
+llvm::Expected<Device> readJSON(const std::string& path) {
+  auto value = mqt::json::readFile(path);
+  if (!value) {
+    return value.takeError();
+  }
+  return parse(*value, path);
+}
+llvm::Expected<Device> readJSON(std::istream& stream, std::string_view source) {
   try {
-    return parse(Json::parse(json), source);
-  } catch (const Json::exception& error) {
-    throw std::invalid_argument(std::string(source) +
-                                ": invalid JSON: " + error.what());
+    const std::string json{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+    if (stream.bad()) {
+      return llvm::createStringError(llvm::StringRef(source) +
+                                     ": failed to read JSON stream");
+    }
+    return readJSON(json, source);
+  } catch (const std::ios_base::failure& error) {
+    return llvm::createStringError(llvm::StringRef(source) + ": " +
+                                   error.what());
   }
 }
-
-Device readJSON(std::istream& stream, const std::string_view source) {
-  const std::string json{std::istreambuf_iterator<char>(stream),
-                         std::istreambuf_iterator<char>()};
-  return readJSON(json, source);
-}
-
-Device readJSON(const std::string& path) {
-  std::ifstream input(path);
-  if (!input) {
-    throw std::runtime_error("Failed to open JSON file: " + path);
-  }
-  return readJSON(input, path);
-}
-
 } // namespace sc

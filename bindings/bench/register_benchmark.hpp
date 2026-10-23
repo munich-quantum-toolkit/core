@@ -16,6 +16,8 @@
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
+#include "llvm/Support/Error.h"
+
 #include <string_view>
 
 namespace mqt {
@@ -23,8 +25,10 @@ namespace mqt {
 template <class Benchmark>
 void registerBenchmarkIO(
     nanobind::class_<Benchmark>& benchmark,
-    Benchmark (*fromInstanceSpecification)(std::string_view, std::string_view),
-    Benchmark (*fromManifest)(std::string_view, std::string_view)) {
+    llvm::Expected<Benchmark> (*fromInstanceSpecification)(std::string_view,
+                                                           std::string_view),
+    llvm::Expected<Benchmark> (*fromManifest)(std::string_view,
+                                              std::string_view)) {
   namespace nb = nanobind;
   using namespace nb::literals;
 
@@ -47,13 +51,29 @@ void registerBenchmarkIO(
       .def_prop_ro("case_id",
                    nb::overload_cast<const Benchmark&>(&bench::caseId),
                    "The stable semantic case ID.")
-      .def_static("from_instance_specification_json", fromInstanceSpecification,
-                  "json"_a, nb::kw_only(),
-                  "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", fromManifest, "json"_a, nb::kw_only(),
-                  "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def_static(
+          "from_instance_specification_json",
+          [fromInstanceSpecification](std::string_view json,
+                                      std::string_view source) {
+            auto result = fromInstanceSpecification(json, source);
+            if (!result) {
+              throw nb::value_error(llvm::toString(result.takeError()).c_str());
+            }
+            return std::move(*result);
+          },
+          "json"_a, nb::kw_only(), "source"_a = "<instance-specification>",
+          "Parse a strict benchmark instance specification.")
+      .def_static(
+          "from_manifest_json",
+          [fromManifest](std::string_view json, std::string_view source) {
+            auto result = fromManifest(json, source);
+            if (!result) {
+              throw nb::value_error(llvm::toString(result.takeError()).c_str());
+            }
+            return std::move(*result);
+          },
+          "json"_a, nb::kw_only(), "source"_a = "<manifest>",
+          "Parse a strict benchmark manifest.");
 }
 
 } // namespace mqt

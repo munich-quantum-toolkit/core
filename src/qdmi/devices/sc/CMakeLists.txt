@@ -21,7 +21,9 @@ if(NOT TARGET ${TARGET_NAME})
       BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Configuration.hpp)
 
-  target_link_libraries(${TARGET_NAME} PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreJSON)
+
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 

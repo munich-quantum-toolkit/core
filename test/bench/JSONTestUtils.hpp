@@ -12,22 +12,20 @@
 
 #include "gtest/gtest.h"
 
-#include <functional>
-#include <stdexcept>
+#include "llvm/Support/Error.h"
+
+#include <string>
 #include <string_view>
 
 namespace mqt::bench::test {
 
-inline void expectInvalidJSON(const std::function<void()>& operation,
-                              const std::string_view diagnostic) {
-  try {
-    operation();
-    FAIL() << "Expected invalid JSON input";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string_view(error.what()).find(diagnostic),
-              std::string_view::npos)
-        << error.what();
-  }
+template <class Operation>
+void expectInvalidJSON(const Operation& operation,
+                       const std::string_view diagnostic) {
+  auto result = operation();
+  ASSERT_FALSE(static_cast<bool>(result)) << "Expected invalid JSON input";
+  const auto error = llvm::toString(result.takeError());
+  EXPECT_NE(error.find(diagnostic), std::string::npos) << error;
 }
 
 } // namespace mqt::bench::test

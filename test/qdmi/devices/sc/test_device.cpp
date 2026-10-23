@@ -12,10 +12,13 @@
 #include "qdmi/TestUtils.hpp"
 #include "qdmi/devices/sc/Device.hpp"
 
+#include "support/JSON.hpp"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <array>
 #include <cstddef>
@@ -252,11 +255,14 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
 }
 
 TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
-  auto configuration = nlohmann::json::parse(CUSTOM_SC);
-  configuration["couplings"] = {{0, 1}};
-  configuration["operations"][0]["sites"] = {{1, 0}};
-  configuration["operations"][0]["siteOverrides"] = nlohmann::json::array();
-  const auto serialized = configuration.dump();
+  auto configuration = llvm::cantFail(mqt::json::parse(CUSTOM_SC));
+  (*configuration.getAsObject())["couplings"] =
+      llvm::json::Array{llvm::json::Array{0, 1}};
+  (*(*configuration.getAsObject()->getArray("operations"))[0]
+        .getAsObject())["sites"] = llvm::json::Array{llvm::json::Array{1, 0}};
+  (*(*configuration.getAsObject()->getArray("operations"))[0]
+        .getAsObject())["siteOverrides"] = llvm::json::Array{};
+  const auto serialized = mqt::json::serialize(configuration);
 
   MQT_SC_QDMI_Device_Session session = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
@@ -270,14 +276,25 @@ TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
 }
 
 TEST(ScRuntimeConfiguration, PreservesUnsortedTuplesAndPartialOverrides) {
-  auto configuration = nlohmann::json::parse(CUSTOM_SC);
-  configuration["numQubits"] = 3;
-  configuration["couplings"] = {{1, 2}, {0, 1}, {2, 0}};
-  configuration["operations"][0]["siteOverrides"] = {
-      {{"sites", {2, 0}}, {"fidelity", 0.8}},
-      {{"sites", {0, 1}}, {"duration", 10}},
+  auto configuration = llvm::cantFail(mqt::json::parse(CUSTOM_SC));
+  (*configuration.getAsObject())["numQubits"] = 3;
+  (*configuration.getAsObject())["couplings"] = llvm::json::Array{
+      llvm::json::Array{1, 2},
+      llvm::json::Array{0, 1},
+      llvm::json::Array{2, 0},
   };
-  auto* session = initializedSession(configuration.dump());
+  (*(*configuration.getAsObject()->getArray("operations"))[0]
+        .getAsObject())["siteOverrides"] = llvm::json::Array{
+      llvm::json::Object{
+          {.K = "sites", .V = llvm::json::Array{2, 0}},
+          {.K = "fidelity", .V = 0.8},
+      },
+      llvm::json::Object{
+          {.K = "sites", .V = llvm::json::Array{0, 1}},
+          {.K = "duration", .V = 10},
+      },
+  };
+  auto* session = initializedSession(mqt::json::serialize(configuration));
   const auto sites = querySites(session);
   auto* const operation = queryOperations(session).front();
   const std::array expected{
@@ -464,13 +481,20 @@ TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
 }
 
 TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
-  auto configuration = nlohmann::json::parse(CUSTOM_SC);
-  configuration["qubitProperties"]["defaults"] = nlohmann::json::object();
-  configuration["qubitProperties"]["overrides"] = nlohmann::json::array();
-  configuration["operations"][0].erase("duration");
-  configuration["operations"][0].erase("fidelity");
-  configuration["operations"][0]["siteOverrides"] = nlohmann::json::array();
-  const auto serialized = configuration.dump();
+  auto configuration = llvm::cantFail(mqt::json::parse(CUSTOM_SC));
+  (*configuration.getAsObject()->getObject("qubitProperties"))["defaults"] =
+      llvm::json::Object{};
+  (*configuration.getAsObject()->getObject("qubitProperties"))["overrides"] =
+      llvm::json::Array{};
+  (*configuration.getAsObject()->getArray("operations"))[0]
+      .getAsObject()
+      ->erase("duration");
+  (*configuration.getAsObject()->getArray("operations"))[0]
+      .getAsObject()
+      ->erase("fidelity");
+  (*(*configuration.getAsObject()->getArray("operations"))[0]
+        .getAsObject())["siteOverrides"] = llvm::json::Array{};
+  const auto serialized = mqt::json::serialize(configuration);
   auto* session = initializedSession(serialized);
   const auto sites = querySites(session);
   auto* const operation = queryOperations(session).front();

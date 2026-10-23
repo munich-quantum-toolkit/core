@@ -15,18 +15,19 @@
 
 #include "Driver.hpp"
 #include "SessionConfig.hpp"
+#include "support/JSON.hpp"
 
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
 #include "qdmi/constants.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
-#include <fstream>
 #include <initializer_list>
 #include <map>
 #include <mutex>
@@ -51,7 +52,7 @@ void validateDeviceId(const std::string_view id) {
 }
 
 namespace {
-using Json = nlohmann::json;
+using Json = llvm::json::Value;
 
 struct DefinitionPatch {
   std::string id;
@@ -81,7 +82,7 @@ struct DeviceManifestState {
 
 void requireObject(const Json& value, const std::filesystem::path& source,
                    const std::string_view path) {
-  if (!value.is_object()) {
+  if (value.getAsObject() == nullptr) {
     throw std::invalid_argument(sourceLabel(source, path) +
                                 " must be an object");
   }
@@ -91,11 +92,13 @@ void rejectUnknownKeys(const Json& value,
                        const std::initializer_list<std::string_view> allowed,
                        const std::filesystem::path& source,
                        const std::string_view path) {
-  for (const auto& [key, unused] : value.items()) {
+  for (const auto& [key, unused] : *value.getAsObject()) {
     static_cast<void>(unused);
-    if (std::ranges::find(allowed, key) == allowed.end()) {
+    if (std::ranges::find(allowed, llvm::StringRef(key).str()) ==
+        allowed.end()) {
       throw std::invalid_argument(sourceLabel(source, path) +
-                                  " contains unknown key '" + key + "'");
+                                  " contains unknown key '" +
+                                  llvm::StringRef(key).str() + "'");
     }
   }
 }
@@ -104,15 +107,15 @@ void rejectUnknownKeys(const Json& value,
                                   const std::filesystem::path& source,
                                   const std::string& path)
     -> std::optional<std::string> {
-  const auto it = value.find(key);
-  if (it == value.end()) {
+  const auto* const it = value.getAsObject()->get(key);
+  if (it == nullptr) {
     return std::nullopt;
   }
-  if (!it->is_string()) {
+  if (!it->getAsString()) {
     throw std::invalid_argument(sourceLabel(source, path + "." + key) +
                                 " must be a string");
   }
-  return it->get<std::string>();
+  return it->getAsString()->str();
 }
 
 [[nodiscard]] auto resolvePath(std::filesystem::path path,
@@ -164,24 +167,26 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
   patch.custom3 = optionalString(value, "custom3", source, path);
   patch.custom4 = optionalString(value, "custom4", source, path);
   patch.custom5 = optionalString(value, "custom5", source, path);
-  if (const auto config = value.find("device-config"); config != value.end()) {
+  if (const auto* const config = value.getAsObject()->get("device-config");
+      config != nullptr) {
     const auto configPath = path + ".device-config";
     requireObject(*config, source, configPath);
     rejectUnknownKeys(*config, {"inline", "file"}, source, configPath);
-    const auto inlineConfig = config->find("inline");
-    const auto fileConfig = config->find("file");
-    if ((inlineConfig == config->end()) == (fileConfig == config->end())) {
+    const auto* const inlineConfig = config->getAsObject()->get("inline");
+    const auto* const fileConfig = config->getAsObject()->get("file");
+    if ((inlineConfig == nullptr) == (fileConfig == nullptr)) {
       throw std::invalid_argument(sourceLabel(source, configPath) +
                                   " must contain exactly one of 'inline' and "
                                   "'file'");
     }
-    if (inlineConfig != config->end()) {
-      if (!inlineConfig->is_object()) {
+    if (inlineConfig != nullptr) {
+      if (inlineConfig->getAsObject() == nullptr) {
         throw std::invalid_argument(
             sourceLabel(source, configPath + ".inline") + " must be an object");
       }
-      patch.deviceConfiguration =
-          InlineDeviceConfiguration{.json = inlineConfig->dump()};
+      patch.deviceConfiguration = InlineDeviceConfiguration{
+          .json = mqt::json::serialize(*inlineConfig),
+      };
     } else {
       const auto file = optionalString(*config, "file", source, configPath);
       if (!file || file->empty() || file->find('\0') != std::string::npos) {
@@ -239,14 +244,16 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
     throw std::invalid_argument(sourceLabel(source, path + ".prefix") +
                                 " must not contain null bytes");
   }
-  if (const auto it = value.find("enabled"); it != value.end()) {
-    if (!it->is_boolean()) {
+  if (const auto* const it = value.getAsObject()->get("enabled");
+      it != nullptr) {
+    if (!it->getAsBoolean()) {
       throw std::invalid_argument(sourceLabel(source, path + ".enabled") +
                                   " must be a boolean");
     }
-    patch.enabled = it->get<bool>();
+    patch.enabled = it->getAsBoolean();
   }
-  if (const auto it = value.find("session"); it != value.end()) {
+  if (const auto* const it = value.getAsObject()->get("session");
+      it != nullptr) {
     patch.session = parseSessionPatch(*it, source, path + ".session", base);
   }
   return patch;
@@ -258,32 +265,31 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
     -> std::vector<DefinitionPatch> {
   requireObject(root, source, "$");
   rejectUnknownKeys(root, {"schema-version", "qdmi"}, source, "$");
-  const auto version = root.find("schema-version");
-  if (version == root.end() || !version->is_number_integer() ||
-      version->get<int>() != 1) {
+  const auto* const version = root.getAsObject()->get("schema-version");
+  if (version == nullptr || version->getAsUINT64() != 1) {
     throw std::invalid_argument(sourceLabel(source, "$.schema-version") +
                                 " must be the integer 1");
   }
-  const auto qdmiConfig = root.find("qdmi");
-  if (qdmiConfig == root.end()) {
+  const auto* const qdmiConfig = root.getAsObject()->get("qdmi");
+  if (qdmiConfig == nullptr) {
     return {};
   }
   requireObject(*qdmiConfig, source, "$.qdmi");
   rejectUnknownKeys(*qdmiConfig, {"devices"}, source, "$.qdmi");
-  const auto devices = qdmiConfig->find("devices");
-  if (devices == qdmiConfig->end()) {
+  const auto* const devices = qdmiConfig->getAsObject()->get("devices");
+  if (devices == nullptr) {
     return {};
   }
-  if (!devices->is_array()) {
+  if (devices->getAsArray() == nullptr) {
     throw std::invalid_argument(sourceLabel(source, "$.qdmi.devices") +
                                 " must be an array");
   }
   std::set<std::string> ids;
   std::vector<DefinitionPatch> patches;
-  patches.reserve(devices->size());
-  for (size_t i = 0; i < devices->size(); ++i) {
+  patches.reserve(devices->getAsArray()->size());
+  for (size_t i = 0; i < devices->getAsArray()->size(); ++i) {
     auto patch =
-        parseDevicePatch((*devices)[i], source,
+        parseDevicePatch((*devices->getAsArray())[i], source,
                          "$.qdmi.devices[" + std::to_string(i) + "]", base);
     if (!ids.emplace(patch.id).second) {
       throw std::invalid_argument(sourceLabel(source, "$.qdmi.devices") +
@@ -295,17 +301,16 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
 }
 
 [[nodiscard]] auto readJson(const std::filesystem::path& path) -> Json {
-  std::ifstream stream(path);
-  if (!stream) {
-    throw std::runtime_error("Cannot open QDMI configuration file: " +
-                             pathToString(path));
+  const auto source = pathToString(path);
+  auto buffer = llvm::MemoryBuffer::getFile(source);
+  if (!buffer) {
+    throw std::runtime_error(source + ": " + buffer.getError().message());
   }
-  try {
-    return Json::parse(stream);
-  } catch (const Json::parse_error& error) {
-    throw std::invalid_argument(pathToString(path) +
-                                ": invalid JSON: " + error.what());
+  auto value = mqt::json::parse((*buffer)->getBuffer(), source);
+  if (!value) {
+    throw std::invalid_argument(llvm::toString(value.takeError()));
   }
+  return std::move(*value);
 }
 
 void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
@@ -514,14 +519,18 @@ auto parseDeviceSessionJson(const char* const data, const size_t size,
     return QDMI_SUCCESS;
   }
   try {
-    const auto value = Json::parse(std::string_view{data, size});
-    config = parseSessionPatch(value, "<device-session-json>", "$",
+    auto value =
+        mqt::json::parse(llvm::StringRef(data, size), "<device-session-json>");
+    if (!value) {
+      llvm::consumeError(value.takeError());
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    config = parseSessionPatch(*value, "<device-session-json>", "$",
                                std::filesystem::current_path());
     return QDMI_SUCCESS;
   } catch (const std::bad_alloc&) {
     return QDMI_ERROR_OUTOFMEM;
-  } catch (const Json::parse_error&) {
-    return QDMI_ERROR_INVALIDARGUMENT;
+
   } catch (const std::invalid_argument&) {
     return QDMI_ERROR_INVALIDARGUMENT;
   } catch (...) {
@@ -563,15 +572,14 @@ DeviceRegistry::DeviceRegistry() {
   const auto inlineBase = std::filesystem::current_path();
   if (auto inlineJson =
           llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_JSON")) {
-    try {
-      mergePatches(parseConfiguration(
-          Json::parse(*inlineJson), "<MQT_CORE_QDMI_CONFIG_JSON>", inlineBase));
-    } catch (const Json::parse_error& error) {
-      throw std::invalid_argument(
-          std::string("<MQT_CORE_QDMI_CONFIG_JSON>: invalid JSON: ") +
-          error.what());
+    auto value = mqt::json::parse(*inlineJson, "<MQT_CORE_QDMI_CONFIG_JSON>");
+    if (!value) {
+      throw std::invalid_argument(llvm::toString(value.takeError()));
     }
+    mergePatches(
+        parseConfiguration(*value, "<MQT_CORE_QDMI_CONFIG_JSON>", inlineBase));
   }
+
   for (auto& [unused, patch] : merged) {
     static_cast<void>(unused);
     if (!patch.enabled.value_or(true)) {

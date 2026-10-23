@@ -14,6 +14,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -55,8 +57,8 @@ TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {
 }
 
 TEST(BV, RoundTripsJSON) {
-  const auto defaults = bvFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"bv","parameters":{"hidden_bitstring":"101"}})");
+  const auto defaults = llvm::cantFail(bvFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"bv","parameters":{"hidden_bitstring":"101"}})"));
   EXPECT_EQ(defaults.options().method, BVMethod::Static);
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
@@ -64,8 +66,9 @@ TEST(BV, RoundTripsJSON) {
 
   const BV dynamic{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
   const auto manifest = toManifestJSON(dynamic);
-  EXPECT_EQ(toManifestJSON(bvFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "bv");
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(bvFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)), "bv");
 }
 
 TEST(BV, UsesSemanticCaseIds) {
@@ -74,13 +77,14 @@ TEST(BV, UsesSemanticCaseIds) {
 }
 
 TEST(BV, DescribesJSONSchema) {
-  EXPECT_NE(describeBenchmarkJSON("bv").find("\"dynamic\""), std::string::npos);
+  EXPECT_NE(llvm::cantFail(describeBenchmarkJSON("bv")).find("\"dynamic\""),
+            std::string::npos);
 }
 
 TEST(BV, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(BV{{.hiddenBitstring = "11"}}),
-                   R"({"schema_version":1,"counts":{"11":8,"00":2}})");
+                   R"({"schema_version":1,"counts":{"11":8,"00":2}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":0.8"), std::string::npos);
 }
 

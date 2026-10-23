@@ -11,8 +11,9 @@
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
 #include "StatisticsJson.hpp"
+#include "support/JSON.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -76,15 +77,15 @@ void MemoryManagerStatistics::reset() noexcept {
 }
 
 std::string MemoryManagerStatistics::toString() const {
-  return toJson(*this).dump(2U);
+  return mqt::json::serialize(toJson(*this), 2U);
 }
 
-nlohmann::basic_json<> toJson(const MemoryManagerStatistics& s) {
+llvm::json::Value toJson(const MemoryManagerStatistics& s) {
   if (s.peakNumUsed == 0) {
     return "unused";
   }
 
-  nlohmann::basic_json<> j;
+  llvm::json::Object j;
   j["memory_allocated_MiB"] = s.getAllocatedMemoryMiB();
   j["memory_used_MiB"] = s.getUsedMemoryMiB();
   j["memory_used_MiB_peak"] = s.getPeakUsedMemoryMiB();

@@ -13,8 +13,9 @@
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "StatisticsJson.hpp"
+#include "support/JSON.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/Support/JSON.h"
 
 #include <string>
 
@@ -23,16 +24,16 @@ namespace dd {
 void UniqueTableStatistics::reset() noexcept { TableStatistics::reset(); }
 
 std::string UniqueTableStatistics::toString() const {
-  return toJson(*this).dump(2U);
+  return mqt::json::serialize(toJson(*this), 2U);
 }
 
-nlohmann::basic_json<> toJson(const UniqueTableStatistics& s) {
+llvm::json::Value toJson(const UniqueTableStatistics& s) {
   if (s.lookups == 0) {
     return "unused";
   }
 
   auto j = toJson(static_cast<const TableStatistics&>(s));
-  j["gc_runs"] = s.gcRuns;
+  (*j.getAsObject())["gc_runs"] = s.gcRuns;
   return j;
 }
 } // namespace dd

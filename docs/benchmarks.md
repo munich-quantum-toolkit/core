@@ -217,7 +217,10 @@ The output format changes the file name, but not the semantic case ID.
 
 A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
-manifests.
+manifests. JSON parsing and fallible JSON output return `llvm::Expected<T>`;
+callers must check the result or handle `takeError()`. C++ translation units
+using these LLVM APIs must match the SDK's RTTI setting (`-fno-rtti` with an
+RTTI-free LLVM build). Python JSON methods raise `ValueError` for invalid input.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -273,6 +276,24 @@ does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
 Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
+
+Manifests use `schema_version: 2`. Case IDs hash sorted, compact semantic JSON
+with the domain prefix `mqt-core:benchmark-case:v2` followed by a NUL byte.
+Numbers use locale-independent decimal formatting that round-trips finite
+`double` values. Instance specifications and counts retain schema version 1;
+family definition versions describe benchmark semantics, independently of the
+JSON encoding version.
+
+Version 1 manifests must be regenerated. Extract their `benchmark` and
+`parameters` into a schema-version-1 instance specification, load it with the
+family's `from_instance_specification_json`, and save its `manifest_json`.
+Regeneration assigns a new case ID; update references to the old ID together.
+
+JSON input must be UTF-8, use valid JSON number syntax, and contain no duplicate
+object keys or unpaired Unicode surrogates. Nesting is limited to 256
+containers. Non-finite and overflowing input numbers are rejected. JSON
+validation errors are recoverable; allocation failures follow LLVM policy and
+are not guaranteed recoverable.
 
 ## Benchmark families
 

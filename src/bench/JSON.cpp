@@ -15,7 +15,6 @@
 #include "bench/FanOut.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
-#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
@@ -27,12 +26,14 @@
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
 
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
+#include "support/JSON.hpp"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/SHA256.h"
 
 #include <algorithm>
@@ -47,18 +48,17 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <utility>
 #include <variant>
-#include <vector>
 
 namespace mqt::bench {
 namespace {
 
-using Json = nlohmann::json;
+using Json = llvm::json::Value;
 
 constexpr uint64_t SCHEMA_VERSION = 1;
-constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";
+constexpr uint64_t MANIFEST_VERSION = 2;
+constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v2";
 
 template <class Benchmark> struct BenchmarkMetadata;
 
@@ -68,7 +68,7 @@ template <class Benchmark> struct BenchmarkMetadata;
     static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
   };                                                                           \
   [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
-  [[nodiscard]] ParsedBenchmark parse##TYPE##Instance(                         \
+  [[nodiscard]] llvm::Expected<ParsedBenchmark> parse##TYPE##Instance(         \
       const Json& parameters, std::string_view source);
 #include "bench/BenchmarkFamilies.inc"
 
@@ -77,7 +77,7 @@ struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
-  ParsedBenchmark (*parse)(const Json&, std::string_view);
+  llvm::Expected<ParsedBenchmark> (*parse)(const Json&, std::string_view);
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
@@ -109,471 +109,429 @@ findBenchmark(const std::string_view benchmark) {
   return nullptr;
 }
 
-[[noreturn]] void fail(const std::string_view source,
-                       const std::string_view pointer,
-                       const std::string_view message) {
-  throw std::invalid_argument(std::string(source) + ":" + std::string(pointer) +
-                              " " + std::string(message));
+[[nodiscard]] llvm::Error fail(const std::string_view source,
+                               const std::string_view pointer,
+                               const std::string_view message) {
+  return llvm::createStringError(llvm::StringRef(source) + ":" +
+                                 llvm::StringRef(pointer) + " " +
+                                 llvm::StringRef(message));
+}
+
+bool keys(const Json& value, std::initializer_list<llvm::StringRef> known,
+          llvm::json::Path path) {
+  const auto* object = value.getAsObject();
+  if (object == nullptr) {
+    path.report("must be an object");
+    return false;
+  }
+  return std::ranges::all_of(*object, [&](const auto& field) {
+    const llvm::StringRef key = field.first;
+    if (std::ranges::find(known, key) != known.end()) {
+      return true;
+    }
+    path.field(key).report("unknown key");
+    return false;
+  });
 }
 
 template <class Factory>
 [[nodiscard]] auto constructBenchmark(const std::string_view source,
-                                      const Factory& factory) {
+                                      const Factory& factory)
+    -> llvm::Expected<decltype(factory())> {
   try {
     return factory();
   } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
+    return fail(source, "$/parameters", error.what());
   }
 }
 
-[[nodiscard]] Json parseJSON(const std::string_view text,
-                             const std::string_view source) {
-  std::vector<std::unordered_set<std::string>> keysByDepth;
-  const Json::parser_callback_t rejectDuplicates =
-      [&](const int depth, const Json::parse_event_t event, Json& parsed) {
-        if (event == Json::parse_event_t::object_start) {
-          const auto index = static_cast<size_t>(depth);
-          if (keysByDepth.size() <= index) {
-            keysByDepth.resize(index + 1U);
-          }
-          keysByDepth[index].clear();
-        } else if (event == Json::parse_event_t::key) {
-          const auto index = static_cast<size_t>(depth - 1);
-          const auto& key = parsed.get_ref<const std::string&>();
-          auto& keys = keysByDepth.at(index);
-          if (!keys.emplace(key).second) {
-            fail(source, "$", "contains duplicate key '" + key + "'");
-          }
-        }
+template <class Enum>
+bool enumValue(const Json& parameters, llvm::StringRef key, Enum& out,
+               std::initializer_list<std::pair<llvm::StringRef, Enum>> values,
+               llvm::json::Path path) {
+  const auto* field = parameters.getAsObject()->get(key);
+  if (!field) {
+    return true;
+  }
+  if (const auto name = field->getAsString()) {
+    for (const auto& [spelling, value] : values) {
+      if (*name == spelling) {
+        out = value;
         return true;
-      };
-
-  try {
-    return Json::parse(text.begin(), text.end(), rejectDuplicates);
-  } catch (const Json::exception& error) {
-    throw std::invalid_argument(std::string(source) +
-                                ": invalid JSON: " + error.what());
-  }
-}
-
-void requireObject(const Json& value, const std::string_view source,
-                   const std::string_view pointer) {
-  if (!value.is_object()) {
-    fail(source, pointer, "must be an object");
-  }
-}
-
-void rejectUnknownKeys(const Json& value,
-                       const std::initializer_list<std::string_view> known,
-                       const std::string_view source,
-                       const std::string_view pointer) {
-  for (const auto& [key, unused] : value.items()) {
-    static_cast<void>(unused);
-    if (std::ranges::find(known, key) == known.end()) {
-      fail(source, pointer, "contains unknown key '" + key + "'");
+      }
     }
   }
+  path.field(key).report("has an unsupported value");
+  return false;
 }
 
-[[nodiscard]] const Json& required(const Json& value, const char* const key,
-                                   const std::string_view source,
-                                   const std::string_view pointer) {
-  const auto found = value.find(key);
-  if (found == value.end()) {
-    fail(source, std::string(pointer) + "/" + key, "is required");
+[[nodiscard]] llvm::Expected<Json> envelope(const std::string_view text,
+                                            const std::string_view source,
+                                            const bool manifest) {
+  auto root = mqt::json::parse(text, source);
+  if (!root) {
+    return root.takeError();
   }
-  return *found;
-}
-
-[[nodiscard]] uint64_t unsignedInteger(const Json& value,
-                                       const std::string_view source,
-                                       const std::string_view pointer) {
-  if (value.is_number_float()) {
-    fail(source, pointer, "must be encoded as an integer");
+  llvm::json::Path::Root diagnostic(source);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(*root, path);
+  uint64_t version = 0;
+  std::string benchmark;
+  if (!object ||
+      !(manifest ? keys(*root,
+                        {
+                            "schema_version",
+                            "benchmark",
+                            "parameters",
+                            "case_id",
+                            "definition_version",
+                            "outputs",
+                            "reference",
+                        },
+                        path)
+                 : keys(*root, {"schema_version", "benchmark", "parameters"},
+                        path)) ||
+      !object.map("schema_version", version) ||
+      !object.map("benchmark", benchmark)) {
+    return diagnostic.getError();
   }
-  if (!value.is_number_unsigned() &&
-      (!value.is_number_integer() || value.get<int64_t>() < 0)) {
-    fail(source, pointer, "must be a non-negative integer");
+  if (version != (manifest ? MANIFEST_VERSION : SCHEMA_VERSION)) {
+    return fail(source, "$/schema_version",
+                manifest ? "must be 2; regenerate version 1 manifests from "
+                           "their instance specifications"
+                         : "must be 1");
   }
-  try {
-    return value.get<uint64_t>();
-  } catch (const Json::exception&) {
-    fail(source, pointer, "must fit an unsigned 64-bit integer");
+  const auto* entry = findBenchmark(benchmark);
+  if (entry == nullptr) {
+    return fail(source, "$/benchmark",
+                "selects unsupported benchmark '" + benchmark + "'");
   }
-}
-
-[[nodiscard]] size_t sizeValue(const Json& value, const std::string_view source,
-                               const std::string_view pointer) {
-  const auto parsed = unsignedInteger(value, source, pointer);
-  if (parsed > std::numeric_limits<size_t>::max()) {
-    fail(source, pointer, "must fit size_t");
+  const auto* parameters = root->getAsObject()->getObject("parameters");
+  if (parameters == nullptr) {
+    return fail(source, "$/parameters", "is required and must be an object");
   }
-  return static_cast<size_t>(parsed);
-}
-
-[[nodiscard]] std::string stringValue(const Json& value,
-                                      const std::string_view source,
-                                      const std::string_view pointer) {
-  if (!value.is_string()) {
-    fail(source, pointer, "must be a string");
+  if (manifest) {
+    uint64_t definition = 0;
+    std::string caseID;
+    if (!object.map("definition_version", definition) ||
+        !object.map("case_id", caseID)) {
+      return diagnostic.getError();
+    }
+    if (definition != entry->definitionVersion) {
+      return fail(source, "$/definition_version",
+                  "must be " + std::to_string(entry->definitionVersion));
+    }
+    if (root->getAsObject()->getArray("outputs") == nullptr) {
+      return fail(source, "$/outputs", "is required and must be an array");
+    }
+    if (root->getAsObject()->getObject("reference") == nullptr) {
+      return fail(source, "$/reference", "is required and must be an object");
+    }
   }
-  return value.get<std::string>();
-}
-
-[[nodiscard]] double numberValue(const Json& value,
-                                 const std::string_view source,
-                                 const std::string_view pointer) {
-  if (!value.is_number()) {
-    fail(source, pointer, "must be a number");
-  }
-  return value.get<double>();
-}
-
-void requireSchemaVersion(const Json& root, const std::string_view source) {
-  const auto version =
-      unsignedInteger(required(root, "schema_version", source, "$"), source,
-                      "$/schema_version");
-  if (version != SCHEMA_VERSION) {
-    fail(source, "$/schema_version", "must be 1");
-  }
-}
-
-[[nodiscard]] const RegistryEntry&
-requireBenchmarkEntry(const Json& root, const std::string_view source) {
-  const auto benchmark = stringValue(required(root, "benchmark", source, "$"),
-                                     source, "$/benchmark");
-  if (const auto* entry = findBenchmark(benchmark)) {
-    return *entry;
-  }
-  fail(source, "$/benchmark",
-       "selects unsupported benchmark '" + benchmark + "'");
-}
-
-[[nodiscard]] Json
-instanceSpecificationEnvelope(const std::string_view text,
-                              const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
-                    "$");
-  requireSchemaVersion(root, source);
-  static_cast<void>(requireBenchmarkEntry(root, source));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
   return root;
 }
 
-[[nodiscard]] Json manifestEnvelope(const std::string_view text,
-                                    const std::string_view source) {
-  auto root = parseJSON(text, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root,
-                    {
-                        "schema_version",
-                        "case_id",
-                        "benchmark",
-                        "definition_version",
-                        "parameters",
-                        "outputs",
-                        "reference",
-                    },
-                    source, "$");
-  requireSchemaVersion(root, source);
-  const auto& benchmark = requireBenchmarkEntry(root, source);
-  const auto definition =
-      unsignedInteger(required(root, "definition_version", source, "$"), source,
-                      "$/definition_version");
-  const auto expectedDefinition = benchmark.definitionVersion;
-  if (definition != expectedDefinition) {
-    fail(source, "$/definition_version",
-         "must be " + std::to_string(expectedDefinition));
+[[nodiscard]] llvm::Expected<BV> parseBVParameters(const Json& parameters,
+                                                   std::string_view source) {
+  BVOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"hidden_bitstring", "method"}, path) ||
+      !object.map("hidden_bitstring", options.hiddenBitstring) ||
+      !enumValue<BVMethod>(
+          parameters, "method", options.method,
+          {{"static", BVMethod::Static}, {"dynamic", BVMethod::Dynamic}},
+          path)) {
+    return diagnostic.getError();
   }
-  static_cast<void>(
-      stringValue(required(root, "case_id", source, "$"), source, "$/case_id"));
-  requireObject(required(root, "parameters", source, "$"), source,
-                "$/parameters");
-  if (!required(root, "outputs", source, "$").is_array()) {
-    fail(source, "$/outputs", "must be an array");
-  }
-  requireObject(required(root, "reference", source, "$"), source,
-                "$/reference");
-  return root;
+  return constructBenchmark(source, [&] { return BV(std::move(options)); });
 }
 
-void requireBenchmark(const Json& root, const std::string_view expected,
-                      const std::string_view source) {
-  const auto actual = stringValue(required(root, "benchmark", source, "$"),
-                                  source, "$/benchmark");
-  if (actual != expected) {
-    fail(source, "$/benchmark", "must be '" + std::string(expected) + "'");
+[[nodiscard]] llvm::Expected<FanOut>
+parseFanOutParameters(const Json& parameters, std::string_view source) {
+  FanOutOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"controls"}, path) ||
+      !object.map("controls", options.controls)) {
+    return diagnostic.getError();
   }
+  return constructBenchmark(source, [&] { return FanOut(options); });
 }
 
-[[nodiscard]] BV parseBVParameters(const Json& parameters,
-                                   const std::string_view source) {
-  rejectUnknownKeys(parameters, {"hidden_bitstring", "method"}, source,
-                    "$/parameters");
-  BVOptions options{
-      .hiddenBitstring = stringValue(
-          required(parameters, "hidden_bitstring", source, "$/parameters"),
-          source, "$/parameters/hidden_bitstring"),
-  };
-  if (const auto method = parameters.find("method");
-      method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
-    if (value == "static") {
-      options.method = BVMethod::Static;
-    } else if (value == "dynamic") {
-      options.method = BVMethod::Dynamic;
-    } else {
-      fail(source, "$/parameters/method", "must be 'static' or 'dynamic'");
-    }
+[[nodiscard]] llvm::Expected<GHZ> parseGHZParameters(const Json& parameters,
+                                                     std::string_view source) {
+  GHZOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"qubits", "topology", "basis"}, path) ||
+      !object.map("qubits", options.qubits) ||
+      !enumValue<GHZTopology>(
+          parameters, "topology", options.topology,
+          {{"linear", GHZTopology::Linear}, {"star", GHZTopology::Star}},
+          path) ||
+      !enumValue<GHZBasis>(parameters, "basis", options.basis,
+                           {{"z", GHZBasis::Z}, {"x", GHZBasis::X}}, path)) {
+    return diagnostic.getError();
   }
-  return constructBenchmark(source,
-                            [&options] { return BV(std::move(options)); });
+  return constructBenchmark(source, [&] { return GHZ(options); });
 }
 
-[[nodiscard]] FanOut parseFanOutParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"controls"}, source, "$/parameters");
-  const FanOutOptions options{
-      .controls =
-          sizeValue(required(parameters, "controls", source, "$/parameters"),
-                    source, "$/parameters/controls"),
-  };
-  return constructBenchmark(source, [&options] { return FanOut(options); });
+[[nodiscard]] llvm::Expected<Grover>
+parseGroverParameters(const Json& parameters, std::string_view source) {
+  GroverOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  size_t iterations = 0;
+  if (!object || !keys(parameters, {"marked_bitstring", "iterations"}, path) ||
+      !object.map("marked_bitstring", options.markedBitstring) ||
+      !object.mapOptional("iterations", iterations)) {
+    return diagnostic.getError();
+  }
+  if (parameters.getAsObject()->get("iterations") != nullptr) {
+    options.iterations = iterations;
+  }
+  return constructBenchmark(source, [&] { return Grover(std::move(options)); });
 }
 
-[[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
-                    "$/parameters");
-  GHZOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-  };
-  if (const auto topology = parameters.find("topology");
-      topology != parameters.end()) {
-    const auto value = stringValue(*topology, source, "$/parameters/topology");
-    if (value == "linear") {
-      options.topology = GHZTopology::Linear;
-    } else if (value == "star") {
-      options.topology = GHZTopology::Star;
-    } else {
-      fail(source, "$/parameters/topology", "must be 'linear' or 'star'");
-    }
-  }
-  if (const auto basis = parameters.find("basis"); basis != parameters.end()) {
-    const auto value = stringValue(*basis, source, "$/parameters/basis");
-    if (value == "z") {
-      options.basis = GHZBasis::Z;
-    } else if (value == "x") {
-      options.basis = GHZBasis::X;
-    } else {
-      fail(source, "$/parameters/basis", "must be 'z' or 'x'");
-    }
-  }
-  return constructBenchmark(source, [&options] { return GHZ(options); });
-}
-
-[[nodiscard]] Grover parseGroverParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"marked_bitstring", "iterations"}, source,
-                    "$/parameters");
-  GroverOptions options{
-      .markedBitstring = stringValue(
-          required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring"),
-  };
-  if (const auto iterations = parameters.find("iterations");
-      iterations != parameters.end()) {
-    options.iterations =
-        sizeValue(*iterations, source, "$/parameters/iterations");
-  }
-  return constructBenchmark(source,
-                            [&options] { return Grover(std::move(options)); });
-}
-
-[[nodiscard]] GroverWeakMeasurement
+[[nodiscard]] llvm::Expected<GroverWeakMeasurement>
 parseGroverWeakMeasurementParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"marked_bitstring", "measurement_strength"},
-                    source, "$/parameters");
-  GroverWeakMeasurementOptions options{
-      .markedBitstring = stringValue(
-          required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring"),
-  };
-  if (const auto strength = parameters.find("measurement_strength");
-      strength != parameters.end()) {
-    options.measurementStrength =
-        numberValue(*strength, source, "$/parameters/measurement_strength");
+                                     std::string_view source) {
+  GroverWeakMeasurementOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  double measurementStrength = 0;
+  if (!object ||
+      !keys(parameters, {"marked_bitstring", "measurement_strength"}, path) ||
+      !object.map("marked_bitstring", options.markedBitstring) ||
+      !object.mapOptional("measurement_strength", measurementStrength)) {
+    return diagnostic.getError();
+  }
+  if (parameters.getAsObject()->get("measurement_strength") != nullptr) {
+    options.measurementStrength = measurementStrength;
   }
   return constructBenchmark(
-      source, [&options] { return GroverWeakMeasurement(std::move(options)); });
+      source, [&] { return GroverWeakMeasurement(std::move(options)); });
 }
 
-[[nodiscard]] MagicStateDistillation
+[[nodiscard]] llvm::Expected<MagicStateDistillation>
 parseMagicStateDistillationParameters(const Json& parameters,
-                                      const std::string_view source) {
-  rejectUnknownKeys(parameters, {"levels"}, source, "$/parameters");
-  MagicStateDistillationOptions options;
-  if (const auto levels = parameters.find("levels");
-      levels != parameters.end()) {
-    options.levels = sizeValue(*levels, source, "$/parameters/levels");
+                                      std::string_view source) {
+  MagicStateDistillationOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"levels"}, path) ||
+      !object.mapOptional("levels", options.levels)) {
+    return diagnostic.getError();
   }
-  return constructBenchmark(
-      source, [&options] { return MagicStateDistillation(options); });
-}
-
-[[nodiscard]] ModularMultiplier
-parseModularMultiplierParameters(const Json& parameters,
-                                 const std::string_view source) {
-  rejectUnknownKeys(parameters,
-                    {"multiplier", "modulus", "multiplicand", "control"},
-                    source, "$/parameters");
-  auto control = std::string("1");
-  if (const auto value = parameters.find("control");
-      value != parameters.end()) {
-    control = stringValue(*value, source, "$/parameters/control");
-  }
-  if (control.size() != 1U) {
-    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
-  }
-  ModularMultiplierOptions options{
-      .multiplier = stringValue(
-          required(parameters, "multiplier", source, "$/parameters"), source,
-          "$/parameters/multiplier"),
-      .modulus =
-          stringValue(required(parameters, "modulus", source, "$/parameters"),
-                      source, "$/parameters/modulus"),
-      .multiplicand = stringValue(
-          required(parameters, "multiplicand", source, "$/parameters"), source,
-          "$/parameters/multiplicand"),
-      .control = control.front(),
-  };
-  return constructBenchmark(
-      source, [&options] { return ModularMultiplier(std::move(options)); });
-}
-
-[[nodiscard]] Multiplexer
-parseMultiplexerParameters(const Json& parameters,
-                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  const MultiplexerOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-  };
   return constructBenchmark(source,
-                            [&options] { return Multiplexer(options); });
+                            [&] { return MagicStateDistillation(options); });
 }
 
-[[nodiscard]] QAOA parseQAOAParameters(const Json& parameters,
-                                       const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "depth"}, source, "$/parameters");
-  QAOAOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-  };
-  if (const auto depth = parameters.find("depth"); depth != parameters.end()) {
-    options.depth = sizeValue(*depth, source, "$/parameters/depth");
+[[nodiscard]] llvm::Expected<ModularMultiplier>
+parseModularMultiplierParameters(const Json& parameters,
+                                 std::string_view source) {
+  ModularMultiplierOptions options{};
+  std::string control = "1";
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object ||
+      !keys(parameters, {"multiplier", "modulus", "multiplicand", "control"},
+            path) ||
+      !object.map("multiplier", options.multiplier) ||
+      !object.map("modulus", options.modulus) ||
+      !object.map("multiplicand", options.multiplicand) ||
+      !object.mapOptional("control", control)) {
+    return diagnostic.getError();
   }
-  return constructBenchmark(source, [&options] { return QAOA(options); });
-}
-
-[[nodiscard]] QFT parseQFTParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"}, source,
-                    "$/parameters");
-  QFTOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-      .periodExponent = sizeValue(
-          required(parameters, "period_exponent", source, "$/parameters"),
-          source, "$/parameters/period_exponent"),
-  };
-  if (const auto method = parameters.find("method");
-      method != parameters.end()) {
-    const auto value = stringValue(*method, source, "$/parameters/method");
-    if (value == "standard") {
-      options.method = QFTMethod::Standard;
-    } else if (value == "semiclassical") {
-      options.method = QFTMethod::Semiclassical;
-    } else {
-      fail(source, "$/parameters/method",
-           "must be 'standard' or 'semiclassical'");
-    }
+  if (control.size() != 1) {
+    return fail(source, "$/parameters/control", "must be 0, 1, or +");
   }
-  return constructBenchmark(source, [&options] { return QFT(options); });
-}
-
-[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
-                                               const std::string_view source) {
-  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
-                    source, "$/parameters");
-  QFTAdderOptions options{
-      .addend =
-          stringValue(required(parameters, "addend", source, "$/parameters"),
-                      source, "$/parameters/addend"),
-      .accumulator = stringValue(
-          required(parameters, "accumulator", source, "$/parameters"), source,
-          "$/parameters/accumulator"),
-  };
-  if (const auto it = parameters.find("method"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/method");
-    if (value == "register") {
-      options.method = QFTAdderMethod::Register;
-    } else if (value == "constant") {
-      options.method = QFTAdderMethod::Constant;
-    } else {
-      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
-    }
-  }
-  if (const auto it = parameters.find("overflow"); it != parameters.end()) {
-    const auto value = stringValue(*it, source, "$/parameters/overflow");
-    if (value == "wrap") {
-      options.overflow = QFTAdderOverflow::Wrap;
-    } else if (value == "carry") {
-      options.overflow = QFTAdderOverflow::Carry;
-    } else {
-      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
-    }
-  }
+  options.control = control.front();
   return constructBenchmark(
-      source, [&options] { return QFTAdder(std::move(options)); });
+      source, [&] { return ModularMultiplier(std::move(options)); });
 }
 
-[[nodiscard]] QPE parseQPEParameters(const Json& parameters,
-                                     const std::string_view source) {
-  rejectUnknownKeys(parameters, {"precision", "phase", "method"}, source,
-                    "$/parameters");
-  const auto precision =
-      sizeValue(required(parameters, "precision", source, "$/parameters"),
-                source, "$/parameters/precision");
-  const auto& phase = required(parameters, "phase", source, "$/parameters");
-  requireObject(phase, source, "$/parameters/phase");
-  rejectUnknownKeys(phase, {"numerator", "denominator"}, source,
-                    "$/parameters/phase");
-  const auto numerator = unsignedInteger(
-      required(phase, "numerator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/numerator");
-  const auto denominator = unsignedInteger(
-      required(phase, "denominator", source, "$/parameters/phase"), source,
-      "$/parameters/phase/denominator");
+[[nodiscard]] llvm::Expected<Multiplexer>
+parseMultiplexerParameters(const Json& parameters, std::string_view source) {
+  MultiplexerOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"qubits"}, path) ||
+      !object.map("qubits", options.qubits)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source, [&] { return Multiplexer(options); });
+}
+
+[[nodiscard]] llvm::Expected<QAOA>
+parseQAOAParameters(const Json& parameters, std::string_view source) {
+  QAOAOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"qubits", "depth"}, path) ||
+      !object.map("qubits", options.qubits) ||
+      !object.mapOptional("depth", options.depth)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source, [&] { return QAOA(options); });
+}
+
+[[nodiscard]] llvm::Expected<QFT> parseQFTParameters(const Json& parameters,
+                                                     std::string_view source) {
+  QFTOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object ||
+      !keys(parameters, {"qubits", "period_exponent", "method"}, path) ||
+      !object.map("qubits", options.qubits) ||
+      !object.map("period_exponent", options.periodExponent) ||
+      !enumValue<QFTMethod>(parameters, "method", options.method,
+                            {
+                                {"standard", QFTMethod::Standard},
+                                {"semiclassical", QFTMethod::Semiclassical},
+                            },
+                            path)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source, [&] { return QFT(options); });
+}
+
+[[nodiscard]] llvm::Expected<QFTAdder>
+parseQFTAdderParameters(const Json& parameters, std::string_view source) {
+  QFTAdderOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object ||
+      !keys(parameters, {"addend", "accumulator", "method", "overflow"},
+            path) ||
+      !object.map("addend", options.addend) ||
+      !object.map("accumulator", options.accumulator) ||
+      !enumValue<QFTAdderMethod>(parameters, "method", options.method,
+                                 {
+                                     {"register", QFTAdderMethod::Register},
+                                     {"constant", QFTAdderMethod::Constant},
+                                 },
+                                 path) ||
+      !enumValue<QFTAdderOverflow>(parameters, "overflow", options.overflow,
+                                   {
+                                       {"wrap", QFTAdderOverflow::Wrap},
+                                       {"carry", QFTAdderOverflow::Carry},
+                                   },
+                                   path)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source,
+                            [&] { return QFTAdder(std::move(options)); });
+}
+
+[[nodiscard]] llvm::Expected<RepeatUntilSuccess>
+parseRepeatUntilSuccessParameters(const Json& parameters,
+                                  std::string_view source) {
+  RepeatUntilSuccessOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"data_qubits"}, path) ||
+      !object.mapOptional("data_qubits", options.dataQubits)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source,
+                            [&] { return RepeatUntilSuccess(options); });
+}
+
+[[nodiscard]] llvm::Expected<Shor>
+parseShorParameters(const Json& parameters, std::string_view source) {
+  ShorOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"number", "base"}, path) ||
+      !object.map("number", options.number) ||
+      !object.mapOptional("base", options.base)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source, [&] { return Shor(options); });
+}
+
+[[nodiscard]] llvm::Expected<WState>
+parseWStateParameters(const Json& parameters, std::string_view source) {
+  WStateOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object || !keys(parameters, {"qubits"}, path) ||
+      !object.map("qubits", options.qubits)) {
+    return diagnostic.getError();
+  }
+  return constructBenchmark(source, [&] { return WState(options); });
+}
+
+[[nodiscard]] llvm::Expected<Teleportation>
+parseTeleportationParameters(const Json& parameters, std::string_view source) {
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  if (!keys(parameters, {}, diagnostic)) {
+    return diagnostic.getError();
+  }
+  return Teleportation{};
+}
+
+[[nodiscard]] llvm::Expected<QPE> parseQPEParameters(const Json& parameters,
+                                                     std::string_view source) {
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  size_t precision = 0;
   auto method = QPEMethod::Standard;
-  if (const auto value = parameters.find("method"); value != parameters.end()) {
-    const auto name = stringValue(*value, source, "$/parameters/method");
-    if (name == "standard") {
-      method = QPEMethod::Standard;
-    } else if (name == "iterative") {
-      method = QPEMethod::Iterative;
-    } else {
-      fail(source, "$/parameters/method", "must be 'standard' or 'iterative'");
-    }
+  if (!object || !keys(parameters, {"precision", "phase", "method"}, path) ||
+      !object.map("precision", precision) ||
+      !enumValue<QPEMethod>(parameters, "method", method,
+                            {
+                                {"standard", QPEMethod::Standard},
+                                {"iterative", QPEMethod::Iterative},
+                            },
+                            path)) {
+    return diagnostic.getError();
+  }
+  const auto* phase = parameters.getAsObject()->get("phase");
+  if (phase == nullptr) {
+    return fail(source, "$/parameters/phase", "is required");
+  }
+  llvm::json::ObjectMapper phaseObject(*phase, path.field("phase"));
+  uint64_t numerator = 0;
+  uint64_t denominator = 0;
+  if (!phaseObject ||
+      !keys(*phase, {"numerator", "denominator"}, path.field("phase")) ||
+      !phaseObject.map("numerator", numerator) ||
+      !phaseObject.map("denominator", denominator)) {
+    return diagnostic.getError();
   }
   return constructBenchmark(source, [&] {
     return QPE({
@@ -584,42 +542,11 @@ parseMultiplexerParameters(const Json& parameters,
   });
 }
 
-[[nodiscard]] RepeatUntilSuccess
-parseRepeatUntilSuccessParameters(const Json& parameters,
-                                  const std::string_view source) {
-  rejectUnknownKeys(parameters, {"data_qubits"}, source, "$/parameters");
-  RepeatUntilSuccessOptions options;
-  if (const auto width = parameters.find("data_qubits");
-      width != parameters.end()) {
-    options.dataQubits = sizeValue(*width, source, "$/parameters/data_qubits");
-  }
-  return constructBenchmark(source,
-                            [&options] { return RepeatUntilSuccess(options); });
-}
-
-[[nodiscard]] Teleportation
-parseTeleportationParameters(const Json& parameters,
-                             const std::string_view source) {
-  rejectUnknownKeys(parameters, {}, source, "$/parameters");
-  return Teleportation{};
-}
-
-[[nodiscard]] WState parseWStateParameters(const Json& parameters,
-                                           const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  const WStateOptions options{
-      .qubits =
-          sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                    source, "$/parameters/qubits"),
-  };
-  return constructBenchmark(source, [&options] { return WState(options); });
-}
-
-[[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
+[[nodiscard]] llvm::StringRef topologyName(const GHZTopology topology) {
   return topology == GHZTopology::Linear ? "linear" : "star";
 }
 
-[[nodiscard]] std::string_view basisName(const GHZBasis basis) {
+[[nodiscard]] llvm::StringRef basisName(const GHZBasis basis) {
   return basis == GHZBasis::Z ? "z" : "x";
 }
 
@@ -635,149 +562,144 @@ parseTeleportationParameters(const Json& parameters,
   return method == QPEMethod::Standard ? "standard" : "iterative";
 }
 
-[[nodiscard]] Shor parseShorParameters(const Json& parameters,
-                                       std::string_view source) {
-  rejectUnknownKeys(parameters, {"number", "base"}, source, "$/parameters");
-  ShorOptions options{
-      .number = unsignedInteger(
-          required(parameters, "number", source, "$/parameters"), source,
-          "$/parameters/number"),
-  };
-  if (const auto base = parameters.find("base"); base != parameters.end()) {
-    options.base = unsignedInteger(*base, source, "$/parameters/base");
-  }
-  return constructBenchmark(source, [&] { return Shor(options); });
-}
-
 [[nodiscard]] Json parametersJSON(const Shor& benchmark) {
   const auto& options = benchmark.options();
-  return {{"number", options.number}, {"base", options.base}};
+  return llvm::json::Object{
+      {.K = "number", .V = options.number},
+      {.K = "base", .V = options.base},
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const BV& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"hidden_bitstring", options.hiddenBitstring},
-      {"method", methodName(options.method)},
+  return llvm::json::Object{
+      {.K = "hidden_bitstring", .V = options.hiddenBitstring},
+      {.K = "method", .V = methodName(options.method)},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const FanOut& benchmark) {
-  return {{"controls", benchmark.options().controls}};
+  return llvm::json::Object{
+      {.K = "controls", .V = benchmark.options().controls},
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const GHZ& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"basis", basisName(options.basis)},
-      {"qubits", options.qubits},
-      {"topology", topologyName(options.topology)},
+  return llvm::json::Object{
+      {.K = "basis", .V = basisName(options.basis)},
+      {.K = "qubits", .V = options.qubits},
+      {.K = "topology", .V = topologyName(options.topology)},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const Grover& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"iterations", *options.iterations},
-      {"marked_bitstring", options.markedBitstring},
+  return llvm::json::Object{
+      {.K = "iterations", .V = *options.iterations},
+      {.K = "marked_bitstring", .V = options.markedBitstring},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const GroverWeakMeasurement& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"marked_bitstring", options.markedBitstring},
-      {"measurement_strength", *options.measurementStrength},
+  return llvm::json::Object{
+      {.K = "marked_bitstring", .V = options.markedBitstring},
+      {.K = "measurement_strength", .V = *options.measurementStrength},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const MagicStateDistillation& benchmark) {
-  return {{"levels", benchmark.options().levels}};
+  return llvm::json::Object{{.K = "levels", .V = benchmark.options().levels}};
 }
 
 [[nodiscard]] Json parametersJSON(const ModularMultiplier& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"control", std::string(1, options.control)},
-      {"multiplicand", options.multiplicand},
-      {"modulus", options.modulus},
-      {"multiplier", options.multiplier},
+  return llvm::json::Object{
+      {.K = "control", .V = std::string(1, options.control)},
+      {.K = "multiplicand", .V = options.multiplicand},
+      {.K = "modulus", .V = options.modulus},
+      {.K = "multiplier", .V = options.multiplier},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const Multiplexer& benchmark) {
-  return {{"qubits", benchmark.options().qubits}};
+  return llvm::json::Object{{.K = "qubits", .V = benchmark.options().qubits}};
 }
 
 [[nodiscard]] Json parametersJSON(const QAOA& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"depth", options.depth},
-      {"qubits", options.qubits},
+  return llvm::json::Object{
+      {.K = "depth", .V = options.depth},
+      {.K = "qubits", .V = options.qubits},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const QFT& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"method", methodName(options.method)},
-      {"period_exponent", options.periodExponent},
-      {"qubits", options.qubits},
+  return llvm::json::Object{
+      {.K = "method", .V = methodName(options.method)},
+      {.K = "period_exponent", .V = options.periodExponent},
+      {.K = "qubits", .V = options.qubits},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const QFTAdder& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"addend", options.addend},
-      {"accumulator", options.accumulator},
+  return llvm::json::Object{
+      {.K = "addend", .V = options.addend},
+      {.K = "accumulator", .V = options.accumulator},
       {
-          "method",
-          options.method == QFTAdderMethod::Register ? "register" : "constant",
+          .K = "method",
+          .V = options.method == QFTAdderMethod::Register ? "register"
+                                                          : "constant",
       },
       {
-          "overflow",
-          options.overflow == QFTAdderOverflow::Wrap ? "wrap" : "carry",
+          .K = "overflow",
+          .V = options.overflow == QFTAdderOverflow::Wrap ? "wrap" : "carry",
       },
   };
 }
 
 [[nodiscard]] Json parametersJSON(const QPE& benchmark) {
   const auto& options = benchmark.options();
-  return {
-      {"method", methodName(options.method)},
+  return llvm::json::Object{
+      {.K = "method", .V = methodName(options.method)},
       {
-          "phase",
-          {
-              {"denominator", options.phase.denominator()},
-              {"numerator", options.phase.numerator()},
-          },
+          .K = "phase",
+          .V =
+              llvm::json::Object{
+                  {.K = "denominator", .V = options.phase.denominator()},
+                  {.K = "numerator", .V = options.phase.numerator()},
+              },
       },
-      {"precision", options.precision},
+      {.K = "precision", .V = options.precision},
   };
 }
 
 [[nodiscard]] Json parametersJSON(const RepeatUntilSuccess& benchmark) {
-  return {{"data_qubits", benchmark.options().dataQubits}};
+  return llvm::json::Object{
+      {.K = "data_qubits", .V = benchmark.options().dataQubits},
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const Teleportation& /*unused*/) {
-  return Json::object();
+  return llvm::json::Object{};
 }
 
 [[nodiscard]] Json parametersJSON(const WState& benchmark) {
-  return {{"qubits", benchmark.options().qubits}};
+  return llvm::json::Object{{.K = "qubits", .V = benchmark.options().qubits}};
 }
 
 [[nodiscard]] Json analyticReferenceJSON(
     const Output& output, const std::string_view model,
     const std::optional<std::string_view> successOutcome = std::nullopt) {
-  Json reference = {
-      {"kind", "analytic"},
-      {"model", std::string(model)},
-      {"outcome_order", "big_endian"},
-      {"output", output.name},
-      {"version", 1},
+  llvm::json::Object reference = llvm::json::Object{
+      {.K = "kind", .V = "analytic"},
+      {.K = "model", .V = std::string(model)},
+      {.K = "outcome_order", .V = "big_endian"},
+      {.K = "output", .V = output.name},
+      {.K = "version", .V = 1},
   };
   if (successOutcome) {
     reference["success_outcome"] = std::string(*successOutcome);
@@ -786,22 +708,22 @@ parseTeleportationParameters(const Json& parameters,
 }
 
 [[nodiscard]] Json referenceJSON(const QAOA& benchmark) {
-  return {
-      {"kind", "verification"},
-      {"model", "qaoa_max_cut_cycle"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
+  return llvm::json::Object{
+      {.K = "kind", .V = "verification"},
+      {.K = "model", .V = "qaoa_max_cut_cycle"},
+      {.K = "outcome_order", .V = "big_endian"},
+      {.K = "output", .V = benchmark.output().name},
+      {.K = "version", .V = 1},
   };
 }
 
 [[nodiscard]] Json referenceJSON(const Shor& benchmark) {
-  return {
-      {"kind", "verification"},
-      {"model", "shor_factors"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
+  return llvm::json::Object{
+      {.K = "kind", .V = "verification"},
+      {.K = "model", .V = "shor_factors"},
+      {.K = "outcome_order", .V = "big_endian"},
+      {.K = "output", .V = benchmark.output().name},
+      {.K = "version", .V = 1},
   };
 }
 
@@ -871,15 +793,21 @@ parseTeleportationParameters(const Json& parameters,
                                 const uint64_t definitionVersionValue,
                                 const Json& parameters, const Output& output,
                                 const Json& reference) {
-  return {
-      {"benchmark", std::string(id)},
-      {"definition_version", definitionVersionValue},
+  return llvm::json::Object{
+      {.K = "benchmark", .V = std::string(id)},
+      {.K = "definition_version", .V = definitionVersionValue},
       {
-          "outputs",
-          Json::array({{{"name", output.name}, {"width", output.width}}}),
+          .K = "outputs",
+          .V =
+              llvm::json::Array{
+                  llvm::json::Object{
+                      {.K = "name", .V = output.name},
+                      {.K = "width", .V = output.width},
+                  },
+              },
       },
-      {"parameters", parameters},
-      {"reference", reference},
+      {.K = "parameters", .V = parameters},
+      {.K = "reference", .V = reference},
   };
 }
 
@@ -894,7 +822,7 @@ template <class Benchmark>
 [[nodiscard]] std::string semanticCaseId(const Json& semantic) {
   auto input = std::string(CASE_DOMAIN);
   input.push_back('\0');
-  input += semantic.dump();
+  input += mqt::json::serialize(semantic);
   return "sha256-" +
          llvm::toHex(llvm::SHA256::hash(llvm::arrayRefFromStringRef(input)),
                      true);
@@ -903,14 +831,14 @@ template <class Benchmark>
 template <class Benchmark>
 [[nodiscard]] Json manifestJSON(const Benchmark& benchmark) {
   auto semantic = semanticJSON(benchmark);
-  semantic["case_id"] = semanticCaseId(semantic);
-  semantic["schema_version"] = SCHEMA_VERSION;
+  (*semantic.getAsObject())["case_id"] = semanticCaseId(semantic);
+  (*semantic.getAsObject())["schema_version"] = MANIFEST_VERSION;
   return semantic;
 }
 
 template <class Benchmark>
 [[nodiscard]] Json instanceSpecificationJSON(const Benchmark& benchmark) {
-  return {
+  return llvm::json::Object{
       {"benchmark", std::string(BenchmarkMetadata<Benchmark>::id)},
       {"parameters", parametersJSON(benchmark)},
       {"schema_version", SCHEMA_VERSION},
@@ -918,582 +846,760 @@ template <class Benchmark>
 }
 
 template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark
-parseInstanceSpecification(const std::string_view text,
-                           const std::string_view source,
-                           const ParseParameters& parseParameters) {
-  const auto root = instanceSpecificationEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  return parseParameters(root.at("parameters"), source);
-}
-
-void requireManifest(const Json& root, const std::string_view resolved,
-                     const std::string_view source) {
-  if (root.dump() != resolved) {
-    fail(source, "$",
-         "does not match its resolved benchmark instance and case ID");
+[[nodiscard]] llvm::Expected<Benchmark>
+parseBenchmark(const std::string_view text, const std::string_view source,
+               const bool manifest, const ParseParameters& parseParameters) {
+  auto root = envelope(text, source, manifest);
+  if (!root) {
+    return root.takeError();
   }
-}
-
-template <class Benchmark, class ParseParameters>
-[[nodiscard]] Benchmark parseManifest(const std::string_view text,
-                                      const std::string_view source,
-                                      const ParseParameters& parseParameters) {
-  const auto root = manifestEnvelope(text, source);
-  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
-  auto benchmark = parseParameters(root.at("parameters"), source);
-  requireManifest(root, manifestJSON(benchmark).dump(), source);
+  if (*root->getAsObject()->getString("benchmark") !=
+      llvm::StringRef(BenchmarkMetadata<Benchmark>::id)) {
+    return fail(source, "$/benchmark",
+                "must be '" + std::string(BenchmarkMetadata<Benchmark>::id) +
+                    "'");
+  }
+  auto benchmark =
+      parseParameters(*root->getAsObject()->get("parameters"), source);
+  if (!benchmark) {
+    return benchmark.takeError();
+  }
+  if (manifest && mqt::json::serialize(*root) !=
+                      mqt::json::serialize(manifestJSON(*benchmark))) {
+    return fail(source, "$",
+                "does not match its resolved benchmark instance and case ID");
+  }
   return benchmark;
 }
 
 template <class Benchmark>
-[[nodiscard]] Json baseInstanceSpecificationSchema(Json parameters) {
+[[nodiscard]] Json
+baseInstanceSpecificationSchema(llvm::json::Object parameters) {
   parameters["additionalProperties"] = false;
   parameters["type"] = "object";
   using Metadata = BenchmarkMetadata<Benchmark>;
-  return {
+  return llvm::json::Object{
       {"$schema", "https://json-schema.org/draft/2020-12/schema"},
       {"additionalProperties", false},
       {
           "properties",
-          {
-              {"benchmark", {{"const", std::string(Metadata::id)}}},
-              {"parameters", std::move(parameters)},
-              {"schema_version", {{"const", SCHEMA_VERSION}}},
+          llvm::json::Object{
+              {
+                  .K = "benchmark",
+                  .V =
+                      llvm::json::Object{
+                          {
+                              .K = "const",
+                              .V = std::string(Metadata::id),
+                          },
+                      },
+              },
+              {.K = "parameters", .V = std::move(parameters)},
+              {
+                  .K = "schema_version",
+                  .V = llvm::json::Object{{.K = "const", .V = SCHEMA_VERSION}},
+              },
           },
       },
-      {"required", {"schema_version", "benchmark", "parameters"}},
+      {
+          "required",
+          llvm::json::Array{"schema_version", "benchmark", "parameters"},
+      },
       {"type", "object"},
       {"x-mqt-definition-version", Metadata::definitionVersion},
   };
 }
 
 [[nodiscard]] Json bvInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<BV>({
+  return baseInstanceSpecificationSchema<BV>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "hidden_bitstring",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"maxLength", BVOptions::MAX_BITS},
-                      {"minLength", 1},
-                      {"pattern", "^[01]+$"},
-                      {"type", "string"},
+                      .K = "hidden_bitstring",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "maxLength", .V = BVOptions::MAX_BITS},
+                              {.K = "minLength", .V = 1},
+                              {.K = "pattern", .V = "^[01]+$"},
+                              {.K = "type", .V = "string"},
+                          },
+                  },
+                  {
+                      .K = "method",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "default", .V = "static"},
+                              {
+                                  .K = "enum",
+                                  .V = llvm::json::Array{"static", "dynamic"},
+                              },
+                          },
                   },
               },
-              {
-                  "method",
-                  {{"default", "static"}, {"enum", {"static", "dynamic"}}},
-              },
-          },
       },
-      {"required", {"hidden_bitstring"}},
+      {.K = "required", .V = llvm::json::Array{"hidden_bitstring"}},
   });
 }
 
 [[nodiscard]] Json fanOutInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<FanOut>({
+  return baseInstanceSpecificationSchema<FanOut>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "controls",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"maximum", FanOutOptions::MAX_CONTROLS},
-                      {"minimum", 1},
-                      {"type", "integer"},
+                      .K = "controls",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maximum",
+                                  .V = FanOutOptions::MAX_CONTROLS,
+                              },
+                              {.K = "minimum", .V = 1},
+                              {.K = "type", .V = "integer"},
+                          },
                   },
               },
-          },
       },
-      {"required", {"controls"}},
+      {.K = "required", .V = llvm::json::Array{"controls"}},
   });
 }
 
 [[nodiscard]] Json ghzInstanceSpecificationSchema() {
-  Json parameters{
-      {
-          "properties",
+  auto parameters =
+      llvm::json::Object{
           {
-              {"basis", {{"default", "z"}, {"enum", {"z", "x"}}}},
-              {
-                  "qubits",
-                  {
-                      {"maximum", GHZOptions::MAX_QUBITS},
-                      {"minimum", 1},
-                      {"type", "integer"},
-                  },
-              },
-              {
-                  "topology",
-                  {{"default", "linear"}, {"enum", {"linear", "star"}}},
-              },
-          },
-      },
-      {"required", {"qubits"}},
-  };
-  parameters["allOf"] = Json::array({
-      {
-          {
-              "if",
-              {
-                  {"properties", {{"basis", {{"const", "x"}}}}},
-                  {"required", {"basis"}},
-              },
-          },
-          {
-              "then",
-              {
-                  {
-                      "properties",
+              .K = "properties",
+              .V =
+                  llvm::json::Object{
                       {
-                          {
-                              "qubits",
-                              {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}},
-                          },
+                          .K = "basis",
+                          .V =
+                              llvm::json::Object{
+                                  {.K = "default", .V = "z"},
+                                  {
+                                      .K = "enum",
+                                      .V = llvm::json::Array{"z", "x"},
+                                  },
+                              },
+                      },
+                      {
+                          .K = "qubits",
+                          .V =
+                              llvm::json::Object{
+                                  {.K = "maximum", .V = GHZOptions::MAX_QUBITS},
+                                  {.K = "minimum", .V = 1},
+                                  {.K = "type", .V = "integer"},
+                              },
+                      },
+                      {
+                          .K = "topology",
+                          .V =
+                              llvm::json::Object{
+                                  {.K = "default", .V = "linear"},
+                                  {
+                                      .K = "enum",
+                                      .V = llvm::json::Array{"linear", "star"},
+                                  },
+                              },
                       },
                   },
+          },
+          {.K = "required", .V = llvm::json::Array{"qubits"}},
+  };
+  parameters["allOf"] =
+      llvm::json::Array{
+          llvm::json::Object{
+              {
+                  .K = "if",
+                  .V =
+                      llvm::json::Object{
+                          {
+                              .K = "properties",
+                              .V =
+                                  llvm::json::Object{
+                                      {
+                                          .K = "basis",
+                                          .V =
+                                              llvm::json::Object{
+                                                  {
+                                                      .K = "const",
+                                                      .V = "x",
+                                                  },
+                                              },
+                                      },
+                                  },
+                          },
+                          {.K = "required", .V = llvm::json::Array{"basis"}},
+                      },
+              },
+              {
+                  .K = "then",
+                  .V =
+                      llvm::json::Object{
+                          {
+                              .K = "properties",
+                              .V =
+                                  llvm::json::Object{
+                                      {
+                                          .K = "qubits",
+                                          .V =
+                                              llvm::json::Object{
+                                                  {
+                                                      .K = "maximum",
+                                                      .V =
+                                                          GHZOptions::MAX_X_BASIS_QUBITS,
+                                                  },
+                                              },
+                                      },
+                                  },
+                          },
+                      },
               },
           },
-      },
-  });
+  };
   return baseInstanceSpecificationSchema<GHZ>(std::move(parameters));
 }
 
 [[nodiscard]] Json groverInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<Grover>({
+  return baseInstanceSpecificationSchema<Grover>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "iterations",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"maximum", std::numeric_limits<int32_t>::max()},
-                      {"minimum", 0},
-                      {"type", "integer"},
+                      .K = "iterations",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maximum",
+                                  .V = std::numeric_limits<int32_t>::max(),
+                              },
+                              {.K = "minimum", .V = 0},
+                              {.K = "type", .V = "integer"},
+                          },
+                  },
+                  {
+                      .K = "marked_bitstring",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "maxLength", .V = 62},
+                              {.K = "minLength", .V = 2},
+                              {.K = "pattern", .V = "^[01]+$"},
+                              {.K = "type", .V = "string"},
+                          },
                   },
               },
-              {
-                  "marked_bitstring",
-                  {
-                      {"maxLength", 62},
-                      {"minLength", 2},
-                      {"pattern", "^[01]+$"},
-                      {"type", "string"},
-                  },
-              },
-          },
       },
-      {"required", {"marked_bitstring"}},
+      {.K = "required", .V = llvm::json::Array{"marked_bitstring"}},
   });
 }
 
 [[nodiscard]] Json groverWeakMeasurementInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<GroverWeakMeasurement>({
+  return baseInstanceSpecificationSchema<
+      GroverWeakMeasurement>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "marked_bitstring",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"maxLength", GroverWeakMeasurementOptions::MAX_QUBITS},
-                      {"minLength", 2},
-                      {"pattern", "^[01]+$"},
-                      {"type", "string"},
+                      .K = "marked_bitstring",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maxLength",
+                                  .V = GroverWeakMeasurementOptions::MAX_QUBITS,
+                              },
+                              {.K = "minLength", .V = 2},
+                              {.K = "pattern", .V = "^[01]+$"},
+                              {.K = "type", .V = "string"},
+                          },
+                  },
+                  {
+                      .K = "measurement_strength",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "exclusiveMinimum", .V = 0},
+                              {.K = "maximum", .V = 0.5},
+                              {.K = "type", .V = "number"},
+                          },
                   },
               },
-              {
-                  "measurement_strength",
-                  {
-                      {"exclusiveMinimum", 0},
-                      {"maximum", 0.5},
-                      {"type", "number"},
-                  },
-              },
-          },
       },
-      {"required", {"marked_bitstring"}},
+      {.K = "required", .V = llvm::json::Array{"marked_bitstring"}},
   });
 }
 
 [[nodiscard]] Json magicStateDistillationInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<MagicStateDistillation>({
-      {
-          "properties",
+  return baseInstanceSpecificationSchema<MagicStateDistillation>(
+      llvm::json::Object{
           {
-              {
-                  "levels",
-                  {
-                      {"default", 1},
-                      {"minimum", 1},
-                      {"maximum", std::numeric_limits<int64_t>::max() / 5},
-                      {"type", "integer"},
+              .K = "properties",
+              .V =
+                  llvm::json::Object{
+                      {
+                          .K = "levels",
+                          .V =
+                              llvm::json::Object{
+                                  {.K = "default", .V = 1},
+                                  {.K = "minimum", .V = 1},
+                                  {
+                                      .K = "maximum",
+                                      .V = std::numeric_limits<int64_t>::max() /
+                                           5,
+                                  },
+                                  {.K = "type", .V = "integer"},
+                              },
+                      },
                   },
-              },
           },
-      },
-  });
+      });
 }
 
 [[nodiscard]] Json modularMultiplierInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<ModularMultiplier>({
-      {
-          "properties",
+  return baseInstanceSpecificationSchema<ModularMultiplier>(
+      llvm::json::Object{
           {
-              {"control", {{"default", "1"}, {"enum", {"0", "1", "+"}}}},
-              {
-                  "multiplicand",
-                  {
-                      {"type", "string"},
-                      {"minLength", 2},
-                      {"maxLength", ModularMultiplierOptions::MAX_BITS},
-                      {"pattern", "^[01+]+$"},
-                  },
-              },
-              {
-                  "modulus",
-                  {
+              .K = "properties",
+              .V =
+                  llvm::json::Object{
                       {
-                          "maxLength",
-                          ModularMultiplierOptions::MAX_BITS,
+                          .K = "control",
+                          .V =
+                              llvm::json::Object{
+                                  {.K = "default", .V = "1"},
+                                  {
+                                      .K = "enum",
+                                      .V = llvm::json::Array{"0", "1", "+"},
+                                  },
+                              },
                       },
-                      {"minLength", 2},
-                      {"pattern", "^1[01]+$"},
-                      {"type", "string"},
-                  },
-              },
-              {
-                  "multiplier",
-                  {
                       {
-                          "maxLength",
-                          ModularMultiplierOptions::MAX_BITS,
+                          .K = "multiplicand",
+                          .V =
+                              llvm::json::Object{
+                                  {.K = "type", .V = "string"},
+                                  {.K = "minLength", .V = 2},
+                                  {
+                                      .K = "maxLength",
+                                      .V = ModularMultiplierOptions::MAX_BITS,
+                                  },
+                                  {.K = "pattern", .V = "^[01+]+$"},
+                              },
                       },
-                      {"minLength", 2},
-                      {"pattern", "^[01]+$"},
-                      {"type", "string"},
+                      {
+                          .K = "modulus",
+                          .V =
+                              llvm::json::Object{
+                                  {
+                                      .K = "maxLength",
+                                      .V = ModularMultiplierOptions::MAX_BITS,
+                                  },
+                                  {.K = "minLength", .V = 2},
+                                  {.K = "pattern", .V = "^1[01]+$"},
+                                  {.K = "type", .V = "string"},
+                              },
+                      },
+                      {
+                          .K = "multiplier",
+                          .V =
+                              llvm::json::Object{
+                                  {
+                                      .K = "maxLength",
+                                      .V = ModularMultiplierOptions::MAX_BITS,
+                                  },
+                                  {.K = "minLength", .V = 2},
+                                  {.K = "pattern", .V = "^[01]+$"},
+                                  {.K = "type", .V = "string"},
+                              },
+                      },
                   },
-              },
           },
-      },
-      {"required", {"multiplier", "modulus", "multiplicand"}},
-  });
+          {
+              .K = "required",
+              .V = llvm::json::Array{"multiplier", "modulus", "multiplicand"},
+          },
+      });
 }
 
 [[nodiscard]] Json multiplexerInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<Multiplexer>({
+  return baseInstanceSpecificationSchema<Multiplexer>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "qubits",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"maximum", MultiplexerOptions::MAX_QUBITS},
-                      {"minimum", 2},
-                      {"type", "integer"},
+                      .K = "qubits",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maximum",
+                                  .V = MultiplexerOptions::MAX_QUBITS,
+                              },
+                              {.K = "minimum", .V = 2},
+                              {.K = "type", .V = "integer"},
+                          },
                   },
               },
-          },
       },
-      {"required", {"qubits"}},
+      {.K = "required", .V = llvm::json::Array{"qubits"}},
   });
 }
 
 [[nodiscard]] Json qaoaInstanceSpecificationSchema() {
   const QAOAOptions defaults{.qubits = 3};
-  return baseInstanceSpecificationSchema<QAOA>({
+  return baseInstanceSpecificationSchema<QAOA>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "depth",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"default", defaults.depth},
-                      {"maximum", QAOAOptions::MAX_DEPTH},
-                      {"minimum", 1},
-                      {"type", "integer"},
+                      .K = "depth",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "default", .V = defaults.depth},
+                              {.K = "maximum", .V = QAOAOptions::MAX_DEPTH},
+                              {.K = "minimum", .V = 1},
+                              {.K = "type", .V = "integer"},
+                          },
+                  },
+                  {
+                      .K = "qubits",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maximum",
+                                  .V = std::numeric_limits<int64_t>::max(),
+                              },
+                              {.K = "minimum", .V = 3},
+                              {.K = "type", .V = "integer"},
+                          },
                   },
               },
-              {
-                  "qubits",
-                  {
-                      {"maximum", std::numeric_limits<int64_t>::max()},
-                      {"minimum", 3},
-                      {"type", "integer"},
-                  },
-              },
-          },
       },
-      {"required", {"qubits"}},
+      {.K = "required", .V = llvm::json::Array{"qubits"}},
   });
 }
 
 [[nodiscard]] Json qftInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QFT>({
+  return baseInstanceSpecificationSchema<QFT>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "method",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"default", "standard"},
-                      {"enum", {"standard", "semiclassical"}},
+                      .K = "method",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "default", .V = "standard"},
+                              {
+                                  .K = "enum",
+                                  .V =
+                                      llvm::json::Array{
+                                          "standard",
+                                          "semiclassical",
+                                      },
+                              },
+                          },
+                  },
+                  {
+                      .K = "period_exponent",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maximum",
+                                  .V = QFTOptions::MAX_PERIOD_EXPONENT,
+                              },
+                              {.K = "minimum", .V = 0},
+                              {.K = "type", .V = "integer"},
+                          },
+                  },
+                  {
+                      .K = "qubits",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "maximum", .V = QFTOptions::MAX_QUBITS},
+                              {.K = "minimum", .V = 1},
+                              {.K = "type", .V = "integer"},
+                          },
                   },
               },
-              {
-                  "period_exponent",
-                  {
-                      {"maximum", QFTOptions::MAX_PERIOD_EXPONENT},
-                      {"minimum", 0},
-                      {"type", "integer"},
-                  },
-              },
-              {
-                  "qubits",
-                  {
-                      {"maximum", QFTOptions::MAX_QUBITS},
-                      {"minimum", 1},
-                      {"type", "integer"},
-                  },
-              },
-          },
       },
-      {"required", {"qubits", "period_exponent"}},
+      {.K = "required", .V = llvm::json::Array{"qubits", "period_exponent"}},
   });
 }
 
 [[nodiscard]] Json qftAdderInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QFTAdder>({
+  llvm::json::Object properties{
       {
-          "properties",
-          {
-              {
-                  "addend",
-                  {
-                      {"type", "string"},
-                      {"minLength", 1},
-                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
-                      {"pattern", "^[01+]+$"},
-                  },
+          .K = "addend",
+          .V =
+              llvm::json::Object{
+                  {.K = "type", .V = "string"},
+                  {.K = "minLength", .V = 1},
+                  {.K = "maxLength", .V = QFTAdderOptions::MAX_QUBITS},
+                  {.K = "pattern", .V = "^[01+]+$"},
               },
-              {
-                  "accumulator",
-                  {
-                      {"type", "string"},
-                      {"minLength", 1},
-                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
-                      {"pattern", "^[01]+$"},
-                  },
-              },
-              {
-                  "method",
-                  {
-                      {"type", "string"},
-                      {"enum", {"register", "constant"}},
-                      {"default", "register"},
-                  },
-              },
-              {
-                  "overflow",
-                  {
-                      {"type", "string"},
-                      {"enum", {"wrap", "carry"}},
-                      {"default", "wrap"},
-                  },
-              },
-          },
       },
       {
-          "allOf",
+          .K = "accumulator",
+          .V =
+              llvm::json::Object{
+                  {.K = "type", .V = "string"},
+                  {.K = "minLength", .V = 1},
+                  {.K = "maxLength", .V = QFTAdderOptions::MAX_QUBITS},
+                  {.K = "pattern", .V = "^[01]+$"},
+              },
+      },
+      {
+          .K = "method",
+          .V =
+              llvm::json::Object{
+                  {.K = "type", .V = "string"},
+                  {.K = "enum", .V = llvm::json::Array{"register", "constant"}},
+                  {.K = "default", .V = "register"},
+              },
+      },
+      {
+          .K = "overflow",
+          .V =
+              llvm::json::Object{
+                  {.K = "type", .V = "string"},
+                  {.K = "enum", .V = llvm::json::Array{"wrap", "carry"}},
+                  {.K = "default", .V = "wrap"},
+              },
+      },
+  };
+  llvm::json::Object constantCondition{
+      {
+          .K = "properties",
+          .V =
+              llvm::json::Object{
+                  {
+                      .K = "method",
+                      .V = llvm::json::Object{{.K = "const", .V = "constant"}},
+                  },
+              },
+      },
+      {.K = "required", .V = llvm::json::Array{"method"}},
+  };
+  llvm::json::Object constantProperties{
+      {
+          .K = "addend",
+          .V = llvm::json::Object{{.K = "pattern", .V = "^[01]+$"}},
+      },
+  };
+  llvm::json::Object carryCondition{
+      {
+          .K = "properties",
+          .V =
+              llvm::json::Object{
+                  {
+                      .K = "overflow",
+                      .V = llvm::json::Object{{.K = "const", .V = "carry"}},
+                  },
+              },
+      },
+      {.K = "required", .V = llvm::json::Array{"overflow"}},
+  };
+  llvm::json::Object carryProperties{
+      {
+          .K = "addend",
+          .V =
+              llvm::json::Object{
+                  {.K = "maxLength", .V = QFTAdderOptions::MAX_QUBITS - 1U},
+              },
+      },
+      {
+          .K = "accumulator",
+          .V =
+              llvm::json::Object{
+                  {.K = "maxLength", .V = QFTAdderOptions::MAX_QUBITS - 1U},
+              },
+      },
+  };
+  llvm::json::Array constraints{
+      llvm::json::Object{
+          {.K = "if", .V = std::move(constantCondition)},
           {
-              {
-                  {
-                      "if",
-                      {
-                          {"properties", {{"method", {{"const", "constant"}}}}},
-                          {"required", {"method"}},
-                      },
+              .K = "then",
+              .V =
+                  llvm::json::Object{
+                      {.K = "properties", .V = std::move(constantProperties)},
                   },
-                  {
-                      "then",
-                      {{"properties", {{"addend", {{"pattern", "^[01]+$"}}}}}},
-                  },
-              },
-              {
-                  {
-                      "if",
-                      {
-                          {"properties", {{"overflow", {{"const", "carry"}}}}},
-                          {"required", {"overflow"}},
-                      },
-                  },
-                  {
-                      "then",
-                      {
-                          {
-                              "properties",
-                              {
-                                  {
-                                      "addend",
-                                      {
-                                          {
-                                              "maxLength",
-                                              QFTAdderOptions::MAX_QUBITS - 1U,
-                                          },
-                                      },
-                                  },
-                                  {
-                                      "accumulator",
-                                      {
-                                          {
-                                              "maxLength",
-                                              QFTAdderOptions::MAX_QUBITS - 1U,
-                                          },
-                                      },
-                                  },
-                              },
-                          },
-                      },
-                  },
-              },
           },
       },
-      {"required", {"addend", "accumulator"}},
+      llvm::json::Object{
+          {.K = "if", .V = std::move(carryCondition)},
+          {
+              .K = "then",
+              .V =
+                  llvm::json::Object{
+                      {.K = "properties", .V = std::move(carryProperties)},
+                  },
+          },
+      },
+  };
+  return baseInstanceSpecificationSchema<QFTAdder>(llvm::json::Object{
+      {.K = "properties", .V = std::move(properties)},
+      {.K = "allOf", .V = std::move(constraints)},
+      {.K = "required", .V = llvm::json::Array{"addend", "accumulator"}},
   });
 }
 
 [[nodiscard]] Json qpeInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QPE>({
+  llvm::json::Object phaseProperties{
       {
-          "properties",
-          {
-              {
-                  "method",
-                  {
-                      {"default", "standard"},
-                      {"enum", {"standard", "iterative"}},
-                  },
+          .K = "denominator",
+          .V =
+              llvm::json::Object{
+                  {.K = "maximum", .V = std::numeric_limits<uint64_t>::max()},
+                  {.K = "minimum", .V = 1},
+                  {.K = "type", .V = "integer"},
               },
-              {
-                  "phase",
-                  {
-                      {"additionalProperties", false},
-                      {
-                          "properties",
-                          {
-                              {
-                                  "denominator",
-                                  {
-                                      {
-                                          "maximum",
-                                          std::numeric_limits<uint64_t>::max(),
-                                      },
-                                      {"minimum", 1},
-                                      {"type", "integer"},
-                                  },
-                              },
-                              {
-                                  "numerator",
-                                  {
-                                      {
-                                          "maximum",
-                                          std::numeric_limits<uint64_t>::max(),
-                                      },
-                                      {"minimum", 0},
-                                      {"type", "integer"},
-                                  },
-                              },
-                          },
-                      },
-                      {"required", {"numerator", "denominator"}},
-                      {"type", "object"},
-                  },
-              },
-              {
-                  "precision",
-                  {
-                      {"maximum", QPEOptions::MAX_PRECISION},
-                      {"minimum", 1},
-                      {"type", "integer"},
-                  },
-              },
-          },
       },
-      {"required", {"precision", "phase"}},
+      {
+          .K = "numerator",
+          .V =
+              llvm::json::Object{
+                  {.K = "maximum", .V = std::numeric_limits<uint64_t>::max()},
+                  {.K = "minimum", .V = 0},
+                  {.K = "type", .V = "integer"},
+              },
+      },
+  };
+  llvm::json::Object phase{
+      {.K = "additionalProperties", .V = false},
+      {.K = "properties", .V = std::move(phaseProperties)},
+      {.K = "required", .V = llvm::json::Array{"numerator", "denominator"}},
+      {.K = "type", .V = "object"},
+  };
+  llvm::json::Object properties{
+      {
+          .K = "method",
+          .V =
+              llvm::json::Object{
+                  {.K = "default", .V = "standard"},
+                  {
+                      .K = "enum",
+                      .V = llvm::json::Array{"standard", "iterative"},
+                  },
+              },
+      },
+      {.K = "phase", .V = std::move(phase)},
+      {
+          .K = "precision",
+          .V =
+              llvm::json::Object{
+                  {.K = "maximum", .V = QPEOptions::MAX_PRECISION},
+                  {.K = "minimum", .V = 1},
+                  {.K = "type", .V = "integer"},
+              },
+      },
+  };
+  return baseInstanceSpecificationSchema<QPE>(llvm::json::Object{
+      {.K = "properties", .V = std::move(properties)},
+      {.K = "required", .V = llvm::json::Array{"precision", "phase"}},
   });
 }
 
 [[nodiscard]] Json repeatUntilSuccessInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<RepeatUntilSuccess>({
+  return baseInstanceSpecificationSchema<RepeatUntilSuccess>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "data_qubits",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"default", 1},
-                      {"minimum", 1},
-                      {"maximum", RepeatUntilSuccessOptions::MAX_DATA_QUBITS},
-                      {"type", "integer"},
+                      .K = "data_qubits",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "default", .V = 1},
+                              {.K = "minimum", .V = 1},
+                              {
+                                  .K = "maximum",
+                                  .V = RepeatUntilSuccessOptions::
+                                      MAX_DATA_QUBITS,
+                              },
+                              {.K = "type", .V = "integer"},
+                          },
                   },
               },
-          },
       },
   });
 }
 
 [[nodiscard]] Json shorInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<Shor>({
+  return baseInstanceSpecificationSchema<Shor>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "number",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"type", "integer"},
-                      {"minimum", 3},
-                      {"maximum", ShorOptions::MAX_NUMBER},
-                      {"not", {{"multipleOf", 2}}},
+                      .K = "number",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "type", .V = "integer"},
+                              {.K = "minimum", .V = 3},
+                              {.K = "maximum", .V = ShorOptions::MAX_NUMBER},
+                              {
+                                  .K = "not",
+                                  .V =
+                                      llvm::json::Object{
+                                          {
+                                              .K = "multipleOf",
+                                              .V = 2,
+                                          },
+                                      },
+                              },
+                          },
+                  },
+                  {
+                      .K = "base",
+                      .V =
+                          llvm::json::Object{
+                              {.K = "type", .V = "integer"},
+                              {.K = "minimum", .V = 2},
+                              {
+                                  .K = "maximum",
+                                  .V = ShorOptions::MAX_NUMBER - 1,
+                              },
+                              {.K = "default", .V = 2},
+                          },
                   },
               },
-              {
-                  "base",
-                  {
-                      {"type", "integer"},
-                      {"minimum", 2},
-                      {"maximum", ShorOptions::MAX_NUMBER - 1},
-                      {"default", 2},
-                  },
-              },
-          },
       },
-      {"required", {"number"}},
+      {.K = "required", .V = llvm::json::Array{"number"}},
   });
 }
 
 [[nodiscard]] Json teleportationInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<Teleportation>({
-      {"properties", Json::object()},
-  });
+  return baseInstanceSpecificationSchema<Teleportation>(
+      llvm::json::Object{{.K = "properties", .V = llvm::json::Object{}}});
 }
 
 [[nodiscard]] Json wStateInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<WState>({
+  return baseInstanceSpecificationSchema<WState>(llvm::json::Object{
       {
-          "properties",
-          {
-              {
-                  "qubits",
+          .K = "properties",
+          .V =
+              llvm::json::Object{
                   {
-                      {"maximum", std::numeric_limits<int64_t>::max()},
-                      {"minimum", 1},
-                      {"type", "integer"},
+                      .K = "qubits",
+                      .V =
+                          llvm::json::Object{
+                              {
+                                  .K = "maximum",
+                                  .V = std::numeric_limits<int64_t>::max(),
+                              },
+                              {.K = "minimum", .V = 1},
+                              {.K = "type", .V = "integer"},
+                          },
                   },
               },
-          },
       },
-      {"required", {"qubits"}},
+      {.K = "required", .V = llvm::json::Array{"qubits"}},
   });
 }
 
@@ -1503,15 +1609,18 @@ template <class Benchmark>
   return {
       .instance = std::move(benchmark),
       .benchmarkId = std::string(BenchmarkMetadata<Benchmark>::id),
-      .caseId = manifest.at("case_id").template get<std::string>(),
-      .manifestJSON = manifest.dump(),
+      .caseId = manifest.getAsObject()->getString("case_id")->str(),
+      .manifestJSON = mqt::json::serialize(manifest),
   };
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  ParsedBenchmark parse##TYPE##Instance(const Json& parameters,                \
-                                        const std::string_view source) {       \
-    return resolveInstance(parse##TYPE##Parameters(parameters, source));       \
+  llvm::Expected<ParsedBenchmark> parse##TYPE##Instance(                       \
+      const Json& parameters, const std::string_view source) {                 \
+    auto parsed = parse##TYPE##Parameters(parameters, source);                 \
+    if (!parsed)                                                               \
+      return parsed.takeError();                                               \
+    return resolveInstance(std::move(*parsed));                                \
   }
 #include "bench/BenchmarkFamilies.inc"
 
@@ -1527,132 +1636,170 @@ template <class Benchmark>
 
 } // namespace
 
-ParsedBenchmark parseInstanceSpecificationJSON(const std::string_view json,
-                                               const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  const auto& id = root.at("benchmark").get_ref<const std::string&>();
-  return findBenchmark(id)->parse(root.at("parameters"), source);
+llvm::Expected<ParsedBenchmark>
+parseInstanceSpecificationJSON(const std::string_view json,
+                               const std::string_view source) {
+  auto root = envelope(json, source, false);
+  if (!root) {
+    return root.takeError();
+  }
+  const auto id = *root->getAsObject()->getString("benchmark");
+  return findBenchmark(id)->parse(*root->getAsObject()->get("parameters"),
+                                  source);
 }
 
-std::string
+llvm::Expected<std::string>
 benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,
                                          const std::string_view source) {
-  return instanceSpecificationEnvelope(json, source)
-      .at("benchmark")
-      .get<std::string>();
+  auto root = envelope(json, source, false);
+  if (!root) {
+    return root.takeError();
+  }
+  return root->getAsObject()->getString("benchmark")->str();
 }
 
-std::string benchmarkIdFromManifestJSON(const std::string_view json,
-                                        const std::string_view source) {
-  return manifestEnvelope(json, source).at("benchmark").get<std::string>();
+llvm::Expected<std::string>
+benchmarkIdFromManifestJSON(const std::string_view json,
+                            const std::string_view source) {
+  auto root = envelope(json, source, true);
+  if (!root) {
+    return root.takeError();
+  }
+  return root->getAsObject()->getString("benchmark")->str();
 }
 
 std::string listBenchmarksJSON() {
-  auto benchmarks = Json::array();
+  llvm::json::Array benchmarks;
   for (const auto& entry : REGISTRY) {
-    benchmarks.emplace_back(Json{
-        {"definition_version", entry.definitionVersion},
-        {"id", std::string(entry.id)},
+    benchmarks.emplace_back(llvm::json::Object{
+        {.K = "definition_version", .V = entry.definitionVersion},
+        {.K = "id", .V = std::string(entry.id)},
     });
   }
-  return Json{
-      {"benchmarks", std::move(benchmarks)},
-      {"schema_version", SCHEMA_VERSION},
-  }
-      .dump();
+  return mqt::json::serialize(llvm::json::Object{
+      {.K = "benchmarks", .V = std::move(benchmarks)},
+      {.K = "schema_version", .V = SCHEMA_VERSION},
+  });
 }
 
-std::string describeBenchmarkJSON(const std::string_view benchmark) {
+llvm::Expected<std::string>
+describeBenchmarkJSON(const std::string_view benchmark) {
   if (const auto* entry = findBenchmark(benchmark)) {
-    return entry->instanceSpecificationSchema().dump();
+    return mqt::json::serialize(entry->instanceSpecificationSchema());
   }
-  throw std::invalid_argument("unsupported benchmark '" +
-                              std::string(benchmark) + "'");
+  return llvm::createStringError("unsupported benchmark '" +
+                                 llvm::StringRef(benchmark) + "'");
 }
 
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  TYPE STEM##FromInstanceSpecificationJSON(const std::string_view json,        \
-                                           const std::string_view source) {    \
-    return parseInstanceSpecification<TYPE>(json, source,                      \
-                                            parse##TYPE##Parameters);          \
+  llvm::Expected<TYPE> STEM##FromInstanceSpecificationJSON(                    \
+      std::string_view json, std::string_view source) {                        \
+    return parseBenchmark<TYPE>(json, source, false, parse##TYPE##Parameters); \
   }                                                                            \
   std::string toInstanceSpecificationJSON(const TYPE& benchmark) {             \
-    return instanceSpecificationJSON(benchmark).dump();                        \
+    return mqt::json::serialize(instanceSpecificationJSON(benchmark));         \
   }                                                                            \
-  TYPE STEM##FromManifestJSON(const std::string_view json,                     \
-                              const std::string_view source) {                 \
-    return parseManifest<TYPE>(json, source, parse##TYPE##Parameters);         \
+  llvm::Expected<TYPE> STEM##FromManifestJSON(std::string_view json,           \
+                                              std::string_view source) {       \
+    return parseBenchmark<TYPE>(json, source, true, parse##TYPE##Parameters);  \
   }                                                                            \
   std::string toManifestJSON(const TYPE& benchmark) {                          \
-    return manifestJSON(benchmark).dump();                                     \
+    return mqt::json::serialize(manifestJSON(benchmark));                      \
   }                                                                            \
   std::string caseId(const TYPE& benchmark) {                                  \
     return semanticCaseId(semanticJSON(benchmark));                            \
   }
 #include "bench/BenchmarkFamilies.inc"
 
-Counts countsFromJSON(const std::string_view json,
-                      const std::string_view source) {
-  const auto root = parseJSON(json, source);
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema_version", "counts"}, source, "$");
-  requireSchemaVersion(root, source);
-  const auto& values = required(root, "counts", source, "$");
-  requireObject(values, source, "$/counts");
-  if (values.empty()) {
-    fail(source, "$/counts", "must not be empty");
+llvm::Expected<Counts> countsFromJSON(const std::string_view text,
+                                      const std::string_view source) {
+  auto root = mqt::json::parse(text, source);
+  if (!root) {
+    return root.takeError();
   }
-
+  llvm::json::Path::Root diagnostic(source);
+  llvm::json::ObjectMapper object(*root, diagnostic);
+  uint64_t version = 0;
+  if (!object || !keys(*root, {"schema_version", "counts"}, diagnostic) ||
+      !object.map("schema_version", version)) {
+    return diagnostic.getError();
+  }
+  if (version != SCHEMA_VERSION) {
+    return fail(source, "$/schema_version", "must be 1");
+  }
+  const auto* counts = root->getAsObject()->getObject("counts");
+  if ((counts == nullptr) || counts->empty()) {
+    return fail(source, "$/counts", "must be a non-empty object");
+  }
   Counts result;
   size_t shots = 0;
-  for (const auto& [outcome, countJSON] : values.items()) {
-    if (outcome.empty() || !std::ranges::all_of(outcome, [](const char bit) {
+  for (const auto& [key, value] : *counts) {
+    const llvm::StringRef outcome = key;
+    if (outcome.empty() || !std::ranges::all_of(outcome, [](char bit) {
           return bit == '0' || bit == '1';
         })) {
-      fail(source, "$/counts", "outcomes must be non-empty bitstrings");
+      return fail(source, "$/counts", "outcomes must be non-empty bitstrings");
     }
-    const auto pointer = "$/counts/" + outcome;
-    const auto count = sizeValue(countJSON, source, pointer);
-    if (count == 0) {
-      fail(source, pointer, "must be positive");
+    const auto count = value.getAsUINT64();
+    if (!count || *count == 0) {
+      return fail(source, "$/counts/" + outcome.str(),
+                  "must be a positive integer");
     }
-    if (count > std::numeric_limits<size_t>::max() - shots) {
-      fail(source, "$/counts", "total shot count exceeds size_t");
+    if (*count > std::numeric_limits<size_t>::max() - shots) {
+      return fail(source, "$/counts", "total shot count exceeds size_t");
     }
-    shots += count;
-    result.emplace(outcome, count);
+    shots += *count;
+    result.emplace(outcome.str(), static_cast<size_t>(*count));
   }
   return result;
 }
 
-std::string evaluateJSON(const std::string_view manifest,
-                         const std::string_view counts,
-                         const std::string_view manifestSource,
-                         const std::string_view countsSource) {
-  const auto root = manifestEnvelope(manifest, manifestSource);
-  const auto parsedCounts = countsFromJSON(counts, countsSource);
-  const auto& id = root.at("benchmark").get_ref<const std::string&>();
-  const auto parsed =
-      findBenchmark(id)->parse(root.at("parameters"), manifestSource);
-  requireManifest(root, parsed.manifestJSON, manifestSource);
+llvm::Expected<std::string> evaluateJSON(const std::string_view manifest,
+                                         const std::string_view counts,
+                                         const std::string_view manifestSource,
+                                         const std::string_view countsSource) {
+  auto root = envelope(manifest, manifestSource, true);
+  if (!root) {
+    return root.takeError();
+  }
+  auto parsedCounts = countsFromJSON(counts, countsSource);
+  if (!parsedCounts) {
+    return parsedCounts.takeError();
+  }
+  const auto id = *root->getAsObject()->getString("benchmark");
+  auto parsed = findBenchmark(id)->parse(
+      *root->getAsObject()->get("parameters"), manifestSource);
+  if (!parsed) {
+    return parsed.takeError();
+  }
+  if (mqt::json::serialize(*root) != parsed->manifestJSON) {
+    return fail(manifestSource, "$",
+                "does not match its resolved benchmark instance and case ID");
+  }
   const auto shots = std::accumulate(
-      parsedCounts.begin(), parsedCounts.end(), size_t{0},
-      [](const size_t sum, const auto& item) { return sum + item.second; });
-  return std::visit(
-      [&](const auto& benchmark) {
-        return evaluationToJSON(parsed.caseId, shots,
-                                benchmark.evaluate(parsedCounts));
-      },
-      parsed.instance);
+      parsedCounts->begin(), parsedCounts->end(), size_t{0},
+      [](size_t sum, const auto& item) { return sum + item.second; });
+  try {
+    return std::visit(
+        [&](const auto& benchmark) {
+          return evaluationToJSON(parsed->caseId, shots,
+                                  benchmark.evaluate(*parsedCounts));
+        },
+        parsed->instance);
+  } catch (const std::invalid_argument& error) {
+    return fail(countsSource, "$/counts", error.what());
+  }
 }
 
-std::string evaluationToJSON(const std::string_view caseIdValue,
-                             const size_t shots, const Evaluation& evaluation) {
+llvm::Expected<std::string> evaluationToJSON(const std::string_view caseIdValue,
+                                             const size_t shots,
+                                             const Evaluation& evaluation) {
   if (!validCaseId(caseIdValue)) {
-    throw std::invalid_argument("case ID must be a full lowercase SHA-256 ID");
+    return llvm::createStringError(
+        "case ID must be a full lowercase SHA-256 ID");
   }
   if (shots == 0) {
-    throw std::invalid_argument("evaluation requires at least one shot");
+    return llvm::createStringError("evaluation requires at least one shot");
   }
   const auto validMetric = [](const double value) {
     return std::isfinite(value) && value >= 0. && value <= 1.;
@@ -1661,7 +1808,7 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       !validMetric(evaluation.squaredHellingerFidelity) ||
       (evaluation.successProbability &&
        !validMetric(*evaluation.successProbability))) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
         "evaluation metrics must be finite and in [0, 1]");
   }
 
@@ -1669,86 +1816,102 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
   if (evaluation.successProbability) {
     success = *evaluation.successProbability;
   }
-  return Json{
-      {"case_id", std::string(caseIdValue)},
+  return mqt::json::serialize(llvm::json::Object{
+      {.K = "case_id", .V = std::string(caseIdValue)},
       {
-          "metrics",
-          {
-              {
-                  "squared_hellinger_fidelity",
-                  evaluation.squaredHellingerFidelity,
+          .K = "metrics",
+          .V =
+              llvm::json::Object{
+                  {
+                      .K = "squared_hellinger_fidelity",
+                      .V = evaluation.squaredHellingerFidelity,
+                  },
+                  {.K = "success_probability", .V = std::move(success)},
+                  {
+                      .K = "total_variation_distance",
+                      .V = evaluation.totalVariationDistance,
+                  },
               },
-              {"success_probability", std::move(success)},
-              {"total_variation_distance", evaluation.totalVariationDistance},
-          },
       },
-      {"schema_version", SCHEMA_VERSION},
-      {"shots", shots},
-  }
-      .dump();
+      {.K = "schema_version", .V = SCHEMA_VERSION},
+      {.K = "shots", .V = shots},
+  });
 }
 
-std::string evaluationToJSON(const std::string_view caseIdValue,
-                             const size_t shots,
-                             const QAOAEvaluation& evaluation) {
+llvm::Expected<std::string> evaluationToJSON(const std::string_view caseIdValue,
+                                             const size_t shots,
+                                             const QAOAEvaluation& evaluation) {
   if (!validCaseId(caseIdValue) || shots == 0) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
         "evaluation requires a SHA-256 case ID and at least one shot");
   }
   if (!std::isfinite(evaluation.meanCut) || evaluation.meanCut < 0. ||
       !std::isfinite(evaluation.approximationRatio) ||
       evaluation.approximationRatio < 0. ||
       evaluation.approximationRatio > 1.) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
         "QAOA evaluation requires a finite non-negative "
         "mean cut and an approximation ratio in [0, 1]");
   }
-  return Json{
-      {"case_id", std::string(caseIdValue)},
+  return mqt::json::serialize(llvm::json::Object{
+      {.K = "case_id", .V = std::string(caseIdValue)},
       {
-          "metrics",
-          {
-              {"approximation_ratio", evaluation.approximationRatio},
-              {"mean_cut", evaluation.meanCut},
-          },
+          .K = "metrics",
+          .V =
+              llvm::json::Object{
+                  {
+                      .K = "approximation_ratio",
+                      .V = evaluation.approximationRatio,
+                  },
+                  {.K = "mean_cut", .V = evaluation.meanCut},
+              },
       },
-      {"schema_version", SCHEMA_VERSION},
-      {"shots", shots},
-  }
-      .dump();
+      {.K = "schema_version", .V = SCHEMA_VERSION},
+      {.K = "shots", .V = shots},
+  });
 }
 
-std::string evaluationToJSON(std::string_view caseIdValue, size_t shots,
-                             const ShorEvaluation& evaluation) {
+llvm::Expected<std::string> evaluationToJSON(std::string_view caseIdValue,
+                                             size_t shots,
+                                             const ShorEvaluation& evaluation) {
   if (!validCaseId(caseIdValue) || shots == 0) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
         "evaluation requires a SHA-256 case ID and at least one shot");
   }
   if (!std::isfinite(evaluation.successProbability) ||
       evaluation.successProbability < 0. ||
       evaluation.successProbability > 1. ||
       evaluation.factors.has_value() != (evaluation.successProbability > 0.)) {
-    throw std::invalid_argument("factor verification requires a success "
-                                "fraction in [0, 1] and factors on success");
+    return llvm::createStringError("factor verification requires a success "
+                                   "fraction in [0, 1] and factors on success");
   }
   Json factors = nullptr;
   if (evaluation.factors) {
     const auto [first, second] = *evaluation.factors;
     if (first < 2 || first > second ||
         second > ShorOptions::MAX_NUMBER / first) {
-      throw std::invalid_argument("factors must form a sorted nontrivial pair "
-                                  "within the supported range");
+      return llvm::createStringError(
+          "factors must form a sorted nontrivial pair "
+          "within the supported range");
     }
-    factors = Json::array({first, second});
+    factors = llvm::json::Array{first, second};
   }
-  return Json{
-      {"case_id", std::string(caseIdValue)},
-      {"factors", factors},
-      {"metrics", {{"success_probability", evaluation.successProbability}}},
-      {"schema_version", SCHEMA_VERSION},
-      {"shots", shots},
-  }
-      .dump();
+  return mqt::json::serialize(llvm::json::Object{
+      {.K = "case_id", .V = std::string(caseIdValue)},
+      {.K = "factors", .V = factors},
+      {
+          .K = "metrics",
+          .V =
+              llvm::json::Object{
+                  {
+                      .K = "success_probability",
+                      .V = evaluation.successProbability,
+                  },
+              },
+      },
+      {.K = "schema_version", .V = SCHEMA_VERSION},
+      {.K = "shots", .V = shots},
+  });
 }
 
 } // namespace mqt::bench

@@ -303,7 +303,12 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (describeCommand) {
-      llvm::outs() << mqt::bench::describeBenchmarkJSON(benchmarkId) << '\n';
+      auto result = mqt::bench::describeBenchmarkJSON(benchmarkId);
+      if (!result) {
+        llvm::errs() << llvm::toString(result.takeError()) << '\n';
+        return 1;
+      }
+      llvm::outs() << *result << '\n';
       return 0;
     }
     if (generateCommand) {
@@ -321,9 +326,13 @@ int main(int argc, char** argv) {
       const auto counts = readText(countsInputPath);
       const auto countsSource =
           countsInputPath == "-" ? "<stdin>" : countsInputPath.getValue();
-      llvm::outs() << mqt::bench::evaluateJSON(manifest, counts,
-                                               manifestInputPath, countsSource)
-                   << '\n';
+      auto result = mqt::bench::evaluateJSON(manifest, counts,
+                                             manifestInputPath, countsSource);
+      if (!result) {
+        llvm::errs() << llvm::toString(result.takeError()) << '\n';
+        return 1;
+      }
+      llvm::outs() << *result << '\n';
       return 0;
     }
     llvm::errs() << "a command is required; use --help for usage\n";

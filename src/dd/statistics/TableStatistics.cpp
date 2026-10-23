@@ -11,8 +11,9 @@
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "StatisticsJson.hpp"
+#include "support/JSON.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <string>
@@ -56,14 +57,16 @@ double TableStatistics::getMemoryMiB() const noexcept {
   return static_cast<double>(numBuckets) * getEntrySizeMiB();
 }
 
-std::string TableStatistics::toString() const { return toJson(*this).dump(2U); }
+std::string TableStatistics::toString() const {
+  return mqt::json::serialize(toJson(*this), 2U);
+}
 
-nlohmann::basic_json<> toJson(const TableStatistics& s) {
+llvm::json::Value toJson(const TableStatistics& s) {
   if (s.lookups == 0) {
     return "unused";
   }
 
-  nlohmann::basic_json<> j;
+  llvm::json::Object j;
   j["num_buckets"] = s.numBuckets;
   j["memory_MiB"] = s.getMemoryMiB();
   j["num_entries"] = s.numEntries;

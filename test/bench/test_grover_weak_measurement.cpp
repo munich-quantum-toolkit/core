@@ -9,10 +9,14 @@
  */
 
 #include "bench/Evaluation.hpp"
-#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/JSON.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
+
+#include "JSONTestUtils.hpp"
 
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Error.h"
 
 #include <cmath>
 #include <limits>
@@ -88,8 +92,9 @@ TEST(GroverWeakMeasurement, EvaluatesTheMarkedOutcomeAsSuccess) {
 }
 
 TEST(GroverWeakMeasurement, RoundTripsJSON) {
-  const auto defaults = groverWeakMeasurementFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})");
+  const auto defaults =
+      llvm::cantFail(groverWeakMeasurementFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})"));
   ASSERT_TRUE(defaults.options().measurementStrength);
   EXPECT_DOUBLE_EQ(*defaults.options().measurementStrength, 0.5);
   EXPECT_EQ(
@@ -98,17 +103,20 @@ TEST(GroverWeakMeasurement, RoundTripsJSON) {
   const GroverWeakMeasurement weaker{
       {.markedBitstring = "10", .measurementStrength = 0.25}};
   const auto manifest = toManifestJSON(weaker);
-  EXPECT_EQ(toManifestJSON(groverWeakMeasurementFromManifestJSON(manifest)),
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(
+                groverWeakMeasurementFromManifestJSON(manifest))),
             manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "grover-weak-measurement");
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)),
+            "grover-weak-measurement");
   EXPECT_NE(manifest.find(R"("model":"grover_weak_measurement")"),
             std::string::npos);
   EXPECT_NE(manifest.find(R"("success_outcome":"10")"), std::string::npos);
 }
 
 TEST(GroverWeakMeasurement, UsesSemanticCaseIds) {
-  const auto defaults = groverWeakMeasurementFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})");
+  const auto defaults =
+      llvm::cantFail(groverWeakMeasurementFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"10"}})"));
   EXPECT_EQ(caseId(defaults),
             caseId(GroverWeakMeasurement{
                 {.markedBitstring = "10", .measurementStrength = 0.5}}));
@@ -118,7 +126,8 @@ TEST(GroverWeakMeasurement, UsesSemanticCaseIds) {
 }
 
 TEST(GroverWeakMeasurement, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("grover-weak-measurement");
+  const auto schema =
+      llvm::cantFail(describeBenchmarkJSON("grover-weak-measurement"));
   EXPECT_NE(schema.find(R"("exclusiveMinimum":0)"), std::string::npos);
   EXPECT_NE(schema.find(R"("maximum":0.5)"), std::string::npos);
   EXPECT_NE(schema.find(R"("maxLength":2044)"), std::string::npos);
@@ -130,18 +139,19 @@ TEST(GroverWeakMeasurement, RejectsInvalidJSONParameters) {
         std::string{
             R"({"schema_version":1,"benchmark":"grover-weak-measurement","parameters":{"marked_bitstring":"0000","measurement_strength":)"} +
         strength + "}}";
-    EXPECT_THROW(
-        static_cast<void>(
-            groverWeakMeasurementFromInstanceSpecificationJSON(instance)),
-        std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] {
+          return groverWeakMeasurementFromInstanceSpecificationJSON(instance);
+        },
+        "");
   }
 }
 
 TEST(GroverWeakMeasurement, EvaluatesCountsFromJSON) {
   const GroverWeakMeasurement benchmark{{.markedBitstring = "10"}};
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(benchmark),
-                   R"({"schema_version":1,"counts":{"10":8,"00":2}})");
+                   R"({"schema_version":1,"counts":{"10":8,"00":2}})"));
   EXPECT_NE(evaluation.find(R"("success_probability":0.8)"), std::string::npos);
 }
 

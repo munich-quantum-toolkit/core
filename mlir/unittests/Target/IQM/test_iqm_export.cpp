@@ -11,8 +11,9 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Target/IQM/Export.h"
 
+#include "support/JSON.hpp"
+
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
 
 #include "mlir/Support/LLVM.h"
 
@@ -21,6 +22,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -114,15 +116,16 @@ TEST_F(IQMExportTest, PreservesNativeParametersAndRecordedOutputOrder) {
   auto exported = qir::exportIQMJSON(*module, target());
   ASSERT_TRUE(static_cast<bool>(exported))
       << llvm::toString(exported.takeError());
-  const auto circuit = nlohmann::json::parse(*exported);
-  EXPECT_EQ(circuit.at("name"), "circuit");
-  EXPECT_EQ(circuit.at("instructions"), nlohmann::json::parse(R"json([
+  const auto circuit = llvm::cantFail(::mqt::json::parse(*exported));
+  EXPECT_EQ(circuit.getAsObject()->getString("name"), "circuit");
+  EXPECT_EQ(*circuit.getAsObject()->get("instructions"),
+            llvm::cantFail(::mqt::json::parse(R"json([
     {"name":"prx","locus":["QBseven"],"args":{"angle":1.25,"phase":-0.75}},
     {"name":"cz","locus":["QBseven","QBfortyTwo"],"args":{}},
     {"name":"measure","locus":["QBfortyTwo"],"args":{"key":"read_out_2_0_0"}},
     {"name":"measure","locus":["QBseven"],"args":{"key":"read_out_2_0_1"}},
     {"name":"measure","locus":["QBzero"],"args":{"key":"c1_1_1_0"}}
-  ])json"));
+  ])json")));
   auto repeated = qir::exportIQMJSON(*module, target());
   ASSERT_TRUE(static_cast<bool>(repeated))
       << llvm::toString(repeated.takeError());

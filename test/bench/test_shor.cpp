@@ -12,7 +12,11 @@
 #include "bench/JSON.hpp"
 #include "bench/Shor.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Error.h"
 
 #include <array>
 #include <bitset>
@@ -176,22 +180,23 @@ TEST(Shor, PropagatesCallbackFailuresAndRejectsInvalidDriverInputs) {
 }
 
 TEST(Shor, RoundTripsJSON) {
-  const auto benchmark = shorFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})");
+  const auto benchmark = llvm::cantFail(shorFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})"));
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(shorFromManifestJSON(manifest)), manifest);
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(shorFromManifestJSON(manifest))),
+            manifest);
   EXPECT_NE(manifest.find("\"kind\":\"verification\""), std::string::npos);
 }
 
 TEST(Shor, UsesSemanticCaseIds) {
-  const auto benchmark = shorFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})");
+  const auto benchmark = llvm::cantFail(shorFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"shor","parameters":{"number":21}})"));
   EXPECT_EQ(caseId(benchmark), caseId(Shor({.number = 21, .base = 2})));
   EXPECT_NE(caseId(benchmark), caseId(Shor({.number = 21, .base = 4})));
 }
 
 TEST(Shor, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("shor");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("shor"));
   EXPECT_NE(schema.find(R"("minimum":3)"), std::string::npos);
   EXPECT_NE(schema.find(R"("required":["number"])"), std::string::npos);
 }
@@ -206,19 +211,21 @@ TEST(Shor, RejectsInvalidJSONParameters) {
            R"({"number":21,"base":7})",
            R"({})",
        }) {
-    EXPECT_THROW(
-        std::ignore = shorFromInstanceSpecificationJSON(
-            std::string(
-                R"({"schema_version":1,"benchmark":"shor","parameters":)") +
-            parameters + "}"),
-        std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] {
+          return shorFromInstanceSpecificationJSON(
+              std::string(
+                  R"({"schema_version":1,"benchmark":"shor","parameters":)") +
+              parameters + "}");
+        },
+        "");
   }
 }
 
 TEST(Shor, EvaluatesCountsFromJSON) {
-  const auto result = evaluateJSON(
+  const auto result = llvm::cantFail(evaluateJSON(
       toManifestJSON(Shor({.number = 21})),
-      R"({"schema_version":1,"counts":{"0010101011":3,"0000000000":1}})");
+      R"({"schema_version":1,"counts":{"0010101011":3,"0000000000":1}})"));
   EXPECT_NE(result.find("\"success_probability\":0.75"), std::string::npos);
   EXPECT_NE(result.find("\"factors\":[3,7]"), std::string::npos);
   EXPECT_EQ(result.find("total_variation_distance"), std::string::npos);

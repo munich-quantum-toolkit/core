@@ -30,21 +30,28 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   endif()
 
   include(GenerateExportHeader)
-  generate_export_header(
-    ${dd_export_target}
-    BASE_NAME mqt_core_dd
-    EXPORT_FILE_NAME mqt_core_dd_export.h)
+  generate_export_header(${dd_export_target} BASE_NAME mqt_core_dd EXPORT_FILE_NAME
+                         mqt_core_dd_export.h)
   foreach(dd_target IN LISTS dd_targets)
     target_sources(${dd_target} PRIVATE ${DD_SOURCES})
     target_sources(
       ${dd_target}
-      PUBLIC
-      FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${DD_HEADERS}
-      FILE_SET HEADERS
-        BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
-        FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_dd_export.h)
-    target_link_libraries(${dd_target} PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+      PUBLIC FILE_SET
+             HEADERS
+             BASE_DIRS
+             ${MQT_CORE_INCLUDE_BUILD_DIR}
+             FILES
+             ${DD_HEADERS}
+             FILE_SET
+             HEADERS
+             BASE_DIRS
+             ${CMAKE_CURRENT_BINARY_DIR}/..
+             FILES
+             ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_dd_export.h)
+    target_link_libraries(${dd_target} PRIVATE MQT::CoreJSON)
   endforeach()
 
-  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-dd PARENT_SCOPE)
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-dd
+      PARENT_SCOPE)
 endif()

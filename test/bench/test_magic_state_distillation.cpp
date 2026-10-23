@@ -12,7 +12,11 @@
 #include "bench/JSON.hpp"
 #include "bench/MagicStateDistillation.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -67,8 +71,9 @@ TEST(MagicStateDistillation, EvaluatesAcceptanceAndRootStateTogether) {
 }
 
 TEST(MagicStateDistillation, RoundTripsJSON) {
-  const auto defaults = magicStateDistillationFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":{}})");
+  const auto defaults =
+      llvm::cantFail(magicStateDistillationFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":{}})"));
   EXPECT_EQ(
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"magic-state-distillation","parameters":{"levels":1},"schema_version":1})");
@@ -76,11 +81,12 @@ TEST(MagicStateDistillation, RoundTripsJSON) {
     const MagicStateDistillation benchmark({.levels = levels});
     const auto instance = toInstanceSpecificationJSON(benchmark);
     EXPECT_EQ(
-        toInstanceSpecificationJSON(
-            magicStateDistillationFromInstanceSpecificationJSON(instance)),
+        toInstanceSpecificationJSON(llvm::cantFail(
+            magicStateDistillationFromInstanceSpecificationJSON(instance))),
         instance);
     const auto manifest = toManifestJSON(benchmark);
-    EXPECT_EQ(toManifestJSON(magicStateDistillationFromManifestJSON(manifest)),
+    EXPECT_EQ(toManifestJSON(llvm::cantFail(
+                  magicStateDistillationFromManifestJSON(manifest))),
               manifest);
     EXPECT_NE(caseId(benchmark), caseId(defaults));
   }
@@ -88,7 +94,7 @@ TEST(MagicStateDistillation, RoundTripsJSON) {
 }
 
 TEST(MagicStateDistillation, DescribesJSONSchema) {
-  EXPECT_NE(describeBenchmarkJSON("magic-state-distillation")
+  EXPECT_NE(llvm::cantFail(describeBenchmarkJSON("magic-state-distillation"))
                 .find("\"maximum\":" +
                       std::to_string(std::numeric_limits<int64_t>::max() / 5)),
             std::string::npos);
@@ -103,19 +109,21 @@ TEST(MagicStateDistillation, RejectsInvalidJSONParameters) {
            R"({"levels":true})",
            R"({"noise":0})",
        }) {
-    EXPECT_THROW(
-        static_cast<void>(magicStateDistillationFromInstanceSpecificationJSON(
-            std::string(
-                R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":)") +
-            parameters + "}")),
-        std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] {
+          return magicStateDistillationFromInstanceSpecificationJSON(
+              std::string(
+                  R"({"schema_version":1,"benchmark":"magic-state-distillation","parameters":)") +
+              parameters + "}");
+        },
+        "");
   }
 }
 
 TEST(MagicStateDistillation, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(MagicStateDistillation{}),
-                   R"({"schema_version":1,"counts":{"00":256}})");
+                   R"({"schema_version":1,"counts":{"00":256}})"));
   EXPECT_NE(evaluation.find(R"("success_probability":1.0)"), std::string::npos);
 }
 

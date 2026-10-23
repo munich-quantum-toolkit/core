@@ -16,6 +16,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -95,28 +97,31 @@ TEST(Multiplexer, PreservesSmallProbabilitiesNearBothEndpoints) {
 }
 
 TEST(Multiplexer, RoundTripsJSON) {
-  const auto parsed = multiplexerFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})");
+  const auto parsed = llvm::cantFail(multiplexerFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})"));
   EXPECT_EQ(parsed.options().qubits, 7);
   EXPECT_EQ(
       toInstanceSpecificationJSON(parsed),
       R"({"benchmark":"multiplexer","parameters":{"qubits":7},"schema_version":1})");
 
   const auto manifest = toManifestJSON(parsed);
-  EXPECT_EQ(toManifestJSON(multiplexerFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "multiplexer");
+  EXPECT_EQ(
+      toManifestJSON(llvm::cantFail(multiplexerFromManifestJSON(manifest))),
+      manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)),
+            "multiplexer");
   EXPECT_NE(manifest.find("\"model\":\"multiplexer\""), std::string::npos);
 }
 
 TEST(Multiplexer, UsesSemanticCaseIds) {
-  const auto parsed = multiplexerFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})");
+  const auto parsed = llvm::cantFail(multiplexerFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})"));
   EXPECT_EQ(caseId(parsed), caseId(Multiplexer{{.qubits = 7}}));
   EXPECT_NE(caseId(parsed), caseId(Multiplexer{{.qubits = 6}}));
 }
 
 TEST(Multiplexer, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("multiplexer");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("multiplexer"));
   EXPECT_NE(schema.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(schema.find("\"minimum\":2"), std::string::npos);
 }
@@ -124,22 +129,22 @@ TEST(Multiplexer, DescribesJSONSchema) {
 TEST(Multiplexer, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})"));
+        return multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})");
       },
       "between 2 and 1024");
   expectInvalidJSON(
       [] {
-        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
+        return multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})");
       },
-      "unknown key 'angles'");
+      "angles");
 }
 
 TEST(Multiplexer, EvaluatesCountsFromJSON) {
-  const auto evaluation =
+  const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(Multiplexer{{.qubits = 2}}),
-                   R"({"schema_version":1,"counts":{"00":8,"01":2}})");
+                   R"({"schema_version":1,"counts":{"00":8,"01":2}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":"),
             std::string::npos);

@@ -11,7 +11,11 @@
 #include "bench/JSON.hpp"
 #include "bench/QFTAdder.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
+
+#include "llvm/Support/Error.h"
 
 #include <stdexcept>
 #include <string>
@@ -112,8 +116,8 @@ TEST(QFTAdder, BoundsTheSumWidthAndKeepsReferenceWeightsRepresentable) {
 }
 
 TEST(QFTAdder, RoundTripsJSON) {
-  const auto defaults = qftAdderFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"qft-adder","parameters":{"addend":"+++","accumulator":"001"}})");
+  const auto defaults = llvm::cantFail(qftAdderFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qft-adder","parameters":{"addend":"+++","accumulator":"001"}})"));
   EXPECT_EQ(defaults.options().method, QFTAdderMethod::Register);
   EXPECT_EQ(defaults.options().overflow, QFTAdderOverflow::Wrap);
   EXPECT_EQ(
@@ -122,8 +126,9 @@ TEST(QFTAdder, RoundTripsJSON) {
 
   const QFTAdder benchmark{{.addend = "+++", .accumulator = "001"}};
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(qftAdderFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "qft-adder");
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(qftAdderFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)), "qft-adder");
   EXPECT_NE(manifest.find("\"model\":\"qft_adder\""), std::string::npos);
   EXPECT_NE(manifest.find("\"width\":6"), std::string::npos);
 
@@ -134,7 +139,8 @@ TEST(QFTAdder, RoundTripsJSON) {
       .overflow = QFTAdderOverflow::Carry,
   }};
   const auto constantManifest = toManifestJSON(constant);
-  EXPECT_EQ(toManifestJSON(qftAdderFromManifestJSON(constantManifest)),
+  EXPECT_EQ(toManifestJSON(
+                llvm::cantFail(qftAdderFromManifestJSON(constantManifest))),
             constantManifest);
 }
 
@@ -154,7 +160,7 @@ TEST(QFTAdder, UsesSemanticCaseIds) {
 }
 
 TEST(QFTAdder, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("qft-adder");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("qft-adder"));
   EXPECT_NE(schema.find("\"maxLength\":1024"), std::string::npos);
   EXPECT_NE(schema.find("\"minLength\":1"), std::string::npos);
 }
@@ -174,17 +180,16 @@ TEST(QFTAdder, RejectsInvalidJSONParameters) {
         std::string{
             R"({"schema_version":1,"benchmark":"qft-adder","parameters":)"} +
         parameters + "}";
-    EXPECT_THROW(
-        static_cast<void>(qftAdderFromInstanceSpecificationJSON(instance)),
-        std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] { return qftAdderFromInstanceSpecificationJSON(instance); }, "");
   }
 }
 
 TEST(QFTAdder, EvaluatesCountsFromJSON) {
   const QFTAdder benchmark{{.addend = "++", .accumulator = "01"}};
-  const auto evaluation = evaluateJSON(
+  const auto evaluation = llvm::cantFail(evaluateJSON(
       toManifestJSON(benchmark),
-      R"({"schema_version":1,"counts":{"0001":1,"0110":1,"1011":1,"1100":1}})");
+      R"({"schema_version":1,"counts":{"0001":1,"0110":1,"1011":1,"1100":1}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
             std::string::npos);
@@ -195,9 +200,9 @@ TEST(QFTAdder, EvaluatesCountsFromJSON) {
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
   }};
-  const auto constantEvaluation =
+  const auto constantEvaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(constant),
-                   R"({"schema_version":1,"counts":{"0111":8,"0110":2}})");
+                   R"({"schema_version":1,"counts":{"0111":8,"0110":2}})"));
   EXPECT_NE(constantEvaluation.find("\"success_probability\":0.8"),
             std::string::npos);
 }

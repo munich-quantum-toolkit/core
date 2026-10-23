@@ -24,11 +24,14 @@
 #include "dd/UniqueTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
+#include "support/JSON.hpp"
+
 #include "../qdmi/TestUtils.hpp"
 
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <array>
@@ -2773,18 +2776,19 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
 TEST(DDPackageTest, DataStructureStatistics) {
   constexpr auto nqubits = 1U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto stats = nlohmann::json::parse(getDataStructureStatisticsString());
+  auto stats =
+      llvm::cantFail(mqt::json::parse(getDataStructureStatisticsString()));
 
-  EXPECT_EQ(stats["vNode"]["size_B"], 64U);
-  EXPECT_EQ(stats["vNode"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["mNode"]["size_B"], 112U);
-  EXPECT_EQ(stats["mNode"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["vEdge"]["size_B"], 24U);
-  EXPECT_EQ(stats["vEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["mEdge"]["size_B"], 24U);
-  EXPECT_EQ(stats["mEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["RealNumber"]["size_B"], 16U);
-  EXPECT_EQ(stats["RealNumber"]["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vNode"))["size_B"], 64U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vNode"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mNode"))["size_B"], 112U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mNode"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vEdge"))["size_B"], 24U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vEdge"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mEdge"))["size_B"], 24U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mEdge"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("RealNumber"))["size_B"], 16U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("RealNumber"))["alignment_B"], 8U);
 }
 
 TEST(DDPackageTest, DDStatistics) {
@@ -2794,25 +2798,33 @@ TEST(DDPackageTest, DDStatistics) {
   EXPECT_NE(dummyGate.p, nullptr);
   dd->incRef(dummyGate);
   const auto statsString = getStatisticsString(*dd, true);
-  const auto stats = nlohmann::json::parse(statsString);
+  auto stats = llvm::cantFail(mqt::json::parse(statsString));
 
   std::cout << statsString << "\n";
-  EXPECT_TRUE(stats.contains("vector"));
-  ASSERT_TRUE(stats.contains("matrix"));
-  EXPECT_TRUE(stats.contains("real_numbers"));
-  EXPECT_TRUE(stats.contains("compute_tables"));
-  EXPECT_EQ(stats["active_memory_mib"],
+  EXPECT_TRUE(stats.getAsObject()->get("vector"));
+  ASSERT_TRUE(stats.getAsObject()->get("matrix"));
+  EXPECT_TRUE(stats.getAsObject()->get("real_numbers"));
+  EXPECT_TRUE(stats.getAsObject()->get("compute_tables"));
+  EXPECT_EQ(stats.getAsObject()->getNumber("active_memory_mib"),
             static_cast<double>(sizeof(mNode)) / (1ULL << 20U));
-  const auto& matrixStats = stats["matrix"];
-  ASSERT_TRUE(matrixStats.contains("unique_table"));
-  const auto& uniqueTableStats = matrixStats["unique_table"];
-  EXPECT_TRUE(uniqueTableStats.contains("0"));
-  EXPECT_TRUE(uniqueTableStats.contains("1"));
-  EXPECT_TRUE(uniqueTableStats.contains("total"));
-  ASSERT_TRUE(uniqueTableStats["0"].contains("num_buckets"));
-  EXPECT_GT(uniqueTableStats["0"]["num_buckets"], 0);
-  ASSERT_TRUE(uniqueTableStats["total"].contains("num_buckets"));
-  EXPECT_GT(uniqueTableStats["total"]["num_buckets"], 0);
+  auto& matrixStats = (*stats.getAsObject())["matrix"];
+  ASSERT_TRUE(matrixStats.getAsObject()->get("unique_table"));
+  auto& uniqueTableStats = (*matrixStats.getAsObject())["unique_table"];
+  EXPECT_TRUE(uniqueTableStats.getAsObject()->get("0"));
+  EXPECT_TRUE(uniqueTableStats.getAsObject()->get("1"));
+  EXPECT_TRUE(uniqueTableStats.getAsObject()->get("total"));
+  ASSERT_TRUE(
+      uniqueTableStats.getAsObject()->getObject("0")->get("num_buckets"));
+  EXPECT_GT((*uniqueTableStats.getAsObject()->getObject("0"))["num_buckets"]
+                .getAsInteger()
+                .value(),
+            0);
+  ASSERT_TRUE(
+      uniqueTableStats.getAsObject()->getObject("total")->get("num_buckets"));
+  EXPECT_GT((*uniqueTableStats.getAsObject()->getObject("total"))["num_buckets"]
+                .getAsInteger()
+                .value(),
+            0);
 }
 
 TEST(DDPackageTest, ReduceAncillaRegression) {

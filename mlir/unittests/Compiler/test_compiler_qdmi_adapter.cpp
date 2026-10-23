@@ -14,9 +14,9 @@
 #include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
+#include "support/JSON.hpp"
 
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
@@ -28,6 +28,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -46,13 +47,21 @@
 using mlir::CompilerTarget;
 
 static qdmi::Device openScDevice(const char* filename) {
-  const auto config = nlohmann::json{
+  auto config = llvm::json::Object{
       {
-          "device-config",
-          {{"file", std::string{MQT_CORE_MLIR_SC_CONFIG_DIR} + "/" + filename}},
+          .K = "device-config",
+          .V =
+              llvm::json::Object{
+                  {
+                      .K = "file",
+                      .V = std::string{MQT_CORE_MLIR_SC_CONFIG_DIR} + "/" +
+                           filename,
+                  },
+              },
       },
   };
-  return qdmi::builtin_driver::openDevice("mqt.sc.default", config.dump());
+  return qdmi::builtin_driver::openDevice(
+      "mqt.sc.default", mqt::json::serialize(std::move(config)));
 }
 
 [[nodiscard]] static const CompilerTarget::OperationCapability&
@@ -530,10 +539,13 @@ TEST(CompilerQDMIAdapterTest,
   ASSERT_TRUE(static_cast<bool>(compiled))
       << llvm::toString(compiled.takeError());
   EXPECT_EQ(compiled->programFormat(), QDMI_PROGRAM_FORMAT_IQMJSON);
-  const auto json = nlohmann::json::parse(compiled->payload());
-  EXPECT_EQ(json["instructions"].back()["name"], "measure");
-  EXPECT_EQ(json["instructions"].back()["args"]["key"], "c_2_0_1");
-  EXPECT_EQ(json["instructions"].back()["locus"].size(), 1);
+  const auto json = llvm::cantFail(::mqt::json::parse(compiled->payload()));
+  const auto& measurement =
+      json.getAsObject()->getArray("instructions")->back();
+  EXPECT_EQ(measurement.getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(measurement.getAsObject()->getObject("args")->getString("key"),
+            "c_2_0_1");
+  EXPECT_EQ(measurement.getAsObject()->getArray("locus")->size(), 1);
   EXPECT_EQ(creations, 0);
   EXPECT_TRUE(
       llvm::errorToBool(mlir::submitProgram(device, *compiled).takeError()));

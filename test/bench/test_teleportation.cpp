@@ -16,6 +16,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -45,28 +47,32 @@ TEST(Teleportation, ChecksTheTeleportedState) {
 }
 
 TEST(Teleportation, RoundTripsJSON) {
-  const auto parsed = teleportationFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})");
+  const auto parsed = llvm::cantFail(teleportationFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})"));
   EXPECT_EQ(
       toInstanceSpecificationJSON(parsed),
       R"({"benchmark":"teleportation","parameters":{},"schema_version":1})");
 
   const Teleportation benchmark;
   const auto manifest = toManifestJSON(benchmark);
-  EXPECT_EQ(toManifestJSON(teleportationFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "teleportation");
+  EXPECT_EQ(
+      toManifestJSON(llvm::cantFail(teleportationFromManifestJSON(manifest))),
+      manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)),
+            "teleportation");
   EXPECT_NE(manifest.find("\"model\":\"teleportation\""), std::string::npos);
   EXPECT_NE(manifest.find("\"parameters\":{}"), std::string::npos);
 }
 
 TEST(Teleportation, UsesSemanticCaseIds) {
-  EXPECT_EQ(caseId(Teleportation{}), "sha256-de1348477e2604539b963a28bc19f5d3"
-                                     "ed27ed86fc6608366bbc6eb9b55855f6");
+  EXPECT_EQ(caseId(Teleportation{}),
+            "sha256-"
+            "e6b056aafd1b4f0a4784ace2df17a7e963e696e3741aace66a3828ad4f60886a");
 }
 
 TEST(Teleportation, DescribesJSONSchema) {
   EXPECT_NE(
-      describeBenchmarkJSON("teleportation")
+      llvm::cantFail(describeBenchmarkJSON("teleportation"))
           .find(
               R"("parameters":{"additionalProperties":false,"properties":{},"type":"object"})"),
       std::string::npos);
@@ -75,16 +81,16 @@ TEST(Teleportation, DescribesJSONSchema) {
 TEST(Teleportation, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(teleportationFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})"));
+        return teleportationFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})");
       },
-      "unknown key 'qubits'");
+      "qubits");
 }
 
 TEST(Teleportation, EvaluatesCountsFromJSON) {
   const auto evaluation =
-      evaluateJSON(toManifestJSON(Teleportation{}),
-                   R"({"schema_version":1,"counts":{"0":8}})");
+      llvm::cantFail(evaluateJSON(toManifestJSON(Teleportation{}),
+                                  R"({"schema_version":1,"counts":{"0":8}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":1.0"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
             std::string::npos);

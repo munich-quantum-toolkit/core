@@ -16,6 +16,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -263,18 +265,19 @@ TEST(ModularMultiplier, KeepsTheLargestReferenceWeightRepresentable) {
 }
 
 TEST(ModularMultiplier, RoundTripsJSON) {
-  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})");
+  const auto benchmark = llvm::cantFail(modularMultiplierFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})"));
   EXPECT_EQ(benchmark.options().control, '1');
   EXPECT_EQ(benchmark.expectedResult(), "11110001");
   const auto manifest = toManifestJSON(benchmark);
   EXPECT_NE(manifest.find("\"success_outcome\":\"11110001\""),
             std::string::npos);
-  EXPECT_EQ(modularMultiplierFromManifestJSON(manifest).expectedResult(),
+  EXPECT_EQ(llvm::cantFail(modularMultiplierFromManifestJSON(manifest))
+                .expectedResult(),
             benchmark.expectedResult());
 
-  const auto superposed = modularMultiplierFromInstanceSpecificationJSON(
-      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+  const auto superposed = llvm::cantFail(modularMultiplierFromInstanceSpecificationJSON(
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
   EXPECT_EQ(superposed.options().multiplier, "011");
   EXPECT_EQ(superposed.options().modulus, "101");
   EXPECT_EQ(
@@ -282,10 +285,10 @@ TEST(ModularMultiplier, RoundTripsJSON) {
       R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
 
   const auto superposedManifest = toManifestJSON(superposed);
-  EXPECT_EQ(
-      toManifestJSON(modularMultiplierFromManifestJSON(superposedManifest)),
-      superposedManifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(superposedManifest),
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(
+                modularMultiplierFromManifestJSON(superposedManifest))),
+            superposedManifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(superposedManifest)),
             "modular-multiplier");
   EXPECT_NE(superposedManifest.find("\"model\":\"modular_multiplier\""),
             std::string::npos);
@@ -293,8 +296,8 @@ TEST(ModularMultiplier, RoundTripsJSON) {
 }
 
 TEST(ModularMultiplier, UsesSemanticCaseIds) {
-  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})");
+  const auto benchmark = llvm::cantFail(modularMultiplierFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})"));
   EXPECT_EQ(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
                                                          .modulus = "101",
                                                          .multiplicand = "111",
@@ -308,8 +311,8 @@ TEST(ModularMultiplier, UsesSemanticCaseIds) {
                                                          .multiplicand = "111",
                                                          .control = '0'})));
 
-  const auto superposed = modularMultiplierFromInstanceSpecificationJSON(
-      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+  const auto superposed = llvm::cantFail(modularMultiplierFromInstanceSpecificationJSON(
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
   EXPECT_EQ(caseId(superposed), caseId(ModularMultiplier{{.multiplier = "011",
                                                           .modulus = "101",
                                                           .multiplicand = "+++",
@@ -321,7 +324,8 @@ TEST(ModularMultiplier, UsesSemanticCaseIds) {
 }
 
 TEST(ModularMultiplier, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("modular-multiplier");
+  const auto schema =
+      llvm::cantFail(describeBenchmarkJSON("modular-multiplier"));
   EXPECT_NE(schema.find("\"maxLength\":63"), std::string::npos);
   EXPECT_NE(schema.find("\"pattern\":\"^1[01]+$\""), std::string::npos);
 }
@@ -332,36 +336,40 @@ TEST(ModularMultiplier, RejectsInvalidJSONParameters) {
         std::string(
             R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111","control":)") +
         control + "}}";
-    EXPECT_THROW(static_cast<void>(
-                     modularMultiplierFromInstanceSpecificationJSON(instance)),
-                 std::invalid_argument);
+    test::expectInvalidJSON(
+        [&] {
+          return modularMultiplierFromInstanceSpecificationJSON(instance);
+        },
+        "");
   }
-  EXPECT_THROW(
-      static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-          R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101"}})")),
-      std::invalid_argument);
-  expectInvalidJSON(
-      [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})"));
+  test::expectInvalidJSON(
+      [&] {
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101"}})");
       },
-      "unknown key 'extra'");
+      "");
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})");
+      },
+      "extra");
+  expectInvalidJSON(
+      [] {
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
       },
       "equal widths");
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
       },
       "canonical");
   expectInvalidJSON(
       [] {
-        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
-            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})"));
+        return modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})");
       },
       "0 < a < N");
 }
@@ -373,9 +381,9 @@ TEST(ModularMultiplier, EvaluatesCountsFromJSON) {
       .multiplicand = "+++",
       .control = '+',
   }};
-  const auto evaluation = evaluateJSON(
+  const auto evaluation = llvm::cantFail(evaluateJSON(
       toManifestJSON(benchmark),
-      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})");
+      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":1.0"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
             std::string::npos);

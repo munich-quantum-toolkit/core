@@ -12,6 +12,8 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "support/JSON.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
@@ -23,9 +25,10 @@
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/variant.h"     // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/vector.h"      // NOLINT(misc-include-cleaner)
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
 #include "qdmi/client.h"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <array>
 #include <cstddef>
@@ -133,17 +136,20 @@ qdmi::SessionConfig makeDriverSessionConfig(
     throw nb::value_error(
         "device_config and device_config_file are mutually exclusive");
   }
-  auto session = nlohmann::json::object();
+  llvm::json::Object session;
   const auto setString = [&session](const char* key,
                                     const std::optional<std::string>& value) {
     if (value) {
+      if (!llvm::json::isUTF8(*value)) {
+        throw nb::value_error("session strings must be valid UTF-8");
+      }
       session[key] = *value;
     }
   };
   setString("base-url", baseUrl);
   setString("token", token);
   if (authFile) {
-    session["auth-file"] = qdmi::detail::pathToString(*authFile);
+    setString("auth-file", qdmi::detail::pathToString(*authFile));
   }
   setString("auth-url", authUrl);
   setString("username", username);
@@ -154,16 +160,21 @@ qdmi::SessionConfig makeDriverSessionConfig(
   setString("custom4", custom4);
   setString("custom5", custom5);
   if (deviceConfig) {
-    try {
-      session["device-config"]["inline"] = nlohmann::json::parse(*deviceConfig);
-    } catch (const nlohmann::json::parse_error& error) {
-      throw nb::value_error(error.what());
+    auto parsed = mqt::json::parse(*deviceConfig, "device_config");
+    if (!parsed) {
+      throw nb::value_error(llvm::toString(parsed.takeError()).c_str());
     }
+    session["device-config"] =
+        llvm::json::Object{{.K = "inline", .V = std::move(*parsed)}};
   } else if (deviceConfigFile) {
-    session["device-config"]["file"] =
-        qdmi::detail::pathToString(*deviceConfigFile);
+    const auto path = qdmi::detail::pathToString(*deviceConfigFile);
+    if (!llvm::json::isUTF8(path)) {
+      throw nb::value_error("device_config_file must be valid UTF-8");
+    }
+    session["device-config"] = llvm::json::Object{{.K = "file", .V = path}};
   }
-  return session.empty() ? std::string{} : session.dump();
+  return session.empty() ? std::string{}
+                         : mqt::json::serialize(std::move(session));
 }
 
 template <typename Query>
