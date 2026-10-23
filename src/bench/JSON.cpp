@@ -1447,8 +1447,11 @@ baseInstanceSpecificationSchema(llvm::json::Object parameters) {
 [[nodiscard]] Json vqeAnsatzInstanceSpecificationSchema() {
   const VQEAnsatzOptions defaults{.qubits = 1};
   return baseInstanceSpecificationSchema<VQEAnsatz>(llvm::json::Object{
-      {"description", "The product qubits * (depth + 1) must fit a signed "
-                      "64-bit circuit input dimension."},
+      {
+          "description",
+          "The product qubits * (depth + 1) must fit a signed "
+          "64-bit circuit input dimension.",
+      },
       {
           "properties",
           llvm::json::Object{
