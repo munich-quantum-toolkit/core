@@ -26,6 +26,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/VQEAnsatz.hpp"
 #include "bench/WState.hpp"
 
 #include "llvm/ADT/StringExtras.h"
@@ -545,6 +546,20 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
                                      }));
 }
 
+[[nodiscard]] llvm::Expected<VQEAnsatz>
+parseVQEAnsatzParameters(const Json& parameters, std::string_view source) {
+  VQEAnsatzOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  if (!keys(parameters, {"qubits", "depth"}, path) ||
+      !sizeValue(parameters, "qubits", options.qubits, path) ||
+      !sizeValue(parameters, "depth", options.depth, path, true)) {
+    return diagnostic.getError();
+  }
+  return withParameterSource(source, VQEAnsatz::create(options));
+}
+
 [[nodiscard]] llvm::StringRef topologyName(const GHZTopology topology) {
   return topology == GHZTopology::Linear ? "linear" : "star";
 }
@@ -681,6 +696,14 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
   return llvm::json::Object{};
 }
 
+[[nodiscard]] Json parametersJSON(const VQEAnsatz& benchmark) {
+  const auto& options = benchmark.options();
+  return llvm::json::Object{
+      {"depth", options.depth},
+      {"qubits", options.qubits},
+  };
+}
+
 [[nodiscard]] Json parametersJSON(const WState& benchmark) {
   return llvm::json::Object{{"qubits", benchmark.options().qubits}};
 }
@@ -773,6 +796,10 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
 
 [[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
   return analyticReferenceJSON(benchmark.output(), "teleportation", "0");
+}
+
+[[nodiscard]] Json referenceJSON(const VQEAnsatz& /*unused*/) {
+  return llvm::json::Object{{"kind", "none"}};
 }
 
 [[nodiscard]] Json referenceJSON(const WState& benchmark) {
@@ -1417,6 +1444,37 @@ baseInstanceSpecificationSchema(llvm::json::Object parameters) {
       llvm::json::Object{{"properties", llvm::json::Object{}}});
 }
 
+[[nodiscard]] Json vqeAnsatzInstanceSpecificationSchema() {
+  const VQEAnsatzOptions defaults{.qubits = 1};
+  return baseInstanceSpecificationSchema<VQEAnsatz>(llvm::json::Object{
+      {"description", "The product qubits * (depth + 1) must fit a signed "
+                      "64-bit circuit input dimension."},
+      {
+          "properties",
+          llvm::json::Object{
+              {
+                  "depth",
+                  llvm::json::Object{
+                      {"default", defaults.depth},
+                      {"maximum", std::numeric_limits<int64_t>::max() - 1},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+              {
+                  "qubits",
+                  llvm::json::Object{
+                      {"maximum", std::numeric_limits<int64_t>::max() / 2},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
+      {"required", llvm::json::Array{"qubits"}},
+  });
+}
+
 [[nodiscard]] Json wStateInstanceSpecificationSchema() {
   return baseInstanceSpecificationSchema<WState>(llvm::json::Object{
       {
@@ -1684,13 +1742,19 @@ llvm::Expected<std::string> evaluateJSON(const std::string_view manifest,
               manifestSource, "$",
               "does not match its resolved benchmark instance and case ID");
         }
-        auto evaluation = benchmark.evaluate(*parsedCounts);
-        if (!evaluation) {
-          return fail(countsSource, "$/counts",
-                      llvm::toString(evaluation.takeError()));
+        if constexpr (requires { benchmark.evaluate(*parsedCounts); }) {
+          auto evaluation = benchmark.evaluate(*parsedCounts);
+          if (!evaluation) {
+            return fail(countsSource, "$/counts",
+                        llvm::toString(evaluation.takeError()));
+          }
+          return evaluationToJSON(*root->getAsObject()->getString("case_id"),
+                                  *evaluation);
+        } else {
+          return fail(manifestSource, "$/reference",
+                      "benchmark '" + id.str() +
+                          "' does not define a built-in evaluation");
         }
-        return evaluationToJSON(*root->getAsObject()->getString("case_id"),
-                                *evaluation);
       },
       *parsed);
 }
