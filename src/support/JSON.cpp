@@ -80,10 +80,14 @@ class Parser {
 
   llvm::Expected<llvm::json::Value> string() {
     const auto start = position_;
+    bool escaped = false;
     ++position_;
     while (position_ < text_.size()) {
       const auto c = text_[position_++];
       if (c == '"') {
+        if (!escaped) {
+          return llvm::json::Value(text_.slice(start + 1, position_ - 1).str());
+        }
         auto decoded = llvm::json::parse(text_.slice(start, position_));
         if (!decoded) {
           return fail(llvm::toString(decoded.takeError()));
@@ -96,6 +100,7 @@ class Parser {
       if (c != '\\') {
         continue;
       }
+      escaped = true;
       if (position_ == text_.size()) {
         break;
       }

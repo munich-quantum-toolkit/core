@@ -24,6 +24,13 @@ overwrites duplicate keys. Remove the corresponding Core checks only when the
 supported LLVM parser enforces these contracts. Nesting is limited to 256
 containers to bound recursive LLVM value destruction and serialization.
 
+Decoded bytes, owning strings, integer precision, deterministic case IDs, and
+the Python/C error boundaries are required semantics. Duplicate-key rejection,
+paired surrogates, finite input numbers, and the depth bound define the explicit
+supported subset. Parsing unescaped strings twice was incidental: after the
+UTF-8 and control-byte checks, construct an owning string directly. Escaped
+strings still use LLVM decoding.
+
 Floating-point input uses `StringRef::getAsDouble`; output uses `std::to_chars`
 through `json::OStream::rawValue`. These conversions are locale-independent.
 Floating-point `std::from_chars` is not available across the supported macOS
@@ -48,37 +55,49 @@ Ordinary JSON validation uses explicit errors. CoreBench and SC configuration
 disable RTTI when LLVM does; CoreJSON follows the same rule. Exception handling
 remains enabled where existing native calls and stream boundaries need it.
 
-CoreBench must expose LLVM error type IDs across shared-library boundaries;
-hiding its LLVM archive symbols breaks typed error handling. QDMI keeps its LLVM
-symbols private behind the C ABI. C++ translation units using public LLVM APIs
-must match the SDK's RTTI setting, while DD-only consumers retain RTTI.
+CoreBench links statically, like CoreJSON and SC configuration, to keep LLVM
+error producers and handlers in the same final image. Separate static LLVM
+copies across a shared-library boundary can make even `llvm::toString` abort;
+exporting symbols on ELF does not solve Windows DLL identity. QDMI keeps its
+LLVM symbols private behind the C ABI. C++ translation units using public LLVM
+APIs must match the SDK's RTTI setting, while DD-only consumers retain RTTI.
 
 ## Validation and limits
 
-The optimized native suite passed 4,100 tests; Python passed 2,017 tests.
-Installed CMake consumers, shared-library typed errors, stub generation,
-whole-file C++ lint, and repository lint passed. Executable documentation and
-local links passed; rendered documentation was inspected. External linkcheck
-failed on two unchanged QIR specification anchors. Hosted CI, Windows, and macOS
-execution remain unverified.
+The optimized native suite passed 4,101 tests; Python passed 2,017 tests.
+Installed CMake consumers, LLVM error handling, stub generation, whole-file C++
+lint, and repository lint passed. Executable documentation and local links
+passed; rendered documentation was inspected. External linkcheck failed on two
+unchanged QIR specification anchors. Hosted CI, Windows, and macOS execution
+remain unverified.
 
 `test/support/test_json.cpp` covers grammar, Unicode, duplicates, depth, numeric
 limits, locale-independent output, and round trips. Deliberately broken locale
 formatting, duplicate detection, and depth checking each failed the targeted
-regression test. An independent sanitizer probe round-tripped 20,000 finite
-doubles in each of the C and German numeric locales. Throwing stream buffers are
-covered by SC configuration tests.
+regression test. Borrowed-string and missing-control-check mutations also fail
+the ownership and strict-syntax tests. An independent sanitizer probe
+round-tripped 20,000 finite doubles in each of the C and German numeric locales.
+Throwing stream buffers are covered by SC configuration tests.
 
 Against base `ecc3a2c7cf488321bf48b226bb9cf3ad4fee72de`, all 16 benchmark
 schemas were equal after independent JSON parsing, 757 SC configuration
 mutations preserved acceptance/rejection, and four public compiler workloads
 produced equal parsed IQM payloads. Existing phase and source-slot checks
-remain. An independent review found and validated the shared error visibility,
+remain. An independent review found and validated the LLVM error ownership,
 exception-cleanup, and DD RTTI constraints above.
 
-Paired public-entry measurements on a shared host showed mixed compile-time
-changes, including a small-program regression. No overall speedup is claimed.
-Profiling separated cumulative allocations, tracked live memory, and process
-peak RSS. Mapping and native synthesis consumed two thirds of the measured
-target pipeline for the deeper workload; other compilation phases were not
-isolated. No further performance change had sufficient evidence to retain.
+Against `769a22d9b092b353e1362409a88ccdc02c5c4f00`, nine alternating pairs
+through public C++ APIs showed about 13% lower CPU time for GHZ/QAOA manifest
+parsing and 5% lower CPU time for Garnet configuration parsing. Wall times were
+affected by shared-host contention. Compiler timings stayed within about 1.5%;
+no overall compiler speedup is claimed. Temporary timers in the public CLI
+showed that target compilation, QCO-to-QC conversion, and QC-to-QIR lowering
+accounted for about 94% of the deeper workload's measured phase CPU time; IQM
+export accounted for less than 1%. Profiling separated cumulative allocations,
+tracked live memory, and process peak RSS.
+
+Rejected direct LLVM JSON equality for manifest validation: it equates integer
+and floating representations and can equate distinct large unsigned integers.
+Canonical serialization preserves those required distinctions. Removing the
+second object-key lookup while retaining early duplicate rejection adds state
+without a demonstrated benefit. No further change had sufficient justification.

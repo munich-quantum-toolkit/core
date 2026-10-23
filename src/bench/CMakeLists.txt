@@ -11,7 +11,9 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
        ${MQT_CORE_INCLUDE_BUILD_DIR}/bench/*.inc)
   file(GLOB_RECURSE BENCH_SOURCES *.cpp)
 
-  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench HIDDEN_VISIBILITY)
+  # LLVM error type IDs must stay in the same image as their handlers.
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench FORCE_STATIC
+                       HIDDEN_VISIBILITY)
   set_target_properties(${MQT_CORE_TARGET_NAME}-bench-library
                         PROPERTIES OUTPUT_NAME ${MQT_CORE_TARGET_NAME}-bench)
 

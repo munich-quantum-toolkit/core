@@ -48,8 +48,7 @@ add_subdirectory(dd)
 
 add_subdirectory(qdmi)
 
-# QDMI keeps LLVM private. CoreBench exposes LLVM errors across library boundaries, so its LLVM type
-# IDs must remain visible to consumers.
+# Keep statically linked LLVM implementation symbols out of the QDMI shared-library ABI.
 if(BUILD_MQT_CORE_SHARED_LIBS)
   foreach(llvm_library LLVMSupport LLVMDemangle)
     get_target_property(llvm_library_type ${llvm_library} TYPE)

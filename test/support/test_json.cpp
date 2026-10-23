@@ -15,6 +15,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 
+#include <algorithm>
 #include <bit>
 #include <clocale>
 #include <cmath>
@@ -38,6 +39,8 @@ TEST(JSON, StrictSyntaxAndUnicode) {
            R"("\uD800")",
            R"("\uDC00")",
            R"("\uD800\u0041")",
+           "\"raw\nnewline\"",
+           "\"\x1F\"",
            "\"\xFF\"",
            R"({"a":1,"\u0061":2})",
        }) {
@@ -63,6 +66,17 @@ TEST(JSON, BoundsNesting) {
   ASSERT_FALSE(rejected);
   EXPECT_NE(llvm::toString(rejected.takeError()).find("nesting"),
             std::string::npos);
+}
+
+TEST(JSON, OwnsParsedStrings) {
+  const std::string key = "a key longer than small-string storage";
+  const std::string value = "unescaped UTF-8 value: é and 😀";
+  std::string input = R"({")" + key + R"(":")" + value + R"(","empty":""})";
+  auto parsed = mqt::json::parse(input);
+  ASSERT_TRUE(static_cast<bool>(parsed)) << llvm::toString(parsed.takeError());
+  std::ranges::fill(input, 'x');
+  EXPECT_EQ(parsed->getAsObject()->getString(key), value);
+  EXPECT_EQ(parsed->getAsObject()->getString("empty"), "");
 }
 
 TEST(JSON, NumbersAndCanonicalOrdering) {

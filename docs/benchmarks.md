@@ -217,10 +217,12 @@ The output format changes the file name, but not the semantic case ID.
 
 A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
-manifests. JSON parsing and fallible JSON output return `llvm::Expected<T>`;
-callers must check the result or handle `takeError()`. C++ translation units
-using these LLVM APIs must match the SDK's RTTI setting (`-fno-rtti` with an
-RTTI-free LLVM build). Python JSON methods raise `ValueError` for invalid input.
+manifests. This target links statically so LLVM errors and their handlers use
+the same runtime. JSON parsing and fallible JSON output return
+`llvm::Expected<T>`; callers must check the result or handle `takeError()`. C++
+translation units using these LLVM APIs must match the SDK's RTTI setting
+(`-fno-rtti` with an RTTI-free LLVM build). Python JSON methods raise
+`ValueError` for invalid input.
 
 ```cpp
 #include "bench/Grover.hpp"

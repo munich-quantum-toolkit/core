@@ -22,6 +22,7 @@ namespace mqt::json {
 ///
 /// Numeric conversion is independent of the process locale. Nesting is limited
 /// to 256 containers to bound LLVM value destruction and serialization.
+/// Returned strings own their storage independently of the input.
 /// Allocation failures follow LLVM policy and are not guaranteed recoverable.
 [[nodiscard]] llvm::Expected<llvm::json::Value>
 parse(llvm::StringRef text, llvm::StringRef source = "<input>");
