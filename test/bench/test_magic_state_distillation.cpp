@@ -21,50 +21,51 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace mqt::bench {
 
 TEST(MagicStateDistillation, ValidatesLevelsAndTwoBitReference) {
-  EXPECT_EQ(MagicStateDistillation{}.options().levels, 1U);
+  EXPECT_EQ(llvm::cantFail(MagicStateDistillation::create()).options().levels,
+            1U);
   const auto maxLevels =
       static_cast<size_t>(std::numeric_limits<int64_t>::max()) / 5;
   for (const size_t levels : {size_t{1}, size_t{8}, maxLevels}) {
-    const MagicStateDistillation benchmark({.levels = levels});
+    const auto benchmark =
+        llvm::cantFail(MagicStateDistillation::create({.levels = levels}));
     EXPECT_EQ(benchmark.options().levels, levels);
   }
   for (const size_t levels :
        {size_t{0}, maxLevels + 1, std::numeric_limits<size_t>::max()}) {
-    EXPECT_THROW(MagicStateDistillation({.levels = levels}),
-                 std::invalid_argument);
+    test::expectError(MagicStateDistillation::create({.levels = levels}),
+                      std::errc::invalid_argument);
   }
-  const MagicStateDistillation benchmark;
+  const auto benchmark = llvm::cantFail(MagicStateDistillation::create());
   EXPECT_EQ(benchmark.output(), (Output{"result", 2}));
-  EXPECT_DOUBLE_EQ(benchmark.probability("00"), 1.);
+  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00")), 1.);
   for (const auto* outcome : {"01", "10", "11"}) {
-    EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 0.);
+    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(outcome)), 0.);
   }
   for (const auto* outcome : {"", "0", "000", "0x"}) {
-    EXPECT_THROW(static_cast<void>(benchmark.probability(outcome)),
-                 std::invalid_argument);
-    EXPECT_THROW(static_cast<void>(benchmark.evaluate({{outcome, 1}})),
-                 std::invalid_argument);
+    test::expectError(benchmark.probability(outcome),
+                      std::errc::invalid_argument);
+    test::expectError(benchmark.evaluate({{outcome, 1}}),
+                      std::errc::invalid_argument);
   }
-  EXPECT_THROW(static_cast<void>(benchmark.evaluate({})),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.evaluate({{"00", 0}})),
-               std::invalid_argument);
+  test::expectError(benchmark.evaluate({}), std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"00", 0}}),
+                    std::errc::invalid_argument);
 }
 
 TEST(MagicStateDistillation, EvaluatesAcceptanceAndRootStateTogether) {
-  const MagicStateDistillation benchmark;
-  const auto exact = benchmark.evaluate({{"00", 256}});
+  const auto benchmark = llvm::cantFail(MagicStateDistillation::create());
+  const auto exact = llvm::cantFail(benchmark.evaluate({{"00", 256}}));
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
   EXPECT_EQ(exact.successProbability, 1.);
-  const auto mixed =
-      benchmark.evaluate({{"00", 5}, {"01", 1}, {"10", 1}, {"11", 1}});
+  const auto mixed = llvm::cantFail(
+      benchmark.evaluate({{"00", 5}, {"01", 1}, {"10", 1}, {"11", 1}}));
   EXPECT_DOUBLE_EQ(mixed.totalVariationDistance, 0.375);
   EXPECT_DOUBLE_EQ(mixed.squaredHellingerFidelity, 0.625);
   EXPECT_EQ(mixed.successProbability, 0.625);
@@ -78,7 +79,8 @@ TEST(MagicStateDistillation, RoundTripsJSON) {
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"magic-state-distillation","parameters":{"levels":1},"schema_version":1})");
   for (const size_t levels : {2U, 8U}) {
-    const MagicStateDistillation benchmark({.levels = levels});
+    const auto benchmark =
+        llvm::cantFail(MagicStateDistillation::create({.levels = levels}));
     const auto instance = toInstanceSpecificationJSON(benchmark);
     EXPECT_EQ(
         toInstanceSpecificationJSON(llvm::cantFail(
@@ -90,7 +92,9 @@ TEST(MagicStateDistillation, RoundTripsJSON) {
               manifest);
     EXPECT_NE(caseId(benchmark), caseId(defaults));
   }
-  EXPECT_EQ(caseId(defaults), caseId(MagicStateDistillation({.levels = 1})));
+  EXPECT_EQ(
+      caseId(defaults),
+      caseId(llvm::cantFail(MagicStateDistillation::create({.levels = 1}))));
 }
 
 TEST(MagicStateDistillation, DescribesJSONSchema) {
@@ -121,9 +125,9 @@ TEST(MagicStateDistillation, RejectsInvalidJSONParameters) {
 }
 
 TEST(MagicStateDistillation, EvaluatesCountsFromJSON) {
-  const auto evaluation = llvm::cantFail(
-      evaluateJSON(toManifestJSON(MagicStateDistillation{}),
-                   R"({"schema_version":1,"counts":{"00":256}})"));
+  const auto evaluation = llvm::cantFail(evaluateJSON(
+      toManifestJSON(llvm::cantFail(MagicStateDistillation::create())),
+      R"({"schema_version":1,"counts":{"00":256}})"));
   EXPECT_NE(evaluation.find(R"("success_probability":1)"), std::string::npos);
 }
 

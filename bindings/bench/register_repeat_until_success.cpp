@@ -42,7 +42,7 @@ attempt measures an ancilla prepared from :math:`|0\rangle` and retries on
 failure. After success, return the parity of a
 :math:`Y \otimes X^{\otimes(n-1)}` measurement on the data qubits.)pb");
   repeatUntilSuccess
-      .def(nb::init<bench::RepeatUntilSuccessOptions>(),
+      .def("__init__", benchmarkInit(&bench::RepeatUntilSuccess::create),
            "options"_a = bench::RepeatUntilSuccessOptions{})
       .def_prop_ro("options", &bench::RepeatUntilSuccess::options,
                    nb::rv_policy::reference_internal,
@@ -50,10 +50,11 @@ failure. After success, return the parity of a
       .def_prop_ro("output", &bench::RepeatUntilSuccess::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::RepeatUntilSuccess::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::RepeatUntilSuccess::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.");
+      .def("probability",
+           benchmarkMethod(&bench::RepeatUntilSuccess::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::RepeatUntilSuccess::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(repeatUntilSuccess,
                       &bench::repeatUntilSuccessFromInstanceSpecificationJSON,
                       &bench::repeatUntilSuccessFromManifestJSON);

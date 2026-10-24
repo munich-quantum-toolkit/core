@@ -19,47 +19,49 @@
 #include "llvm/Support/Error.h"
 
 #include <numbers>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace mqt::bench {
 
 using test::expectInvalidJSON;
 
 TEST(RepeatUntilSuccess, HasTheOutput) {
-  const RepeatUntilSuccess benchmark;
+  const auto benchmark = llvm::cantFail(RepeatUntilSuccess::create());
   EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
 }
 
 TEST(RepeatUntilSuccess, ValidatesDataWidth) {
-  EXPECT_EQ(RepeatUntilSuccess{}.options().dataQubits, 1U);
-  EXPECT_EQ(RepeatUntilSuccess({.dataQubits = 5}).options().dataQubits, 5U);
-  EXPECT_NO_THROW(RepeatUntilSuccess(
-      {.dataQubits = RepeatUntilSuccessOptions::MAX_DATA_QUBITS}));
-  EXPECT_THROW(RepeatUntilSuccess({.dataQubits = 0}), std::invalid_argument);
-  EXPECT_THROW(
-      RepeatUntilSuccess(
+  EXPECT_EQ(llvm::cantFail(RepeatUntilSuccess::create()).options().dataQubits,
+            1U);
+  EXPECT_EQ(llvm::cantFail(RepeatUntilSuccess::create({.dataQubits = 5}))
+                .options()
+                .dataQubits,
+            5U);
+  static_cast<void>(llvm::cantFail(RepeatUntilSuccess::create(
+      {.dataQubits = RepeatUntilSuccessOptions::MAX_DATA_QUBITS})));
+  test::expectError(RepeatUntilSuccess::create({.dataQubits = 0}),
+                    std::errc::invalid_argument);
+  test::expectError(
+      RepeatUntilSuccess::create(
           {.dataQubits = RepeatUntilSuccessOptions::MAX_DATA_QUBITS + 1}),
-      std::invalid_argument);
+      std::errc::invalid_argument);
 }
 
 TEST(RepeatUntilSuccess, HasThePhaseSensitiveReference) {
-  const RepeatUntilSuccess benchmark;
+  const auto benchmark = llvm::cantFail(RepeatUntilSuccess::create());
   constexpr auto bias = std::numbers::sqrt2 / 3.;
-  EXPECT_DOUBLE_EQ(benchmark.probability("0"), 0.5 + bias);
-  EXPECT_DOUBLE_EQ(benchmark.probability("1"), 0.5 - bias);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("")),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("00")),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("x")),
-               std::invalid_argument);
+  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("0")), 0.5 + bias);
+  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("1")), 0.5 - bias);
+  test::expectError(benchmark.probability(""), std::errc::invalid_argument);
+  test::expectError(benchmark.probability("00"), std::errc::invalid_argument);
+  test::expectError(benchmark.probability("x"), std::errc::invalid_argument);
 }
 
 TEST(RepeatUntilSuccess, EvaluatesTheReferenceWithoutASuccessOutcome) {
-  const RepeatUntilSuccess benchmark;
+  const auto benchmark = llvm::cantFail(RepeatUntilSuccess::create());
   constexpr auto bias = std::numbers::sqrt2 / 3.;
-  const auto allZero = benchmark.evaluate({{"0", 10}});
+  const auto allZero = llvm::cantFail(benchmark.evaluate({{"0", 10}}));
   EXPECT_NEAR(allZero.totalVariationDistance, 0.5 - bias, 1e-15);
   EXPECT_NEAR(allZero.squaredHellingerFidelity, 0.5 + bias, 1e-15);
   EXPECT_FALSE(allZero.successProbability);
@@ -72,7 +74,7 @@ TEST(RepeatUntilSuccess, RoundTripsJSON) {
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"repeat-until-success","parameters":{"data_qubits":1},"schema_version":1})");
 
-  const RepeatUntilSuccess benchmark;
+  const auto benchmark = llvm::cantFail(RepeatUntilSuccess::create());
   const auto manifest = toManifestJSON(benchmark);
   EXPECT_EQ(toManifestJSON(
                 llvm::cantFail(repeatUntilSuccessFromManifestJSON(manifest))),
@@ -83,18 +85,22 @@ TEST(RepeatUntilSuccess, RoundTripsJSON) {
             std::string::npos);
   EXPECT_NE(manifest.find("\"parameters\":{\"data_qubits\":1}"),
             std::string::npos);
-  EXPECT_EQ(llvm::cantFail(repeatUntilSuccessFromManifestJSON(toManifestJSON(
-                               RepeatUntilSuccess({.dataQubits = 32}))))
-                .options()
-                .dataQubits,
-            32U);
+  EXPECT_EQ(
+      llvm::cantFail(
+          repeatUntilSuccessFromManifestJSON(toManifestJSON(
+              llvm::cantFail(RepeatUntilSuccess::create({.dataQubits = 32})))))
+          .options()
+          .dataQubits,
+      32U);
 }
 
 TEST(RepeatUntilSuccess, UsesSemanticCaseIds) {
-  EXPECT_EQ(caseId(RepeatUntilSuccess{}),
-            caseId(RepeatUntilSuccess{{.dataQubits = 1}}));
-  EXPECT_NE(caseId(RepeatUntilSuccess{}),
-            caseId(RepeatUntilSuccess{{.dataQubits = 5}}));
+  EXPECT_EQ(
+      caseId(llvm::cantFail(RepeatUntilSuccess::create())),
+      caseId(llvm::cantFail(RepeatUntilSuccess::create({.dataQubits = 1}))));
+  EXPECT_NE(
+      caseId(llvm::cantFail(RepeatUntilSuccess::create())),
+      caseId(llvm::cantFail(RepeatUntilSuccess::create({.dataQubits = 5}))));
 }
 
 TEST(RepeatUntilSuccess, DescribesJSONSchema) {
@@ -126,7 +132,7 @@ TEST(RepeatUntilSuccess, RejectsInvalidJSONParameters) {
 
 TEST(RepeatUntilSuccess, EvaluatesCountsFromJSON) {
   const auto evaluation = llvm::cantFail(
-      evaluateJSON(toManifestJSON(RepeatUntilSuccess{}),
+      evaluateJSON(toManifestJSON(llvm::cantFail(RepeatUntilSuccess::create())),
                    R"({"schema_version":1,"counts":{"0":993,"1":7}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
   EXPECT_NE(evaluation.find("\"total_variation_distance\":"),

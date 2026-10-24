@@ -42,16 +42,16 @@ void registerBV(const nb::module_& m) {
 
   auto bv = nb::class_<bench::BV>(m, "BV",
                                   "A validated Bernstein--Vazirani benchmark.");
-  bv.def(nb::init<bench::BVOptions>(), "options"_a)
+  bv.def("__init__", benchmarkInit(&bench::BV::create), "options"_a)
       .def_prop_ro("options", &bench::BV::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::BV::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::BV::probability, "outcome"_a,
+      .def("probability", benchmarkMethod(&bench::BV::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::BV::evaluate, "counts"_a,
+      .def("evaluate", benchmarkMethod(&bench::BV::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(bv, &bench::bvFromInstanceSpecificationJSON,
                       &bench::bvFromManifestJSON);

@@ -218,18 +218,25 @@ The output format changes the file name, but not the semantic case ID.
 A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
 manifests. This target links statically so LLVM errors and their handlers use
-the same runtime. JSON parsing and fallible JSON output return
-`llvm::Expected<T>`; callers must check the result or handle `takeError()`.
-Python JSON methods raise `ValueError` for invalid input.
+the same runtime. Checked factories (`create`), probability, evaluation,
+factoring, and JSON boundaries return `llvm::Expected<T>`. Callers must check
+results and consume or propagate errors with `takeError()`. Getters and
+Teleportation construction remain infallible. Python keeps its constructors,
+`ValueError` for invalid input, and `OverflowError` for shot-count overflow.
+Shor's native executor returns `llvm::Expected<Counts>`; Python executor errors
+retain their original exception.
 
 ```cpp
 #include "bench/Grover.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <cassert>
 
 int main() {
-  const mqt::bench::Grover benchmark{{.markedBitstring = "101"}};
-  const auto evaluation = benchmark.evaluate({{"101", 1000}});
+  const auto benchmark =
+      llvm::cantFail(mqt::bench::Grover::create({.markedBitstring = "101"}));
+  const auto evaluation = llvm::cantFail(benchmark.evaluate({{"101", 1000}}));
   assert(evaluation.successProbability == 1.0);
 }
 ```

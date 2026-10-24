@@ -44,16 +44,16 @@ void registerQFT(const nb::module_& m) {
       .def_ro("method", &bench::QFTOptions::method, "The circuit method.");
 
   auto qft = nb::class_<bench::QFT>(m, "QFT", "A validated QFT benchmark.");
-  qft.def(nb::init<bench::QFTOptions>(), "options"_a)
+  qft.def("__init__", benchmarkInit(&bench::QFT::create), "options"_a)
       .def_prop_ro("options", &bench::QFT::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::QFT::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::QFT::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::QFT::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::QFT::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::QFT::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(qft, &bench::qftFromInstanceSpecificationJSON,
                       &bench::qftFromManifestJSON);

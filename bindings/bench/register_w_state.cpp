@@ -34,16 +34,16 @@ void registerWState(const nb::module_& m) {
 
   auto wState = nb::class_<bench::WState>(
       m, "WState", "A validated W-state preparation benchmark.");
-  wState.def(nb::init<bench::WStateOptions>(), "options"_a)
+  wState.def("__init__", benchmarkInit(&bench::WState::create), "options"_a)
       .def_prop_ro("options", &bench::WState::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::WState::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::WState::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::WState::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::WState::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::WState::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(wState, &bench::wStateFromInstanceSpecificationJSON,
                       &bench::wStateFromManifestJSON);

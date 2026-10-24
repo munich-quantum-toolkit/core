@@ -52,7 +52,8 @@ The initially zero product register stores :math:`c \cdot a \cdot x \bmod N`,
 where :math:`c` is the control, :math:`a` is the classical multiplier,
 :math:`x` is the multiplicand, and :math:`N` is the modulus.)pb");
   modularMultiplier
-      .def(nb::init<bench::ModularMultiplierOptions>(), "options"_a)
+      .def("__init__", benchmarkInit(&bench::ModularMultiplier::create),
+           "options"_a)
       .def_prop_ro("options", &bench::ModularMultiplier::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -61,10 +62,11 @@ where :math:`c` is the control, :math:`a` is the classical multiplier,
                    "The logical control, multiplicand, and accumulator output.")
       .def_prop_ro("expected_result", &bench::ModularMultiplier::expectedResult,
                    "The unique outcome, or ``None`` for superposed inputs.")
-      .def("probability", &bench::ModularMultiplier::probability, "outcome"_a,
+      .def("probability",
+           benchmarkMethod(&bench::ModularMultiplier::probability), "outcome"_a,
            "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::ModularMultiplier::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.");
+      .def("evaluate", benchmarkMethod(&bench::ModularMultiplier::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(modularMultiplier,
                       &bench::modularMultiplierFromInstanceSpecificationJSON,
                       &bench::modularMultiplierFromManifestJSON);

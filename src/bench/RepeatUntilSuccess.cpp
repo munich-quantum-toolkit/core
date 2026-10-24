@@ -14,19 +14,26 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <numbers>
-#include <stdexcept>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bench {
 
 RepeatUntilSuccess::RepeatUntilSuccess(RepeatUntilSuccessOptions options)
-    : options_(options), output_{.name = "result", .width = 1} {
-  if (options_.dataQubits == 0 ||
-      options_.dataQubits > RepeatUntilSuccessOptions::MAX_DATA_QUBITS) {
-    throw std::invalid_argument(
+    : options_(options), output_{.name = "result", .width = 1} {}
+
+llvm::Expected<RepeatUntilSuccess>
+RepeatUntilSuccess::create(RepeatUntilSuccessOptions options) {
+  if (options.dataQubits == 0 ||
+      options.dataQubits > RepeatUntilSuccessOptions::MAX_DATA_QUBITS) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "repeat-until-success data qubits must be between 1 and 1000000");
   }
+  return RepeatUntilSuccess(options);
 }
 
 const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
@@ -35,13 +42,17 @@ const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
 
 const Output& RepeatUntilSuccess::output() const noexcept { return output_; }
 
-double RepeatUntilSuccess::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+llvm::Expected<double>
+RepeatUntilSuccess::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return error;
+  }
   constexpr auto bias = std::numbers::sqrt2 / 3.;
   return outcome == "0" ? 0.5 + bias : 0.5 - bias;
 }
 
-Evaluation RepeatUntilSuccess::evaluate(const Counts& counts) const {
+llvm::Expected<Evaluation>
+RepeatUntilSuccess::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

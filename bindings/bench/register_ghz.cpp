@@ -46,16 +46,16 @@ void registerGHZ(const nb::module_& m) {
       .def_ro("basis", &bench::GHZOptions::basis, "The measurement basis.");
 
   auto ghz = nb::class_<bench::GHZ>(m, "GHZ", "A validated GHZ benchmark.");
-  ghz.def(nb::init<bench::GHZOptions>(), "options"_a)
+  ghz.def("__init__", benchmarkInit(&bench::GHZ::create), "options"_a)
       .def_prop_ro("options", &bench::GHZ::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::GHZ::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::GHZ::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::GHZ::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::GHZ::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::GHZ::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(ghz, &bench::ghzFromInstanceSpecificationJSON,
                       &bench::ghzFromManifestJSON);

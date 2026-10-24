@@ -18,8 +18,8 @@
 
 #include "llvm/Support/Error.h"
 
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace mqt::bench {
 
@@ -28,19 +28,17 @@ using test::expectInvalidJSON;
 TEST(Teleportation, ChecksTheTeleportedState) {
   const Teleportation benchmark;
   EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
-  EXPECT_DOUBLE_EQ(benchmark.probability("0"), 1.);
-  EXPECT_DOUBLE_EQ(benchmark.probability("1"), 0.);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("00")),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("x")),
-               std::invalid_argument);
+  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("0")), 1.);
+  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("1")), 0.);
+  test::expectError(benchmark.probability("00"), std::errc::invalid_argument);
+  test::expectError(benchmark.probability("x"), std::errc::invalid_argument);
 
-  const auto exact = benchmark.evaluate({{"0", 8}});
+  const auto exact = llvm::cantFail(benchmark.evaluate({{"0", 8}}));
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
   EXPECT_EQ(exact.successProbability, 1.);
 
-  const auto noisy = benchmark.evaluate({{"0", 6}, {"1", 2}});
+  const auto noisy = llvm::cantFail(benchmark.evaluate({{"0", 6}, {"1", 2}}));
   EXPECT_DOUBLE_EQ(noisy.totalVariationDistance, 0.25);
   EXPECT_DOUBLE_EQ(noisy.squaredHellingerFidelity, 0.75);
   EXPECT_EQ(noisy.successProbability, 0.75);

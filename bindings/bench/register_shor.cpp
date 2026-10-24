@@ -22,9 +22,14 @@
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
+#include <system_error>
+#include <utility>
 
 namespace mqt {
 namespace nb = nanobind;
@@ -50,14 +55,14 @@ void registerShor(nb::module_& m) {
               "A sorted factor pair, or ``None``.");
   auto shor = nb::class_<bench::Shor>(
       m, "Shor", "A validated semiclassical Shor benchmark.");
-  shor.def(nb::init<bench::ShorOptions>(), "options"_a)
+  shor.def("__init__", benchmarkInit(&bench::Shor::create), "options"_a)
       .def_prop_ro("options", &bench::Shor::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro(
           "output", &bench::Shor::output, nb::rv_policy::reference_internal,
           "The big-endian phase register with twice the modulus bit width.")
-      .def("evaluate", &bench::Shor::evaluate, "counts"_a,
+      .def("evaluate", benchmarkMethod(&bench::Shor::evaluate), "counts"_a,
            "Recover factors using exact continued fractions and verify them by "
            "division.");
   registerBenchmarkIO(shor, &bench::shorFromInstanceSpecificationJSON,
@@ -79,8 +84,24 @@ void registerShor(nb::module_& m) {
       [](uint64_t number,
          const std::function<bench::Counts(const bench::Shor&)>& run,
          size_t maxAttempts, uint64_t seed) {
-        return bench::factor(number, run,
-                             {.maxAttempts = maxAttempts, .seed = seed});
+        std::exception_ptr callbackError;
+        auto result = bench::factor(
+            number,
+            [&](const bench::Shor& benchmark) -> llvm::Expected<bench::Counts> {
+              try {
+                return run(benchmark);
+              } catch (...) {
+                callbackError = std::current_exception();
+                return llvm::createStringError(std::errc::operation_canceled,
+                                               "benchmark callback failed");
+              }
+            },
+            {.maxAttempts = maxAttempts, .seed = seed});
+        if (callbackError) {
+          llvm::consumeError(result.takeError());
+          std::rethrow_exception(callbackError);
+        }
+        return unwrapBenchmark(std::move(result));
       },
       "number"_a, "run"_a, nb::kw_only(), "max_attempts"_a = 16, "seed"_a = 0,
       R"pb(Find one nontrivial factor pair with a bounded number of attempted bases.

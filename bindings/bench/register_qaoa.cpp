@@ -61,16 +61,16 @@ Copy the program first to reuse it for other angles.
 
 The benchmark does not run an optimizer. Evaluation measures cut quality,
 not agreement with an ideal output distribution.)pb");
-  qaoa.def(nb::init<bench::QAOAOptions>(), "options"_a)
+  qaoa.def("__init__", benchmarkInit(&bench::QAOA::create), "options"_a)
       .def_prop_ro("options", &bench::QAOA::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::QAOA::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("cut_size", &bench::QAOA::cutSize, "outcome"_a,
+      .def("cut_size", benchmarkMethod(&bench::QAOA::cutSize), "outcome"_a,
            "Count cycle edges whose measured endpoint bits differ.")
-      .def("evaluate", &bench::QAOA::evaluate, "counts"_a,
+      .def("evaluate", benchmarkMethod(&bench::QAOA::evaluate), "counts"_a,
            "Compute the mean cut and its ratio to the maximum cut size.");
   registerBenchmarkIO(qaoa, &bench::qaoaFromInstanceSpecificationJSON,
                       &bench::qaoaFromManifestJSON);

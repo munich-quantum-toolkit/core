@@ -78,9 +78,15 @@ def test_shor_errors() -> None:
     with pytest.raises(ValueError, match="width"):
         shor.Shor(shor.Options(number=21)).evaluate({"0": 1})
 
-    def failed(_: shor.Shor) -> dict[str, int]:
-        msg = "execution failed"
-        raise RuntimeError(msg)
 
-    with pytest.raises(RuntimeError, match="execution failed"):
+@pytest.mark.parametrize("error_type", [RuntimeError, ValueError, KeyboardInterrupt])
+def test_factor_preserves_callback_exception(error_type: type[BaseException]) -> None:
+    """Keep the original callback exception across native error propagation."""
+    error = error_type("execution failed")
+
+    def failed(_: shor.Shor) -> dict[str, int]:
+        raise error
+
+    with pytest.raises(error_type, match="execution failed") as caught:
         shor.factor(21, failed)
+    assert caught.value is error

@@ -45,7 +45,6 @@
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -133,15 +132,14 @@ bool keys(const Json& value, std::initializer_list<llvm::StringRef> known,
   });
 }
 
-template <class Factory>
-[[nodiscard]] auto constructBenchmark(const std::string_view source,
-                                      const Factory& factory)
-    -> llvm::Expected<decltype(factory())> {
-  try {
-    return factory();
-  } catch (const std::invalid_argument& error) {
-    return fail(source, "$/parameters", error.what());
+template <class Benchmark>
+[[nodiscard]] llvm::Expected<Benchmark>
+withParameterSource(const std::string_view source,
+                    llvm::Expected<Benchmark> result) {
+  if (!result) {
+    return fail(source, "$/parameters", llvm::toString(result.takeError()));
   }
+  return result;
 }
 
 template <class Enum>
@@ -263,7 +261,7 @@ bool sizeValue(const Json& parameters, llvm::StringRef key, size_t& out,
           path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return BV(std::move(options)); });
+  return withParameterSource(source, BV::create(std::move(options)));
 }
 
 [[nodiscard]] llvm::Expected<FanOut>
@@ -276,7 +274,7 @@ parseFanOutParameters(const Json& parameters, std::string_view source) {
       !sizeValue(parameters, "controls", options.controls, path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return FanOut(options); });
+  return withParameterSource(source, FanOut::create(options));
 }
 
 [[nodiscard]] llvm::Expected<GHZ> parseGHZParameters(const Json& parameters,
@@ -295,7 +293,7 @@ parseFanOutParameters(const Json& parameters, std::string_view source) {
                            {{"z", GHZBasis::Z}, {"x", GHZBasis::X}}, path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return GHZ(options); });
+  return withParameterSource(source, GHZ::create(options));
 }
 
 [[nodiscard]] llvm::Expected<Grover>
@@ -314,7 +312,7 @@ parseGroverParameters(const Json& parameters, std::string_view source) {
   if (parameters.getAsObject()->get("iterations") != nullptr) {
     options.iterations = iterations;
   }
-  return constructBenchmark(source, [&] { return Grover(std::move(options)); });
+  return withParameterSource(source, Grover::create(std::move(options)));
 }
 
 [[nodiscard]] llvm::Expected<GroverWeakMeasurement>
@@ -335,8 +333,8 @@ parseGroverWeakMeasurementParameters(const Json& parameters,
   if (parameters.getAsObject()->get("measurement_strength") != nullptr) {
     options.measurementStrength = measurementStrength;
   }
-  return constructBenchmark(
-      source, [&] { return GroverWeakMeasurement(std::move(options)); });
+  return withParameterSource(source,
+                             GroverWeakMeasurement::create(std::move(options)));
 }
 
 [[nodiscard]] llvm::Expected<MagicStateDistillation>
@@ -350,8 +348,7 @@ parseMagicStateDistillationParameters(const Json& parameters,
       !sizeValue(parameters, "levels", options.levels, path, true)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source,
-                            [&] { return MagicStateDistillation(options); });
+  return withParameterSource(source, MagicStateDistillation::create(options));
 }
 
 [[nodiscard]] llvm::Expected<ModularMultiplier>
@@ -376,8 +373,8 @@ parseModularMultiplierParameters(const Json& parameters,
     return fail(source, "$/parameters/control", "must be 0, 1, or +");
   }
   options.control = control.front();
-  return constructBenchmark(
-      source, [&] { return ModularMultiplier(std::move(options)); });
+  return withParameterSource(source,
+                             ModularMultiplier::create(std::move(options)));
 }
 
 [[nodiscard]] llvm::Expected<Multiplexer>
@@ -390,7 +387,7 @@ parseMultiplexerParameters(const Json& parameters, std::string_view source) {
       !sizeValue(parameters, "qubits", options.qubits, path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return Multiplexer(options); });
+  return withParameterSource(source, Multiplexer::create(options));
 }
 
 [[nodiscard]] llvm::Expected<QAOA>
@@ -404,7 +401,7 @@ parseQAOAParameters(const Json& parameters, std::string_view source) {
       !sizeValue(parameters, "depth", options.depth, path, true)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return QAOA(options); });
+  return withParameterSource(source, QAOA::create(options));
 }
 
 [[nodiscard]] llvm::Expected<QFT> parseQFTParameters(const Json& parameters,
@@ -424,7 +421,7 @@ parseQAOAParameters(const Json& parameters, std::string_view source) {
                             path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return QFT(options); });
+  return withParameterSource(source, QFT::create(options));
 }
 
 [[nodiscard]] llvm::Expected<QFTAdder>
@@ -453,8 +450,7 @@ parseQFTAdderParameters(const Json& parameters, std::string_view source) {
                                    path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source,
-                            [&] { return QFTAdder(std::move(options)); });
+  return withParameterSource(source, QFTAdder::create(std::move(options)));
 }
 
 [[nodiscard]] llvm::Expected<RepeatUntilSuccess>
@@ -468,8 +464,7 @@ parseRepeatUntilSuccessParameters(const Json& parameters,
       !sizeValue(parameters, "data_qubits", options.dataQubits, path, true)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source,
-                            [&] { return RepeatUntilSuccess(options); });
+  return withParameterSource(source, RepeatUntilSuccess::create(options));
 }
 
 [[nodiscard]] llvm::Expected<Shor>
@@ -484,7 +479,7 @@ parseShorParameters(const Json& parameters, std::string_view source) {
       !object.mapOptional("base", options.base)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return Shor(options); });
+  return withParameterSource(source, Shor::create(options));
 }
 
 [[nodiscard]] llvm::Expected<WState>
@@ -497,7 +492,7 @@ parseWStateParameters(const Json& parameters, std::string_view source) {
       !sizeValue(parameters, "qubits", options.qubits, path)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] { return WState(options); });
+  return withParameterSource(source, WState::create(options));
 }
 
 [[nodiscard]] llvm::Expected<Teleportation>
@@ -540,13 +535,16 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
       !phaseObject.map("denominator", denominator)) {
     return diagnostic.getError();
   }
-  return constructBenchmark(source, [&] {
-    return QPE({
-        .precision = precision,
-        .phase = Phase(numerator, denominator),
-        .method = method,
-    });
-  });
+  auto parsedPhase = Phase::create(numerator, denominator);
+  if (!parsedPhase) {
+    return fail(source, "$/parameters",
+                llvm::toString(parsedPhase.takeError()));
+  }
+  return withParameterSource(source, QPE::create({
+                                         .precision = precision,
+                                         .phase = *parsedPhase,
+                                         .method = method,
+                                     }));
 }
 
 [[nodiscard]] llvm::StringRef topologyName(const GHZTopology topology) {
@@ -1620,21 +1618,22 @@ llvm::Expected<std::string> evaluateJSON(const std::string_view manifest,
   const auto shots = std::accumulate(
       parsedCounts->begin(), parsedCounts->end(), size_t{0},
       [](size_t sum, const auto& item) { return sum + item.second; });
-  try {
-    return std::visit(
-        [&](const auto& benchmark) -> llvm::Expected<std::string> {
-          if (*root != manifestJSON(benchmark)) {
-            return fail(
-                manifestSource, "$",
-                "does not match its resolved benchmark instance and case ID");
-          }
-          return evaluationToJSON(*root->getAsObject()->getString("case_id"),
-                                  shots, benchmark.evaluate(*parsedCounts));
-        },
-        *parsed);
-  } catch (const std::invalid_argument& error) {
-    return fail(countsSource, "$/counts", error.what());
-  }
+  return std::visit(
+      [&](const auto& benchmark) -> llvm::Expected<std::string> {
+        if (*root != manifestJSON(benchmark)) {
+          return fail(
+              manifestSource, "$",
+              "does not match its resolved benchmark instance and case ID");
+        }
+        auto evaluation = benchmark.evaluate(*parsedCounts);
+        if (!evaluation) {
+          return fail(countsSource, "$/counts",
+                      llvm::toString(evaluation.takeError()));
+        }
+        return evaluationToJSON(*root->getAsObject()->getString("case_id"),
+                                shots, *evaluation);
+      },
+      *parsed);
 }
 
 llvm::Expected<std::string> evaluationToJSON(const std::string_view caseIdValue,

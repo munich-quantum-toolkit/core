@@ -65,7 +65,7 @@ All strings are big-endian, and leading zeros determine the operand width.
 Register addends may contain ``+`` for independent :math:`|+\rangle` qubits.
 The accumulator and constant addends must be binary. The circuit follows
 Draper's register addition and its constant-input Fourier specialization.)pb");
-  qftAdder.def(nb::init<bench::QFTAdderOptions>(), "options"_a)
+  qftAdder.def("__init__", benchmarkInit(&bench::QFTAdder::create), "options"_a)
       .def_prop_ro("options", &bench::QFTAdder::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -75,9 +75,9 @@ Draper's register addition and its constant-input Fourier specialization.)pb");
       .def_prop_ro(
           "expected_result", &bench::QFTAdder::expectedResult,
           "The unique logical outcome, or ``None`` for a superposed addend.")
-      .def("probability", &bench::QFTAdder::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::QFTAdder::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::QFTAdder::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::QFTAdder::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(qftAdder, &bench::qftAdderFromInstanceSpecificationJSON,
                       &bench::qftAdderFromManifestJSON);

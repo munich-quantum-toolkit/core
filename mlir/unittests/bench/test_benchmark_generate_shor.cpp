@@ -25,6 +25,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
@@ -44,13 +45,13 @@ using namespace mlir;
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
   // Keep the circuit small enough for unoptimized coverage builds.
   constexpr uint64_t number = 15;
-  const Shor benchmark({.number = number});
+  const auto benchmark = llvm::cantFail(Shor::create({.number = number}));
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));
-  auto evaluation = benchmark.evaluate(*counts);
+  auto evaluation = llvm::cantFail(benchmark.evaluate(*counts));
   ASSERT_TRUE(evaluation.factors);
   EXPECT_EQ(evaluation.factors->first * evaluation.factors->second, number);
   // Base 2 has order 4 modulo 15: four equally likely phases, with no tails.
@@ -65,7 +66,7 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17,
                   qco::DDArgumentBindings{}, nullptr, nullptr, {}, 1);
   ASSERT_TRUE(succeeded(shared));
-  EXPECT_TRUE(benchmark.evaluate(*shared).factors);
+  EXPECT_TRUE(llvm::cantFail(benchmark.evaluate(*shared)).factors);
 }
 
 static mlir::FailureOr<QCOProgram> inPlaceMultiplier(uint64_t number,
@@ -161,7 +162,8 @@ TEST(GenerateProgramTest,
 }
 
 TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
-  const Shor benchmark({.number = ShorOptions::MAX_NUMBER});
+  const auto benchmark =
+      llvm::cantFail(Shor::create({.number = ShorOptions::MAX_NUMBER}));
   auto program = generate(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(program->str().size(), 32'768U);

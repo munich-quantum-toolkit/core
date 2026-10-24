@@ -46,16 +46,16 @@ For :math:`n` controls, the circuit uses :math:`2n` qubits. The logical
 output contains the controls followed by the target as its least-significant
 bit. For a control string of Hamming weight :math:`w`, the target is zero
 with conditional probability :math:`\cos^2(\pi w/4)`.)pb");
-  fanOut.def(nb::init<bench::FanOutOptions>(), "options"_a)
+  fanOut.def("__init__", benchmarkInit(&bench::FanOut::create), "options"_a)
       .def_prop_ro("options", &bench::FanOut::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::FanOut::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::FanOut::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::FanOut::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::FanOut::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::FanOut::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(fanOut, &bench::fanOutFromInstanceSpecificationJSON,
                       &bench::fanOutFromManifestJSON);

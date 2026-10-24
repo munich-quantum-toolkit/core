@@ -41,7 +41,7 @@ void registerGrover(const nb::module_& m) {
 
   auto grover = nb::class_<bench::Grover>(
       m, "Grover", "A validated single-solution Grover benchmark.");
-  grover.def(nb::init<bench::GroverOptions>(), "options"_a)
+  grover.def("__init__", benchmarkInit(&bench::Grover::create), "options"_a)
       .def_prop_ro("options", &bench::Grover::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -50,9 +50,9 @@ void registerGrover(const nb::module_& m) {
                    "The logical output register.")
       .def_prop_ro("qubits", &bench::Grover::qubits,
                    "The number of search qubits.")
-      .def("probability", &bench::Grover::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::Grover::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::Grover::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::Grover::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(grover, &bench::groverFromInstanceSpecificationJSON,
                       &bench::groverFromManifestJSON);

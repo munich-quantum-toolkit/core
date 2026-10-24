@@ -47,7 +47,8 @@ namespace {
     throw nb::value_error("phase denominator must fit in 64 bits");
   }
   const auto numerator = value.attr("numerator").attr("__mod__")(denominator);
-  return {nb::cast<uint64_t>(numerator), denominatorValue};
+  return unwrapBenchmark(
+      bench::Phase::create(nb::cast<uint64_t>(numerator), denominatorValue));
 }
 
 [[nodiscard]] nb::object asFraction(const bench::Phase& phase) {
@@ -62,8 +63,8 @@ void registerQPE(const nb::module_& m) {
   nb::class_<bench::Phase>(
       m, "Phase",
       R"pb(An exact phase :math:`\phi=p/q` in turns, reduced modulo one turn.)pb")
-      .def(nb::init<uint64_t, uint64_t>(), nb::kw_only(), "numerator"_a,
-           "denominator"_a)
+      .def("__init__", benchmarkInit(&bench::Phase::create), nb::kw_only(),
+           "numerator"_a, "denominator"_a)
       .def_prop_ro("numerator", &bench::Phase::numerator,
                    R"pb(The reduced numerator :math:`p`.)pb")
       .def_prop_ro("denominator", &bench::Phase::denominator,
@@ -99,16 +100,16 @@ void registerQPE(const nb::module_& m) {
       .def_ro("method", &bench::QPEOptions::method, "The circuit method.");
 
   auto qpe = nb::class_<bench::QPE>(m, "QPE", "A validated QPE benchmark.");
-  qpe.def(nb::init<bench::QPEOptions>(), "options"_a)
+  qpe.def("__init__", benchmarkInit(&bench::QPE::create), "options"_a)
       .def_prop_ro("options", &bench::QPE::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::QPE::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::QPE::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::QPE::evaluate, "counts"_a,
+      .def("probability", benchmarkMethod(&bench::QPE::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::QPE::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(qpe, &bench::qpeFromInstanceSpecificationJSON,
                       &bench::qpeFromManifestJSON);

@@ -50,7 +50,7 @@ Bit 1 flags any rejected block; bit 0 checks the retained root state against
 regardless of rejection. The benchmark models ideal logical circuits without
 input noise, physical error correction, or retries.)pb");
   magicStateDistillation
-      .def(nb::init<bench::MagicStateDistillationOptions>(),
+      .def("__init__", benchmarkInit(&bench::MagicStateDistillation::create),
            "options"_a = bench::MagicStateDistillationOptions{})
       .def_prop_ro("options", &bench::MagicStateDistillation::options,
                    nb::rv_policy::reference_internal,
@@ -58,10 +58,12 @@ input noise, physical error correction, or retries.)pb");
       .def_prop_ro("output", &bench::MagicStateDistillation::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::MagicStateDistillation::probability,
+      .def("probability",
+           benchmarkMethod(&bench::MagicStateDistillation::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::MagicStateDistillation::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.");
+      .def("evaluate",
+           benchmarkMethod(&bench::MagicStateDistillation::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(
       magicStateDistillation,
       &bench::magicStateDistillationFromInstanceSpecificationJSON,

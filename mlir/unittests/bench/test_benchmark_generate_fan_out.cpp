@@ -22,6 +22,7 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
@@ -32,7 +33,8 @@ namespace mqt::bench {
 TEST(GenerateProgramTest, FanOutMatchesSequentialPhasesAndCleansAncillas) {
   for (const size_t controls : {1U, 3U, 5U, 257U}) {
     SCOPED_TRACE(controls);
-    auto program = test::generateQCO(FanOut{{.controls = controls}});
+    auto program = test::generateQCO(
+        llvm::cantFail(FanOut::create({.controls = controls})));
     ASSERT_TRUE(mlir::succeeded(program));
     dd::Package package(0);
     auto state = mlir::qco::simulateStatevector(
@@ -68,11 +70,13 @@ TEST(GenerateProgramTest, FanOutMatchesSequentialPhasesAndCleansAncillas) {
 }
 
 TEST(GenerateProgramTest, SamplesFanOutAgainstReference) {
-  test::expectSamplingMatchesReference(FanOut{{.controls = 3}});
+  test::expectSamplingMatchesReference(
+      llvm::cantFail(FanOut::create({.controls = 3})));
 }
 
 TEST(GenerateProgramTest, SerializesTheLargestFanOutWithCompactLoops) {
-  auto program = generate(FanOut{{.controls = FanOutOptions::MAX_CONTROLS}});
+  auto program = generate(llvm::cantFail(
+      FanOut::create({.controls = FanOutOptions::MAX_CONTROLS})));
   ASSERT_TRUE(mlir::succeeded(program));
   // Generation must not expand a gate list with one operation per qubit.
   EXPECT_LT(test::countOperations(program->module()), 150U);

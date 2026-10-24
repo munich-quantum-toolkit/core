@@ -16,8 +16,16 @@
 
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bench::test {
+
+template <class T>
+void expectError(llvm::Expected<T> result, const std::errc code) {
+  ASSERT_FALSE(static_cast<bool>(result)) << "Expected invalid benchmark input";
+  EXPECT_EQ(llvm::errorToErrorCode(result.takeError()),
+            std::make_error_code(code));
+}
 
 template <class Operation>
 void expectInvalidJSON(const Operation& operation,

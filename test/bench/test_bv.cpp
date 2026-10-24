@@ -12,17 +12,19 @@
 #include "bench/Evaluation.hpp"
 #include "bench/JSON.hpp"
 
+#include "JSONTestUtils.hpp"
+
 #include "gtest/gtest.h"
 
 #include "llvm/Support/Error.h"
 
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace mqt::bench {
 
 TEST(BV, UsesTheStaticMethodByDefault) {
-  const BV benchmark{{.hiddenBitstring = "101"}};
+  const auto benchmark = llvm::cantFail(BV::create({.hiddenBitstring = "101"}));
   EXPECT_EQ(benchmark.options().method, BVMethod::Static);
   EXPECT_EQ(benchmark.output(), (Output{"result", 3}));
 }
@@ -30,25 +32,29 @@ TEST(BV, UsesTheStaticMethodByDefault) {
 TEST(BV, ValidatesTheConfiguredInstance) {
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidMethod = static_cast<BVMethod>(2);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = ""}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = "10x"}}),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = std::string(
-                                         BVOptions::MAX_BITS + 1, '0')}}),
-               std::invalid_argument);
-  EXPECT_THROW(
-      static_cast<void>(BV{{.hiddenBitstring = "1", .method = invalidMethod}}),
-      std::invalid_argument);
+  test::expectError(BV::create({.hiddenBitstring = ""}),
+                    std::errc::invalid_argument);
+  test::expectError(BV::create({.hiddenBitstring = "10x"}),
+                    std::errc::invalid_argument);
+  test::expectError(
+      BV::create({
+          .hiddenBitstring = std::string(BVOptions::MAX_BITS + 1, '0'),
+      }),
+      std::errc::invalid_argument);
+  test::expectError(
+      BV::create({.hiddenBitstring = "1", .method = invalidMethod}),
+      std::errc::invalid_argument);
 }
 
 TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {
   for (const auto method : {BVMethod::Static, BVMethod::Dynamic}) {
-    const BV benchmark{{.hiddenBitstring = "101", .method = method}};
-    EXPECT_DOUBLE_EQ(benchmark.probability("101"), 1.);
-    EXPECT_DOUBLE_EQ(benchmark.probability("011"), 0.);
+    const auto benchmark = llvm::cantFail(
+        BV::create({.hiddenBitstring = "101", .method = method}));
+    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("101")), 1.);
+    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("011")), 0.);
 
-    const auto evaluation = benchmark.evaluate({{"101", 80}, {"011", 20}});
+    const auto evaluation =
+        llvm::cantFail(benchmark.evaluate({{"101", 80}, {"011", 20}}));
     EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.2);
     EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 0.8);
     ASSERT_TRUE(evaluation.successProbability);
@@ -64,7 +70,8 @@ TEST(BV, RoundTripsJSON) {
       toInstanceSpecificationJSON(defaults),
       R"({"benchmark":"bv","parameters":{"hidden_bitstring":"101","method":"static"},"schema_version":1})");
 
-  const BV dynamic{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const auto dynamic = llvm::cantFail(
+      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic}));
   const auto manifest = toManifestJSON(dynamic);
   EXPECT_EQ(toManifestJSON(llvm::cantFail(bvFromManifestJSON(manifest))),
             manifest);
@@ -72,8 +79,9 @@ TEST(BV, RoundTripsJSON) {
 }
 
 TEST(BV, UsesSemanticCaseIds) {
-  EXPECT_NE(caseId(BV{{.hiddenBitstring = "1"}}),
-            caseId(BV{{.hiddenBitstring = "1", .method = BVMethod::Dynamic}}));
+  EXPECT_NE(caseId(llvm::cantFail(BV::create({.hiddenBitstring = "1"}))),
+            caseId(llvm::cantFail(BV::create(
+                {.hiddenBitstring = "1", .method = BVMethod::Dynamic}))));
 }
 
 TEST(BV, DescribesJSONSchema) {
@@ -82,9 +90,9 @@ TEST(BV, DescribesJSONSchema) {
 }
 
 TEST(BV, EvaluatesCountsFromJSON) {
-  const auto evaluation = llvm::cantFail(
-      evaluateJSON(toManifestJSON(BV{{.hiddenBitstring = "11"}}),
-                   R"({"schema_version":1,"counts":{"11":8,"00":2}})"));
+  const auto evaluation = llvm::cantFail(evaluateJSON(
+      toManifestJSON(llvm::cantFail(BV::create({.hiddenBitstring = "11"}))),
+      R"({"schema_version":1,"counts":{"11":8,"00":2}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":0.8"), std::string::npos);
 }
 

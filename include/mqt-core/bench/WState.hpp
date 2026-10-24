@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <string_view>
 
@@ -28,13 +30,16 @@ struct WStateOptions {
 /// A validated W-state benchmark.
 class MQT_CORE_BENCH_EXPORT WState final {
 public:
-  explicit WState(WStateOptions options);
+  [[nodiscard]] static llvm::Expected<WState> create(WStateOptions options);
   [[nodiscard]] const WStateOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
-  [[nodiscard]] double probability(std::string_view outcome) const;
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::Expected<double>
+  probability(std::string_view outcome) const;
+  [[nodiscard]] llvm::Expected<Evaluation> evaluate(const Counts& counts) const;
 
 private:
+  explicit WState(WStateOptions options);
+
   WStateOptions options_;
   Output output_;
 };

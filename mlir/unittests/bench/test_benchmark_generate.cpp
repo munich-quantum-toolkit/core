@@ -12,7 +12,6 @@
 #include "bench/FanOut.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
-#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/JSON.hpp"
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
@@ -25,6 +24,7 @@
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
@@ -57,7 +57,7 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, ResolvesInstanceMetadata) {
-  const GHZ benchmark{{.qubits = 3}};
+  const auto benchmark = llvm::cantFail(GHZ::create({.qubits = 3}));
   auto generated = generate(
       R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":3}})");
   ASSERT_TRUE(mlir::succeeded(generated));
@@ -87,47 +87,57 @@ static void expectQCAndJeff(const Benchmark& benchmark) {
 }
 
 TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
-  expectQCAndJeff(BV{{.hiddenBitstring = "101"}});
-  expectQCAndJeff(BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
-  expectQCAndJeff(FanOut{{.controls = 3}});
-  expectQCAndJeff(ModularMultiplier{{
+  expectQCAndJeff(llvm::cantFail(BV::create({.hiddenBitstring = "101"})));
+  expectQCAndJeff(llvm::cantFail(
+      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic})));
+  expectQCAndJeff(llvm::cantFail(FanOut::create({.controls = 3})));
+  expectQCAndJeff(llvm::cantFail(ModularMultiplier::create({
       .multiplier = "011",
       .modulus = "101",
       .multiplicand = "+++",
       .control = '+',
-  }});
-  expectQCAndJeff(GHZ{{.qubits = 3}});
-  expectQCAndJeff(Grover{{.markedBitstring = "101"}});
-  expectQCAndJeff(GroverWeakMeasurement{{.markedBitstring = "101"}});
-  expectQCAndJeff(MagicStateDistillation{{.levels = 1}});
-  expectQCAndJeff(Multiplexer{{.qubits = 3}});
-  expectQCAndJeff(QAOA{{.qubits = 3}});
-  expectQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
-  expectQCAndJeff(QFT{
-      {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
-  expectQCAndJeff(QFTAdder{{
+  })));
+  expectQCAndJeff(llvm::cantFail(GHZ::create({.qubits = 3})));
+  expectQCAndJeff(llvm::cantFail(Grover::create({.markedBitstring = "101"})));
+  expectQCAndJeff(llvm::cantFail(
+      GroverWeakMeasurement::create({.markedBitstring = "101"})));
+  expectQCAndJeff(
+      llvm::cantFail(MagicStateDistillation::create({.levels = 1})));
+  expectQCAndJeff(llvm::cantFail(Multiplexer::create({.qubits = 3})));
+  expectQCAndJeff(llvm::cantFail(QAOA::create({.qubits = 3})));
+  expectQCAndJeff(
+      llvm::cantFail(QFT::create({.qubits = 3, .periodExponent = 1})));
+  expectQCAndJeff(llvm::cantFail(QFT::create(
+      {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical})));
+  expectQCAndJeff(llvm::cantFail(QFTAdder::create({
       .addend = "101",
       .accumulator = "001",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
-  }});
-  expectQCAndJeff(QFTAdder{{.addend = "+++", .accumulator = "001"}});
-  expectQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
-  expectQCAndJeff(QPE{
-      {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
-  expectQCAndJeff(RepeatUntilSuccess{});
-  expectQCAndJeff(Shor{{.number = 15}});
+  })));
+  expectQCAndJeff(llvm::cantFail(
+      QFTAdder::create({.addend = "+++", .accumulator = "001"})));
+  expectQCAndJeff(llvm::cantFail(QPE::create(
+      {.precision = 3, .phase = llvm::cantFail(Phase::create(3, 8))})));
+  expectQCAndJeff(llvm::cantFail(QPE::create({
+      .precision = 3,
+      .phase = llvm::cantFail(Phase::create(3, 8)),
+      .method = QPEMethod::Iterative,
+  })));
+  expectQCAndJeff(llvm::cantFail(RepeatUntilSuccess::create()));
+  expectQCAndJeff(llvm::cantFail(Shor::create({.number = 15})));
   expectQCAndJeff(Teleportation{});
-  expectQCAndJeff(WState{{.qubits = 3}});
+  expectQCAndJeff(llvm::cantFail(WState::create({.qubits = 3})));
 }
 
 template <class Benchmark>
 static void expectReference(const Benchmark& benchmark, const Counts& counts) {
-  EXPECT_LT(benchmark.evaluate(counts).totalVariationDistance, 0.08);
+  EXPECT_LT(llvm::cantFail(benchmark.evaluate(counts)).totalVariationDistance,
+            0.08);
 }
 
 static void expectReference(const Shor& benchmark, const Counts& counts) {
-  const auto result = benchmark.evaluate(counts);
+  const auto result = llvm::cantFail(benchmark.evaluate(counts));
   ASSERT_TRUE(result.factors);
   EXPECT_EQ(result.factors->first * result.factors->second,
             benchmark.options().number);
@@ -187,30 +197,33 @@ static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
 TEST(GenerateProgramTest, ExecutesRuntimePhasesThroughJeffAndAdaptiveQIR) {
   for (auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     for (auto phase : {
-             Phase(1, 3),
-             Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()),
+             llvm::cantFail(Phase::create(1, 3)),
+             llvm::cantFail(Phase::create(
+                 uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max())),
          }) {
       SCOPED_TRACE(static_cast<int>(method));
       SCOPED_TRACE(phase.numerator());
       expectPortableExecution(
-          QPE{{.precision = 3, .phase = phase, .method = method}}, 2048);
+          llvm::cantFail(
+              QPE::create({.precision = 3, .phase = phase, .method = method})),
+          2048);
     }
   }
-  expectPortableExecution(QFTAdder{{
+  expectPortableExecution(llvm::cantFail(QFTAdder::create({
                               .addend = "101",
                               .accumulator = "011",
                               .method = QFTAdderMethod::Constant,
                               .overflow = QFTAdderOverflow::Carry,
-                          }},
+                          })),
                           2048);
-  expectPortableExecution(ModularMultiplier{{
+  expectPortableExecution(llvm::cantFail(ModularMultiplier::create({
                               .multiplier = "011",
                               .modulus = "101",
                               .multiplicand = "+++",
                               .control = '+',
-                          }},
+                          })),
                           2048);
-  expectPortableExecution(Shor{{.number = 15}}, 64);
+  expectPortableExecution(llvm::cantFail(Shor::create({.number = 15})), 64);
 }
 
 template <class Benchmark>
@@ -248,25 +261,25 @@ static void expectOpenQASMRoundTrip(const Benchmark& benchmark, size_t shots) {
 TEST(GenerateProgramTest,
      RoundTripsStructuredOpenQASMThroughBothCompilerPaths) {
   expectOpenQASMRoundTrip(
-      QPE{{
+      llvm::cantFail(QPE::create({
           .precision = 8,
-          .phase =
-              Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()),
-      }},
+          .phase = llvm::cantFail(Phase::create(
+              uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max())),
+      })),
       2048);
-  expectOpenQASMRoundTrip(QPE{{
+  expectOpenQASMRoundTrip(llvm::cantFail(QPE::create({
                               .precision = 8,
-                              .phase = Phase(3, 8),
+                              .phase = llvm::cantFail(Phase::create(3, 8)),
                               .method = QPEMethod::Iterative,
-                          }},
+                          })),
                           2048);
-  expectOpenQASMRoundTrip(QFTAdder{{
+  expectOpenQASMRoundTrip(llvm::cantFail(QFTAdder::create({
                               .addend = "101",
                               .accumulator = "011",
                               .method = QFTAdderMethod::Register,
-                          }},
+                          })),
                           2048);
-  expectOpenQASMRoundTrip(Shor{{.number = 15}}, 64);
+  expectOpenQASMRoundTrip(llvm::cantFail(Shor::create({.number = 15})), 64);
 }
 
 template <class Benchmark>
@@ -304,23 +317,24 @@ static void expectStaticTargetExecution(const Benchmark& benchmark) {
 }
 
 TEST(GenerateProgramTest, CompilesRuntimePhasesForStaticTargets) {
-  expectStaticTargetExecution(QPE{{.precision = 3, .phase = Phase(1, 3)}});
-  expectStaticTargetExecution(QFTAdder{{
+  expectStaticTargetExecution(llvm::cantFail(QPE::create(
+      {.precision = 3, .phase = llvm::cantFail(Phase::create(1, 3))})));
+  expectStaticTargetExecution(llvm::cantFail(QFTAdder::create({
       .addend = "101",
       .accumulator = "011",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
-  }});
-  expectStaticTargetExecution(ModularMultiplier{{
+  })));
+  expectStaticTargetExecution(llvm::cantFail(ModularMultiplier::create({
       .multiplier = "011",
       .modulus = "101",
       .multiplicand = "+++",
       .control = '+',
-  }});
+  })));
 }
 
 TEST(GenerateProgramTest, RoundTripsWStateThroughOpenQASM) {
-  const WState benchmark{{.qubits = 3}};
+  const auto benchmark = llvm::cantFail(WState::create({.qubits = 3}));
   auto qc = generate(benchmark);
   ASSERT_TRUE(mlir::succeeded(qc));
   auto qasm = std::move(*qc).intoOpenQASM3();

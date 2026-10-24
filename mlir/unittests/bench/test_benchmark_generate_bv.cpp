@@ -18,6 +18,8 @@
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
+#include "llvm/Support/Error.h"
+
 namespace mqt::bench {
 
 using namespace mlir;
@@ -25,15 +27,16 @@ using namespace mlir;
 TEST(GenerateProgramTest, SamplesAsymmetricBVInputsAgainstReference) {
   for (const auto method : {BVMethod::Static, BVMethod::Dynamic}) {
     SCOPED_TRACE(static_cast<int>(method));
-    test::expectSamplingMatchesReference(
-        BV{{.hiddenBitstring = "001", .method = method}});
+    test::expectSamplingMatchesReference(llvm::cantFail(
+        BV::create({.hiddenBitstring = "001", .method = method})));
   }
 }
 
 TEST(GenerateProgramTest, EmitsStructuredBVWithMethodSpecificResources) {
-  const BV staticBenchmark{{.hiddenBitstring = "101"}};
-  const BV dynamicBenchmark{
-      {.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const auto staticBenchmark =
+      llvm::cantFail(BV::create({.hiddenBitstring = "101"}));
+  const auto dynamicBenchmark = llvm::cantFail(
+      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic}));
   auto staticProgram = generate(staticBenchmark);
   auto dynamicProgram = generate(dynamicBenchmark);
   ASSERT_TRUE(mlir::succeeded(staticProgram));

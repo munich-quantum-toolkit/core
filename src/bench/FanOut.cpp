@@ -14,28 +14,37 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bench {
 
 FanOut::FanOut(FanOutOptions options)
     : options_(options),
-      output_{.name = "result", .width = options_.controls + 1} {
-  if (options_.controls == 0 ||
-      options_.controls > FanOutOptions::MAX_CONTROLS) {
-    throw std::invalid_argument("fan-out controls must be between 1 and 1073");
+      output_{.name = "result", .width = options_.controls + 1} {}
+
+llvm::Expected<FanOut> FanOut::create(FanOutOptions options) {
+  if (options.controls == 0 || options.controls > FanOutOptions::MAX_CONTROLS) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
+        "fan-out controls must be between 1 and 1073");
   }
+  return FanOut(options);
 }
 
 const FanOutOptions& FanOut::options() const noexcept { return options_; }
 
 const Output& FanOut::output() const noexcept { return output_; }
 
-double FanOut::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+llvm::Expected<double>
+FanOut::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return error;
+  }
 
   const auto weight =
       std::ranges::count(outcome.substr(0, options_.controls), '1') % 4;
@@ -47,7 +56,7 @@ double FanOut::probability(const std::string_view outcome) const {
   return outcome.back() == expectedTarget ? std::ldexp(1., exponent) : 0.;
 }
 
-Evaluation FanOut::evaluate(const Counts& counts) const {
+llvm::Expected<Evaluation> FanOut::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

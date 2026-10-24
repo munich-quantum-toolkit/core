@@ -93,7 +93,7 @@ TEST(BenchmarkJSON, RejectsInvalidSizeParameters) {
 }
 
 TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
-  const GHZ ghz{{.qubits = 3}};
+  const auto ghz = llvm::cantFail(GHZ::create({.qubits = 3}));
   const auto manifest = toManifestJSON(ghz);
   EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
@@ -153,7 +153,7 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
 }
 
 TEST(BenchmarkJSON, ComparesReferenceVersionByValue) {
-  const GHZ ghz{{.qubits = 3}};
+  const auto ghz = llvm::cantFail(GHZ::create({.qubits = 3}));
   auto manifest = llvm::cantFail(llvm::json::parse(toManifestJSON(ghz)));
   auto& version = (*manifest.getAsObject()->getObject("reference"))["version"];
   auto equivalent = toManifestJSON(ghz);
@@ -180,7 +180,7 @@ TEST(BenchmarkJSON, ComparesReferenceVersionByValue) {
 }
 
 TEST(BenchmarkJSON, AcceptsEquivalentOutputWidths) {
-  const GHZ benchmark{{.qubits = 3}};
+  const auto benchmark = llvm::cantFail(GHZ::create({.qubits = 3}));
   constexpr std::string_view field = R"("width":3)";
   for (const auto* spelling : {"3", "3.0", "3e0"}) {
     SCOPED_TRACE(spelling);
@@ -201,13 +201,13 @@ TEST(BenchmarkJSON, AcceptsEquivalentOutputWidths) {
 }
 
 TEST(BenchmarkJSON, EvaluatesAResolvedManifest) {
-  const GHZ ghz{{.qubits = 2}};
+  const auto ghz = llvm::cantFail(GHZ::create({.qubits = 2}));
   const Counts counts{{"00", 5}, {"11", 3}};
-  EXPECT_EQ(
-      llvm::cantFail(
-          evaluateJSON(toManifestJSON(ghz),
-                       R"({"schema_version":1,"counts":{"00":5,"11":3}})")),
-      llvm::cantFail(evaluationToJSON(caseId(ghz), 8, ghz.evaluate(counts))));
+  EXPECT_EQ(llvm::cantFail(evaluateJSON(
+                toManifestJSON(ghz),
+                R"({"schema_version":1,"counts":{"00":5,"11":3}})")),
+            llvm::cantFail(evaluationToJSON(
+                caseId(ghz), 8, llvm::cantFail(ghz.evaluate(counts)))));
 }
 
 TEST(BenchmarkJSON, ListsBenchmarksAndRejectsUnknownSchemas) {

@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <string_view>
 
@@ -32,17 +34,21 @@ struct RepeatUntilSuccessOptions {
 /// \f$(I+i\sqrt{2}X^{\otimes n})/\sqrt{3}\f$.
 class MQT_CORE_BENCH_EXPORT RepeatUntilSuccess final {
 public:
-  explicit RepeatUntilSuccess(RepeatUntilSuccessOptions options = {});
+  [[nodiscard]] static llvm::Expected<RepeatUntilSuccess>
+  create(RepeatUntilSuccessOptions options = {});
 
   [[nodiscard]] const RepeatUntilSuccessOptions& options() const noexcept;
 
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] double probability(std::string_view outcome) const;
+  [[nodiscard]] llvm::Expected<double>
+  probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::Expected<Evaluation> evaluate(const Counts& counts) const;
 
 private:
+  explicit RepeatUntilSuccess(RepeatUntilSuccessOptions options);
+
   RepeatUntilSuccessOptions options_;
   Output output_;
 };

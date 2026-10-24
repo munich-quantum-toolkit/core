@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/JSON.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
 
 #include "register_benchmark.hpp"
 
@@ -54,7 +54,9 @@ loop; :math:`1` exits with the marked state.
 By default, the measurement strength is :math:`\kappa=2^{-n/2}` for :math:`n`
 search qubits. The accepted range :math:`0<\kappa\leq 2^{-n/2}` follows the
 paper's robustness bound.)pb");
-  grover.def(nb::init<bench::GroverWeakMeasurementOptions>(), "options"_a)
+  grover
+      .def("__init__", benchmarkInit(&bench::GroverWeakMeasurement::create),
+           "options"_a)
       .def_prop_ro("options", &bench::GroverWeakMeasurement::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
@@ -63,10 +65,11 @@ paper's robustness bound.)pb");
                    "The logical output register.")
       .def_prop_ro("qubits", &bench::GroverWeakMeasurement::qubits,
                    "The number of search qubits.")
-      .def("probability", &bench::GroverWeakMeasurement::probability,
+      .def("probability",
+           benchmarkMethod(&bench::GroverWeakMeasurement::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::GroverWeakMeasurement::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.");
+      .def("evaluate", benchmarkMethod(&bench::GroverWeakMeasurement::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(
       grover, &bench::groverWeakMeasurementFromInstanceSpecificationJSON,
       &bench::groverWeakMeasurementFromManifestJSON);

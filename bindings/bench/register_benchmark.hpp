@@ -18,9 +18,42 @@
 
 #include "llvm/Support/Error.h"
 
+#include <memory>
+#include <pyerrors.h>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace mqt {
+
+template <class T> T unwrapBenchmark(llvm::Expected<T> result) {
+  if (!result) {
+    llvm::handleAllErrors(result.takeError(),
+                          [](const llvm::ErrorInfoBase& error) {
+                            PyErr_SetString(error.convertToErrorCode() ==
+                                                    std::errc::value_too_large
+                                                ? PyExc_OverflowError
+                                                : PyExc_ValueError,
+                                            error.message().c_str());
+                          });
+    throw nanobind::python_error();
+  }
+  return std::move(*result);
+}
+
+template <class Benchmark, class... Args>
+auto benchmarkInit(llvm::Expected<Benchmark> (*create)(Args...)) {
+  return [create](Benchmark* self, Args... args) {
+    std::construct_at(self, unwrapBenchmark(create(std::move(args)...)));
+  };
+}
+
+template <class Benchmark, class T, class... Args>
+auto benchmarkMethod(llvm::Expected<T> (Benchmark::*method)(Args...) const) {
+  return [method](const Benchmark& self, Args... args) {
+    return unwrapBenchmark((self.*method)(args...));
+  };
+}
 
 template <class Benchmark>
 void registerBenchmarkIO(
@@ -55,22 +88,14 @@ void registerBenchmarkIO(
           "from_instance_specification_json",
           [fromInstanceSpecification](std::string_view json,
                                       std::string_view source) {
-            auto result = fromInstanceSpecification(json, source);
-            if (!result) {
-              throw nb::value_error(llvm::toString(result.takeError()).c_str());
-            }
-            return std::move(*result);
+            return unwrapBenchmark(fromInstanceSpecification(json, source));
           },
           "json"_a, nb::kw_only(), "source"_a = "<instance-specification>",
           "Parse a strict benchmark instance specification.")
       .def_static(
           "from_manifest_json",
           [fromManifest](std::string_view json, std::string_view source) {
-            auto result = fromManifest(json, source);
-            if (!result) {
-              throw nb::value_error(llvm::toString(result.takeError()).c_str());
-            }
-            return std::move(*result);
+            return unwrapBenchmark(fromManifest(json, source));
           },
           "json"_a, nb::kw_only(), "source"_a = "<manifest>",
           "Parse a strict benchmark manifest.");

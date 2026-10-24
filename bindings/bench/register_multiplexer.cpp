@@ -35,17 +35,18 @@ void registerMultiplexer(const nb::module_& m) {
 
   auto multiplexer = nb::class_<bench::Multiplexer>(
       m, "Multiplexer", "A validated quantum multiplexer benchmark.");
-  multiplexer.def(nb::init<bench::MultiplexerOptions>(), "options"_a)
+  multiplexer
+      .def("__init__", benchmarkInit(&bench::Multiplexer::create), "options"_a)
       .def_prop_ro("options", &bench::Multiplexer::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::Multiplexer::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::Multiplexer::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::Multiplexer::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.");
+      .def("probability", benchmarkMethod(&bench::Multiplexer::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::Multiplexer::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(multiplexer,
                       &bench::multiplexerFromInstanceSpecificationJSON,
                       &bench::multiplexerFromManifestJSON);

@@ -14,15 +14,17 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <numeric>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 namespace mqt::bench {
@@ -94,13 +96,18 @@ struct SignedMagnitude {
 } // namespace
 
 Phase::Phase(uint64_t numerator, const uint64_t denominator) {
-  if (denominator == 0) {
-    throw std::invalid_argument("phase denominator must not be zero");
-  }
   numerator %= denominator;
   const auto divisor = std::gcd(numerator, denominator);
   numerator_ = numerator / divisor;
   denominator_ = denominator / divisor;
+}
+
+llvm::Expected<Phase> Phase::create(uint64_t numerator, uint64_t denominator) {
+  if (denominator == 0) {
+    return llvm::createStringError(std::errc::invalid_argument,
+                                   "phase denominator must not be zero");
+  }
+  return Phase(numerator, denominator);
 }
 
 uint64_t Phase::numerator() const noexcept { return numerator_; }
@@ -109,34 +116,43 @@ uint64_t Phase::denominator() const noexcept { return denominator_; }
 
 QPE::QPE(QPEOptions options)
     : options_(options), output_{.name = "result", .width = options_.precision},
-      scaledRemainder_(options_.phase.numerator()) {
-  if (options_.precision == 0 ||
-      options_.precision > QPEOptions::MAX_PRECISION) {
-    throw std::invalid_argument("QPE precision must be between 1 and 1000000");
+      scaledRemainder_(options_.phase.numerator()) {}
+
+llvm::Expected<QPE> QPE::create(QPEOptions options) {
+  if (options.precision == 0 || options.precision > QPEOptions::MAX_PRECISION) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
+        "QPE precision must be between 1 and 1000000");
   }
-  if (options_.method != QPEMethod::Standard &&
-      options_.method != QPEMethod::Iterative) {
-    throw std::invalid_argument("unknown QPE method");
+  if (options.method != QPEMethod::Standard &&
+      options.method != QPEMethod::Iterative) {
+    return llvm::createStringError(std::errc::invalid_argument,
+                                   "unknown QPE method");
   }
 
-  lowerOutcome_.assign(options_.precision, '0');
-  const auto denominator = options_.phase.denominator();
-  for (auto& bit : lowerOutcome_) {
-    if (scaledRemainder_ >= denominator - scaledRemainder_) {
+  QPE benchmark(options);
+  benchmark.lowerOutcome_.assign(benchmark.options_.precision, '0');
+  const auto denominator = benchmark.options_.phase.denominator();
+  for (auto& bit : benchmark.lowerOutcome_) {
+    if (benchmark.scaledRemainder_ >=
+        denominator - benchmark.scaledRemainder_) {
       bit = '1';
-      scaledRemainder_ -= denominator - scaledRemainder_;
+      benchmark.scaledRemainder_ -= denominator - benchmark.scaledRemainder_;
     } else {
-      scaledRemainder_ += scaledRemainder_;
+      benchmark.scaledRemainder_ += benchmark.scaledRemainder_;
     }
   }
+  return benchmark;
 }
 
 const QPEOptions& QPE::options() const noexcept { return options_; }
 
 const Output& QPE::output() const noexcept { return output_; }
 
-double QPE::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+llvm::Expected<double> QPE::probability(const std::string_view outcome) const {
+  if (auto error = detail::validateOutcome(outcome, output_.width)) {
+    return error;
+  }
   const auto difference = subtractModulo(lowerOutcome_, outcome);
   const auto integerBits = bitLength(difference.magnitude);
   if (integerBits > 600) {
@@ -180,7 +196,7 @@ double QPE::probability(const std::string_view outcome) const {
   return probability;
 }
 
-Evaluation QPE::evaluate(const Counts& counts) const {
+llvm::Expected<Evaluation> QPE::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 
