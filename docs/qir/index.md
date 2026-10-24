@@ -371,8 +371,12 @@ outcomes and replay deterministic prefixes for sibling paths. After LLVM O1,
 eligible programs use only local stack memory, defined constant globals, direct
 supported QIR calls, and deterministic scalar LLVM intrinsics. Remaining helper
 calls, heap-allocated classical arrays, lifecycle hooks, native effects, and
-pointer-address observations exclude grouping. Other supported programs execute
-once per shot.
+pointer-address observations exclude grouping. If such a program also has no
+result reads or explicit resets, a trial defers measurements and collects the
+output projection, including dynamically allocated result arrays. Gates on
+measured wires or reuse of released qubits reject the trial. Successful trials
+sample a histogram directly from the retained DD; rejected trials use ordinary
+grouped sampling. Other supported programs execute once per shot.
 
 A fixed seed reproduces outcomes for the same execution path; sequences need not
 match across different sampling algorithms or software versions.

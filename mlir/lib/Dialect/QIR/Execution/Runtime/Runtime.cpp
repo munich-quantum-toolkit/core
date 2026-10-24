@@ -74,6 +74,9 @@ auto Runtime::reset() -> void {
   rRegister.clear();
   std::ranges::fill(resultValues_, ResultStruct{});
   measurements.clear();
+  if (deferredOutputs_ != nullptr) {
+    deferredOutputs_->clear();
+  }
   if (samplingBranches_ != nullptr) {
     samplingBranches_->position = 0;
   }
@@ -235,6 +238,7 @@ auto Runtime::measure(Qubit* qubit, Result* result) -> void {
   auto& value = deref(result);
   if (extractState_) {
     measuredQubits_.insert(target);
+    value.deferredWire = qubitPermutation[target];
   } else if (!deferMeasurements_) {
     value.r = measureQubit(qubitPermutation[target]);
   }
@@ -382,6 +386,9 @@ auto Runtime::qAlloc() -> Qubit* {
                       ? static_cast<dd::Qubit>(currentMaxQubitId++)
                       : freeQubits_.back();
   if (!freeQubits_.empty()) {
+    if (deferredOutputs_ != nullptr) {
+      invalidStateExtraction_ = true;
+    }
     freeQubits_.pop_back();
   }
   qRegister.emplace(qubit, id);
@@ -402,6 +409,11 @@ auto Runtime::qFree(Qubit* qubit) -> void {
     if (id < qState.numQubits) {
       reset(std::array{qubit});
     }
+    freeQubits_.push_back(id);
+  } else if (deferredOutputs_ != nullptr) {
+    // A sampling trial must stay within the original allocation bound.
+    // Reusing a released wire invalidates deferral and triggers ordinary
+    // sampling.
     freeQubits_.push_back(id);
   }
   qRegister.erase(it);
@@ -447,7 +459,16 @@ auto Runtime::deref(Result* result) -> ResultStruct& {
   return it->second;
 }
 
-auto Runtime::appendMeasurementBit(bool result) -> void {
+auto Runtime::appendMeasurementBit(const bool result,
+                                   const std::optional<dd::Qubit> deferredWire)
+    -> void {
+  if (deferredOutputs_ != nullptr) {
+    if (deferredWire) {
+      deferredOutputs_->emplace_back(*deferredWire);
+    } else {
+      deferredOutputs_->emplace_back(result);
+    }
+  }
   if (!extractState_) {
     measurements.push_back(result ? '1' : '0');
   }

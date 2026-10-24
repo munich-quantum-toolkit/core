@@ -127,10 +127,11 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// order: the last result comes first, and each register is MSB-first. Other
 /// classical output types are rejected. Without classical results, the function
 /// samples all DD wires. Terminal measurements use
-/// one simulation for all shots. Adaptive programs share shot prefixes when
-/// their measurements and resets are in the top-level stream or
-/// `scf.for`/`scf.while` loops. Other adaptive programs run once per shot
-/// across independent workers.
+/// one simulation for all shots. Counts-only sampling groups outcomes directly
+/// in the DD. Adaptive programs share shot prefixes through for/while loops,
+/// conditionals and index switches. Measurements in called functions use
+/// independent shots. Seeded draws are reproducible for a fixed sampling
+/// strategy; requesting individual outcomes may select another strategy.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.

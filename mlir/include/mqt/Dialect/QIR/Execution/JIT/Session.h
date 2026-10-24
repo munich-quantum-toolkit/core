@@ -117,10 +117,13 @@ public:
 
   /// Sample a histogram without textual recording or retained shot strings.
   ///
-  /// Eligible deterministic programs split shot populations at measurements
-  /// and replay their prefixes for sibling paths. Other programs execute per
-  /// shot. Counts use QIR recording order; seeded results are repeatable within
-  /// this sampling strategy, not across strategies.
+  /// Terminal programs sample one retained DD, including replayable programs
+  /// with dynamic resources and no measurement-dependent computation. Runtime
+  /// checks reject deferral across gates on measured wires or reused qubits.
+  /// Other eligible deterministic programs split shot populations at
+  /// measurements and replay their prefixes for sibling paths. Other programs
+  /// execute per shot. Counts use QIR recording order; seeded results are
+  /// repeatable within this sampling strategy, not across strategies.
   int64_t sampleCounts(size_t shots, std::map<std::string, size_t>& counts,
                        bool* stateAvailable = nullptr);
 
@@ -172,6 +175,7 @@ private:
   bool initializesRuntime_ = false;
   bool shareCompiledCode_ = false;
   bool sampleBranches_ = false;
+  bool tryTerminalSampling_ = false;
   size_t quantumCallSites_ = 0;
   Execution execution_;
 

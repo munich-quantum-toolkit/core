@@ -472,7 +472,7 @@ int64_t JitSession::runWithRuntime(Runtime& runtime) {
   const auto restoreRuntime =
       llvm::scope_exit([previous] { Runtime::bind(previous); });
   const auto code = entryPointFn_();
-  if (runtime.invalidStateExtraction_) {
+  if (runtime.invalidStateExtraction_ && runtime.deferredOutputs_ == nullptr) {
     throw std::invalid_argument(
         "QIR state extraction cannot reset or operate on a measured qubit");
   }
@@ -502,6 +502,29 @@ int64_t JitSession::sampleCounts(size_t shots,
   auto* output = runtime.os;
   runtime.disableOutput();
   const auto restore = llvm::scope_exit([&] { runtime.os = output; });
+  if (shots != 0 && (samplingOutputs_ || tryTerminalSampling_)) {
+    std::vector<dd::SamplingOutput> outputs;
+    runtime.deferredOutputs_ = &outputs;
+    runtime.extractState_ = true;
+    const auto endTrial = llvm::scope_exit([&] {
+      runtime.extractState_ = false;
+      runtime.deferredOutputs_ = nullptr;
+    });
+    if (const auto code = runWithRuntime(runtime); code != 0) {
+      if (stateAvailable != nullptr) {
+        *stateAvailable = false;
+      }
+      return code;
+    }
+    if (!runtime.invalidStateExtraction_) {
+      counts = dd::Package::sampleCounts(runtime.qState.edge, outputs, shots,
+                                         runtime.mt);
+      if (stateAvailable != nullptr) {
+        *stateAvailable = true;
+      }
+      return 0;
+    }
+  }
   if (!sampleBranches_ || shots == 0) {
     return sample(
         shots, [&](std::string_view shot) { ++counts[std::string(shot)]; },
@@ -965,6 +988,9 @@ void JitSession::initialize(
       sampleBranches_ =
           execution == Execution::Sampling &&
           qir::canSampleBranches(*module.getFunction(entryPointName));
+      tryTerminalSampling_ =
+          sampleBranches_ &&
+          qir::canDeferMeasurements(*module.getFunction(entryPointName));
     });
   }
 

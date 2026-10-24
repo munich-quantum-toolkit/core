@@ -45,6 +45,7 @@
 /// pointer opaque such that it cannot be dereferenced
 struct ResultStruct {
   bool r{};
+  std::optional<dd::Qubit> deferredWire;
 };
 struct ArrayImpl {
   int32_t refcount{};
@@ -141,6 +142,7 @@ private:
     size_t position = 0;
   };
   SamplingBranches* samplingBranches_ = nullptr;
+  std::vector<dd::SamplingOutput>* deferredOutputs_ = nullptr;
   llvm::raw_ostream* os = &llvm::outs();
   // Set only while building a terminal-sampling template in a
   // raw_string_ostream.
@@ -234,7 +236,8 @@ public:
   auto rFree(Result* result) -> void;
 
   /// Append a measurement bit to the measurement string.
-  auto appendMeasurementBit(bool result) -> void;
+  auto appendMeasurementBit(bool result, std::optional<dd::Qubit> deferredWire =
+                                             std::nullopt) -> void;
 
   /// Returns the accumulated measurement string.
   auto getMeasurements() const -> const std::string&;
