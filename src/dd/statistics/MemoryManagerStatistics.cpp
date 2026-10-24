@@ -11,8 +11,8 @@
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
 #include "StatisticsJson.hpp"
-#include "support/JSON.hpp"
 
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
 #include <algorithm>
@@ -35,7 +35,9 @@ std::size_t MemoryManagerStatistics::getTotalNumAvailable() const noexcept {
 }
 
 double MemoryManagerStatistics::getUsageRatio() const noexcept {
-  return static_cast<double>(numUsed) / static_cast<double>(numAllocated);
+  return numAllocated == 0
+             ? 0.
+             : static_cast<double>(numUsed) / static_cast<double>(numAllocated);
 }
 
 double MemoryManagerStatistics::getAllocatedMemoryMiB() const noexcept {
@@ -77,7 +79,7 @@ void MemoryManagerStatistics::reset() noexcept {
 }
 
 std::string MemoryManagerStatistics::toString() const {
-  return mqt::json::serialize(toJson(*this), 2U);
+  return llvm::formatv("{0:2}", toJson(*this)).str();
 }
 
 llvm::json::Value toJson(const MemoryManagerStatistics& s) {

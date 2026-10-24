@@ -23,7 +23,7 @@ if(TARGET MQT::CoreQDMI)
 
   package_add_test_with_working_dir(mqt-core-qdmi-client-runtime-test MQT::CoreQDMI
                                     "${CMAKE_CURRENT_BINARY_DIR}" test_client_runtime.cpp)
-  target_link_libraries(mqt-core-qdmi-client-runtime-test PRIVATE MQT::CoreJSON)
+  target_link_libraries(mqt-core-qdmi-client-runtime-test PRIVATE LLVMSupport)
   target_compile_definitions(
     mqt-core-qdmi-client-runtime-test
     PRIVATE

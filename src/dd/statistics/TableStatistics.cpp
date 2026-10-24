@@ -11,8 +11,8 @@
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "StatisticsJson.hpp"
-#include "support/JSON.hpp"
 
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
 #include <algorithm>
@@ -58,7 +58,7 @@ double TableStatistics::getMemoryMiB() const noexcept {
 }
 
 std::string TableStatistics::toString() const {
-  return mqt::json::serialize(toJson(*this), 2U);
+  return llvm::formatv("{0:2}", toJson(*this)).str();
 }
 
 llvm::json::Value toJson(const TableStatistics& s) {

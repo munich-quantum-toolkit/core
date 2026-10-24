@@ -13,8 +13,6 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include "support/JSON.hpp"
-
 #include "gtest/gtest.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -85,7 +83,7 @@ TEST(IQMJSONPipelineTest, CompilesInputFormatsForAnExplicitTarget) {
     ASSERT_TRUE(succeeded(output));
     ASSERT_TRUE(std::holds_alternative<IQMJSONProgram>(*output));
     const auto& exported = std::get<IQMJSONProgram>(*output);
-    const auto circuit = llvm::cantFail(::mqt::json::parse(exported.source()));
+    const auto circuit = llvm::cantFail(llvm::json::parse(exported.source()));
     const auto& instructions = *circuit.getAsObject()->getArray("instructions");
     EXPECT_EQ(instructions.front().getAsObject()->getString("name"), "prx");
     EXPECT_EQ(instructions.back().getAsObject()->getArray("locus")->size(), 1U);
@@ -113,7 +111,7 @@ TEST(IQMJSONPipelineTest, PreservesReversedStoresToDistinctOutputRegisters) {
                                    makeIQMEnvironment());
   ASSERT_TRUE(succeeded(output));
   const auto circuit = llvm::cantFail(
-      ::mqt::json::parse(std::get<IQMJSONProgram>(*output).source()));
+      llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   ASSERT_GE(instructions.size(), 3U);
   const auto& firstOutput = instructions[instructions.size() - 2];
@@ -139,7 +137,7 @@ TEST(IQMJSONPipelineTest, UnrollsLoopsAndSynthesizesIQMBasis) {
                                    makeIQMEnvironment());
   ASSERT_TRUE(succeeded(output));
   const auto circuit = llvm::cantFail(
-      ::mqt::json::parse(std::get<IQMJSONProgram>(*output).source()));
+      llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   size_t rotations = 0;
   size_t entanglers = 0;
@@ -209,7 +207,7 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
                                    environment);
   ASSERT_TRUE(succeeded(output));
   const auto circuit = llvm::cantFail(
-      ::mqt::json::parse(std::get<IQMJSONProgram>(*output).source()));
+      llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   ASSERT_GT(instructions.size(), 3U);
   EXPECT_EQ(instructions[instructions.size() - 3]

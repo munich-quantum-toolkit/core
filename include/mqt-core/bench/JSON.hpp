@@ -53,21 +53,22 @@ struct ParsedBenchmark {
   std::string manifestJSON;
 };
 
-/// Parse a strict instance specification and resolve its benchmark metadata.
+/// Parse a instance specification and resolve its benchmark metadata.
 ///
 /// Returns an error for invalid JSON or unsupported parameters.
+/// JSON APIs require UTF-8 text, finite numbers, and the C numeric locale.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<ParsedBenchmark>
 parseInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
 
-/// Return the benchmark ID from a strict instance specification.
+/// Return the benchmark ID from a instance specification.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 benchmarkIdFromInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
 
-/// Return the benchmark ID from a strict manifest envelope.
+/// Return the benchmark ID from a manifest envelope.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 benchmarkIdFromManifestJSON(std::string_view json,
                             std::string_view source = "<manifest>");
@@ -95,7 +96,7 @@ describeBenchmarkJSON(std::string_view benchmark);
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const TYPE& benchmark);
 #include "bench/BenchmarkFamilies.inc"
 
-/// Parse sampled outcomes from a strict counts document.
+/// Parse sampled outcomes from a counts document.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<Counts>
 countsFromJSON(std::string_view text, std::string_view source = "<counts>");
 

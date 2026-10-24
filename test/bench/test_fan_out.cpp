@@ -142,7 +142,7 @@ TEST(FanOut, EvaluatesCountsFromJSON) {
   const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(FanOut{{.controls = 1}}),
                    R"({"schema_version":1,"counts":{"00":2,"10":1,"11":1}})"));
-  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1.0)"),
+  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1)"),
             std::string::npos);
   EXPECT_NE(evaluation.find(R"("success_probability":null)"),
             std::string::npos);

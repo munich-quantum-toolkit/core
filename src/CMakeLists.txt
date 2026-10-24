@@ -41,7 +41,6 @@ if(APPLE)
   set(CMAKE_LINK_LIBRARY_USING_mqt_llvm_hidden_SUPPORTED TRUE)
 endif()
 
-add_subdirectory(support)
 add_subdirectory(bench)
 
 add_subdirectory(dd)
@@ -56,11 +55,13 @@ if(BUILD_MQT_CORE_SHARED_LIBS)
       continue()
     endif()
     if(APPLE)
-      set_property(TARGET ${MQT_CORE_TARGET_NAME}-qdmi
-                   PROPERTY LINK_LIBRARY_OVERRIDE_${llvm_library} mqt_llvm_hidden)
+      set_property(
+        TARGET ${MQT_CORE_TARGET_NAME}-qdmi
+        PROPERTY LINK_LIBRARY_OVERRIDE_${llvm_library} mqt_llvm_hidden)
     elseif(UNIX)
-      target_link_options(${MQT_CORE_TARGET_NAME}-qdmi PRIVATE
-                          "LINKER:--exclude-libs,$<TARGET_FILE_NAME:${llvm_library}>")
+      target_link_options(
+        ${MQT_CORE_TARGET_NAME}-qdmi
+        PRIVATE "LINKER:--exclude-libs,$<TARGET_FILE_NAME:${llvm_library}>")
     endif()
   endforeach()
 endif()
@@ -106,8 +107,8 @@ if(MQT_CORE_INSTALL)
 
   install(
     FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config.cmake
-          ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config-version.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mqt-core-config-version.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
     DESTINATION ${config_install_dir}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
   install(

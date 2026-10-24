@@ -12,12 +12,11 @@
 #include "qdmi/TestUtils.hpp"
 #include "qdmi/devices/sc/Device.hpp"
 
-#include "support/JSON.hpp"
-
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
 #include <array>
@@ -242,7 +241,7 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
       testing::AllOf(testing::HasSubstr("[mqt-core] [error]"),
                      testing::HasSubstr("Invalid SC device configuration from "
                                         "inline session configuration"),
-                     testing::HasSubstr("invalid JSON")));
+                     testing::HasSubstr("Expected object key")));
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
                 std::strlen(CUSTOM_SC) + 1, CUSTOM_SC),
@@ -255,14 +254,14 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
 }
 
 TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
-  auto configuration = llvm::cantFail(mqt::json::parse(CUSTOM_SC));
+  auto configuration = llvm::cantFail(llvm::json::parse(CUSTOM_SC));
   (*configuration.getAsObject())["couplings"] =
       llvm::json::Array{llvm::json::Array{0, 1}};
   (*(*configuration.getAsObject()->getArray("operations"))[0]
         .getAsObject())["sites"] = llvm::json::Array{llvm::json::Array{1, 0}};
   (*(*configuration.getAsObject()->getArray("operations"))[0]
         .getAsObject())["siteOverrides"] = llvm::json::Array{};
-  const auto serialized = mqt::json::serialize(configuration);
+  const auto serialized = llvm::formatv("{0}", configuration).str();
 
   MQT_SC_QDMI_Device_Session session = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
@@ -276,7 +275,7 @@ TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
 }
 
 TEST(ScRuntimeConfiguration, PreservesUnsortedTuplesAndPartialOverrides) {
-  auto configuration = llvm::cantFail(mqt::json::parse(CUSTOM_SC));
+  auto configuration = llvm::cantFail(llvm::json::parse(CUSTOM_SC));
   (*configuration.getAsObject())["numQubits"] = 3;
   (*configuration.getAsObject())["couplings"] = llvm::json::Array{
       llvm::json::Array{1, 2},
@@ -285,16 +284,10 @@ TEST(ScRuntimeConfiguration, PreservesUnsortedTuplesAndPartialOverrides) {
   };
   (*(*configuration.getAsObject()->getArray("operations"))[0]
         .getAsObject())["siteOverrides"] = llvm::json::Array{
-      llvm::json::Object{
-          {.K = "sites", .V = llvm::json::Array{2, 0}},
-          {.K = "fidelity", .V = 0.8},
-      },
-      llvm::json::Object{
-          {.K = "sites", .V = llvm::json::Array{0, 1}},
-          {.K = "duration", .V = 10},
-      },
+      llvm::json::Object{{"sites", llvm::json::Array{2, 0}}, {"fidelity", 0.8}},
+      llvm::json::Object{{"sites", llvm::json::Array{0, 1}}, {"duration", 10}},
   };
-  auto* session = initializedSession(mqt::json::serialize(configuration));
+  auto* session = initializedSession(llvm::formatv("{0}", configuration).str());
   const auto sites = querySites(session);
   auto* const operation = queryOperations(session).front();
   const std::array expected{
@@ -481,7 +474,7 @@ TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
 }
 
 TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
-  auto configuration = llvm::cantFail(mqt::json::parse(CUSTOM_SC));
+  auto configuration = llvm::cantFail(llvm::json::parse(CUSTOM_SC));
   (*configuration.getAsObject()->getObject("qubitProperties"))["defaults"] =
       llvm::json::Object{};
   (*configuration.getAsObject()->getObject("qubitProperties"))["overrides"] =
@@ -494,7 +487,7 @@ TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
       ->erase("fidelity");
   (*(*configuration.getAsObject()->getArray("operations"))[0]
         .getAsObject())["siteOverrides"] = llvm::json::Array{};
-  const auto serialized = mqt::json::serialize(configuration);
+  const auto serialized = llvm::formatv("{0}", configuration).str();
   auto* session = initializedSession(serialized);
   const auto sites = querySites(session);
   auto* const operation = queryOperations(session).front();

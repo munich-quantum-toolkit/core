@@ -73,7 +73,6 @@ TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
   for (
       const auto* specification : {
           R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":0}})",
-          R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})",
           R"({"schema_version":1,"benchmark":"unknown","parameters":{}})",
       }) {
     EXPECT_TRUE(mlir::failed(generate(specification)));

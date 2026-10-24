@@ -102,7 +102,7 @@ TEST(WState, EvaluatesCountsFromJSON) {
   const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(WState{{.qubits = 2}}),
                    R"({"schema_version":1,"counts":{"01":10,"10":10}})"));
-  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1.0)"),
+  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1)"),
             std::string::npos);
   EXPECT_NE(evaluation.find(R"("shots":20)"), std::string::npos);
 }

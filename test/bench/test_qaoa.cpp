@@ -216,7 +216,7 @@ TEST(QAOA, EvaluatesCountsFromJSON) {
   const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(QAOA{{.qubits = 4}}),
                    R"({"schema_version":1,"counts":{"0000":1,"0101":3}})"));
-  EXPECT_NE(evaluation.find(R"("mean_cut":3.0)"), std::string::npos);
+  EXPECT_NE(evaluation.find(R"("mean_cut":3)"), std::string::npos);
   EXPECT_NE(evaluation.find(R"("approximation_ratio":0.75)"),
             std::string::npos);
   EXPECT_EQ(evaluation.find("total_variation_distance"), std::string::npos);

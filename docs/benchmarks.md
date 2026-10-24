@@ -219,10 +219,8 @@ A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
 manifests. This target links statically so LLVM errors and their handlers use
 the same runtime. JSON parsing and fallible JSON output return
-`llvm::Expected<T>`; callers must check the result or handle `takeError()`. C++
-translation units using these LLVM APIs must match the SDK's RTTI setting
-(`-fno-rtti` with an RTTI-free LLVM build). Python JSON methods raise
-`ValueError` for invalid input.
+`llvm::Expected<T>`; callers must check the result or handle `takeError()`.
+Python JSON methods raise `ValueError` for invalid input.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -265,7 +263,7 @@ Adding a family requires five extension points:
    `bindings/bench/`, use `registerBenchmarkIO` for generation and JSON methods,
    register its direct submodule in `register_bench.cpp`, and add the source to
    `bindings/bench/CMakeLists.txt`.
-5. Test the reference, strict instance specification JSON, emitter structure,
+5. Test the reference, instance specification validation, emitter structure,
    `jeff` conversion, and Python generation.
 
 `BenchmarkFamilies.inc` is the sole family catalog. Do not add a private family
@@ -276,31 +274,10 @@ list, a generic option map, or a public base class.
 Instance specifications reject unknown fields and invalid values. The case ID
 does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
-Parameters and envelope versions use exact integer tokens where their types
-require integers. Output widths and reference versions compare by numeric value,
-so widths `3`, `3.0`, and `3e0` are equivalent. Integer tokens retain 64-bit
-precision; decimal and exponent forms are parsed as `double` values. Canonical
-output and case IDs are generated from the resolved benchmark. Before
-evaluation, normalize backend results to the manifest's big-endian `result`
-order.
-
-Manifests use `schema_version: 2`. Case IDs hash sorted, compact semantic JSON
-with the domain prefix `mqt-core:benchmark-case:v2` followed by a NUL byte.
-Numbers use locale-independent decimal formatting that round-trips finite
-`double` values. Instance specifications and counts retain schema version 1;
-family definition versions describe benchmark semantics, independently of the
-JSON encoding version.
-
-Version 1 manifests must be regenerated. Extract their `benchmark` and
-`parameters` into a schema-version-1 instance specification, load it with the
-family's `from_instance_specification_json`, and save its `manifest_json`.
-Regeneration assigns a new case ID; update references to the old ID together.
-
-JSON input must be UTF-8, use valid JSON number syntax, and contain no duplicate
-object keys or unpaired Unicode surrogates. Nesting is limited to 256
-containers. Non-finite and overflowing input numbers are rejected. JSON
-validation errors are recoverable; allocation failures follow LLVM policy and
-are not guaranteed recoverable.
+Typed integer parameters retain 64-bit precision. Redundant output metadata uses
+LLVM JSON value equality. JSON APIs require the C numeric locale
+(`LC_NUMERIC=C`), finite numbers, and UTF-8 text. Normalize backend results to
+the manifest's big-endian `result` order before evaluation.
 
 ## Benchmark families
 

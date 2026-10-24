@@ -14,7 +14,6 @@
 #include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
-#include "support/JSON.hpp"
 
 #include "gtest/gtest.h"
 #include "qdmi/client.h"
@@ -28,6 +27,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
@@ -49,19 +49,18 @@ using mlir::CompilerTarget;
 static qdmi::Device openScDevice(const char* filename) {
   auto config = llvm::json::Object{
       {
-          .K = "device-config",
-          .V =
-              llvm::json::Object{
-                  {
-                      .K = "file",
-                      .V = std::string{MQT_CORE_MLIR_SC_CONFIG_DIR} + "/" +
-                           filename,
-                  },
+          "device-config",
+          llvm::json::Object{
+              {
+                  "file",
+                  std::string{MQT_CORE_MLIR_SC_CONFIG_DIR} + "/" + filename,
               },
+          },
       },
   };
   return qdmi::builtin_driver::openDevice(
-      "mqt.sc.default", mqt::json::serialize(std::move(config)));
+      "mqt.sc.default",
+      llvm::formatv("{0}", llvm::json::Value(std::move(config))).str());
 }
 
 [[nodiscard]] static const CompilerTarget::OperationCapability&
@@ -539,7 +538,7 @@ TEST(CompilerQDMIAdapterTest,
   ASSERT_TRUE(static_cast<bool>(compiled))
       << llvm::toString(compiled.takeError());
   EXPECT_EQ(compiled->programFormat(), QDMI_PROGRAM_FORMAT_IQMJSON);
-  const auto json = llvm::cantFail(::mqt::json::parse(compiled->payload()));
+  const auto json = llvm::cantFail(llvm::json::parse(compiled->payload()));
   const auto& measurement =
       json.getAsObject()->getArray("instructions")->back();
   EXPECT_EQ(measurement.getAsObject()->getString("name"), "measure");
@@ -1052,7 +1051,9 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
               {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))})),
           llvm::cantFail(CompilerTarget::OperationCapability::create(
               "cnot", 2, 0,
-              {llvm::cantFail(CompilerTarget::SiteTuple::create({1, 2}))})),
+              {
+                  llvm::cantFail(CompilerTarget::SiteTuple::create({1, 2})),
+              })),
       })));
   mlir::attachTargetEnvironment(
       program->module(),

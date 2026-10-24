@@ -8,8 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "support/JSON.hpp"
-
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/SmallString.h"
@@ -18,6 +16,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
@@ -292,14 +291,14 @@ TEST(CompilerCLI, EmitsTargetedIQMJSONAndPreservesOutputOnFailure) {
   auto output = llvm::MemoryBuffer::getFile(outputPath);
   ASSERT_TRUE(output);
   const auto circuit =
-      llvm::cantFail(::mqt::json::parse((*output)->getBuffer().str()));
+      llvm::cantFail(llvm::json::parse((*output)->getBuffer().str()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   EXPECT_EQ(instructions.back().getAsObject()->getString("name"), "measure");
   EXPECT_EQ(instructions.back().getAsObject()->getArray("locus")->size(), 1U);
   for (const auto& site :
        *instructions.back().getAsObject()->getArray("locus")) {
     EXPECT_TRUE(site == "physical-a" || site == "physical-b")
-        << ::mqt::json::serialize(site);
+        << llvm::formatv("{0}", site).str();
   }
   args[2] = "--target=#mqt.compilation_target<sites = [<id = 5>, <id = 17>], "
             "connectivity = all_to_all, couplings = [], native_operations = "

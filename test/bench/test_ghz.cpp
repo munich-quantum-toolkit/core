@@ -137,7 +137,7 @@ TEST(GHZ, UsesSemanticCaseIds) {
             caseId(GHZ{{.qubits = 3, .topology = GHZTopology::Star}}));
   EXPECT_EQ(caseId(defaults),
             "sha256-"
-            "826ce9dbfb0533e6591e99b339bf702351d6dd98cb341b49f230b361e0e21466");
+            "a222c0c57bcecb4f5e7ea72bab43968392861a52c5cb7c9c13aeaffffa059a65");
 }
 
 TEST(GHZ, DescribesJSONSchema) {

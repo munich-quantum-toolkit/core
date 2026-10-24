@@ -67,7 +67,7 @@ TEST(Teleportation, RoundTripsJSON) {
 TEST(Teleportation, UsesSemanticCaseIds) {
   EXPECT_EQ(caseId(Teleportation{}),
             "sha256-"
-            "e6b056aafd1b4f0a4784ace2df17a7e963e696e3741aace66a3828ad4f60886a");
+            "de1348477e2604539b963a28bc19f5d3ed27ed86fc6608366bbc6eb9b55855f6");
 }
 
 TEST(Teleportation, DescribesJSONSchema) {
@@ -91,10 +91,10 @@ TEST(Teleportation, EvaluatesCountsFromJSON) {
   const auto evaluation =
       llvm::cantFail(evaluateJSON(toManifestJSON(Teleportation{}),
                                   R"({"schema_version":1,"counts":{"0":8}})"));
-  EXPECT_NE(evaluation.find("\"success_probability\":1.0"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
+  EXPECT_NE(evaluation.find("\"success_probability\":1"), std::string::npos);
+  EXPECT_NE(evaluation.find("\"total_variation_distance\":0"),
             std::string::npos);
-  EXPECT_NE(evaluation.find("\"squared_hellinger_fidelity\":1.0"),
+  EXPECT_NE(evaluation.find("\"squared_hellinger_fidelity\":1"),
             std::string::npos);
 }
 

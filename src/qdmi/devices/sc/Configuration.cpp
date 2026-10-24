@@ -10,11 +10,10 @@
 
 #include "qdmi/devices/sc/Configuration.hpp"
 
-#include "support/JSON.hpp"
-
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 #include <algorithm>
 #include <array>
@@ -299,19 +298,21 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
 
 llvm::Expected<Device> readJSON(std::string_view json,
                                 std::string_view source) {
-  auto value = mqt::json::parse(json, source);
+  auto value = llvm::json::parse(json);
   if (!value) {
-    return value.takeError();
+    return llvm::createStringError(llvm::StringRef(source) + ": " +
+                                   llvm::toString(value.takeError()));
   }
   return parse(*value, source);
 }
 
 llvm::Expected<Device> readJSON(const std::string& path) {
-  auto value = mqt::json::readFile(path);
-  if (!value) {
-    return value.takeError();
+  auto buffer = llvm::MemoryBuffer::getFile(path);
+  if (!buffer) {
+    return llvm::createStringError(buffer.getError(), "failed to read '%s'",
+                                   path.c_str());
   }
-  return parse(*value, path);
+  return readJSON((*buffer)->getBuffer(), path);
 }
 llvm::Expected<Device> readJSON(std::istream& stream, std::string_view source) {
   try {

@@ -191,7 +191,7 @@ TEST(QFTAdder, EvaluatesCountsFromJSON) {
       toManifestJSON(benchmark),
       R"({"schema_version":1,"counts":{"0001":1,"0110":1,"1011":1,"1100":1}})"));
   EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":0.0"),
+  EXPECT_NE(evaluation.find("\"total_variation_distance\":0"),
             std::string::npos);
 
   const QFTAdder constant{{

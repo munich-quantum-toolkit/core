@@ -35,7 +35,8 @@ if(mqt-core_Development_FOUND
   if(LLVM_FOUND)
     include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-development-targets.cmake")
     target_include_directories(MQT::CoreQDMICommon SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
-    target_include_directories(MQT::CoreJSON SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
+    target_include_directories(MQT::CoreBench SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
+    target_include_directories(MQT::CoreQDMIScDeviceConfig SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
   else()
     set(mqt-core_Development_FOUND FALSE)
     set(mqt-core_NOT_FOUND_MESSAGE

@@ -13,8 +13,8 @@
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "StatisticsJson.hpp"
-#include "support/JSON.hpp"
 
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
 #include <string>
@@ -24,7 +24,7 @@ namespace dd {
 void UniqueTableStatistics::reset() noexcept { TableStatistics::reset(); }
 
 std::string UniqueTableStatistics::toString() const {
-  return mqt::json::serialize(toJson(*this), 2U);
+  return llvm::formatv("{0:2}", toJson(*this)).str();
 }
 
 llvm::json::Value toJson(const UniqueTableStatistics& s) {

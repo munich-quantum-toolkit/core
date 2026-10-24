@@ -12,8 +12,6 @@
 
 #include "qdmi/common/Common.hpp"
 
-#include "support/JSON.hpp"
-
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
@@ -28,6 +26,7 @@
 #include "qdmi/client.h"
 
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
 #include <array>
@@ -160,21 +159,23 @@ qdmi::SessionConfig makeDriverSessionConfig(
   setString("custom4", custom4);
   setString("custom5", custom5);
   if (deviceConfig) {
-    auto parsed = mqt::json::parse(*deviceConfig, "device_config");
+    auto parsed = llvm::json::parse(*deviceConfig);
     if (!parsed) {
       throw nb::value_error(llvm::toString(parsed.takeError()).c_str());
     }
     session["device-config"] =
-        llvm::json::Object{{.K = "inline", .V = std::move(*parsed)}};
+        llvm::json::Object{{"inline", std::move(*parsed)}};
   } else if (deviceConfigFile) {
     const auto path = qdmi::detail::pathToString(*deviceConfigFile);
     if (!llvm::json::isUTF8(path)) {
       throw nb::value_error("device_config_file must be valid UTF-8");
     }
-    session["device-config"] = llvm::json::Object{{.K = "file", .V = path}};
+    session["device-config"] = llvm::json::Object{{"file", path}};
   }
-  return session.empty() ? std::string{}
-                         : mqt::json::serialize(std::move(session));
+  return session.empty()
+             ? std::string{}
+             : llvm::formatv("{0}", llvm::json::Value(std::move(session)))
+                   .str();
 }
 
 template <typename Query>

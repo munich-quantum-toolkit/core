@@ -15,12 +15,12 @@
 
 #include "Driver.hpp"
 #include "SessionConfig.hpp"
-#include "support/JSON.hpp"
 
 #include "qdmi/constants.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
@@ -185,7 +185,7 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
             sourceLabel(source, configPath + ".inline") + " must be an object");
       }
       patch.deviceConfiguration = InlineDeviceConfiguration{
-          .json = mqt::json::serialize(*inlineConfig),
+          .json = llvm::formatv("{0}", *inlineConfig).str(),
       };
     } else {
       const auto file = optionalString(*config, "file", source, configPath);
@@ -306,9 +306,10 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   if (!buffer) {
     throw std::runtime_error(source + ": " + buffer.getError().message());
   }
-  auto value = mqt::json::parse((*buffer)->getBuffer(), source);
+  auto value = llvm::json::parse((*buffer)->getBuffer());
   if (!value) {
-    throw std::invalid_argument(llvm::toString(value.takeError()));
+    throw std::invalid_argument(source + ": " +
+                                llvm::toString(value.takeError()));
   }
   return std::move(*value);
 }
@@ -519,8 +520,7 @@ auto parseDeviceSessionJson(const char* const data, const size_t size,
     return QDMI_SUCCESS;
   }
   try {
-    auto value =
-        mqt::json::parse(llvm::StringRef(data, size), "<device-session-json>");
+    auto value = llvm::json::parse(llvm::StringRef(data, size));
     if (!value) {
       llvm::consumeError(value.takeError());
       return QDMI_ERROR_INVALIDARGUMENT;
@@ -572,7 +572,7 @@ DeviceRegistry::DeviceRegistry() {
   const auto inlineBase = std::filesystem::current_path();
   if (auto inlineJson =
           llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_JSON")) {
-    auto value = mqt::json::parse(*inlineJson, "<MQT_CORE_QDMI_CONFIG_JSON>");
+    auto value = llvm::json::parse(*inlineJson);
     if (!value) {
       throw std::invalid_argument(llvm::toString(value.takeError()));
     }

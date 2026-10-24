@@ -14,8 +14,6 @@
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
-#include "support/JSON.hpp"
-
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -276,10 +274,12 @@ private:
                               [&] { stream.value(siteNames_.at(*qubit)); });
         stream.attributeObject("args", [&] {
           stream.attributeBegin("angle");
-          ::mqt::json::number(stream, *angle);
+          stream.rawValue(
+              [&](llvm::raw_ostream& out) { out << llvm::APFloat(*angle); });
           stream.attributeEnd();
           stream.attributeBegin("phase");
-          ::mqt::json::number(stream, *phase);
+          stream.rawValue(
+              [&](llvm::raw_ostream& out) { out << llvm::APFloat(*phase); });
           stream.attributeEnd();
         });
       });

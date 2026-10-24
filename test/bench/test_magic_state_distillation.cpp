@@ -124,7 +124,7 @@ TEST(MagicStateDistillation, EvaluatesCountsFromJSON) {
   const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(MagicStateDistillation{}),
                    R"({"schema_version":1,"counts":{"00":256}})"));
-  EXPECT_NE(evaluation.find(R"("success_probability":1.0)"), std::string::npos);
+  EXPECT_NE(evaluation.find(R"("success_probability":1)"), std::string::npos);
 }
 
 } // namespace mqt::bench

@@ -22,10 +22,10 @@
 #include "dd/StateGeneration.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
+#include "dd/statistics/MemoryManagerStatistics.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
 #include "../qdmi/TestUtils.hpp"
-#include "support/JSON.hpp"
 
 #include "gtest/gtest.h"
 
@@ -2776,7 +2776,7 @@ TEST(DDPackageTest, DataStructureStatistics) {
   constexpr auto nqubits = 1U;
   const auto dd = std::make_unique<Package>(nqubits);
   auto stats =
-      llvm::cantFail(mqt::json::parse(getDataStructureStatisticsString()));
+      llvm::cantFail(llvm::json::parse(getDataStructureStatisticsString()));
 
   EXPECT_EQ((*stats.getAsObject()->getObject("vNode"))["size_B"], 64U);
   EXPECT_EQ((*stats.getAsObject()->getObject("vNode"))["alignment_B"], 8U);
@@ -2797,7 +2797,7 @@ TEST(DDPackageTest, DDStatistics) {
   EXPECT_NE(dummyGate.p, nullptr);
   dd->incRef(dummyGate);
   const auto statsString = getStatisticsString(*dd, true);
-  auto stats = llvm::cantFail(mqt::json::parse(statsString));
+  auto stats = llvm::cantFail(llvm::json::parse(statsString));
 
   std::cout << statsString << "\n";
   EXPECT_TRUE(stats.getAsObject()->get("vector"));
@@ -3301,3 +3301,13 @@ TEST(DDPackageTest, KroneckerRestoresNormalizationAfterInterningChanges) {
 }
 
 } // namespace dd
+
+TEST(DDStatistics, ResetMemoryUsageIsFinite) {
+  dd::MemoryManagerStatistics statistics(sizeof(dd::vNode));
+  statistics.numAllocated = 4;
+  statistics.trackUsedEntries();
+  statistics.reset();
+  const auto value = llvm::cantFail(llvm::json::parse(statistics.toString()));
+  EXPECT_EQ(value.getAsObject()->getNumber("usage_ratio"), 0.);
+  EXPECT_EQ(value.getAsObject()->getInteger("num_used_peak"), 1);
+}

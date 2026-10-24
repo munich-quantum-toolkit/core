@@ -160,4 +160,17 @@ TEST(QPE, RejectsInvalidJSONParameters) {
       "denominator must not be zero");
 }
 
+TEST(QPE, PreservesLargeIntegerParametersInManifests) {
+  const auto benchmark = llvm::cantFail(qpeFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993,"denominator":9007199254740994}}})"));
+  EXPECT_EQ(benchmark.options().phase.numerator(), 9007199254740993ULL);
+  EXPECT_EQ(benchmark.options().phase.denominator(), 9007199254740994ULL);
+  auto manifest = toManifestJSON(benchmark);
+  const auto numerator = manifest.find("9007199254740993");
+  ASSERT_NE(numerator, std::string::npos);
+  manifest.replace(numerator, 16, "9007199254740992");
+  expectInvalidJSON([&] { return qpeFromManifestJSON(manifest); },
+                    "does not match");
+}
+
 } // namespace mqt::bench
