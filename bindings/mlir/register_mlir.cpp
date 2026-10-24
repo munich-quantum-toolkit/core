@@ -23,6 +23,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/VQEAnsatz.hpp"
 #include "bench/WState.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
