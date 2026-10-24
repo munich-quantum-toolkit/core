@@ -49,7 +49,7 @@ does not use this seed.
 
 Adaptive sampling selects its worker count automatically by default. QCO
 programs share work before measurements and resets when these operations occur
-in the top-level stream or counted loops. Other QCO programs and adaptive QIR
+in the top-level stream or for/while loops. Other QCO programs and adaptive QIR
 programs can run independent shots in parallel. Terminal measurements still use
 one simulation for all shots. Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM3` to a
 `size_t` maximum worker count (`custom3` in Python). Zero selects automatic

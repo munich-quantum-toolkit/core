@@ -128,8 +128,9 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// classical output types are rejected. Without classical results, the function
 /// samples all DD wires. Terminal measurements use
 /// one simulation for all shots. Adaptive programs share shot prefixes when
-/// their measurements and resets are in the top-level stream or counted loops.
-/// Other adaptive programs run once per shot across independent workers.
+/// their measurements and resets are in the top-level stream or
+/// `scf.for`/`scf.while` loops. Other adaptive programs run once per shot
+/// across independent workers.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.

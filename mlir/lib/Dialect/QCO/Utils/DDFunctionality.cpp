@@ -2533,7 +2533,7 @@ static bool canBranchStructured(func::FuncOp func) {
       found = true;
       for (Operation* parent = op->getParentOp(); parent != func.getOperation();
            parent = parent->getParentOp()) {
-        if (!isa<scf::ForOp>(parent)) {
+        if (!isa<scf::ForOp, scf::WhileOp>(parent)) {
           unsupported = true;
           break;
         }
@@ -2554,12 +2554,9 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
                std::mt19937_64& rng, const PreparedState& prepared,
                const SamplingPlan& plan, std::vector<std::string>* shotResults,
                const DDExecutionOptions& options, bool collectCounts) {
-  struct ForFrame {
-    scf::ForOp op;
-    Block::iterator continuation;
-    llvm::APInt induction;
-    llvm::APInt step;
-    llvm::APInt remaining;
+  struct LoopFrame {
+    Operation* op;
+    std::optional<LoopRange> range;
   };
   struct Group {
     dd::VectorDD state;
@@ -2568,7 +2565,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     ClassicalEnv classical;
     size_t remainingWhileIterations;
     size_t count;
-    SmallVector<ForFrame, 2> loops;
+    SmallVector<LoopFrame, 2> loops;
   };
   std::map<std::string, size_t> counts;
   Group first{
@@ -2606,32 +2603,70 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     walk.activeCalls.insert(func.getOperation());
     while (!group.loops.empty() ||
            current != entry.getTerminator()->getIterator()) {
-      if (!group.loops.empty() &&
-          current ==
-              group.loops.back().op.getBody()->getTerminator()->getIterator()) {
+      if (!group.loops.empty() && current->hasTrait<OpTrait::IsTerminator>()) {
         auto& frame = group.loops.back();
-        auto yield = cast<scf::YieldOp>(frame.op.getBody()->getTerminator());
-        --frame.remaining;
-        if (!frame.remaining.isZero()) {
-          frame.induction += frame.step;
-          if (failed(bindValuePairs(
-                  yield.getOperands(),
-                  frame.op.getBody()->getArguments().drop_front(), walk,
-                  frame.op))) {
+        if (auto forOp = dyn_cast<scf::ForOp>(frame.op)) {
+          auto yield = cast<scf::YieldOp>(*current);
+          auto& range = *frame.range;
+          --range.trips;
+          if (!range.trips.isZero()) {
+            range.induction += range.step;
+            if (failed(
+                    bindValuePairs(yield.getOperands(),
+                                   forOp.getBody()->getArguments().drop_front(),
+                                   walk, forOp))) {
+              return failure();
+            }
+            bindInteger(
+                forOp.getBody()->getArgument(0),
+                range.induction.trunc(range.induction.getBitWidth() - 1),
+                group.classical);
+            current = forOp.getBody()->begin();
+            continue;
+          }
+          if (failed(bindValuePairs(yield.getOperands(), forOp.getResults(),
+                                    walk, forOp))) {
             return failure();
           }
-          bindInteger(frame.op.getBody()->getArgument(0),
-                      frame.induction.trunc(frame.induction.getBitWidth() - 1),
-                      group.classical);
-          current = frame.op.getBody()->begin();
         } else {
-          if (failed(bindValuePairs(yield.getOperands(), frame.op.getResults(),
-                                    walk, frame.op))) {
-            return failure();
+          auto whileOp = cast<scf::WhileOp>(frame.op);
+          if (auto condition = dyn_cast<scf::ConditionOp>(*current)) {
+            auto value =
+                lookupBool(condition.getCondition(), group.classical, whileOp);
+            if (failed(value)) {
+              return failure();
+            }
+            if (*value) {
+              if (walk.remainingWhileIterations == 0) {
+                return whileOp.emitError("QCO DD execution exceeds the "
+                                         "configured while-iteration limit");
+              }
+              --walk.remainingWhileIterations;
+              if (failed(bindValuePairs(condition.getArgs(),
+                                        whileOp.getAfterArguments(), walk,
+                                        whileOp))) {
+                return failure();
+              }
+              current = whileOp.getAfter().front().begin();
+              continue;
+            }
+            if (failed(bindValuePairs(condition.getArgs(), whileOp.getResults(),
+                                      walk, whileOp))) {
+              return failure();
+            }
+          } else {
+            auto yield = cast<scf::YieldOp>(*current);
+            if (failed(bindValuePairs(yield.getOperands(),
+                                      whileOp.getBeforeArguments(), walk,
+                                      whileOp))) {
+              return failure();
+            }
+            current = whileOp.getBefore().front().begin();
+            continue;
           }
-          current = frame.continuation;
-          group.loops.pop_back();
         }
+        current = std::next(frame.op->getIterator());
+        group.loops.pop_back();
         continue;
       }
       Operation& op = *current;
@@ -2659,12 +2694,23 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
                     group.classical);
         group.loops.push_back({
             .op = forOp,
-            .continuation = std::next(current),
-            .induction = range->induction,
-            .step = range->step,
-            .remaining = range->trips,
+            .range = std::move(range),
         });
         current = forOp.getBody()->begin();
+        continue;
+      }
+      if (auto whileOp = dyn_cast<scf::WhileOp>(op);
+          whileOp && branchLoops.contains(&op)) {
+        if (failed(bindValuePairs(whileOp.getInits(),
+                                  whileOp.getBeforeArguments(), walk,
+                                  whileOp))) {
+          return failure();
+        }
+        group.loops.push_back({
+            .op = whileOp,
+            .range = std::nullopt,
+        });
+        current = whileOp.getBefore().front().begin();
         continue;
       }
       auto measure = dyn_cast<MeasureOp>(op);
@@ -2719,11 +2765,6 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         }
         branch.remainingWhileIterations = walk.remainingWhileIterations;
       };
-      const auto continueBranch = [&](Group branch, bool measuredZero,
-                                      dd::fp probability) -> LogicalResult {
-        collapse(branch, measuredZero, probability);
-        return visit(advance, std::move(branch));
-      };
       if (zeroCount == 0) {
         collapse(group, false, pone);
         current = advance;
@@ -2745,29 +2786,23 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       };
       dd.incRef(other.state);
       group.count = zeroCount;
-      if (reset) {
-        collapse(group, true, pzero);
-        collapse(other, false, pone);
-        // Equal nodes represent the same normalized state up to root phase.
-        if (group.state.p == other.state.p) {
-          group.count += other.count;
-          dd.decRef(other.state);
-          current = advance;
-          continue;
-        }
-        dd.incRef(group.state);
-        if (failed(visit(advance, std::move(group)))) {
-          dd.decRef(other.state);
-          return failure();
-        }
-        return visit(advance, std::move(other));
-      }
-      dd.incRef(group.state);
-      if (failed(continueBranch(std::move(group), true, pzero))) {
+      collapse(group, true, pzero);
+      collapse(other, false, pone);
+      // Equal nodes represent the same normalized state up to root phase.
+      if (reset && group.state.p == other.state.p) {
+        group.count += other.count;
         dd.decRef(other.state);
+        current = advance;
+        continue;
+      }
+      // Recurse into the smaller group to bound stack depth by log2(shots).
+      if (group.count < other.count) {
+        std::swap(group, other);
+      }
+      if (failed(visit(advance, std::move(other)))) {
         return failure();
       }
-      return continueBranch(std::move(other), false, pone);
+      current = advance;
     }
     if (failed(validateReturn(cast<func::ReturnOp>(entry.getTerminator()),
                               group.qubits, group.tensors))) {
