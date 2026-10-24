@@ -18,6 +18,8 @@
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <array>
 #include <complex>
@@ -45,7 +47,8 @@ namespace {
 
 class QIRRuntimeTest : public testing::Test {
 protected:
-  std::ostringstream sink;
+  std::string sinkText;
+  llvm::raw_string_ostream sink{sinkText};
   void SetUp() override { Runtime::getInstance().setOstream(sink); }
   void TearDown() override {
     Runtime::getInstance().resetOstream();
@@ -192,7 +195,7 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
   auto& runtime = Runtime::getInstance();
   for (const bool ordered : {false, true}) {
     SCOPED_TRACE(ordered);
-    sink.str("");
+    sink.str().clear();
     if (ordered) {
       runtime.setOutputSchema(Runtime::OutputSchema::Ordered);
     }

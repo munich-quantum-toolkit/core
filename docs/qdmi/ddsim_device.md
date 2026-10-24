@@ -80,16 +80,16 @@ classical bit before submitting its generated OpenQASM 3 program.
 Sampling returns individual bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
 histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
 Both results come from the same samples, including mid-circuit measurements. The
-sequence of shots has no defined meaning. QIR Base or Adaptive programs with a
-static terminal measurement region can sample one prepared DD; other QIR
-programs run once per shot. See the [QIR execution contract](../qir/index.md)
-for eligibility and resource limits. OpenQASM classical registers use reverse
-declaration order, with each register most-significant-bit first. QIR records
-define increasing output-bit indices; the device reverses each recorded
-bitstring before returning shots and counts. Equivalent OpenQASM and QIR
-programs therefore use the same bit positions within each bitstring. Adaptive
-QIR shots can record different numbers of bits; their histogram retains these
-variable-length outcomes.
+sequence of shots has no defined meaning. Jobs without captured text retain a
+compact histogram and expand shots only when queried. QIR Base or Adaptive
+programs with a static terminal measurement region can sample one prepared DD.
+See the [QIR execution contract](../qir/index.md) for sampling eligibility and
+resource limits. OpenQASM classical registers use reverse declaration order,
+with each register most-significant-bit first. QIR records define increasing
+output-bit indices; the device reverses each recorded bitstring before returning
+shots and counts. Equivalent OpenQASM and QIR programs therefore use the same
+bit positions within each bitstring. Adaptive QIR shots can record different
+numbers of bits; their histogram retains these variable-length outcomes.
 
 Sparse statevector and probability results use ascending numerical basis-index
 order. Their keys and values share that order. Sparse exports require at most 64
@@ -143,10 +143,12 @@ clients use `job.getCustomResult<std::string>(qdmi::CustomProperty::Custom1)`.
 Without capture, that result is unsupported (`None` in Python).
 
 Capture retains the QIR header, per-shot metadata, typed output records, and
-exit codes in memory. Double records preserve the original floating-point value
-when parsed back. Capture executes the program once per shot, so capture jobs
-provide counts and shots but no uncollapsed statevector. Default sampling keeps
-its optimized path. See the
+exit codes. Shot records align with `QDMI_JOB_RESULT_SHOTS`; integer and double
+records do not add bits to shots or counts. Double records preserve the original
+floating-point value when parsed back. Eligible terminal programs retain one
+output template and the uncollapsed statevector; querying the stream expands
+that template with the sampled bits. Other capture jobs execute once per shot
+and retain their text in memory. See the
 [executable QIR example](../qir/index.md#retrieve-the-qir-output-stream-through-qdmi).
 
 ## Compile and execute
