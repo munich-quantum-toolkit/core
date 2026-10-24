@@ -8,7 +8,7 @@ The MQT Core superconducting (SC) provider builds a session-owned runtime model
 from JSON. Separate sessions using the same provider library and prefix can
 expose different names, capacities, topology, operations, and calibration.
 
-JSON configuration requires UTF-8 text, finite numbers, and the C numeric locale
+Decimal numbers in JSON configuration require the C numeric locale
 (`LC_NUMERIC=C`).
 
 ## Configuration sources

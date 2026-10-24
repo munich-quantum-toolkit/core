@@ -12,8 +12,8 @@
 
 #include "StatisticsJson.hpp"
 
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -79,28 +79,33 @@ void MemoryManagerStatistics::reset() noexcept {
 }
 
 std::string MemoryManagerStatistics::toString() const {
-  return llvm::formatv("{0:2}", toJson(*this)).str();
+  std::string result;
+  llvm::raw_string_ostream out(result);
+  llvm::json::OStream json(out, 2);
+  writeJson(json, *this);
+  return result;
 }
 
-llvm::json::Value toJson(const MemoryManagerStatistics& s) {
+void writeJson(llvm::json::OStream& json, const MemoryManagerStatistics& s) {
   if (s.peakNumUsed == 0) {
-    return "unused";
+    json.value("unused");
+    return;
   }
 
-  llvm::json::Object j;
-  j["memory_allocated_MiB"] = s.getAllocatedMemoryMiB();
-  j["memory_used_MiB"] = s.getUsedMemoryMiB();
-  j["memory_used_MiB_peak"] = s.getPeakUsedMemoryMiB();
-  j["num_allocated"] = s.numAllocated;
-  j["num_allocations"] = s.numAllocations;
-  j["num_available_for_reuse"] = s.numAvailableForReuse;
-  j["num_available_for_reuse_peak"] = s.peakNumAvailableForReuse;
-  j["num_available_from_chunks"] = s.getNumAvailableFromChunks();
-  j["num_available_total"] = s.getTotalNumAvailable();
-  j["num_used"] = s.numUsed;
-  j["num_used_peak"] = s.peakNumUsed;
-  j["usage_ratio"] = s.getUsageRatio();
-  return j;
+  json.object([&] {
+    writeStatistic(json, "memory_allocated_MiB", s.getAllocatedMemoryMiB());
+    writeStatistic(json, "memory_used_MiB", s.getUsedMemoryMiB());
+    writeStatistic(json, "memory_used_MiB_peak", s.getPeakUsedMemoryMiB());
+    json.attribute("num_allocated", s.numAllocated);
+    json.attribute("num_allocations", s.numAllocations);
+    json.attribute("num_available_for_reuse", s.numAvailableForReuse);
+    json.attribute("num_available_for_reuse_peak", s.peakNumAvailableForReuse);
+    json.attribute("num_available_from_chunks", s.getNumAvailableFromChunks());
+    json.attribute("num_available_total", s.getTotalNumAvailable());
+    json.attribute("num_used", s.numUsed);
+    json.attribute("num_used_peak", s.peakNumUsed);
+    writeStatistic(json, "usage_ratio", s.getUsageRatio());
+  });
 }
 
 } // namespace dd

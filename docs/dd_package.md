@@ -19,8 +19,6 @@ diagrams (DDs). The C++ library and {py:mod}`mqt.core.dd` Python module support
 simulation, synthesis, and verification. Start with the quickstart for Python
 usage or the introduction below for the data structure and its limits.
 
-JSON statistics use the C numeric locale (`LC_NUMERIC=C`).
-
 ## Quickstart
 
 The MQT Compiler Collection uses the DD package to simulate

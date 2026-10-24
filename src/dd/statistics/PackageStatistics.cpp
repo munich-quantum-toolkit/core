@@ -20,12 +20,13 @@
 
 #include "StatisticsJson.hpp"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <ostream>
 #include <string>
-#include <utility>
 
 namespace dd {
 namespace {
@@ -59,66 +60,52 @@ double computePeakMemoryMiB(const Package& package) {
 namespace {
 [[nodiscard]] llvm::json::Value getDataStructureStatistics();
 
-[[nodiscard]] llvm::json::Value
-getStatistics(Package& package, const bool includeIndividualTables) {
-  llvm::json::Object j;
-
-  j["data_structure"] = getDataStructureStatistics();
-
+void writeStatistics(llvm::json::OStream& json, Package& package,
+                     const bool includeIndividualTables) {
   const auto activeCounts = package.computeActiveCounts();
-
-  llvm::json::Object vector;
-  auto& vectorUniqueTable = vector["unique_table"];
-  vectorUniqueTable = toJson(package.vUniqueTable, includeIndividualTables);
-  if (vectorUniqueTable != "unused") {
-    (*vectorUniqueTable.getAsObject()->getObject(
-        "total"))["num_active_entries"] = activeCounts.vector;
-  }
-  vector["memory_manager"] = toJson(package.vMemoryManager.getStats());
-
-  llvm::json::Object matrix;
-  auto& matrixUniqueTable = matrix["unique_table"];
-  matrixUniqueTable = toJson(package.mUniqueTable, includeIndividualTables);
-  if (matrixUniqueTable != "unused") {
-    (*matrixUniqueTable.getAsObject()->getObject(
-        "total"))["num_active_entries"] = activeCounts.matrix;
-  }
-  matrix["memory_manager"] = toJson(package.mMemoryManager.getStats());
-
-  llvm::json::Object realNumbers;
-  auto& realNumbersUniqueTable = realNumbers["unique_table"];
-  realNumbersUniqueTable = toJson(package.cUniqueTable.getStats());
-  if (realNumbersUniqueTable != "unused") {
-    (*realNumbersUniqueTable.getAsObject())["num_active_entries"] =
-        activeCounts.reals;
-  }
-  realNumbers["memory_manager"] = toJson(package.cMemoryManager.getStats());
-
-  llvm::json::Object computeTables;
-  computeTables["vector_add"] = toJson(package.vectorAdd.getStats());
-  computeTables["matrix_add"] = toJson(package.matrixAdd.getStats());
-  computeTables["matrix_conjugate_transpose"] =
-      toJson(package.conjugateMatrixTranspose.getStats());
-  computeTables["matrix_vector_mult"] =
-      toJson(package.matrixVectorMultiplication.getStats());
-  computeTables["matrix_matrix_mult"] =
-      toJson(package.matrixMatrixMultiplication.getStats());
-  computeTables["vector_kronecker"] =
-      toJson(package.vectorKronecker.getStats());
-  computeTables["matrix_kronecker"] =
-      toJson(package.matrixKronecker.getStats());
-  computeTables["vector_inner_product"] =
-      toJson(package.vectorInnerProduct.getStats());
-
-  j["vector"] = std::move(vector);
-  j["matrix"] = std::move(matrix);
-  j["real_numbers"] = std::move(realNumbers);
-  j["compute_tables"] = std::move(computeTables);
-
-  j["active_memory_mib"] = estimateMemoryMiB(activeCounts);
-  j["peak_memory_mib"] = computePeakMemoryMiB(package);
-
-  return j;
+  const auto attribute = [&](llvm::StringRef name, const auto& statistics) {
+    json.attributeBegin(name);
+    writeJson(json, statistics);
+    json.attributeEnd();
+  };
+  json.object([&] {
+    json.attribute("data_structure", getDataStructureStatistics());
+    json.attributeObject("vector", [&] {
+      json.attributeBegin("unique_table");
+      writeJson(json, package.vUniqueTable, includeIndividualTables,
+                activeCounts.vector);
+      json.attributeEnd();
+      attribute("memory_manager", package.vMemoryManager.getStats());
+    });
+    json.attributeObject("matrix", [&] {
+      json.attributeBegin("unique_table");
+      writeJson(json, package.mUniqueTable, includeIndividualTables,
+                activeCounts.matrix);
+      json.attributeEnd();
+      attribute("memory_manager", package.mMemoryManager.getStats());
+    });
+    json.attributeObject("real_numbers", [&] {
+      json.attributeBegin("unique_table");
+      writeJson(json, package.cUniqueTable.getStats(), activeCounts.reals);
+      json.attributeEnd();
+      attribute("memory_manager", package.cMemoryManager.getStats());
+    });
+    json.attributeObject("compute_tables", [&] {
+      attribute("vector_add", package.vectorAdd.getStats());
+      attribute("matrix_add", package.matrixAdd.getStats());
+      attribute("matrix_conjugate_transpose",
+                package.conjugateMatrixTranspose.getStats());
+      attribute("matrix_vector_mult",
+                package.matrixVectorMultiplication.getStats());
+      attribute("matrix_matrix_mult",
+                package.matrixMatrixMultiplication.getStats());
+      attribute("vector_kronecker", package.vectorKronecker.getStats());
+      attribute("matrix_kronecker", package.matrixKronecker.getStats());
+      attribute("vector_inner_product", package.vectorInnerProduct.getStats());
+    });
+    writeStatistic(json, "active_memory_mib", estimateMemoryMiB(activeCounts));
+    writeStatistic(json, "peak_memory_mib", computePeakMemoryMiB(package));
+  });
 }
 
 template <class T> [[nodiscard]] llvm::json::Object typeStatistics() {
@@ -188,8 +175,11 @@ std::string getDataStructureStatisticsString() {
 
 std::string getStatisticsString(Package& package,
                                 const bool includeIndividualTables) {
-  return llvm::formatv("{0:2}", getStatistics(package, includeIndividualTables))
-      .str();
+  std::string result;
+  llvm::raw_string_ostream out(result);
+  llvm::json::OStream json(out, 2);
+  writeStatistics(json, package, includeIndividualTables);
+  return result;
 }
 
 void printStatistics(Package& package, std::ostream& os) {

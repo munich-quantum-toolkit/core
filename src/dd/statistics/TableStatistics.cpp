@@ -12,8 +12,8 @@
 
 #include "StatisticsJson.hpp"
 
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <string>
@@ -58,27 +58,33 @@ double TableStatistics::getMemoryMiB() const noexcept {
 }
 
 std::string TableStatistics::toString() const {
-  return llvm::formatv("{0:2}", toJson(*this)).str();
+  std::string result;
+  llvm::raw_string_ostream out(result);
+  llvm::json::OStream json(out, 2);
+  writeJson(json, *this);
+  return result;
 }
 
-llvm::json::Value toJson(const TableStatistics& s) {
+void writeJson(llvm::json::OStream& json, const TableStatistics& s) {
   if (s.lookups == 0) {
-    return "unused";
+    json.value("unused");
+    return;
   }
+  json.object([&] { writeTableStatistics(json, s); });
+}
 
-  llvm::json::Object j;
-  j["num_buckets"] = s.numBuckets;
-  j["memory_MiB"] = s.getMemoryMiB();
-  j["num_entries"] = s.numEntries;
-  j["peak_num_entries"] = s.peakNumEntries;
-  j["collisions"] = s.collisions;
-  j["hits"] = s.hits;
-  j["lookups"] = s.lookups;
-  j["inserts"] = s.inserts;
-  j["hit_ratio"] = s.hitRatio();
-  j["col_ratio"] = s.colRatio();
-  j["load_factor"] = s.loadFactor();
-  return j;
+void writeTableStatistics(llvm::json::OStream& json, const TableStatistics& s) {
+  json.attribute("num_buckets", s.numBuckets);
+  writeStatistic(json, "memory_MiB", s.getMemoryMiB());
+  json.attribute("num_entries", s.numEntries);
+  json.attribute("peak_num_entries", s.peakNumEntries);
+  json.attribute("collisions", s.collisions);
+  json.attribute("hits", s.hits);
+  json.attribute("lookups", s.lookups);
+  json.attribute("inserts", s.inserts);
+  writeStatistic(json, "hit_ratio", s.hitRatio());
+  writeStatistic(json, "col_ratio", s.colRatio());
+  writeStatistic(json, "load_factor", s.loadFactor());
 }
 
 } // namespace dd

@@ -15,7 +15,13 @@
 
 #pragma once
 
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cstddef>
+#include <optional>
 
 namespace dd {
 
@@ -24,21 +30,34 @@ struct MemoryManagerStatistics;
 struct TableStatistics;
 struct UniqueTableStatistics;
 
-/// Render the memory-manager statistics, or "unused" if nothing was used.
-[[nodiscard]] llvm::json::Value toJson(const MemoryManagerStatistics& s);
+/// Write a finite statistic without depending on the numeric locale.
+inline void writeStatistic(llvm::json::OStream& json, llvm::StringRef name,
+                           const double value) {
+  json.attributeBegin(name);
+  json.rawValue([&](llvm::raw_ostream& out) { out << llvm::APFloat(value); });
+  json.attributeEnd();
+}
 
-/// Render the table statistics, or "unused" if the table was never queried.
-[[nodiscard]] llvm::json::Value toJson(const TableStatistics& s);
+/// Write the memory-manager statistics, or "unused" if nothing was used.
+void writeJson(llvm::json::OStream& json, const MemoryManagerStatistics& s);
 
-/// Render the unique-table statistics, or "unused" if it was never queried.
-[[nodiscard]] llvm::json::Value toJson(const UniqueTableStatistics& s);
+/// Write the fields shared by table and unique-table statistics.
+void writeTableStatistics(llvm::json::OStream& json, const TableStatistics& s);
 
-/// Render the statistics of every table in a unique table.
+/// Write the table statistics, or "unused" if the table was never queried.
+void writeJson(llvm::json::OStream& json, const TableStatistics& s);
+
+/// Write unique-table statistics, including active entries for package reports.
+void writeJson(llvm::json::OStream& json, const UniqueTableStatistics& s,
+               std::optional<size_t> activeEntries = std::nullopt);
+
+/// Write the statistics of every table in a unique table.
 ///
+/// @param json The output stream
 /// @param table The unique table
 /// @param includeIndividualTables Whether to add an entry per variable
-/// @return The rendered statistics, or "unused" if no table holds entries
-[[nodiscard]] llvm::json::Value toJson(const UniqueTable& table,
-                                       bool includeIndividualTables);
+/// @param activeEntries The number of active entries in the table
+void writeJson(llvm::json::OStream& json, const UniqueTable& table,
+               bool includeIndividualTables, size_t activeEntries);
 
 } // namespace dd

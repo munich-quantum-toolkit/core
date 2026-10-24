@@ -14,9 +14,11 @@
 
 #include "StatisticsJson.hpp"
 
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
 namespace dd {
@@ -24,16 +26,25 @@ namespace dd {
 void UniqueTableStatistics::reset() noexcept { TableStatistics::reset(); }
 
 std::string UniqueTableStatistics::toString() const {
-  return llvm::formatv("{0:2}", toJson(*this)).str();
+  std::string result;
+  llvm::raw_string_ostream out(result);
+  llvm::json::OStream json(out, 2);
+  writeJson(json, *this);
+  return result;
 }
 
-llvm::json::Value toJson(const UniqueTableStatistics& s) {
+void writeJson(llvm::json::OStream& json, const UniqueTableStatistics& s,
+               const std::optional<size_t> activeEntries) {
   if (s.lookups == 0) {
-    return "unused";
+    json.value("unused");
+    return;
   }
-
-  auto j = toJson(static_cast<const TableStatistics&>(s));
-  (*j.getAsObject())["gc_runs"] = s.gcRuns;
-  return j;
+  json.object([&] {
+    writeTableStatistics(json, s);
+    json.attribute("gc_runs", s.gcRuns);
+    if (activeEntries) {
+      json.attribute("num_active_entries", *activeEntries);
+    }
+  });
 }
 } // namespace dd
