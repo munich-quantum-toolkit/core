@@ -78,6 +78,20 @@ TEST(BenchmarkJSON, RejectsInvalidInstanceEnvelopes) {
       "must be 'ghz'");
 }
 
+TEST(BenchmarkJSON, RejectsInvalidSizeParameters) {
+  for (const auto* value : {"null", "-1", "1.5", "18446744073709551616"}) {
+    SCOPED_TRACE(value);
+    expectInvalidJSON(
+        [&] {
+          return groverFromInstanceSpecificationJSON(
+              std::string(
+                  R"({"schema_version":1,"benchmark":"grover","parameters":{"marked_bitstring":"01","iterations":)") +
+              value + "}}");
+        },
+        "iterations");
+  }
+}
+
 TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   const GHZ ghz{{.qubits = 3}};
   const auto manifest = toManifestJSON(ghz);

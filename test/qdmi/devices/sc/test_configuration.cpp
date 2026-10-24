@@ -277,7 +277,7 @@ TEST(ScConfigurationTest, ValidatesOperationSupportAndCalibration) {
       [](auto& root) {
         (*(*root.getAsObject()->getArray("operations"))[1]
               .getAsObject())["sites"] =
-            llvm::json::Array{llvm::json::Array{0, 2}};
+            llvm::json::Array{llvm::json::Value(llvm::json::Array{0, 2})};
         (*(*root.getAsObject()->getArray("operations"))[1]
               .getAsObject())["siteOverrides"] = llvm::json::Array{};
       },
@@ -339,7 +339,10 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
           {"name", "three"},
           {"numParameters", 1},
           {"numQubits", 3},
-          {"sites", llvm::json::Array{llvm::json::Array{2, 0, 1}}},
+          {
+              "sites",
+              llvm::json::Array{llvm::json::Value(llvm::json::Array{2, 0, 1})},
+          },
           {"duration", 0},
           {
               "siteOverrides",

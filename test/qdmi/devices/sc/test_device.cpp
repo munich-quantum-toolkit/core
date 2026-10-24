@@ -256,9 +256,10 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
 TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
   auto configuration = llvm::cantFail(llvm::json::parse(CUSTOM_SC));
   (*configuration.getAsObject())["couplings"] =
-      llvm::json::Array{llvm::json::Array{0, 1}};
+      llvm::json::Array{llvm::json::Value(llvm::json::Array{0, 1})};
   (*(*configuration.getAsObject()->getArray("operations"))[0]
-        .getAsObject())["sites"] = llvm::json::Array{llvm::json::Array{1, 0}};
+        .getAsObject())["sites"] =
+      llvm::json::Array{llvm::json::Value(llvm::json::Array{1, 0})};
   (*(*configuration.getAsObject()->getArray("operations"))[0]
         .getAsObject())["siteOverrides"] = llvm::json::Array{};
   const auto serialized = llvm::formatv("{0}", configuration).str();
@@ -269,8 +270,11 @@ TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
                 serialized.size() + 1, serialized.c_str()),
             QDMI_SUCCESS);
-  EXPECT_EQ(MQT_SC_QDMI_device_session_init(session),
-            QDMI_ERROR_INVALIDARGUMENT);
+  testing::internal::CaptureStderr();
+  const auto status = MQT_SC_QDMI_device_session_init(session);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_EQ(status, QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(diagnostic, testing::HasSubstr("device connectivity"));
   MQT_SC_QDMI_device_session_free(session);
 }
 

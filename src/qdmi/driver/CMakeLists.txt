@@ -19,6 +19,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
   target_link_libraries(
     ${TARGET_NAME}
@@ -37,6 +38,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   if(BUILD_MQT_CORE_TESTS)
     add_library(mqt-core-qdmi-driver-testing STATIC DeviceRegistry.cpp Driver.cpp)
+    mqt_llvm_target_disable_rtti(mqt-core-qdmi-driver-testing)
     target_compile_features(mqt-core-qdmi-driver-testing PUBLIC cxx_std_20)
     target_compile_definitions(mqt-core-qdmi-driver-testing PUBLIC QDMI_STATIC_DEFINE)
     target_link_libraries(

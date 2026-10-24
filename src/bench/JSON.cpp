@@ -164,6 +164,26 @@ bool enumValue(const Json& parameters, llvm::StringRef key, Enum& out,
   return false;
 }
 
+// LLVM's integer mappers do not cover size_t on every supported platform.
+bool sizeValue(const Json& parameters, llvm::StringRef key, size_t& out,
+               llvm::json::Path path, bool optional = false) {
+  const auto* field = parameters.getAsObject()->get(key);
+  if (field == nullptr) {
+    if (optional) {
+      return true;
+    }
+    path.field(key).report("missing value");
+    return false;
+  }
+  const auto value = field->getAsUINT64();
+  if (!value || !std::in_range<size_t>(*value)) {
+    path.field(key).report("expected uint64_t fitting size_t");
+    return false;
+  }
+  out = static_cast<size_t>(*value);
+  return true;
+}
+
 [[nodiscard]] llvm::Expected<Json> envelope(const std::string_view text,
                                             const std::string_view source,
                                             const bool manifest) {
@@ -252,9 +272,8 @@ parseFanOutParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"controls"}, path) ||
-      !object.map("controls", options.controls)) {
+  if (!keys(parameters, {"controls"}, path) ||
+      !sizeValue(parameters, "controls", options.controls, path)) {
     return diagnostic.getError();
   }
   return constructBenchmark(source, [&] { return FanOut(options); });
@@ -266,9 +285,8 @@ parseFanOutParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"qubits", "topology", "basis"}, path) ||
-      !object.map("qubits", options.qubits) ||
+  if (!keys(parameters, {"qubits", "topology", "basis"}, path) ||
+      !sizeValue(parameters, "qubits", options.qubits, path) ||
       !enumValue<GHZTopology>(
           parameters, "topology", options.topology,
           {{"linear", GHZTopology::Linear}, {"star", GHZTopology::Star}},
@@ -290,7 +308,7 @@ parseGroverParameters(const Json& parameters, std::string_view source) {
   size_t iterations = 0;
   if (!object || !keys(parameters, {"marked_bitstring", "iterations"}, path) ||
       !object.map("marked_bitstring", options.markedBitstring) ||
-      !object.mapOptional("iterations", iterations)) {
+      !sizeValue(parameters, "iterations", iterations, path, true)) {
     return diagnostic.getError();
   }
   if (parameters.getAsObject()->get("iterations") != nullptr) {
@@ -328,9 +346,8 @@ parseMagicStateDistillationParameters(const Json& parameters,
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"levels"}, path) ||
-      !object.mapOptional("levels", options.levels)) {
+  if (!keys(parameters, {"levels"}, path) ||
+      !sizeValue(parameters, "levels", options.levels, path, true)) {
     return diagnostic.getError();
   }
   return constructBenchmark(source,
@@ -369,9 +386,8 @@ parseMultiplexerParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"qubits"}, path) ||
-      !object.map("qubits", options.qubits)) {
+  if (!keys(parameters, {"qubits"}, path) ||
+      !sizeValue(parameters, "qubits", options.qubits, path)) {
     return diagnostic.getError();
   }
   return constructBenchmark(source, [&] { return Multiplexer(options); });
@@ -383,10 +399,9 @@ parseQAOAParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"qubits", "depth"}, path) ||
-      !object.map("qubits", options.qubits) ||
-      !object.mapOptional("depth", options.depth)) {
+  if (!keys(parameters, {"qubits", "depth"}, path) ||
+      !sizeValue(parameters, "qubits", options.qubits, path) ||
+      !sizeValue(parameters, "depth", options.depth, path, true)) {
     return diagnostic.getError();
   }
   return constructBenchmark(source, [&] { return QAOA(options); });
@@ -398,11 +413,9 @@ parseQAOAParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object ||
-      !keys(parameters, {"qubits", "period_exponent", "method"}, path) ||
-      !object.map("qubits", options.qubits) ||
-      !object.map("period_exponent", options.periodExponent) ||
+  if (!keys(parameters, {"qubits", "period_exponent", "method"}, path) ||
+      !sizeValue(parameters, "qubits", options.qubits, path) ||
+      !sizeValue(parameters, "period_exponent", options.periodExponent, path) ||
       !enumValue<QFTMethod>(parameters, "method", options.method,
                             {
                                 {"standard", QFTMethod::Standard},
@@ -451,9 +464,8 @@ parseRepeatUntilSuccessParameters(const Json& parameters,
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"data_qubits"}, path) ||
-      !object.mapOptional("data_qubits", options.dataQubits)) {
+  if (!keys(parameters, {"data_qubits"}, path) ||
+      !sizeValue(parameters, "data_qubits", options.dataQubits, path, true)) {
     return diagnostic.getError();
   }
   return constructBenchmark(source,
@@ -481,9 +493,8 @@ parseWStateParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
-  if (!object || !keys(parameters, {"qubits"}, path) ||
-      !object.map("qubits", options.qubits)) {
+  if (!keys(parameters, {"qubits"}, path) ||
+      !sizeValue(parameters, "qubits", options.qubits, path)) {
     return diagnostic.getError();
   }
   return constructBenchmark(source, [&] { return WState(options); });
@@ -504,11 +515,10 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
   const auto diagnosticSource = std::string(source) + ":$/parameters";
   llvm::json::Path::Root diagnostic(diagnosticSource);
   const llvm::json::Path path(diagnostic);
-  llvm::json::ObjectMapper object(parameters, path);
   size_t precision = 0;
   auto method = QPEMethod::Standard;
-  if (!object || !keys(parameters, {"precision", "phase", "method"}, path) ||
-      !object.map("precision", precision) ||
+  if (!keys(parameters, {"precision", "phase", "method"}, path) ||
+      !sizeValue(parameters, "precision", precision, path) ||
       !enumValue<QPEMethod>(parameters, "method", method,
                             {
                                 {"standard", QPEMethod::Standard},
