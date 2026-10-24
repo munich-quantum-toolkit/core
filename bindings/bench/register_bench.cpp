@@ -14,9 +14,28 @@
 #include "nanobind/stl/optional.h" // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"   // NOLINT(misc-include-cleaner)
 
+#ifdef __APPLE__
+#include <exception>
+#include <stdexcept>
+#endif
+
 namespace mqt {
 
 namespace nb = nanobind;
+
+#ifdef __APPLE__
+// Darwin's split nanobind backend can miss exceptions from this module.
+static void translateBenchmarkError(const std::exception_ptr& error,
+                                    void* /*unused*/) {
+  try {
+    std::rethrow_exception(error);
+  } catch (const std::invalid_argument& exception) {
+    PyErr_SetString(PyExc_ValueError, exception.what());
+  } catch (const std::overflow_error& exception) {
+    PyErr_SetString(PyExc_OverflowError, exception.what());
+  }
+}
+#endif
 
 // forward declarations
 void registerBV(const nb::module_& m);
@@ -39,6 +58,9 @@ void registerWState(const nb::module_& m);
 // The nanobind module macro requires its module handle by value.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+#ifdef __APPLE__
+  nb::register_exception_translator(&translateBenchmarkError);
+#endif
   m.doc() = "Typed benchmark instances and references.";
 
   nb::class_<bench::Output>(m, "Output",
