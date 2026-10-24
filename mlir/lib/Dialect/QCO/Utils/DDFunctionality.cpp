@@ -329,6 +329,7 @@ struct GateCache {
     dd::MatrixDD matrix;
   };
   dd::Package& dd;
+  Block* uncachedBlock = nullptr;
   DenseMap<Operation*, SmallVector<Entry, 1>> entries;
 
   explicit GateCache(dd::Package& package) : dd(package) {}
@@ -530,7 +531,8 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   }
   dd::MatrixDD matrix;
   if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
-    if (walk.gates != nullptr) {
+    if (walk.gates != nullptr &&
+        unitary->getBlock() != walk.gates->uncachedBlock) {
       auto& variants = walk.gates->entries[unitary.getOperation()];
       auto found = llvm::find_if(variants, [&](const GateCache::Entry& entry) {
         return entry.numQubits == walk.qubits->numQubits &&
@@ -2922,13 +2924,15 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
   };
 
   if (!plan.dynamic && !forceDynamic) {
+    // Entry-block gates execute only once during a terminal trial.
+    gateCache.uncachedBlock = &func.getBody().front();
     ClassicalEnv classical;
     DenseSet<dd::Qubit> measuredWires;
     Operation* deferredMeasurementUse = nullptr;
     dd.incRef(in);
-    auto state = simulateImpl(func, in, dd, prepared, nullptr, options,
-                              &plan.deferredMeasurements, &classical,
-                              &measuredWires, &deferredMeasurementUse);
+    auto state = simulateImpl(
+        func, in, dd, prepared, nullptr, options, &plan.deferredMeasurements,
+        &classical, &measuredWires, &deferredMeasurementUse, true, &gateCache);
     if (succeeded(state)) {
       const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
       if (shotResults == nullptr && collectCounts) {
@@ -2960,6 +2964,7 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
     }
   }
 
+  gateCache.uncachedBlock = nullptr;
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
     dd.incRef(in);

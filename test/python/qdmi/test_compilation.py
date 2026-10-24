@@ -603,7 +603,7 @@ def test_binary_qir_results(program_format: ProgramFormat, *, capture: bool) -> 
         assert recorded_shots == shots
     else:
         assert output is None
-    if program_format in {ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_BASE_MODULE}:
+    if not capture or program_format in {ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_BASE_MODULE}:
         assert job.get_dense_statevector() == pytest.approx([2**-0.5, 2**-0.5, 0, 0])
     else:
         with pytest.raises(RuntimeError, match="Not supported"):

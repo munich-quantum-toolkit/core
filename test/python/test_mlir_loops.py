@@ -100,6 +100,22 @@ result = false;
     assert simulate(restored)[0] == pytest.approx(1j)
 
 
+def test_sampling_with_loop_dependent_gates() -> None:
+    """Each qubit receives rotations by 2 pi, 3 pi, and 4 pi."""
+    program = QCProgram.from_openqasm_str("""
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+for int i in [0:2] {
+  for int j in [0:2] {
+    ry((i + 2) * pi) q[j];
+  }
+}
+bit[3] c = measure q;
+""").to_qco()
+    assert sample(program, shots=128, seed=17) == {"111": 128}
+
+
 @pytest.mark.parametrize("stale", [False, True])
 def test_wide_register_condition_in_do_while(*, stale: bool) -> None:
     """Preserve wide snapshots across stores in loop conditions."""
