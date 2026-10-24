@@ -47,7 +47,11 @@ function(enable_project_options target_name)
   endif()
 
   if(MSVC)
-    target_compile_options(${target_name} INTERFACE /utf-8 /EHsc)
+    # Respect LLVM targets that explicitly disable exceptions.
+    target_compile_options(
+      ${target_name}
+      INTERFACE
+        /utf-8 "$<$<NOT:$<IN_LIST:_HAS_EXCEPTIONS=0,$<TARGET_PROPERTY:COMPILE_DEFINITIONS>>>:/EHsc>")
   else()
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)

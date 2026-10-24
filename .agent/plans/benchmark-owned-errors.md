@@ -1,6 +1,6 @@
 # Owned benchmark errors
 
-Status: complete; local prototype.
+Status: complete; included in the LLVM JSON migration.
 
 ## Goal and scope
 
@@ -26,6 +26,10 @@ implementation. Preserve current subnormal fidelity arithmetic, current family
 limits, FanOut, QAOA, and program-sequence support. No shared diagnostic runtime
 is needed for this bounded migration.
 
+CoreBench uses LLVM's exception and RTTI policy on every platform. The MSVC
+project options honor LLVM's no-exception setting instead of overriding it. The
+benchmark binding needs no platform-specific exception translator.
+
 ## Validation
 
 The release suite passes 4,089 native tests and 2,036 Python tests; GCC debug
@@ -46,6 +50,5 @@ behavior, and binding defaults. No broader diagnostic framework is needed.
 
 The native C++ API changes; the Python API stays compatible. Native Shor
 callbacks must return errors rather than throw. Allocation failure remains
-outside the recoverable-error contract. MSVC retains its normal STL exception
-ABI; this prototype has only been built locally on Linux. It has not been pushed
-or tested in hosted CI.
+outside the recoverable-error contract. Local execution checks cover Linux;
+hosted CI must validate the updated macOS and Windows builds.

@@ -24,11 +24,11 @@ comparison. Case IDs hash LLVM's sorted compact JSON. Benchmarks are unreleased,
 so there is no intermediate encoding migration path.
 
 CoreBench remains static because LLVM Error type IDs and their handlers must
-share one image, including on Windows. Native constructors still throw, with
-validation translated at the JSON boundary. The benchmark generator and CLI use
-LLVM results and no longer enable exception handling. CoreBench's explicit RTTI
-override remains: compiler macro probes show that ordinary CMake targets do not
-inherit LLVM's RTTI default, and LLVM's EH opt-in also enables RTTI.
+share one image, including on Windows. Checked factories and native benchmark
+methods return owned LLVM errors. CoreBench, the benchmark generator, and the
+CLI follow LLVM's exception and RTTI policy. Python retains its constructors and
+error categories without a benchmark-specific platform translator. See the
+[benchmark error contract](benchmark-owned-errors.md).
 
 The CLI retains sibling-file creation and hard-link publication. LLVM's unique
 file helper substitutes percent characters throughout the path, breaking the
@@ -46,7 +46,7 @@ JSON export took 2.57 ms. Allocation traffic rose slightly, while peak tracked
 live memory and memory retained at return were essentially unchanged. Process
 peak RSS is a separate measure and does not establish a memory saving.
 
-Local validation passed 4,088 native tests, 2,021 Python tests, full
+Local validation passed 4,089 native tests, 2,036 Python tests, full
 changed-file C++ lint, repository lint, executable documentation and local link
 checks, and an installed CMake consumer without CoreJSON. The trimmed benchmark
 section was inspected in Chrome. One specialist Ponytail review found a
@@ -56,5 +56,5 @@ large parameters, and a zero-allocation DD usage ratio each fail their targeted
 regression. DD reports also match 12 independently parsed pre-change reports;
 the comma-locale regression fails against the previous installed library.
 
-Native constructor exceptions and the existing external compiler I/O exception
-boundaries remain. This is not a repository-wide exception-free migration.
+External compiler I/O and QDMI exception boundaries remain. This is not a
+repository-wide exception-free migration.

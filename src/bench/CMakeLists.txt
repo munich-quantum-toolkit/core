@@ -38,12 +38,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
       BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
       FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_bench_export.h)
 
-  # Retain the normal MSVC STL ABI while disabling native exceptions elsewhere.
-  if(MSVC)
-    mqt_llvm_target_disable_rtti(${MQT_CORE_TARGET_NAME}-bench-library)
-  else()
-    llvm_update_compile_flags(${MQT_CORE_TARGET_NAME}-bench-library)
-  endif()
+  llvm_update_compile_flags(${MQT_CORE_TARGET_NAME}-bench-library)
 
   set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-bench-library PARENT_SCOPE)
 endif()
