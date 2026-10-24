@@ -363,8 +363,8 @@ linear ownership
 benchmark instance
   **Preferred term:** benchmark instance. **Accepted alias:** instance when the
   benchmark context is clear. One validated member of a benchmark family with
-  every default resolved. It owns a logical output and an analytic or
-  verification reference and can be used to generate a program or manifest.
+  every default resolved. It owns a logical output and, when available, an
+  analytic or verification reference. It can generate a program or manifest.
 
 benchmark instance specification
 instance specification
@@ -380,8 +380,9 @@ manifest
   **Preferred term:** benchmark manifest. **Accepted alias:** manifest when the
   benchmark context is clear. A canonical sidecar record generated for a
   benchmark instance. It records the resolved parameters, case ID, logical
-  outputs, reference model, and benchmark-definition version. It accompanies
-  the generated program but does not identify its file, format, or bytes.
+  outputs, reference availability and model, and benchmark-definition version.
+  It accompanies the generated program but does not identify its file, format,
+  or bytes.
 
 magic state
   **Preferred term:** magic state. **Accepted aliases:** none. A non-stabilizer
@@ -440,6 +441,13 @@ semiclassical QFT
   alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
   resets, and reuses one qubit for each output bit. Each round applies rotations
   controlled by earlier measurement results.
+
+VQE
+variational quantum eigensolver
+  **Preferred term:** variational quantum eigensolver. **Accepted
+  abbreviation:** VQE. A hybrid algorithm that minimizes a Hamiltonian's
+  expectation value by classically adjusting the parameters of a quantum
+  ansatz state.
 
 W state
   **Preferred term:** W state. The equal, positive-amplitude superposition of
