@@ -16,7 +16,6 @@
 #include "llvm/Support/Error.h"
 
 #include <cstdint>
-#include <istream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -75,8 +74,7 @@ struct Device {
 /// Parse and validate a device description and report errors with @p source.
 [[nodiscard]] llvm::Expected<Device> readJSON(std::string_view json,
                                               std::string_view source);
-[[nodiscard]] llvm::Expected<Device>
-readJSON(std::istream& stream, std::string_view source = "input");
+/// Read a JSON file and return validation or file-access errors.
 [[nodiscard]] llvm::Expected<Device> readJSON(const std::string& path);
 
 } // namespace sc

@@ -455,26 +455,29 @@ TEST(ScRuntimeConfiguration, SelectsEnvironmentAndExplicitFileSources) {
 }
 
 TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
-  MQT_SC_QDMI_Device_Session session = nullptr;
-  ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  constexpr auto missing =
-      std::to_array("missing-sc-device-configuration.json");
-  ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, missing.size(),
-                missing.data()),
-            QDMI_SUCCESS);
-  testing::internal::CaptureStderr();
-  const auto status = MQT_SC_QDMI_device_session_init(session);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
-  EXPECT_EQ(status, QDMI_ERROR_NOTFOUND);
-  EXPECT_THAT(
-      diagnostic,
-      testing::AllOf(
-          testing::HasSubstr("[mqt-core] [error]"),
-          testing::HasSubstr("QDMI device configuration "
-                             "'missing-sc-device-configuration.json' does not "
-                             "exist")));
-  MQT_SC_QDMI_device_session_free(session);
+  const mqt::test::TemporaryDirectory directory;
+  const auto regularFile = directory.write("regular-file", "");
+  for (const auto& path : {
+           directory.path() / "missing.json",
+           regularFile / "configuration.json",
+       }) {
+    const auto missing = path.string();
+    SCOPED_TRACE(missing);
+    MQT_SC_QDMI_Device_Session session = nullptr;
+    ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+    ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+                  missing.size() + 1, missing.c_str()),
+              QDMI_SUCCESS);
+    testing::internal::CaptureStderr();
+    const auto status = MQT_SC_QDMI_device_session_init(session);
+    const auto diagnostic = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(status, QDMI_ERROR_NOTFOUND);
+    EXPECT_THAT(diagnostic,
+                testing::AllOf(testing::HasSubstr("[mqt-core] [error]"),
+                               testing::HasSubstr(missing)));
+    MQT_SC_QDMI_device_session_free(session);
+  }
 }
 
 TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {

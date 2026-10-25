@@ -10,27 +10,24 @@
 
 #include "qdmi/common/DeviceConfiguration.hpp"
 
+#include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
 
 #include "qdmi/device.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
-#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <ios>
-#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <utility>
 
 #ifdef _WIN32
 #include <memory>
@@ -103,77 +100,27 @@ namespace qdmi::detail {
 }
 
 namespace {
-template <class Reporter>
-void reportPath(const std::filesystem::path& path,
-                const std::format_string<> fallback,
-                Reporter&& reporter) noexcept {
-  try {
-#ifdef _WIN32
-    const auto pathText = path.string();
-    std::forward<Reporter>(reporter)(std::string_view(pathText));
-#else
-    std::forward<Reporter>(reporter)(std::string_view(path.native()));
-#endif
-  } catch (...) {
-    qdmi::diagnostics::error(fallback);
-  }
-}
-
 [[nodiscard]] std::optional<LoadedDeviceConfiguration>
 readFile(const std::filesystem::path& path, const bool bundled, int& status) {
-  std::error_code error;
-  const auto exists = std::filesystem::exists(path, error);
-  if (error) {
-    status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_PERMISSIONDENIED;
-    reportPath(path,
-               "Cannot inspect QDMI device configuration (details unavailable)",
-               [&error](const std::string_view pathText) {
-                 const auto message = error.message();
-                 qdmi::diagnostics::error(
-                     "Cannot inspect QDMI device configuration '{}': {}",
-                     pathText, message);
-               });
-    return std::nullopt;
-  }
-  if (!exists) {
-    status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_NOTFOUND;
-    reportPath(path, "QDMI device configuration does not exist",
-               [](const std::string_view pathText) {
-                 qdmi::diagnostics::error(
-                     "QDMI device configuration '{}' does not exist", pathText);
-               });
-    return std::nullopt;
-  }
-  errno = 0;
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_PERMISSIONDENIED;
-    const auto errorNumber = errno;
-    reportPath(path, "Cannot read QDMI device configuration",
-               [errorNumber](const std::string_view pathText) {
-                 const auto* const message = std::strerror(errorNumber);
-                 qdmi::diagnostics::error(
-                     "Cannot read QDMI device configuration '{}': {}", pathText,
-                     message == nullptr ? "unknown error" : message);
-               });
-    return std::nullopt;
-  }
-  std::string json{std::istreambuf_iterator<char>(input),
-                   std::istreambuf_iterator<char>()};
-  if (!input.eof() && input.fail()) {
-    status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_PERMISSIONDENIED;
-    reportPath(path, "Failed while reading QDMI device configuration",
-               [](const std::string_view pathText) {
-                 qdmi::diagnostics::error(
-                     "Failed while reading QDMI device configuration '{}'",
-                     pathText);
-               });
+  const auto source = qdmi::detail::pathToString(path);
+  auto buffer = llvm::MemoryBuffer::getFile(source);
+  if (!buffer) {
+    if (bundled) {
+      status = QDMI_ERROR_FATAL;
+    } else if (buffer.getError() == std::errc::no_such_file_or_directory ||
+               buffer.getError() == std::errc::not_a_directory) {
+      status = QDMI_ERROR_NOTFOUND;
+    } else {
+      status = QDMI_ERROR_PERMISSIONDENIED;
+    }
+    qdmi::diagnostics::error("Cannot read QDMI device configuration '{}': {}",
+                             source, buffer.getError().message());
     return std::nullopt;
   }
   status = QDMI_SUCCESS;
   return LoadedDeviceConfiguration{
-      .json = std::move(json),
-      .source = path.string(),
+      .json = (*buffer)->getBuffer().str(),
+      .source = source,
   };
 }
 } // namespace
