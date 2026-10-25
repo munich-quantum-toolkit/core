@@ -24,6 +24,7 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package_fwd.hpp" // IWYU pragma: export
+#include "dd/Pauli.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
@@ -1190,6 +1191,27 @@ public:
   /// @pre The observable is not the zero terminal. Debug assertions also
   /// require a non-terminal state and an approximately zero imaginary part.
   fp expectationValue(const mEdge& x, const vEdge& y);
+
+  /// Evaluate a batch of sparse Pauli sums on a borrowed state.
+  ///
+  /// Results are quadratic forms without normalization. Repeated Pauli strings
+  /// share one contraction within the call. The state and its references remain
+  /// unchanged. A zero terminal represents the zero vector at any logical
+  /// width; other states must have exactly numQubits wires. A zero-qubit label
+  /// is empty.
+  ///
+  /// @param state A state with a live reference in this package, or a static
+  /// terminal.
+  /// @param numQubits Logical width, within this package's capacity.
+  /// @param observables Sparse sums with finite real coefficients and labels of
+  /// exactly numQubits characters from I, X, Y, Z; the rightmost acts on qubit
+  /// zero.
+  /// @return One real value per observable, in input order.
+  /// @throws std::invalid_argument If the state, width, or terms are invalid.
+  /// @throws std::overflow_error If a norm, contraction, or sum is not finite.
+  std::vector<fp>
+  expectationValues(const vEdge& state, size_t numQubits,
+                    std::span<const PauliObservable> observables);
 
   ///
   /// Kronecker/tensor product

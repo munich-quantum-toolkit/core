@@ -20,6 +20,7 @@
 #include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
+#include "dd/Pauli.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
@@ -45,6 +46,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -1105,6 +1107,78 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 
   assert(RealNumber::approximatelyZero(expValue.i));
   return expValue.r;
+}
+
+std::vector<fp>
+Package::expectationValues(const vEdge& state, const size_t numQubits,
+                           const std::span<const PauliObservable> observables) {
+  if (vEdge::trackingRequired(state) && !getRootSet<vNode>().contains(state)) {
+    throw std::invalid_argument(
+        "State must have a live reference in this package.");
+  }
+  const auto stateQubits =
+      state.isTerminal() ? size_t{0} : static_cast<size_t>(state.p->v) + 1U;
+  if (numQubits > qubits() ||
+      (!state.isZeroTerminal() && stateQubits != numQubits)) {
+    throw std::invalid_argument(
+        "Pauli width does not match the state or package.");
+  }
+  for (const auto& observable : observables) {
+    for (const auto& term : observable) {
+      if (term.paulis.size() != numQubits ||
+          term.paulis.find_first_not_of("IXYZ") != std::string::npos ||
+          !std::isfinite(term.coefficient)) {
+        throw std::invalid_argument("Pauli terms need matching IXYZ labels and "
+                                    "finite real coefficients.");
+      }
+    }
+  }
+  const auto norm = ComplexNumbers::mag2(state.w);
+  if (!std::isfinite(norm)) {
+    throw std::overflow_error("State norm is not finite.");
+  }
+
+  constexpr std::array<GateMatrix, 3> gates{
+      GateMatrix{0, 1, 1, 0},
+      GateMatrix{0, {0, -1}, {0, 1}, 0},
+      GateMatrix{1, 0, 0, -1},
+  };
+  std::unordered_map<std::string_view, fp> expectations;
+  std::vector<fp> values;
+  values.reserve(observables.size());
+  for (const auto& observable : observables) {
+    fp value = 0.;
+    for (const auto& term : observable) {
+      if (term.coefficient == 0. || state.isZeroTerminal()) {
+        continue;
+      }
+      auto [entry, inserted] = expectations.try_emplace(term.paulis, norm);
+      if (inserted && term.paulis.find_first_not_of('I') != std::string::npos) {
+        auto matrix = makeIdent();
+        for (size_t index = 0; index < numQubits; ++index) {
+          const auto pauli = term.paulis[numQubits - index - 1];
+          if (pauli != 'I') {
+            const auto& gate = gates[static_cast<size_t>(pauli - 'X')];
+            // Each factor is above the existing wires; keep physical indices.
+            matrix = kronecker(makeGateDD(gate, static_cast<Qubit>(index)),
+                               matrix, index, false);
+          }
+        }
+        const auto expectation = innerProduct(state, multiply(matrix, state));
+        if (!std::isfinite(expectation.r) || !std::isfinite(expectation.i)) {
+          throw std::overflow_error("Pauli contraction is not finite.");
+        }
+        entry->second = expectation.r;
+        garbageCollect();
+      }
+      value += term.coefficient * entry->second;
+      if (!std::isfinite(value)) {
+        throw std::overflow_error("Pauli expectation is not finite.");
+      }
+    }
+    values.push_back(value);
+  }
+  return values;
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
