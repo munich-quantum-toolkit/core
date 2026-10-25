@@ -28,6 +28,7 @@ def test_qaoa_reference_and_json() -> None:
     assert benchmark.output.width == 4
     assert benchmark.cut_size("0101") == 4
     evaluation = benchmark.evaluate({"0101": 3, "0000": 1})
+    assert evaluation.shots == 4
     assert evaluation.mean_cut == pytest.approx(3)
     assert evaluation.approximation_ratio == pytest.approx(0.75)
     assert json.loads(benchmark.manifest_json)["reference"]["kind"] == "verification"

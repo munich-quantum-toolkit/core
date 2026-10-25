@@ -13,11 +13,11 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <utility>
 
@@ -39,6 +39,8 @@ using FactorPair = std::pair<uint64_t, uint64_t>;
 
 /// Classical verification of measured Shor phases.
 struct ShorEvaluation {
+  /// Total number of evaluated shots.
+  size_t shots = 0;
   /// Fraction of shots that independently yield a verified factor pair.
   double successProbability = 0.;
   std::optional<FactorPair> factors;
@@ -84,10 +86,11 @@ struct FactorResult {
 /// perfect powers are handled classically. Other inputs try base 2 first, then
 /// seeded random bases. The callback owns device selection, shots, and
 /// execution seeds. Invalid counts and callback errors propagate to the caller.
-/// The callback must return errors through Expected and must not throw.
+/// The callable must be nonempty and is borrowed for this call. It must return
+/// errors through Expected and must not throw.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<FactorResult>
 factor(uint64_t number,
-       const std::function<llvm::Expected<Counts>(const Shor&)>& run,
+       llvm::function_ref<llvm::Expected<Counts>(const Shor&)> run,
        const FactorOptions& options = {});
 
 } // namespace mqt::bench

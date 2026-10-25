@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/JSON.hpp"
 
@@ -21,6 +20,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -202,12 +202,17 @@ TEST(BenchmarkJSON, AcceptsEquivalentOutputWidths) {
 
 TEST(BenchmarkJSON, EvaluatesAResolvedManifest) {
   const auto ghz = llvm::cantFail(GHZ::create({.qubits = 2}));
-  const Counts counts{{"00", 5}, {"11", 3}};
-  EXPECT_EQ(llvm::cantFail(evaluateJSON(
-                toManifestJSON(ghz),
-                R"({"schema_version":1,"counts":{"00":5,"11":3}})")),
-            llvm::cantFail(evaluationToJSON(
-                caseId(ghz), 8, llvm::cantFail(ghz.evaluate(counts)))));
+  const auto result = llvm::cantFail(llvm::json::parse(llvm::cantFail(
+      evaluateJSON(toManifestJSON(ghz),
+                   R"({"schema_version":1,"counts":{"00":5,"11":3}})"))));
+  const auto& object = *result.getAsObject();
+  EXPECT_EQ(object.getString("case_id"), caseId(ghz));
+  EXPECT_EQ(object.getInteger("shots"), 8);
+  const auto& metrics = *object.getObject("metrics");
+  EXPECT_DOUBLE_EQ(*metrics.getNumber("total_variation_distance"), 0.125);
+  EXPECT_NEAR(*metrics.getNumber("squared_hellinger_fidelity"),
+              0.5 + (std::sqrt(15.) / 8.), 1e-15);
+  EXPECT_EQ(*metrics.get("success_probability"), llvm::json::Value(nullptr));
 }
 
 TEST(BenchmarkJSON, ListsBenchmarksAndRejectsUnknownSchemas) {
@@ -240,47 +245,6 @@ TEST(BenchmarkJSON, ParsesCounts) {
         return countsFromJSON(R"({"schema_version":1,"counts":{"00":0}})");
       },
       "must be a positive integer");
-}
-
-TEST(BenchmarkJSON, SerializesEvaluations) {
-  const auto serialized =
-      llvm::cantFail(evaluationToJSON("sha256-" + std::string(64, '0'), 100,
-                                      Evaluation{
-                                          .totalVariationDistance = 0.,
-                                          .squaredHellingerFidelity = 1.,
-                                          .successProbability = std::nullopt,
-                                      }));
-  EXPECT_NE(serialized.find("\"squared_hellinger_fidelity\":1"),
-            std::string::npos);
-  EXPECT_NE(serialized.find("\"success_probability\":null"), std::string::npos);
-  EXPECT_NE(serialized.find("\"total_variation_distance\":0"),
-            std::string::npos);
-}
-
-TEST(BenchmarkJSON, RejectsInvalidEvaluations) {
-  const auto validCaseId = "sha256-" + std::string(64, '0');
-  test::expectInvalidJSON(
-      [&] {
-        return evaluationToJSON("not-a-case", 1,
-                                Evaluation{
-                                    .totalVariationDistance = 0.,
-                                    .squaredHellingerFidelity = 1.,
-                                    .successProbability = std::nullopt,
-                                });
-      },
-      "");
-  test::expectInvalidJSON(
-      [&] {
-        return evaluationToJSON(
-            validCaseId, 1,
-            Evaluation{
-                .totalVariationDistance =
-                    std::numeric_limits<double>::quiet_NaN(),
-                .squaredHellingerFidelity = 1.,
-                .successProbability = std::nullopt,
-            });
-      },
-      "");
 }
 
 } // namespace mqt::bench

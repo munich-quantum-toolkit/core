@@ -106,6 +106,7 @@ evaluate(const Counts& counts, const size_t width,
                      : std::nullopt;
   // NOLINTEND(google-runtime-float)
   return Evaluation{
+      .shots = *totalShots,
       .totalVariationDistance = static_cast<double>(totalVariation),
       .squaredHellingerFidelity = static_cast<double>(fidelity),
       .successProbability = success,

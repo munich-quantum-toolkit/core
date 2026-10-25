@@ -33,6 +33,7 @@ def test_shor_instance() -> None:
     ):
         assert restored.case_id == benchmark.case_id
     evaluation = benchmark.evaluate({"0010101011": 3, "0000000000": 1})
+    assert evaluation.shots == 4
     assert evaluation.factors == (3, 7)
     assert evaluation.success_probability == pytest.approx(0.75)
     assert_generates(benchmark.generate())

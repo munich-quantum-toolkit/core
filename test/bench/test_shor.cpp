@@ -52,6 +52,7 @@ TEST(Shor, RecoversOnlyVerifiedFactorsAndWeightsShots) {
   const auto evaluation = llvm::cantFail(
       benchmark.evaluate({{"0010101011", 3}, {"0000000000", 1}}));
   EXPECT_EQ(evaluation.factors, (FactorPair{3, 7}));
+  EXPECT_EQ(evaluation.shots, 4);
   EXPECT_DOUBLE_EQ(evaluation.successProbability, 0.75);
   for (const auto* outcome :
        {"0000000000", "0101010101", "1000000000", "1111111111"}) {
@@ -244,6 +245,7 @@ TEST(Shor, EvaluatesCountsFromJSON) {
       R"({"schema_version":1,"counts":{"0010101011":3,"0000000000":1}})"));
   EXPECT_NE(result.find("\"success_probability\":0.75"), std::string::npos);
   EXPECT_NE(result.find("\"factors\":[3,7]"), std::string::npos);
+  EXPECT_NE(result.find("\"shots\":4"), std::string::npos);
   EXPECT_EQ(result.find("total_variation_distance"), std::string::npos);
   EXPECT_EQ(result.find("squared_hellinger_fidelity"), std::string::npos);
 }

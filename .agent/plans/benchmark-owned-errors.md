@@ -1,13 +1,16 @@
 # Owned benchmark errors
 
-Status: complete; included in the LLVM JSON migration.
+Status: complete; included in the LLVM JSON migration. Subsequent scalar and
+evaluation API changes are recorded in
+[evaluation boundaries](benchmark-evaluation-api.md).
 
 ## Goal and scope
 
 Complete the benchmark portion of the exception-free API migration on the LLVM
-JSON implementation. Native construction, probability, evaluation, and Shor
-factoring return owned LLVM errors. Python retains its constructors and error
-categories. Valid numerical results and JSON contracts remain unchanged.
+JSON implementation. Native construction, raw-count evaluation, and Shor
+factoring return owned LLVM errors. Scalar probability queries use documented
+preconditions. Python retains its constructors and error categories. Valid
+numerical results and JSON contracts remain unchanged.
 
 The scope includes all 16 benchmark families, Phase, JSON, native generation
 callers, bindings, and their tests. The broader DD, QDMI, and QIR migration is
@@ -30,7 +33,7 @@ CoreBench uses LLVM's exception and RTTI policy on every platform. The MSVC
 project options honor LLVM's no-exception setting instead of overriding it. The
 benchmark binding needs no platform-specific exception translator.
 
-## Validation
+## Validation at completion of the error migration
 
 The release suite passes 4,089 native tests and 2,036 Python tests; GCC debug
 passes all 167 benchmark tests. C++ lint, repository lint, stub generation, and

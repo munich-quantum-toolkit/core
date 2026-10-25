@@ -31,7 +31,6 @@
 
 #include "llvm/Support/Error.h"
 
-#include <cstddef>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -56,7 +55,7 @@ struct ParsedBenchmark {
 /// Parse an instance specification and resolve its benchmark metadata.
 ///
 /// Returns an error for invalid JSON or unsupported parameters.
-/// JSON APIs require UTF-8 text, finite numbers, and the C numeric locale.
+/// JSON APIs use the C numeric locale.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<ParsedBenchmark>
 parseInstanceSpecificationJSON(
     std::string_view json,
@@ -105,20 +104,5 @@ countsFromJSON(std::string_view text, std::string_view source = "<counts>");
 evaluateJSON(std::string_view manifest, std::string_view counts,
              std::string_view manifestSource = "<manifest>",
              std::string_view countsSource = "<counts>");
-
-/// Serialize one evaluation result as canonical JSON.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
-evaluationToJSON(std::string_view caseId, size_t shots,
-                 const Evaluation& evaluation);
-
-/// Serialize QAOA cut scores without distribution-fit metrics.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
-evaluationToJSON(std::string_view caseId, size_t shots,
-                 const QAOAEvaluation& evaluation);
-
-/// Serialize classical factor verification without distribution-fit metrics.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
-evaluationToJSON(std::string_view caseId, size_t shots,
-                 const ShorEvaluation& evaluation);
 
 } // namespace mqt::bench

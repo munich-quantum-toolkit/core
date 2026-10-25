@@ -220,7 +220,7 @@ parameters, references, evaluation, instances, instance specifications, and
 manifests. Use `create` to construct validated instances. Fallible operations
 return `llvm::Expected<T>`. Native `probability` and `cutSize` queries require
 binary outcomes of `output().width` bits. Python queries and count evaluation
-validate their inputs.
+validate their inputs. Evaluation results include the total `shots` used.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -634,10 +634,10 @@ number of retry attempts.
 
 ```{code-cell} ipython3
 evaluation = rus.evaluate(counts)
-assert sum(counts.values()) == 4096
+assert evaluation.shots == 4096
 assert evaluation.total_variation_distance < 0.02
 for bit in ("0", "1"):
-    observed = counts.get(bit, 0) / sum(counts.values())
+    observed = counts.get(bit, 0) / evaluation.shots
     print(f"P({bit}): observed {observed:.3f}, ideal {rus.probability(bit):.3f}")
 print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
 ```

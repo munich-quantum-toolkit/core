@@ -37,6 +37,8 @@ struct QAOAOptions {
 
 /// Classical scores of sampled QAOA cuts.
 struct QAOAEvaluation {
+  /// Total number of evaluated shots.
+  size_t shots = 0;
   /// Mean number of edges whose endpoints have different measured bits.
   double meanCut = 0.;
   /// Mean cut size divided by the cycle graph's maximum cut size.

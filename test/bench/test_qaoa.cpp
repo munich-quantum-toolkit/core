@@ -82,6 +82,7 @@ TEST(QAOA, EvaluatesCutsAgainstTheCycleOptimum) {
                              {"000", 1},
                              {"010", 3},
                          }));
+  EXPECT_EQ(triangle.shots, 4);
   EXPECT_DOUBLE_EQ(triangle.meanCut, 1.5);
   EXPECT_DOUBLE_EQ(triangle.approximationRatio, 0.75);
   const auto square = llvm::cantFail(llvm::cantFail(QAOA::create({.qubits = 4}))
@@ -115,8 +116,7 @@ TEST(QAOA, KeepsRoundedOptimalScoresWithinTheirBounds) {
   EXPECT_LE(evaluation.meanCut, 2.);
   EXPECT_DOUBLE_EQ(evaluation.approximationRatio, 1.);
   EXPECT_LE(evaluation.approximationRatio, 1.);
-  static_cast<void>(llvm::cantFail(evaluationToJSON(
-      caseId(benchmark), (maximum / 3) + (2 * (maximum / 5)), evaluation)));
+  EXPECT_EQ(evaluation.shots, (maximum / 3) + (2 * (maximum / 5)));
 }
 
 TEST(QAOA, ValidatesEveryCountKey) {
@@ -221,37 +221,12 @@ TEST(QAOA, EvaluatesCountsFromJSON) {
   const auto evaluation = llvm::cantFail(
       evaluateJSON(toManifestJSON(llvm::cantFail(QAOA::create({.qubits = 4}))),
                    R"({"schema_version":1,"counts":{"0000":1,"0101":3}})"));
+  EXPECT_NE(evaluation.find(R"("shots":4)"), std::string::npos);
   EXPECT_NE(evaluation.find(R"("mean_cut":3)"), std::string::npos);
   EXPECT_NE(evaluation.find(R"("approximation_ratio":0.75)"),
             std::string::npos);
   EXPECT_EQ(evaluation.find("total_variation_distance"), std::string::npos);
   EXPECT_EQ(evaluation.find("squared_hellinger_fidelity"), std::string::npos);
-}
-
-TEST(QAOA, RejectsInvalidEvaluationMetrics) {
-  const auto id = caseId(llvm::cantFail(QAOA::create({.qubits = 3})));
-  test::expectInvalidJSON(
-      [&] { return evaluationToJSON(id, 0, QAOAEvaluation{}); }, "");
-  test::expectInvalidJSON(
-      [&] { return evaluationToJSON("invalid", 1, QAOAEvaluation{}); }, "");
-  test::expectInvalidJSON(
-      [&] { return evaluationToJSON(id, 1, QAOAEvaluation{.meanCut = -1.}); },
-      "");
-  test::expectInvalidJSON(
-      [&] {
-        return evaluationToJSON(id, 1,
-                                QAOAEvaluation{.approximationRatio = 1.1});
-      },
-      "");
-  test::expectInvalidJSON(
-      [&] {
-        return evaluationToJSON(
-            id, 1,
-            QAOAEvaluation{
-                .meanCut = std::numeric_limits<double>::quiet_NaN(),
-            });
-      },
-      "");
 }
 
 } // namespace mqt::bench

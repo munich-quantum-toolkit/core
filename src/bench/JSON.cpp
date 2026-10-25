@@ -38,12 +38,10 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
-#include <numeric>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -1459,14 +1457,78 @@ template <class Benchmark>
   }
 #include "bench/BenchmarkFamilies.inc"
 
-[[nodiscard]] bool validCaseId(const std::string_view value) {
-  constexpr std::string_view prefix = "sha256-";
-  if (!value.starts_with(prefix) || value.size() != prefix.size() + 64U) {
-    return false;
+[[nodiscard]] std::string evaluationToJSON(const std::string_view caseIdValue,
+                                           const Evaluation& evaluation) {
+  Json success = nullptr;
+  if (evaluation.successProbability) {
+    success = *evaluation.successProbability;
   }
-  return std::ranges::all_of(value.substr(prefix.size()), [](const char digit) {
-    return (digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f');
-  });
+  return llvm::formatv("{0}",
+                       llvm::json::Value(llvm::json::Object{
+                           {"case_id", std::string(caseIdValue)},
+                           {
+                               "metrics",
+                               llvm::json::Object{
+                                   {
+                                       "squared_hellinger_fidelity",
+                                       evaluation.squaredHellingerFidelity,
+                                   },
+                                   {"success_probability", std::move(success)},
+                                   {
+                                       "total_variation_distance",
+                                       evaluation.totalVariationDistance,
+                                   },
+                               },
+                           },
+                           {"schema_version", SCHEMA_VERSION},
+                           {"shots", evaluation.shots},
+                       }))
+      .str();
+}
+
+[[nodiscard]] std::string evaluationToJSON(const std::string_view caseIdValue,
+                                           const QAOAEvaluation& evaluation) {
+  return llvm::formatv("{0}", llvm::json::Value(llvm::json::Object{
+                                  {"case_id", std::string(caseIdValue)},
+                                  {
+                                      "metrics",
+                                      llvm::json::Object{
+                                          {
+                                              "approximation_ratio",
+                                              evaluation.approximationRatio,
+                                          },
+                                          {"mean_cut", evaluation.meanCut},
+                                      },
+                                  },
+                                  {"schema_version", SCHEMA_VERSION},
+                                  {"shots", evaluation.shots},
+                              }))
+      .str();
+}
+
+[[nodiscard]] std::string evaluationToJSON(std::string_view caseIdValue,
+                                           const ShorEvaluation& evaluation) {
+  Json factors = nullptr;
+  if (evaluation.factors) {
+    const auto [first, second] = *evaluation.factors;
+    factors = llvm::json::Array{first, second};
+  }
+  return llvm::formatv("{0}", llvm::json::Value(llvm::json::Object{
+                                  {"case_id", std::string(caseIdValue)},
+                                  {"factors", factors},
+                                  {
+                                      "metrics",
+                                      llvm::json::Object{
+                                          {
+                                              "success_probability",
+                                              evaluation.successProbability,
+                                          },
+                                      },
+                                  },
+                                  {"schema_version", SCHEMA_VERSION},
+                                  {"shots", evaluation.shots},
+                              }))
+      .str();
 }
 
 } // namespace
@@ -1615,9 +1677,6 @@ llvm::Expected<std::string> evaluateJSON(const std::string_view manifest,
   if (!parsed) {
     return parsed.takeError();
   }
-  const auto shots = std::accumulate(
-      parsedCounts->begin(), parsedCounts->end(), size_t{0},
-      [](size_t sum, const auto& item) { return sum + item.second; });
   return std::visit(
       [&](const auto& benchmark) -> llvm::Expected<std::string> {
         if (*root != manifestJSON(benchmark)) {
@@ -1631,133 +1690,9 @@ llvm::Expected<std::string> evaluateJSON(const std::string_view manifest,
                       llvm::toString(evaluation.takeError()));
         }
         return evaluationToJSON(*root->getAsObject()->getString("case_id"),
-                                shots, *evaluation);
+                                *evaluation);
       },
       *parsed);
-}
-
-llvm::Expected<std::string> evaluationToJSON(const std::string_view caseIdValue,
-                                             const size_t shots,
-                                             const Evaluation& evaluation) {
-  if (!validCaseId(caseIdValue)) {
-    return llvm::createStringError(
-        "case ID must be a full lowercase SHA-256 ID");
-  }
-  if (shots == 0) {
-    return llvm::createStringError("evaluation requires at least one shot");
-  }
-  const auto validMetric = [](const double value) {
-    return std::isfinite(value) && value >= 0. && value <= 1.;
-  };
-  if (!validMetric(evaluation.totalVariationDistance) ||
-      !validMetric(evaluation.squaredHellingerFidelity) ||
-      (evaluation.successProbability &&
-       !validMetric(*evaluation.successProbability))) {
-    return llvm::createStringError(
-        "evaluation metrics must be finite and in [0, 1]");
-  }
-
-  Json success = nullptr;
-  if (evaluation.successProbability) {
-    success = *evaluation.successProbability;
-  }
-  return llvm::formatv("{0}",
-                       llvm::json::Value(llvm::json::Object{
-                           {"case_id", std::string(caseIdValue)},
-                           {
-                               "metrics",
-                               llvm::json::Object{
-                                   {
-                                       "squared_hellinger_fidelity",
-                                       evaluation.squaredHellingerFidelity,
-                                   },
-                                   {"success_probability", std::move(success)},
-                                   {
-                                       "total_variation_distance",
-                                       evaluation.totalVariationDistance,
-                                   },
-                               },
-                           },
-                           {"schema_version", SCHEMA_VERSION},
-                           {"shots", shots},
-                       }))
-      .str();
-}
-
-llvm::Expected<std::string> evaluationToJSON(const std::string_view caseIdValue,
-                                             const size_t shots,
-                                             const QAOAEvaluation& evaluation) {
-  if (!validCaseId(caseIdValue) || shots == 0) {
-    return llvm::createStringError(
-        "evaluation requires a SHA-256 case ID and at least one shot");
-  }
-  if (!std::isfinite(evaluation.meanCut) || evaluation.meanCut < 0. ||
-      !std::isfinite(evaluation.approximationRatio) ||
-      evaluation.approximationRatio < 0. ||
-      evaluation.approximationRatio > 1.) {
-    return llvm::createStringError(
-        "QAOA evaluation requires a finite non-negative "
-        "mean cut and an approximation ratio in [0, 1]");
-  }
-  return llvm::formatv("{0}", llvm::json::Value(llvm::json::Object{
-                                  {"case_id", std::string(caseIdValue)},
-                                  {
-                                      "metrics",
-                                      llvm::json::Object{
-                                          {
-                                              "approximation_ratio",
-                                              evaluation.approximationRatio,
-                                          },
-                                          {"mean_cut", evaluation.meanCut},
-                                      },
-                                  },
-                                  {"schema_version", SCHEMA_VERSION},
-                                  {"shots", shots},
-                              }))
-      .str();
-}
-
-llvm::Expected<std::string> evaluationToJSON(std::string_view caseIdValue,
-                                             size_t shots,
-                                             const ShorEvaluation& evaluation) {
-  if (!validCaseId(caseIdValue) || shots == 0) {
-    return llvm::createStringError(
-        "evaluation requires a SHA-256 case ID and at least one shot");
-  }
-  if (!std::isfinite(evaluation.successProbability) ||
-      evaluation.successProbability < 0. ||
-      evaluation.successProbability > 1. ||
-      evaluation.factors.has_value() != (evaluation.successProbability > 0.)) {
-    return llvm::createStringError("factor verification requires a success "
-                                   "fraction in [0, 1] and factors on success");
-  }
-  Json factors = nullptr;
-  if (evaluation.factors) {
-    const auto [first, second] = *evaluation.factors;
-    if (first < 2 || first > second ||
-        second > ShorOptions::MAX_NUMBER / first) {
-      return llvm::createStringError(
-          "factors must form a sorted nontrivial pair "
-          "within the supported range");
-    }
-    factors = llvm::json::Array{first, second};
-  }
-  return llvm::formatv("{0}", llvm::json::Value(llvm::json::Object{
-                                  {"case_id", std::string(caseIdValue)},
-                                  {"factors", factors},
-                                  {
-                                      "metrics",
-                                      llvm::json::Object{
-                                          {
-                                              "success_probability",
-                                              evaluation.successProbability,
-                                          },
-                                      },
-                                  },
-                                  {"schema_version", SCHEMA_VERSION},
-                                  {"shots", shots},
-                              }))
-      .str();
 }
 
 } // namespace mqt::bench

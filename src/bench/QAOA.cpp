@@ -77,6 +77,7 @@ llvm::Expected<QAOAEvaluation> QAOA::evaluate(const Counts& counts) const {
   const auto mean = std::min(weightedCut / static_cast<long double>(*shots),
                              static_cast<long double>(optimum));
   return QAOAEvaluation{
+      .shots = *shots,
       .meanCut = static_cast<double>(mean),
       .approximationRatio =
           static_cast<double>(mean / static_cast<long double>(optimum)),

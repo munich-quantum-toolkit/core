@@ -48,6 +48,8 @@ void registerShor(nb::module_& m) {
           "The base, from 2 through the modulus minus one and coprime to it.");
   nb::class_<bench::ShorEvaluation>(
       m, "Evaluation", "Verified factors recovered from measured phases.")
+      .def_ro("shots", &bench::ShorEvaluation::shots,
+              "The number of evaluated shots.")
       .def_ro("success_probability", &bench::ShorEvaluation::successProbability,
               "The fraction of shots that independently yield a verified "
               "factor pair.")

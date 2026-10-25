@@ -14,6 +14,7 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
@@ -21,7 +22,6 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -155,7 +155,7 @@ llvm::Expected<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
     return total.takeError();
   }
   size_t successes = 0;
-  ShorEvaluation result;
+  ShorEvaluation result{.shots = *total};
   for (const auto& [outcome, count] : counts) {
     if (count == 0) {
       continue;
@@ -178,7 +178,7 @@ llvm::Expected<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
 
 llvm::Expected<FactorResult>
 factor(uint64_t number,
-       const std::function<llvm::Expected<Counts>(const Shor&)>& run,
+       llvm::function_ref<llvm::Expected<Counts>(const Shor&)> run,
        const FactorOptions& options) {
   if (number < 2 || number > ShorOptions::MAX_NUMBER) {
     return llvm::createStringError(

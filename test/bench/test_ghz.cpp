@@ -77,6 +77,7 @@ TEST(GHZ, GivesTheXBasisDistribution) {
 TEST(GHZ, EvaluatesCountsAgainstTheWholeIdealDistribution) {
   const auto ghz = llvm::cantFail(GHZ::create({.qubits = 2}));
   const auto exact = llvm::cantFail(ghz.evaluate({{"00", 50}, {"11", 50}}));
+  EXPECT_EQ(exact.shots, 100);
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
   EXPECT_FALSE(exact.successProbability.has_value());

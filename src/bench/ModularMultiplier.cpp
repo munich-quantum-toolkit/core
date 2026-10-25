@@ -175,13 +175,11 @@ double ModularMultiplier::probability(const std::string_view outcome) const {
 
 llvm::Expected<Evaluation>
 ModularMultiplier::evaluate(const Counts& counts) const {
-  size_t totalShots = 0;
   size_t successShots = 0;
   auto result =
       detail::evaluate(counts, output_.width,
                        [&](const std::string_view outcome, const size_t count) {
                          const auto ideal = probability(outcome);
-                         totalShots += count;
                          if (ideal > 0.) {
                            successShots += count;
                          }
@@ -191,7 +189,7 @@ ModularMultiplier::evaluate(const Counts& counts) const {
     return result.takeError();
   }
   result->successProbability =
-      static_cast<double>(successShots) / static_cast<double>(totalShots);
+      static_cast<double>(successShots) / static_cast<double>(result->shots);
   return result;
 }
 

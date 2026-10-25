@@ -49,6 +49,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   nb::class_<bench::Evaluation>(
       m, "Evaluation", "The result of comparing counts with a reference.")
+      .def_ro("shots", &bench::Evaluation::shots,
+              "The number of evaluated shots.")
       .def_ro("total_variation_distance",
               &bench::Evaluation::totalVariationDistance,
               "The total variation distance from the ideal distribution.")

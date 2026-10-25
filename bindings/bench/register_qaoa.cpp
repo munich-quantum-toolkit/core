@@ -39,6 +39,8 @@ void registerQAOA(const nb::module_& m) {
 
   nb::class_<bench::QAOAEvaluation>(m, "Evaluation",
                                     "The sampled cut quality on a cycle graph.")
+      .def_ro("shots", &bench::QAOAEvaluation::shots,
+              "The number of evaluated shots.")
       .def_ro("mean_cut", &bench::QAOAEvaluation::meanCut,
               "The shot-weighted mean number of cut edges.")
       .def_ro("approximation_ratio", &bench::QAOAEvaluation::approximationRatio,

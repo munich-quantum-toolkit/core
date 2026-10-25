@@ -58,6 +58,7 @@ def test_ghz_evaluation() -> None:
     """Evaluate counts against the GHZ reference distribution."""
     benchmark = _make_benchmark()
     evaluation = benchmark.evaluate({"000": 50, "011": 50})
+    assert evaluation.shots == 100
     assert isinstance(evaluation, bench.Evaluation)
     assert evaluation.total_variation_distance == pytest.approx(0.5)
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.5)
