@@ -314,9 +314,9 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
 
 template <class Node>
 [[maybe_unused]] static void
-export2Dot(Edge<Node> basic, const std::filesystem::path& outputFilename,
-           bool colored = true, bool edgeLabels = false, bool classic = false,
-           bool memory = false, bool show = true, bool formatAsPolar = true) {
+exportToDot(Edge<Node> basic, const std::filesystem::path& outputFilename,
+            bool colored = true, bool edgeLabels = false, bool classic = false,
+            bool memory = false, bool show = true, bool formatAsPolar = true) {
   std::ofstream init(outputFilename);
   if (!init) {
     throw std::runtime_error("Cannot open DOT file");
