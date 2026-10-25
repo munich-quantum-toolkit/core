@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/Pauli.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
@@ -2613,6 +2614,11 @@ TEST_F(QCODDFunctionalityTest, ParameterizedUnitaryCallsUseClassicalBindings) {
                        std::complex<double>(0., 1.)),
               0., 1e-12);
   package.decRef(*state);
+  const std::vector<dd::PauliObservable> observables{{{.paulis = "Z"}}};
+  const auto expectations = expectationValues(func, observables, bindings);
+  ASSERT_TRUE(succeeded(expectations));
+  ASSERT_EQ(expectations->size(), 1U);
+  EXPECT_NEAR(expectations->front(), -1., 1e-12);
   auto counts = sample(func, 8, 17, bindings);
   ASSERT_TRUE(succeeded(counts));
   EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
@@ -4386,6 +4392,10 @@ TEST_F(QCODDFunctionalityTest, StatevectorRejectsNonTerminalMeasurement) {
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*reuse), *dd)));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*reset), *dd)));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*call), *dd)));
+  const std::vector<dd::PauliObservable> observables{{{.paulis = "Z"}}};
+  EXPECT_TRUE(failed(expectationValues(mainFunc(*reuse), observables)));
+  EXPECT_TRUE(failed(expectationValues(mainFunc(*reset), observables)));
+  EXPECT_TRUE(failed(expectationValues(mainFunc(*call), observables)));
 }
 
 TEST_F(QCODDFunctionalityTest, LifetimeMarkersPreserveEntangledState) {

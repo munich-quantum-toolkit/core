@@ -24,6 +24,7 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package_fwd.hpp" // IWYU pragma: export
+#include "dd/Pauli.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
@@ -1206,6 +1207,25 @@ public:
   /// require a non-terminal state and an approximately zero imaginary part.
   [[nodiscard]] llvm::Expected<fp> expectationValue(const mEdge& x,
                                                     const vEdge& y);
+
+  /// Evaluate a batch of sparse Pauli sums on a borrowed state.
+  ///
+  /// The state must be normalized. Repeated Pauli strings
+  /// share one contraction within the call. The state and its references remain
+  /// unchanged. The state determines the label width; terminals have zero
+  /// qubits and use empty labels.
+  ///
+  /// @param state A state with a live reference in this package, or a static
+  /// terminal.
+  /// @param observables Sparse sums with finite real coefficients and labels of
+  /// one character per state qubit from I, X, Y, Z; the rightmost acts on qubit
+  /// zero.
+  /// @return One real value per observable, in input order.
+  /// Returns an error for invalid state, width, or terms, or non-finite
+  /// results.
+  [[nodiscard]] llvm::Expected<std::vector<fp>>
+  expectationValues(const vEdge& state,
+                    std::span<const PauliObservable> observables);
 
   ///
   /// Kronecker/tensor product
