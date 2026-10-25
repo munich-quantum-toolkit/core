@@ -154,13 +154,13 @@ static void expectQIRSampling(const Benchmark& benchmark, QIRProgram qirProgram,
   const auto bitcode = std::move(qirProgram).intoBitcode();
   ASSERT_TRUE(mlir::succeeded(bitcode));
   ASSERT_FALSE(bitcode->empty());
-  qir::JitSession session(
+  auto session = llvm::cantFail(qir::JitSession::create(
       llvm::StringRef(reinterpret_cast<const char*>(bitcode->data()),
                       bitcode->size()),
-      "benchmark-bitcode", qir::Execution::Sampling, 17);
-  session.runtime().disableOutput();
+      "benchmark-bitcode", qir::Execution::Sampling, 17));
+  session->runtime().disableOutput();
   std::vector<std::string> outcomes;
-  ASSERT_EQ(session.sample(shots, outcomes), 0);
+  ASSERT_EQ(llvm::cantFail(session->sample(shots, outcomes)), 0);
   ASSERT_EQ(outcomes.size(), shots);
   Counts qirCounts;
   for (const auto& outcome : outcomes) {
