@@ -219,13 +219,13 @@ private:
 };
 } // namespace
 
-static double
-vectorMaximum(dd::VectorDD edge, dd::ResourceControl& resources,
-              std::pmr::unordered_map<dd::vNode*, double>& cache) {
+template <class Node>
+static double entryMaximum(dd::Edge<Node> edge, dd::ResourceControl& resources,
+                           std::pmr::unordered_map<Node*, double>& cache) {
   resources.checkpoint();
   const auto magnitude = std::abs(static_cast<Complex>(edge.w));
   if (!std::isfinite(magnitude)) {
-    throw std::runtime_error("non-finite vector weight");
+    throw std::runtime_error("non-finite entry weight");
   }
   if (magnitude == 0 || edge.isTerminal()) {
     return magnitude;
@@ -234,15 +234,23 @@ vectorMaximum(dd::VectorDD edge, dd::ResourceControl& resources,
   if (const auto found = cache.find(edge.p); found != cache.end()) {
     maximum = found->second;
   } else {
-    maximum = std::max(vectorMaximum(edge.p->e[0], resources, cache),
-                       vectorMaximum(edge.p->e[1], resources, cache));
+    for (const auto& child : edge.p->e) {
+      maximum = std::max(maximum, entryMaximum(child, resources, cache));
+    }
     cache.emplace(edge.p, maximum);
   }
   const auto weighted = magnitude * maximum;
   if (!std::isfinite(weighted)) {
-    throw std::runtime_error("non-finite vector maximum");
+    throw std::runtime_error("non-finite entry maximum");
   }
   return weighted;
+}
+
+template <class Node>
+static double entryMaximum(dd::Edge<Node> edge,
+                           dd::ResourceControl& resources) {
+  std::pmr::unordered_map<Node*, double> cache(&resources);
+  return entryMaximum(edge, resources, cache);
 }
 
 static dd::MatrixDD projector(dd::Package& package, dd::Qubit wire,
@@ -277,7 +285,7 @@ static bool cleanOutputs(dd::Package& package, dd::ResourceControl& resources,
         package,
         package.multiply(projector(package, static_cast<dd::Qubit>(wire), true),
                          root));
-    if (MatrixNorms(resources)(leakage.get()).first > tolerance) {
+    if (entryMaximum(leakage.get(), resources) > tolerance) {
       return false;
     }
   }
@@ -411,6 +419,14 @@ static VerificationCheckerResult
 construction(dd::ResourceControl& resources, const Prepared& left,
              const Prepared& right, const std::vector<bool>& zeroInputs,
              size_t freeInputs, const VerificationOptions& options) {
+  if (options.relation == Relation::TerminalProbabilities &&
+      (left.outputs.size() >= std::numeric_limits<size_t>::digits ||
+       (size_t{1} << left.outputs.size()) > options.limits.maxOutcomes)) {
+    return {
+        .method = Method::Construction,
+        .reason = "terminal outcome limit exceeded",
+    };
+  }
   dd::Package package(zeroInputs.size(), {}, &resources);
   MatrixRoot lhs(package, dd::Package::makeIdent());
   MatrixRoot rhs(package, dd::Package::makeIdent());
@@ -418,11 +434,6 @@ construction(dd::ResourceControl& resources, const Prepared& left,
   construct(package, rhs, right, zeroInputs);
   if (options.relation == Relation::TerminalProbabilities) {
     VerificationCheckerResult result{.method = Method::Construction};
-    if (left.outputs.size() >= std::numeric_limits<size_t>::digits ||
-        (size_t{1} << left.outputs.size()) > options.limits.maxOutcomes) {
-      result.reason = "terminal outcome limit exceeded";
-      return result;
-    }
     const auto outcomes = size_t{1} << left.outputs.size();
     double maximum = 0;
     for (size_t outcome = 0; outcome < outcomes; ++outcome) {
@@ -432,8 +443,7 @@ construction(dd::ResourceControl& resources, const Prepared& left,
       outcomeEffect(package, b, rhs.get(), right, outcome);
       MatrixRoot difference(
           package, package.add(a.get(), scaled(package, b.get(), -1.)));
-      maximum =
-          std::max(maximum, MatrixNorms(resources)(difference.get()).first);
+      maximum = std::max(maximum, entryMaximum(difference.get(), resources));
       if (maximum > options.tolerance) {
         result.verdict = Verdict::NotEquivalent;
         result.reason = "terminal outcome effects differ";
@@ -554,8 +564,7 @@ simulation(dd::ResourceControl& resources, const Prepared& left,
         for (const auto wire : program->interface.cleanOutputs) {
           VectorRoot leakage(
               package, package.multiply(projector(package, wire, true), state));
-          std::pmr::unordered_map<dd::vNode*, double> cache(&resources);
-          if (vectorMaximum(leakage.get(), resources, cache) >
+          if (entryMaximum(leakage.get(), resources) >
               options.numericalTolerance) {
             result.verdict = Verdict::Unsupported;
             result.reason = "fixed input leaves a nonzero workspace output";
@@ -563,8 +572,7 @@ simulation(dd::ResourceControl& resources, const Prepared& left,
           }
         }
       }
-      std::pmr::unordered_map<dd::vNode*, double> cache(&resources);
-      const auto maximum = vectorMaximum(difference.get(), resources, cache);
+      const auto maximum = entryMaximum(difference.get(), resources);
       result.distance = maximum;
       if (maximum <= options.tolerance) {
         result.verdict = Verdict::Equivalent;

@@ -334,8 +334,28 @@ TEST_F(NativeVerification, TerminalEffectsDifferFromZeroStateProbabilities) {
   auto options = constructionOptions();
   options.relation = Relation::TerminalProbabilities;
   EXPECT_EQ(check(*left, *right, options).verdict, Verdict::NotEquivalent);
+}
+
+TEST_F(NativeVerification, OutcomeLimitAvoidsDDConstruction) {
+  auto program = parse(R"(module { func.func @main() -> i1 {
+    %q = qco.static 0 : !qco.qubit
+    %h = qco.h %q : !qco.qubit
+    %measured, %m = qco.measure %h : !qco.qubit
+    qco.sink %measured : !qco.qubit
+    return %m : i1
+  } })");
+  ASSERT_TRUE(program);
+  auto options = constructionOptions();
+  options.relation = Relation::TerminalProbabilities;
   options.limits.maxOutcomes = 1;
-  EXPECT_EQ(check(*left, *right, options).verdict, Verdict::Inconclusive);
+  const auto result = check(*program, *program, options);
+  EXPECT_EQ(result.verdict, Verdict::Inconclusive);
+  EXPECT_EQ(result.reason, "terminal outcome limit exceeded");
+  EXPECT_EQ(result.peakDDBytes, 0);
+
+  options.limits.maxDDBytes = 1;
+  EXPECT_EQ(check(*program, *program, options).reason,
+            "terminal outcome limit exceeded");
 }
 
 TEST_F(NativeVerification,

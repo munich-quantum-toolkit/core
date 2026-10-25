@@ -1,7 +1,8 @@
 # Native equivalence checking
 
-Status: implemented. Final build and test evidence is recorded below. No commit
-or publication is part of this task.
+Status: implemented. This record preserves the initial implementation evidence.
+The [measured simplification follow-up](native-equivalence-performance.md)
+records subsequent changes, validation and publication.
 
 ## Outcome and boundaries
 

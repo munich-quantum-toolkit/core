@@ -43,8 +43,10 @@ correspondence. The verifier does not claim equality of arbitrary MLIR function
 types. When quantum returns and layout metadata are both present, their decoded
 output identities must agree.
 
-Target programs require source or layout provenance. Raw physical programs
-without that metadata are unsupported; their caller must supply a known layout.
+Physical qubit roots with an attached target require source or layout
+provenance. Raw physical programs without that metadata are unsupported; their
+caller must supply a known layout. A target that only constrains capabilities
+does not replace the positional identity of quantum function arguments.
 
 Concrete scalar arguments are bound by entry argument position:
 
@@ -112,9 +114,11 @@ effect entry within the numerical tolerance given by `tolerance`. The projector
 $\Pi_y$ includes constant and copied bits and acts as identity on unobserved
 outputs. Select labels such as `result0:result[7]` in
 `contract.observed_outputs`; an empty selection uses all returned bits. Missing
-or undefined labels are unsupported. Matching these effects does not establish
-equality of reduced quantum states. Approximate partial equivalence and general
-channel equivalence are unsupported.
+or undefined labels are unsupported. The joint-outcome budget counts every
+selected bit, including constants and copies. An exceeded outcome budget returns
+inconclusive after interface validation and before DD construction. Matching
+these effects does not establish equality of reduced quantum states. Approximate
+partial equivalence and general channel equivalence are unsupported.
 
 ## Interpret results and limits
 
@@ -151,9 +155,11 @@ before returning, and results retain no DD handles. C++ callers may supply a
 `std::stop_token`; Python callers can set `options.limits.timeout_ms`.
 
 Concurrent calls own separate DD packages and share worker grants with sampling.
-They never change global numerical settings. Do not change the legacy global DD
-tolerance, or mutate or consume either borrowed program, while checking it.
-Python releases the GIL and retains both program owners during the call.
+Diagnostic capture is restricted to the emitting caller, including unsupported
+traces that share an MLIR context. Calls never change global numerical settings.
+Do not change the legacy global DD tolerance, or mutate or consume either
+borrowed program, while checking it. Python releases the GIL and retains both
+program owners during the call.
 
 C++ callers include `mqt/Compiler/Verification.h` for the borrowed-program
 `mlir::verify` overload and link `MQTCompilerVerification`. For explicit QCO
