@@ -30,13 +30,15 @@ function(add_mqt_python_binding package_name target_name)
   if(ARG_MODULE_NAME)
     # The library name must be the same as the module name
     set_target_properties(${target_name} PROPERTIES OUTPUT_NAME ${ARG_MODULE_NAME})
-    target_compile_definitions(${target_name}
-                               PRIVATE MQT_${package_name}_MODULE_NAME=${ARG_MODULE_NAME})
+    target_compile_definitions(
+      ${target_name}
+      PRIVATE MQT_${package_name}_MODULE_NAME=${ARG_MODULE_NAME})
     set(module_name ${ARG_MODULE_NAME})
   else()
     # Use the target name as the module name
-    target_compile_definitions(${target_name}
-                               PRIVATE MQT_${package_name}_MODULE_NAME=${target_name})
+    target_compile_definitions(
+      ${target_name}
+      PRIVATE MQT_${package_name}_MODULE_NAME=${target_name})
     set(module_name ${target_name})
   endif()
 

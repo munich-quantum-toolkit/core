@@ -159,6 +159,25 @@ def test_standard_gates_round_trip(gate: Gate) -> None:
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
+def test_symbolic_standard_gates_round_trip() -> None:
+    """Preserve each parameterized gate's identity when exporting symbols."""
+    circuit = QuantumCircuit(4)
+    for index, gate in enumerate(STANDARD_GATES):
+        if gate.params:
+            symbolic = gate.to_mutable()
+            symbolic.params = [Parameter(f"p{index}_{position}") for position in range(len(gate.params))]
+            circuit.append(symbolic, range(gate.num_qubits))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert restored.parameters == circuit.parameters
+    values = {parameter: (index + 1) / 100 for index, parameter in enumerate(circuit.parameters)}
+    np.testing.assert_allclose(
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
+        atol=1e-12,
+    )
+
+
 def test_dense_unitary_round_trip_preserves_qarg_mapping_and_source_data() -> None:
     """Preserve a dense unitary and its qubit mapping without changing source data."""
     local = QuantumCircuit(2)
@@ -1067,7 +1086,7 @@ def test_qiskit_store_preserves_width_one_uint_contexts() -> None:
     assert indexed_store.lvalue.index.type == types.Uint(1)
 
 
-@pytest.mark.parametrize(("width", "mutate_index"), [(1, True), (2, True), (150, True), (150, False)])
+@pytest.mark.parametrize(("width", "mutate_index"), [(1, True), (2, True), (150, True), (65, False), (150, False)])
 def test_qiskit_indexed_access_preserves_snapshots(width: int, *, mutate_index: bool) -> None:
     """Retain the index and loaded bit across writes to their source registers."""
     initial = 1 << (width - 1) if width > 64 else 0
@@ -1100,7 +1119,13 @@ def test_qiskit_indexed_access_preserves_snapshots(width: int, *, mutate_index: 
     restored = program.to_qiskit()
     assert sample(restored, shots=1, seed=1) == expected
     if not mutate_index:
-        assert f"uint[64](uint[{width}](index))" in qiskit.qasm3.dumps(restored)
+        qasm = qiskit.qasm3.dumps(restored)
+        assert f"uint[64](uint[{width}](index))" in qasm
+        # Select circuit outputs without exposing Qiskit's snapshot temporaries.
+        for register in restored.cregs:
+            declaration = f"bit[{register.size}] {register.name};"
+            qasm = qasm.replace(declaration, f"output {declaration}")
+        assert sample(QCProgram.from_openqasm_str(qasm), shots=1, seed=1) == expected
 
 
 def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
@@ -4384,7 +4409,7 @@ def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_mlir_binding_import_does_not_import_qiskit() -> None:
-    """Keep importing the MLIR extension independent of optional Qiskit."""
+    """Keep Qiskit optional and allow it to be imported after MLIR."""
     script = """
 import importlib.abc
 import sys
@@ -4395,9 +4420,19 @@ class RejectQiskit(importlib.abc.MetaPathFinder):
             raise AssertionError("MLIR binding attempted to import Qiskit")
         return None
 
-sys.meta_path.insert(0, RejectQiskit())
+blocker = RejectQiskit()
+sys.meta_path.insert(0, blocker)
 import mqt.core.mlir
 assert "qiskit" not in sys.modules
+
+sys.meta_path.remove(blocker)
+from qiskit import QuantumCircuit
+from mqt.core.mlir import OutputFormat, compile_program, sample
+circuit = QuantumCircuit(1)
+circuit.x(0)
+assert sample(circuit, shots=1) == {"1": 1}
+programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
+assert sample(programs[0], shots=1) == {"1": 1}
 """
     subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 

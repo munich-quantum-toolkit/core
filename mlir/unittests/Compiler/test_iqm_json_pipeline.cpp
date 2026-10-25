@@ -14,7 +14,6 @@
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -23,6 +22,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
@@ -83,12 +83,12 @@ TEST(IQMJSONPipelineTest, CompilesInputFormatsForAnExplicitTarget) {
     ASSERT_TRUE(succeeded(output));
     ASSERT_TRUE(std::holds_alternative<IQMJSONProgram>(*output));
     const auto& exported = std::get<IQMJSONProgram>(*output);
-    const auto instructions =
-        nlohmann::json::parse(exported.source()).at("instructions");
-    EXPECT_EQ(instructions.front().at("name"), "prx");
-    EXPECT_EQ(instructions.back().at("locus").size(), 1U);
-    EXPECT_EQ(instructions.front().at("locus")[0],
-              instructions.back().at("locus")[0]);
+    const auto circuit = llvm::cantFail(llvm::json::parse(exported.source()));
+    const auto& instructions = *circuit.getAsObject()->getArray("instructions");
+    EXPECT_EQ(instructions.front().getAsObject()->getString("name"), "prx");
+    EXPECT_EQ(instructions.back().getAsObject()->getArray("locus")->size(), 1U);
+    EXPECT_EQ(instructions.front().getAsObject()->getArray("locus")->front(),
+              instructions.back().getAsObject()->getArray("locus")->front());
   }
 }
 
@@ -110,16 +110,18 @@ TEST(IQMJSONPipelineTest, PreservesReversedStoresToDistinctOutputRegisters) {
   auto output = runDefaultPipeline(CompilerInput(std::move(*program)),
                                    makeIQMEnvironment());
   ASSERT_TRUE(succeeded(output));
-  const auto instructions =
-      nlohmann::json::parse(std::get<IQMJSONProgram>(*output).source())
-          .at("instructions");
+  const auto circuit = llvm::cantFail(
+      llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
+  const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   ASSERT_GE(instructions.size(), 3U);
   const auto& firstOutput = instructions[instructions.size() - 2];
-  EXPECT_EQ(firstOutput.at("name"), "measure");
-  EXPECT_EQ(instructions.back().at("name"), "measure");
-  EXPECT_EQ(instructions.front().at("name"), "prx");
-  EXPECT_EQ(instructions.front().at("locus"), firstOutput.at("locus"));
-  EXPECT_NE(firstOutput.at("locus"), instructions.back().at("locus"));
+  EXPECT_EQ(firstOutput.getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions.back().getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions.front().getAsObject()->getString("name"), "prx");
+  EXPECT_EQ(*instructions.front().getAsObject()->getArray("locus"),
+            *firstOutput.getAsObject()->getArray("locus"));
+  EXPECT_NE(*firstOutput.getAsObject()->getArray("locus"),
+            *instructions.back().getAsObject()->getArray("locus"));
 }
 
 TEST(IQMJSONPipelineTest, UnrollsLoopsAndSynthesizesIQMBasis) {
@@ -134,21 +136,21 @@ TEST(IQMJSONPipelineTest, UnrollsLoopsAndSynthesizesIQMBasis) {
   )qasm")),
                                    makeIQMEnvironment());
   ASSERT_TRUE(succeeded(output));
-  const auto instructions =
-      nlohmann::json::parse(std::get<IQMJSONProgram>(*output).source())
-          .at("instructions");
+  const auto circuit = llvm::cantFail(
+      llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
+  const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   size_t rotations = 0;
   size_t entanglers = 0;
   for (const auto& instruction : instructions) {
-    const auto name = instruction.at("name").get<std::string>();
+    const auto name = instruction.getAsObject()->getString("name")->str();
     EXPECT_TRUE(name == "prx" || name == "cz" || name == "measure") << name;
     rotations += static_cast<size_t>(name == "prx");
     entanglers += static_cast<size_t>(name == "cz");
   }
   EXPECT_GT(rotations, 0U);
   EXPECT_GT(entanglers, 0U);
-  EXPECT_EQ(instructions.back().at("name"), "measure");
-  EXPECT_EQ(instructions.back().at("locus").size(), 1U);
+  EXPECT_EQ(instructions.back().getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions.back().getAsObject()->getArray("locus")->size(), 1U);
 }
 
 TEST(IQMJSONPipelineTest, RejectsReconstructedOutputsAndNonterminalGates) {
@@ -204,16 +206,24 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
   )qasm")),
                                    environment);
   ASSERT_TRUE(succeeded(output));
-  const auto instructions =
-      nlohmann::json::parse(std::get<IQMJSONProgram>(*output).source())
-          .at("instructions");
+  const auto circuit = llvm::cantFail(
+      llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
+  const auto& instructions = *circuit.getAsObject()->getArray("instructions");
   ASSERT_GT(instructions.size(), 3U);
-  EXPECT_EQ(instructions[instructions.size() - 3].at("args").at("key"),
+  EXPECT_EQ(instructions[instructions.size() - 3]
+                .getAsObject()
+                ->getObject("args")
+                ->getString("key"),
             "a_2_0_0");
-  EXPECT_EQ(instructions[instructions.size() - 2].at("args").at("key"),
+  EXPECT_EQ(instructions[instructions.size() - 2]
+                .getAsObject()
+                ->getObject("args")
+                ->getString("key"),
             "a_2_0_1");
-  EXPECT_EQ(instructions.back().at("args").at("key"), "a_0_1_1_0");
+  EXPECT_EQ(
+      instructions.back().getAsObject()->getObject("args")->getString("key"),
+      "a_0_1_1_0");
   for (size_t index = 0; index + 3 < instructions.size(); ++index) {
-    EXPECT_NE(instructions[index].at("name"), "measure");
+    EXPECT_NE(instructions[index].getAsObject()->getString("name"), "measure");
   }
 }

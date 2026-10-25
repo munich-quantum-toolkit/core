@@ -186,7 +186,10 @@ grouping. QIR Base and Adaptive lowering require inputs to be bound first.
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
 register when the constant width is 1 through 64. Bit zero is the least
 significant bit. Signed casts use two's-complement representation, with bit
-`N - 1` as the sign bit.
+`N - 1` as the sign bit. For wider registers, immediately narrow the value to at
+most 64 bits, for example `uint[64](uint[150](bits))`. Narrowing retains the low
+bits; the outer cast determines their signedness. Wide scalar variables and
+arithmetic are unsupported.
 
 `float(value)` and `float[64](value)` accept numeric and Boolean values.
 Bit-string literals contain binary digits, optionally separated by underscores,
@@ -411,15 +414,18 @@ OpenQASM export supports fixed-size stack arrays, strided and overlapping
 copies, and concatenation. Arrays support one to seven dimensions and up to
 100,000 elements in total, including temporary arrays whose copies cannot be
 folded into one assignment. Export preserves loaded values across writes,
-retains integer bit patterns, and emits angles as floating-point radians.
-Reimport also requires the combined register-and-array limit described above.
+retains integer bit patterns, and emits angles as floating-point radians. Dense
+constant initialization becomes an array declaration initializer; it must write
+a whole entry-block allocation before any other use. Reimport also requires the
+combined register-and-array limit described above.
 
 jeff export flattens fixed-size stack arrays in row-major order and carries
 updates through control flow. Import uses reference storage with copies for live
 old values; array-valued interfaces stay tensor-based. Lengths must fit signed
-i32. Unresolved safety assertions are unsupported. Arrays cannot have live old
-values or be passed more than once into mutating control flow. Loop-carried
-stack arrays must keep their incoming storage.
+i32. Unresolved safety assertions are unsupported. Across mutating control flow,
+live old array values and repeated operands require numeric literals or zero
+arrays, which initialize independent storage. Loop-carried stack arrays must
+keep their incoming storage.
 
 Qiskit and Base QIR export require array storage to be eliminated. Compiler
 cleanup promotes eligible arrays to scalar values and folds constants. With

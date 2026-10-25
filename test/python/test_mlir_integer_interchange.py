@@ -143,6 +143,28 @@ def test_integer_width_casts(source_width: int, target_width: int, *, signed: bo
     _check_paths(program, target_width, expected)
 
 
+@pytest.mark.parametrize("signed", [False, True])
+def test_openqasm_wide_cast_narrowing_snapshot(*, signed: bool) -> None:
+    """Truncate a wide register and retain its signed or unsigned snapshot."""
+    cast_type = "int" if signed else "uint"
+    initial = (1 << 149) | 129
+    program = QCProgram.from_openqasm_str(f"""
+OPENQASM 3.0;
+qubit q;
+bit[150] source = "{initial:0150b}";
+{cast_type}[8] snapshot = {cast_type}[8]({cast_type}[150](source));
+source = "{"0" * 150}";
+output bit[2] result;
+result[0] = snapshot == {(-127 if signed else 129)};
+result[1] = snapshot < 0;
+""")
+    expected = 3 if signed else 1
+    assert _observe(program, 2) == expected
+    assert _observe(program.to_openqasm3(copy=True), 2) == expected
+    program.cleanup()
+    assert _observe(program, 2) == expected
+
+
 @pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
 @pytest.mark.parametrize("runtime", [False, True])
 @pytest.mark.parametrize("direction", ["<<", ">>"])

@@ -293,22 +293,24 @@ TEST(DDTableTest, MemoryManagerGrowthReuseAndResetStatistics) {
     EXPECT_EQ(manager.template get<T>(), first);
     EXPECT_EQ(stats.numAvailableForReuse, 0);
     EXPECT_EQ(stats.numUsed, 3);
-    manager.reset(true);
-    EXPECT_EQ(stats.numAllocated, 6);
-    EXPECT_EQ(stats.numAllocations, 3);
+    manager.reset();
+    EXPECT_EQ(stats.numAllocated, 2);
+    EXPECT_EQ(stats.numAllocations, 2);
     EXPECT_EQ(stats.numUsed, 0);
     EXPECT_EQ(stats.peakNumUsed, 3);
     EXPECT_EQ(stats.peakNumAvailableForReuse, 2);
-    manager.reset(true);
-    EXPECT_EQ(stats.numAllocations, 3);
+    manager.reset();
+    EXPECT_EQ(stats.numAllocations, 2);
     for (size_t i = 0; i < 6; ++i) {
       EXPECT_NE(manager.template get<T>(), nullptr);
     }
     EXPECT_EQ(stats.numAllocations, 3);
+    EXPECT_EQ(stats.numAllocated, 6);
     EXPECT_EQ(stats.numUsed, 6);
     EXPECT_EQ(stats.peakNumUsed, 6);
     manager.reset();
-    EXPECT_EQ(stats.numAllocated, 6);
+    EXPECT_EQ(stats.numAllocated, 2);
+    EXPECT_EQ(stats.numAllocations, 3);
     EXPECT_EQ(stats.numUsed, 0);
     EXPECT_EQ(stats.numAvailableForReuse, 0);
   };

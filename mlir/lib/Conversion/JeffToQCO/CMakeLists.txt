@@ -18,6 +18,7 @@ add_mlir_conversion_library(
   MLIRJeffToNative
   MLIRFuncTransforms
   MLIRMemRefDialect
+  MLIRBufferizationDialect
   MLIRCBitDialect
   MLIRMQTDialect
   MLIRQCODialect

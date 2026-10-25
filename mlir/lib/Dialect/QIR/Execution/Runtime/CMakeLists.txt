@@ -13,8 +13,9 @@ if(NOT TARGET ${TARGET_NAME})
   add_library(${TARGET_NAME} STATIC QIR.cpp Runtime.cpp)
   add_library(MQT::CoreQIRRuntime ALIAS ${TARGET_NAME})
 
-  target_include_directories(${TARGET_NAME}
-                             PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
+  target_include_directories(
+    ${TARGET_NAME}
+    PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   target_link_libraries(

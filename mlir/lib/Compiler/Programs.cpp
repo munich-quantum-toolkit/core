@@ -24,6 +24,7 @@
 #include "jeff/IR/JeffDialect.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -77,7 +78,8 @@ std::shared_ptr<MLIRContext> createCompilerContext() {
                   qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                   cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
                   scf::SCFDialect, LLVM::LLVMDialect, memref::MemRefDialect,
-                  tensor::TensorDialect, jeff::JeffDialect>();
+                  tensor::TensorDialect, jeff::JeffDialect,
+                  bufferization::BufferizationDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 

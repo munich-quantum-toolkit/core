@@ -40,6 +40,28 @@ job.wait()
 print(job.get_counts())
 ```
 
+For several programs, pass a homogeneous Python sequence, such as a list or
+tuple. All elements share the target and compilation options. The returned list
+follows input order; an empty sequence returns `[]`.
+
+```{code-cell} ipython3
+sources = (bell_qasm, bell_qasm.replace("h q[0];", "x q[0];"))
+for compiled in compile_program(sources, target=device):
+    job = submit_program(compiled, target=device, num_shots=16)
+    job.wait()
+    print(job.get_counts())
+```
+
+Elements must share one input kind (subclasses are accepted). Strings and paths
+are single inputs; generators and binary buffers are unsupported. An explicit
+`output` selects every result's representation. Output defaults follow the same
+rules as for a single program.
+
+Typed MLIR inputs are consumed; use `copy=True` to preserve them. Input kinds
+are checked before compilation. A compilation failure stops the sequence and
+returns no results; processed inputs may be consumed, while later inputs remain
+usable.
+
 `target` accepts an open device or a registered device ID. To compile and submit
 in one call:
 

@@ -12,14 +12,19 @@ macro(PACKAGE_ADD_TEST testname linklibs)
     add_executable(${testname} ${ARGN})
     # Ensure test executables remain runnable from the build tree during GoogleTest discovery
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
-                                              MQT::ProjectOptions MQT::ProjectWarnings)
+    target_link_libraries(
+      ${testname}
+      PRIVATE ${linklibs} GTest::gmock GTest::gtest_main MQT::ProjectOptions MQT::ProjectWarnings)
     gtest_discover_tests(
-      ${testname} DISCOVERY_MODE PRE_TEST
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      # Defer the property name so it is not parsed as the discovery working directory.
-      PROPERTIES "$<1:WORKING_DIRECTORY>" "${CMAKE_CURRENT_SOURCE_DIR}"
-                 VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" DISCOVERY_TIMEOUT 60)
+      ${testname}
+      DISCOVERY_MODE PRE_TEST
+      WORKING_DIRECTORY
+        ${CMAKE_CURRENT_BINARY_DIR}
+        # Defer the property name so it is not parsed as the discovery working directory.
+      PROPERTIES
+        "$<1:WORKING_DIRECTORY>" "${CMAKE_CURRENT_SOURCE_DIR}" VS_DEBUGGER_WORKING_DIRECTORY
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+      DISCOVERY_TIMEOUT 60)
     set_target_properties(${testname} PROPERTIES FOLDER tests)
 
     target_compile_features(${testname} PRIVATE cxx_std_20)
@@ -31,14 +36,19 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
     add_executable(${testname} ${ARGN})
     # Ensure test executables remain runnable from the build tree during GoogleTest discovery
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
-                                              MQT::ProjectOptions MQT::ProjectWarnings)
+    target_link_libraries(
+      ${testname}
+      PRIVATE ${linklibs} GTest::gmock GTest::gtest_main MQT::ProjectOptions MQT::ProjectWarnings)
     gtest_discover_tests(
-      ${testname} DISCOVERY_MODE PRE_TEST
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      # Defer the property name so it is not parsed as the discovery working directory.
-      PROPERTIES "$<1:WORKING_DIRECTORY>" "${test_working_directory}" VS_DEBUGGER_WORKING_DIRECTORY
-                 "${test_working_directory}" DISCOVERY_TIMEOUT 60)
+      ${testname}
+      DISCOVERY_MODE PRE_TEST
+      WORKING_DIRECTORY
+        ${CMAKE_CURRENT_BINARY_DIR}
+        # Defer the property name so it is not parsed as the discovery working directory.
+      PROPERTIES
+        "$<1:WORKING_DIRECTORY>" "${test_working_directory}" VS_DEBUGGER_WORKING_DIRECTORY
+        "${test_working_directory}"
+      DISCOVERY_TIMEOUT 60)
     set_target_properties(${testname} PROPERTIES FOLDER tests)
 
     target_compile_features(${testname} PRIVATE cxx_std_20)

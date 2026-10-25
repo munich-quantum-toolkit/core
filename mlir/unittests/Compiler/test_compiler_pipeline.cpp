@@ -374,6 +374,15 @@ constexpr llvm::StringLiteral QCO_INDEX_SWITCH_SOURCE = R"mlir(
   }
 )mlir";
 
+static Value specializedUnitaryFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{qubit.getType()},
+      [&](ValueRange arguments) { b.rx(b.floatConstant(0.5), arguments[0]); });
+  b.call(rotate, qubit);
+  return b.measure(qubit);
+}
+
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();
   const auto name = " (" + testCase.name + ")";
@@ -1700,6 +1709,76 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   }
 }
 
+TEST_F(CompilerPipelineTest, ConstantArrayInitializationPreservesValues) {
+  constexpr auto source = R"qasm(OPENQASM 3.1;
+    array[int[3], 2, 9] a = {{-1,0,1,2,3,-4,-3,-2,-1},
+                             {-1,0,1,2,3,-4,-3,-2,-1}};
+    array[int[3], 2, 9] b = {{-1,0,1,2,3,-4,-3,-2,-1},
+                             {-1,0,1,2,3,-4,-3,-2,-1}};
+    array[float, 18] reals = {-0.0,0.0,0.5,1.5,2.5,3.5,4.5,5.5,6.5,
+                             7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5};
+    qubit q;
+    h q;
+    bit choice = measure q;
+    if (choice) { a[0,0] += 1; } else { a[1,8] += 1; }
+    int totalA = 0;
+    int totalB = 0;
+    for int row in [0:1] {
+      for int column in [0:8] {
+        totalA += a[row,column];
+        totalB += (row * 9 + column + 1) * b[row,column];
+      }
+    }
+    reset q;
+    if (totalA == -9 && totalB == -135 &&
+        1.0 / reals[0] < 0.0 && 1.0 / reals[1] > 0.0 && reals[17] == 15.5) {
+      x q;
+    }
+    output bit result;
+    result = measure q;
+  )qasm";
+  for (const bool throughJeff : {false, true}) {
+    SCOPED_TRACE(throughJeff);
+    auto qc = QCProgram::fromOpenQASMString(source);
+    ASSERT_TRUE(succeeded(qc));
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(succeeded(qco));
+    if (throughJeff) {
+      auto jeff = std::move(*qco).intoJeff();
+      ASSERT_TRUE(succeeded(jeff));
+      auto restored = JeffProgram::fromBytes(jeff->toBytes());
+      ASSERT_TRUE(succeeded(restored));
+      qco = std::move(*restored).intoQCO();
+      ASSERT_TRUE(succeeded(qco));
+    }
+    const auto samples =
+        qco::sample(mlir::mqt::getEntryPoint(qco->module()), 16, 42);
+    ASSERT_TRUE(succeeded(samples));
+    EXPECT_EQ(*samples, (std::map<std::string, size_t>{{"1", 16}}));
+    auto restoredQC = std::move(*qco).intoQC();
+    ASSERT_TRUE(succeeded(restoredQC));
+    auto exported = restoredQC->copy().intoOpenQASM3();
+    ASSERT_TRUE(succeeded(exported));
+    auto reimported = QCProgram::fromOpenQASMString(exported->source());
+    ASSERT_TRUE(succeeded(reimported));
+    auto roundTrip = std::move(*reimported).intoQCO();
+    ASSERT_TRUE(succeeded(roundTrip));
+    const auto roundTripSamples =
+        qco::sample(mlir::mqt::getEntryPoint(roundTrip->module()), 16, 42);
+    ASSERT_TRUE(succeeded(roundTripSamples));
+    EXPECT_EQ(*roundTripSamples, (std::map<std::string, size_t>{{"1", 16}}));
+    auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
+    ASSERT_TRUE(succeeded(qir));
+    auto llvmIR = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(succeeded(llvmIR));
+    ::qir::JitSession session(*llvmIR, "constant-arrays",
+                              ::qir::Execution::Sampling, 42);
+    std::vector<std::string> qirSamples;
+    ASSERT_EQ(session.sample(16, qirSamples), 0);
+    EXPECT_EQ(qirSamples, std::vector<std::string>(16, "1"));
+  }
+}
+
 TEST_F(CompilerPipelineTest, BaseRejectsResidualClassicalArrayStorage) {
   auto qc = QCProgram::fromMLIRString(R"mlir(module {
     memref.global "private" @angles : memref<1xf64> = dense<1.0>
@@ -1781,6 +1860,36 @@ TEST_F(CompilerPipelineTest, ConstantSubroutineConditionsSurviveDefaultExport) {
     ASSERT_TRUE(succeeded(outcomes));
     EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{expected, 1}}));
   }
+}
+
+TEST_F(CompilerPipelineTest, SingleCleanupFoldsPromotedSubroutineConditions) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func private @enabled(%value: i1) -> i1 { return %value : i1 }
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %false = arith.constant false
+      %storage = memref.alloca() : memref<1xi1>
+      memref.store %false, %storage[%zero] : memref<1xi1>
+      %value = memref.load %storage[%zero] : memref<1xi1>
+      %condition = func.call @enabled(%value) : (i1) -> i1
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+        %q2 = qco.x %arg0 : !qco.qubit
+        qco.yield %q2 : !qco.qubit
+      } else args(%arg0 = %q0) {
+        qco.yield %arg0 : !qco.qubit
+      }
+      %q2, %result = qco.measure %q1 : !qco.qubit
+      qco.sink %q2 : !qco.qubit
+      return %result : i1
+    }
+  })mlir");
+  ASSERT_TRUE(succeeded(program));
+  ASSERT_TRUE(succeeded(program->cleanup()));
+  const auto outcomes =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+  ASSERT_TRUE(succeeded(outcomes));
+  EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{"0", 1}}));
 }
 
 TEST_F(CompilerPipelineTest, BorrowedArrayViewsPreserveAliasesInQIRAndJeff) {
@@ -5748,7 +5857,42 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
   EXPECT_FALSE(program->module().lookupSymbol<func::FuncOp>("flip"));
   EXPECT_TRUE(verify(program->module()).succeeded());
   EXPECT_TRUE(qco::verifyLinearity(program->module()).succeeded());
-  expectFullUnitaryEqual(*reference, program->module(), 2);
+  auto layout = mlir::mqt::QubitLayout::fromAttr(
+      program->module()->getAttr("mqt.layout"),
+      [&] { return program->module().emitError(); });
+  ASSERT_TRUE(succeeded(layout));
+  ASSERT_EQ(layout->inputCount, 2);
+  ASSERT_TRUE(layout->sites);
+  auto package = std::make_unique<dd::Package>(0);
+  const auto expectedDD =
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*reference), *package);
+  const auto actualDD = qco::buildFunctionality(
+      mlir::mqt::getEntryPoint(program->module()), *package);
+  ASSERT_TRUE(succeeded(expectedDD));
+  ASSERT_TRUE(succeeded(actualDD));
+  const auto expected = dd::getMatrix(*expectedDD, 2);
+  const auto physicalIndex = [&](size_t basis, bool output) {
+    size_t physical = 0;
+    for (size_t qubit = 0; qubit < 2; ++qubit) {
+      const auto initial = layout->initial[qubit];
+      const auto position =
+          output && layout->routing ? (*layout->routing)[initial] : initial;
+      const auto site = (*layout->sites)[position];
+      physical |= ((basis >> qubit) & 1U) << static_cast<size_t>(site);
+    }
+    return physical;
+  };
+  for (size_t row = 0; row < 4; ++row) {
+    for (size_t column = 0; column < 4; ++column) {
+      EXPECT_LE(std::abs(dd::getValueByIndex(*actualDD, package->qubits(),
+                                             physicalIndex(row, true),
+                                             physicalIndex(column, false)) -
+                         expected[row][column]),
+                1e-12);
+    }
+  }
+  package->decRef(*expectedDD);
+  package->decRef(*actualDD);
 }
 
 // Test that target compilation leaves dead-value cleanup at a fixed point.
@@ -6540,8 +6684,7 @@ INSTANTIATE_TEST_SUITE_P(
         CompilerPipelineTestCase{
             "ReusableUnitaryFunction",
             MQT_NAMED_BUILDER(mlir::qc::reusableUnitaryFunction),
-            MQT_NAMED_BUILDER(mlir::qc::reusableUnitaryFunction), nullptr,
-            false},
+            MQT_NAMED_BUILDER(specializedUnitaryFunction), nullptr, false},
         CompilerPipelineTestCase{
             "ReusableResetFunction",
             MQT_NAMED_BUILDER(mlir::qc::reusableResetFunction),

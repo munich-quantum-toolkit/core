@@ -7,10 +7,7 @@
 # Licensed under the MIT License
 
 # Find llc tool (LLVM is guaranteed to be available at this point)
-find_program(
-  LLC_EXECUTABLE
-  NAMES llc
-  HINTS ${LLVM_TOOLS_BINARY_DIR})
+find_program(LLC_EXECUTABLE NAMES llc HINTS ${LLVM_TOOLS_BINARY_DIR})
 
 if(NOT LLC_EXECUTABLE)
   message(FATAL_ERROR "llc not found. This should not happen since LLVM is available.")
@@ -25,8 +22,8 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
     get_filename_component(circuit_name ${circuit_path} NAME_WE)
     add_custom_command(
       OUTPUT ${circuit_name}.o
-      COMMAND ${LLC_EXECUTABLE} -filetype=obj -relocation-model=pic ${circuit_path} -o
-              ${circuit_name}.o
+      COMMAND
+        ${LLC_EXECUTABLE} -filetype=obj -relocation-model=pic ${circuit_path} -o ${circuit_name}.o
       DEPENDS ${circuit_path}
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o with llc")
     add_executable(${target_name} ${circuit_name}.o)
@@ -41,9 +38,7 @@ function(camel_to_dash_lowercase input output)
   string(REGEX REPLACE "([A-Z])" "-\\1" result "${input}")
   string(TOLOWER "${result}" result)
   string(REGEX REPLACE "^-+" "" result "${result}")
-  set(${output}
-      "${result}"
-      PARENT_SCOPE)
+  set(${output} "${result}" PARENT_SCOPE)
 endfunction()
 
 set(TARGET_NAME mqt-core-qir-runtime-test)

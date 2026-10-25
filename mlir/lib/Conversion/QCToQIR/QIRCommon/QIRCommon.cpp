@@ -148,11 +148,11 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
                                     LLVMTypeConverter& typeConverter) {
   auto* ctx = moduleOp.getContext();
-  // Constant tensors and element reads require no allocation or alias
-  // analysis.
+  // Read-only tensors and explicit destinations need no alias analysis.
   bufferization::BufferizationOptions options;
   options.allowUnknownOps = true;
-  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp>();
+  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp,
+                                  bufferization::MaterializeInDestinationOp>();
   bufferization::BufferizationState state;
   if (failed(bufferization::bufferizeOp(moduleOp, options, state))) {
     return failure();

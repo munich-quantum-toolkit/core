@@ -12,17 +12,20 @@ if(NOT TARGET ${TARGET_NAME})
   # Add driver library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver FORCE_SHARED HIDDEN_VISIBILITY)
   set_target_properties(
-    ${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
-                              RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
+    ${TARGET_NAME}
+    PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.." RUNTIME_OUTPUT_DIRECTORY
+      "${CMAKE_CURRENT_BINARY_DIR}/..")
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
+  # LLVM's inline error handlers must match the SDK's RTTI setting.
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreQDMICommon qdmi::qdmi_project_warnings
-            $<BUILD_INTERFACE:nlohmann_json::nlohmann_json> ${CMAKE_DL_LIBS})
+    PRIVATE MQT::CoreQDMICommon qdmi::qdmi_project_warnings LLVMSupport ${CMAKE_DL_LIBS})
 
   configure_qdmi_exports(
     TARGET
@@ -36,13 +39,13 @@ if(NOT TARGET ${TARGET_NAME})
 
   if(BUILD_MQT_CORE_TESTS)
     add_library(mqt-core-qdmi-driver-testing STATIC DeviceRegistry.cpp Driver.cpp)
+    mqt_llvm_target_disable_rtti(mqt-core-qdmi-driver-testing)
     target_compile_features(mqt-core-qdmi-driver-testing PUBLIC cxx_std_20)
     target_compile_definitions(mqt-core-qdmi-driver-testing PUBLIC QDMI_STATIC_DEFINE)
     target_link_libraries(
       mqt-core-qdmi-driver-testing
       PUBLIC qdmi::qdmi MQT::CoreQDMICommon
-      PRIVATE MQT::ProjectOptions qdmi::qdmi_project_warnings nlohmann_json::nlohmann_json
-              ${CMAKE_DL_LIBS})
+      PRIVATE MQT::ProjectOptions qdmi::qdmi_project_warnings LLVMSupport ${CMAKE_DL_LIBS})
   endif()
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
@@ -55,6 +58,4 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

@@ -21,6 +21,6 @@ if(NOT TARGET ${TARGET_NAME})
     .
     LINK_LIBS
     MQT::CoreQDMI
-    nlohmann_json::nlohmann_json)
+    LLVMSupport)
 
 endif()

@@ -28,6 +28,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -75,7 +76,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <optional>
 #include <random>
 #include <string>
@@ -329,6 +329,7 @@ struct GateCache {
     dd::MatrixDD matrix;
   };
   dd::Package& dd;
+  Block* uncachedBlock = nullptr;
   DenseMap<Operation*, SmallVector<Entry, 1>> entries;
 
   explicit GateCache(dd::Package& package) : dd(package) {}
@@ -368,6 +369,7 @@ struct LoopRange {
 struct SamplingPlan {
   bool dynamic = false;
   SmallVector<Value> outputs;
+  size_t outputWidth = 0;
   DenseSet<Operation*> deferredMeasurements;
 };
 } // namespace
@@ -529,7 +531,8 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   }
   dd::MatrixDD matrix;
   if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
-    if (walk.gates != nullptr) {
+    if (walk.gates != nullptr &&
+        unitary->getBlock() != walk.gates->uncachedBlock) {
       auto& variants = walk.gates->entries[unitary.getOperation()];
       auto found = llvm::find_if(variants, [&](const GateCache::Entry& entry) {
         return entry.numQubits == walk.qubits->numQubits &&
@@ -612,14 +615,13 @@ static LogicalResult validateReturn(func::ReturnOp returnOp,
 
 static LogicalResult validateConstant(arith::ConstantOp constant) {
   auto tensorType = dyn_cast<RankedTensorType>(constant.getType());
-  const bool isScalarTable =
-      tensorType && tensorType.getRank() == 1 &&
-      isSupportedClassicalType(tensorType.getElementType()) &&
+  const bool isScalarTensor =
+      tensorType && isSupportedClassicalType(tensorType.getElementType()) &&
       isa<DenseElementsAttr>(constant.getValue());
-  if (!isSupportedClassicalType(constant.getType()) && !isScalarTable) {
+  if (!isSupportedClassicalType(constant.getType()) && !isScalarTensor) {
     return constant.emitError()
            << "QCO DD simulation only supports scalar integer, index, and f64 "
-              "constants or dense rank-one integer or f64 tensor constants";
+              "constants or dense integer, index, or f64 tensor constants";
   }
   return success();
 }
@@ -906,6 +908,30 @@ static LogicalResult applyMemRefAlloc(AllocOp alloc, ClassicalEnv& classical) {
     stride = size == 0 ? 0 : stride * storage->shape[dimension];
   }
   classical.memrefs[alloc.getResult()] = std::move(storage);
+  return success();
+}
+
+static LogicalResult
+applyArrayInitializer(bufferization::MaterializeInDestinationOp init,
+                      ClassicalEnv& classical) {
+  auto constant = init.getSource().getDefiningOp<arith::ConstantOp>();
+  auto data = constant ? dyn_cast<DenseElementsAttr>(constant.getValue())
+                       : DenseElementsAttr{};
+  auto alloc = init.getDest().getDefiningOp<memref::AllocaOp>();
+  const auto target = classical.memrefs.find(init.getDest());
+  if (!data || !alloc || !alloc.getType().hasStaticShape() ||
+      data.getType().getShape() != alloc.getType().getShape() ||
+      target == classical.memrefs.end()) {
+    return init.emitError() << "array initialization requires a dense constant "
+                               "and whole static local storage";
+  }
+  auto values = data.getValues<Attribute>();
+  // Reuse local storage without overwriting another branch's shared buffer.
+  auto& storage = target->second->storage->values;
+  if (storage.use_count() != 1) {
+    storage = std::make_shared<SmallVector<Attribute>>();
+  }
+  storage->assign(values.begin(), values.end());
   return success();
 }
 
@@ -1586,31 +1612,52 @@ static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
   return success();
 }
 
-template <typename StateDD>
-static LogicalResult applyRegionBranch(ValueRange linearOperands, Block& block,
-                                       WalkState& walk, StateDD& state,
-                                       Operation* parent) {
-  if (failed(
-          bindValuePairs(linearOperands, block.getArguments(), walk, parent))) {
-    return failure();
-  }
-  if (failed(walkBlock(block, walk, state))) {
-    return failure();
-  }
-  auto yield = cast<YieldOp>(block.getTerminator());
-  return bindValuePairs(yield.getOperands(), parent->getResults(), walk, yield);
-}
-
-template <typename StateDD>
-static LogicalResult applyScfRegion(Region& region, ValueRange results,
-                                    WalkState& walk, StateDD& state,
-                                    Operation* parent) {
-  Block& block = region.front();
-  if (failed(walkBlock(block, walk, state))) {
-    return failure();
-  }
-  auto yield = cast<scf::YieldOp>(block.getTerminator());
-  return bindValuePairs(yield.getOperands(), results, walk, parent);
+static FailureOr<Block*> selectBranch(Operation* op, WalkState& walk) {
+  return TypeSwitch<Operation*, FailureOr<Block*>>(op)
+      .Case<IfOp, scf::IfOp>([&](auto ifOp) -> FailureOr<Block*> {
+        auto condition = lookupBool(ifOp.getCondition(), *walk.classical, op);
+        if (failed(condition)) {
+          return failure();
+        }
+        Region& region =
+            *condition ? ifOp.getThenRegion() : ifOp.getElseRegion();
+        if (region.empty()) {
+          if (op->getNumResults() != 0) {
+            return op->emitError("selected empty region has results");
+          }
+          return static_cast<Block*>(nullptr);
+        }
+        Block& block = region.front();
+        if constexpr (std::is_same_v<decltype(ifOp), IfOp>) {
+          if (failed(bindValuePairs(ifOp.getQubits(), block.getArguments(),
+                                    walk, op))) {
+            return failure();
+          }
+        }
+        return &block;
+      })
+      .Case<IndexSwitchOp, scf::IndexSwitchOp>(
+          [&](auto switchOp) -> FailureOr<Block*> {
+            auto selector = lookupIndex(switchOp.getArg(), *walk.classical, op);
+            if (failed(selector)) {
+              return failure();
+            }
+            Region* region = &switchOp.getDefaultRegion();
+            for (auto [i, value] : llvm::enumerate(switchOp.getCases())) {
+              if (value == *selector) {
+                region = &switchOp.getCaseRegions()[i];
+                break;
+              }
+            }
+            Block& block = region->front();
+            if constexpr (std::is_same_v<decltype(switchOp), IndexSwitchOp>) {
+              if (failed(bindValuePairs(switchOp.getTargets(),
+                                        block.getArguments(), walk, op))) {
+                return failure();
+              }
+            }
+            return &block;
+          });
 }
 
 static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
@@ -1807,6 +1854,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<memref::AllocOp, memref::AllocaOp>(
           [&](auto alloc) { return applyMemRefAlloc(alloc, *walk.classical); })
+      .Case([&](bufferization::MaterializeInDestinationOp init) {
+        return applyArrayInitializer(init, *walk.classical);
+      })
       .Case([&](memref::StoreOp store) {
         return applyMemRefStore(store, *walk.classical);
       })
@@ -1937,61 +1987,21 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return success();
         }
       })
-      .Case([&](IfOp ifOp) -> LogicalResult {
-        auto condition = lookupBool(ifOp.getCondition(), *walk.classical, ifOp);
-        if (failed(condition)) {
-          return failure();
-        }
-        Block* block = *condition ? ifOp.thenBlock() : ifOp.elseBlock();
-        return applyRegionBranch(ifOp.getQubits(), *block, walk, state, ifOp);
-      })
-      .Case([&](IndexSwitchOp switchOp) -> LogicalResult {
-        auto selector =
-            lookupIndex(switchOp.getArg(), *walk.classical, switchOp);
-        if (failed(selector)) {
-          return failure();
-        }
-        Block* block = switchOp.getDefaultBlock();
-        for (auto [i, caseValue] : llvm::enumerate(switchOp.getCases())) {
-          if (caseValue == *selector) {
-            block = switchOp.getCaseBlock(i);
-            break;
-          }
-        }
-        return applyRegionBranch(switchOp.getTargets(), *block, walk, state,
-                                 switchOp);
-      })
-      .Case([&](scf::IfOp ifOp) -> LogicalResult {
-        auto condition = lookupBool(ifOp.getCondition(), *walk.classical, ifOp);
-        if (failed(condition)) {
-          return failure();
-        }
-        Region& selected =
-            *condition ? ifOp.getThenRegion() : ifOp.getElseRegion();
-        if (selected.empty()) {
-          return ifOp.getNumResults() == 0
-                     ? success()
-                     : ifOp.emitError()
-                           << "selected empty scf.if region has results";
-        }
-        return applyScfRegion(selected, ifOp.getResults(), walk, state, ifOp);
-      })
-      .Case([&](scf::IndexSwitchOp switchOp) -> LogicalResult {
-        auto selector =
-            lookupIndex(switchOp.getArg(), *walk.classical, switchOp);
-        if (failed(selector)) {
-          return failure();
-        }
-        Region* selected = &switchOp.getDefaultRegion();
-        for (auto [i, value] : llvm::enumerate(switchOp.getCases())) {
-          if (value == *selector) {
-            selected = &switchOp.getCaseRegions()[i];
-            break;
-          }
-        }
-        return applyScfRegion(*selected, switchOp.getResults(), walk, state,
-                              switchOp);
-      })
+      .template Case<IfOp, IndexSwitchOp, scf::IfOp, scf::IndexSwitchOp>(
+          [&](Operation* branch) -> LogicalResult {
+            auto selected = selectBranch(branch, walk);
+            if (failed(selected)) {
+              return failure();
+            }
+            if (*selected == nullptr) {
+              return success();
+            }
+            if (failed(walkBlock(**selected, walk, state))) {
+              return failure();
+            }
+            return bindValuePairs((*selected)->getTerminator()->getOperands(),
+                                  branch->getResults(), walk, branch);
+          })
       .Case([&](scf::ForOp forOp) -> LogicalResult {
         auto range = resolveLoop(forOp, *walk.classical);
         if (failed(range)) {
@@ -2437,6 +2447,10 @@ getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
     if (isa<cbit::RegisterType>(value.getType()) ||
         value.getType().isInteger(1)) {
       plan.outputs.push_back(value);
+      plan.outputWidth +=
+          value.getType().isInteger(1)
+              ? 1U
+              : cast<cbit::RegisterType>(value.getType()).getWidth();
     } else if (!statevectorAnalysis && !isa<QubitType>(value.getType()) &&
                !isQTensorType(value.getType())) {
       return returnOp.emitError()
@@ -2481,13 +2495,10 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
   return state;
 }
 
-static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
-                                            const ClassicalEnv& classical,
-                                            std::string basis) {
-  if (outputs.empty()) {
-    return basis;
-  }
-  std::string outcome;
+static LogicalResult visitOutputBits(
+    ArrayRef<Value> outputs, const ClassicalEnv& classical,
+    function_ref<LogicalResult(const ClassicalEnv::RegisterBit&, Value)>
+        visit) {
   for (Value value : llvm::reverse(outputs)) {
     const bool isScalar = value.getType().isInteger(1);
     ClassicalEnv::RegisterBit scalar;
@@ -2506,11 +2517,7 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
     for (size_t i = bits.size(); i > 0; --i) {
       const size_t index = i - 1;
       const auto& cell = bits[index];
-      if (cell.value) {
-        outcome.push_back(*cell.value ? '1' : '0');
-      } else if (cell.deferredWire && *cell.deferredWire < basis.size()) {
-        outcome.push_back(basis[basis.size() - 1 - *cell.deferredWire]);
-      } else {
+      if (!cell.value && !cell.deferredWire) {
         if (isScalar) {
           return emitError(value.getLoc()) << "returned Boolean value is not "
                                               "mapped for QCO DD simulation";
@@ -2518,9 +2525,63 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
         return emitError(value.getLoc())
                << "returned CBit register element " << index << " is undefined";
       }
+      if (failed(visit(cell, value))) {
+        return failure();
+      }
     }
   }
+  return success();
+}
+
+static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
+                                            const ClassicalEnv& classical,
+                                            std::string basis,
+                                            size_t outputWidth) {
+  if (outputs.empty()) {
+    return basis;
+  }
+  std::string outcome;
+  outcome.reserve(outputWidth);
+  if (failed(visitOutputBits(
+          outputs, classical,
+          [&](const auto& bit, Value value) -> LogicalResult {
+            if (bit.value) {
+              outcome.push_back(*bit.value ? '1' : '0');
+            } else if (*bit.deferredWire < basis.size()) {
+              outcome.push_back(basis[basis.size() - 1 - *bit.deferredWire]);
+            } else {
+              return emitError(value.getLoc())
+                     << "output qubit is outside the state";
+            }
+            return success();
+          }))) {
+    return failure();
+  }
   return outcome;
+}
+
+static FailureOr<std::map<std::string, size_t>>
+sampleTerminalCounts(const dd::VectorDD& state, const SamplingPlan& plan,
+                     const ClassicalEnv& classical, size_t shots,
+                     std::mt19937_64& rng) {
+  SmallVector<dd::SamplingOutput> outputs;
+  if (plan.outputs.empty()) {
+    const size_t width = state.isTerminal() ? 0 : size_t{state.p->v} + 1;
+    for (size_t i = width; i > 0; --i) {
+      outputs.emplace_back(static_cast<dd::Qubit>(i - 1));
+    }
+  } else if (failed(visitOutputBits(plan.outputs, classical,
+                                    [&](const auto& bit, Value) {
+                                      if (bit.value) {
+                                        outputs.emplace_back(*bit.value);
+                                      } else {
+                                        outputs.emplace_back(*bit.deferredWire);
+                                      }
+                                      return success();
+                                    }))) {
+    return failure();
+  }
+  return dd::Package::sampleCounts(state, outputs, shots, rng);
 }
 
 static bool canBranchStructured(func::FuncOp func) {
@@ -2533,7 +2594,8 @@ static bool canBranchStructured(func::FuncOp func) {
       found = true;
       for (Operation* parent = op->getParentOp(); parent != func.getOperation();
            parent = parent->getParentOp()) {
-        if (!isa<scf::ForOp>(parent)) {
+        if (!isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp, scf::IfOp,
+                 scf::IndexSwitchOp>(parent)) {
           unsupported = true;
           break;
         }
@@ -2552,14 +2614,11 @@ static bool canBranchStructured(func::FuncOp func) {
 static FailureOr<std::map<std::string, size_t>>
 sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
                std::mt19937_64& rng, const PreparedState& prepared,
-               const SamplingPlan& plan, std::vector<std::string>& ordered,
+               const SamplingPlan& plan, std::vector<std::string>* shotResults,
                const DDExecutionOptions& options, bool collectCounts) {
-  struct ForFrame {
-    scf::ForOp op;
-    Block::iterator continuation;
-    llvm::APInt induction;
-    llvm::APInt step;
-    llvm::APInt remaining;
+  struct RegionFrame {
+    Operation* op;
+    std::optional<LoopRange> range;
   };
   struct Group {
     dd::VectorDD state;
@@ -2567,29 +2626,27 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     TensorMap tensors;
     ClassicalEnv classical;
     size_t remainingWhileIterations;
-    std::vector<size_t> ids;
-    SmallVector<ForFrame, 2> loops;
+    size_t count;
+    SmallVector<RegionFrame, 2> frames;
   };
-  ordered.resize(shots);
+  std::map<std::string, size_t> counts;
   Group first{
       .state = dd::makeZeroState(prepared.qubits.numQubits, dd),
       .qubits = prepared.qubits,
       .tensors = prepared.tensors.clone(),
       .classical = prepared.classical.clone(),
       .remainingWhileIterations = options.maxWhileIterations,
-      .ids = {},
+      .count = shots,
   };
-  first.ids.resize(shots);
-  std::iota(first.ids.begin(), first.ids.end(), 0);
   Block& entry = func.getBody().front();
-  DenseSet<Operation*> branchLoops;
+  DenseSet<Operation*> branchRegions;
   func.getBody().walk([&](Operation* op) {
     if (!isa<MeasureOp, ResetOp>(op)) {
       return;
     }
     for (Operation* parent = op->getParentOp(); parent != func.getOperation();
          parent = parent->getParentOp()) {
-      branchLoops.insert(parent);
+      branchRegions.insert(parent);
     }
   });
   GateCache gateCache(dd);
@@ -2606,39 +2663,80 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         .remainingWhileIterations = group.remainingWhileIterations,
     };
     walk.activeCalls.insert(func.getOperation());
-    while (!group.loops.empty() ||
+    while (!group.frames.empty() ||
            current != entry.getTerminator()->getIterator()) {
-      if (!group.loops.empty() &&
-          current ==
-              group.loops.back().op.getBody()->getTerminator()->getIterator()) {
-        auto& frame = group.loops.back();
-        auto yield = cast<scf::YieldOp>(frame.op.getBody()->getTerminator());
-        --frame.remaining;
-        if (!frame.remaining.isZero()) {
-          frame.induction += frame.step;
-          if (failed(bindValuePairs(
-                  yield.getOperands(),
-                  frame.op.getBody()->getArguments().drop_front(), walk,
-                  frame.op))) {
+      if (!group.frames.empty() && current->hasTrait<OpTrait::IsTerminator>()) {
+        auto& frame = group.frames.back();
+        if (auto forOp = dyn_cast<scf::ForOp>(frame.op)) {
+          auto yield = cast<scf::YieldOp>(*current);
+          auto& range = *frame.range;
+          --range.trips;
+          if (!range.trips.isZero()) {
+            range.induction += range.step;
+            if (failed(
+                    bindValuePairs(yield.getOperands(),
+                                   forOp.getBody()->getArguments().drop_front(),
+                                   walk, forOp))) {
+              return failure();
+            }
+            bindInteger(
+                forOp.getBody()->getArgument(0),
+                range.induction.trunc(range.induction.getBitWidth() - 1),
+                group.classical);
+            current = forOp.getBody()->begin();
+            continue;
+          }
+          if (failed(bindValuePairs(yield.getOperands(), forOp.getResults(),
+                                    walk, forOp))) {
             return failure();
           }
-          bindInteger(frame.op.getBody()->getArgument(0),
-                      frame.induction.trunc(frame.induction.getBitWidth() - 1),
-                      group.classical);
-          current = frame.op.getBody()->begin();
-        } else {
-          if (failed(bindValuePairs(yield.getOperands(), frame.op.getResults(),
-                                    walk, frame.op))) {
-            return failure();
+        } else if (auto whileOp = dyn_cast<scf::WhileOp>(frame.op)) {
+          if (auto condition = dyn_cast<scf::ConditionOp>(*current)) {
+            auto value =
+                lookupBool(condition.getCondition(), group.classical, whileOp);
+            if (failed(value)) {
+              return failure();
+            }
+            if (*value) {
+              if (walk.remainingWhileIterations == 0) {
+                return whileOp.emitError("QCO DD execution exceeds the "
+                                         "configured while-iteration limit");
+              }
+              --walk.remainingWhileIterations;
+              if (failed(bindValuePairs(condition.getArgs(),
+                                        whileOp.getAfterArguments(), walk,
+                                        whileOp))) {
+                return failure();
+              }
+              current = whileOp.getAfter().front().begin();
+              continue;
+            }
+            if (failed(bindValuePairs(condition.getArgs(), whileOp.getResults(),
+                                      walk, whileOp))) {
+              return failure();
+            }
+          } else {
+            auto yield = cast<scf::YieldOp>(*current);
+            if (failed(bindValuePairs(yield.getOperands(),
+                                      whileOp.getBeforeArguments(), walk,
+                                      whileOp))) {
+              return failure();
+            }
+            current = whileOp.getBefore().front().begin();
+            continue;
           }
-          current = frame.continuation;
-          group.loops.pop_back();
+        } else if (failed(bindValuePairs(current->getOperands(),
+                                         frame.op->getResults(), walk,
+                                         frame.op))) {
+          return failure();
         }
+        current = std::next(frame.op->getIterator());
+        group.frames.pop_back();
         continue;
       }
       Operation& op = *current;
       if (auto forOp = dyn_cast<scf::ForOp>(op);
-          forOp && branchLoops.contains(&op)) {
+          forOp && branchRegions.contains(&op)) {
         auto range = resolveLoop(forOp, group.classical);
         if (failed(range)) {
           return failure();
@@ -2659,19 +2757,44 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         bindInteger(forOp.getBody()->getArgument(0),
                     range->induction.trunc(range->induction.getBitWidth() - 1),
                     group.classical);
-        group.loops.push_back({
+        group.frames.push_back({
             .op = forOp,
-            .continuation = std::next(current),
-            .induction = range->induction,
-            .step = range->step,
-            .remaining = range->trips,
+            .range = std::move(range),
         });
         current = forOp.getBody()->begin();
         continue;
       }
+      if (auto whileOp = dyn_cast<scf::WhileOp>(op);
+          whileOp && branchRegions.contains(&op)) {
+        if (failed(bindValuePairs(whileOp.getInits(),
+                                  whileOp.getBeforeArguments(), walk,
+                                  whileOp))) {
+          return failure();
+        }
+        group.frames.push_back({
+            .op = whileOp,
+            .range = std::nullopt,
+        });
+        current = whileOp.getBefore().front().begin();
+        continue;
+      }
+      if (isa<IfOp, IndexSwitchOp, scf::IfOp, scf::IndexSwitchOp>(op) &&
+          branchRegions.contains(&op)) {
+        auto selected = selectBranch(&op, walk);
+        if (failed(selected)) {
+          return failure();
+        }
+        if (*selected == nullptr) {
+          ++current;
+          continue;
+        }
+        group.frames.push_back({.op = &op, .range = std::nullopt});
+        current = (*selected)->begin();
+        continue;
+      }
       auto measure = dyn_cast<MeasureOp>(op);
       auto reset = dyn_cast<ResetOp>(op);
-      if ((!measure && !reset) || group.ids.size() == 1) {
+      if ((!measure && !reset) || group.count == 1) {
         if (failed(applyOp(op, walk, group.state))) {
           return failure();
         }
@@ -2690,14 +2813,19 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       if (std::abs(sum - 1) > 0.001) {
         return op.emitError() << "numerical instability during measurement";
       }
-      std::vector<size_t> zero;
-      std::vector<size_t> one;
-      zero.reserve(group.ids.size());
-      one.reserve(group.ids.size());
-      std::uniform_real_distribution<dd::fp> dist(0., 1.);
-      for (const auto id : group.ids) {
-        (dist(rng) < pzero / sum ? zero : one).push_back(id);
+      const auto probabilityZero = pzero / sum;
+      size_t zeroCount = 0;
+      // Small groups retain the individual RNG path through the DD.
+      if (group.count < 256) {
+        std::uniform_real_distribution<dd::fp> dist(0., 1.);
+        for (size_t i = 0; i < group.count; ++i) {
+          zeroCount += dist(rng) < probabilityZero;
+        }
+      } else {
+        zeroCount = std::binomial_distribution<size_t>(group.count,
+                                                       probabilityZero)(rng);
       }
+      const auto oneCount = group.count - zeroCount;
       auto advance = std::next(current);
       const auto collapse = [&](Group& branch, bool measuredZero,
                                 dd::fp probability) {
@@ -2716,19 +2844,12 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         }
         branch.remainingWhileIterations = walk.remainingWhileIterations;
       };
-      const auto continueBranch = [&](Group branch, bool measuredZero,
-                                      dd::fp probability) -> LogicalResult {
-        collapse(branch, measuredZero, probability);
-        return visit(advance, std::move(branch));
-      };
-      if (zero.empty()) {
-        group.ids = std::move(one);
+      if (zeroCount == 0) {
         collapse(group, false, pone);
         current = advance;
         continue;
       }
-      if (one.empty()) {
-        group.ids = std::move(zero);
+      if (oneCount == 0) {
         collapse(group, true, pzero);
         current = advance;
         continue;
@@ -2739,59 +2860,71 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           .tensors = group.tensors.clone(),
           .classical = group.classical.clone(),
           .remainingWhileIterations = walk.remainingWhileIterations,
-          .ids = std::move(one),
-          .loops = group.loops,
+          .count = oneCount,
+          .frames = group.frames,
       };
       dd.incRef(other.state);
-      group.ids = std::move(zero);
-      if (reset) {
-        collapse(group, true, pzero);
-        collapse(other, false, pone);
-        // Equal nodes represent the same normalized state up to root phase.
-        if (group.state.p == other.state.p) {
-          group.ids.insert(group.ids.end(), other.ids.begin(), other.ids.end());
-          dd.decRef(other.state);
-          current = advance;
-          continue;
-        }
-        dd.incRef(group.state);
-        if (failed(visit(advance, std::move(group)))) {
-          dd.decRef(other.state);
-          return failure();
-        }
-        return visit(advance, std::move(other));
-      }
-      dd.incRef(group.state);
-      if (failed(continueBranch(std::move(group), true, pzero))) {
+      group.count = zeroCount;
+      collapse(group, true, pzero);
+      collapse(other, false, pone);
+      // Equal nodes represent the same normalized state up to root phase.
+      if (reset && group.state.p == other.state.p) {
+        group.count += other.count;
         dd.decRef(other.state);
+        current = advance;
+        continue;
+      }
+      // Recurse into the smaller group to bound stack depth by log2(shots).
+      if (group.count < other.count) {
+        std::swap(group, other);
+      }
+      if (failed(visit(advance, std::move(other)))) {
         return failure();
       }
-      return continueBranch(std::move(other), false, pone);
+      current = advance;
     }
     if (failed(validateReturn(cast<func::ReturnOp>(entry.getTerminator()),
                               group.qubits, group.tensors))) {
       return failure();
     }
-    for (const auto id : group.ids) {
-      auto outcome = encodeOutcome(plan.outputs, group.classical,
-                                   plan.outputs.empty()
-                                       ? dd.measureAll(group.state, false, rng)
-                                       : std::string{});
+    if (shotResults == nullptr && collectCounts) {
+      auto sampled = sampleTerminalCounts(group.state, plan, group.classical,
+                                          group.count, rng);
+      if (failed(sampled)) {
+        return failure();
+      }
+      for (const auto& [outcome, count] : *sampled) {
+        counts[outcome] += count;
+      }
+      return success();
+    }
+    if (!plan.outputs.empty()) {
+      auto outcome =
+          encodeOutcome(plan.outputs, group.classical, {}, plan.outputWidth);
       if (failed(outcome)) {
         return failure();
       }
-      ordered[id] = std::move(*outcome);
+      if (collectCounts) {
+        counts[*outcome] += group.count;
+      }
+      if (shotResults != nullptr) {
+        shotResults->insert(shotResults->end(), group.count, *outcome);
+      }
+      return success();
+    }
+    for (size_t i = 0; i < group.count; ++i) {
+      auto outcome = dd.measureAll(group.state, false, rng);
+      if (collectCounts) {
+        ++counts[outcome];
+      }
+      if (shotResults != nullptr) {
+        shotResults->push_back(std::move(outcome));
+      }
     }
     return success();
   };
   if (failed(visit(entry.begin(), std::move(first)))) {
     return failure();
-  }
-  std::map<std::string, size_t> counts;
-  if (collectCounts) {
-    for (const auto& shot : ordered) {
-      ++counts[shot];
-    }
   }
   return counts;
 }
@@ -2809,7 +2942,8 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
   std::map<std::string, size_t> counts;
   const auto record = [&](const ClassicalEnv& classical,
                           std::string basis) -> LogicalResult {
-    auto outcome = encodeOutcome(plan.outputs, classical, std::move(basis));
+    auto outcome = encodeOutcome(plan.outputs, classical, std::move(basis),
+                                 plan.outputWidth);
     if (failed(outcome)) {
       return failure();
     }
@@ -2823,18 +2957,29 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
   };
 
   if (!plan.dynamic && !forceDynamic) {
+    // Entry-block gates execute only once during a terminal trial.
+    gateCache.uncachedBlock = &func.getBody().front();
     ClassicalEnv classical;
     DenseSet<dd::Qubit> measuredWires;
     Operation* deferredMeasurementUse = nullptr;
     dd.incRef(in);
-    auto state = simulateImpl(func, in, dd, prepared, nullptr, options,
-                              &plan.deferredMeasurements, &classical,
-                              &measuredWires, &deferredMeasurementUse);
+    auto state = simulateImpl(
+        func, in, dd, prepared, nullptr, options, &plan.deferredMeasurements,
+        &classical, &measuredWires, &deferredMeasurementUse, true, &gateCache);
     if (succeeded(state)) {
       const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
-      for (size_t i = 0; i < shots; ++i) {
-        if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+      if (shotResults == nullptr && collectCounts) {
+        auto sampled =
+            sampleTerminalCounts(*state, plan, classical, shots, rng);
+        if (failed(sampled)) {
           return failure();
+        }
+        counts = std::move(*sampled);
+      } else {
+        for (size_t i = 0; i < shots; ++i) {
+          if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+            return failure();
+          }
         }
       }
       if (retainedState != nullptr) {
@@ -2852,6 +2997,7 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
     }
   }
 
+  gateCache.uncachedBlock = nullptr;
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
     dd.incRef(in);
@@ -2918,9 +3064,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   if (canBranchStructured(func)) {
     // shortcut: Shared structured-branch evaluation corrupts concurrent
     // shot groups; isolate its IR before enabling multiple workers.
-    std::vector<std::string> ordered;
-    return sampleBranches(func, *dd, shots, rng, *prepared, *plan,
-                          shotResults != nullptr ? *shotResults : ordered,
+    return sampleBranches(func, *dd, shots, rng, *prepared, *plan, shotResults,
                           options, collectCounts);
   }
   if (workers == 0) {
@@ -3018,8 +3162,18 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
        const DDArgumentBindings& argumentBindings,
        std::vector<std::string>* shotResults, DDSamplingState* retainedState,
        const DDExecutionOptions& options, size_t workers) {
+  return sample(func, shots, seed, argumentBindings, shotResults, retainedState,
+                options, workers, nullptr);
+}
+
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, size_t shots, uint64_t seed,
+       const DDArgumentBindings& argumentBindings,
+       std::vector<std::string>* shotResults, DDSamplingState* retainedState,
+       const DDExecutionOptions& options, size_t workers,
+       function_ref<size_t(size_t)> requestWorkers) {
   return sampleProgram(func, shots, seed, argumentBindings, shotResults,
-                       retainedState, options, workers, true, nullptr);
+                       retainedState, options, workers, true, requestWorkers);
 }
 
 LogicalResult sampleShots(func::FuncOp func, size_t shots, uint64_t seed,

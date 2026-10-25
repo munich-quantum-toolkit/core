@@ -2735,6 +2735,21 @@ TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
           .diagnostic = "supports widths from 1 through 64",
       },
       {
+          .source = "OPENQASM 3.1; qubit[65] q; bit[65] value = measure q; "
+                    "uint result = uint[64](uint[66](value));",
+          .diagnostic = "must match the bit-register width",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[65] value; "
+                    "uint result = uint[64](uint[65](value));",
+          .diagnostic = "has not been initialized",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[65] value; "
+                    "uint result = uint[64](uint[65](value) + 1);",
+          .diagnostic = "supports widths from 1 through 64",
+      },
+      {
           .source = "OPENQASM 3.1; bit[2] value; "
                     "uint result = uint[2](value);",
           .diagnostic = "has not been initialized",

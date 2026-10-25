@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -35,6 +37,8 @@ struct QAOAOptions {
 
 /// Classical scores of sampled QAOA cuts.
 struct QAOAEvaluation {
+  /// Total number of evaluated shots.
+  size_t shots = 0;
   /// Mean number of edges whose endpoints have different measured bits.
   double meanCut = 0.;
   /// Mean cut size divided by the cycle graph's maximum cut size.
@@ -44,16 +48,21 @@ struct QAOAEvaluation {
 /// A validated QAOA benchmark for MaxCut.
 class MQT_CORE_BENCH_EXPORT QAOA final {
 public:
-  explicit QAOA(QAOAOptions options);
+  [[nodiscard]] static llvm::Expected<QAOA> create(QAOAOptions options);
 
   [[nodiscard]] const QAOAOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the cut size of a big-endian logical outcome on the cycle.
+  ///
+  /// Requires a binary outcome of output().width bits.
   [[nodiscard]] size_t cutSize(std::string_view outcome) const;
   /// Score sampled cuts without computing an ideal output distribution.
-  [[nodiscard]] QAOAEvaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::Expected<QAOAEvaluation>
+  evaluate(const Counts& counts) const;
 
 private:
+  explicit QAOA(QAOAOptions options);
+
   QAOAOptions options_;
   Output output_;
 };

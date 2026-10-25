@@ -1762,6 +1762,8 @@ def test_payload_specification_preserves_python_api() -> None:
     payload_format.version = "9.9.9"
     exposed_descriptor = environment.format
     exposed_descriptor.version = "8.8.8"
+    exposed_capability = environment.capabilities[0]
+    exposed_capability.value = 2
     capability.value = 1
     assert environment.format.version == "2.1.0"
     assert environment.capabilities[0].value == 0
@@ -2206,13 +2208,17 @@ def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
     actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
     assert actual.ir == expected.ir
     assert "mqt.compilation_seed" not in actual.ir
+    # Match the custom pipeline's cleanup boundaries, including constant order.
+    expected = source.copy()
+    expected.cleanup()
+    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
+    expected.cleanup()
     compiled = compile_program(
         source,
         output=OutputFormat.QCO_OPTIMIZED,
         qco_pipeline="pauli-twirl-2q-gates{seed=99}",
         options=CompilationOptions(seed=seed),
     )
-    expected.cleanup()
     assert compiled.ir == expected.ir
 
 

@@ -21,9 +21,103 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <map>
 #include <numbers>
+#include <random>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace dd {
+
+TEST(DDHistogram, ProjectsEntangledStateWithoutChangingIt) {
+  Package package(3);
+  const CVec amplitudes{
+      {0., 0.},  {0.1, 0.2}, {0.2, 0.1}, {0.3, 0.},
+      {0., 0.4}, {0.5, 0.},  {0., 0.6},  {0.2, 0.},
+  };
+  // Squared amplitudes sum to one; hidden qubits have different suffixes.
+  const auto state = makeStateFromVector(amplitudes, package);
+  const auto original = getVector(state);
+  const std::vector<SamplingOutput> outputs{Qubit{0}, true, Qubit{2}, Qubit{0}};
+  std::map<std::string, double> probabilities;
+  for (size_t i = 0; i < amplitudes.size(); ++i) {
+    std::string key{'0', '1', '0', '0'};
+    key[0] = key[3] = (i & 1U) != 0 ? '1' : '0';
+    key[2] = (i & 4U) != 0 ? '1' : '0';
+    probabilities[key] += std::norm(amplitudes[i]);
+  }
+  constexpr size_t shots = 32768;
+  std::mt19937_64 rng(17);
+  const auto counts = Package::sampleCounts(state, outputs, shots, rng);
+  size_t total = 0;
+  for (const auto& [key, count] : counts) {
+    ASSERT_TRUE(probabilities.contains(key));
+    const auto probability = probabilities.at(key);
+    EXPECT_NEAR(static_cast<double>(count), shots * probability,
+                (6 * std::sqrt(shots * probability * (1 - probability))) + 1);
+    total += count;
+  }
+  EXPECT_EQ(total, shots);
+  EXPECT_EQ(getVector(state), original);
+  EXPECT_TRUE(Package::sampleCounts(state, outputs, 0, rng).empty());
+  EXPECT_EQ(Package::sampleCounts(state, {}, shots, rng),
+            (std::map<std::string, size_t>{{"", shots}}));
+  const std::vector<SamplingOutput> invalid{Qubit{3}};
+  EXPECT_THROW(Package::sampleCounts(state, invalid, 1, rng),
+               std::invalid_argument);
+  package.decRef(state);
+}
+
+TEST(DDHistogram, SamplesWideCorrelatedAndIndependentBits) {
+  Package package(128);
+  const auto ghz = makeGHZState(128, package);
+  std::vector<SamplingOutput> outputs;
+  for (size_t i = 128; i > 0; --i) {
+    outputs.emplace_back(static_cast<Qubit>(i - 1));
+  }
+  std::mt19937_64 rng(17);
+  const auto counts = Package::sampleCounts(ghz, outputs, 1000000, rng);
+  ASSERT_EQ(counts.size(), 2);
+  EXPECT_NEAR(static_cast<double>(counts.at(std::string(128, '0'))), 500000.,
+              3000.);
+  EXPECT_EQ(counts.at(std::string(128, '0')) + counts.at(std::string(128, '1')),
+            1000000);
+  rng.seed(17);
+  EXPECT_EQ(Package::sampleCounts(ghz, outputs, 1000000, rng), counts);
+  package.decRef(ghz);
+
+  const auto uniform = makeBasisState(
+      24, std::vector<BasisStates>(24, BasisStates::plus), package);
+  outputs.resize(24);
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    outputs[i] = static_cast<Qubit>(i);
+  }
+  constexpr size_t shots = 32768;
+  const auto independent = Package::sampleCounts(uniform, outputs, shots, rng);
+  size_t total = 0;
+  std::vector<size_t> ones(24);
+  std::map<std::string, size_t> prefixes;
+  for (const auto& [key, count] : independent) {
+    ASSERT_EQ(key.size(), 24);
+    total += count;
+    prefixes[key.substr(0, 4)] += count;
+    for (size_t i = 0; i < key.size(); ++i) {
+      ones[i] += key[i] == '1' ? count : 0;
+    }
+  }
+  EXPECT_EQ(total, shots);
+  for (const auto count : ones) {
+    EXPECT_NEAR(static_cast<double>(count), shots / 2.,
+                6 * std::sqrt(shots / 4.));
+  }
+  ASSERT_EQ(prefixes.size(), 16);
+  for (const auto& [prefix, count] : prefixes) {
+    EXPECT_NEAR(static_cast<double>(count), shots / 16.,
+                6 * std::sqrt(shots * 15. / 256.));
+  }
+  package.decRef(uniform);
+}
 
 TEST(DDGateConstruction, AppliesGlobalPhase) {
   Package package(1);

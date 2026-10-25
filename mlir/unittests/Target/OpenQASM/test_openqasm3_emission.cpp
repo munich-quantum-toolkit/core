@@ -275,6 +275,15 @@ set(angles);
 output bool correct;
 correct = valid(angles);
 )qasm",
+      R"qasm(
+def last(readonly array[int[8], #dim = 1] values) -> int {
+  return values[sizeof(values)-1];
+}
+array[int[8], 17] values = {0, 1, 2, 3, 4, 5, 6, 7, 8,
+                           9, 10, 11, 12, 13, 14, -1, -128};
+output bool correct;
+correct = last(values) == -128 && values[15] == -1;
+)qasm",
   };
   for (const auto* source : sources) {
     expectSubroutineRoundTrip(source, /*expectNoArrayCopies=*/true);

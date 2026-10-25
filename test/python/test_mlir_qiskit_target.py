@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from math import pi
-from typing import assert_type, cast
+from typing import TYPE_CHECKING, assert_type, cast
 
 import numpy as np
 import pytest
@@ -66,6 +66,9 @@ from mqt.core.mlir import (
     submit_program,
 )
 from mqt.core.qdmi import ProgramFormat, open_device
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 if not supports_qiskit_translation():
     pytest.skip("Qiskit version has no compiler translation adapter", allow_module_level=True)
@@ -1138,3 +1141,44 @@ def test_device_executes_controlled_qir_with_exact_phase() -> None:
     job.wait()
 
     assert job.get_dense_statevector() == pytest.approx(expected)
+
+
+def test_compile_program_sequence_qiskit_target_snapshot() -> None:
+    """Resolve a target once and retain batch members across Python callbacks."""
+
+    class Circuit(QuantumCircuit):
+        pass
+
+    circuits = [QuantumCircuit(1, 1), Circuit(1, 1)]
+    circuits[1].x(0)
+    for circuit in circuits:
+        circuit.measure(0, 0)
+    originals = [circuit.copy() for circuit in circuits]
+    pending = list(circuits)
+
+    class Backend(GenericBackendV2):
+        target_reads = 0
+
+        @property
+        def target(self) -> Target:
+            self.target_reads += 1
+            pending.clear()
+            return super().target
+
+    backend = Backend(2, basis_gates=["u", "cx"], seed=1)
+    backend.target_reads = 0
+    assert_type(compile_program(circuits[0], target=backend), QuantumCircuit)
+    scalar_reads = backend.target_reads
+    backend.target_reads = 0
+    pending.extend(circuits)
+    inputs: Sequence[QuantumCircuit] = pending
+    compiled = compile_program(inputs, target=backend)
+    assert_type(compiled, list[QuantumCircuit])
+    assert backend.target_reads == scalar_reads > 0
+    assert pending == []
+    assert circuits == originals
+    assert [sample(circuit, shots=1) for circuit in compiled] == [{"0": 1}, {"1": 1}]
+    programs: Sequence[QCProgram] = [QCProgram.from_qiskit(circuit) for circuit in circuits]
+    assert_type(compile_program(programs[0], target=backend.target, copy=True), QuantumCircuit)
+    assert_type(compile_program(programs, target=backend.target, copy=True), list[QuantumCircuit])
+    assert_type(compile_program(programs, target=CompilerTarget.from_qiskit(backend)), list[QCProgram])

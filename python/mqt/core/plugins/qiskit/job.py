@@ -81,7 +81,7 @@ class QDMIJob(JobV1):
         backend: The backend this job runs on.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
-        memory: Whether to collect genuine ordered shots.
+        memory: Whether to collect individual shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
             disabled by default. Cancelled or uncertain jobs are never retried.
         job_parameters: Custom submission parameters retained for replacements.
@@ -238,7 +238,7 @@ class QDMIJob(JobV1):
         """Collect and validate one circuit's result.
 
         Returns:
-            A Qiskit experiment with counts and, if requested, ordered memory.
+            A Qiskit experiment with counts and, if requested, per-shot memory.
 
         Raises:
             JobError: If execution failed or the result violates the circuit's output contract.

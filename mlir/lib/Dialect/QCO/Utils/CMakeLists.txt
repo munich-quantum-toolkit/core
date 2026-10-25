@@ -10,8 +10,12 @@ add_mlir_library(MLIRQCOMatrix PARTIAL_SOURCES_INTENDED Matrix.cpp LINK_LIBS PUB
 
 mqt_mlir_target_use_project_options(MLIRQCOMatrix)
 
-target_sources(MLIRQCOMatrix PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                                    ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/Matrix.h)
+target_sources(
+  MLIRQCOMatrix
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/Matrix.h)
 
 file(GLOB_RECURSE UTILS_CPP "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 list(FILTER UTILS_CPP EXCLUDE REGEX "(DDAdapter|DDFunctionality|Matrix)\\.cpp$")
@@ -42,18 +46,9 @@ file(GLOB_RECURSE UTILS_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect
 
 target_sources(
   MLIRQCOUtils
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${UTILS_HEADERS_SOURCE}
-         FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_BUILD_INCLUDE_DIR}
-         FILES
-         ${UTILS_HEADERS_BUILD})
+  PUBLIC
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${UTILS_HEADERS_SOURCE}
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR} FILES ${UTILS_HEADERS_BUILD})
 
 function(mqt_add_dd_adapter suffix dd_target)
   set(LLVM_REQUIRES_EH ON)
@@ -75,8 +70,10 @@ function(mqt_add_dd_adapter suffix dd_target)
 
   target_sources(
     MLIRQCODDAdapter${suffix}
-    PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-           ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDAdapter.h)
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+      FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDAdapter.h)
 
   add_mlir_library(
     MLIRQCODDFunctionality${suffix}
@@ -97,6 +94,7 @@ function(mqt_add_dd_adapter suffix dd_target)
     MLIRSCFDialect
     PRIVATE
     MLIRCBitDialect
+    MLIRBufferizationDialect
     MLIRMemRefDialect
     MLIRMQTUtils
     MLIRTensorDialect
@@ -107,8 +105,10 @@ function(mqt_add_dd_adapter suffix dd_target)
 
   target_sources(
     MLIRQCODDFunctionality${suffix}
-    PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-           ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDFunctionality.h)
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+      FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDFunctionality.h)
 endfunction()
 
 mqt_add_dd_adapter("" MQT::CoreDD)

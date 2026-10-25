@@ -49,11 +49,7 @@ function(require_textual_llvm_ir filename)
 endfunction()
 
 function(require_bitcode filename)
-  file(
-    READ "${filename}" bitcode_magic
-    OFFSET 0
-    LIMIT 4
-    HEX)
+  file(READ "${filename}" bitcode_magic OFFSET 0 LIMIT 4 HEX)
   string(TOLOWER "${bitcode_magic}" bitcode_magic)
   if(NOT bitcode_magic STREQUAL "4243c0de")
     message(FATAL_ERROR "${filename} does not start with the LLVM bitcode magic")
@@ -69,14 +65,14 @@ set(binary_payload_specification
 set(text_payload_specification
     "#mqt.payload_spec<format = <id = \"qir\", version = \"2.1.0\", profile = \"base\", encoding = text>, capabilities = [], optional_capabilities_known = false>"
 )
-run_command_expect_failure(
-  "mqt-cc target without payload specification"
-  "--qdmi-device or --target and --payload-spec must be provided together" "${MQT_CC}"
-  "${INPUT_FILE}" "--qdmi-device=mqt.sc.iqm.garnet")
+run_command_expect_failure("mqt-cc target without payload specification"
+                           "--qdmi-device or --target and --payload-spec must be provided together"
+                           "${MQT_CC}" "${INPUT_FILE}" "--qdmi-device=mqt.sc.iqm.garnet")
 run_command_expect_failure(
   "mqt-cc invalid payload specification"
   "--payload-spec must be a valid #mqt.payload_spec attribute" "${MQT_CC}" "${INPUT_FILE}"
-  "--qdmi-device=mqt.sc.iqm.garnet" "--payload-spec=#mqt.payload_spec<>")
+  "--qdmi-device=mqt.sc.iqm.garnet" "--payload-spec=#mqt.payload_spec<>"
+)
 run_command_expect_failure(
   "mqt-cc target with explicit output"
   "Only --emit=qco-optimized can be combined with target compilation"
@@ -87,8 +83,14 @@ run_command_expect_failure(
   "--emit=qir-base")
 
 execute_process(
-  COMMAND "${MQT_CC}" "${INPUT_FILE}" "--qdmi-device=mqt.sc.iqm.garnet"
-          "--payload-spec=${binary_payload_specification}" --emit=qco-optimized -o -
+  COMMAND
+    "${MQT_CC}"
+    "${INPUT_FILE}"
+    "--qdmi-device=mqt.sc.iqm.garnet"
+    "--payload-spec=${binary_payload_specification}"
+    --emit=qco-optimized
+    -o
+    -
   RESULT_VARIABLE result
   OUTPUT_VARIABLE mapped_qco
   ERROR_VARIABLE error)

@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <string_view>
 
@@ -32,16 +34,20 @@ struct FanOutOptions {
 /// A validated quantum fan-out benchmark.
 class MQT_CORE_BENCH_EXPORT FanOut final {
 public:
-  explicit FanOut(FanOutOptions options);
+  [[nodiscard]] static llvm::Expected<FanOut> create(FanOutOptions options);
 
   [[nodiscard]] const FanOutOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
+  ///
+  /// Requires a binary outcome of output().width bits.
   [[nodiscard]] double probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::Expected<Evaluation> evaluate(const Counts& counts) const;
 
 private:
+  explicit FanOut(FanOutOptions options);
+
   FanOutOptions options_;
   Output output_;
 };

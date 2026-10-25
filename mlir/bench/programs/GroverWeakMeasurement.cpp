@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "bench/WeakMeasurementGrover.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
 
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -56,8 +56,8 @@ static void computePredicate(qc::QCProgramBuilder& builder,
 }
 
 SmallVector<Value>
-weakMeasurementGrover(qc::QCProgramBuilder& builder,
-                      const WeakMeasurementGrover& benchmark) {
+groverWeakMeasurement(qc::QCProgramBuilder& builder,
+                      const GroverWeakMeasurement& benchmark) {
   const auto& options = benchmark.options();
   const auto width = static_cast<int64_t>(benchmark.qubits());
   auto search = builder.allocQubitRegister(width, "search");

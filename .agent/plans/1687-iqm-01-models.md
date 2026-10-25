@@ -76,9 +76,9 @@ and command-line integration belong to later changes.
   retaining both permits stable compiler indices while allowing callers to
   recover provider-facing hardware names.
 
-- reuse the exact sanitized topology and calibration files from pull request
-  #1687 and add only site names. Rationale: the files were already reviewed,
-  contain no credentials or calibration identifiers, and preserve
+- reuse the exact sanitized topology and calibration files from pull
+  request #1687 and add only site names. Rationale: the files were already
+  reviewed, contain no credentials or calibration identifiers, and preserve
   nanosecond-level coherence precision through unit `us` with scale factor
   `0.001`.
 

@@ -8,7 +8,11 @@
 
 add_mlir_library(MLIRIQMTarget Export.cpp LINK_LIBS MQTCompilerTarget LLVMCore LLVMAnalysis)
 
-target_link_libraries(MLIRIQMTarget PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(MLIRIQMTarget PRIVATE LLVMSupport)
 mqt_mlir_target_use_project_options(MLIRIQMTarget)
-target_sources(MLIRIQMTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                                    ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/IQM/Export.h)
+target_sources(
+  MLIRIQMTarget
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/IQM/Export.h)

@@ -11,22 +11,23 @@ add_executable(${target_name} test_target_synthesis.cpp)
 
 target_link_libraries(
   ${target_name}
-  PRIVATE MLIRParser
-          GTest::gtest_main
-          MQTCompilerTarget
-          MLIRMQTTransforms
-          MLIRQCOProgramBuilder
-          MLIRExactUnitaryTest
-          MLIRQCOUtils
-          MLIRQCOTransforms
-          MLIRPass
-          MLIRFuncDialect
-          MLIRArithDialect
-          MLIRSCFDialect
-          MLIRTransforms
-          MLIRIR
-          MLIRSupport
-          LLVMSupport)
+  PRIVATE
+    MLIRParser
+    GTest::gtest_main
+    MQTCompilerTarget
+    MLIRMQTTransforms
+    MLIRQCOProgramBuilder
+    MLIRExactUnitaryTest
+    MLIRQCOUtils
+    MLIRQCOTransforms
+    MLIRPass
+    MLIRFuncDialect
+    MLIRArithDialect
+    MLIRSCFDialect
+    MLIRTransforms
+    MLIRIR
+    MLIRSupport
+    LLVMSupport)
 
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 

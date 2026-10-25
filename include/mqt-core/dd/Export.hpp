@@ -21,9 +21,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
+#include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <queue>
 #include <sstream>
 #include <stdexcept>
@@ -41,6 +40,11 @@ fp thicknessFromMagnitude(const Complex& a);
 void printPhaseFormatted(std::ostream& os, fp r);
 
 std::string conditionalFormat(const Complex& a, bool formatAsPolar = true);
+
+/// Render a DOT file as a sibling SVG using Graphviz.
+///
+/// Requires `dot` on PATH and throws if Graphviz cannot render the file.
+void renderDotToSvg(const std::filesystem::path& dotFilename);
 
 template <class Node>
 static std::ostream& header(const Edge<Node>& e, std::ostream& os,
@@ -310,23 +314,21 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
 
 template <class Node>
 [[maybe_unused]] static void
-export2Dot(Edge<Node> basic, const std::string& outputFilename,
+export2Dot(Edge<Node> basic, const std::filesystem::path& outputFilename,
            bool colored = true, bool edgeLabels = false, bool classic = false,
            bool memory = false, bool show = true, bool formatAsPolar = true) {
   std::ofstream init(outputFilename);
+  if (!init) {
+    throw std::runtime_error("Cannot open DOT file");
+  }
   toDot(basic, init, colored, edgeLabels, classic, memory, formatAsPolar);
   init.close();
+  if (!init) {
+    throw std::runtime_error("Cannot write DOT file");
+  }
 
   if (show) {
-    std::ostringstream oss;
-    oss << "dot -Tsvg " << outputFilename << " -o "
-        << outputFilename.substr(0, outputFilename.find_last_of('.')) << ".svg";
-    const auto str =
-        oss.str(); // required to avoid immediate deallocation of temporary
-    const auto exitCode = std::system(str.c_str());
-    if (exitCode != 0) {
-      std::cerr << "Error: dot returned with exit code " << exitCode << "\n";
-    }
+    renderDotToSvg(outputFilename);
   }
 }
 

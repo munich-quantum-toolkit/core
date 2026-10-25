@@ -363,4 +363,34 @@ attributes #1 = { "irreversible" }
   }
 }
 
+TEST(IRRewriter, BranchSamplingRejectsAmbientEffects) {
+  for (const auto* body : {
+           "store i64 1, ptr %slot\n%v = load i64, ptr %slot",
+           "%v = call i64 @llvm.readcyclecounter()",
+           R"(call void asm sideeffect "", ""())",
+           "%v = load volatile i64, ptr %slot",
+           "store i64 1, ptr inttoptr (i64 4096 to ptr)",
+           "%v = ptrtoint ptr %slot to i64",
+           "call void @helper()",
+       }) {
+    SCOPED_TRACE(body);
+    const auto ir = std::string(R"(
+declare i64 @llvm.readcyclecounter()
+define void @helper() { ret void }
+define i64 @main() {
+  %slot = alloca i64
+)") + body + R"(
+  ret i64 0
+}
+)";
+    llvm::LLVMContext context;
+    llvm::SMDiagnostic error;
+    auto module = llvm::parseAssemblyString(ir, error, context);
+    ASSERT_NE(module, nullptr);
+    ASSERT_FALSE(llvm::verifyModule(*module));
+    EXPECT_EQ(qir::canSampleBranches(*module->getFunction("main")),
+              llvm::StringRef(body).starts_with("store i64 1, ptr %slot"));
+  }
+}
+
 } // namespace

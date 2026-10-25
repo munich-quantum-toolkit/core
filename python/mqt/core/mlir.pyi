@@ -11,7 +11,7 @@
 import enum
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Any, Literal, SupportsFloat, TypeAlias, TypeVar, Unpack, overload
+from typing import Annotated, Any, Literal, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
@@ -33,9 +33,22 @@ _CompilerOutput: TypeAlias = (
     qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
 )
 _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
+_CompilerInputT = TypeVar(
+    "_CompilerInputT",
+    str,
+    os.PathLike[str],
+    qiskit.circuit.QuantumCircuit,
+    QCProgram,
+    QCOProgram,
+    JeffProgram,
+    OpenQASMProgram,
+)
+_SourceT = TypeVar("_SourceT", str, os.PathLike[str])
 
-def _generate_benchmark(instance_specification_json: str) -> QCProgram:
-    """Generate the QC program described by an instance specification."""
+class _CompileOptions(TypedDict, total=False, closed=True):
+    copy: bool
+    qco_pipeline: str
+    options: CompilationOptions
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -1370,9 +1383,7 @@ def compile_program(
     *,
     target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QC],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> QCProgram: ...
 @overload
 def compile_program(
@@ -1380,9 +1391,7 @@ def compile_program(
     *,
     target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QCO_OPTIMIZED],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> QCOProgram: ...
 @overload
 def compile_program(
@@ -1390,9 +1399,7 @@ def compile_program(
     *,
     target: None = None,
     output: Literal[OutputFormat.QC_IMPORT],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> QCProgram: ...
 @overload
 def compile_program(
@@ -1400,9 +1407,7 @@ def compile_program(
     *,
     target: None = None,
     output: Literal[OutputFormat.QCO],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> QCOProgram: ...
 @overload
 def compile_program(
@@ -1410,9 +1415,7 @@ def compile_program(
     *,
     target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.OPENQASM3],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -1420,9 +1423,7 @@ def compile_program(
     *,
     target: _CompilerTarget,
     output: Literal[OutputFormat.IQM_JSON],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> IQMJSONProgram: ...
 @overload
 def compile_program(
@@ -1430,9 +1431,7 @@ def compile_program(
     *,
     target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.JEFF],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> JeffProgram: ...
 @overload
 def compile_program(
@@ -1440,9 +1439,7 @@ def compile_program(
     *,
     target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> QIRProgram: ...
 @overload
 def compile_program(
@@ -1450,39 +1447,15 @@ def compile_program(
     *,
     target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QISKIT],
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> qiskit.circuit.QuantumCircuit: ...
-@overload
-def compile_program(
-    program: _ProgramT,
-    *,
-    target: CompilerTarget | None = None,
-    output: None = None,
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
-) -> _ProgramT: ...
-@overload
-def compile_program(
-    program: str | os.PathLike[str],
-    *,
-    target: CompilerTarget | None = None,
-    output: None = None,
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
-) -> QCProgram | JeffProgram | OpenQASMProgram: ...
 @overload
 def compile_program(
     program: _CompilerInput,
     *,
     target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
     output: None = None,
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> qiskit.circuit.QuantumCircuit: ...
 @overload
 def compile_program(
@@ -1490,41 +1463,172 @@ def compile_program(
     *,
     target: mqt.core.qdmi.Device | str,
     output: None = None,
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
+    **kwargs: Unpack[_CompileOptions],
 ) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: _ProgramT,
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> _ProgramT: ...
+@overload
+def compile_program(
+    program: str | os.PathLike[str],
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> QCProgram | JeffProgram | OpenQASMProgram: ...
 @overload
 def compile_program(
     program: _CompilerInput,
     *,
     target: _CompilerTarget | None = None,
     output: OutputFormat,
-    copy: bool = False,
-    qco_pipeline: str = "mqt-qco-default",
-    options: CompilationOptions = ...,
-) -> _CompilerOutput:
-    """Compile a program, optionally for a hardware target.
+    **kwargs: Unpack[_CompileOptions],
+) -> _CompilerOutput: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QC],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QCO_OPTIMIZED],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCOProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: None = None,
+    output: Literal[OutputFormat.QC_IMPORT],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: None = None,
+    output: Literal[OutputFormat.QCO],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCOProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.OPENQASM3],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[OpenQASMProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget,
+    output: Literal[OutputFormat.IQM_JSON],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[IQMJSONProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.JEFF],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[JeffProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QIRProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: mqt.core.qdmi.Device | str,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[CompiledProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_ProgramT],
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[_ProgramT]: ...
+@overload
+def compile_program(
+    program: Sequence[_SourceT],
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: OutputFormat,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[_CompilerOutput]:
+    """Compile a program or a homogeneous sequence for an optional hardware target.
 
-    An explicit ``output`` selects the returned representation independently of
-    ``target``. Without it, compilation preserves the input format family, unless
-    a Qiskit target selects QuantumCircuit or a QDMI device selects a
-    :class:`CompiledProgram` ready for :func:`submit_program`.
+    A sequence returns a list in input order, including for empty and singleton
+    inputs. Elements must share one supported input kind; subclasses are accepted.
+    Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
-    Source strings and paths return typed programs: OpenQASM returns
-    :class:`OpenQASMProgram`, QC MLIR returns :class:`QCProgram`, and jeff files
-    return :class:`JeffProgram`. QCO inputs return optimized QCO. Typed MLIR
-    programs are consumed, including if compilation fails; set ``copy=True`` to
-    preserve them. Source strings, paths, Qiskit circuits and OpenQASM text programs
-    remain reusable.
+    An explicit ``output`` selects each result's representation. Without it, a
+    Qiskit target selects QuantumCircuit and a QDMI device selects
+    :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
+    retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+    QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
+    QCO inputs return optimized QCO.
+
+    Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
+    paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input
+    kinds are checked before compilation. Compilation stops at the first failure
+    and returns no results; processed inputs, including the failing input, may be
+    consumed, while later inputs remain usable.
 
     Args:
-        program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
+        program: Source text, a file path, a Qiskit circuit, a typed compiler program,
+            or a homogeneous sequence of these inputs.
         target: A CompilerTarget, Qiskit BackendV2 or Target, QDMI Device, or device ID.
         output: The returned representation. QC_IMPORT and raw QCO are checkpoints
             before target compilation and cannot be combined with a target.
-        copy: Preserve a typed input program by compiling an explicit copy.
-        qco_pipeline: The QCO optimization pipeline. Custom pipelines require no target.
+        copy: Preserve typed inputs by compiling copies. Defaults to False.
+        qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
+            Custom pipelines require no target.
         options: Shared compilation controls.
 
     Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR

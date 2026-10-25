@@ -27,13 +27,11 @@ mqt_mlir_target_use_project_options(MQTCompilerTarget)
 
 target_sources(
   MQTCompilerTarget
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Target.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetEnvironment.h)
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Target.h
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetEnvironment.h)
 
 # Build the optional QDMI-to-compiler-target adapter
 set(LLVM_REQUIRES_EH ON)
@@ -55,8 +53,11 @@ unset(LLVM_REQUIRES_EH)
 unset(LLVM_REQUIRES_RTTI)
 
 target_sources(
-  MQTCompilerQDMIAdapter PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                                ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/QDMIAdapter.h)
+  MQTCompilerQDMIAdapter
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/QDMIAdapter.h)
 
 # Build the compiler program model and OpenQASM-to-QCO path
 add_mlir_library(
@@ -83,6 +84,7 @@ add_mlir_library(
   MLIRLLVMIRTransforms
   MLIRLLVMToLLVMIRTranslation
   MLIRMathDialect
+  MLIRBufferizationDialect
   MLIRMemRefDialect
   MLIRMQTDialect
   MLIRParser
@@ -101,8 +103,11 @@ add_mlir_library(
 mqt_mlir_target_use_project_options(MQTCompilerPrograms)
 
 target_sources(
-  MQTCompilerPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                             ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Programs.h)
+  MQTCompilerPrograms
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Programs.h)
 
 # Build the compiler pipeline library
 add_mlir_library(
@@ -135,5 +140,8 @@ add_mlir_library(
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
 target_sources(
-  MQTCompilerPipeline PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                             ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)
+  MQTCompilerPipeline
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)

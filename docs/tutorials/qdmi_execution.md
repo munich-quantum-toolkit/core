@@ -119,8 +119,9 @@ it does not change the underlying state.
 
 ## Recover individual shots
 
-A histogram loses ordering. `get_shots()` returns the individual outcomes in
-sampling order, and counting them must reconstruct the same histogram:
+A histogram records how often each outcome occurs. `get_shots()` returns each
+individual outcome in unspecified order, and counting them must reconstruct the
+same histogram:
 
 ```{code-cell} ipython3
 samples = job.get_shots()

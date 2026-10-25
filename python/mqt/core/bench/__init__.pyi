@@ -40,6 +40,10 @@ class Evaluation:
     """The result of comparing counts with a reference."""
 
     @property
+    def shots(self) -> int:
+        """The number of evaluated shots."""
+
+    @property
     def total_variation_distance(self) -> float:
         """The total variation distance from the ideal distribution."""
 

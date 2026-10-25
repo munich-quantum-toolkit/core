@@ -12,18 +12,20 @@
 #include "mqt/Target/IQM/Export.h"
 
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <clocale>
 #include <memory>
 #include <string>
 #include <utility>
@@ -114,15 +116,16 @@ TEST_F(IQMExportTest, PreservesNativeParametersAndRecordedOutputOrder) {
   auto exported = qir::exportIQMJSON(*module, target());
   ASSERT_TRUE(static_cast<bool>(exported))
       << llvm::toString(exported.takeError());
-  const auto circuit = nlohmann::json::parse(*exported);
-  EXPECT_EQ(circuit.at("name"), "circuit");
-  EXPECT_EQ(circuit.at("instructions"), nlohmann::json::parse(R"json([
+  const auto circuit = llvm::cantFail(llvm::json::parse(*exported));
+  EXPECT_EQ(circuit.getAsObject()->getString("name"), "circuit");
+  EXPECT_EQ(*circuit.getAsObject()->get("instructions"),
+            llvm::cantFail(llvm::json::parse(R"json([
     {"name":"prx","locus":["QBseven"],"args":{"angle":1.25,"phase":-0.75}},
     {"name":"cz","locus":["QBseven","QBfortyTwo"],"args":{}},
     {"name":"measure","locus":["QBfortyTwo"],"args":{"key":"read_out_2_0_0"}},
     {"name":"measure","locus":["QBseven"],"args":{"key":"read_out_2_0_1"}},
     {"name":"measure","locus":["QBzero"],"args":{"key":"c1_1_1_0"}}
-  ])json"));
+  ])json")));
   auto repeated = qir::exportIQMJSON(*module, target());
   ASSERT_TRUE(static_cast<bool>(repeated))
       << llvm::toString(repeated.takeError());
@@ -243,3 +246,32 @@ TEST_F(IQMExportTest, RequiresBaseEntryPointAndNamedTarget) {
 }
 
 } // namespace
+
+TEST_F(IQMExportTest, FormatsParametersIndependentlyOfNumericLocale) {
+  auto module =
+      parse(std::string("call void @__quantum__qis__prx__body(double 0.25, "
+                        "double 0.1, ptr null)\n") +
+            MEASURE_AND_RECORD);
+  ASSERT_TRUE(module);
+  const auto originalLocale = std::string(std::setlocale(LC_NUMERIC, nullptr));
+  const auto restoreLocale = llvm::scope_exit(
+      [&] { std::setlocale(LC_NUMERIC, originalLocale.c_str()); });
+  if (std::setlocale(LC_NUMERIC, "de_DE.UTF-8") == nullptr &&
+      std::setlocale(LC_NUMERIC, "de_DE.utf8") == nullptr) {
+    GTEST_SKIP() << "A comma-decimal numeric locale is unavailable";
+  }
+  auto exported = qir::exportIQMJSON(*module, target());
+  ASSERT_TRUE(static_cast<bool>(exported))
+      << llvm::toString(exported.takeError());
+  std::setlocale(LC_NUMERIC, "C");
+  auto circuit = llvm::json::parse(*exported);
+  ASSERT_TRUE(static_cast<bool>(circuit))
+      << llvm::toString(circuit.takeError());
+  const auto* args = circuit->getAsObject()
+                         ->getArray("instructions")
+                         ->front()
+                         .getAsObject()
+                         ->getObject("args");
+  EXPECT_EQ(args->getNumber("angle"), 0.25);
+  EXPECT_EQ(args->getNumber("phase"), 0.1);
+}

@@ -22,6 +22,7 @@
 #include "mqt/Target/OpenQASM/GateCatalog.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -130,7 +131,8 @@ public:
     context
         .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
-                     memref::MemRefDialect, scf::SCFDialect, ub::UBDialect>();
+                     memref::MemRefDialect, scf::SCFDialect, ub::UBDialect,
+                     bufferization::BufferizationDialect>();
     builder.setListener(&emissionBudget);
     builder.initialize();
     for (const auto& gate : program.gates) {
@@ -622,6 +624,53 @@ private:
     return rotated;
   }
 
+  [[nodiscard]] TypedAttr constantAttribute(frontend::ExpressionId id) {
+    const auto& expression = program.expressions.at(id);
+    auto type = scalarType(expression.type, expression.integerWidth);
+    if (expression.kind == frontend::ExpressionKind::Cast) {
+      auto source = constantAttribute(expression.lhs);
+      if (!source) {
+        return {};
+      }
+      if (source.getType() == type) {
+        return source;
+      }
+      if (auto integer = dyn_cast<IntegerAttr>(source)) {
+        const bool isSigned = program.expressions[expression.lhs].type ==
+                              frontend::ScalarType::Int;
+        if (auto target = dyn_cast<IntegerType>(type)) {
+          return IntegerAttr::get(
+              target, isSigned
+                          ? integer.getValue().sextOrTrunc(target.getWidth())
+                          : integer.getValue().zextOrTrunc(target.getWidth()));
+        }
+        if (type.isF64()) {
+          APFloat value(0.0);
+          value.convertFromAPInt(integer.getValue(), isSigned,
+                                 APFloat::rmNearestTiesToEven);
+          return FloatAttr::get(type, value);
+        }
+      }
+      // Floating-to-integer casts retain the scalar lowering's poison behavior.
+      return {};
+    }
+    if (expression.kind != frontend::ExpressionKind::Constant) {
+      return {};
+    }
+    return std::visit(
+        [&](auto value) -> TypedAttr {
+          using T = decltype(value);
+          if constexpr (std::is_same_v<T, double>) {
+            return FloatAttr::get(type, value);
+          } else {
+            return IntegerAttr::get(
+                type, APInt(cast<IntegerType>(type).getWidth(),
+                            static_cast<uint64_t>(value), std::is_signed_v<T>));
+          }
+        },
+        expression.constant);
+  }
+
   Value emitExpression(OpBuilder& opBuilder, const frontend::ExpressionId id,
                        ValueRange gateParameters) {
     if (emissionBudget.isExhausted()) {
@@ -640,33 +689,7 @@ private:
       return call ? call.getResult(0) : Value{};
     }
     case frontend::ExpressionKind::Constant:
-      switch (expression.type) {
-      case frontend::ScalarType::Bool:
-        return arith::ConstantIntOp::create(
-            opBuilder, loc,
-            static_cast<int64_t>(std::get<bool>(expression.constant)), 1);
-      case frontend::ScalarType::Int:
-        return arith::ConstantIntOp::create(
-            opBuilder, loc, std::get<int64_t>(expression.constant),
-            expression.integerWidth != 0 ? expression.integerWidth : 64);
-      case frontend::ScalarType::Uint:
-        return arith::ConstantOp::create(
-            opBuilder, loc,
-            IntegerAttr::get(
-                opBuilder.getIntegerType(expression.integerWidth != 0
-                                             ? expression.integerWidth
-                                             : 64),
-                APInt(expression.integerWidth != 0 ? expression.integerWidth
-                                                   : 64,
-                      std::get<uint64_t>(expression.constant),
-                      /*isSigned=*/false)));
-      case frontend::ScalarType::Float:
-      case frontend::ScalarType::Angle:
-        return arith::ConstantFloatOp::create(
-            opBuilder, loc, opBuilder.getF64Type(),
-            APFloat(std::get<double>(expression.constant)));
-      }
-      llvm_unreachable("unknown scalar type");
+      return arith::ConstantOp::create(opBuilder, loc, constantAttribute(id));
     case frontend::ExpressionKind::GateParameter:
       return gateParameters[expression.parameter];
     case frontend::ExpressionKind::Variable:
@@ -1928,6 +1951,28 @@ private:
                         scalarType(declaration.type, declaration.elementWidth));
     auto storage = memref::AllocaOp::create(builder, type);
     arrayValues_.at(statement.array) = storage;
+    // Preserve upstream memref SROA for arrays of at most 16 elements.
+    if (statement.initializer.size() > 16) {
+      SmallVector<Attribute> values;
+      values.reserve(statement.initializer.size());
+      for (auto expression : statement.initializer) {
+        auto value = constantAttribute(expression);
+        if (!value) {
+          break;
+        }
+        values.push_back(value);
+      }
+      if (values.size() == statement.initializer.size()) {
+        auto data = DenseElementsAttr::get(
+            RankedTensorType::get(type.getShape(), type.getElementType()),
+            values);
+        auto constant = arith::ConstantOp::create(builder, data);
+        bufferization::MaterializeInDestinationOp::create(
+            builder, TypeRange{}, constant, storage, /*restrict=*/false,
+            /*writable=*/true);
+        return;
+      }
+    }
     for (const auto [index, expression] :
          llvm::enumerate(statement.initializer)) {
       auto value = emitExpression(builder, expression, {});

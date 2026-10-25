@@ -13,6 +13,8 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -21,7 +23,7 @@
 namespace mqt::bench {
 
 /// Parameters for one weak-measurement Grover benchmark instance.
-struct WeakMeasurementGroverOptions {
+struct GroverWeakMeasurementOptions {
   /// Largest width whose default strength is a normal double.
   static constexpr size_t MAX_QUBITS = 2'044;
 
@@ -32,21 +34,26 @@ struct WeakMeasurementGroverOptions {
 };
 
 /// A validated weak-measurement Grover benchmark.
-class MQT_CORE_BENCH_EXPORT WeakMeasurementGrover final {
+class MQT_CORE_BENCH_EXPORT GroverWeakMeasurement final {
 public:
-  explicit WeakMeasurementGrover(WeakMeasurementGroverOptions options);
+  [[nodiscard]] static llvm::Expected<GroverWeakMeasurement>
+  create(GroverWeakMeasurementOptions options);
 
-  [[nodiscard]] const WeakMeasurementGroverOptions& options() const noexcept;
+  [[nodiscard]] const GroverWeakMeasurementOptions& options() const noexcept;
   /// Return the number of search qubits.
   [[nodiscard]] size_t qubits() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
+  ///
+  /// Requires a binary outcome of output().width bits.
   [[nodiscard]] double probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
-  [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
+  [[nodiscard]] llvm::Expected<Evaluation> evaluate(const Counts& counts) const;
 
 private:
-  WeakMeasurementGroverOptions options_;
+  explicit GroverWeakMeasurement(GroverWeakMeasurementOptions options);
+
+  GroverWeakMeasurementOptions options_;
   Output output_;
 };
 

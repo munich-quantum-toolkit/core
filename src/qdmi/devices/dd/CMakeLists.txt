@@ -22,8 +22,10 @@ if(NOT TARGET ${TARGET_NAME})
   endif()
   target_sources(${TARGET_NAME} PRIVATE Device.cpp Worker.cpp WorkerProtocol.cpp)
 
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
-                                       ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
+  target_sources(
+    ${TARGET_NAME}
+    PUBLIC
+    FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon LLVMSupport)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
@@ -39,14 +41,15 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_features(${WORKER_TARGET} PRIVATE cxx_std_20)
   target_link_libraries(
     ${WORKER_TARGET}
-    PRIVATE MQT::CoreDD
-            MQT::CoreQDMICommon
-            MLIRQCODDFunctionality
-            MQTCompilerPrograms
-            MQT::CoreQIRJIT
-            MQT::CoreQIRRuntime
-            MQT::ProjectWarnings
-            MQT::ProjectOptions)
+    PRIVATE
+      MQT::CoreDD
+      MQT::CoreQDMICommon
+      MLIRQCODDFunctionality
+      MQTCompilerPrograms
+      MQT::CoreQIRJIT
+      MQT::CoreQIRRuntime
+      MQT::ProjectWarnings
+      MQT::ProjectOptions)
   mqt_llvm_target_disable_rtti(${WORKER_TARGET})
   if(WIN32)
     target_compile_definitions(${TARGET_NAME} PRIVATE NOMINMAX)
@@ -54,14 +57,17 @@ if(NOT TARGET ${TARGET_NAME})
   else()
     set(WORKER_DIRECTORY ${CMAKE_INSTALL_LIBDIR})
   endif()
-  set_target_properties(${WORKER_TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
-                                                    "${CMAKE_BINARY_DIR}/${WORKER_DIRECTORY}")
+  set_target_properties(
+    ${WORKER_TARGET}
+    PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${WORKER_DIRECTORY}")
   target_compile_definitions(
-    ${TARGET_NAME} PRIVATE MQT_DDSIM_WORKER_NAME="${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
+    ${TARGET_NAME}
+    PRIVATE MQT_DDSIM_WORKER_NAME="${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
   add_dependencies(${TARGET_NAME} ${WORKER_TARGET})
   if(MQT_CORE_INSTALL)
-    install(TARGETS ${WORKER_TARGET} RUNTIME DESTINATION ${WORKER_DIRECTORY}
-                                             COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+    install(
+      TARGETS ${WORKER_TARGET}
+      RUNTIME DESTINATION ${WORKER_DIRECTORY} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
   endif()
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
   set_property(
@@ -71,6 +77,4 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

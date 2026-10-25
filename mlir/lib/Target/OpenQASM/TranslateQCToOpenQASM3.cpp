@@ -37,6 +37,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/IR/ValueBoundsOpInterfaceImpl.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
@@ -55,6 +56,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -266,8 +268,8 @@ public:
     raw_indented_ostream bodyOutput(bodyStream);
     output = &bodyOutput;
 
-    emitDeclarations();
-    if (failed(emitBlock(function.getBody().front()))) {
+    if (failed(emitDeclarations()) ||
+        failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
     if (outputs.empty()) {
@@ -324,6 +326,7 @@ private:
   DenseMap<Operation*, ArrayAssignment> arrayAssignments_;
   DenseSet<Operation*> elidedArrayOps_;
   DenseSet<Value> readonlyArguments_;
+  DenseMap<Value, DenseElementsAttr> arrayInitializers_;
 
   [[nodiscard]] bool isReadonlyArray(Value argument) {
     SmallVector<Value> worklist{argument};
@@ -990,6 +993,33 @@ private:
       resourceOrder.push_back(alloc.getResult());
     }
 
+    DominanceInfo dominance(function);
+    if (function
+            .walk([&](bufferization::MaterializeInDestinationOp init) {
+              auto constant =
+                  init.getSource().getDefiningOp<arith::ConstantOp>();
+              auto data = constant
+                              ? dyn_cast<DenseElementsAttr>(constant.getValue())
+                              : DenseElementsAttr{};
+              if (!data || !resources.contains(init.getDest()) ||
+                  resources.at(init.getDest()).kind != ResourceKind::Array ||
+                  init->getBlock() != &function.getBody().front() ||
+                  llvm::any_of(init.getDest().getUsers(), [&](Operation* user) {
+                    return user != init &&
+                           !dominance.properlyDominates(init, user);
+                  })) {
+                fail(init,
+                     "constant array initialization must precede every use "
+                     "of an entry-block allocation");
+                return WalkResult::interrupt();
+              }
+              arrayInitializers_.try_emplace(init.getDest(), data);
+              return WalkResult::advance();
+            })
+            .wasInterrupted()) {
+      return failure();
+    }
+
     const auto localBits = function.walk([&](cbit::AllocOp alloc) {
       if (alloc->getBlock() != &function.getBody().front() &&
           failed(collectClassicalResource(alloc))) {
@@ -1053,7 +1083,37 @@ private:
                                                 : scalarKind(value.getType());
   }
 
-  void emitDeclarations(bool entryPoint = true) {
+  [[nodiscard]] LogicalResult emitArrayInitializer(DenseElementsAttr data,
+                                                   Location location) {
+    auto values = data.getValues<Attribute>();
+    auto current = values.begin();
+    auto shape = data.getType().getShape();
+    const auto emitDimension = [&](auto&& self,
+                                   size_t dimension) -> LogicalResult {
+      *output << '{';
+      for (int64_t i = 0; i < shape[dimension]; ++i) {
+        if (i != 0) {
+          *output << ", ";
+        }
+        if (dimension + 1 < shape.size()) {
+          if (failed(self(self, dimension + 1))) {
+            return failure();
+          }
+        } else {
+          auto value = emitConstant(*current++, location);
+          if (failed(value)) {
+            return failure();
+          }
+          *output << scalarKind(data.getElementType()) << '(' << *value << ')';
+        }
+      }
+      *output << '}';
+      return success();
+    };
+    return emitDimension(emitDimension, 0);
+  }
+
+  [[nodiscard]] LogicalResult emitDeclarations(bool entryPoint = true) {
     if (entryPoint) {
       for (auto argument : function.getArguments()) {
         *output << "input float[64] " << valueNames.at(argument) << ";\n";
@@ -1070,7 +1130,15 @@ private:
         for (auto extent : type.getShape()) {
           *output << ", " << extent;
         }
-        *output << "] " << resource.name << ";\n";
+        *output << "] " << resource.name;
+        if (auto init = arrayInitializers_.find(value);
+            init != arrayInitializers_.end()) {
+          *output << " = ";
+          if (failed(emitArrayInitializer(init->second, value.getLoc()))) {
+            return failure();
+          }
+        }
+        *output << ";\n";
         continue;
       }
       if (resource.kind != ResourceKind::Qubit) {
@@ -1101,6 +1169,7 @@ private:
       }
     }
     *output << '\n';
+    return success();
   }
 
   [[nodiscard]] LogicalResult emitGateDefinition(func::FuncOp gate) {
@@ -1191,8 +1260,8 @@ private:
     if (failed(collectProgramShape(false))) {
       return failure();
     }
-    emitDeclarations(false);
-    if (failed(emitBlock(helper.getBody().front()))) {
+    if (failed(emitDeclarations(false)) ||
+        failed(emitBlock(helper.getBody().front()))) {
       return failure();
     }
     definitionOutput.unindent();
@@ -1218,10 +1287,10 @@ private:
     if (operation.getName().getDialectNamespace() ==
             cbit::CBitDialect::getDialectNamespace() ||
         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
-            memref::CopyOp, tensor::ExtractOp, memref::DeallocOp, qc::AllocOp,
-            qc::DeallocOp, qc::StaticOp, qc::MeasureOp, qc::ResetOp,
-            qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, ub::PoisonOp,
-            arith::SelectOp>(&operation)) {
+            memref::CopyOp, bufferization::MaterializeInDestinationOp,
+            tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
+            qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
+            scf::IndexSwitchOp, ub::PoisonOp, arith::SelectOp>(&operation)) {
       return false;
     }
     if (auto loop = dyn_cast<scf::ForOp>(&operation)) {
@@ -1282,8 +1351,9 @@ private:
     if (auto extract = dyn_cast<tensor::ExtractOp>(&operation)) {
       return emitTableLookup(extract);
     }
-    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
-            memref::LoadOp, memref::AllocaOp, memref::SubViewOp, memref::CastOp,
+    if (isa<arith::ConstantOp, bufferization::MaterializeInDestinationOp,
+            cbit::LoadOp, cbit::ReadOp, cbit::AllocOp, memref::LoadOp,
+            memref::AllocaOp, memref::SubViewOp, memref::CastOp,
             memref::ReinterpretCastOp, memref::AllocOp, memref::DeallocOp,
             qc::AllocOp, qc::DeallocOp, qc::StaticOp>(&operation)) {
       return success();
