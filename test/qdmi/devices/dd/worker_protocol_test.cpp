@@ -104,8 +104,29 @@ TEST(WorkerProtocol, PreservesExactPayloadAndResultMetadata) {
   EXPECT_EQ(result.shotCount, response.shotCount);
   EXPECT_EQ(result.shots, response.shots);
   EXPECT_EQ(result.output, response.output);
+  EXPECT_FALSE(result.outputTemplate);
   EXPECT_EQ(result.qubits, response.qubits);
   EXPECT_EQ(result.state, response.state);
+
+  response.shotCount = 3;
+  response.shots = "10,01,10,";
+  response.outputTemplate =
+      OutputTemplate{.text = "0\n1\n", .resultOffsets = {0, 2}};
+  ASSERT_TRUE(decode(encode(response), result));
+  EXPECT_EQ(result.shots, response.shots);
+  ASSERT_TRUE(result.outputTemplate);
+  EXPECT_EQ(result.outputTemplate->text, response.outputTemplate->text);
+  EXPECT_EQ(result.outputTemplate->resultOffsets,
+            response.outputTemplate->resultOffsets);
+
+  response.shotCount = 2;
+  response.shots = ",,";
+  response.outputTemplate = OutputTemplate{.text = "42\n", .resultOffsets = {}};
+  ASSERT_TRUE(decode(encode(response), result));
+  EXPECT_EQ(result.shots, response.shots);
+  ASSERT_TRUE(result.outputTemplate);
+  EXPECT_EQ(result.outputTemplate->text, "42\n");
+  EXPECT_TRUE(result.outputTemplate->resultOffsets.empty());
 
   WorkerResponse compressed;
   compressed.succeeded = true;
@@ -127,6 +148,9 @@ TEST(WorkerProtocol, RejectsTruncationTrailingBytesAndInvalidResults) {
   response.succeeded = true;
   response.shotCount = 1;
   response.shots = "01,";
+  response.output = "prefix";
+  response.outputTemplate =
+      OutputTemplate{.text = "0\n1\n", .resultOffsets = {0, 2}};
   const auto bytes = encode(response);
   for (size_t size = 0; size < bytes.size(); ++size) {
     WorkerResponse result;
@@ -137,6 +161,21 @@ TEST(WorkerProtocol, RejectsTruncationTrailingBytesAndInvalidResults) {
   invalidFlag[0] = 2;
   EXPECT_FALSE(decode(invalidFlag, result));
   EXPECT_FALSE(decode(bytes + "x", result));
+  response.shotCount = 2;
+  response.shots = "0,111,";
+  EXPECT_FALSE(decode(encode(response), result));
+  response.shotCount = 1;
+  response.shots = "01,";
+  for (const auto& record : {
+           OutputTemplate{.text = "0\n1\n", .resultOffsets = {0, 4}},
+           OutputTemplate{.text = "0\n1\n", .resultOffsets = {0, 0}},
+           OutputTemplate{.text = "0\n1\n", .resultOffsets = {0, 1}},
+           OutputTemplate{.text = "0\n1\n", .resultOffsets = {0}},
+       }) {
+    response.outputTemplate = record;
+    EXPECT_FALSE(decode(encode(response), result));
+  }
+  response.outputTemplate.reset();
   response.shots = "02,";
   EXPECT_FALSE(decode(encode(response), result));
   response.shots.clear();

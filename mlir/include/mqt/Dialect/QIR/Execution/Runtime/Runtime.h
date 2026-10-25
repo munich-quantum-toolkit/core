@@ -20,6 +20,7 @@
 
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>
@@ -27,7 +28,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -134,13 +134,24 @@ private:
   uintptr_t currentMaxResultAddress;
   QState qState;
   std::mt19937_64 mt;
-  std::ostream* os = &std::cout;
+  struct SamplingBranches {
+    std::vector<bool> path;
+    std::vector<std::pair<std::vector<bool>, size_t>> pending;
+    size_t count;
+    size_t position = 0;
+  };
+  SamplingBranches* samplingBranches_ = nullptr;
+  llvm::raw_ostream* os = &llvm::outs();
+  // Set only while building a terminal-sampling template in a
+  // raw_string_ostream.
+  std::vector<uint64_t>* outputResultPositions_ = nullptr;
   // The QIR spec does not define a default output schema.
   // The runtime picks @c Labeled when a program doesn't declare one.
   OutputSchema outputSchema = OutputSchema::Labeled;
   std::vector<std::pair<std::string, std::string>> metadata;
 
   auto enlargeState(size_t maxQubit) -> void;
+  bool measureQubit(dd::Qubit target);
   void configureStaticResources(std::optional<size_t> qubits,
                                 std::optional<size_t> results);
   auto
@@ -237,7 +248,8 @@ public:
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 
-  auto setOstream(std::ostream& other) -> void;
+  /// Borrow a stream that outlives execution and session teardown.
+  auto setOstream(llvm::raw_ostream& other) -> void;
   auto resetOstream() -> void;
   /// Disable textual records while retaining measurement bits.
   auto disableOutput() -> void;
@@ -287,7 +299,7 @@ public:
 };
 
 /// Write the schema's spec-mandated literal (`labeled` or `ordered`).
-auto operator<<(std::ostream& os, Runtime::OutputSchema schema)
-    -> std::ostream&;
+auto operator<<(llvm::raw_ostream& os, Runtime::OutputSchema schema)
+    -> llvm::raw_ostream&;
 
 } // namespace qir

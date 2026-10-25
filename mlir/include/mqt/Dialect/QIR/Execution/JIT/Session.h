@@ -18,9 +18,11 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,6 +32,12 @@
 namespace qir {
 
 class Runtime;
+
+/// One terminal shot's output, with Result digit offsets in recording order.
+struct SampledOutput {
+  std::string text;
+  std::vector<uint64_t> resultOffsets;
+};
 
 /// Whether the JIT'd program runs to produce measurement samples or
 /// to leave the final quantum state in @ref qir::Runtime for external
@@ -66,11 +74,14 @@ public:
   /// @param bufferName Identifier used in diagnostics.
   /// @param execution Execution mode.
   /// @param randomSeed Optional deterministic runtime seed.
+  /// @param output Borrowed stream for constructor, entry-point, and destructor
+  /// records. It must outlive the session; null disables output.
   /// @throws std::runtime_error if the IR cannot be parsed or the JIT fails
   /// to initialize.
   JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
              Execution execution = Execution::Sampling,
-             std::optional<uint64_t> randomSeed = std::nullopt);
+             std::optional<uint64_t> randomSeed = std::nullopt,
+             llvm::raw_ostream* output = &llvm::outs());
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
@@ -83,20 +94,38 @@ public:
   /// Execute a batch, preserving recorded-result order and returning the first
   /// nonzero exit code.
   ///
-  /// With textual output disabled, eligible static Base or Adaptive programs
-  /// are executed once with deferred measurements, then sampled. Other programs
-  /// execute normally for every shot. State-extraction sessions cannot be
-  /// sampled. The supplied vector is replaced, including for zero shots. If
-  /// supplied, stateAvailable is set only when successful terminal sampling
-  /// leaves an uncollapsed state. The caller may then use runtime().takeState()
-  /// before executing the session again.
+  /// Eligible static Base or Adaptive programs execute once with deferred
+  /// measurements, then sample that state. Other programs execute per shot.
+  /// State-extraction sessions cannot be sampled. The supplied vector is
+  /// replaced, including for zero shots. If supplied, stateAvailable is set
+  /// only when successful terminal sampling leaves an uncollapsed state. The
+  /// caller may then use runtime().takeState() before executing the session
+  /// again. Results contain recorded Result and Boolean values; numeric records
+  /// appear only in the textual output.
   int64_t sample(size_t shots, std::vector<std::string>& results,
                  bool* stateAvailable = nullptr, bool emitHeader = true);
 
   /// Execute a batch and emit each shot before the next is generated.
-  /// The view is valid only during the callback.
+  ///
+  /// The view is valid only during the callback. If supplied with output
+  /// enabled, terminalOutput receives the template instead of writing per-shot
+  /// records. Other output goes to the stream; terminalOutput is reset when no
+  /// template is produced.
   int64_t sample(size_t shots, llvm::function_ref<void(std::string_view)> emit,
-                 bool* stateAvailable = nullptr, bool emitHeader = true);
+                 bool* stateAvailable = nullptr, bool emitHeader = true,
+                 std::optional<SampledOutput>* terminalOutput = nullptr);
+
+  /// Sample a histogram without textual recording or retained shot strings.
+  ///
+  /// Eligible deterministic programs split shot populations at measurements
+  /// and replay their prefixes for sibling paths. Other programs execute per
+  /// shot. Counts use QIR recording order; seeded results are repeatable within
+  /// this sampling strategy, not across strategies.
+  int64_t sampleCounts(size_t shots, std::map<std::string, size_t>& counts,
+                       bool* stateAvailable = nullptr);
+
+  /// Whether histogram sampling can group measurement paths.
+  [[nodiscard]] bool canSampleBranches() const { return sampleBranches_; }
 
   /// Whether sampling may share the compiled entry point.
   ///
@@ -130,7 +159,7 @@ public:
                             bool emitHeader = true,
                             bool* stateAvailable = nullptr);
 
-  /// Whether the current output mode can use one retained terminal state.
+  /// Whether sampling can use one retained terminal state.
   [[nodiscard]] bool canSampleTerminal() const;
 
   [[nodiscard]] auto runtime() -> Runtime&;
@@ -142,6 +171,7 @@ private:
   std::optional<std::vector<uintptr_t>> samplingOutputs_;
   bool initializesRuntime_ = false;
   bool shareCompiledCode_ = false;
+  bool sampleBranches_ = false;
   size_t quantumCallSites_ = 0;
   Execution execution_;
 
@@ -150,7 +180,8 @@ private:
   sampleWithRuntimeImpl(Runtime& runtime, size_t shots,
                         llvm::function_ref<void(std::string&&)> emitOwned,
                         llvm::function_ref<void(std::string_view)> emitBorrowed,
-                        bool emitHeader, bool* stateAvailable);
+                        bool emitHeader, bool* stateAvailable,
+                        std::optional<SampledOutput>* terminalOutput);
 
   /// Initializes the native target, asm printer and asm parser.
   ///

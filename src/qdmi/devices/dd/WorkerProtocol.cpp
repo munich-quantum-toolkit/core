@@ -205,7 +205,13 @@ std::string encode(const WorkerResponse& response) {
   const llvm::StringRef shots(response.shots);
   auto size = Response::size(static_cast<uint8_t>(response.succeeded), output,
                              response.qubits, state) +
-              (2 * sizeof(uint64_t)) + SPSArgList<SPSString>::size(shots);
+              sizeof(uint8_t) + (2 * sizeof(uint64_t)) +
+              SPSArgList<SPSString>::size(shots);
+  if (response.outputTemplate) {
+    const auto& record = *response.outputTemplate;
+    size += SPSArgList<SPSString, SPSSequence<uint64_t>>::size(
+        llvm::StringRef(record.text), record.resultOffsets);
+  }
   for (const auto& [outcome, count] : response.counts) {
     size += SPSArgList<SPSString, uint64_t>::size(llvm::StringRef(outcome),
                                                   static_cast<uint64_t>(count));
@@ -214,6 +220,13 @@ std::string encode(const WorkerResponse& response) {
   SPSOutputBuffer buffer(bytes.data(), bytes.size());
   Response::serialize(buffer, static_cast<uint8_t>(response.succeeded), output,
                       response.qubits, state);
+  SPSArgList<uint8_t>::serialize(
+      buffer, static_cast<uint8_t>(response.outputTemplate.has_value()));
+  if (response.outputTemplate) {
+    const auto& record = *response.outputTemplate;
+    SPSArgList<SPSString, SPSSequence<uint64_t>>::serialize(
+        buffer, llvm::StringRef(record.text), record.resultOffsets);
+  }
   SPSArgList<uint64_t, SPSString>::serialize(buffer, response.shotCount, shots);
   SPSArgList<uint64_t>::serialize(
       buffer, static_cast<uint64_t>(response.counts.size()));
@@ -225,6 +238,7 @@ std::string encode(const WorkerResponse& response) {
 }
 
 bool decode(llvm::StringRef bytes, WorkerResponse& response) {
+  response = {};
   SPSInputBuffer buffer(bytes.data(), bytes.size());
   std::optional<llvm::StringRef> output;
   std::optional<llvm::StringRef> state;
@@ -242,6 +256,33 @@ bool decode(llvm::StringRef bytes, WorkerResponse& response) {
   if (state) {
     response.state = state->str();
   }
+  uint8_t hasTemplate = 0;
+  if (!SPSArgList<uint8_t>::deserialize(buffer, hasTemplate) ||
+      hasTemplate > 1) {
+    return false;
+  }
+  if (hasTemplate != 0) {
+    auto& record = response.outputTemplate.emplace();
+    llvm::StringRef text;
+    uint64_t count = 0;
+    if (!SPSArgList<SPSString, uint64_t>::deserialize(buffer, text, count) ||
+        !output || count > bytes.size() / sizeof(uint64_t)) {
+      return false;
+    }
+    record.text = text.str();
+    record.resultOffsets.reserve(count);
+    for (uint64_t i = 0; i < count; ++i) {
+      uint64_t offset = 0;
+      if (!SPSArgList<uint64_t>::deserialize(buffer, offset) ||
+          offset >= text.size() ||
+          (text[offset] != '0' && text[offset] != '1') ||
+          (!record.resultOffsets.empty() &&
+           offset <= record.resultOffsets.back())) {
+        return false;
+      }
+      record.resultOffsets.push_back(offset);
+    }
+  }
   llvm::StringRef shots;
   if (!SPSArgList<uint64_t, SPSString>::deserialize(buffer, response.shotCount,
                                                     shots) ||
@@ -249,11 +290,19 @@ bool decode(llvm::StringRef bytes, WorkerResponse& response) {
     return false;
   }
   uint64_t decodedShots = 0;
+  size_t width = 0;
   for (const char bit : shots) {
     if (bit == ',') {
+      if (response.outputTemplate &&
+          width != response.outputTemplate->resultOffsets.size()) {
+        return false;
+      }
+      width = 0;
       ++decodedShots;
     } else if (bit != '0' && bit != '1') {
       return false;
+    } else {
+      ++width;
     }
   }
   if (decodedShots != response.shotCount ||
@@ -264,7 +313,7 @@ bool decode(llvm::StringRef bytes, WorkerResponse& response) {
   uint64_t distinct = 0;
   if (!SPSArgList<uint64_t>::deserialize(buffer, distinct) ||
       distinct > bytes.size() / (2 * sizeof(uint64_t)) ||
-      (distinct != 0 && response.shotCount != 0)) {
+      (distinct != 0 && (response.shotCount != 0 || response.outputTemplate))) {
     return false;
   }
   for (uint64_t i = 0; i < distinct; ++i) {

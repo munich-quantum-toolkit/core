@@ -228,10 +228,9 @@ The header identifies the output schema. `START` and `END` delimit each shot;
 recorded measurement bits, not every intermediate measurement performed in the
 loop.
 
-Capture runs once per shot and retains the text in memory. Leave it disabled for
-ordinary sampling; it also prevents the terminal-sampling statevector from being
-retained. The {doc}`QIR guide <../qir/index>` covers both output schemas,
-resource lifetimes, and state-extraction restrictions.
+Leave capture disabled for ordinary sampling. The
+{doc}`QIR guide <../qir/index>` covers both output schemas, resource lifetimes,
+and state-extraction restrictions.
 
 Continue with {doc}`qdmi_execution` to explore device discovery, payload
 selection, repeated jobs, and the different kinds of results behind this API.

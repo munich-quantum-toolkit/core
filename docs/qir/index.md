@@ -244,13 +244,10 @@ The parameter and result slots are separate: **job parameter CUSTOM1** is the
 seed; **job result CUSTOM1** contains the captured text. The same capture API
 works for Base and Adaptive profiles, with text or bitcode input.
 
-Capture is off by default. Enabling it executes the program for each shot and
-retains the complete stream in memory, so start with a small shot count. The
-stream uses QIR record order; QDMI shots and counts place the highest-index bit
-first. Capture jobs still expose those normal results, but do not retain an
-uncollapsed statevector. OpenQASM jobs and zero-shot state-extraction jobs
-reject capture. See {doc}`DDSIM <../qdmi/ddsim_device>` for the C API parameter
-types.
+Capture is off by default. The stream uses QIR record order; QDMI shots and
+counts place the highest-index bit first. Capture jobs provide both results, and
+terminal sampling can also retain an uncollapsed statevector. See
+{doc}`DDSIM <../qdmi/ddsim_device>` for capture limits and the C API.
 
 ## Execution contracts
 
@@ -361,19 +358,24 @@ later jobs remain usable.
 
 ### Sampling and state extraction
 
-Sampling supports Base and Adaptive formats. With output capture disabled, for
-either profile with an acyclic, unconditional entry path, constant gate
-arguments, terminal Z measurements and scalar result records, DDSIM prepares the
-DD once and samples it for all shots. The runtime retains repeated or reordered
-result records in program order, including after SWAPs. The QDMI device reverses
-each shot for most-significant-bit first serialization before constructing its
-histogram. Programs with classical memory accesses, helper calls, conditional
-branches, resets, dynamic resources, Boolean output records, or generic
-controlled argument arrays use ordinary per-shot execution. These inputs remain
-supported by the runner; they are not eligible for this sampling optimization,
-including when all Boolean records are constant. A fixed seed reproduces a shot
-sequence for the same execution path; sequences need not match across different
-sampling algorithms or software versions.
+Sampling supports Base and Adaptive formats. For either profile with an acyclic,
+unconditional entry path, constant gate arguments, terminal Z measurements and
+scalar result records, DDSIM prepares the DD once and samples it for all shots.
+The runtime preserves repeated or reordered results, constant numeric records,
+and tuple or array headers. Classical memory accesses, helper calls, conditional
+branches, resets, dynamic resources, global destructors, Boolean output records,
+and generic controlled argument arrays exclude this terminal optimization.
+
+With capture disabled, `JitSession::sampleCounts` can group shots by measurement
+outcomes and replay deterministic prefixes for sibling paths. After LLVM O1,
+eligible programs use only local stack memory, defined constant globals, direct
+supported QIR calls, and deterministic scalar LLVM intrinsics. Remaining helper
+calls, heap-allocated classical arrays, lifecycle hooks, native effects, and
+pointer-address observations exclude grouping. Other supported programs execute
+once per shot.
+
+A fixed seed reproduces outcomes for the same execution path; sequences need not
+match across different sampling algorithms or software versions.
 
 When provided for static resources, `required_num_qubits` and
 `required_num_results` specify capacities, and out-of-range IDs are rejected.

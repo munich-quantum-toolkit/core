@@ -64,6 +64,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -446,10 +447,16 @@ JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
 JitSession::JitSession(const llvm::StringRef irBytes,
                        const llvm::StringRef bufferName,
                        const Execution execution,
-                       std::optional<uint64_t> randomSeed)
+                       std::optional<uint64_t> randomSeed,
+                       llvm::raw_ostream* output)
     : runtime_(std::make_unique<Runtime>(
           randomSeed ? *randomSeed : Runtime::generateRandomSeed())),
       execution_(execution) {
+  if (output != nullptr) {
+    runtime_->setOstream(*output);
+  } else {
+    runtime_->disableOutput();
+  }
   initialize(loadModuleFromMemory(irBytes, bufferName), execution);
 }
 
@@ -480,8 +487,49 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
 
 int64_t JitSession::sample(size_t shots,
                            llvm::function_ref<void(std::string_view)> emit,
-                           bool* stateAvailable, bool emitHeader) {
-  return sampleWithRuntime(*runtime_, shots, emit, emitHeader, stateAvailable);
+                           bool* stateAvailable, bool emitHeader,
+                           std::optional<SampledOutput>* terminalOutput) {
+  return sampleWithRuntimeImpl(
+      *runtime_, shots, [&](const std::string& shot) { emit(shot); }, emit,
+      emitHeader, stateAvailable, terminalOutput);
+}
+
+int64_t JitSession::sampleCounts(size_t shots,
+                                 std::map<std::string, size_t>& counts,
+                                 bool* stateAvailable) {
+  counts.clear();
+  auto& runtime = *runtime_;
+  auto* output = runtime.os;
+  runtime.disableOutput();
+  const auto restore = llvm::scope_exit([&] { runtime.os = output; });
+  if (!sampleBranches_ || shots == 0) {
+    return sample(
+        shots, [&](std::string_view shot) { ++counts[std::string(shot)]; },
+        stateAvailable, false);
+  }
+  if (stateAvailable != nullptr) {
+    *stateAvailable = false;
+  }
+  Runtime::SamplingBranches branches{.count = shots};
+  runtime.samplingBranches_ = &branches;
+  const auto restoreBranches =
+      llvm::scope_exit([&] { runtime.samplingBranches_ = nullptr; });
+  for (;;) {
+    if (!initializesRuntime_) {
+      runtime.reset();
+    }
+    if (const auto code = runWithRuntime(runtime); code != 0) {
+      return code;
+    }
+    counts[runtime.getMeasurements()] += branches.count;
+    if (branches.pending.empty()) {
+      return 0;
+    }
+    auto next = std::move(branches.pending.back());
+    branches.pending.pop_back();
+    branches.path = std::move(next.first);
+    branches.count = next.second;
+  }
 }
 
 int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
@@ -502,7 +550,7 @@ int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
       runtime, shots,
       [&](std::string&& shot) { results.push_back(std::move(shot)); },
       [&](std::string_view shot) { results.emplace_back(shot); }, emitHeader,
-      stateAvailable);
+      stateAvailable, nullptr);
 }
 
 int64_t
@@ -510,15 +558,15 @@ JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
                               llvm::function_ref<void(std::string_view)> emit,
                               bool emitHeader, bool* stateAvailable) {
   return sampleWithRuntimeImpl(
-      runtime, shots, [&](const std::string& shot) { emit(shot); },
-      [&](std::string_view shot) { emit(shot); }, emitHeader, stateAvailable);
+      runtime, shots, [&](const std::string& shot) { emit(shot); }, emit,
+      emitHeader, stateAvailable, nullptr);
 }
 
 int64_t JitSession::sampleWithRuntimeImpl(
     Runtime& runtime, size_t shots,
     llvm::function_ref<void(std::string&&)> emitOwned,
     llvm::function_ref<void(std::string_view)> emitBorrowed, bool emitHeader,
-    bool* stateAvailable) {
+    bool* stateAvailable, std::optional<SampledOutput>* terminalOutput) {
   if (&runtime != runtime_.get() && !shareCompiledCode_) {
     throw std::logic_error("QIR entry point cannot be shared across workers");
   }
@@ -527,6 +575,9 @@ int64_t JitSession::sampleWithRuntimeImpl(
   }
   if (execution_ != Execution::Sampling) {
     throw std::logic_error("Cannot sample a QIR state-extraction session");
+  }
+  if (terminalOutput != nullptr) {
+    terminalOutput->reset();
   }
   if (emitHeader) {
     runtime.outputProgramHeader();
@@ -540,15 +591,47 @@ int64_t JitSession::sampleWithRuntimeImpl(
     runtime.outputShotEnd(code);
     return code;
   };
-  if (samplingOutputs_ && !runtime.hasOutput() && shots != 0) {
+  if (samplingOutputs_ && shots != 0) {
+    SampledOutput record;
+    llvm::raw_string_ostream captured(record.text);
+    auto* output = runtime.os;
     runtime.deferMeasurements_ = true;
-    const auto restore =
-        llvm::scope_exit([&] { runtime.deferMeasurements_ = false; });
+    const auto restore = llvm::scope_exit([&] {
+      runtime.deferMeasurements_ = false;
+      runtime.os = output;
+      runtime.outputResultPositions_ = nullptr;
+    });
+    if (output != nullptr) {
+      runtime.setOstream(captured);
+      runtime.outputResultPositions_ = &record.resultOffsets;
+    }
     if (const auto code = execute(); code != 0) {
       return code;
     }
-    runtime.sampleMeasurements(*samplingOutputs_, shots, emitOwned,
-                               emitBorrowed);
+    if (output != nullptr && terminalOutput == nullptr) {
+      const auto writeShot = [&](std::string_view shot) {
+        for (size_t i = 0; i < record.resultOffsets.size(); ++i) {
+          record.text[record.resultOffsets[i]] = shot[i];
+        }
+        *output << record.text;
+      };
+      runtime.sampleMeasurements(
+          *samplingOutputs_, shots,
+          [&](std::string&& shot) {
+            writeShot(shot);
+            emitOwned(std::move(shot));
+          },
+          [&](std::string_view shot) {
+            writeShot(shot);
+            emitBorrowed(shot);
+          });
+    } else {
+      runtime.sampleMeasurements(*samplingOutputs_, shots, emitOwned,
+                                 emitBorrowed);
+      if (output != nullptr) {
+        *terminalOutput = std::move(record);
+      }
+    }
     if (stateAvailable != nullptr) {
       *stateAvailable = true;
     }
@@ -566,7 +649,7 @@ int64_t JitSession::sampleWithRuntimeImpl(
 auto JitSession::runtime() -> Runtime& { return *runtime_; }
 
 bool JitSession::canSampleTerminal() const {
-  return samplingOutputs_.has_value() && !runtime_->hasOutput();
+  return samplingOutputs_.has_value();
 }
 
 bool JitSession::canShareCompiledCode() const { return shareCompiledCode_; }
@@ -743,7 +826,10 @@ void JitSession::initialize(
         first != nullptr && first->getCalledFunction() != nullptr &&
         first->getCalledFunction()->isDeclaration() &&
         first->getCalledFunction()->getName() == "__quantum__rt__initialize";
-    if (execution == Execution::Sampling) {
+    // Destructors may inspect the last shot's collapsed state and Result
+    // values.
+    if (execution == Execution::Sampling &&
+        module.getNamedGlobal("llvm.global_dtors") == nullptr) {
       samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
     }
   });
@@ -876,6 +962,9 @@ void JitSession::initialize(
             llvm::OptimizationLevel::O1));
       }
       pipeline.run(module, moduleAnalyses);
+      sampleBranches_ =
+          execution == Execution::Sampling &&
+          qir::canSampleBranches(*module.getFunction(entryPointName));
     });
   }
 

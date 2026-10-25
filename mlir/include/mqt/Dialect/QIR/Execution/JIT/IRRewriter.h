@@ -56,4 +56,13 @@ bool prepareForStateExtraction(llvm::Function& entryPoint);
 std::optional<std::vector<uintptr_t>>
 getStaticSamplingOutputs(const llvm::Function& entryPoint);
 
+/// Whether repeated executions depend only on quantum measurement outcomes.
+///
+/// Inspect the optimized entry point. Branch sampling supports classical loops,
+/// stack-local memory, constant globals, and QIR qubit/result resources. Native
+/// heap objects, remaining helper calls, pointer-address observations, external
+/// effects, and module constructors/destructors require ordinary execution.
+/// Runtime declarations must already have passed the JIT's ABI validation.
+bool canSampleBranches(const llvm::Function& entryPoint);
+
 } // namespace qir

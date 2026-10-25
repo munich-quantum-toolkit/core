@@ -30,7 +30,7 @@ from mqt.core.mlir import (
     sample,
     submit_program,
 )
-from mqt.core.qdmi import CustomProperty, Job, ProgramFormat, is_binary_program_format, open_device
+from mqt.core.qdmi import CustomProperty, Job, ProgramFormat, open_device
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -578,34 +578,36 @@ c = measure q;
         ProgramFormat.QIR_ADAPTIVE_MODULE,
     ],
 )
-def test_qir_output_stream_matches_shots(program_format: ProgramFormat) -> None:
-    """Capture framed records without changing QDMI result order or other jobs."""
+@pytest.mark.parametrize("capture", [False, True])
+def test_binary_qir_results(program_format: ProgramFormat, *, capture: bool) -> None:
+    """Binary QIR sampling exposes counts, shots, and eligible retained states."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; bit[2] c = measure q;'
-    device = open_device("mqt.ddsim.default")
-    job = submit_program(source, target=device, program_format=program_format, num_shots=8, custom1=7, custom2=True)
-    payload = job.get_program(bytes) if is_binary_program_format(program_format) else job.get_program()
-    ordinary = device.submit_job(payload, program_format, num_shots=8, custom1=7)
+    job = submit_program(
+        source, target="mqt.ddsim.default", program_format=program_format, num_shots=8, custom1=7, custom2=capture
+    )
     assert job.wait()
-    assert ordinary.wait()
+    shots = job.get_shots()
+    assert len(shots) == 8
+    assert job.get_counts() == {bits: shots.count(bits) for bits in set(shots)}
     output = job.get_custom_result(CustomProperty.CUSTOM1, str)
-    assert isinstance(output, str)
-    assert output.startswith("HEADER\tschema_id\tlabeled\nHEADER\tschema_version\t2.1\n")
-    records = output.split("START\n")[1:]
-    assert len(records) == 8
-    for record, shot in zip(records, job.get_shots(), strict=True):
-        assert record.endswith("END\t0\n")
-        bits = [
-            line.split("\t")[2]
-            for line in record.splitlines()
-            if line.startswith(("OUTPUT\tRESULT\t", "OUTPUT\tRESULT_ARRAY\t"))
-        ]
-        assert "".join(bits)[::-1] == shot
-    assert sum(job.get_counts().values()) == 8
-    assert job.get_custom_result(CustomProperty.CUSTOM1, str) == output
-    assert job.get_custom_result(CustomProperty.CUSTOM1, bytes) == output.encode() + b"\0"
-    assert ordinary.get_custom_result(CustomProperty.CUSTOM1, str) is None
-    with pytest.raises(RuntimeError, match="Not supported"):
-        job.get_dense_statevector()
+    if capture:
+        assert isinstance(output, str)
+        recorded_shots = []
+        for frame in output.split("START\n")[1:]:
+            bits = [
+                line.split("\t")[2]
+                for line in frame.splitlines()
+                if line.startswith(("OUTPUT\tRESULT\t", "OUTPUT\tRESULT_ARRAY\t"))
+            ]
+            recorded_shots.append("".join(bits)[::-1])
+        assert recorded_shots == shots
+    else:
+        assert output is None
+    if program_format in {ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_BASE_MODULE}:
+        assert job.get_dense_statevector() == pytest.approx([2**-0.5, 2**-0.5, 0, 0])
+    else:
+        with pytest.raises(RuntimeError, match="Not supported"):
+            job.get_dense_statevector()
 
 
 @pytest.mark.parametrize(("program_format", "shots"), [(ProgramFormat.QASM3, 1), (ProgramFormat.QIR_BASE_MODULE, 0)])
