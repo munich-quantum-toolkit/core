@@ -23,6 +23,7 @@
 #include "mlir/IR/BuiltinOps.h"
 
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -276,7 +277,7 @@ TEST_F(JitSessionTest, StateExtractionSupportsAdaptiveControlAndLifetimes) {
     EXPECT_TRUE(sink.str().empty());
     auto state = session.runtime().takeState();
     EXPECT_EQ(state.numQubits, 4);
-    const auto values = dd::getVector(state.edge);
+    const auto values = llvm::cantFail(dd::getVector(state.edge));
     ASSERT_EQ(values.size(), 16);
     for (size_t i = 0; i < values.size(); ++i) {
       const auto expected = i == 4 || i == 7 ? std::polar(dd::SQRT2_2, 0.3)
@@ -810,7 +811,7 @@ c[2] = measure q[0];
   EXPECT_EQ(counts.at("100") + counts.at("111"), 32768);
   EXPECT_NEAR(static_cast<double>(counts.at("100")), 16384., 550.);
   auto state = session.runtime().takeState();
-  const auto vector = dd::getVector(state.edge);
+  const auto vector = llvm::cantFail(dd::getVector(state.edge));
   ASSERT_EQ(vector.size(), 4);
   EXPECT_NEAR(std::abs(vector[2] - std::polar(std::sqrt(0.5), -0.3)), 0.,
               1e-12);
@@ -900,7 +901,7 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_
     EXPECT_FALSE(available);
   }
   EXPECT_EQ(state.numQubits, 2);
-  const auto vector = dd::getVector(state.edge);
+  const auto vector = llvm::cantFail(dd::getVector(state.edge));
   ASSERT_EQ(vector.size(), 4);
   EXPECT_NEAR(std::abs(vector[2] - std::polar(1., 0.3)), 0., 1e-12);
   EXPECT_NEAR(std::abs(vector[0]) + std::abs(vector[1]) + std::abs(vector[3]),
@@ -931,7 +932,7 @@ TEST(QIRBatchSampling, TextOutputPreservesTerminalSamplesAndState) {
   }
   EXPECT_EQ(shot, results.size());
   const auto state = session.runtime().takeState();
-  const auto vector = dd::getVector(state.edge);
+  const auto vector = llvm::cantFail(dd::getVector(state.edge));
   ASSERT_EQ(vector.size(), 4);
   EXPECT_NEAR(std::abs(vector[0]), std::sqrt(0.5), 1e-12);
   EXPECT_NEAR(std::abs(vector[3]), std::sqrt(0.5), 1e-12);
@@ -1112,7 +1113,7 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
     auto state = session.runtime().takeState();
     EXPECT_EQ(state.numQubits, 3);
     EXPECT_EQ(state.dd->qubits(), 3);
-    const auto values = dd::getVector(state.edge);
+    const auto values = llvm::cantFail(dd::getVector(state.edge));
     ASSERT_EQ(values.size(), 8);
     EXPECT_EQ(values[1], 1.);
     state.dd->decRef(state.edge);

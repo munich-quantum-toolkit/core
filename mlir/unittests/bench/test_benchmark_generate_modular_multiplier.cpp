@@ -51,11 +51,12 @@ static void expectCoherentModularMultiplier(const size_t bits,
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
 
-  dd::Package package(0);
+  auto packageOwner = llvm::cantFail(dd::Package::create(0));
+  auto& package = *packageOwner;
   auto state = qco::simulateStatevector(
       mlir::mqt::getEntryPoint(program->module()), package);
   ASSERT_TRUE(succeeded(state));
-  const auto actual = dd::getVector(*state);
+  const auto actual = llvm::cantFail(dd::getVector(*state));
   package.decRef(*state);
 
   dd::CVec expected(size_t{1} << ((2U * bits) + 3U));

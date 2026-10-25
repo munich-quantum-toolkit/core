@@ -30,10 +30,12 @@
 #include "dd/UniqueTable.hpp"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -41,12 +43,13 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <memory>
 #include <random>
 #include <ranges>
 #include <span>
 #include <stack>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -87,8 +90,8 @@ public:
   /// @param nq The maximum number of qubits to allocate memory for. This can
   /// always be extended later using @ref resize.
   /// @param config The configuration of the package
-  explicit Package(std::size_t nq = DEFAULT_QUBITS,
-                   const DDPackageConfig& config = DDPackageConfig{});
+  [[nodiscard]] static llvm::Expected<std::unique_ptr<Package>>
+  create(size_t nq = DEFAULT_QUBITS, const DDPackageConfig& config = {});
   ~Package() = default;
   Package(const Package& package) = delete;
 
@@ -99,9 +102,9 @@ public:
   /// Existing decision diagrams remain valid. Shrinking is not supported.
   ///
   /// @param nq The requested number of qubits.
-  /// @throws std::invalid_argument If nq is less than the current capacity or
-  /// exceeds @ref MAX_POSSIBLE_QUBITS.
-  void resize(std::size_t nq);
+  /// Returns an error if nq is less than the current capacity or exceeds
+  /// @ref MAX_POSSIBLE_QUBITS.
+  [[nodiscard]] llvm::Error resize(size_t nq);
 
   /// Reset package state and invalidate all DDs created by this package.
   void reset();
@@ -110,6 +113,7 @@ public:
   [[nodiscard]] auto qubits() const { return nqubits; }
 
 private:
+  Package(size_t nq, const DDPackageConfig& config);
   std::size_t nqubits;
   DDPackageConfig config_;
 
@@ -198,8 +202,7 @@ public:
   ///
   /// @tparam Node The node type of the edge.
   /// @param e The edge to decrease the reference count of.
-  /// @throws std::invalid_argument If the edge is not part of the tracking
-  /// hashset.
+  /// @pre Every tracked edge has a reference in this package.
   template <class Node> void decRef(const Edge<Node>& e) {
     if (Edge<Node>::trackingRequired(e)) {
       roots.removeFromRoots(e);
@@ -229,10 +232,8 @@ private:
     /// Remove from respective root set.
     template <class Node> void removeFromRoots(const Edge<Node>& e) {
       auto& set = getRoots<Node>();
-      auto it = set.find(e);
-      if (it == set.end()) {
-        throw std::invalid_argument("Edge is not part of the root set.");
-      }
+      const auto it = set.find(e);
+      assert(it != set.end() && "Edge is not part of the root set.");
       if (--it->second == 0U) {
         set.erase(it);
       }
@@ -338,7 +339,8 @@ public:
   /// @param mat The matrix representation of the gate
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  mEdge makeGateDD(const GateMatrix& mat, Qubit target);
+  [[nodiscard]] llvm::Expected<mEdge> makeGateDD(const GateMatrix& mat,
+                                                 Qubit target);
 
   /// Construct the DD for a single-qubit controlled gate
   ///
@@ -346,7 +348,8 @@ public:
   /// @param control The control qubit
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  mEdge makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
 
   /// Construct the DD for a multi-controlled single-qubit gate
   ///
@@ -354,12 +357,13 @@ public:
   /// @param controls The control qubits
   /// @param target The target qubit
   /// @return A decision diagram for the gate
-  mEdge makeGateDD(const GateMatrix& mat, const Controls& controls,
-                   Qubit target);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeGateDD(const GateMatrix& mat, const Controls& controls, Qubit target);
 
   /// Construct a single-qubit gate DD from a row-major matrix view.
-  mEdge makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
-                   const Controls& controls, Qubit target);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
+             const Controls& controls, Qubit target);
 
   /// Creates the DD for a two-qubit gate
   ///
@@ -367,10 +371,11 @@ public:
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
-                           Qubit target1);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
+                     Qubit target1);
 
   /// Creates the DD for a two-qubit gate
   ///
@@ -379,11 +384,11 @@ public:
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const Control& control, Qubit target0,
-                           Qubit target1);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, const Control& control,
+                     Qubit target0, Qubit target1);
 
   /// Creates the DD for a two-qubit gate
   ///
@@ -392,17 +397,17 @@ public:
   /// @param target0 First target qubit
   /// @param target1 Second target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const Controls& controls, Qubit target0,
-                           Qubit target1);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, const Controls& controls,
+                     Qubit target0, Qubit target1);
 
   /// Construct a two-qubit gate DD from a row-major matrix view.
-  mEdge makeTwoQubitGateDD(
-      std::span<const std::complex<fp>, static_cast<std::size_t>(NEDGE) * NEDGE>
-          mat,
-      const Controls& controls, Qubit target0, Qubit target1);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeTwoQubitGateDD(std::span<const std::complex<fp>,
+                               static_cast<std::size_t>(NEDGE) * NEDGE> mat,
+                     const Controls& controls, Qubit target0, Qubit target1);
 
   /// Creates the DD for a three-qubit gate
   ///
@@ -411,10 +416,11 @@ public:
   /// @param target1 Second target qubit
   /// @param target2 Third target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
-                             Qubit target1, Qubit target2);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
+                       Qubit target1, Qubit target2);
 
   /// Creates the DD for a three-qubit gate
   ///
@@ -424,11 +430,11 @@ public:
   /// @param target1 Second target qubit
   /// @param target2 Third target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const Control& control, Qubit target0,
-                             Qubit target1, Qubit target2);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, const Control& control,
+                       Qubit target0, Qubit target1, Qubit target2);
 
   /// Creates the DD for a three-qubit gate
   ///
@@ -438,48 +444,52 @@ public:
   /// @param target1 Second target qubit
   /// @param target2 Third target qubit
   /// @return DD representing the gate
-  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// Returns an error if the number of qubits is larger than the
   /// package configuration
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const Controls& controls, Qubit target0,
-                             Qubit target1, Qubit target2);
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                       const Controls& controls, Qubit target0, Qubit target1,
+                       Qubit target2);
 
   /// Construct a three-qubit gate DD from a row-major matrix view.
-  mEdge makeThreeQubitGateDD(
+  [[nodiscard]] llvm::Expected<mEdge> makeThreeQubitGateDD(
       std::span<const std::complex<fp>,
                 static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
-                    THREE_QUBIT_GATE_DIM>
-          mat,
+                    THREE_QUBIT_GATE_DIM> mat,
       const Controls& controls, Qubit target0, Qubit target1, Qubit target2);
 
   /// Converts a given matrix to a decision diagram
   ///
   /// @param matrix A complex matrix to convert to a DD.
   /// @return A decision diagram representing the matrix.
-  /// @throws std::invalid_argument If the given matrix is not square or its
+  /// Returns an error if the given matrix is not square or its
   /// length is not a power of two.
-  /// @throws std::runtime_error If the matrix exceeds the package capacity.
-  mEdge makeDDFromMatrix(const CMat& matrix);
+  /// Returns an error if the matrix exceeds the package capacity.
+  [[nodiscard]] llvm::Expected<mEdge> makeDDFromMatrix(const CMat& matrix);
 
   /// Construct a matrix DD without copying its storage.
   ///
   /// @param dimension Number of rows and columns; zero yields the identity.
   /// @param entry Callable returning the complex entry at (row, column).
-  /// @pre entry is valid for all indices smaller than dimension.
-  /// @throws std::invalid_argument If dimension is not a power of two.
-  /// @throws std::runtime_error If the matrix exceeds the package capacity.
+  /// @pre entry is valid for all indices smaller than dimension and does not
+  /// throw. Returns an error if dimension is not a power of two. Returns an
+  /// error if the matrix exceeds the package capacity.
   template <class MatrixEntry>
-  mEdge makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
     if (dimension == 0) {
       return mEdge::one();
     }
     if (!std::has_single_bit(dimension)) {
-      throw std::invalid_argument(
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
           "Matrix must have a length of a power of two.");
     }
     const auto levels = std::bit_width(dimension) - 1;
     if (levels > qubits()) {
-      throw std::runtime_error("Matrix exceeds the package qubit capacity.");
+      return llvm::createStringError(
+          std::make_error_code(std::errc::state_not_recoverable),
+          "Matrix exceeds the package qubit capacity.");
     }
     if (levels == 0) {
       return cn.lookup(mCachedEdge::terminal(entry(0, 0)));
@@ -496,14 +506,14 @@ public:
   /// Missing DD levels represent identity wires. An empty target list takes a
   /// single scalar entry. Controls are supported for one to three targets.
   ///
-  /// @throws std::invalid_argument If the matrix size does not match the target
+  /// Returns an error if the matrix size does not match the target
   /// count or controls accompany zero or more than three targets.
-  /// @throws std::runtime_error If qubits exceed package capacity, targets are
+  /// Returns an error if qubits exceed package capacity, targets are
   /// duplicated, controls have conflicting polarities, or controls overlap
   /// targets.
-  mEdge makeGateDD(std::span<const std::complex<fp>> matrix,
-                   std::span<const Qubit> targets,
-                   const Controls& controls = {});
+  [[nodiscard]] llvm::Expected<mEdge>
+  makeGateDD(std::span<const std::complex<fp>> matrix,
+             std::span<const Qubit> targets, const Controls& controls = {});
 
 private:
   /// Read matrix bits in DD level order, which may differ from operand order.
@@ -656,10 +666,12 @@ public:
   /// @param mt A random number generator.
   /// @param epsilon The tolerance for numerical instabilities.
   /// @return A string representing the measurement result.
-  /// @throws std::runtime_error If numerical instabilities are detected or if
+  /// Returns an error if numerical instabilities are detected or if
   /// probabilities do not sum to 1.
-  std::string measureAll(vEdge& rootEdge, bool collapse, std::mt19937_64& mt,
-                         fp epsilon = 0.001);
+  [[nodiscard]] llvm::Expected<std::string> measureAll(vEdge& rootEdge,
+                                                       bool collapse,
+                                                       std::mt19937_64& mt,
+                                                       fp epsilon = 0.001);
 
   /// Sample a histogram without changing the state.
   ///
@@ -669,9 +681,9 @@ public:
   /// cheaper to sample individually. Seeded draws are reproducible within this
   /// strategy, not interchangeable with @ref measureAll.
   ///
-  /// @throws std::invalid_argument If an output qubit is outside the state.
-  /// @throws std::runtime_error If numerical instabilities are detected.
-  [[nodiscard]] static std::map<std::string, size_t>
+  /// Returns an error if an output qubit is outside the state.
+  /// Returns an error if numerical instabilities are detected.
+  [[nodiscard]] static llvm::Expected<std::map<std::string, size_t>>
   sampleCounts(const vEdge& state, std::span<const SamplingOutput> outputs,
                size_t shots, std::mt19937_64& mt, fp epsilon = 0.001);
 
@@ -696,8 +708,8 @@ public:
   /// @return A pair of floating-point values representing the probabilities of
   /// measuring 0 and 1, respectively.
   ///
-  /// @throws std::invalid_argument If the qubit is outside the state.
-  static std::pair<fp, fp>
+  /// @pre The measured qubit is present in the state.
+  [[nodiscard]] static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
 
   /// Measures the qubit with the given index in the given state vector decision
@@ -711,11 +723,12 @@ public:
   /// @param epsilon the numerical precision used for checking the normalization
   /// of the state vector decision diagram
   /// @return the measurement result ('0' or '1')
-  /// @throws std::runtime_error if a numerical instability is detected during
-  /// the measurement.
-  /// @throws std::invalid_argument If the qubit is outside the state.
-  char measureOneCollapsing(vEdge& rootEdge, Qubit index, std::mt19937_64& mt,
-                            fp epsilon = 0.001);
+  /// Returns an error if the qubit is outside the state or a numerical
+  /// instability is detected during measurement.
+  [[nodiscard]] llvm::Expected<char> measureOneCollapsing(vEdge& rootEdge,
+                                                          Qubit index,
+                                                          std::mt19937_64& mt,
+                                                          fp epsilon = 0.001);
 
   /// Performs a specific measurement on the given state vector decision
   /// diagram.
@@ -728,7 +741,9 @@ public:
   /// normalization)
   /// @param measureZero whether or not to measure '0' (otherwise '1' is
   /// measured)
-  /// @throws std::invalid_argument If the qubit is outside the state.
+  /// @pre The measured qubit is present in the state.
+  /// @pre The state belongs to this package and holds a reference.
+  /// The supplied probability is positive and matches the chosen outcome.
   void performCollapsingMeasurement(vEdge& rootEdge, Qubit index,
                                     fp probability, bool measureZero);
 
@@ -976,6 +991,7 @@ public:
   /// garbage collection is triggered.
   ///
   /// @param operation Matrix operation to apply
+  /// @pre The input owns a reference in this package.
   /// @param e Vector to apply the operation to
   /// @return The appropriately reference-counted result.
   VectorDD applyOperation(const MatrixDD& operation, const VectorDD& e);
@@ -987,6 +1003,7 @@ public:
   /// garbage collection is triggered.
   ///
   /// @param operation Matrix operation to apply
+  /// @pre The input owns a reference in this package.
   /// @param e Matrix to apply the operation to
   /// @param applyFromLeft Flag to indicate if the operation should be applied
   /// from the left (default) or right.
@@ -1151,11 +1168,9 @@ public:
   /// @param probs A map of probabilities for each measurement outcome.
   /// @param permutation Optional permutation matching the measurement order.
   /// @return The fidelity of the measurement outcomes.
-  /// @throws std::out_of_range If outcomes do not fit size_t or a
-  /// permutation index is out of range.
-  static fp fidelityOfMeasurementOutcomes(const vEdge& e,
-                                          const SparsePVec& probs,
-                                          const Permutation& permutation = {});
+  [[nodiscard]] static llvm::Expected<fp>
+  fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
+                                const Permutation& permutation = {});
 
 private:
   /// Recursively calculates the inner product of two vector decision
@@ -1185,11 +1200,12 @@ public:
   /// @param x An observable whose expectation value is real.
   /// @param y A non-terminal state vector DD.
   /// @return The real part of the expectation value.
-  /// @throws std::invalid_argument If the observable acts on a qubit outside
+  /// Returns an error if the observable acts on a qubit outside
   /// the state.
   /// @pre The observable is not the zero terminal. Debug assertions also
   /// require a non-terminal state and an approximately zero imaginary part.
-  fp expectationValue(const mEdge& x, const vEdge& y);
+  [[nodiscard]] llvm::Expected<fp> expectationValue(const mEdge& x,
+                                                    const vEdge& y);
 
   ///
   /// Kronecker/tensor product

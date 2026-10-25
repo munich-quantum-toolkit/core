@@ -446,6 +446,17 @@ W state
   all computational-basis states with exactly one qubit in state one.
 ```
 
+## Error handling
+
+```{glossary}
+:sorted:
+
+Expected
+  **Preferred term:** `llvm::Expected<T>`. **Accepted aliases:** none. A return
+  type owning either a successful value or an error. See the
+  [native API guide](cpp_api.md#handle-native-errors).
+```
+
 ## Index
 
 Every glossary entry appears in the

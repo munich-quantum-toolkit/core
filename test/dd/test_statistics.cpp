@@ -16,6 +16,8 @@
 #include "dd/statistics/TableStatistics.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/ScopeExit.h"
@@ -43,8 +45,9 @@ TEST(DDStatistics, SerializesIndependentlyOfNumericLocale) {
   table.hits = 1;
   table.collisions = 1;
   table.numEntries = 2;
-  dd::Package package(2);
-  package.incRef(dd::makeZeroState(2, package));
+  auto packageOwner = ::mqt::test::value(dd::Package::create(2));
+  auto& package = *packageOwner;
+  package.incRef(::mqt::test::value(dd::makeZeroState(2, package)));
   const auto serialize = [&] {
     std::string streamedMemory;
     llvm::raw_string_ostream(streamedMemory) << memory;

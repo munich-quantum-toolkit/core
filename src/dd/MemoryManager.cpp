@@ -12,13 +12,13 @@
 
 #include "dd/LinkedListBase.hpp"
 
+#include "llvm/Support/ErrorHandling.h"
+
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <limits>
 #include <memory>
-#include <new>
-#include <stdexcept>
 #include <utility>
 
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -34,11 +34,10 @@ namespace dd {
 MemoryManager::MemoryManager(size_t entrySize,
                              const std::size_t initialAllocationSize)
     : entrySize_(entrySize), chunks(1), stats(entrySize) {
-  if (initialAllocationSize == 0) {
-    throw std::invalid_argument("Initial DD allocation size must be positive.");
-  }
+  assert(initialAllocationSize > 0 &&
+         "Initial DD allocation size must be positive");
   if (initialAllocationSize > std::numeric_limits<size_t>::max() / entrySize) {
-    throw std::bad_alloc();
+    llvm::report_bad_alloc_error("DD allocation size overflow");
   }
   const auto bytes = initialAllocationSize * entrySize;
   chunks[0] = {std::make_unique_for_overwrite<Storage>(bytes), bytes};
@@ -110,7 +109,7 @@ void MemoryManager::allocateNewChunk() {
 
   const auto previousBytes = chunks.back().second;
   if (previousBytes > std::numeric_limits<size_t>::max() / GROWTH_FACTOR) {
-    throw std::bad_alloc();
+    llvm::report_bad_alloc_error("DD allocation size overflow");
   }
   const auto bytes = previousBytes * GROWTH_FACTOR;
   const auto numNewEntries = bytes / entrySize_;

@@ -26,6 +26,7 @@
 #include "WorkerProtocol.hpp"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 
@@ -853,8 +854,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             result->qirOutput_ = std::move(response.output);
             result->outputTemplate_ = std::move(response.outputTemplate);
             if (response.state) {
-              result->dd_ = std::make_unique<dd::Package>(
-                  response.qubits, RESULT_PACKAGE_CONFIG);
+              auto package =
+                  dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
+              if (!package) {
+                throw std::runtime_error(llvm::toString(package.takeError()));
+              }
+              result->dd_ = std::move(*package);
               result->stateVecDD_ =
                   result->dd_->deserialize<dd::vNode>(*response.state, true);
               const auto root = result->stateVecDD_;
@@ -1067,7 +1072,7 @@ auto qdmi::dd::ProgramResult::getDenseResults(const QDMI_Job_Result result,
     }
     const std::span output(static_cast<double*>(data), dimension * components);
     std::ranges::fill(output, 0.);
-    ::dd::traverseVector(
+    llvm::cantFail(::dd::traverseVector(
         stateVecDD_,
         [&output, probabilities](const size_t index,
                                  const std::complex<::dd::fp>& amplitude) {
@@ -1077,7 +1082,7 @@ auto qdmi::dd::ProgramResult::getDenseResults(const QDMI_Job_Result result,
             output[2 * index] = amplitude.real();
             output[(2 * index) + 1] = amplitude.imag();
           }
-        });
+        }));
   }
   if (sizeRet != nullptr) {
     *sizeRet = reqSize;
@@ -1135,7 +1140,7 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
     }
     if (keys) {
       auto* dataPtr = static_cast<char*>(data);
-      ::dd::traverseVector(
+      llvm::cantFail(::dd::traverseVector(
           stateVecDD_, [&dataPtr, numQubits](const size_t index,
                                              const std::complex<::dd::fp>&) {
             for (size_t j = numQubits; j > 0; --j) {
@@ -1144,29 +1149,29 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
             }
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = ',';
-          });
+          }));
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       *(dataPtr - 1) = '\0'; // Replace last comma with null terminator
     } else if (complex) {
       // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
-      ::dd::traverseVector(
+      llvm::cantFail(::dd::traverseVector(
           stateVecDD_,
           [&dataPtr](const size_t, const std::complex<::dd::fp>& amplitude) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = amplitude.real();
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = amplitude.imag();
-          });
+          }));
     } else {
       // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
-      ::dd::traverseVector(
+      llvm::cantFail(::dd::traverseVector(
           stateVecDD_,
           [&dataPtr](const size_t, const std::complex<::dd::fp>& amplitude) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = std::norm(amplitude);
-          });
+          }));
     }
   }
   if (sizeRet != nullptr) {

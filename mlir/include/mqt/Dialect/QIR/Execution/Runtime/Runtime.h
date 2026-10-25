@@ -20,6 +20,7 @@
 
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -86,7 +87,7 @@ public:
     size_t numQubits;
 
     QState()
-        : dd(std::make_unique<dd::Package>(0)), edge(dd::vEdge::one()),
+        : dd(llvm::cantFail(dd::Package::create(0))), edge(dd::vEdge::one()),
           numQubits(0) {}
 
     /// Reset to a fresh empty state.

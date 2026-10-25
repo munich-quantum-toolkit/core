@@ -49,6 +49,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -153,7 +154,8 @@ referenceGate(dd::Targets targets,
 template <typename GateOp>
 [[nodiscard]] static dd::MatrixDD
 referenceGateDD(dd::Package& package, llvm::ArrayRef<dd::Qubit> targets) {
-  return makeGateDD(package, GateOp::getUnitaryMatrix(), targets);
+  return llvm::cantFail(
+      makeGateDD(package, GateOp::getUnitaryMatrix(), targets));
 }
 
 namespace {
@@ -190,13 +192,13 @@ protected:
   static void
   expectEqualToReference(func::FuncOp func, const size_t numQubits,
                          const std::initializer_list<ReferenceGate> gates) {
-    auto dd = std::make_unique<dd::Package>(numQubits);
+    auto dd = llvm::cantFail(dd::Package::create(numQubits));
 
     auto referenceFn = dd::MatrixDD::one();
-    auto referenceSim = dd::makeZeroState(numQubits, *dd);
+    auto referenceSim = llvm::cantFail(dd::makeZeroState(numQubits, *dd));
     for (const auto& gate : gates) {
-      const auto operation =
-          makeGateDD(*dd, gate.matrix, gate.targets, gate.controls);
+      const auto operation = llvm::cantFail(
+          makeGateDD(*dd, gate.matrix, gate.targets, gate.controls));
       referenceFn = dd->applyOperation(operation, referenceFn);
       referenceSim = dd->applyOperation(operation, referenceSim);
     }
@@ -208,10 +210,11 @@ protected:
     dd->decRef(referenceFn);
 
     std::mt19937_64 rng(0);
-    const auto fromQcoSim =
-        simulate(func, dd::makeZeroState(numQubits, *dd), *dd, rng);
+    const auto fromQcoSim = simulate(
+        func, llvm::cantFail(dd::makeZeroState(numQubits, *dd)), *dd, rng);
     ASSERT_TRUE(succeeded(fromQcoSim));
-    EXPECT_EQ(dd::getVector(*fromQcoSim), dd::getVector(referenceSim));
+    EXPECT_EQ(llvm::cantFail(dd::getVector(*fromQcoSim)),
+              llvm::cantFail(dd::getVector(referenceSim)));
     dd->decRef(*fromQcoSim);
     dd->decRef(referenceSim);
   }
@@ -219,27 +222,29 @@ protected:
   void expectMlirFails(size_t numQubits, StringRef mlirCode) const {
     auto mod = parseSourceString<ModuleOp>(mlirCode, context.get());
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(numQubits);
+    auto dd = llvm::cantFail(dd::Package::create(numQubits));
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 
   void expectSimulatesFromZero(func::FuncOp func, bool expectedOne) {
-    auto dd = std::make_unique<dd::Package>(1);
-    auto expected = dd::makeZeroState(1, *dd);
+    auto dd = llvm::cantFail(dd::Package::create(1));
+    auto expected = llvm::cantFail(dd::makeZeroState(1, *dd));
     if (expectedOne) {
       expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}), expected);
     }
-    const auto out = simulate(func, dd::makeZeroState(1, *dd), *dd, rng);
+    const auto out =
+        simulate(func, llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
     ASSERT_TRUE(succeeded(out));
-    EXPECT_EQ(dd::getVector(*out), dd::getVector(expected));
+    EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+              llvm::cantFail(dd::getVector(expected)));
     dd->decRef(*out);
     dd->decRef(expected);
   }
 
   void expectSimulationFails(func::FuncOp func, size_t numQubits) {
-    auto dd = std::make_unique<dd::Package>(numQubits);
-    EXPECT_TRUE(
-        failed(simulate(func, dd::makeZeroState(numQubits, *dd), *dd, rng)));
+    auto dd = llvm::cantFail(dd::Package::create(numQubits));
+    EXPECT_TRUE(failed(simulate(
+        func, llvm::cantFail(dd::makeZeroState(numQubits, *dd)), *dd, rng)));
     EXPECT_TRUE(failed(sample(func, 1, 1)));
   }
 
@@ -255,10 +260,12 @@ TEST(DDAdapterTest, MatchesRawSingleQubitConstructor) {
   constexpr dd::GateMatrix raw{0., 1., -1., 0.};
   constexpr size_t numQubits = 4;
   const dd::Controls controls{{0, dd::Control::Type::Neg}, {3}};
-  dd::Package package(numQubits);
+  auto packageOwner = llvm::cantFail(dd::Package::create(numQubits));
+  auto& package = *packageOwner;
 
-  EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), {2}, controls),
-            package.makeGateDD(raw, controls, 2));
+  EXPECT_EQ(llvm::cantFail(
+                makeGateDD(package, toDynamicMatrix(literal), {2}, controls)),
+            llvm::cantFail(package.makeGateDD(raw, controls, 2)));
 }
 
 TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
@@ -266,13 +273,15 @@ TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
   constexpr auto literal = makePermutationMatrix(rowForColumn);
   constexpr size_t numQubits = 5;
   const dd::Controls controls{{4, dd::Control::Type::Neg}};
-  dd::Package package(numQubits);
+  auto packageOwner = llvm::cantFail(dd::Package::create(numQubits));
+  auto& package = *packageOwner;
 
   for (const std::array<dd::Qubit, 2> targets :
        {std::array<dd::Qubit, 2>{3, 1}, {1, 3}}) {
-    EXPECT_EQ(
-        makeGateDD(package, toDynamicMatrix(literal), targets, controls),
-        package.makeTwoQubitGateDD(literal, controls, targets[0], targets[1]));
+    EXPECT_EQ(llvm::cantFail(makeGateDD(package, toDynamicMatrix(literal),
+                                        targets, controls)),
+              llvm::cantFail(package.makeTwoQubitGateDD(
+                  literal, controls, targets[0], targets[1])));
   }
 }
 
@@ -281,13 +290,15 @@ TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
   constexpr auto literal = makePermutationMatrix(rowForColumn);
   constexpr size_t numQubits = 6;
   const dd::Controls controls{{5}};
-  dd::Package package(numQubits);
+  auto packageOwner = llvm::cantFail(dd::Package::create(numQubits));
+  auto& package = *packageOwner;
 
   for (const std::array<dd::Qubit, 3> targets :
        {std::array<dd::Qubit, 3>{4, 1, 3}, {1, 3, 4}}) {
-    EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), targets, controls),
-              package.makeThreeQubitGateDD(literal, controls, targets[0],
-                                           targets[1], targets[2]));
+    EXPECT_EQ(llvm::cantFail(makeGateDD(package, toDynamicMatrix(literal),
+                                        targets, controls)),
+              llvm::cantFail(package.makeThreeQubitGateDD(
+                  literal, controls, targets[0], targets[1], targets[2])));
   }
 }
 
@@ -298,16 +309,19 @@ TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
   constexpr auto literal = makePermutationMatrix(rowForColumn);
   constexpr size_t numQubits = 6;
   constexpr std::array<dd::Qubit, 4> targets{4, 1, 5, 2};
-  dd::Package package(numQubits);
+  auto packageOwner = llvm::cantFail(dd::Package::create(numQubits));
+  auto& package = *packageOwner;
 
-  EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), targets),
-            package.makeDDFromMatrix(
-                embedPermutation(numQubits, targets, rowForColumn)));
+  EXPECT_EQ(
+      llvm::cantFail(makeGateDD(package, toDynamicMatrix(literal), targets)),
+      llvm::cantFail(package.makeDDFromMatrix(
+          embedPermutation(numQubits, targets, rowForColumn))));
 }
 
 TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
   constexpr size_t numQubits = 6;
-  dd::Package package(numQubits);
+  auto packageOwner = llvm::cantFail(dd::Package::create(numQubits));
+  auto& package = *packageOwner;
   LiteralMatrix<16> local{};
   for (size_t row = 0; row < 16; ++row) {
     for (size_t col = 0; col < 16; ++col) {
@@ -319,8 +333,9 @@ TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
            std::array<dd::Qubit, 4>{0, 1, 2, 3},
            std::array<dd::Qubit, 4>{4, 1, 5, 2},
        }) {
-    const auto matrix = dd::getMatrix(
-        makeGateDD(package, toDynamicMatrix(local), targets), numQubits);
+    const auto matrix = llvm::cantFail(dd::getMatrix(
+        llvm::cantFail(makeGateDD(package, toDynamicMatrix(local), targets)),
+        numQubits));
     size_t targetMask = 0;
     for (const auto wire : targets) {
       targetMask |= size_t{1} << wire;
@@ -345,14 +360,15 @@ TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
 
 TEST(DDAdapterTest, PreservesScalarMatricesWithAndWithoutIdleWires) {
   for (const size_t numQubits : {0U, 4U}) {
-    dd::Package package(numQubits);
+    auto packageOwner = llvm::cantFail(dd::Package::create(numQubits));
+    auto& package = *packageOwner;
     for (const auto scalar : {
              std::complex<double>{},
              std::polar(1., 0.37),
              std::complex<double>{1e-15, 0.},
          }) {
       const std::array matrix{scalar};
-      EXPECT_EQ(makeGateDD(package, std::span{matrix}, {}),
+      EXPECT_EQ(llvm::cantFail(makeGateDD(package, std::span{matrix}, {})),
                 dd::mEdge::terminal(package.cn.lookup(scalar)));
     }
   }
@@ -611,7 +627,7 @@ TEST_F(QCODDFunctionalityTest, TwoQubitDensePathBeyondFallbackLimit) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(13);
+  auto dd = llvm::cantFail(dd::Package::create(13));
   const auto functionality = buildFunctionality(mainFunc(*mod), *dd);
   ASSERT_TRUE(succeeded(functionality));
   dd->decRef(*functionality);
@@ -639,14 +655,14 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
   ASSERT_TRUE(with);
   ASSERT_TRUE(zeroQubit);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   const auto u0 = buildFunctionality(mainFunc(*without), *dd);
   const auto u1 = buildFunctionality(mainFunc(*with), *dd);
   ASSERT_TRUE(succeeded(u0));
   ASSERT_TRUE(succeeded(u1));
   const auto phase = std::polar(1.0, 0.25);
-  const auto m0 = dd::getMatrix(*u0, 1);
-  const auto m1 = dd::getMatrix(*u1, 1);
+  const auto m0 = llvm::cantFail(dd::getMatrix(*u0, 1));
+  const auto m1 = llvm::cantFail(dd::getMatrix(*u1, 1));
   for (size_t r = 0; r < 2; ++r) {
     for (size_t c = 0; c < 2; ++c) {
       EXPECT_TRUE(std::abs(m1[r][c] - (m0[r][c] * phase)) < 1e-10);
@@ -655,7 +671,7 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
   dd->decRef(*u0);
   dd->decRef(*u1);
 
-  auto dd0 = std::make_unique<dd::Package>(0);
+  auto dd0 = llvm::cantFail(dd::Package::create(0));
   const auto uZ = buildFunctionality(mainFunc(*zeroQubit), *dd0);
   ASSERT_TRUE(succeeded(uZ));
   EXPECT_TRUE(uZ->isTerminal());
@@ -704,19 +720,21 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
   ASSERT_TRUE(canonical);
   ASSERT_TRUE(swapped);
 
-  auto dd = std::make_unique<dd::Package>(2);
+  auto dd = llvm::cantFail(dd::Package::create(2));
   const auto canonicalFunctionality =
       buildFunctionality(mainFunc(*canonical), *dd);
   ASSERT_TRUE(succeeded(canonicalFunctionality));
   dd->decRef(*canonicalFunctionality);
   const auto canonicalSimulation =
-      simulate(mainFunc(*canonical), dd::makeZeroState(2, *dd), *dd, rng);
+      simulate(mainFunc(*canonical), llvm::cantFail(dd::makeZeroState(2, *dd)),
+               *dd, rng);
   ASSERT_TRUE(succeeded(canonicalSimulation));
   dd->decRef(*canonicalSimulation);
 
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*swapped), *dd)));
-  EXPECT_TRUE(failed(
-      simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd, rng)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*swapped),
+                      llvm::cantFail(dd::makeZeroState(2, *dd)), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, FailedScalarConstructionReleasesPhase) {
@@ -733,7 +751,7 @@ TEST_F(QCODDFunctionalityTest, FailedScalarConstructionReleasesPhase) {
   )mlir",
                                          context.get());
   ASSERT_TRUE(mod);
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = llvm::cantFail(dd::Package::create(0));
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   EXPECT_TRUE(dd->getRootSet<dd::mNode>().empty());
 }
@@ -750,10 +768,10 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
   )mlir",
                                          context.get());
   ASSERT_TRUE(mod);
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  EXPECT_TRUE(failed(simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsStaticQubitBeyondDDRange) {
@@ -762,10 +780,10 @@ TEST_F(QCODDFunctionalityTest, RejectsStaticQubitBeyondDDRange) {
     return SmallVector<Value>{};
   });
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  EXPECT_TRUE(failed(simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
@@ -784,11 +802,11 @@ TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
   ASSERT_TRUE(valid);
   ASSERT_TRUE(tooWide);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   auto& roots = dd->getRootSet<dd::vNode>();
   for (size_t i = 0; i < 3; ++i) {
-    const auto output =
-        simulate(mainFunc(*valid), dd::makeZeroState(1, *dd), *dd, rng);
+    const auto output = simulate(
+        mainFunc(*valid), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
     ASSERT_TRUE(succeeded(output));
     EXPECT_EQ(roots.size(), 1U);
     EXPECT_EQ(roots.at(*output), 1U);
@@ -796,24 +814,26 @@ TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
     EXPECT_TRUE(roots.empty());
   }
   for (size_t i = 0; i < 3; ++i) {
-    EXPECT_TRUE(failed(
-        simulate(mainFunc(*tooWide), dd::makeZeroState(1, *dd), *dd, rng)));
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*tooWide),
+                        llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
     EXPECT_TRUE(roots.empty());
   }
 
-  auto twoQubitDd = std::make_unique<dd::Package>(2);
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*tooWide), dd::makeZeroState(1, *twoQubitDd),
-                      *twoQubitDd, rng)));
+  auto twoQubitDd = llvm::cantFail(dd::Package::create(2));
+  EXPECT_TRUE(failed(simulate(mainFunc(*tooWide),
+                              llvm::cantFail(dd::makeZeroState(1, *twoQubitDd)),
+                              *twoQubitDd, rng)));
   EXPECT_TRUE(twoQubitDd->getRootSet<dd::vNode>().empty());
   const auto widerOutput = simulate(
-      mainFunc(*valid), dd::makeZeroState(2, *twoQubitDd), *twoQubitDd, rng);
+      mainFunc(*valid), llvm::cantFail(dd::makeZeroState(2, *twoQubitDd)),
+      *twoQubitDd, rng);
   ASSERT_TRUE(succeeded(widerOutput));
-  EXPECT_EQ(dd::getVector(*widerOutput).size(), 4U);
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*widerOutput)).size(), 4U);
   twoQubitDd->decRef(*widerOutput);
   EXPECT_TRUE(twoQubitDd->getRootSet<dd::vNode>().empty());
 
-  auto zeroQubitDd = std::make_unique<dd::Package>(0);
+  auto zeroQubitDd = llvm::cantFail(dd::Package::create(0));
   EXPECT_TRUE(failed(
       simulate(mainFunc(*valid), dd::VectorDD::one(), *zeroQubitDd, rng)));
   EXPECT_TRUE(zeroQubitDd->getRootSet<dd::vNode>().empty());
@@ -835,16 +855,17 @@ TEST_F(QCODDFunctionalityTest,
                                          context.get());
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(3);
+  auto dd = llvm::cantFail(dd::Package::create(3));
   auto input = dd->applyOperation(referenceGateDD<XOp>(*dd, {1}),
-                                  dd::makeZeroState(2, *dd));
+                                  llvm::cantFail(dd::makeZeroState(2, *dd)));
   const auto output = simulate(mainFunc(*mod), input, *dd, rng);
   ASSERT_TRUE(succeeded(output));
 
   auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {1}),
-                                     dd::makeZeroState(3, *dd));
+                                     llvm::cantFail(dd::makeZeroState(3, *dd)));
   expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {2}), expected);
-  EXPECT_EQ(dd::getVector(*output), dd::getVector(expected));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*output)),
+            llvm::cantFail(dd::getVector(expected)));
   dd->decRef(*output);
   dd->decRef(expected);
 }
@@ -859,19 +880,19 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
   ASSERT_TRUE(mod);
 
   constexpr uint64_t seed = 42;
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
 
   std::mt19937_64 refRng(seed);
-  auto ref = dd::makeZeroState(1, *dd);
+  auto ref = llvm::cantFail(dd::makeZeroState(1, *dd));
   ref = dd->applyOperation(referenceGateDD<HOp>(*dd, {0}), ref);
-  static_cast<void>(dd->measureOneCollapsing(ref, 0, refRng));
-  const auto expected = dd::getVector(ref);
+  static_cast<void>(llvm::cantFail(dd->measureOneCollapsing(ref, 0, refRng)));
+  const auto expected = llvm::cantFail(dd::getVector(ref));
 
   std::mt19937_64 rng(seed);
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  EXPECT_EQ(dd::getVector(*out), expected);
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)), expected);
   dd->decRef(*out);
   dd->decRef(ref);
 }
@@ -885,13 +906,14 @@ TEST_F(QCODDFunctionalityTest, SimulateResetForcesZero) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(7);
-  auto expected = dd::makeZeroState(1, *dd);
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  auto expected = llvm::cantFail(dd::makeZeroState(1, *dd));
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(expected));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(expected)));
   dd->decRef(*out);
   dd->decRef(expected);
 }
@@ -963,14 +985,15 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(99);
   auto one = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
-                                dd::makeZeroState(1, *dd));
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+                                llvm::cantFail(dd::makeZeroState(1, *dd)));
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(one));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(one)));
   dd->decRef(*out);
   dd->decRef(one);
 }
@@ -1000,21 +1023,25 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
   ASSERT_TRUE(zeroCondition);
   ASSERT_TRUE(measurementCondition);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(99);
-  auto zero = dd::makeZeroState(1, *dd);
+  auto zero = llvm::cantFail(dd::makeZeroState(1, *dd));
   auto one = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
-                                dd::makeZeroState(1, *dd));
+                                llvm::cantFail(dd::makeZeroState(1, *dd)));
 
   const auto zeroOut =
-      simulate(mainFunc(*zeroCondition), dd::makeZeroState(1, *dd), *dd, rng);
+      simulate(mainFunc(*zeroCondition),
+               llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(zeroOut));
-  EXPECT_EQ(dd::getVector(*zeroOut), dd::getVector(zero));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*zeroOut)),
+            llvm::cantFail(dd::getVector(zero)));
 
-  const auto measurementOut = simulate(mainFunc(*measurementCondition),
-                                       dd::makeZeroState(1, *dd), *dd, rng);
+  const auto measurementOut =
+      simulate(mainFunc(*measurementCondition),
+               llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(measurementOut));
-  EXPECT_EQ(dd::getVector(*measurementOut), dd::getVector(one));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*measurementOut)),
+            llvm::cantFail(dd::getVector(one)));
 
   dd->decRef(*zeroOut);
   dd->decRef(*measurementOut);
@@ -1067,10 +1094,10 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitLoad) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(1);
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  EXPECT_TRUE(failed(simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
@@ -1091,10 +1118,10 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(1);
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  EXPECT_TRUE(failed(simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateWholeCBitRegisterReadAndWrite) {
@@ -1136,13 +1163,14 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(3);
-  auto zero = dd::makeZeroState(1, *dd);
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  auto zero = llvm::cantFail(dd::makeZeroState(1, *dd));
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(zero));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(zero)));
   dd->decRef(*out);
   dd->decRef(zero);
 }
@@ -1208,17 +1236,18 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(3);
+  auto dd = llvm::cantFail(dd::Package::create(3));
   std::mt19937_64 rng(11);
   // Final computational basis: |1⟩|0⟩|1⟩ after measures and case-1 X on q2.
-  auto expected = dd::makeZeroState(3, *dd);
+  auto expected = llvm::cantFail(dd::makeZeroState(3, *dd));
   expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}), expected);
   expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {2}), expected);
 
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(3, *dd), *dd, rng);
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(3, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(expected));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(expected)));
   dd->decRef(*out);
   dd->decRef(expected);
 }
@@ -1240,14 +1269,15 @@ TEST_F(QCODDFunctionalityTest, AcceptsLargestValidShift) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(1);
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
   auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
-                                     dd::makeZeroState(1, *dd));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(expected));
+                                     llvm::cantFail(dd::makeZeroState(1, *dd)));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(expected)));
   dd->decRef(*out);
   dd->decRef(expected);
 }
@@ -1272,10 +1302,10 @@ TEST_F(QCODDFunctionalityTest, RejectsOutOfRangeShift) {
     });
     ASSERT_TRUE(mod);
 
-    auto dd = std::make_unique<dd::Package>(1);
+    auto dd = llvm::cantFail(dd::Package::create(1));
     std::mt19937_64 rng(1);
-    EXPECT_TRUE(
-        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+    EXPECT_TRUE(failed(simulate(
+        mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
   }
 }
 
@@ -2003,10 +2033,10 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalControl) {
        }) {
     auto mod = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(1);
+    auto dd = llvm::cantFail(dd::Package::create(1));
     std::mt19937_64 rng(1);
-    EXPECT_TRUE(
-        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+    EXPECT_TRUE(failed(simulate(
+        mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
   }
 }
 
@@ -2035,14 +2065,15 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIfResults) {
   )mlir",
                                          context.get());
   ASSERT_TRUE(mod);
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(1);
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
   auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
-                                     dd::makeZeroState(1, *dd));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(expected));
+                                     llvm::cantFail(dd::makeZeroState(1, *dd)));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(expected)));
   dd->decRef(*out);
   dd->decRef(expected);
 }
@@ -2076,14 +2107,15 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIndexResults) {
   )mlir",
                                          context.get());
   ASSERT_TRUE(mod);
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   std::mt19937_64 rng(1);
-  const auto out =
-      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  const auto out = simulate(
+      mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng);
   ASSERT_TRUE(succeeded(out));
   auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
-                                     dd::makeZeroState(1, *dd));
-  EXPECT_EQ(dd::getVector(*out), dd::getVector(expected));
+                                     llvm::cantFail(dd::makeZeroState(1, *dd)));
+  EXPECT_EQ(llvm::cantFail(dd::getVector(*out)),
+            llvm::cantFail(dd::getVector(expected)));
   dd->decRef(*out);
   dd->decRef(expected);
 }
@@ -2132,7 +2164,7 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       return SmallVector<Value>{};
     });
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(1);
+    auto dd = llvm::cantFail(dd::Package::create(1));
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 
@@ -2143,7 +2175,7 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       return SmallVector<Value>{};
     });
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(1);
+    auto dd = llvm::cantFail(dd::Package::create(1));
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 
@@ -2157,13 +2189,13 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       return SmallVector<Value>{};
     });
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(1);
+    auto dd = llvm::cantFail(dd::Package::create(1));
     const auto functionality = buildFunctionality(mainFunc(*mod), *dd);
     ASSERT_TRUE(succeeded(functionality));
     EXPECT_EQ(dd->qubits(), 2U);
     dd->decRef(*functionality);
-    EXPECT_TRUE(
-        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+    EXPECT_TRUE(failed(simulate(
+        mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
   }
 
   expectMlirFails(1, R"mlir(
@@ -2283,7 +2315,7 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       return SmallVector<Value>{};
     });
     ASSERT_TRUE(wideModifier);
-    auto wideDD = std::make_unique<dd::Package>(11);
+    auto wideDD = llvm::cantFail(dd::Package::create(11));
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*wideModifier), *wideDD)));
   }
 }
@@ -2312,10 +2344,11 @@ TEST_F(QCODDFunctionalityTest, ExecuteParameterizedGateCallsWithGlobalPhase) {
   DDArgumentBindings bindings;
   bindings[function.getArgument(0)] =
       FloatAttr::get(Float64Type::get(context.get()), std::numbers::pi / 2);
-  dd::Package package(1);
+  auto packageOwner = llvm::cantFail(dd::Package::create(1));
+  auto& package = *packageOwner;
   auto result = buildFunctionality(function, package, bindings);
   ASSERT_TRUE(succeeded(result));
-  const auto matrix = dd::getMatrix(*result, 1);
+  const auto matrix = llvm::cantFail(dd::getMatrix(*result, 1));
   for (size_t row = 0; row < 2; ++row) {
     for (size_t column = 0; column < 2; ++column) {
       EXPECT_NEAR(std::abs(matrix[row][column] - (row == column ? 0. : -1.)),
@@ -2545,10 +2578,11 @@ TEST_F(QCODDFunctionalityTest, ParameterizedUnitaryCallsUseClassicalBindings) {
   DDArgumentBindings bindings;
   bindings[func.getArgument(0)] =
       FloatAttr::get(Float64Type::get(context.get()), std::numbers::pi / 2.);
-  dd::Package package(1);
+  auto packageOwner = llvm::cantFail(dd::Package::create(1));
+  auto& package = *packageOwner;
   auto matrix = buildFunctionality(func, package, bindings);
   ASSERT_TRUE(succeeded(matrix));
-  const auto dense = dd::getMatrix(*matrix, 1);
+  const auto dense = llvm::cantFail(dd::getMatrix(*matrix, 1));
   // Two rotations and their global phases give iX, checking the phase too.
   EXPECT_NEAR(std::abs(dense[0][0]), 0., 1e-12);
   EXPECT_NEAR(std::abs(dense[1][1]), 0., 1e-12);
@@ -2557,7 +2591,8 @@ TEST_F(QCODDFunctionalityTest, ParameterizedUnitaryCallsUseClassicalBindings) {
   package.decRef(*matrix);
   auto state = simulateStatevector(func, package, bindings);
   ASSERT_TRUE(succeeded(state));
-  EXPECT_NEAR(std::abs(dd::getVector(*state)[1] - std::complex<double>(0., 1.)),
+  EXPECT_NEAR(std::abs(llvm::cantFail(dd::getVector(*state))[1] -
+                       std::complex<double>(0., 1.)),
               0., 1e-12);
   package.decRef(*state);
   auto counts = sample(func, 8, 17, bindings);
@@ -2583,7 +2618,7 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
   DDArgumentBindings bindings;
   bindings[selfRecursiveFunc.getArgument(0)] =
       BoolAttr::get(context.get(), true);
-  auto zeroQubitDd = std::make_unique<dd::Package>(0);
+  auto zeroQubitDd = llvm::cantFail(dd::Package::create(0));
   EXPECT_TRUE(failed(simulate(selfRecursiveFunc, dd::VectorDD::one(),
                               *zeroQubitDd, rng, bindings)));
 
@@ -2643,9 +2678,10 @@ TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
     if (succeeds) {
       expectSimulatesFromZero(mainFunc(*mod), false);
     } else {
-      auto dd = std::make_unique<dd::Package>(1);
-      EXPECT_TRUE(failed(
-          simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+      auto dd = llvm::cantFail(dd::Package::create(1));
+      EXPECT_TRUE(failed(simulate(mainFunc(*mod),
+                                  llvm::cantFail(dd::makeZeroState(1, *dd)),
+                                  *dd, rng)));
     }
   }
 
@@ -2787,10 +2823,11 @@ TEST_F(QCODDFunctionalityTest, RejectsUnboundedWhileLoop) {
   })mlir",
                                               context.get());
   ASSERT_TRUE(moduleOp);
-  dd::Package package(0);
-  EXPECT_TRUE(failed(
-      simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package), package, rng,
-               DDArgumentBindings(), {.maxWhileIterations = 10})));
+  auto packageOwner = llvm::cantFail(dd::Package::create(0));
+  auto& package = *packageOwner;
+  EXPECT_TRUE(failed(simulate(
+      mainFunc(*moduleOp), llvm::cantFail(dd::makeZeroState(0, package)),
+      package, rng, DDArgumentBindings(), {.maxWhileIterations = 10})));
 }
 
 TEST_F(QCODDFunctionalityTest, SharesExactWhileBudgetAcrossCalls) {
@@ -2838,10 +2875,11 @@ TEST_F(QCODDFunctionalityTest, SharesExactWhileBudgetAcrossCalls) {
                    std::string::npos;
       return success();
     });
-    dd::Package package(0);
-    auto output =
-        simulate(mainFunc(*moduleOp), dd::makeZeroState(0, package), package,
-                 rng, DDArgumentBindings(), {.maxWhileIterations = limit});
+    auto packageOwner = llvm::cantFail(dd::Package::create(0));
+    auto& package = *packageOwner;
+    auto output = simulate(
+        mainFunc(*moduleOp), llvm::cantFail(dd::makeZeroState(0, package)),
+        package, rng, DDArgumentBindings(), {.maxWhileIterations = limit});
     EXPECT_EQ(succeeded(output), accepted);
     EXPECT_EQ(diagnosed, !accepted);
     if (succeeded(output)) {
@@ -3136,7 +3174,7 @@ TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
                                               context.get());
   ASSERT_TRUE(moduleOp);
   auto func = mainFunc(*moduleOp);
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = llvm::cantFail(dd::Package::create(0));
   for (const auto index : {-1, 2}) {
     DDArgumentBindings bindings;
     bindings[func.getArgument(0)] =
@@ -3231,7 +3269,7 @@ TEST_F(QCODDFunctionalityTest, SamplingAnalysisHandlesSharedCallees) {
     ASSERT_EQ(histogram->size(), 1U);
     EXPECT_EQ(histogram->at(""), 1U);
 
-    auto dd = std::make_unique<dd::Package>(0);
+    auto dd = llvm::cantFail(dd::Package::create(0));
     auto state = simulateStatevector(func, *dd);
     EXPECT_EQ(failed(state), !leafBody.empty());
     if (succeeded(state)) {
@@ -3377,16 +3415,17 @@ TEST_F(QCODDFunctionalityTest, FixedGatePowersPreserveFullMatrix) {
       constantFunction.getArgument(0).replaceAllUsesWith(constantExponent);
       ASSERT_TRUE(succeeded(manager.run(*constant)));
       EXPECT_TRUE(constantFunction.getBody().getOps<PowOp>().empty());
-      dd::Package package(1);
+      auto packageOwner = llvm::cantFail(dd::Package::create(1));
+      auto& package = *packageOwner;
       auto expected =
           buildFunctionality(before, package, {{before.getArgument(0), value}});
       ASSERT_TRUE(succeeded(expected));
-      const auto left = dd::getMatrix(*expected, 1);
+      const auto left = llvm::cantFail(dd::getMatrix(*expected, 1));
       for (auto function : {after, constantFunction}) {
         auto actual = buildFunctionality(function, package,
                                          {{function.getArgument(0), value}});
         ASSERT_TRUE(succeeded(actual));
-        const auto right = dd::getMatrix(*actual, 1);
+        const auto right = llvm::cantFail(dd::getMatrix(*actual, 1));
         for (size_t row = 0; row < 2; ++row) {
           for (size_t column = 0; column < 2; ++column) {
             EXPECT_NEAR(std::abs(left[row][column] - right[row][column]), 0.,
@@ -3428,12 +3467,13 @@ TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
   bindings[func.getArgument(0)] = FloatAttr::get(
       cast<FloatType>(func.getArgument(0).getType()), std::numbers::pi / 2.0);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   auto actual = buildFunctionality(func, *dd, bindings);
   auto expected = buildFunctionality(mainFunc(*concrete), *dd);
   ASSERT_TRUE(succeeded(actual));
   ASSERT_TRUE(succeeded(expected));
-  EXPECT_EQ(dd::getMatrix(*actual, 1), dd::getMatrix(*expected, 1));
+  EXPECT_EQ(llvm::cantFail(dd::getMatrix(*actual, 1)),
+            llvm::cantFail(dd::getMatrix(*expected, 1)));
   dd->decRef(*actual);
   dd->decRef(*expected);
 
@@ -3443,7 +3483,7 @@ TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
 
   const auto state = simulateStatevector(func, *dd, bindings);
   ASSERT_TRUE(succeeded(state));
-  const auto vector = dd::getVector(*state);
+  const auto vector = llvm::cantFail(dd::getVector(*state));
   ASSERT_EQ(vector.size(), 2U);
   EXPECT_NEAR(std::norm(vector[0]), 0.0, 1e-12);
   EXPECT_NEAR(std::norm(vector[1]), 1.0, 1e-12);
@@ -3614,21 +3654,22 @@ TEST_F(QCODDFunctionalityTest, AllocationPreservesComplexInputAmplitudes) {
   ASSERT_TRUE(succeeded(verify(*mod)));
   for (StringRef name : {"scalar", "tensor"}) {
     SCOPED_TRACE(name.str());
-    dd::Package package(1);
+    auto packageOwner = llvm::cantFail(dd::Package::create(1));
+    auto& package = *packageOwner;
     const double amplitude = std::sqrt(0.5);
     const dd::CVec input{{0., amplitude}, amplitude};
-    auto state =
-        simulate(mod->lookupSymbol<func::FuncOp>(name),
-                 dd::makeStateFromVector(input, package), package, rng);
+    auto state = simulate(
+        mod->lookupSymbol<func::FuncOp>(name),
+        llvm::cantFail(dd::makeStateFromVector(input, package)), package, rng);
     ASSERT_TRUE(succeeded(state));
     const dd::CVec expected{input[0], input[1], 0., 0.};
-    const auto actual = dd::getVector(*state);
+    const auto actual = llvm::cantFail(dd::getVector(*state));
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < actual.size(); ++i) {
       EXPECT_NEAR(std::abs(actual[i] - expected[i]), 0., 1e-12);
     }
     package.garbageCollect(true);
-    EXPECT_EQ(dd::getVector(*state), actual);
+    EXPECT_EQ(llvm::cantFail(dd::getVector(*state)), actual);
     package.decRef(*state);
     package.garbageCollect(true);
     EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
@@ -3692,7 +3733,7 @@ TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
   bindings[func.getArgument(0)] =
       IntegerAttr::get(IndexType::get(context.get()), 2);
 
-  auto dd = std::make_unique<dd::Package>(2);
+  auto dd = llvm::cantFail(dd::Package::create(2));
   const auto histogram = sample(func, 4, 1, bindings);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"10", 4}}));
@@ -4113,7 +4154,7 @@ TEST_F(QCODDFunctionalityTest, RejectsRepresentativeClassicalRuntimeErrors) {
   DDArgumentBindings bindings;
   bindings[constant.getResult()] =
       IntegerAttr::get(IndexType::get(context.get()), 0);
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = llvm::cantFail(dd::Package::create(0));
   EXPECT_TRUE(failed(simulate(func, dd::VectorDD::one(), *dd, rng, bindings)));
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
@@ -4133,7 +4174,7 @@ TEST_F(QCODDFunctionalityTest,
     return SmallVector<Value>{};
   });
   ASSERT_TRUE(mod);
-  auto package = std::make_unique<dd::Package>(0);
+  auto package = llvm::cantFail(dd::Package::create(0));
   const auto actual = buildFunctionality(mainFunc(*mod), *package);
   ASSERT_TRUE(succeeded(actual));
   EXPECT_EQ(package->qubits(), 4);
@@ -4205,7 +4246,7 @@ TEST_F(QCODDFunctionalityTest, BuildFunctionalityRestrictsRuntimeAllocations) {
   )mlir");
   ASSERT_TRUE(topLevel);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   const auto functionality = buildFunctionality(mainFunc(*topLevel), *dd);
   ASSERT_TRUE(succeeded(functionality));
   dd->decRef(*functionality);
@@ -4235,7 +4276,7 @@ TEST_F(QCODDFunctionalityTest, RejectsMultiBlockAndExecuteRegion) {
        }) {
     auto mod = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(mod);
-    auto dd = std::make_unique<dd::Package>(1);
+    auto dd = llvm::cantFail(dd::Package::create(1));
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 }
@@ -4278,7 +4319,7 @@ TEST_F(QCODDFunctionalityTest, StatevectorSupportsTerminalMeasurements) {
   ASSERT_TRUE(empty);
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = llvm::cantFail(dd::Package::create(0));
   const auto emptyState = simulateStatevector(mainFunc(*empty), *dd);
   ASSERT_TRUE(succeeded(emptyState));
   EXPECT_TRUE(emptyState->isTerminal());
@@ -4286,7 +4327,7 @@ TEST_F(QCODDFunctionalityTest, StatevectorSupportsTerminalMeasurements) {
   const auto state = simulateStatevector(mainFunc(*mod), *dd);
   ASSERT_TRUE(succeeded(state));
   EXPECT_EQ(dd->qubits(), 1U);
-  const auto vector = dd::getVector(*state);
+  const auto vector = llvm::cantFail(dd::getVector(*state));
   ASSERT_EQ(vector.size(), 2U);
   EXPECT_NEAR(std::norm(vector[0]), 0.5, 1e-12);
   EXPECT_NEAR(std::norm(vector[1]), 0.5, 1e-12);
@@ -4323,7 +4364,7 @@ TEST_F(QCODDFunctionalityTest, StatevectorRejectsNonTerminalMeasurement) {
   ASSERT_TRUE(reset);
   ASSERT_TRUE(call);
 
-  auto dd = std::make_unique<dd::Package>(1);
+  auto dd = llvm::cantFail(dd::Package::create(1));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*reuse), *dd)));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*reset), *dd)));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*call), *dd)));
@@ -4340,10 +4381,10 @@ TEST_F(QCODDFunctionalityTest, LifetimeMarkersPreserveEntangledState) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = llvm::cantFail(dd::Package::create(0));
   const auto state = simulateStatevector(mainFunc(*mod), *dd);
   ASSERT_TRUE(succeeded(state));
-  const auto vector = dd::getVector(*state);
+  const auto vector = llvm::cantFail(dd::getVector(*state));
   ASSERT_EQ(vector.size(), 8U);
   EXPECT_NEAR(std::norm(vector[4]), 0.5, 1e-12);
   EXPECT_NEAR(std::norm(vector[7]), 0.5, 1e-12);
@@ -4374,11 +4415,11 @@ TEST_F(QCODDFunctionalityTest, StatevectorSkipsUnreachedAllocations) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(0);
+  auto dd = llvm::cantFail(dd::Package::create(0));
   const auto state = simulateStatevector(mainFunc(*mod), *dd);
   ASSERT_TRUE(succeeded(state));
   EXPECT_EQ(dd->qubits(), 0U);
-  const auto vector = dd::getVector(*state);
+  const auto vector = llvm::cantFail(dd::getVector(*state));
   ASSERT_EQ(vector.size(), 1U);
   EXPECT_NEAR(std::norm(vector[0]), 1.0, 1e-12);
   dd->decRef(*state);

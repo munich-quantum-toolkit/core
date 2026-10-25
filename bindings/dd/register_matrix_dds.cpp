@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
+#include "Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"
@@ -53,13 +54,13 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
 
   const auto dim = 1ULL << numQubits;
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
-  dd::traverseMatrix(
+  bindings::unwrap(dd::traverseMatrix(
       m, std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](const std::size_t i, const std::size_t j,
                       const std::complex<dd::fp>& c) {
         (*dataPtr)[(i * dim) + j] = c;
       },
-      numQubits, threshold);
+      numQubits, threshold));
   auto* const data = dataPtr->data();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
     delete static_cast<dd::CVec*>(ptr);
@@ -93,13 +94,15 @@ Returns:
           "Get the size of the DD by traversing it once.");
 
   mat.def("get_entry",
-          nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
-              &dd::getValueByIndex),
+          bindings::bindResult(
+              nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
+                  &dd::getValueByIndex)),
           "num_qubits"_a, "row"_a, "col"_a,
           "Get the entry of the matrix by row and column index.");
 
-  mat.def("get_entry_by_path", &dd::mEdge::getValueByPath, "num_qubits"_a,
-          "decisions"_a, R"pb(Get the entry of the matrix by decisions.
+  mat.def("get_entry_by_path", bindings::bindResult(&dd::mEdge::getValueByPath),
+          "num_qubits"_a, "decisions"_a,
+          R"pb(Get the entry of the matrix by decisions.
 
 Args:
     num_qubits: The number of qubits; must cover the matrix DD.

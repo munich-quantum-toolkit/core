@@ -122,11 +122,13 @@ TEST(GenerateProgramTest,
       }
       auto program = inPlaceMultiplier(number, multiplier);
       ASSERT_TRUE(mlir::succeeded(program));
-      dd::Package package(qubits);
+      auto packageOwner = llvm::cantFail(dd::Package::create(qubits));
+      auto& package = *packageOwner;
       auto functionality = qco::buildFunctionality(
           mlir::mqt::getEntryPoint(program->module()), package);
       ASSERT_TRUE(succeeded(functionality));
-      const auto phase = dd::getValueByIndex(*functionality, qubits, 0, 0);
+      const auto phase =
+          llvm::cantFail(dd::getValueByIndex(*functionality, qubits, 0, 0));
       EXPECT_NEAR(std::norm(phase), 1., 1e-11);
       dd::CVec input(size_t{1} << qubits);
       dd::CVec expectedOutput(input.size());
@@ -139,8 +141,8 @@ TEST(GenerateProgramTest,
           const auto product =
               control != 0 ? multiplier * value % number : value;
           const auto expected = (product << 1U) | control;
-          const auto amplitude = dd::getValueByIndex(
-              *functionality, qubits, expected, (value << 1U) | control);
+          const auto amplitude = llvm::cantFail(dd::getValueByIndex(
+              *functionality, qubits, expected, (value << 1U) | control));
           EXPECT_NEAR(std::abs(amplitude - phase), 0., 1e-11);
           const auto index = (value << 1U) | control;
           input[index] =
@@ -150,8 +152,9 @@ TEST(GenerateProgramTest,
         }
       }
       auto state = package.applyOperation(
-          *functionality, dd::makeStateFromVector(input, package));
-      const auto output = dd::getVector(state);
+          *functionality,
+          llvm::cantFail(dd::makeStateFromVector(input, package)));
+      const auto output = llvm::cantFail(dd::getVector(state));
       for (size_t index = 0; index < output.size(); ++index) {
         EXPECT_NEAR(std::abs(output[index] - expectedOutput[index]), 0., 1e-11);
       }

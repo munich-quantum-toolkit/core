@@ -33,6 +33,8 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/Support/Error.h"
+
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -326,7 +328,7 @@ TEST(WeylDecompositionStandalone, Random) {
 TEST(WeylDecompositionStandalone, NearUnitaryNonconvergenceReturnsFailure) {
   auto target = Matrix4x4::identity();
   target(0, 3) = 4e-11;
-  ASSERT_TRUE(isUnitaryMatrix(target, mqt::DENSE_UNITARY_TOLERANCE));
+  ASSERT_TRUE(isUnitaryMatrix(target, mlir::mqt::DENSE_UNITARY_TOLERANCE));
 
   EXPECT_FALSE(TwoQubitWeylDecomposition::create(target, std::nullopt));
   EXPECT_FALSE(
@@ -350,7 +352,7 @@ TEST(WeylDecompositionStandalone,
      NearUnitaryReconstructionFailureReturnsFailure) {
   auto target = Matrix4x4::identity();
   target(0, 0) += 4e-11;
-  ASSERT_TRUE(isUnitaryMatrix(target, mqt::DENSE_UNITARY_TOLERANCE));
+  ASSERT_TRUE(isUnitaryMatrix(target, mlir::mqt::DENSE_UNITARY_TOLERANCE));
 
   // Its real symmetric M2 can be diagonalized, but the normalized local
   // factors cannot reconstruct the input within the Weyl tolerance.
@@ -541,14 +543,14 @@ struct Synthesized2QCircuit {
 
 [[nodiscard]] static FailureOr<Matrix4x4>
 computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
-  auto dd = std::make_unique<dd::Package>(2);
+  auto dd = llvm::cantFail(dd::Package::create(2));
   auto u = buildFunctionality(funcOp, *dd);
   if (failed(u)) {
     return failure();
   }
   // `getMatrix` is DD/LSB-first; QCO is MSB-first — index `1 ↔ 2` swaps the
   // middle basis states (`|01⟩` ↔ `|10⟩`).
-  const auto& m = dd::getMatrix(*u, 2);
+  const auto& m = llvm::cantFail(dd::getMatrix(*u, 2));
   const Matrix4x4 matrix = Matrix4x4::fromElements(
       m[0][0], m[0][2], m[0][1], m[0][3], m[2][0], m[2][2], m[2][1], m[2][3],
       m[1][0], m[1][2], m[1][1], m[1][3], m[3][0], m[3][2], m[3][1], m[3][3]);
