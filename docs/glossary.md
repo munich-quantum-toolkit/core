@@ -49,6 +49,18 @@ routing permutation
   **Preferred term:** routing permutation. **Accepted aliases:** none. A map
   from each device position before routing to its final position.
 
+coherent equivalence
+  **Preferred term:** coherent equivalence. **Accepted aliases:** none. Equality
+  of quantum input-to-output maps, with the selected global-phase and numerical
+  relation. It preserves quantum outputs rather than only measurement
+  probabilities. See {doc}`compilation/verification`.
+
+terminal observational equivalence
+  **Preferred term:** terminal observational equivalence. **Accepted aliases:**
+  none. Equality of the joint probabilities of selected returned classical
+  outcomes for every input in the declared quantum domain. It does not imply
+  equality of reduced quantum states.
+
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
   product of single-qubit identity or Pauli X, Y, and Z operators.

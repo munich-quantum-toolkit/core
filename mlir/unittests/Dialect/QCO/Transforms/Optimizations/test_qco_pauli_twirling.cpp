@@ -13,7 +13,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -120,7 +120,7 @@ TEST_P(AllPauliTwirlRowsTest, PreservesExactUnitary) {
   ASSERT_TRUE(succeeded(runPass(*moduleOp, seed)));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_EQ(getTopLevelPaulis(*moduleOp).size(), 4);
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
+  ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 2);
 }
 
 TEST_F(PauliTwirlingTest, SameSeedProducesSameProgram) {
@@ -147,7 +147,7 @@ TEST_F(PauliTwirlingTest, PreservesExistingPhaseWhenRewriting) {
   ASSERT_TRUE(succeeded(runPass(*moduleOp, 4)));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_EQ(getTopLevelPaulis(*moduleOp).size(), 4);
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
+  ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 2);
 
   bool initialPhaseUnchanged = false;
   moduleOp->walk([&](GPhaseOp op) {

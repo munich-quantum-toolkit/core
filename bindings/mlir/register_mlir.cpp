@@ -33,9 +33,11 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Compiler/Verification.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/Verification.h"
 #include "mqt/bench/Generate.h"
 #include "qdmi/QDMI.hpp"
 
@@ -48,6 +50,7 @@
 #include "kj/exception.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h"
 #include "nanobind/stl/filesystem.h"
 #include "nanobind/stl/map.h"
 #include "nanobind/stl/optional.h"
@@ -58,17 +61,23 @@
 #include "nanobind/stl/vector.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <cassert>
 #include <cctype>
+#include <chrono>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -85,6 +94,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -273,6 +283,259 @@ static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
   if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
     return *std::move(result);
   }
+}
+
+[[nodiscard]] static mlir::Attribute
+verificationScalar(mlir::Type type, const nb::handle value) {
+  if (type.isF64()) {
+    if ((!nb::isinstance<nb::float_>(value) &&
+         !nb::isinstance<nb::int_>(value)) ||
+        nb::isinstance<nb::bool_>(value)) {
+      throw nb::type_error("f64 verification bindings require a real scalar");
+    }
+    const auto number = nb::cast<double>(value);
+    if (!std::isfinite(number)) {
+      throw nb::value_error("verification bindings must be finite");
+    }
+    return mlir::FloatAttr::get(type, number);
+  }
+  const auto integer = llvm::dyn_cast<mlir::IntegerType>(type);
+  if (!integer && !llvm::isa<mlir::IndexType>(type)) {
+    throw nb::type_error("verification bindings support scalar integer, index, "
+                         "and f64 arguments");
+  }
+  if (!nb::isinstance<nb::int_>(value)) {
+    throw nb::type_error(
+        "integer verification bindings require an int or bool");
+  }
+  const auto width = integer ? integer.getWidth() : 64U;
+  if (width > 64) {
+    throw nb::type_error(
+        "Python verification bindings support integer widths up to 64 bits");
+  }
+  if (width == 1 || (integer && integer.isUnsigned())) {
+    uint64_t number = 0;
+    if (!nb::try_cast(value, number) ||
+        (width < 64 && number >= (uint64_t{1} << width))) {
+      throw nb::value_error(
+          "verification binding is outside the argument's unsigned range");
+    }
+    return mlir::IntegerAttr::get(type, llvm::APInt(width, number));
+  }
+  int64_t number = 0;
+  if (!nb::try_cast(value, number) || !llvm::isIntN(width, number)) {
+    throw nb::value_error(
+        "verification binding is outside the argument's signed range");
+  }
+  return mlir::IntegerAttr::get(type, number);
+}
+
+[[nodiscard]] static mlir::EntryArgumentBindings
+verificationBindings(mlir::func::FuncOp entry, const nb::handle bindings) {
+  mlir::EntryArgumentBindings result;
+  if (bindings.is_none()) {
+    return result;
+  }
+  if (!nb::isinstance<nb::dict>(bindings)) {
+    throw nb::type_error("verification bindings must be a dict of argument "
+                         "positions to scalars");
+  }
+  for (const auto& [key, value] : nb::borrow<nb::dict>(bindings)) {
+    size_t index = 0;
+    if (nb::isinstance<nb::bool_>(key) || !nb::isinstance<nb::int_>(key) ||
+        !nb::try_cast(key, index) || index >= entry.getNumArguments()) {
+      throw nb::value_error(
+          "verification binding index is outside the entry argument list");
+    }
+    result.emplace(
+        index, verificationScalar(entry.getArgument(index).getType(), value));
+  }
+  return result;
+}
+
+[[nodiscard]] static mlir::qco::VerificationResult
+verifyPrograms(const nb::typed<nb::object, mlir::QCOProgram>& before,
+               const nb::typed<nb::object, mlir::QCOProgram>& after,
+               const std::optional<mlir::qco::VerificationOptions>& options,
+               const std::optional<mlir::qco::VerificationContract>& contract,
+               const nb::object& leftBindings,
+               const nb::object& rightBindings) {
+  if (!nb::isinstance<mlir::QCOProgram>(before) ||
+      !nb::isinstance<mlir::QCOProgram>(after)) {
+    throw nb::type_error("verification requires two QCOProgram objects");
+  }
+  const auto& left = nb::cast<const mlir::QCOProgram&>(before);
+  const auto& right = nb::cast<const mlir::QCOProgram&>(after);
+  auto leftEntry = entryFunc(left);
+  auto rightEntry = entryFunc(right);
+  const auto leftArguments = verificationBindings(leftEntry, leftBindings);
+  const auto rightArguments = verificationBindings(rightEntry, rightBindings);
+  const auto nativeOptions = options.value_or(mlir::qco::VerificationOptions{});
+  const auto nativeContract =
+      contract.value_or(mlir::qco::VerificationContract{});
+  std::string diagnostics;
+  const auto caller = std::this_thread::get_id();
+  const auto collect = [&](mlir::Diagnostic& diagnostic) {
+    // Shared contexts may host concurrent read-only calls. Collect only this
+    // caller's diagnostics; other threads' handlers get their own emissions.
+    if (std::this_thread::get_id() != caller) {
+      return mlir::failure();
+    }
+    if (!diagnostics.empty()) {
+      diagnostics.push_back('\n');
+    }
+    llvm::raw_string_ostream stream(diagnostics);
+    stream << diagnostic;
+    return mlir::success();
+  };
+  const mlir::ScopedDiagnosticHandler leftHandler(leftEntry.getContext(),
+                                                  collect);
+  std::unique_ptr<mlir::ScopedDiagnosticHandler> rightHandler;
+  if (leftEntry.getContext() != rightEntry.getContext()) {
+    rightHandler = std::make_unique<mlir::ScopedDiagnosticHandler>(
+        rightEntry.getContext(), collect);
+  }
+  const auto result = [&] {
+    const nb::gil_scoped_release release;
+    return mlir::verify(left, right, nativeContract, leftArguments,
+                        rightArguments, nativeOptions);
+  }();
+  if (mlir::failed(result)) {
+    throw nb::value_error(
+        ("Cannot verify these QCO programs: " + diagnostics).c_str());
+  }
+  return *result;
+}
+
+static void registerVerification(nb::module_& module) {
+  using namespace mlir::qco;
+  nb::enum_<VerificationVerdict>(module, "VerificationVerdict")
+      .value("EQUIVALENT", VerificationVerdict::Equivalent)
+      .value("NOT_EQUIVALENT", VerificationVerdict::NotEquivalent)
+      .value("INCONCLUSIVE", VerificationVerdict::Inconclusive)
+      .value("UNSUPPORTED", VerificationVerdict::Unsupported);
+  nb::enum_<VerificationMethod>(module, "VerificationMethod")
+      .value("AUTO", VerificationMethod::Auto)
+      .value("SIMULATION", VerificationMethod::Simulation)
+      .value("CONSTRUCTION", VerificationMethod::Construction)
+      .value("ALTERNATING", VerificationMethod::Alternating);
+  nb::enum_<VerificationPhase>(module, "VerificationPhase")
+      .value("PRESERVE", VerificationPhase::Preserve)
+      .value("IGNORE", VerificationPhase::Ignore);
+  nb::enum_<VerificationRelation>(module, "VerificationRelation")
+      .value("EXACT", VerificationRelation::Exact)
+      .value("PROCESS_DISTANCE", VerificationRelation::ProcessDistance)
+      .value("AMPLITUDE_DISTANCE", VerificationRelation::AmplitudeDistance)
+      .value("TERMINAL_PROBABILITIES",
+             VerificationRelation::TerminalProbabilities);
+  nb::enum_<VerificationDomain>(module, "VerificationDomain")
+      .value("CIRCUIT_INPUTS", VerificationDomain::CircuitInputs)
+      .value("INITIALIZED_PROGRAM", VerificationDomain::InitializedProgram);
+  nb::class_<VerificationContract>(
+      module, "VerificationContract",
+      "The common quantum input and observable-output interface.")
+      .def(nb::init<>())
+      .def_rw("domain", &VerificationContract::domain)
+      .def_rw("num_inputs", &VerificationContract::numInputs)
+      .def_rw("zero_ancillas", &VerificationContract::zeroAncillas)
+      .def_rw("observed_outputs", &VerificationContract::observedOutputs);
+  nb::class_<VerificationLimits>(
+      module, "VerificationLimits",
+      "Cooperative bounds; byte limits describe requested storage, not RSS.")
+      .def(nb::init<>())
+      .def_prop_rw(
+          "timeout_ms",
+          [](const VerificationLimits& value) { return value.timeout.count(); },
+          [](VerificationLimits& value, const int64_t milliseconds) {
+            if (milliseconds < 0) {
+              throw nb::value_error("verification timeout must be nonnegative");
+            }
+            value.timeout = std::chrono::milliseconds(milliseconds);
+          },
+          "Timeout in milliseconds; zero disables the deadline.")
+      .def_rw("max_steps", &VerificationLimits::maxSteps)
+      .def_rw("max_call_depth", &VerificationLimits::maxCallDepth)
+      .def_rw("max_gates", &VerificationLimits::maxGates)
+      .def_rw("max_execution_bytes", &VerificationLimits::maxExecutionBytes)
+      .def_rw("max_dd_bytes", &VerificationLimits::maxDDBytes)
+      .def_rw("max_qubits", &VerificationLimits::maxQubits)
+      .def_rw("max_outcomes", &VerificationLimits::maxOutcomes)
+      .def_rw("workers", &VerificationLimits::workers);
+  nb::class_<VerificationOptions>(
+      module, "VerificationOptions",
+      "Relation, acceptance threshold, checker selection, and limits.")
+      .def(nb::init<>())
+      .def_rw("method", &VerificationOptions::method)
+      .def_rw("relation", &VerificationOptions::relation)
+      .def_rw("phase", &VerificationOptions::phase)
+      .def_rw("tolerance", &VerificationOptions::tolerance)
+      .def_rw("numerical_tolerance", &VerificationOptions::numericalTolerance)
+      .def_rw("limits", &VerificationOptions::limits)
+      .def_rw("max_simulation_samples",
+              &VerificationOptions::maxSimulationSamples)
+      .def_rw("seed", &VerificationOptions::seed);
+  nb::class_<VerificationCheckerResult>(module, "VerificationCheckerResult")
+      .def_ro("method", &VerificationCheckerResult::method)
+      .def_ro("verdict", &VerificationCheckerResult::verdict)
+      .def_ro("reason", &VerificationCheckerResult::reason)
+      .def_ro("distance", &VerificationCheckerResult::distance)
+      .def_ro("phase", &VerificationCheckerResult::phase)
+      .def_ro("counterexample", &VerificationCheckerResult::counterexample)
+      .def_ro("samples", &VerificationCheckerResult::samples)
+      .def_ro("seconds", &VerificationCheckerResult::seconds);
+  nb::class_<VerificationResult>(
+      module, "VerificationResult",
+      "Owned evidence for these concrete bindings; inspect verdict explicitly.")
+      .def_ro("verdict", &VerificationResult::verdict)
+      .def_ro("reason", &VerificationResult::reason)
+      .def_ro("relation", &VerificationResult::relation)
+      .def_ro("phase", &VerificationResult::phase)
+      .def_prop_ro(
+          "contract",
+          [](const VerificationResult& result) { return result.contract; })
+      .def_ro("tolerance", &VerificationResult::tolerance)
+      .def_ro("numerical_tolerance", &VerificationResult::numericalTolerance)
+      .def_ro("left_bindings", &VerificationResult::leftBindings)
+      .def_ro("right_bindings", &VerificationResult::rightBindings)
+      .def_ro("num_inputs", &VerificationResult::numInputs)
+      .def_ro("num_free_inputs", &VerificationResult::numFreeInputs)
+      .def_ro("num_qubits", &VerificationResult::numQubits)
+      .def_ro("resolved_gates", &VerificationResult::resolvedGates)
+      .def_ro("peak_dd_bytes", &VerificationResult::peakDDBytes)
+      .def_ro("dd_tolerance", &VerificationResult::ddTolerance)
+      .def_ro("distance", &VerificationResult::distance)
+      .def_ro("output_labels", &VerificationResult::outputLabels)
+      .def_ro("checkers", &VerificationResult::checkers)
+      .def("__bool__", [](const VerificationResult&) -> bool {
+        throw nb::type_error("VerificationResult has no truth value; inspect "
+                             "result.verdict explicitly");
+      });
+  module.def(
+      "verify", &verifyPrograms, "before"_a, "after"_a, nb::kw_only(),
+      "options"_a = nb::none(), "contract"_a = nb::none(),
+      "left_bindings"_a = nb::none(), "right_bindings"_a = nb::none(),
+      nb::sig("def verify(before: QCOProgram, after: QCOProgram, *, options: "
+              "VerificationOptions | None = None, contract: "
+              "VerificationContract | None = None, left_bindings: dict[int, "
+              "bool | int | float] | None = None, right_bindings: dict[int, "
+              "bool | int | float] | None = None) -> VerificationResult"),
+      R"pb(Check two borrowed QCO programs without compiling or consuming them.
+
+The default compares all circuit inputs and preserves global phase. Process
+distance requires setting both ``relation=PROCESS_DISTANCE`` and ``phase=IGNORE``
+on the options object. Bindings map entry argument positions to concrete
+scalars. Integers use their signed range except i1 and explicitly unsigned
+types. A result establishes nothing about other classical bindings.
+
+The GIL is released during checking and both program owners are retained.
+Neither program may be mutated or consumed concurrently. Results own their
+evidence and remain usable after the programs are destroyed. Passing finite
+simulation samples returns INCONCLUSIVE, never exhaustive equivalence.
+
+Raises:
+    TypeError: When inputs or bindings have unsupported Python types.
+    ValueError: When options, binding indices, or scalar values are invalid.
+    RuntimeError: When either program has already been consumed.)pb");
 }
 
 template <class T>
@@ -2290,6 +2553,7 @@ Args:
     copy: Preserve the source program by exporting a copy.)pb");
 
   nb::module_::import_("mqt.core.dd");
+  registerVerification(m);
 
   qcoProgram.def(
       "build_functionality", &buildQCOFunctionality, "dd_package"_a,

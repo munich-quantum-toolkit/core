@@ -28,7 +28,7 @@ target_link_libraries(
     MLIRQCOProgramBuilder
     MLIRQCOPrograms
     MLIRQCODDFunctionality
-    MLIRExactUnitaryTest
+    MLIRVerificationTest
     MLIRQCOUtils
     MLIRMQTTransforms
     MQT::CoreDD)

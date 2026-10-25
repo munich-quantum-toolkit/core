@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <memory_resource>
 #include <unordered_map>
 #include <vector>
 
@@ -129,15 +130,15 @@ private:
   /// Typedef for a bucket in the table.
   using Bucket = RealNumber*;
   /// Typedef for the table.
-  using Table = std::vector<Bucket>;
+  using Table = std::pmr::vector<Bucket>;
 
   /// Intrusive bucket chains; rehashing preserves entry addresses and flags.
-  Table table = Table(NBUCKET);
+  Table table;
   /// Matrix root weights share the memory manager and mark/sweep ownership.
   ///
   /// Exact keys keep lookup independent of tolerance and avoid tiny-value
   /// chains.
-  std::unordered_map<fp, RealNumber*> exactRoots;
+  std::pmr::unordered_map<fp, RealNumber*> exactRoots;
 
   /// A power-of-two cell width between eight and sixteen times the tolerance
   /// keeps each tolerance interval within the central and adjacent cells.

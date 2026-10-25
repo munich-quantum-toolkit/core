@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -27,7 +28,7 @@
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -70,6 +71,7 @@
 #include <cstdint>
 #include <memory>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -124,8 +126,8 @@ static void expectEquivalent(const OwningOpRef<ModuleOp>& expected,
   const auto numQubits = countStaticQubits(mainFunction(*expected));
   ASSERT_EQ(numQubits, countStaticQubits(mainFunction(*actual)));
   ASSERT_GT(numQubits, 0U);
-  ::mqt::test::expectFullUnitaryEqual(*expected, *actual, numQubits,
-                                      mlir::qco::MATRIX_TOLERANCE);
+  ::mqt::test::expectUnitaryEquivalent(*expected, *actual, numQubits,
+                                       mlir::qco::MATRIX_TOLERANCE);
 }
 
 template <class Op> [[nodiscard]] static size_t countOps(ModuleOp module) {
@@ -157,6 +159,18 @@ runPass(ModuleOp module, std::unique_ptr<mlir::Pass> pass) {
 }
 
 static void attachTestEnvironment(ModuleOp module, const Target& target) {
+  // These fixtures start in known circuit-wire order, before the tested pass.
+  if (!module->hasAttr("mqt.layout")) {
+    auto function = ::mqt::test::verificationEntry(module);
+    const auto width = function ? countStaticQubits(function) : 0;
+    if (width != 0) {
+      mlir::mqt::QubitLayout layout;
+      layout.initial.resize(width);
+      std::iota(layout.initial.begin(), layout.initial.end(), int64_t{0});
+      layout.inputCount = static_cast<int64_t>(width);
+      module->setAttr("mqt.layout", layout.toAttr(module.getContext()));
+    }
+  }
   mlir::attachTargetEnvironment(
       module, mlir::TargetEnvironment(target, makePayloadSpecification()));
 }
@@ -1893,7 +1907,7 @@ TEST_F(TargetSynthesisTest,
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
     // Compare the full circuit at DD precision; synthesis and DD rounding
     // accumulate across the repeated decompositions. Keep global phase.
-    ::mqt::test::expectFullUnitaryEqual(*expected, *synthesized, 3);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *synthesized, 3);
   }
 }
 
@@ -2097,6 +2111,8 @@ TEST_F(TargetSynthesisTest, MappingLeavesDirectionRepairToSynthesis) {
                     mlir::qco::createMappingPass(mlir::qco::MappingPassOptions{
                         .niterations = 1, .ntrials = 1, .seed = 42}))));
   EXPECT_EQ(countOps<SWAPOp>(*moduleOp), 0U);
+  // Compare synthesis at this checkpoint in the mapped physical wire order.
+  attachTestEnvironment(*moduleOp, target);
   auto expected = mlir::OwningOpRef<ModuleOp>(moduleOp->clone());
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
@@ -2938,7 +2954,7 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
           ASSERT_TRUE(mlir::succeeded(
               runPass(moduleOp, mlir::createCanonicalizerPass())));
         }
-        ::mqt::test::expectFullUnitaryEqual(
+        ::mqt::test::expectUnitaryEquivalent(
             *expected, *actual, 2,
             gate == "p" ? mlir::qco::MATRIX_TOLERANCE
                         : mlir::qco::decomposition::WEYL_TOLERANCE);

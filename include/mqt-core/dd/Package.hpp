@@ -26,6 +26,7 @@
 #include "dd/Package_fwd.hpp" // IWYU pragma: export
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
+#include "dd/ResourceControl.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
@@ -41,6 +42,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory_resource>
 #include <random>
 #include <ranges>
 #include <span>
@@ -87,8 +89,14 @@ public:
   /// @param nq The maximum number of qubits to allocate memory for. This can
   /// always be extended later using @ref resize.
   /// @param config The configuration of the package
+  /// @param resources Optional shared resource control; must outlive the
+  /// package. Destroy the package after a ResourceLimitExceeded exception.
+  /// Counts nodes, weights, tables, roots, and trace scratch; dense exports,
+  /// sampling, serialization, and statistics scratch are not charged.
+  /// Stopping is cooperative: allocation and collection may delay checks.
   explicit Package(std::size_t nq = DEFAULT_QUBITS,
-                   const DDPackageConfig& config = DDPackageConfig{});
+                   const DDPackageConfig& config = DDPackageConfig{},
+                   ResourceControl* resources = nullptr);
   ~Package() = default;
   Package(const Package& package) = delete;
 
@@ -109,25 +117,40 @@ public:
   /// Get the number of qubits
   [[nodiscard]] auto qubits() const { return nqubits; }
 
+  /// Cooperatively check cancellation and the deadline.
+  void checkResources() const {
+    if (resources_ != nullptr) {
+      resources_->checkpoint();
+    }
+  }
+
 private:
   std::size_t nqubits;
   DDPackageConfig config_;
+  ResourceControl* resources_;
+
+  [[nodiscard]] std::pmr::memory_resource* memoryResource() const noexcept {
+    return resources_ != nullptr ? resources_ : std::pmr::new_delete_resource();
+  }
 
 public:
   /// The memory manager for vector nodes
   MemoryManager vMemoryManager{
-      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize),
+      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize,
+                                   memoryResource()),
   };
   /// The memory manager for matrix nodes
   MemoryManager mMemoryManager{
-      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize),
+      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize,
+                                   memoryResource()),
   };
   /// The memory manager for complex numbers
   ///
   /// @note The real and imaginary part of complex numbers are treated
   /// separately. Hence, it suffices for the manager to only manage real
   /// numbers.
-  MemoryManager cMemoryManager{MemoryManager::create<RealNumber>()};
+  MemoryManager cMemoryManager{MemoryManager::create<RealNumber>(
+      MemoryManager::INITIAL_ALLOCATION_SIZE, memoryResource())};
 
   /// Get the memory manager for a given type
   ///
@@ -218,8 +241,12 @@ private:
       }
     };
     template <class Node>
-    using RootSet = std::unordered_map<Edge<Node>, std::size_t,
-                                       std::hash<Edge<Node>>, RootEqual<Node>>;
+    using RootSet =
+        std::pmr::unordered_map<Edge<Node>, std::size_t, std::hash<Edge<Node>>,
+                                RootEqual<Node>>;
+
+    explicit RootSetManager(std::pmr::memory_resource* resource)
+        : vRoots(resource), mRoots(resource) {}
 
     /// Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) {
@@ -301,7 +328,7 @@ private:
     template <class Node> friend auto& Package::getRootSet() noexcept;
   };
 
-  RootSetManager roots;
+  RootSetManager roots{memoryResource()};
 
 public:
   /// Trigger garbage collection on all unique tables.
@@ -470,6 +497,7 @@ public:
   /// @throws std::runtime_error If the matrix exceeds the package capacity.
   template <class MatrixEntry>
   mEdge makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
+    checkResources();
     if (dimension == 0) {
       return mEdge::one();
     }
@@ -511,6 +539,7 @@ private:
   mCachedEdge buildMatrixDD(const MatrixEntry& entry, const Operand& operand,
                             const size_t level, const size_t row,
                             const size_t col) {
+    checkResources();
     const auto [wire, mask] = operand(level);
     if (level == 0) {
       return makeDDNode<mNode, CachedEdge>(
@@ -548,6 +577,7 @@ public:
   makeDDNode(const Qubit var,
              const std::array<EdgeType<Node>,
                               std::tuple_size_v<decltype(Node::e)>>& edges) {
+    checkResources();
     auto& memoryManager = getMemoryManager<Node>();
     auto* p = memoryManager.template get<Node>();
 
@@ -736,9 +766,9 @@ public:
   /// Addition
   ///
   ComputeTable<vCachedEdge, vCachedEdge, vCachedEdge> vectorAdd{
-      config_.ctVecAddNumBucket};
+      config_.ctVecAddNumBucket, memoryResource()};
   ComputeTable<mCachedEdge, mCachedEdge, mCachedEdge> matrixAdd{
-      config_.ctMatAddNumBucket};
+      config_.ctMatAddNumBucket, memoryResource()};
 
   /// Get the compute table for addition operations.
   ///
@@ -754,9 +784,9 @@ public:
   }
 
   ComputeTable<vCachedEdge, vCachedEdge, vCachedEdge> vectorAddMagnitudes{
-      config_.ctVecAddMagNumBucket};
+      config_.ctVecAddMagNumBucket, memoryResource()};
   ComputeTable<mCachedEdge, mCachedEdge, mCachedEdge> matrixAddMagnitudes{
-      config_.ctMatAddMagNumBucket};
+      config_.ctMatAddMagNumBucket, memoryResource()};
 
   /// Get the compute table for addition operations with magnitudes.
   ///
@@ -822,6 +852,7 @@ public:
   template <class Node>
   CachedEdge<Node> add2(const CachedEdge<Node>& x, const CachedEdge<Node>& y,
                         const Qubit var) {
+    checkResources();
     if (x.w.exactlyZero()) {
       if (y.w.exactlyZero()) {
         return CachedEdge<Node>::zero();
@@ -875,6 +906,7 @@ public:
   template <class Node>
   CachedEdge<Node> addMagnitudes(const CachedEdge<Node>& x,
                                  const CachedEdge<Node>& y, const Qubit var) {
+    checkResources();
     if (x.w.exactlyZero()) {
       if (y.w.exactlyZero()) {
         return CachedEdge<Node>::zero();
@@ -917,7 +949,7 @@ public:
   /// Vector conjugation
   ///
   UnaryComputeTable<vNode*, vCachedEdge> conjugateVector{
-      config_.ctVecConjNumBucket};
+      config_.ctVecConjNumBucket, memoryResource()};
 
   /// Conjugates a given decision diagram edge.
   ///
@@ -934,7 +966,7 @@ public:
   /// Matrix (conjugate) transpose
   ///
   UnaryComputeTable<mNode*, mCachedEdge> conjugateMatrixTranspose{
-      config_.ctMatConjTransNumBucket};
+      config_.ctMatConjTransNumBucket, memoryResource()};
 
   /// Computes the conjugate transpose of a given matrix edge.
   ///
@@ -951,9 +983,9 @@ public:
   /// Multiplication
   ///
   ComputeTable<mNode*, vNode*, vCachedEdge> matrixVectorMultiplication{
-      config_.ctMatVecMultNumBucket};
+      config_.ctMatVecMultNumBucket, memoryResource()};
   ComputeTable<mNode*, mNode*, mCachedEdge> matrixMatrixMultiplication{
-      config_.ctMatMatMultNumBucket};
+      config_.ctMatMatMultNumBucket, memoryResource()};
 
   /// Get the compute table for multiplication operations.
   ///
@@ -1032,6 +1064,7 @@ private:
   CachedEdge<RightOperandNode> multiply2(const Edge<LeftOperandNode>& x,
                                          const Edge<RightOperandNode>& y,
                                          Qubit var) {
+    checkResources();
     using LEdge = Edge<LeftOperandNode>;
     using REdge = Edge<RightOperandNode>;
     using ResultEdge = CachedEdge<RightOperandNode>;
@@ -1128,7 +1161,7 @@ private:
   ///
 public:
   ComputeTable<vNode*, vNode*, vCachedEdge> vectorInnerProduct{
-      config_.ctVecInnerProdNumBucket};
+      config_.ctVecInnerProdNumBucket, memoryResource()};
 
   /// Calculates the inner product of two vector decision diagrams.
   ///
@@ -1196,9 +1229,9 @@ public:
   ///
 
   ComputeTable<vNode*, vNode*, vCachedEdge> vectorKronecker{
-      config_.ctVecKronNumBucket};
+      config_.ctVecKronNumBucket, memoryResource()};
   ComputeTable<mNode*, mNode*, mCachedEdge> matrixKronecker{
-      config_.ctMatKronNumBucket};
+      config_.ctMatKronNumBucket, memoryResource()};
 
   /// Get the compute table for Kronecker product operations.
   ///
@@ -1261,6 +1294,7 @@ private:
   template <class Node>
   CachedEdge<Node> kronecker2(const Edge<Node>& x, const Edge<Node>& y,
                               const size_t shift) {
+    checkResources();
     if (x.w.exactlyZero() || y.w.exactlyZero()) {
       return CachedEdge<Node>::zero();
     }
@@ -1307,7 +1341,7 @@ private:
   ///
 public:
   UnaryComputeTable<mNode*, mCachedEdge> matrixTrace{
-      config_.ctMatTraceNumBucket};
+      config_.ctMatTraceNumBucket, memoryResource()};
 
   /// Get the compute table for trace operations.
   ///

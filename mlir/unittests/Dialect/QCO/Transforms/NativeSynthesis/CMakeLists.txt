@@ -17,7 +17,7 @@ target_link_libraries(
     MQTCompilerTarget
     MLIRMQTTransforms
     MLIRQCOProgramBuilder
-    MLIRExactUnitaryTest
+    MLIRVerificationTest
     MLIRQCOUtils
     MLIRQCOTransforms
     MLIRPass

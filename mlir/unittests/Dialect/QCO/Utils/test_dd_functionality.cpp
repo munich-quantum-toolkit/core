@@ -21,6 +21,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/DDWorkerBudget.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include "gtest/gtest.h"
@@ -53,6 +54,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -64,6 +66,7 @@
 #include <memory>
 #include <numbers>
 #include <random>
+#include <stop_token>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -4773,6 +4776,415 @@ TEST_F(QCODDFunctionalityTest, RejectsShiftAndMathDomainErrors) {
                                        .str());
     }
   }
+}
+
+TEST_F(QCODDFunctionalityTest, ResolvedExecutionPreservesBoundControlAndPhase) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @rotate(%angle: f64, %q: !qco.qubit) -> !qco.qubit {
+        %out = qco.rx(%angle) %q : !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func @main(%enabled: i1, %angle: f64) {
+        %zero = arith.constant 0 : index
+        %two = arith.constant 2 : index
+        %one = arith.constant 1 : index
+        %q = qco.static 100000 : !qco.qubit
+        %loop = scf.for %i = %zero to %two step %one iter_args(%iter = %q) -> (!qco.qubit) {
+          %out = qco.if %enabled args(%arg = %iter) -> (!qco.qubit) {
+            %rotated = func.call @rotate(%angle, %arg) : (f64, !qco.qubit) -> !qco.qubit
+            qco.yield %rotated : !qco.qubit
+          } else args(%arg = %iter) {
+            qco.yield %arg : !qco.qubit
+          }
+          scf.yield %out : !qco.qubit
+        }
+        qco.gphase(%angle)
+        qco.sink %loop : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto func = mainFunc(*moduleOp);
+  DDArgumentBindings bindings{
+      {func.getArgument(0), BoolAttr::get(context.get(), true)},
+      {
+          func.getArgument(1),
+          FloatAttr::get(Float64Type::get(context.get()), 0.3),
+      },
+  };
+  auto trace = resolveExecution(func, bindings);
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  ASSERT_EQ(trace.roots.size(), 1);
+  EXPECT_EQ(trace.roots[0].staticId, 100000);
+  EXPECT_EQ(trace.roots[0].wire, 0);
+  ASSERT_EQ(trace.gates.size(), 3);
+  dd::Package package(1);
+  auto state = dd::makeZeroState(1, package);
+  for (const auto& gate : trace.gates) {
+    state = package.applyOperation(makeResolvedGateDD(package, gate), state);
+  }
+  const auto vector = dd::getVector(state);
+  const auto phase = std::polar(1.0, 0.3);
+  EXPECT_NEAR(std::abs(vector[0] - phase * std::cos(0.3)), 0, 1e-12);
+  EXPECT_NEAR(std::abs(vector[1] - phase * std::complex(0.0, -std::sin(0.3))),
+              0, 1e-12);
+  package.decRef(state);
+  bindings[func.getArgument(0)] = BoolAttr::get(context.get(), false);
+  trace = resolveExecution(func, bindings);
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  EXPECT_EQ(trace.gates.size(), 1);
+  bindings.erase(func.getArgument(1));
+  EXPECT_EQ(resolveExecution(func, bindings).status,
+            DDTraceStatus::Unsupported);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionPreservesMeasurementDestinations) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @read(%q: !qco.qubit) -> (i1, !qco.qubit) {
+        %measured, %bit = qco.measure %q : !qco.qubit
+        return %bit, %measured : i1, !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> (!cbit.reg<5>, i1, !qco.qubit) {
+        %one = arith.constant 1 : index
+        %four = arith.constant 4 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<5>
+        %bit, %out = func.call @read(%q) : (!qco.qubit) -> (i1, !qco.qubit)
+        cbit.store %bit, %reg[%one] : !cbit.reg<5>
+        %copy = cbit.load %reg[%one] : !cbit.reg<5>
+        cbit.store %copy, %reg[%four] : !cbit.reg<5>
+        return %reg, %copy, %out : !cbit.reg<5>, i1, !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto func = mainFunc(*moduleOp);
+  auto alloc = *func.getOps<cbit::AllocOp>().begin();
+  alloc->setAttr("mqt.register_name",
+                 StringAttr::get(context.get(), "readout"));
+  const auto trace = resolveExecution(func);
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  ASSERT_EQ(trace.outputs.size(), 6);
+  EXPECT_EQ(trace.quantumReturns, (std::vector<dd::Qubit>{0}));
+  for (const auto& output : trace.outputs) {
+    if (output.resultIndex == 1 || output.bitIndex == 1 ||
+        output.bitIndex == 4) {
+      ASSERT_TRUE(output.wire);
+      EXPECT_EQ(*output.wire, 0);
+      EXPECT_FALSE(output.constant);
+    } else {
+      ASSERT_TRUE(output.constant);
+      EXPECT_FALSE(*output.constant);
+      EXPECT_FALSE(output.wire);
+    }
+    if (output.resultIndex == 0) {
+      EXPECT_EQ(output.name, "readout");
+    }
+  }
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionRejectsExecutedNoncoherentPaths) {
+  for (const auto* body : {
+           R"mlir(%measured, %bit = qco.measure %q : !qco.qubit
+              %out = qco.if %bit args(%arg = %measured) -> (!qco.qubit) {
+                %x = qco.x %arg : !qco.qubit
+                qco.yield %x : !qco.qubit
+              } else args(%arg = %measured) { qco.yield %arg : !qco.qubit })mlir",
+           R"mlir(%measured, %bit = qco.measure %q : !qco.qubit
+              %out = qco.x %measured : !qco.qubit)mlir",
+           R"mlir(%out = qco.reset %q : !qco.qubit)mlir",
+       }) {
+    auto moduleOp = parseSourceString<ModuleOp>(
+        std::string(
+            "module { func.func @main(%q: !qco.qubit) -> !qco.qubit {\n") +
+            body + "\nreturn %out : !qco.qubit\n} }",
+        context.get());
+    ASSERT_TRUE(moduleOp);
+    const auto trace = resolveExecution(mainFunc(*moduleOp));
+    EXPECT_EQ(trace.status, DDTraceStatus::Unsupported) << trace.message;
+    EXPECT_TRUE(trace.gates.empty());
+  }
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %false = arith.constant false
+        %out = qco.if %false args(%arg = %q) -> (!qco.qubit) {
+          %reset = qco.reset %arg : !qco.qubit
+          qco.yield %reset : !qco.qubit
+        } else args(%arg = %q) { qco.yield %arg : !qco.qubit }
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_EQ(resolveExecution(mainFunc(*moduleOp)).status,
+            DDTraceStatus::Complete);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionBoundsEmptyLoopsAndAllocations) {
+  auto loop = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %zero = arith.constant 0 : index
+        %many = arith.constant 1000000 : index
+        %one = arith.constant 1 : index
+        scf.for %i = %zero to %many step %one { scf.yield }
+        return
+      }
+    }
+  )mlir",
+                                          context.get());
+  ASSERT_TRUE(loop);
+  DDTraceOptions options;
+  options.maxSteps = 10;
+  auto trace = resolveExecution(mainFunc(*loop), DDArgumentBindings{}, options);
+  EXPECT_EQ(trace.status, DDTraceStatus::ResourceLimit);
+  EXPECT_EQ(trace.steps, 10);
+  auto endless = parseSourceString<ModuleOp>(R"mlir(
+    module { func.func @main() {
+      %true = arith.constant true
+      %last = scf.while (%flag = %true) : (i1) -> i1 {
+        scf.condition(%flag) %flag : i1
+      } do {
+      ^bb0(%flag: i1):
+        scf.yield %flag : i1
+      }
+      return
+    } }
+  )mlir",
+                                             context.get());
+  ASSERT_TRUE(endless);
+  trace = resolveExecution(mainFunc(*endless), DDArgumentBindings{}, options);
+  EXPECT_EQ(trace.status, DDTraceStatus::ResourceLimit);
+  EXPECT_EQ(trace.steps, 10);
+  options = {};
+  options.deadline = std::chrono::steady_clock::now();
+  EXPECT_EQ(
+      resolveExecution(mainFunc(*loop), DDArgumentBindings{}, options).status,
+      DDTraceStatus::ResourceLimit);
+  std::stop_source cancellation;
+  cancellation.request_stop();
+  options = {};
+  options.stop = cancellation.get_token();
+  EXPECT_EQ(
+      resolveExecution(mainFunc(*loop), DDArgumentBindings{}, options).status,
+      DDTraceStatus::Cancelled);
+
+  auto alloc = parseSourceString<ModuleOp>(R"mlir(
+    module { func.func @main() {
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<9223372036854775807>
+      return
+    } }
+  )mlir",
+                                           context.get());
+  ASSERT_TRUE(alloc);
+  options = {};
+  options.maxBytes = 1024;
+  EXPECT_EQ(
+      resolveExecution(mainFunc(*alloc), DDArgumentBindings{}, options).status,
+      DDTraceStatus::ResourceLimit);
+}
+
+TEST_F(QCODDFunctionalityTest, ResolvedExecutionBoundsGatesAndCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @flip(%q: !qco.qubit) -> !qco.qubit {
+        %out = qco.x %q : !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %out = func.call @flip(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto func = mainFunc(*moduleOp);
+  for (unsigned limit = 0; limit != 4; ++limit) {
+    DDTraceOptions options;
+    if (limit == 0) {
+      options.maxGates = 0;
+    }
+    if (limit == 1) {
+      options.maxCallDepth = 1;
+    }
+    if (limit == 2) {
+      options.maxQubits = 0;
+    }
+    if (limit == 3) {
+      options.maxBytes = 0;
+    }
+    const auto trace = resolveExecution(func, DDArgumentBindings{}, options);
+    EXPECT_EQ(trace.status, DDTraceStatus::ResourceLimit) << trace.message;
+    EXPECT_TRUE(trace.gates.empty());
+  }
+  EXPECT_EQ(resolveExecution(func).status, DDTraceStatus::Complete);
+}
+
+TEST_F(QCODDFunctionalityTest, SharedWorkerBudgetCancelsWaitingCall) {
+  const auto grant = acquireDDWorkers(std::numeric_limits<size_t>::max());
+  ASSERT_GT(grant, 0);
+  std::stop_source cancellation;
+  auto waiting = std::async(std::launch::async, [&] {
+    return acquireDDWorkers(1, cancellation.get_token());
+  });
+  EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(10)),
+            std::future_status::timeout);
+  cancellation.request_stop();
+  EXPECT_EQ(waiting.get(), 0);
+  releaseDDWorkers(grant);
+  const auto next = acquireDDWorkers(1);
+  EXPECT_EQ(next, 1);
+  releaseDDWorkers(next);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionTracksAllocationOriginsAndLifetimes) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module { func.func @main() {
+      %two = arith.constant 2 : index
+      %first = qco.alloc : !qco.qubit
+      %tensor = qtensor.alloc(%two) : tensor<2x!qco.qubit>
+      qco.sink %first : !qco.qubit
+      qtensor.dealloc %tensor : tensor<2x!qco.qubit>
+      %last = qco.alloc : !qco.qubit
+      qco.sink %last : !qco.qubit
+      return
+    } }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto trace = resolveExecution(mainFunc(*moduleOp));
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  ASSERT_EQ(trace.roots.size(), 4);
+  for (size_t i = 0; i < trace.roots.size(); ++i) {
+    EXPECT_EQ(trace.roots[i].wire, i);
+    EXPECT_EQ(trace.roots[i].kind, DDWireRoot::Kind::Allocation);
+  }
+  EXPECT_EQ(trace.roots[0].allocationIndex, 0);
+  EXPECT_EQ(trace.roots[1].allocationIndex, 1);
+  EXPECT_EQ(trace.roots[2].allocationIndex, 1);
+  EXPECT_EQ(trace.roots[2].elementIndex, 1);
+  EXPECT_EQ(trace.roots[3].allocationIndex, 2);
+  auto nested = parseSourceString<ModuleOp>(R"mlir(
+    module { func.func @main() {
+      %true = arith.constant true
+      scf.if %true {
+        %q = qco.alloc : !qco.qubit
+        qco.sink %q : !qco.qubit
+      }
+      return
+    } }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(nested);
+  EXPECT_EQ(resolveExecution(mainFunc(*nested)).status,
+            DDTraceStatus::Unsupported);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionBindsTensorExtentAndReplaysWireMap) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module { func.func @main(%tensor: tensor<?x!qco.qubit>) -> tensor<?x!qco.qubit> {
+      %one = arith.constant 1 : index
+      %remaining, %q = qtensor.extract %tensor[%one] : tensor<?x!qco.qubit>
+      %x = qco.x %q : !qco.qubit
+      %result = qtensor.insert %x into %remaining[%one] : tensor<?x!qco.qubit>
+      return %result : tensor<?x!qco.qubit>
+    } }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto func = mainFunc(*moduleOp);
+  const DDArgumentBindings bindings{
+      {
+          func.getArgument(0),
+          IntegerAttr::get(IndexType::get(context.get()), 2),
+      },
+  };
+  const auto trace = resolveExecution(func, bindings);
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  EXPECT_EQ(trace.quantumReturns, (std::vector<dd::Qubit>{0, 1}));
+  ASSERT_EQ(trace.gates.size(), 1);
+  dd::Package package(2);
+  const std::array<dd::Qubit, 2> map{1, 0};
+  auto state =
+      package.applyOperation(makeResolvedGateDD(package, trace.gates[0], map),
+                             dd::makeZeroState(2, package));
+  EXPECT_EQ(dd::getVector(state), (dd::CVec{0., 1., 0., 0.}));
+  package.decRef(state);
+  EXPECT_EQ(resolveExecution(func).status, DDTraceStatus::Unsupported);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionClearsOverwrittenMeasurementTokens) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module { func.func @main(%q: !qco.qubit) -> (i1, !qco.qubit) {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %false = arith.constant false
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %out, %bit = qco.measure %q : !qco.qubit
+      cbit.store %bit, %reg[%zero] : !cbit.reg<1>
+      %last = scf.for %i = %zero to %two step %one iter_args(%carry = %false) -> i1 {
+        %copy = cbit.load %reg[%zero] : !cbit.reg<1>
+        cbit.store %false, %reg[%zero] : !cbit.reg<1>
+        scf.yield %copy : i1
+      }
+      return %last, %out : i1, !qco.qubit
+    } }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto trace = resolveExecution(mainFunc(*moduleOp));
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  ASSERT_EQ(trace.outputs.size(), 1);
+  EXPECT_FALSE(trace.outputs[0].wire);
+  ASSERT_TRUE(trace.outputs[0].constant);
+  EXPECT_FALSE(*trace.outputs[0].constant);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ResolvedExecutionReplaysControlledAndDenseGates) {
+  auto moduleOp = buildModule([](QCOProgramBuilder& builder) {
+    auto control = builder.staticQubit(0);
+    auto target = builder.staticQubit(1);
+    control = builder.x(control);
+    std::tie(control, target) = builder.cx(control, target);
+    std::tie(target, control) = builder.ctrl(
+        target, control, [&](Value q) { return builder.h(builder.t(q)); });
+    builder.sink(control);
+    builder.sink(target);
+    return SmallVector<Value>{};
+  });
+  ASSERT_TRUE(moduleOp);
+  const auto trace = resolveExecution(mainFunc(*moduleOp));
+  ASSERT_EQ(trace.status, DDTraceStatus::Complete) << trace.message;
+  ASSERT_EQ(trace.gates.size(), 3);
+  dd::Package package(2);
+  auto state = dd::makeZeroState(2, package);
+  const std::array<dd::Qubit, 2> map{1, 0};
+  for (const auto& gate : trace.gates) {
+    state =
+        package.applyOperation(makeResolvedGateDD(package, gate, map), state);
+  }
+  const auto vector = dd::getVector(state);
+  const auto amplitude = std::polar(std::sqrt(0.5), std::numbers::pi / 4);
+  EXPECT_NEAR(std::abs(vector[0]), 0, 1e-12);
+  EXPECT_NEAR(std::abs(vector[1] - amplitude), 0, 1e-12);
+  EXPECT_NEAR(std::abs(vector[2]), 0, 1e-12);
+  EXPECT_NEAR(std::abs(vector[3] + amplitude), 0, 1e-12);
+  package.decRef(state);
 }
 
 } // namespace

@@ -12,7 +12,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -94,7 +94,7 @@ protected:
     size_t gateCount = 0;
     rewritten->walk([&](GateOp) { ++gateCount; });
     EXPECT_EQ(gateCount, expectedGates);
-    ::mqt::test::expectFullUnitaryEqual(*original, *rewritten, 2);
+    ::mqt::test::expectUnitaryEquivalent(*original, *rewritten, 2);
   }
 };
 

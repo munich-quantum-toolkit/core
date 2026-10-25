@@ -16,7 +16,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -158,7 +158,7 @@ TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesFullUnitary) {
   )mlir",
                                                &context_);
   ASSERT_TRUE(reference);
-  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*reference, *moduleOp, 1);
 }
 
 TEST_F(QCModifierCanonicalizationTest,
@@ -201,7 +201,7 @@ TEST_F(QCModifierCanonicalizationTest,
   )mlir",
                                                &context_);
   ASSERT_TRUE(reference);
-  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 3);
+  ::mqt::test::expectUnitaryEquivalent(*reference, *moduleOp, 3);
 }
 
 TEST_F(QCModifierCanonicalizationTest, ControlledPhaseDropsUnusedTargets) {

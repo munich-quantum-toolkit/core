@@ -14,7 +14,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -105,7 +105,7 @@ TEST_F(QCOModifierCanonicalizationTest, AdjacentControlledInverseGatesCancel) {
     ASSERT_TRUE(result);
     auto function = result->lookupSymbol<func::FuncOp>("test");
     EXPECT_TRUE(function.getBody().getOps<CtrlOp>().empty());
-    ::mqt::test::expectFullUnitaryEqual(*original, *result, 3);
+    ::mqt::test::expectUnitaryEquivalent(*original, *result, 3);
   }
 }
 
@@ -137,7 +137,7 @@ TEST_F(QCOModifierCanonicalizationTest,
     ASSERT_TRUE(result);
     auto function = result->lookupSymbol<func::FuncOp>("test");
     EXPECT_LE(llvm::range_size(function.getBody().getOps<CtrlOp>()), 1);
-    ::mqt::test::expectFullUnitaryEqual(*original, *result, 2);
+    ::mqt::test::expectUnitaryEquivalent(*original, *result, 2);
   }
 }
 
@@ -198,7 +198,7 @@ TEST_F(QCOModifierCanonicalizationTest, AdjacentControlledTwoTargetGates) {
     ASSERT_TRUE(result);
     auto function = result->lookupSymbol<func::FuncOp>("test");
     EXPECT_LE(llvm::range_size(function.getBody().getOps<CtrlOp>()), 1);
-    ::mqt::test::expectFullUnitaryEqual(*original, *result, 3);
+    ::mqt::test::expectUnitaryEquivalent(*original, *result, 3);
   }
 }
 
@@ -225,7 +225,7 @@ TEST_F(QCOModifierCanonicalizationTest, ControlledRotationsKeepWireOrder) {
   ASSERT_TRUE(result);
   auto function = result->lookupSymbol<func::FuncOp>("test");
   EXPECT_EQ(llvm::range_size(function.getBody().getOps<CtrlOp>()), 2);
-  ::mqt::test::expectFullUnitaryEqual(*original, *result, 3);
+  ::mqt::test::expectUnitaryEquivalent(*original, *result, 3);
 }
 
 TEST_F(QCOModifierCanonicalizationTest, ControlledRotationsRespectTarget) {
@@ -260,7 +260,7 @@ TEST_F(QCOModifierCanonicalizationTest, ControlledRotationsRespectTarget) {
   ASSERT_TRUE(result);
   auto function = result->lookupSymbol<func::FuncOp>("test");
   EXPECT_EQ(llvm::range_size(function.getBody().getOps<CtrlOp>()), 2);
-  ::mqt::test::expectFullUnitaryEqual(*original, *result, 2);
+  ::mqt::test::expectUnitaryEquivalent(*original, *result, 2);
 }
 
 TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesLargeAngles) {
@@ -295,7 +295,7 @@ TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesLargeAngles) {
   EXPECT_DOUBLE_EQ(*lambda, -1.0e16);
   auto original = parseSourceString<ModuleOp>(source, &context_);
   ASSERT_TRUE(original);
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 1);
 }
 
 TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesDynamicAngles) {
@@ -353,7 +353,7 @@ TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesFullUnitary) {
   )mlir",
                                                &context_);
   ASSERT_TRUE(reference);
-  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*reference, *moduleOp, 1);
 }
 
 TEST_F(QCOModifierCanonicalizationTest,
@@ -392,7 +392,7 @@ TEST_F(QCOModifierCanonicalizationTest,
   )mlir",
                                                &context_);
   ASSERT_TRUE(reference);
-  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 3);
+  ::mqt::test::expectUnitaryEquivalent(*reference, *moduleOp, 3);
 }
 
 TEST_F(QCOModifierCanonicalizationTest, ControlledPhaseDropsUnusedTargets) {

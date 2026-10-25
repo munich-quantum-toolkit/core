@@ -15,7 +15,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -90,7 +90,7 @@ TEST_F(CombineControlledGatesTest, DefaultPipelineMergesParameterizedBodies) {
   ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   EXPECT_EQ(countControls(*moduleOp), 1U);
   moduleOp->walk([](CtrlOp op) { EXPECT_EQ(op.getNumBodyUnitaries(), 1U); });
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
+  ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 2);
 }
 
 TEST_F(CombineControlledGatesTest, RespectsWireOrderPartitionAndUses) {
@@ -142,7 +142,7 @@ TEST_F(CombineControlledGatesTest, RespectsWireOrderPartitionAndUses) {
     OwningOpRef<ModuleOp> original(moduleOp->clone());
     ASSERT_NO_FATAL_FAILURE(combine(*moduleOp, false));
     EXPECT_EQ(countControls(*moduleOp), 2U);
-    ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 4);
+    ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 4);
   }
 }
 
@@ -195,6 +195,6 @@ TEST_F(CombineControlledGatesTest, PreservesPhaseWiresAndParameterDominance) {
       fold.addPass(createCanonicalizerPass());
       ASSERT_TRUE(succeeded(fold.run(mod)));
     }
-    ::mqt::test::expectFullUnitaryEqual(*expected, *actual, 4);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *actual, 4);
   }
 }

@@ -37,9 +37,9 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Support/RandomSeed.h"
 
-#include "ExactUnitaryTest.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
+#include "VerificationTest.h"
 #include "qasm_programs.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
@@ -5165,7 +5165,7 @@ ctrl @ )" + modifier + "composite q[0], q[1], q[2], q[3];";
                                       : program.compileForTarget(environment)));
       EXPECT_TRUE(succeeded(verify(program.module())));
       EXPECT_TRUE(succeeded(qco::verifyLinearity(program.module())));
-      expectFullUnitaryEqual(reference.module(), program.module(), 4);
+      expectUnitaryEquivalent(reference.module(), program.module(), 4);
     }
   }
 }
@@ -5212,8 +5212,8 @@ ctrl @ ry(phi) q[0], q[1];
       ASSERT_TRUE(succeeded(
           program->bindParameters({{"theta", angle}, {"phi", -0.3}})));
     }
-    expectFullUnitaryEqual(expected.module(), actual.module(), 2);
-    expectFullUnitaryEqual(expected.module(), combined.module(), 2);
+    expectUnitaryEquivalent(expected.module(), actual.module(), 2);
+    expectUnitaryEquivalent(expected.module(), combined.module(), 2);
   }
 }
 
@@ -5243,7 +5243,7 @@ TEST_F(CompilerPipelineTest, TargetPipelinesSimplifyCombinedControls) {
       ASSERT_TRUE(succeeded(qc));
       auto original = std::move(*qc).intoQCO();
       ASSERT_TRUE(succeeded(original));
-      ASSERT_TRUE(succeeded(original->cleanup()));
+      // Retain every declared input until the pipeline records its identity.
       auto reference = original->copy();
       ASSERT_TRUE(
           succeeded(reference.bindParameters({{"theta", 0.2}, {"phi", -0.3}})));
@@ -5256,7 +5256,7 @@ TEST_F(CompilerPipelineTest, TargetPipelinesSimplifyCombinedControls) {
         EXPECT_TRUE(succeeded(qco::verifyLinearity(program.module())));
         ASSERT_TRUE(
             succeeded(program.bindParameters({{"theta", 0.2}, {"phi", -0.3}})));
-        expectFullUnitaryEqual(reference.module(), program.module(), 3);
+        expectUnitaryEquivalent(reference.module(), program.module(), 3);
       }
     }
   }
@@ -5295,7 +5295,7 @@ ctrl(2) @ rz(0.2) q[0], q[1], q[2];
       EXPECT_TRUE(target.supports(op));
     });
     EXPECT_EQ(controls, 2U);
-    expectFullUnitaryEqual(original->module(), program.module(), 3);
+    expectUnitaryEquivalent(original->module(), program.module(), 3);
   }
 }
 
@@ -5344,7 +5344,7 @@ ctrl @ ry(phi) q[0], q[1];
           succeeded(bound->bindParameters({{"theta", 0.73}, {"phi", -0.3}})));
       ASSERT_TRUE(succeeded(bound->cleanup()));
     }
-    expectFullUnitaryEqual(reference.module(), restored->module(), 2);
+    expectUnitaryEquivalent(reference.module(), restored->module(), 2);
   }
 }
 
@@ -5359,6 +5359,14 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
       });
   ASSERT_TRUE(verify(*moduleOp).succeeded());
   auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+  // The reference identity follows the fixture's declared static wire IDs.
+  (*reference)
+      ->setAttr("mqt.layout",
+                mlir::mqt::QubitLayout{
+                    .initial = {0, 1},
+                    .inputCount = 2,
+                }
+                    .toAttr(ownedContext.get()));
   auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
   ASSERT_TRUE(mlir::succeeded(program));
   using OperationCapability = CompilerTarget::OperationCapability;
@@ -5379,7 +5387,12 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
                                     : compiled.compileForTarget(environment)));
     EXPECT_TRUE(verify(compiled.module()).succeeded());
     EXPECT_TRUE(qco::verifyLinearity(compiled.module()).succeeded());
-    expectFullUnitaryEqual(*reference, compiled.module(), 2);
+    // Static inputs bypass placement and routing, retaining this fixture's
+    // physical wire identity. Do not overwrite compiler-produced metadata.
+    ASSERT_FALSE(compiled.module()->hasAttr("mqt.layout"));
+    compiled.module()->setAttr("mqt.layout",
+                               (*reference)->getAttr("mqt.layout"));
+    expectUnitaryEquivalent(*reference, compiled.module(), 2);
     size_t numTwoQubitGates = 0;
     compiled.module().walk([&](qco::UnitaryOpInterface unitary) {
       numTwoQubitGates += unitary.isTwoQubit();
@@ -5493,6 +5506,14 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
     inputVerifier.addPass(qco::createVerifyTargetConformance());
     ASSERT_TRUE(inputVerifier.run(*moduleOp).succeeded());
     auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+    // The reference identity follows the fixture's declared static wire IDs.
+    (*reference)
+        ->setAttr("mqt.layout",
+                  mlir::mqt::QubitLayout{
+                      .initial = {0, 1},
+                      .inputCount = 2,
+                  }
+                      .toAttr(ownedContext.get()));
     auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
     ASSERT_TRUE(mlir::succeeded(program));
 
@@ -5506,7 +5527,12 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
     PassManager outputVerifier(ownedContext.get());
     outputVerifier.addPass(qco::createVerifyTargetConformance());
     ASSERT_TRUE(outputVerifier.run(program->module()).succeeded());
-    expectFullUnitaryEqual(*reference, program->module(), 2);
+    // Static inputs bypass placement and routing, retaining this fixture's
+    // physical wire identity. Do not overwrite compiler-produced metadata.
+    ASSERT_FALSE(program->module()->hasAttr("mqt.layout"));
+    program->module()->setAttr("mqt.layout",
+                               (*reference)->getAttr("mqt.layout"));
+    expectUnitaryEquivalent(*reference, program->module(), 2);
     if (testCase.expectFusion) {
       size_t numTwoQubitGates = 0;
       program->module().walk([&](qco::UnitaryOpInterface unitary) {
@@ -5546,13 +5572,25 @@ TEST_F(CompilerPipelineTest,
         return SmallVector<Value>{};
       });
   auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+  // The reference identity follows the fixture's declared static wire IDs.
+  (*reference)
+      ->setAttr("mqt.layout",
+                mlir::mqt::QubitLayout{
+                    .initial = {0, 1, 2, 3, 4},
+                    .inputCount = 5,
+                }
+                    .toAttr(ownedContext.get()));
   auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
   ASSERT_TRUE(mlir::succeeded(program));
   ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
       TargetEnvironment(target, makePayloadSpecification()))));
   ASSERT_TRUE(succeeded(verify(program->module())));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-  expectFullUnitaryEqual(*reference, program->module(), 5);
+  // Static inputs bypass placement and routing, retaining this fixture's
+  // physical wire identity. Do not overwrite compiler-produced metadata.
+  ASSERT_FALSE(program->module()->hasAttr("mqt.layout"));
+  program->module()->setAttr("mqt.layout", (*reference)->getAttr("mqt.layout"));
+  expectUnitaryEquivalent(*reference, program->module(), 5);
   size_t entanglers = 0;
   program->module().walk([&](qco::UnitaryOpInterface unitary) {
     entanglers += unitary.isTwoQubit();
@@ -6028,7 +6066,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
             b.sink(qubit);
             return SmallVector<Value>{};
           });
-      expectFullUnitaryEqual(*reference, *bound, 1);
+      expectUnitaryEquivalent(*reference, *bound, 1);
     }
   }
 }

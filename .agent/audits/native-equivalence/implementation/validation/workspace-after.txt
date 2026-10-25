@@ -1,0 +1,2 @@
+VerificationVerdict.UNSUPPORTED coherent comparison cannot discard a nonzero workspace output
+[(VerificationMethod.CONSTRUCTION, VerificationVerdict.UNSUPPORTED, 'coherent comparison cannot discard a nonzero workspace output')]

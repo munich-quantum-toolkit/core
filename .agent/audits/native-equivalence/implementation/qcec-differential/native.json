@@ -1,0 +1,289 @@
+{
+  "backend": "native",
+  "python": "3.14.8",
+  "versions": {
+    "mqt-core": "4.1.2.dev75+g1d384a5d2.d20261025",
+    "qiskit": "2.5.2"
+  },
+  "cases": [
+    {
+      "name": "identical",
+      "relation": "exact",
+      "tolerance": 1e-12,
+      "expected": "equal",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "EQUIVALENT",
+      "reason": "maximum entry residual meets the contract",
+      "distance": 0.0,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "EQUIVALENT",
+          "reason": "maximum entry residual meets the contract",
+          "distance": 0.0
+        }
+      ]
+    },
+    {
+      "name": "wrong_angle",
+      "relation": "exact",
+      "tolerance": 1e-12,
+      "expected": "different",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(0.17) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    %cst = arith.constant 1.700000e-01 : f64\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<1x!qco.qubit>\n    %q_5 = qco.ry(%cst) %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_6 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "NOT_EQUIVALENT",
+      "reason": "entry residual exceeds the contract for every allowed phase",
+      "distance": 0.08489768280241602,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "NOT_EQUIVALENT",
+          "reason": "entry residual exceeds the contract for every allowed phase",
+          "distance": 0.08489768280241602
+        }
+      ]
+    },
+    {
+      "name": "metadata_phase_preserve",
+      "relation": "exact",
+      "tolerance": 1e-12,
+      "expected": "native different; QCEC metadata-phase blind spot",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.37,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %cst = arith.constant 3.700000e-01 : f64\n    qco.gphase(%cst)\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "NOT_EQUIVALENT",
+      "reason": "entry residual exceeds the contract for every allowed phase",
+      "distance": 0.36789306705608243,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "NOT_EQUIVALENT",
+          "reason": "entry residual exceeds the contract for every allowed phase",
+          "distance": 0.36789306705608243
+        }
+      ]
+    },
+    {
+      "name": "metadata_phase_ignore",
+      "relation": "phase_ignore",
+      "tolerance": 1e-12,
+      "expected": "equal modulo phase",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.37,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %cst = arith.constant 3.700000e-01 : f64\n    qco.gphase(%cst)\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "EQUIVALENT",
+      "reason": "maximum entry residual meets the contract",
+      "distance": 0.0,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "EQUIVALENT",
+          "reason": "maximum entry residual meets the contract",
+          "distance": 0.0
+        }
+      ]
+    },
+    {
+      "name": "gate_phase_ignore",
+      "relation": "phase_ignore",
+      "tolerance": 1e-12,
+      "expected": "equal modulo phase",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nx q[0];\nz q[0];\nx q[0];\nz q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<1x!qco.qubit>\n    %q_5 = qco.x %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<1x!qco.qubit>\n    %qs_7, %q_8 = qtensor.extract %qs_6[%c0] : tensor<1x!qco.qubit>\n    %q_9 = qco.z %q_8 : !qco.qubit\n    %qs_10 = qtensor.insert %q_9 into %qs_7[%c0] : tensor<1x!qco.qubit>\n    %qs_11, %q_12 = qtensor.extract %qs_10[%c0] : tensor<1x!qco.qubit>\n    %q_13 = qco.x %q_12 : !qco.qubit\n    %qs_14 = qtensor.insert %q_13 into %qs_11[%c0] : tensor<1x!qco.qubit>\n    %qs_15, %q_16 = qtensor.extract %qs_14[%c0] : tensor<1x!qco.qubit>\n    %q_17 = qco.z %q_16 : !qco.qubit\n    %qs_18 = qtensor.insert %q_17 into %qs_15[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_18 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "EQUIVALENT",
+      "reason": "maximum entry residual meets the contract",
+      "distance": 0.0,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "EQUIVALENT",
+          "reason": "maximum entry residual meets the contract",
+          "distance": 0.0
+        }
+      ]
+    },
+    {
+      "name": "process_boundary_0.49",
+      "relation": "process",
+      "tolerance": 0.49,
+      "expected": "D=0.5; below rejects, near is native inconclusive, above accepts",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(pi/3) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    %cst = arith.constant 1.0471975511965976 : f64\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<1x!qco.qubit>\n    %q_5 = qco.ry(%cst) %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_6 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "NOT_EQUIVALENT",
+      "reason": "distance above the acceptance interval",
+      "distance": 0.4999999999999999,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "NOT_EQUIVALENT",
+          "reason": "distance above the acceptance interval",
+          "distance": 0.4999999999999999
+        }
+      ]
+    },
+    {
+      "name": "process_boundary_0.5",
+      "relation": "process",
+      "tolerance": 0.5,
+      "expected": "D=0.5; below rejects, near is native inconclusive, above accepts",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(pi/3) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    %cst = arith.constant 1.0471975511965976 : f64\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<1x!qco.qubit>\n    %q_5 = qco.ry(%cst) %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_6 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "INCONCLUSIVE",
+      "reason": "distance lies in the numerical uncertainty interval",
+      "distance": null,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "INCONCLUSIVE",
+          "reason": "distance lies in the numerical uncertainty interval",
+          "distance": 0.4999999999999999
+        }
+      ]
+    },
+    {
+      "name": "process_boundary_0.51",
+      "relation": "process",
+      "tolerance": 0.51,
+      "expected": "D=0.5; below rejects, near is native inconclusive, above accepts",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(pi/3) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_2 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() attributes {mqt.entry_point} {\n    %c1 = arith.constant 1 : index\n    %q = qtensor.alloc(%c1) {mqt.register_name = \"q\"} : tensor<1x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<1x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<1x!qco.qubit>\n    %cst = arith.constant 1.0471975511965976 : f64\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<1x!qco.qubit>\n    %q_5 = qco.ry(%cst) %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<1x!qco.qubit>\n    qtensor.dealloc %qs_6 : tensor<1x!qco.qubit>\n    return\n  }\n}\n",
+      "verdict": "EQUIVALENT",
+      "reason": "distance below the acceptance interval",
+      "distance": 0.4999999999999999,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [],
+      "checkers": [
+        {
+          "verdict": "EQUIVALENT",
+          "reason": "distance below the acceptance interval",
+          "distance": 0.4999999999999999
+        }
+      ]
+    },
+    {
+      "name": "sparse_routing_physical_False_label_False",
+      "relation": "terminal",
+      "tolerance": 1e-12,
+      "expected": "equal observed probabilities for every input",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nswap q[0],q[1];\nmeasure q[0] -> c[3];\nmeasure q[1] -> c[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {\n    %c2 = arith.constant 2 : index\n    %q = qtensor.alloc(%c2) {mqt.register_name = \"q\"} : tensor<2x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"} : !cbit.reg<4>\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<2x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<2x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<2x!qco.qubit>\n    %q_5, %b = qco.measure %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<2x!qco.qubit>\n    cbit.store %b, %c[%c0] : !cbit.reg<4>\n    %qs_7, %q_8 = qtensor.extract %qs_6[%c1] : tensor<2x!qco.qubit>\n    %q_9, %b_10 = qco.measure %q_8 : !qco.qubit\n    %qs_11 = qtensor.insert %q_9 into %qs_7[%c1] : tensor<2x!qco.qubit>\n    %c3 = arith.constant 3 : index\n    cbit.store %b_10, %c[%c3] : !cbit.reg<4>\n    qtensor.dealloc %qs_11 : tensor<2x!qco.qubit>\n    return %c : !cbit.reg<4>\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {\n    %c2 = arith.constant 2 : index\n    %q = qtensor.alloc(%c2) {mqt.register_name = \"q\"} : tensor<2x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"} : !cbit.reg<4>\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<2x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<2x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<2x!qco.qubit>\n    %qs_5, %q_6 = qtensor.extract %qs_3[%c1] : tensor<2x!qco.qubit>\n    %qubit0_out, %qubit1_out = qco.swap %q_4, %q_6 : !qco.qubit, !qco.qubit\n    %qs_7 = qtensor.insert %qubit1_out into %qs_5[%c1] : tensor<2x!qco.qubit>\n    %qs_8 = qtensor.insert %qubit0_out into %qs_7[%c0] : tensor<2x!qco.qubit>\n    %qs_9, %q_10 = qtensor.extract %qs_8[%c0] : tensor<2x!qco.qubit>\n    %q_11, %b = qco.measure %q_10 : !qco.qubit\n    %qs_12 = qtensor.insert %q_11 into %qs_9[%c0] : tensor<2x!qco.qubit>\n    %c3 = arith.constant 3 : index\n    cbit.store %b, %c[%c3] : !cbit.reg<4>\n    %qs_13, %q_14 = qtensor.extract %qs_12[%c1] : tensor<2x!qco.qubit>\n    %q_15, %b_16 = qco.measure %q_14 : !qco.qubit\n    %qs_17 = qtensor.insert %q_15 into %qs_13[%c1] : tensor<2x!qco.qubit>\n    cbit.store %b_16, %c[%c0] : !cbit.reg<4>\n    qtensor.dealloc %qs_17 : tensor<2x!qco.qubit>\n    return %c : !cbit.reg<4>\n  }\n}\n",
+      "verdict": "EQUIVALENT",
+      "reason": "all selected terminal outcome effects agree",
+      "distance": 0.0,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [
+        "result0:c[0]",
+        "result0:c[1]",
+        "result0:c[2]",
+        "result0:c[3]"
+      ],
+      "checkers": [
+        {
+          "verdict": "EQUIVALENT",
+          "reason": "all selected terminal outcome effects agree",
+          "distance": 0.0
+        }
+      ]
+    },
+    {
+      "name": "sparse_routing_physical_True_label_False",
+      "relation": "terminal",
+      "tolerance": 1e-12,
+      "expected": "different",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[1];\nswap q[0],q[1];\nmeasure q[0] -> c[3];\nmeasure q[1] -> c[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {\n    %c2 = arith.constant 2 : index\n    %q = qtensor.alloc(%c2) {mqt.register_name = \"q\"} : tensor<2x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"} : !cbit.reg<4>\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<2x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<2x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<2x!qco.qubit>\n    %q_5, %b = qco.measure %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<2x!qco.qubit>\n    cbit.store %b, %c[%c0] : !cbit.reg<4>\n    %qs_7, %q_8 = qtensor.extract %qs_6[%c1] : tensor<2x!qco.qubit>\n    %q_9, %b_10 = qco.measure %q_8 : !qco.qubit\n    %qs_11 = qtensor.insert %q_9 into %qs_7[%c1] : tensor<2x!qco.qubit>\n    %c3 = arith.constant 3 : index\n    cbit.store %b_10, %c[%c3] : !cbit.reg<4>\n    qtensor.dealloc %qs_11 : tensor<2x!qco.qubit>\n    return %c : !cbit.reg<4>\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {\n    %c2 = arith.constant 2 : index\n    %q = qtensor.alloc(%c2) {mqt.register_name = \"q\"} : tensor<2x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"} : !cbit.reg<4>\n    %qs, %q_0 = qtensor.extract %q[%c1] : tensor<2x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c1] : tensor<2x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<2x!qco.qubit>\n    %qs_5, %q_6 = qtensor.extract %qs_3[%c1] : tensor<2x!qco.qubit>\n    %qubit0_out, %qubit1_out = qco.swap %q_4, %q_6 : !qco.qubit, !qco.qubit\n    %qs_7 = qtensor.insert %qubit1_out into %qs_5[%c1] : tensor<2x!qco.qubit>\n    %qs_8 = qtensor.insert %qubit0_out into %qs_7[%c0] : tensor<2x!qco.qubit>\n    %qs_9, %q_10 = qtensor.extract %qs_8[%c0] : tensor<2x!qco.qubit>\n    %q_11, %b = qco.measure %q_10 : !qco.qubit\n    %qs_12 = qtensor.insert %q_11 into %qs_9[%c0] : tensor<2x!qco.qubit>\n    %c3 = arith.constant 3 : index\n    cbit.store %b, %c[%c3] : !cbit.reg<4>\n    %qs_13, %q_14 = qtensor.extract %qs_12[%c1] : tensor<2x!qco.qubit>\n    %q_15, %b_16 = qco.measure %q_14 : !qco.qubit\n    %qs_17 = qtensor.insert %q_15 into %qs_13[%c1] : tensor<2x!qco.qubit>\n    cbit.store %b_16, %c[%c0] : !cbit.reg<4>\n    qtensor.dealloc %qs_17 : tensor<2x!qco.qubit>\n    return %c : !cbit.reg<4>\n  }\n}\n",
+      "verdict": "NOT_EQUIVALENT",
+      "reason": "terminal outcome effects differ",
+      "distance": 1.0,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [
+        "result0:c[0]",
+        "result0:c[1]",
+        "result0:c[2]",
+        "result0:c[3]"
+      ],
+      "checkers": [
+        {
+          "verdict": "NOT_EQUIVALENT",
+          "reason": "terminal outcome effects differ",
+          "distance": 1.0
+        }
+      ]
+    },
+    {
+      "name": "sparse_routing_physical_False_label_True",
+      "relation": "terminal",
+      "tolerance": 1e-12,
+      "expected": "different",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nswap q[0],q[1];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "left_qco": "module {\n  func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {\n    %c2 = arith.constant 2 : index\n    %q = qtensor.alloc(%c2) {mqt.register_name = \"q\"} : tensor<2x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"} : !cbit.reg<4>\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<2x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<2x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<2x!qco.qubit>\n    %q_5, %b = qco.measure %q_4 : !qco.qubit\n    %qs_6 = qtensor.insert %q_5 into %qs_3[%c0] : tensor<2x!qco.qubit>\n    cbit.store %b, %c[%c0] : !cbit.reg<4>\n    %qs_7, %q_8 = qtensor.extract %qs_6[%c1] : tensor<2x!qco.qubit>\n    %q_9, %b_10 = qco.measure %q_8 : !qco.qubit\n    %qs_11 = qtensor.insert %q_9 into %qs_7[%c1] : tensor<2x!qco.qubit>\n    %c3 = arith.constant 3 : index\n    cbit.store %b_10, %c[%c3] : !cbit.reg<4>\n    qtensor.dealloc %qs_11 : tensor<2x!qco.qubit>\n    return %c : !cbit.reg<4>\n  }\n}\n",
+      "right_qco": "module {\n  func.func @main() -> !cbit.reg<4> attributes {mqt.entry_point} {\n    %c2 = arith.constant 2 : index\n    %q = qtensor.alloc(%c2) {mqt.register_name = \"q\"} : tensor<2x!qco.qubit>\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"} : !cbit.reg<4>\n    %qs, %q_0 = qtensor.extract %q[%c0] : tensor<2x!qco.qubit>\n    %q_1 = qco.x %q_0 : !qco.qubit\n    %qs_2 = qtensor.insert %q_1 into %qs[%c0] : tensor<2x!qco.qubit>\n    %qs_3, %q_4 = qtensor.extract %qs_2[%c0] : tensor<2x!qco.qubit>\n    %qs_5, %q_6 = qtensor.extract %qs_3[%c1] : tensor<2x!qco.qubit>\n    %qubit0_out, %qubit1_out = qco.swap %q_4, %q_6 : !qco.qubit, !qco.qubit\n    %qs_7 = qtensor.insert %qubit1_out into %qs_5[%c1] : tensor<2x!qco.qubit>\n    %qs_8 = qtensor.insert %qubit0_out into %qs_7[%c0] : tensor<2x!qco.qubit>\n    %qs_9, %q_10 = qtensor.extract %qs_8[%c0] : tensor<2x!qco.qubit>\n    %q_11, %b = qco.measure %q_10 : !qco.qubit\n    %qs_12 = qtensor.insert %q_11 into %qs_9[%c0] : tensor<2x!qco.qubit>\n    cbit.store %b, %c[%c0] : !cbit.reg<4>\n    %qs_13, %q_14 = qtensor.extract %qs_12[%c1] : tensor<2x!qco.qubit>\n    %q_15, %b_16 = qco.measure %q_14 : !qco.qubit\n    %qs_17 = qtensor.insert %q_15 into %qs_13[%c1] : tensor<2x!qco.qubit>\n    %c3 = arith.constant 3 : index\n    cbit.store %b_16, %c[%c3] : !cbit.reg<4>\n    qtensor.dealloc %qs_17 : tensor<2x!qco.qubit>\n    return %c : !cbit.reg<4>\n  }\n}\n",
+      "verdict": "NOT_EQUIVALENT",
+      "reason": "terminal outcome effects differ",
+      "distance": 1.0,
+      "dd_tolerance": 2.2737367544323206e-13,
+      "output_labels": [
+        "result0:c[0]",
+        "result0:c[1]",
+        "result0:c[2]",
+        "result0:c[3]"
+      ],
+      "checkers": [
+        {
+          "verdict": "NOT_EQUIVALENT",
+          "reason": "terminal outcome effects differ",
+          "distance": 1.0
+        }
+      ]
+    }
+  ]
+}

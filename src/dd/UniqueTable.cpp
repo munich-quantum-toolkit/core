@@ -27,7 +27,8 @@ namespace dd {
 
 UniqueTable::UniqueTable(MemoryManager& manager,
                          const UniqueTableConfig& config)
-    : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager) {
+    : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager),
+      tables(manager.getMemoryResource()), stats(manager.getMemoryResource()) {
   if (!std::has_single_bit(cfg.nBuckets) ||
       !std::has_single_bit(cfg.maxBuckets) || cfg.maxBuckets < cfg.nBuckets) {
     throw std::invalid_argument(

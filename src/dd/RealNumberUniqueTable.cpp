@@ -28,7 +28,9 @@ namespace dd {
 
 RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
                                              const std::size_t initialGCLim)
-    : memoryManager(&manager), initialGCLimit(initialGCLim) {
+    : table(NBUCKET, manager.getMemoryResource()),
+      exactRoots(manager.getMemoryResource()), memoryManager(&manager),
+      initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
   stats.numBuckets = NBUCKET + exactRoots.bucket_count();
   RealNumber::immortalize(lookupNonNegative(0.5));
@@ -159,7 +161,7 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
 }
 
 void RealNumberUniqueTable::rehash(const std::size_t size, const int exponent) {
-  Table next(size);
+  Table next(size, table.get_allocator().resource());
   table.swap(next);
   cellExponent = exponent;
   for (auto* head : next) {

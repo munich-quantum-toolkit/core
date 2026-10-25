@@ -18,7 +18,7 @@
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -195,7 +195,7 @@ protected:
     OwningOpRef<ModuleOp> original = module->clone();
     const auto result = runMergePass(*module);
     if (succeeded(result)) {
-      ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+      ::mqt::test::expectUnitaryEquivalent(*original, *module, 1);
     }
     return result;
   }
@@ -372,7 +372,7 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
     }
     ASSERT_TRUE(succeeded(verify(*module)));
     ASSERT_TRUE(succeeded(verifyLinearity(*module)));
-    ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+    ::mqt::test::expectUnitaryEquivalent(*original, *module, 1);
   }
 }
 
@@ -572,7 +572,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
       }
       ASSERT_TRUE(succeeded(verify(*original)));
       ASSERT_TRUE(succeeded(verify(*module)));
-      ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+      ::mqt::test::expectUnitaryEquivalent(*original, *module, 1);
     }
   }
 }
@@ -632,7 +632,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, largePhasesPreserveControlledMatrix) {
         }
         ASSERT_TRUE(succeeded(verify(*module)));
         ASSERT_TRUE(succeeded(verifyLinearity(*module)));
-        ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+        ::mqt::test::expectUnitaryEquivalent(*original, *module, 2);
       }
     }
   }
@@ -753,7 +753,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
       ASSERT_TRUE(succeeded(pm.run(*after)));
       ASSERT_TRUE(succeeded(verify(*after)));
       ASSERT_TRUE(succeeded(verifyLinearity(*after)));
-      ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
+      ::mqt::test::expectUnitaryEquivalent(*before, *after, 2);
     }
   }
 }
@@ -853,7 +853,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
           ASSERT_TRUE(succeeded(canonicalizer.run(*after)));
           ASSERT_TRUE(succeeded(verify(*after)));
           ASSERT_TRUE(succeeded(verifyLinearity(*after)));
-          ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
+          ::mqt::test::expectUnitaryEquivalent(*before, *after, 2);
         }
       }
     }
@@ -908,7 +908,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, composesHadamardZChainsDirectly) {
           PassManager canonicalizer(&context);
           canonicalizer.addPass(createCanonicalizerPass());
           ASSERT_TRUE(succeeded(canonicalizer.run(*after)));
-          ::mqt::test::expectFullUnitaryEqual(*before, *after, 2);
+          ::mqt::test::expectUnitaryEquivalent(*before, *after, 2);
         }
       }
     }
@@ -958,7 +958,7 @@ TEST_F(MergeSingleQubitRotationGatesTest,
           EXPECT_LE(std::abs(*value), 4 * PI);
         }
       });
-      ::mqt::test::expectFullUnitaryEqual(*before, *after, 1);
+      ::mqt::test::expectUnitaryEquivalent(*before, *after, 1);
     }
   }
 }

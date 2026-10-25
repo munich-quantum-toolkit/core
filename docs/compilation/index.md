@@ -27,6 +27,8 @@ change and rerun.
   {doc}`target-compilation guide <../mlir/target_compilation>` uses device
   operations, connectivity, and supported payloads to produce a runnable
   program.
+- **Verify a compilation:** compare retained QCO programs with the native
+  {doc}`verification API <verification>`, including layout and synthesis error.
 - **Exchange programs:** use {doc}`OpenQASM <../mlir/OpenQASM>` or
   {doc}`Qiskit <../mlir/qiskit>` at the frontend, or compile to
   {doc}`QIR <../qir/index>` and execute LLVM text or bitcode with DDSIM. Use
@@ -50,6 +52,7 @@ and the
 ../tutorials/index
 ../mlir/mqt_compiler_collection
 ../mlir/target_compilation
+verification
 ../qir/index
 ../jeff
 ../mlir/OpenQASM

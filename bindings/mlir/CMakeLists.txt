@@ -73,6 +73,7 @@ if(NOT TARGET ${TARGET_NAME})
     MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
+    MQTCompilerVerificationPython
     MLIRAnalysis
     MLIRMQTDialect
     MLIRMQTUtils

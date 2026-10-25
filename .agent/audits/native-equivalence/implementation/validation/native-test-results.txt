@@ -1,0 +1,72 @@
+Native validation summaries from the final successful run of each affected binary.
+Full local logs are identified in native-tests.json.
+
+COMMAND: build/release/mlir/unittests/Dialect/QCO/Utils/mqt-core-mlir-unittest-qco-utils
+EXIT: 0
+[==========] 300 tests from 27 test suites ran. (1656 ms total)
+[  PASSED  ] 300 tests.
+
+COMMAND: build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
+EXIT: 0
+[==========] 321 tests from 17 test suites ran. (5650 ms total)
+[  PASSED  ] 321 tests.
+
+COMMAND: build/release/mlir/unittests/Dialect/MQT/Transforms/mqt-core-mlir-unittests-mqt-transforms
+EXIT: 0
+[==========] 31 tests from 2 test suites ran. (95 ms total)
+[  PASSED  ] 31 tests.
+
+COMMAND: build/release/mlir/unittests/Dialect/QC/IR/mqt-core-mlir-unittest-qc-ir
+EXIT: 0
+[==========] 369 tests from 40 test suites ran. (374 ms total)
+[  PASSED  ] 369 tests.
+
+COMMAND: build/release/mlir/unittests/Dialect/QCO/IR/mqt-core-mlir-unittest-qco-ir
+EXIT: 0
+[==========] 586 tests from 47 test suites ran. (455 ms total)
+[  PASSED  ] 586 tests.
+
+COMMAND: build/release/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/mqt-core-mlir-unittest-target-synthesis
+EXIT: 0
+[==========] 99 tests from 2 test suites ran. (430 ms total)
+[  PASSED  ] 99 tests.
+
+COMMAND: build/release/mlir/unittests/Dialect/QCO/Transforms/Optimizations/mqt-core-mlir-unittest-optimizations
+EXIT: 0
+[==========] 207 tests from 17 test suites ran. (210 ms total)
+[  PASSED  ] 207 tests.
+
+COMMAND: build/release/test/dd/mqt-core-dd-test
+EXIT: 0
+[==========] 220 tests from 11 test suites ran. (301 ms total)
+[  PASSED  ] 220 tests.
+
+Focused evidence from the same passing QCO Utils run:
+[ RUN      ] NativeVerification.ApproximationBoundaryUsesStableResidualAndSeparateGuard
+[       OK ] NativeVerification.ApproximationBoundaryUsesStableResidualAndSeparateGuard (2 ms)
+[ RUN      ] NativeVerification.TimeoutOptionsDoNotOverflowTheClock
+[       OK ] NativeVerification.TimeoutOptionsDoNotOverflowTheClock (0 ms)
+[ RUN      ] DenseVerification.PowerCannotAmplifyAcceptedMatrixRoundingIntoNonunitarity
+[       OK ] DenseVerification.PowerCannotAmplifyAcceptedMatrixRoundingIntoNonunitarity (0 ms)
+[ RUN      ] VerificationInterfaceTest.PrivateWorkspaceMustReturnToZero
+[       OK ] VerificationInterfaceTest.PrivateWorkspaceMustReturnToZero (19 ms)
+[----------] 119 tests from QCODDFunctionalityTest
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionPreservesBoundControlAndPhase
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionPreservesBoundControlAndPhase (3 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionPreservesMeasurementDestinations
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionPreservesMeasurementDestinations (1 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionRejectsExecutedNoncoherentPaths
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionRejectsExecutedNoncoherentPaths (0 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionBoundsEmptyLoopsAndAllocations
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionBoundsEmptyLoopsAndAllocations (0 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionBoundsGatesAndCalls
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionBoundsGatesAndCalls (3 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionTracksAllocationOriginsAndLifetimes
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionTracksAllocationOriginsAndLifetimes (0 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionBindsTensorExtentAndReplaysWireMap
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionBindsTensorExtentAndReplaysWireMap (0 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionClearsOverwrittenMeasurementTokens
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionClearsOverwrittenMeasurementTokens (0 ms)
+[ RUN      ] QCODDFunctionalityTest.ResolvedExecutionReplaysControlledAndDenseGates
+[       OK ] QCODDFunctionalityTest.ResolvedExecutionReplaysControlledAndDenseGates (0 ms)
+[----------] 119 tests from QCODDFunctionalityTest (1487 ms total)

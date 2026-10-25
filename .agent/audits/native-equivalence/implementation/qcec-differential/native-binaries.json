@@ -1,0 +1,14 @@
+{
+  "mlir": {
+    "path": "/home/nvidia/.codex/experiments/native-equivalence-20261025/core/.nox/stubs/lib/python3.14/site-packages/mqt/core/mlir.abi3.so",
+    "sha256": "f083dd812f247cfc7edfe81422ce5d7e3d1e3a13ebaf46611899315e2147bbd2"
+  },
+  "dd": {
+    "path": "/home/nvidia/.codex/experiments/native-equivalence-20261025/core/.nox/stubs/lib/python3.14/site-packages/mqt/core/dd.abi3.so",
+    "sha256": "b53b5a9bb635163c31c40033f64247b0f3f9a3e92f6fd458c63a72ec3a3fe9a2"
+  },
+  "libmqt-core-dd-python.so": {
+    "path": "/home/nvidia/.codex/experiments/native-equivalence-20261025/core/.nox/stubs/lib/python3.14/site-packages/mqt/core/lib/libmqt-core-dd-python.so",
+    "sha256": "ec978b6ccf24ababcedc41cb9f94025a82b5723b2a1c4ce36d9e97e460a3da7f"
+  }
+}

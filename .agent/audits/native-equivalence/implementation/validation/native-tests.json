@@ -1,0 +1,82 @@
+[
+  {
+    "binary": "mlir/unittests/Dialect/QCO/Utils/mqt-core-mlir-unittest-qco-utils",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-final-workspace-eligibility-qco-utils.log",
+    "summary": [
+      "[==========] 300 tests from 27 test suites ran. (1656 ms total)",
+      "[  PASSED  ] 300 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-final-physical-fixtures-compiler.log",
+    "summary": [
+      "[==========] 321 tests from 17 test suites ran. (5650 ms total)",
+      "[  PASSED  ] 321 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "mlir/unittests/Dialect/MQT/Transforms/mqt-core-mlir-unittests-mqt-transforms",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-verified-mqt-core-mlir-unittests-mqt-transforms.log",
+    "summary": [
+      "[==========] 31 tests from 2 test suites ran. (95 ms total)",
+      "[  PASSED  ] 31 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "mlir/unittests/Dialect/QC/IR/mqt-core-mlir-unittest-qc-ir",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-verified-mqt-core-mlir-unittest-qc-ir.log",
+    "summary": [
+      "[==========] 369 tests from 40 test suites ran. (374 ms total)",
+      "[  PASSED  ] 369 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "mlir/unittests/Dialect/QCO/IR/mqt-core-mlir-unittest-qco-ir",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-verified-mqt-core-mlir-unittest-qco-ir.log",
+    "summary": [
+      "[==========] 586 tests from 47 test suites ran. (455 ms total)",
+      "[  PASSED  ] 586 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/mqt-core-mlir-unittest-target-synthesis",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-verified-mqt-core-mlir-unittest-target-synthesis.log",
+    "summary": [
+      "[==========] 99 tests from 2 test suites ran. (430 ms total)",
+      "[  PASSED  ] 99 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "mlir/unittests/Dialect/QCO/Transforms/Optimizations/mqt-core-mlir-unittest-optimizations",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-verified-mqt-core-mlir-unittest-optimizations.log",
+    "summary": [
+      "[==========] 207 tests from 17 test suites ran. (210 ms total)",
+      "[  PASSED  ] 207 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  },
+  {
+    "binary": "test/dd/mqt-core-dd-test",
+    "exit": 0,
+    "log": "/tmp/native-equivalence-verified-mqt-core-dd-test.log",
+    "summary": [
+      "[==========] 220 tests from 11 test suites ran. (301 ms total)",
+      "[  PASSED  ] 220 tests."
+    ],
+    "retained_summary": "native-test-results.txt"
+  }
+]

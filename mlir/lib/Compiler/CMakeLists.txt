@@ -145,3 +145,27 @@ target_sources(
   FILE_SET HEADERS
     BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
     FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)
+
+# Keep verification's DD linkage separate from the general program model.
+function(mqt_add_compiler_verification suffix)
+  add_mlir_library(
+    MQTCompilerVerification${suffix}
+    PARTIAL_SOURCES_INTENDED
+    Verification.cpp
+    LINK_LIBS
+    PUBLIC
+    MQTCompilerPrograms
+    MLIRQCOVerification${suffix})
+  mqt_mlir_target_use_project_options(MQTCompilerVerification${suffix})
+  target_sources(
+    MQTCompilerVerification${suffix}
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+      FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Verification.h)
+endfunction()
+
+mqt_add_compiler_verification("")
+if(BUILD_MQT_CORE_BINDINGS)
+  mqt_add_compiler_verification(Python)
+endif()

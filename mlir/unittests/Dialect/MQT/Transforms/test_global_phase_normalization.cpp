@@ -21,7 +21,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -98,7 +98,7 @@ protected:
     OwningOpRef<ModuleOp> expected(cloned);
     ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, numQubits);
   }
 
   static void expectNormalizedQCUnitary(OwningOpRef<ModuleOp>& moduleOp,
@@ -113,7 +113,7 @@ protected:
       ASSERT_TRUE(pm.run(candidate).succeeded());
       ASSERT_TRUE(verify(candidate).succeeded());
     }
-    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, numQubits);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, numQubits);
   }
 };
 
@@ -419,7 +419,7 @@ TEST_F(GlobalPhaseNormalizationTest, RemovesQCControlEmptiedByPhaseExtraction) {
     ASSERT_TRUE(pm.run(candidate).succeeded());
     ASSERT_TRUE(verify(candidate).succeeded());
   }
-  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+  ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, 2);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -677,7 +677,7 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
   auto controls = llvm::to_vector(func.getBody().getOps<qco::CtrlOp>());
   ASSERT_EQ(controls.size(), 2);
   auto returnOp = cast<func::ReturnOp>(func.getBody().front().getTerminator());
-  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 4);
+  ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, 4);
   EXPECT_EQ(returnOp.getOperand(3), controls[0].getOutputTarget(0));
 }
 

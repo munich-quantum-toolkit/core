@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Package_fwd.hpp"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -17,14 +18,19 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
+#include <chrono>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <random>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -42,6 +48,102 @@ using DDArgumentBindings = DenseMap<Value, Attribute>;
 struct DDExecutionOptions {
   size_t maxWhileIterations = 1'000'000'000;
 };
+
+/// A resolved gate factory with no dependency on mutable MLIR state.
+using DDResolvedGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
+                                               ArrayRef<dd::Qubit>,
+                                               const dd::Controls&);
+
+/// A quantum operation whose parameters and wire identities are concrete.
+///
+/// Standard gates use factory/parameters; other gates own a row-major local
+/// matrix in QCO operand order. A one-entry matrix represents global phase.
+struct DDResolvedGate {
+  DDResolvedGateFactory factory = nullptr;
+  std::vector<double> parameters;
+  std::vector<std::complex<double>> matrix;
+  std::vector<dd::Qubit> targets;
+  std::vector<dd::Control> controls;
+};
+
+/// Origin of a compact execution wire. Allocation roots are initialized zero.
+struct DDWireRoot {
+  enum class Kind { Argument, Static, Allocation };
+  Kind kind;
+  dd::Qubit wire;
+  size_t argumentIndex = 0;
+  size_t elementIndex = 0;
+  uint64_t staticId = 0;
+  size_t allocationIndex = 0;
+};
+
+/// One returned classical bit, retaining its destination and source identity.
+struct DDOutputBit {
+  size_t resultIndex;
+  size_t bitIndex;
+  std::string name;
+  std::optional<dd::Qubit> wire;
+  std::optional<bool> constant;
+};
+
+/// Outcome of resolving one concrete classical execution.
+enum class DDTraceStatus { Complete, Unsupported, ResourceLimit, Cancelled };
+
+/// Bounds for resolving a coherent program without allocating DD nodes.
+///
+/// maxBytes cumulatively counts trace buffers and requested QTensor and
+/// classical allocation payloads. It excludes SSA-map overhead, MLIR-interned
+/// attributes, and folding scratch; it does not bound total process memory.
+/// maxSteps also bounds dictionary growth by executed operations. maxCallDepth
+/// includes the entry function. The deadline includes classical execution.
+struct DDTraceOptions {
+  size_t maxSteps = 1'000'000;
+  size_t maxCallDepth = 64;
+  size_t maxGates = 1'000'000;
+  size_t maxBytes = 64 * 1024 * 1024;
+  size_t maxQubits = 4096;
+  std::chrono::steady_clock::time_point deadline =
+      std::chrono::steady_clock::time_point::max();
+  std::stop_token stop;
+};
+
+/// Immutable execution data after resolution; contains no MLIR or DD handles.
+///
+/// Quantum returns preserve function-result order. Classical outputs retain
+/// their original result positions and register bit indices. Unused terminal
+/// measurements do not create output bits. Failure retains a reason, not a
+/// completed execution suitable for checking.
+struct DDResolvedExecution {
+  DDTraceStatus status = DDTraceStatus::Unsupported;
+  std::string message;
+  size_t numQubits = 0;
+  size_t steps = 0;
+  size_t storageBytes = 0;
+  std::vector<DDResolvedGate> gates;
+  std::vector<DDWireRoot> roots;
+  std::vector<dd::Qubit> quantumReturns;
+  std::vector<DDOutputBit> outputs;
+};
+
+/// Resolve concrete SCF/calls through the simulation interpreter.
+///
+/// The caller verifies MLIR and QCO linearity. Entry-block allocations are
+/// supported. Executed nested allocations, recursion, resets, measurement-
+/// dependent computation, and gates on measured wires are unsupported. Terminal
+/// measurement tokens may pass through calls, SSA values, and CBit
+/// loads/stores. Static IDs are retained in roots while events use compact wire
+/// IDs.
+[[nodiscard]] DDResolvedExecution resolveExecution(
+    func::FuncOp func,
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+    const DDTraceOptions& options = {});
+
+/// Build a resolved operation in the caller's package, optionally remapping
+/// its compact wires. The returned gate has no registered root reference.
+/// A nonempty wireMap must cover every wire referenced by the gate.
+[[nodiscard]] dd::MatrixDD makeResolvedGateDD(dd::Package& package,
+                                              const DDResolvedGate& gate,
+                                              ArrayRef<dd::Qubit> wireMap = {});
 
 /// An uncollapsed sampling state and the package that owns its DD nodes.
 ///

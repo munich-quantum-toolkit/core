@@ -19,6 +19,7 @@
 #include <bit>
 #include <cstddef>
 #include <iostream>
+#include <memory_resource>
 #include <stdexcept>
 #include <vector>
 
@@ -38,7 +39,11 @@ public:
   /// Default constructor
   ///
   /// @param numBuckets Number of hash table buckets. Must be a power of two.
-  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
+  /// @param resource Storage allocator; must outlive the table.
+  explicit ComputeTable(
+      const size_t numBuckets = DEFAULT_NUM_BUCKETS,
+      std::pmr::memory_resource* resource = std::pmr::new_delete_resource())
+      : table(resource), valid(resource) {
     // numBuckets must be a power of two
     if (!std::has_single_bit(numBuckets)) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
@@ -137,7 +142,7 @@ public:
   /// The capacity must be a power of two. Invalidates lookup result pointers.
   /// The replacement storage is allocated on its first insertion.
   void resize(const size_t numBuckets) {
-    ComputeTable replacement(numBuckets);
+    ComputeTable replacement(numBuckets, table.get_allocator().resource());
     table.swap(replacement.table);
     valid.swap(replacement.valid);
     stats.numBuckets = numBuckets;
@@ -157,16 +162,18 @@ private:
     if (!table.empty()) {
       return;
     }
-    std::vector<Entry> entries(stats.numBuckets);
-    std::vector<bool> occupied(stats.numBuckets, false);
+    std::pmr::vector<Entry> entries(stats.numBuckets,
+                                    table.get_allocator().resource());
+    std::pmr::vector<bool> occupied(stats.numBuckets, false,
+                                    valid.get_allocator().resource());
     table.swap(entries);
     valid.swap(occupied);
   }
 
   /// The actual table storing the entries
-  std::vector<Entry> table;
+  std::pmr::vector<Entry> table;
   /// Dynamic bitset to mark valid entries
-  std::vector<bool> valid;
+  std::pmr::vector<bool> valid;
   /// Statistics of the compute table
   TableStatistics stats{};
 };

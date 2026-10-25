@@ -16,8 +16,8 @@
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Support/Passes.h"
 
-#include "ExactUnitaryTest.h"
 #include "TestCaseUtils.h"
+#include "VerificationTest.h"
 #include "qco_programs.h"
 
 #include "gtest/gtest.h"
@@ -826,7 +826,7 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, 2);
 
     auto func = *moduleOp->getOps<func::FuncOp>().begin();
     EXPECT_TRUE(func.getBody().getOps<PowOp>().empty());
@@ -860,7 +860,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, 2);
 
     size_t powCount = 0;
     moduleOp->walk([&](PowOp) { ++powCount; });
@@ -898,7 +898,7 @@ TEST_F(QCOMatrixTest, RejectedPowURemainsUnchanged) {
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, 2);
     size_t powCount = 0;
     moduleOp->walk([&](PowOp) { ++powCount; });
     EXPECT_EQ(powCount, 1U);
@@ -934,7 +934,7 @@ TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *moduleOp, 2);
   }
 }
 
@@ -1139,7 +1139,7 @@ TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
     OwningOpRef<ModuleOp> expected = program->clone();
     ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
     ASSERT_TRUE(succeeded(verifyLinearity(*program)));
-    ::mqt::test::expectFullUnitaryEqual(*expected, *program, 2);
+    ::mqt::test::expectUnitaryEquivalent(*expected, *program, 2);
     auto function = *program->getOps<func::FuncOp>().begin();
     EXPECT_EQ(llvm::range_size(function.getBody().getOps<DCXOp>()),
               reversed ? 0 : 2);

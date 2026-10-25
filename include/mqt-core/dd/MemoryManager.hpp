@@ -19,7 +19,7 @@
 #include <concepts>
 #include <cstddef>
 #include <memory>
-#include <utility>
+#include <memory_resource>
 #include <vector>
 
 namespace dd {
@@ -33,7 +33,8 @@ struct LLBase;
 /// Returned objects enter a free list and are reused before allocating from a
 /// chunk, reducing allocation overhead for DD nodes and edge weights.
 class MemoryManager {
-  MemoryManager(size_t entrySize, std::size_t initialAllocationSize);
+  MemoryManager(size_t entrySize, std::size_t initialAllocationSize,
+                std::pmr::memory_resource* resource);
 
 public:
   // delete copy construction and assignment
@@ -51,15 +52,21 @@ public:
   /// Construct a new MemoryManager object for objects of type T.
   ///
   /// @param initialAllocationSize The positive initial number of entries
+  /// @param resource Storage allocator; must outlive the manager.
   /// @tparam T The type of the entries
   /// @throws std::invalid_argument If initialAllocationSize is zero.
   template <class T>
-  static MemoryManager
-  create(const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE) {
-    return {sizeof(T), initialAllocationSize};
+  static MemoryManager create(
+      const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE,
+      std::pmr::memory_resource* resource = std::pmr::new_delete_resource()) {
+    return {sizeof(T), initialAllocationSize, resource};
   }
 
   ~MemoryManager() = default;
+
+  [[nodiscard]] std::pmr::memory_resource* getMemoryResource() const noexcept {
+    return chunks.get_allocator().resource();
+  }
 
   /// Get an entry from the manager.
   ///
@@ -129,7 +136,15 @@ private:
   /// runtime.
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
   using Storage = std::byte[];
-  using Chunk = std::pair<std::unique_ptr<Storage>, size_t>;
+  struct ChunkDeleter {
+    std::pmr::memory_resource* resource;
+    size_t bytes;
+    void operator()(std::byte* pointer) const noexcept {
+      resource->deallocate(pointer, bytes, alignof(std::max_align_t));
+    }
+  };
+  using Chunk = std::unique_ptr<Storage, ChunkDeleter>;
+  [[nodiscard]] Chunk allocateChunk(size_t entries) const;
 
   /// A linked list of entries that are available for (re-)use
   ///
@@ -144,7 +159,7 @@ private:
   ///
   /// The MemoryManager maintains a vector of chunks. Each chunk is a
   /// byte buffer. Entries in a chunk are allocated contiguously.
-  std::vector<Chunk> chunks;
+  std::pmr::vector<Chunk> chunks;
 
   /// Iterator to the next available entry in the current chunk
   ///

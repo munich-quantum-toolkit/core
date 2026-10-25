@@ -1,0 +1,394 @@
+{
+  "backend": "qcec",
+  "python": "3.12.15",
+  "versions": {
+    "mqt-core": "3.11.0",
+    "qiskit": "2.2.3",
+    "mqt-qcec": "3.11.1.dev15+g4319be6bb"
+  },
+  "cases": [
+    {
+      "name": "identical",
+      "relation": "exact",
+      "tolerance": 1e-12,
+      "expected": "equal",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12
+      },
+      "verdict": "equivalent",
+      "details": {
+        "check_time": 0.001614752,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent",
+            "runtime": 1.3152e-5
+          }
+        ],
+        "equivalence": "equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 1.5536e-5
+      }
+    },
+    {
+      "name": "wrong_angle",
+      "relation": "exact",
+      "tolerance": 1e-12,
+      "expected": "different",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(0.17) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12
+      },
+      "verdict": "not_equivalent",
+      "details": {
+        "check_time": 0.001579568,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "not_equivalent",
+            "runtime": 1.608e-5
+          }
+        ],
+        "equivalence": "not_equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 1.1088e-5
+      }
+    },
+    {
+      "name": "metadata_phase_preserve",
+      "relation": "exact",
+      "tolerance": 1e-12,
+      "expected": "native different; QCEC metadata-phase blind spot",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.37,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12
+      },
+      "verdict": "equivalent",
+      "details": {
+        "check_time": 0.00140467,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent",
+            "runtime": 4.672e-6
+          }
+        ],
+        "equivalence": "equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 6.992e-6
+      }
+    },
+    {
+      "name": "metadata_phase_ignore",
+      "relation": "phase_ignore",
+      "tolerance": 1e-12,
+      "expected": "equal modulo phase",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.37,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12
+      },
+      "verdict": "equivalent",
+      "details": {
+        "check_time": 0.001319821,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent",
+            "runtime": 4.624e-6
+          }
+        ],
+        "equivalence": "equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 5.328e-6
+      }
+    },
+    {
+      "name": "gate_phase_ignore",
+      "relation": "phase_ignore",
+      "tolerance": 1e-12,
+      "expected": "equal modulo phase",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nx q[0];\nz q[0];\nx q[0];\nz q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12
+      },
+      "verdict": "equivalent_up_to_global_phase",
+      "details": {
+        "check_time": 0.000185618,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent_up_to_global_phase",
+            "runtime": 6.304e-6
+          }
+        ],
+        "equivalence": "equivalent_up_to_global_phase",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 1.1104e-5
+      }
+    },
+    {
+      "name": "process_boundary_0.49",
+      "relation": "process",
+      "tolerance": 0.49,
+      "expected": "D=0.5; below rejects, near is native inconclusive, above accepts",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(pi/3) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12,
+        "check_approximate_equivalence": true,
+        "approximate_checking_threshold": 0.49
+      },
+      "verdict": "not_equivalent",
+      "details": {
+        "check_time": 0.00092673,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "not_equivalent",
+            "runtime": 1.0496e-5
+          }
+        ],
+        "equivalence": "not_equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 7.04e-6
+      }
+    },
+    {
+      "name": "process_boundary_0.5",
+      "relation": "process",
+      "tolerance": 0.5,
+      "expected": "D=0.5; below rejects, near is native inconclusive, above accepts",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(pi/3) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12,
+        "check_approximate_equivalence": true,
+        "approximate_checking_threshold": 0.5
+      },
+      "verdict": "equivalent",
+      "details": {
+        "check_time": 0.000123137,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent",
+            "runtime": 6.56e-6
+          }
+        ],
+        "equivalence": "equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 7.201e-6
+      }
+    },
+    {
+      "name": "process_boundary_0.51",
+      "relation": "process",
+      "tolerance": 0.51,
+      "expected": "D=0.5; below rejects, near is native inconclusive, above accepts",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\nx q[0];\nry(pi/3) q[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12,
+        "check_approximate_equivalence": true,
+        "approximate_checking_threshold": 0.51
+      },
+      "verdict": "equivalent",
+      "details": {
+        "check_time": 0.000945721,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent",
+            "runtime": 7.776e-6
+          }
+        ],
+        "equivalence": "equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 5.6e-6
+      }
+    },
+    {
+      "name": "sparse_routing_physical_False_label_False",
+      "relation": "terminal",
+      "tolerance": 1e-12,
+      "expected": "equal observed probabilities for every input",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nswap q[0],q[1];\nmeasure q[0] -> c[3];\nmeasure q[1] -> c[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12,
+        "check_partial_equivalence": true
+      },
+      "verdict": "equivalent",
+      "details": {
+        "check_time": 0.000126481,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "equivalent",
+            "runtime": 5.088e-6
+          }
+        ],
+        "equivalence": "equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 1.2064e-5
+      }
+    },
+    {
+      "name": "sparse_routing_physical_True_label_False",
+      "relation": "terminal",
+      "tolerance": 1e-12,
+      "expected": "different",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[1];\nswap q[0],q[1];\nmeasure q[0] -> c[3];\nmeasure q[1] -> c[0];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12,
+        "check_partial_equivalence": true
+      },
+      "verdict": "not_equivalent",
+      "details": {
+        "check_time": 0.00095793,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "not_equivalent",
+            "runtime": 6.512e-6
+          }
+        ],
+        "equivalence": "not_equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 8.016e-6
+      }
+    },
+    {
+      "name": "sparse_routing_physical_False_label_True",
+      "relation": "terminal",
+      "tolerance": 1e-12,
+      "expected": "different",
+      "left_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "right_qasm2": "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[2];\ncreg c[4];\nx q[0];\nswap q[0],q[1];\nmeasure q[0] -> c[0];\nmeasure q[1] -> c[3];",
+      "left_global_phase": 0.0,
+      "right_global_phase": 0.0,
+      "options": {
+        "method": "construction",
+        "parallel": false,
+        "seed": 42,
+        "run_zx_checker": false,
+        "trace_threshold": 1e-12,
+        "numerical_tolerance": 1e-12,
+        "check_partial_equivalence": true
+      },
+      "verdict": "not_equivalent",
+      "details": {
+        "check_time": 0.000121921,
+        "checkers": [
+          {
+            "checker": "decision_diagram_construction",
+            "equivalence": "not_equivalent",
+            "runtime": 1.0288e-5
+          }
+        ],
+        "equivalence": "not_equivalent",
+        "parameterized": {
+          "performed_instantiations": 0
+        },
+        "preprocessing_time": 7.952e-6
+      }
+    }
+  ]
+}

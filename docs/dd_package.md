@@ -19,6 +19,10 @@ diagrams (DDs). The C++ library and {py:mod}`mqt.core.dd` Python module support
 simulation, synthesis, and verification. Start with the quickstart for Python
 usage or the introduction below for the data structure and its limits.
 
+For comparison of compilation results, use the native
+{doc}`verification API <compilation/verification>`. It shares the DD runtime
+with simulation and preserves source input and output identities.
+
 ## Quickstart
 
 The MQT Compiler Collection uses the DD package to simulate

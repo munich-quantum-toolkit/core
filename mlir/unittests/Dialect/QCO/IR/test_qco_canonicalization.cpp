@@ -12,7 +12,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -237,7 +237,7 @@ TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesNonzeroPhase) {
         rewrittenReturn.getOperand(0).getDefiningOp<UnitaryOp>();
     ASSERT_TRUE(rewrittenPhase);
     EXPECT_EQ(rewrittenPhase.getMatrix(), matrix);
-    ::mqt::test::expectFullUnitaryEqual(*original, *rewritten, 1);
+    ::mqt::test::expectUnitaryEquivalent(*original, *rewritten, 1);
   }
 }
 

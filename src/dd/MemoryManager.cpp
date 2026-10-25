@@ -15,9 +15,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <memory_resource>
+#include <new>
 #include <stdexcept>
-#include <utility>
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #ifdef _M_X64
@@ -30,21 +32,31 @@
 namespace dd {
 
 MemoryManager::MemoryManager(size_t entrySize,
-                             const std::size_t initialAllocationSize)
-    : entrySize_(entrySize), chunks(1), stats(entrySize) {
+                             const std::size_t initialAllocationSize,
+                             std::pmr::memory_resource* resource)
+    : entrySize_(entrySize), chunks(resource), stats(entrySize) {
   if (initialAllocationSize == 0) {
     throw std::invalid_argument("Initial DD allocation size must be positive.");
   }
-  chunks[0] = {std::make_unique_for_overwrite<Storage>(initialAllocationSize *
-                                                       entrySize),
-               initialAllocationSize * entrySize};
+  chunks.emplace_back(allocateChunk(initialAllocationSize));
   // The first slab must exist before its bounds can be initialized.
   // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
-  chunkIt = chunks[0].first.get();
+  chunkIt = chunks[0].get();
   // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer,cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  chunkEndIt = chunks[0].first.get() + chunks[0].second;
+  chunkEndIt = chunks[0].get() + chunks[0].get_deleter().bytes;
   stats.numAllocations = 1U;
   stats.numAllocated = initialAllocationSize;
+}
+
+MemoryManager::Chunk MemoryManager::allocateChunk(const size_t entries) const {
+  if (entries > std::numeric_limits<size_t>::max() / entrySize_) {
+    throw std::bad_alloc();
+  }
+  const auto bytes = entries * entrySize_;
+  auto* resource = getMemoryResource();
+  auto* data = static_cast<std::byte*>(
+      resource->allocate(bytes, alignof(std::max_align_t)));
+  return Chunk(data, ChunkDeleter{.resource = resource, .bytes = bytes});
 }
 
 LLBase* MemoryManager::get() {
@@ -67,16 +79,16 @@ void MemoryManager::returnEntry(LLBase& entry) noexcept {
 
 void MemoryManager::reset() {
   const auto numAllocations = stats.numAllocations;
-  chunks.resize(1U);
+  chunks.erase(chunks.begin() + 1, chunks.end());
 
   available = nullptr;
-  chunkIt = chunks[0].first.get();
+  chunkIt = chunks[0].get();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  chunkEndIt = chunks[0].first.get() + chunks[0].second;
+  chunkEndIt = chunks[0].get() + chunks[0].get_deleter().bytes;
 
   stats.reset();
   stats.numAllocations = numAllocations;
-  stats.numAllocated = chunks[0].second / entrySize_;
+  stats.numAllocated = chunks[0].get_deleter().bytes / entrySize_;
 }
 
 bool MemoryManager::entryAvailableForReuse() const noexcept {
@@ -104,15 +116,16 @@ LLBase* MemoryManager::getEntryFromAvailableList() noexcept {
 void MemoryManager::allocateNewChunk() {
   assert(!entryAvailableInChunk());
 
-  const auto numPrevEntries = chunks.back().second / entrySize_;
+  const auto numPrevEntries = chunks.back().get_deleter().bytes / entrySize_;
+  if (numPrevEntries > std::numeric_limits<size_t>::max() / GROWTH_FACTOR) {
+    throw std::bad_alloc();
+  }
   const auto numNewEntries = numPrevEntries * GROWTH_FACTOR;
 
-  chunks.emplace_back(
-      std::make_unique_for_overwrite<Storage>(numNewEntries * entrySize_),
-      numNewEntries * entrySize_);
-  chunkIt = chunks.back().first.get();
+  chunks.emplace_back(allocateChunk(numNewEntries));
+  chunkIt = chunks.back().get();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  chunkEndIt = chunks.back().first.get() + chunks.back().second;
+  chunkEndIt = chunks.back().get() + chunks.back().get_deleter().bytes;
   ++stats.numAllocations;
   stats.numAllocated += numNewEntries;
 }

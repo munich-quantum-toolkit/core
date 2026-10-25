@@ -23,6 +23,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <memory_resource>
 #include <ranges>
 #include <stdexcept>
 #include <type_traits>
@@ -205,7 +206,7 @@ private:
   /// Typedef for a bucket in the table
   using Bucket = NodeBase*;
   /// Typedef for the table
-  using Table = std::vector<Bucket>;
+  using Table = std::pmr::vector<Bucket>;
 
   UniqueTableConfig cfg;
 
@@ -220,10 +221,10 @@ private:
   /// Each hash table is an array of buckets. Each bucket is a linked
   /// list of entries. The linked list is implemented by using the next pointer
   /// of the entries.
-  std::vector<Table> tables;
+  std::pmr::vector<Table> tables;
 
   /// A collection of statistics
-  std::vector<UniqueTableStatistics> stats;
+  std::pmr::vector<UniqueTableStatistics> stats;
 
   /// Total entries across all levels, used by per-operation collection checks.
   std::size_t entryCount_ = 0U;
@@ -232,7 +233,7 @@ private:
   uint32_t nextId_ = 0U;
 
   template <class Node> void grow(const size_t v) {
-    Table old(tables[v].size() * 2U);
+    Table old(tables[v].size() * 2U, tables.get_allocator().resource());
     tables[v].swap(old);
     for (auto* bucket : old) {
       auto* node = static_cast<Node*>(bucket);

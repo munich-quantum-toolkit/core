@@ -19,11 +19,13 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/DDAdapter.h"
+#include "mqt/Dialect/QCO/Utils/DDWorkerBudget.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -64,6 +66,7 @@
 #include <array>
 #include <cassert>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstddef>
@@ -78,6 +81,8 @@
 #include <mutex>
 #include <optional>
 #include <random>
+#include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -90,7 +95,7 @@ namespace mlir::qco {
 namespace {
 struct WorkerBudget {
   std::mutex mutex;
-  std::condition_variable available;
+  std::condition_variable_any available;
   size_t active = 0;
   const size_t limit = [] {
     const size_t hardware = static_cast<size_t>(std::max(
@@ -115,6 +120,24 @@ static WorkerBudget& workerBudget() {
   return budget;
 }
 
+size_t acquireDDWorkers(size_t requested, const std::stop_token& stop,
+                        std::chrono::steady_clock::time_point deadline) {
+  if (requested == 0 || stop.stop_requested() ||
+      std::chrono::steady_clock::now() >= deadline) {
+    return 0;
+  }
+  auto& budget = workerBudget();
+  std::unique_lock lock(budget.mutex);
+  if (!budget.available.wait_until(
+          lock, stop, deadline, [&] { return budget.active < budget.limit; }) ||
+      stop.stop_requested() || std::chrono::steady_clock::now() >= deadline) {
+    return 0;
+  }
+  const size_t granted = std::min(requested, budget.limit - budget.active);
+  budget.active += granted;
+  return granted;
+}
+
 static size_t reserveSamplingWorkers(size_t requested, size_t shots) {
   if (shots == 0) {
     return 0;
@@ -130,7 +153,7 @@ static size_t reserveSamplingWorkers(size_t requested, size_t shots) {
   return granted;
 }
 
-static void releaseSamplingWorkers(size_t count) {
+void releaseDDWorkers(size_t count) {
   if (count == 0) {
     return;
   }
@@ -215,6 +238,132 @@ struct TensorMap {
       copy.bind(value, target);
     }
     return copy;
+  }
+};
+
+struct TraceRecorder {
+  DDResolvedExecution& result;
+  const DDTraceOptions& options;
+  Block* entry;
+  size_t allocationIndex = 0;
+
+  LogicalResult fail(Operation* op, DDTraceStatus status, StringRef message) {
+    result.status = status;
+    result.message = message.str();
+    return op->emitError(message);
+  }
+
+  LogicalResult check(Operation* op, bool countStep = true) {
+    if (options.stop.stop_requested()) {
+      return fail(op, DDTraceStatus::Cancelled, "execution tracing cancelled");
+    }
+    if (std::chrono::steady_clock::now() >= options.deadline) {
+      return fail(op, DDTraceStatus::ResourceLimit,
+                  "execution tracing exceeded its deadline");
+    }
+    if (countStep) {
+      if (result.steps >= options.maxSteps) {
+        return fail(op, DDTraceStatus::ResourceLimit,
+                    "execution tracing exceeded its step limit");
+      }
+      ++result.steps;
+    }
+    return success();
+  }
+
+  LogicalResult reserveBytes(size_t bytes, Operation* op) {
+    if (bytes > options.maxBytes - result.storageBytes) {
+      return fail(op, DDTraceStatus::ResourceLimit,
+                  "execution tracing exceeded its storage limit");
+    }
+    result.storageBytes += bytes;
+    return success();
+  }
+
+  template <class T>
+  LogicalResult reserveElement(std::vector<T>& values, Operation* op) {
+    if (values.size() < values.capacity()) {
+      return success();
+    }
+    const size_t available =
+        (options.maxBytes - result.storageBytes) / sizeof(T);
+    const size_t growth =
+        std::min(std::max(size_t{1}, values.capacity()), available);
+    if (growth == 0 || failed(reserveBytes(growth * sizeof(T), op))) {
+      return fail(op, DDTraceStatus::ResourceLimit,
+                  "execution tracing exceeded its storage limit");
+    }
+    values.reserve(values.capacity() + growth);
+    return success();
+  }
+
+  LogicalResult append(DDResolvedGateFactory factory,
+                       ArrayRef<double> parameters,
+                       ArrayRef<std::complex<double>> matrix,
+                       ArrayRef<dd::Qubit> targets,
+                       const dd::Controls& controls, Operation* op) {
+    if (failed(check(op, false))) {
+      return failure();
+    }
+    // Matrix powers can amplify a tolerated input defect. Validate the
+    // resolved matrix, without allocating another dense matrix, before DD use.
+    if (!matrix.empty()) {
+      const size_t dimension = size_t{1} << targets.size();
+      for (size_t lhsColumn = 0; lhsColumn < dimension; ++lhsColumn) {
+        for (size_t rhsColumn = lhsColumn; rhsColumn < dimension; ++rhsColumn) {
+          if (failed(check(op, false))) {
+            return failure();
+          }
+          std::complex<double> innerProduct{};
+          for (size_t row = 0; row < dimension; ++row) {
+            innerProduct += std::conj(matrix[(row * dimension) + lhsColumn]) *
+                            matrix[(row * dimension) + rhsColumn];
+          }
+          const double expected = lhsColumn == rhsColumn ? 1.0 : 0.0;
+          if (!std::isfinite(innerProduct.real()) ||
+              !std::isfinite(innerProduct.imag()) ||
+              std::abs(innerProduct - expected) >
+                  mqt::DENSE_UNITARY_TOLERANCE) {
+            return fail(op, DDTraceStatus::Unsupported,
+                        "resolved matrix must be finite and unitary");
+          }
+        }
+      }
+    }
+    if (result.gates.size() >= options.maxGates) {
+      return fail(op, DDTraceStatus::ResourceLimit,
+                  "execution tracing exceeded its gate limit");
+    }
+    const size_t bytes = parameters.size() * sizeof(double) +
+                         matrix.size() * sizeof(std::complex<double>) +
+                         targets.size() * sizeof(dd::Qubit) +
+                         controls.size() * sizeof(dd::Control);
+    if (failed(reserveElement(result.gates, op)) ||
+        failed(reserveBytes(bytes, op))) {
+      return failure();
+    }
+    result.gates.push_back({
+        .factory = factory,
+        .parameters = {parameters.begin(), parameters.end()},
+        .matrix = {matrix.begin(), matrix.end()},
+        .targets = {targets.begin(), targets.end()},
+        .controls = {controls.begin(), controls.end()},
+    });
+    return success();
+  }
+
+  FailureOr<dd::Qubit> addRoot(DDWireRoot root, Operation* op) {
+    if (result.numQubits >= options.maxQubits ||
+        result.numQubits >= dd::Package::MAX_POSSIBLE_QUBITS) {
+      return fail(op, DDTraceStatus::ResourceLimit,
+                  "execution tracing exceeded its qubit limit");
+    }
+    if (failed(reserveElement(result.roots, op))) {
+      return failure();
+    }
+    root.wire = static_cast<dd::Qubit>(result.numQubits++);
+    result.roots.push_back(root);
+    return root.wire;
   }
 };
 
@@ -351,6 +500,7 @@ struct WalkState {
   TensorMap* tensors;
   ClassicalEnv* classical;
   dd::Package* dd;
+  TraceRecorder* trace = nullptr;
   GateCache* gates = nullptr;
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
@@ -408,9 +558,7 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
          << "floating-point SSA value has no concrete QCO DD binding";
 }
 
-using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
-                                             ArrayRef<dd::Qubit>,
-                                             const dd::Controls&);
+using StandardGateFactory = DDResolvedGateFactory;
 
 namespace {
 struct DecodedStandardGate {
@@ -475,6 +623,9 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
              << "global phase must be finite for QCO DD simulation";
     }
     const auto phase = GPhaseOp::unitaryMatrix(*theta).value;
+    if (walk.trace != nullptr) {
+      return walk.trace->append(nullptr, {}, ArrayRef{phase}, {}, {}, op);
+    }
     auto id = dd::Package::makeIdent();
     id.w = walk.dd->cn.lookup(phase.real(), phase.imag());
     state = walk.dd->applyOperation(id, state);
@@ -482,6 +633,16 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   }
   if (isa<BarrierOp>(op)) {
     return walk.qubits->remapUnitary(unitary);
+  }
+  if (walk.trace != nullptr) {
+    const size_t width = unitary.getInputQubits().size();
+    const size_t available =
+        walk.trace->options.maxBytes - walk.trace->result.storageBytes;
+    if (width >= std::numeric_limits<size_t>::digits / 2 ||
+        (size_t{1} << (2 * width)) > available / sizeof(std::complex<double>)) {
+      return walk.trace->fail(op, DDTraceStatus::ResourceLimit,
+                              "local matrix exceeds execution storage limit");
+    }
   }
   DynamicMatrix local;
   if (auto power = dyn_cast<PowOp>(op)) {
@@ -512,7 +673,14 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  state = walk.dd->applyOperation(makeGateDD(*walk.dd, local, wires), state);
+  if (walk.trace != nullptr) {
+    if (failed(
+            walk.trace->append(nullptr, {}, local.entries(), wires, {}, op))) {
+      return failure();
+    }
+  } else {
+    state = walk.dd->applyOperation(makeGateDD(*walk.dd, local, wires), state);
+  }
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -528,6 +696,13 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   auto targets = walk.qubits->lookupRange(targetVals, unitary.getOperation());
   if (failed(targets)) {
     return failure();
+  }
+  if (walk.trace != nullptr) {
+    if (failed(walk.trace->append(gate.build, gate.parameters, {}, *targets,
+                                  controls, unitary.getOperation()))) {
+      return failure();
+    }
+    return walk.qubits->remapUnitary(unitary);
   }
   dd::MatrixDD matrix;
   if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
@@ -763,7 +938,8 @@ static LogicalResult storeRegister(cbit::StoreOp store,
   return success();
 }
 
-static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
+static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical,
+                                  bool preserveDeferred = false) {
   const auto regIt = classical.registers.find(load.getReg());
   if (regIt == classical.registers.end()) {
     return load.emitError()
@@ -775,6 +951,11 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
     return failure();
   }
   const auto& cell = (*regIt->second)[*index];
+  if (cell.deferredWire && preserveDeferred) {
+    classical.values.erase(load.getResult());
+    classical.deferredMeasurements[load.getResult()] = *cell.deferredWire;
+    return success();
+  }
   if (cell.deferredWire && classical.deferredMeasurementUse != nullptr) {
     *classical.deferredMeasurementUse = load.getOperation();
     return failure();
@@ -782,6 +963,7 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
   if (!cell.value) {
     return load.emitError() << "read from an undefined CBit register element";
   }
+  classical.deferredMeasurements.erase(load.getResult());
   bindInteger(load.getResult(),
               llvm::APInt(1, static_cast<uint64_t>(*cell.value)), classical);
   return success();
@@ -860,7 +1042,8 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
 }
 
 template <typename AllocOp>
-static LogicalResult applyMemRefAlloc(AllocOp alloc, ClassicalEnv& classical) {
+static LogicalResult applyMemRefAlloc(AllocOp alloc, ClassicalEnv& classical,
+                                      TraceRecorder* trace = nullptr) {
   const auto type = alloc.getType();
   if (!type || !type.getLayout().isIdentity() ||
       !isSupportedClassicalType(type.getElementType())) {
@@ -897,6 +1080,15 @@ static LogicalResult applyMemRefAlloc(AllocOp alloc, ClassicalEnv& classical) {
     size *= extent;
   }
   storage->size = static_cast<size_t>(size);
+  if (trace != nullptr) {
+    if (storage->size > (trace->options.maxBytes - trace->result.storageBytes) /
+                            sizeof(Attribute) ||
+        failed(trace->reserveBytes(storage->size * sizeof(Attribute), alloc))) {
+      return trace->fail(
+          alloc, DDTraceStatus::ResourceLimit,
+          "classical allocation exceeds execution storage limit");
+    }
+  }
   storage->storage = std::make_shared<ClassicalEnv::MemRefStorage>();
   storage->storage->values =
       std::make_shared<SmallVector<Attribute>>(storage->size);
@@ -1724,9 +1916,19 @@ static LogicalResult checkDeferredMeasurementUse(UnitaryOpInterface unitary,
 
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
+  if (walk.trace != nullptr && failed(walk.trace->check(&op))) {
+    return failure();
+  }
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .template Case<StaticOp, SinkOp, qtensor::DeallocOp>(
-          [](auto) { return success(); })
+      .Case([&](StaticOp staticOp) -> LogicalResult {
+        if (walk.trace != nullptr &&
+            staticOp->getBlock() != walk.trace->entry) {
+          return staticOp.emitError(
+              "execution tracing requires entry-block static qubits");
+        }
+        return success();
+      })
+      .template Case<SinkOp, qtensor::DeallocOp>([](auto) { return success(); })
       .Case(
           [](arith::ConstantOp constant) { return validateConstant(constant); })
       .Case([&](tensor::ExtractOp extract) -> LogicalResult {
@@ -1753,6 +1955,25 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return success();
       })
       .Case([&](AllocOp alloc) -> LogicalResult {
+        if (walk.trace != nullptr) {
+          if (alloc->getBlock() != walk.trace->entry) {
+            return alloc.emitError(
+                "execution tracing requires entry-block allocations");
+          }
+          auto wire = walk.trace->addRoot(
+              {
+                  .kind = DDWireRoot::Kind::Allocation,
+                  .wire = 0,
+                  .allocationIndex = walk.trace->allocationIndex++,
+              },
+              alloc);
+          if (failed(wire)) {
+            return failure();
+          }
+          walk.qubits->numQubits = walk.trace->result.numQubits;
+          walk.qubits->bind(alloc.getResult(), *wire);
+          return success();
+        }
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
           if (!walk.qubits->lookup(alloc.getResult())) {
             return alloc.emitError()
@@ -1770,6 +1991,51 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
       })
       .Case([&](qtensor::AllocOp alloc) -> LogicalResult {
+        if (walk.trace != nullptr) {
+          if (alloc->getBlock() != walk.trace->entry) {
+            return alloc.emitError(
+                "execution tracing requires entry-block allocations");
+          }
+          auto size = lookupIndex(alloc.getSize(), *walk.classical, alloc);
+          if (failed(size) || *size <= 0) {
+            return alloc.emitError(
+                "qtensor allocation size must be positive and concrete");
+          }
+          const auto count = static_cast<size_t>(*size);
+          if (count > walk.trace->options.maxQubits -
+                          walk.trace->result.numQubits ||
+              count > dd::Package::MAX_POSSIBLE_QUBITS -
+                          walk.trace->result.numQubits) {
+            return walk.trace->fail(
+                alloc, DDTraceStatus::ResourceLimit,
+                "execution tracing exceeded its qubit limit");
+          }
+          if (failed(walk.trace->reserveBytes(
+                  count * sizeof(std::optional<dd::Qubit>), alloc))) {
+            return failure();
+          }
+          TensorSlots slots;
+          slots.reserve(count);
+          const size_t allocation = walk.trace->allocationIndex++;
+          for (size_t index = 0; index < count; ++index) {
+            auto wire = walk.trace->addRoot(
+                {
+                    .kind = DDWireRoot::Kind::Allocation,
+                    .wire = 0,
+                    .elementIndex = index,
+                    .allocationIndex = allocation,
+                },
+                alloc);
+            if (failed(wire)) {
+              return failure();
+            }
+            slots.push_back(wire);
+          }
+          walk.qubits->numQubits = walk.trace->result.numQubits;
+          walk.tensors->bind(alloc.getResult(),
+                             std::make_shared<TensorSlots>(std::move(slots)));
+          return success();
+        }
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
           if (!walk.tensors->lookup(alloc.getResult())) {
             return alloc.emitError()
@@ -1800,6 +2066,12 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         auto wires =
             walk.qubits->lookupRange(fromElements.getElements(), fromElements);
         if (failed(wires)) {
+          return failure();
+        }
+        if (walk.trace != nullptr &&
+            failed(walk.trace->reserveBytes(
+                wires->size() * sizeof(std::optional<dd::Qubit>),
+                fromElements))) {
           return failure();
         }
         TensorSlots slots;
@@ -1852,8 +2124,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         walk.tensors->bind(insert.getResult(), input);
         return success();
       })
-      .template Case<memref::AllocOp, memref::AllocaOp>(
-          [&](auto alloc) { return applyMemRefAlloc(alloc, *walk.classical); })
+      .template Case<memref::AllocOp, memref::AllocaOp>([&](auto alloc) {
+        return applyMemRefAlloc(alloc, *walk.classical, walk.trace);
+      })
       .Case([&](bufferization::MaterializeInDestinationOp init) {
         return applyArrayInitializer(init, *walk.classical);
       })
@@ -1883,12 +2156,26 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                     *walk.classical);
         return success();
       })
-      .Case([&](cbit::AllocOp alloc) {
+      .Case([&](cbit::AllocOp alloc) -> LogicalResult {
+        if (walk.trace != nullptr) {
+          const auto count = static_cast<size_t>(alloc.getType().getWidth());
+          if (count >
+              (walk.trace->options.maxBytes - walk.trace->result.storageBytes) /
+                  sizeof(ClassicalEnv::RegisterBit)) {
+            return walk.trace->fail(
+                alloc, DDTraceStatus::ResourceLimit,
+                "classical allocation exceeds execution storage limit");
+          }
+          if (failed(walk.trace->reserveBytes(
+                  count * sizeof(ClassicalEnv::RegisterBit), alloc))) {
+            return failure();
+          }
+        }
         allocateRegister(alloc, *walk.classical);
         return success();
       })
       .Case([&](cbit::LoadOp load) {
-        return loadRegister(load, *walk.classical);
+        return loadRegister(load, *walk.classical, walk.trace != nullptr);
       })
       .Case([&](cbit::ReadOp read) {
         return readRegister(read, *walk.classical);
@@ -1901,6 +2188,17 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .Case([](memref::DeallocOp) { return success(); })
       .Case([&](MeasureOp measureOp) -> LogicalResult {
+        if (walk.trace != nullptr) {
+          const auto wire = walk.qubits->lookup(measureOp.getQubitIn());
+          if (!wire) {
+            return measureOp.emitError("measurement qubit is not mapped");
+          }
+          walk.classical->values.erase(measureOp.getResult());
+          walk.classical->deferredMeasurements[measureOp.getResult()] = *wire;
+          walk.deferredMeasuredWires->insert(*wire);
+          walk.qubits->bind(measureOp.getQubitOut(), *wire);
+          return success();
+        }
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
           return measureOp.emitError()
                  << "measurements are not supported for QCO DD functionality "
@@ -1981,6 +2279,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 
         for (auto remaining = range->trips; !remaining.isZero();
              --remaining, range->induction += range->step) {
+          if (walk.trace != nullptr && failed(walk.trace->check(forOp))) {
+            return failure();
+          }
           auto iterArgs = body.getArguments().drop_front();
           if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
             return failure();
@@ -2004,6 +2305,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         SmallVector<Value> carried(whileOp.getInits().begin(),
                                    whileOp.getInits().end());
         while (true) {
+          if (walk.trace != nullptr && failed(walk.trace->check(whileOp))) {
+            return failure();
+          }
           if (failed(bindValuePairs(carried, before.getArguments(), walk,
                                     whileOp)) ||
               failed(walkBlock(before, walk, state))) {
@@ -2045,6 +2349,12 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return call.emitError() << "call callee must have a body";
         }
         Operation* calleeOp = callee.getOperation();
+        if (walk.trace != nullptr &&
+            walk.activeCalls.size() >= walk.trace->options.maxCallDepth) {
+          return walk.trace->fail(
+              call, DDTraceStatus::ResourceLimit,
+              "execution tracing exceeded its call-depth limit");
+        }
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
                  << "recursive call is not supported for QCO DD "
@@ -2500,6 +2810,256 @@ static LogicalResult visitOutputBits(
   return success();
 }
 
+dd::MatrixDD makeResolvedGateDD(dd::Package& package,
+                                const DDResolvedGate& gate,
+                                ArrayRef<dd::Qubit> wireMap) {
+  SmallVector<dd::Qubit> targets;
+  targets.reserve(gate.targets.size());
+  const auto mapped = [&](dd::Qubit wire) {
+    if (wireMap.empty()) {
+      return wire;
+    }
+    if (wire >= wireMap.size()) {
+      throw std::invalid_argument("resolved gate wire map is incomplete");
+    }
+    return wireMap[wire];
+  };
+  for (const auto wire : gate.targets) {
+    targets.push_back(mapped(wire));
+  }
+  dd::Controls controls;
+  for (const auto& control : gate.controls) {
+    controls.insert({mapped(control.qubit), control.type});
+  }
+  if (gate.factory != nullptr) {
+    return gate.factory(package, gate.parameters, targets, controls);
+  }
+  return makeGateDD(package, gate.matrix, targets, controls);
+}
+
+DDResolvedExecution resolveExecution(func::FuncOp func,
+                                     const DDArgumentBindings& argumentBindings,
+                                     const DDTraceOptions& options) {
+  DDResolvedExecution result;
+  ScopedDiagnosticHandler diagnostics(func.getContext(),
+                                      [&](Diagnostic& diagnostic) {
+                                        if (result.message.empty()) {
+                                          result.message = diagnostic.str();
+                                        }
+                                        return success();
+                                      });
+  if (func.isDeclaration() || !func.getBody().hasOneBlock()) {
+    result.message = "execution tracing requires a one-block function body";
+    return result;
+  }
+  TraceRecorder recorder{
+      .result = result,
+      .options = options,
+      .entry = &func.getBody().front(),
+  };
+  auto execute = [&]() -> LogicalResult {
+    if (failed(recorder.check(func, false))) {
+      return failure();
+    }
+    if (options.maxCallDepth == 0) {
+      return recorder.fail(func, DDTraceStatus::ResourceLimit,
+                           "execution tracing exceeded its call-depth limit");
+    }
+    QubitMap qubits;
+    TensorMap tensors;
+    ClassicalEnv classical;
+    if (failed(applyArgumentBindings(func, argumentBindings, classical))) {
+      return failure();
+    }
+    for (StaticOp op : func.getBody().front().getOps<StaticOp>()) {
+      auto wire = recorder.addRoot(
+          {
+              .kind = DDWireRoot::Kind::Static,
+              .wire = 0,
+              .staticId = op.getIndex(),
+          },
+          op);
+      if (failed(wire)) {
+        return failure();
+      }
+      qubits.bind(op.getQubit(), *wire);
+    }
+    for (auto [index, argument] : llvm::enumerate(func.getArguments())) {
+      if (!isa<QubitType>(argument.getType()) &&
+          !isQTensorType(argument.getType())) {
+        continue;
+      }
+      if (!result.roots.empty() &&
+          result.roots.front().kind == DDWireRoot::Kind::Static) {
+        return func.emitError(
+            "execution tracing cannot mix static roots and quantum arguments");
+      }
+      size_t count = 1;
+      if (isQTensorType(argument.getType())) {
+        auto type = cast<RankedTensorType>(argument.getType());
+        int64_t extent = type.getDimSize(0);
+        if (type.isDynamicDim(0)) {
+          const auto binding = argumentBindings.find(argument);
+          if (binding == argumentBindings.end()) {
+            return func.emitError(
+                "dynamic qtensor arguments require an index extent");
+          }
+          extent = cast<IntegerAttr>(binding->second).getValue().getSExtValue();
+        }
+        if (extent < 0) {
+          return func.emitError("dynamic qtensor extent must be non-negative");
+        }
+        count = static_cast<size_t>(extent);
+      }
+      if (count > options.maxQubits - result.numQubits ||
+          count > dd::Package::MAX_POSSIBLE_QUBITS - result.numQubits) {
+        return recorder.fail(func, DDTraceStatus::ResourceLimit,
+                             "execution tracing exceeded its qubit limit");
+      }
+      if (failed(recorder.reserveBytes(count * sizeof(std::optional<dd::Qubit>),
+                                       func))) {
+        return failure();
+      }
+      TensorSlots slots;
+      slots.reserve(count);
+      for (size_t element = 0; element < count; ++element) {
+        auto wire = recorder.addRoot(
+            {
+                .kind = DDWireRoot::Kind::Argument,
+                .wire = 0,
+                .argumentIndex = index,
+                .elementIndex = element,
+            },
+            func);
+        if (failed(wire)) {
+          return failure();
+        }
+        slots.push_back(wire);
+      }
+      if (isa<QubitType>(argument.getType())) {
+        qubits.bind(argument, *slots.front());
+      } else {
+        tensors.bind(argument, std::make_shared<TensorSlots>(std::move(slots)));
+      }
+    }
+    qubits.numQubits = result.numQubits;
+    DenseSet<dd::Qubit> measuredWires;
+    Operation* deferredUse = nullptr;
+    classical.deferredMeasurementUse = &deferredUse;
+    WalkState walk{
+        .qubits = &qubits,
+        .tensors = &tensors,
+        .classical = &classical,
+        .dd = nullptr,
+        .trace = &recorder,
+        .deferredMeasuredWires = &measuredWires,
+        .remainingWhileIterations = std::numeric_limits<size_t>::max(),
+    };
+    walk.activeCalls.insert(func.getOperation());
+    dd::MatrixDD unused = dd::MatrixDD::one();
+    auto returned = walkFunctionBody(func, walk, unused);
+    if (failed(returned)) {
+      if (deferredUse != nullptr) {
+        return deferredUse->emitError("execution tracing cannot use a "
+                                      "measurement result or measured wire");
+      }
+      return failure();
+    }
+    for (auto [index, value] : llvm::enumerate(returned->getOperands())) {
+      if (isa<QubitType>(value.getType()) || isQTensorType(value.getType())) {
+        const auto add = [&](std::optional<dd::Qubit> wire) -> LogicalResult {
+          if (!wire) {
+            return returned->emitError("returned quantum value is not mapped");
+          }
+          if (failed(
+                  recorder.reserveElement(result.quantumReturns, *returned))) {
+            return failure();
+          }
+          result.quantumReturns.push_back(*wire);
+          return success();
+        };
+        if (isa<QubitType>(value.getType())) {
+          if (failed(add(qubits.lookup(value)))) {
+            return failure();
+          }
+        } else {
+          auto slots = tensors.lookup(value);
+          if (!slots) {
+            return returned->emitError("returned qtensor is not mapped");
+          }
+          for (const auto wire : *slots) {
+            if (failed(add(wire))) {
+              return failure();
+            }
+          }
+        }
+        continue;
+      }
+      const bool scalar = value.getType().isInteger(1);
+      if (!scalar && !isa<cbit::RegisterType>(value.getType())) {
+        return returned->emitError("execution tracing supports only Boolean or "
+                                   "CBit classical results");
+      }
+      std::string name;
+      if (!scalar) {
+        const auto storage = classical.registers.find(value);
+        if (storage == classical.registers.end()) {
+          return returned->emitError("returned CBit register is not mapped");
+        }
+        for (const auto& [source, candidate] : classical.registers) {
+          if (candidate != storage->second) {
+            continue;
+          }
+          if (auto* defining = source.getDefiningOp()) {
+            if (auto label =
+                    defining->getAttrOfType<StringAttr>("mqt.register_name")) {
+              name = label.str();
+              break;
+            }
+          }
+        }
+      }
+      size_t bit =
+          scalar ? 1 : cast<cbit::RegisterType>(value.getType()).getWidth();
+      if (failed(visitOutputBits(
+              llvm::ArrayRef<Value>{value}, classical,
+              [&](const auto& cell, Value) -> LogicalResult {
+                if (failed(
+                        recorder.reserveElement(result.outputs, *returned)) ||
+                    failed(recorder.reserveBytes(name.size(), *returned))) {
+                  return failure();
+                }
+                result.outputs.push_back({
+                    .resultIndex = index,
+                    .bitIndex = --bit,
+                    .name = name,
+                    .wire = cell.deferredWire,
+                    .constant = cell.value,
+                });
+                return success();
+              }))) {
+        return failure();
+      }
+    }
+    return recorder.check(func, false);
+  };
+  try {
+    if (succeeded(execute())) {
+      result.status = DDTraceStatus::Complete;
+    }
+  } catch (const std::bad_alloc&) {
+    result.status = DDTraceStatus::ResourceLimit;
+    result.message = "execution tracing exhausted memory";
+  }
+  if (result.status != DDTraceStatus::Complete) {
+    result.gates.clear();
+    result.roots.clear();
+    result.quantumReturns.clear();
+    result.outputs.clear();
+  }
+  return result;
+}
+
 static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
                                             const ClassicalEnv& classical,
                                             std::string basis,
@@ -2619,7 +3179,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
   GateCache gateCache(dd);
   std::function<LogicalResult(Block::iterator, Group)> visit =
       [&](Block::iterator current, Group group) -> LogicalResult {
-    const auto guard = llvm::make_scope_exit([&] { dd.decRef(group.state); });
+    const auto guard = llvm::scope_exit([&] { dd.decRef(group.state); });
     WalkState walk{
         .qubits = &group.qubits,
         .tensors = &group.tensors,
@@ -2998,8 +3558,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     shotResults->reserve(shots);
   }
   size_t grant = reserveSamplingWorkers(1, shots);
-  const auto release =
-      llvm::make_scope_exit([&] { releaseSamplingWorkers(grant); });
+  const auto release = llvm::scope_exit([&] { releaseDDWorkers(grant); });
   auto dd = std::make_unique<dd::Package>(0);
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
@@ -3043,14 +3602,14 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     workers = 1;
   }
   if (workers > 1) {
-    releaseSamplingWorkers(std::exchange(grant, 0));
+    releaseDDWorkers(std::exchange(grant, 0));
     grant = reserveSamplingWorkers(workers, shots);
     workers = requestWorkers && grant > 1 ? requestWorkers(grant) : grant;
     if (workers == 0 || workers > grant) {
       return func.emitError()
              << "sampling worker grant must be between 1 and " << grant;
     }
-    releaseSamplingWorkers(grant - workers);
+    releaseDDWorkers(grant - workers);
     grant = workers;
   }
   if (workers == 1) {

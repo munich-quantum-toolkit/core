@@ -9,6 +9,9 @@
 set(qco_utils_target mqt-core-mlir-unittest-qco-utils)
 add_executable(
   ${qco_utils_target}
+  test_verification.cpp
+  test_verification_dense.cpp
+  test_verification_interface.cpp
   test_dd_functionality.cpp
   test_drivers.cpp
   test_layout.cpp
@@ -20,6 +23,7 @@ target_link_libraries(
   PRIVATE
     GTest::gtest_main
     MLIRParser
+    MLIRQCOVerification
     MLIRQCODDFunctionality
     MLIRQCOUtils
     MLIRQCOProgramBuilder

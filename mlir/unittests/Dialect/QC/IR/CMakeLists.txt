@@ -21,7 +21,7 @@ target_link_libraries(
     MLIRQCToQCO
     MLIRQCOUtils
     MLIRQCODDFunctionality
-    MLIRExactUnitaryTest
+    MLIRVerificationTest
     MLIRMQTTransforms)
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 # These cheap verifier cases share a process; retain per-case GoogleTest results.

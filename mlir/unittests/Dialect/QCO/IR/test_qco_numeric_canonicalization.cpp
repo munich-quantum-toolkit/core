@@ -14,7 +14,7 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include "ExactUnitaryTest.h"
+#include "VerificationTest.h"
 
 #include "gtest/gtest.h"
 
@@ -130,7 +130,7 @@ TEST_F(QCONumericCanonicalizationTest, RMergePreservesLargeAxisAngles) {
     const auto expected =
         ROp::unitaryMatrix(0.2, phi) * ROp::unitaryMatrix(0.1, phi);
     EXPECT_TRUE(matrix->isApprox(expected, 1e-15));
-    ::mqt::test::expectFullUnitaryEqual(*original, *rewritten, 1);
+    ::mqt::test::expectUnitaryEquivalent(*original, *rewritten, 1);
   }
 }
 
@@ -179,7 +179,7 @@ TEST_F(QCONumericCanonicalizationTest, RPowerPreservesLargeAxisAngles) {
     ASSERT_TRUE(matrix);
     const auto bodyMatrix = ROp::unitaryMatrix(0.1, phi);
     EXPECT_TRUE(matrix->isApprox(bodyMatrix * bodyMatrix, 1e-15));
-    ::mqt::test::expectFullUnitaryEqual(*original, *rewritten, 1);
+    ::mqt::test::expectUnitaryEquivalent(*original, *rewritten, 1);
   }
 }
 
@@ -294,7 +294,7 @@ TEST_F(QCONumericCanonicalizationTest, LargeOddPauliPowerPreservesUnitary) {
   auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
   EXPECT_TRUE(function.getBody().getOps<PowOp>().empty());
   EXPECT_TRUE(llvm::hasSingleElement(function.getBody().getOps<XOp>()));
-  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*reference, *moduleOp, 1);
 }
 
 TEST_F(QCONumericCanonicalizationTest, PowerRetainsDynamicAngle) {
@@ -479,7 +479,7 @@ TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsLargeRoundingError) {
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
   EXPECT_EQ(llvm::range_size(function.getBody().getOps<RXOp>()), 2U);
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 1);
 }
 
 TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsDynamicAngles) {
@@ -522,7 +522,7 @@ TEST_F(QCONumericCanonicalizationTest,
   auto angle = mlir::mqt::valueToDouble(rotation.getTheta());
   ASSERT_TRUE(angle);
   EXPECT_NEAR(*angle, 0.3, 1e-15);
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*original, *moduleOp, 1);
 }
 
 TEST_F(QCONumericCanonicalizationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
@@ -559,7 +559,7 @@ TEST_F(QCONumericCanonicalizationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
   moduleOp->walk([&](PowOp) { ++powerCount; });
   EXPECT_EQ(powerCount, 2U);
   // (S X)^2 = i I, whose principal square root is exp(i π/4) I.
-  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
+  ::mqt::test::expectUnitaryEquivalent(*reference, *moduleOp, 1);
 }
 
 } // namespace

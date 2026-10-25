@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.25)
+project(DDResourceTests LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_BUILD_TYPE Release)
+set(CORE /home/nvidia/.codex/experiments/native-equivalence-20261025/core)
+file(GLOB_RECURSE DD_SOURCES ${CORE}/src/dd/*.cpp)
+add_library(dd STATIC ${DD_SOURCES})
+target_include_directories(dd SYSTEM PUBLIC /home/nvidia/.local/opt/mqt-llvm-mlir/23.1.0/include)
+target_include_directories(
+  dd
+  PUBLIC ${CORE}/include/mqt-core ${CORE}/build/release/src
+  PRIVATE ${CORE}/build/release/_deps/nlohmann_json-src/include)
+set(GTEST_ROOT ${CORE}/build/release/_deps/googletest-src)
+add_subdirectory(${GTEST_ROOT} googletest)
+add_executable(dd-resource-test ${CORE}/test/dd/test_resource_control.cpp)
+target_link_libraries(dd-resource-test PRIVATE dd gtest_main)
+file(GLOB DD_TESTS ${CORE}/test/dd/*.cpp)
+add_executable(dd-all-test ${DD_TESTS})
+target_link_libraries(dd-all-test PRIVATE dd gtest_main gmock)
+target_include_directories(
+  dd-all-test
+  PRIVATE ${CORE}/build/release/_deps/nlohmann_json-src/include)
