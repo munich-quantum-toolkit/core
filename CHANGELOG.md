@@ -21,6 +21,8 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Keep DD states and permutation mappings valid when allocation fails during
+  global-phase or permutation updates ([#2826]) ([**@denialhaag**])
 - 🐛 Reject DD extraction widths, dimensions, and output vectors that cannot
   represent the requested result ([#2826], [#2814]) ([**@burgholzer**],
   [**@denialhaag**])

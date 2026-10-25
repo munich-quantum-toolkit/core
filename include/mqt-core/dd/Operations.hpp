@@ -182,6 +182,7 @@ void applyVirtualOperation(const qc::Operation& op,
  * @param in The input DD
  * @param phase The phase to apply
  * @param dd The DD package to use
+ * @throws std::bad_alloc If allocation fails. The input DD remains unchanged.
  * @return The output DD
  */
 VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
@@ -203,6 +204,8 @@ VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
  * the right (false)
  * @throws std::invalid_argument If either mapping is invalid. The DD and
  * @p from remain unchanged in this case.
+ * @throws std::bad_alloc If allocation fails. Completed swaps remain applied
+ * to both @p on and @p from.
  */
 template <class DDType>
 void changePermutation(DDType& on, qc::Permutation& from,
@@ -253,26 +256,27 @@ void changePermutation(DDType& on, qc::Permutation& from,
     }
 
     // swap i and j
-    auto saved = on;
+    auto next = on;
     const auto swapDD = dd.makeTwoQubitGateDD(swapMatrix, current, goal);
     if constexpr (std::is_same_v<DDType, VectorDD>) {
-      on = dd.multiply(swapDD, on);
+      next = dd.multiply(swapDD, on);
     } else {
       // the regular flag only has an effect on matrix DDs
       if (regular) {
-        on = dd.multiply(swapDD, on);
+        next = dd.multiply(swapDD, on);
       } else {
-        on = dd.multiply(on, swapDD);
+        next = dd.multiply(on, swapDD);
       }
     }
 
-    dd.incRef(on);
-    dd.decRef(saved);
-    dd.garbageCollect();
+    dd.incRef(next);
+    dd.decRef(on);
+    on = next;
 
     // update permutation
     from.at(i) = goal;
     from.at(j) = current;
+    dd.garbageCollect();
   }
 }
 

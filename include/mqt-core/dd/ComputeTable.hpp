@@ -36,15 +36,14 @@ public:
 
   /// Default constructor
   /// @param numBuckets Number of hash table buckets. Must be a power of two.
-  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
-    // numBuckets must be a power of two
-    if (!std::has_single_bit(numBuckets)) {
-      throw std::invalid_argument("Number of buckets must be a power of two.");
-    }
+  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS)
+      : table(std::has_single_bit(numBuckets)
+                  ? numBuckets
+                  : throw std::invalid_argument(
+                        "Number of buckets must be a power of two.")),
+        valid(numBuckets, false) {
     stats.entrySize = sizeof(Entry);
     stats.numBuckets = numBuckets;
-    valid = std::vector(numBuckets, false);
-    table = std::vector<Entry>(numBuckets);
   }
 
   /// An entry in the compute table
