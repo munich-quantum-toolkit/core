@@ -13,6 +13,7 @@
 
 #include "Driver.hpp"
 #include "SessionConfig.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -1197,7 +1198,7 @@ TEST(DeviceRegistrationTest,
      EnumeratesEnabledIdsInOrderWithoutLoadingLibraries) {
   auto& driver = qdmi::Driver::get();
   const auto idsBefore = driver.registeredDeviceIds();
-  EXPECT_THAT(qdmi::builtin_driver::registeredDeviceIds(),
+  EXPECT_THAT(::mqt::test::value(qdmi::builtin_driver::registeredDeviceIds()),
               testing::Contains("broken.example"));
   driver.registerDevice({
       .id = "test.enumeration.first",
@@ -1245,9 +1246,9 @@ TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
   }));
 
   const auto inlineDevice =
-      qdmi::Session::openDevice("test.typed-configuration");
+      ::mqt::test::value(qdmi::Session::openDevice("test.typed-configuration"));
   EXPECT_THAT(
-      inlineDevice.getName(),
+      ::mqt::test::value(inlineDevice.getName()),
       testing::HasSubstr(R"(custom1={"name":"inline"};custom2=<unset>)"));
 }
 
@@ -1289,14 +1290,23 @@ TEST(DeviceRegistrationTest,
   }));
 
   const auto defaultDevice =
-      qdmi::Session::openDevice("test.sc.runtime-default");
-  const auto customDevice = qdmi::Session::openDevice("test.sc.runtime-custom");
-  EXPECT_EQ(defaultDevice.getName(), "MQT SC Default QDMI Device");
-  EXPECT_EQ(customDevice.getName(), "Custom SC Driver Device");
-  ASSERT_FALSE(defaultDevice.getOperations().empty());
-  ASSERT_FALSE(customDevice.getOperations().empty());
-  EXPECT_EQ(defaultDevice.getOperations().front().getDuration(), 20);
-  EXPECT_EQ(customDevice.getOperations().front().getDuration(), 77);
+      ::mqt::test::value(qdmi::Session::openDevice("test.sc.runtime-default"));
+  const auto customDevice =
+      ::mqt::test::value(qdmi::Session::openDevice("test.sc.runtime-custom"));
+  EXPECT_EQ(::mqt::test::value(defaultDevice.getName()),
+            "MQT SC Default QDMI Device");
+  EXPECT_EQ(::mqt::test::value(customDevice.getName()),
+            "Custom SC Driver Device");
+  ASSERT_FALSE(::mqt::test::value(defaultDevice.getOperations()).empty());
+  ASSERT_FALSE(::mqt::test::value(customDevice.getOperations()).empty());
+  EXPECT_EQ(::mqt::test::value(::mqt::test::value(defaultDevice.getOperations())
+                                   .front()
+                                   .getDuration()),
+            20);
+  EXPECT_EQ(::mqt::test::value(::mqt::test::value(customDevice.getOperations())
+                                   .front()
+                                   .getDuration()),
+            77);
 
   static_cast<void>(driver.registerDeviceIfAbsent({
       .id = "test.sc.runtime-invalid",
@@ -1310,23 +1320,29 @@ TEST(DeviceRegistrationTest,
                   },
           },
   }));
-  EXPECT_THROW(
-      static_cast<void>(qdmi::Session::openDevice("test.sc.runtime-invalid")),
-      std::out_of_range);
-  EXPECT_EQ(qdmi::Session::openDevice("test.sc.runtime-default").getName(),
-            "MQT SC Default QDMI Device");
+  EXPECT_TRUE(::mqt::test::errorStatus([&] {
+                return qdmi::Session::openDevice("test.sc.runtime-invalid");
+              }).has_value());
+  EXPECT_EQ(
+      ::mqt::test::value(::mqt::test::value(qdmi::Session::openDevice(
+                                                "test.sc.runtime-default"))
+                             .getName()),
+      "MQT SC Default QDMI Device");
 }
 
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   registerSessionTestDevice();
-  const auto first = qdmi::Session::openDevice("test.session-overrides");
-  const auto second = qdmi::Session::openDevice("test.session-overrides");
+  const auto first =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
+  const auto second =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   EXPECT_NE(first, second);
 }
 
 TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   const auto bytesOf = [](const auto& value) {
     std::vector<std::byte> bytes(sizeof(value));
     std::memcpy(bytes.data(), &value, sizeof(value));
@@ -1344,36 +1360,44 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
       qdmi::CustomProperty::Custom3, qdmi::CustomProperty::Custom4,
       qdmi::CustomProperty::Custom5,
   };
-  const auto job =
+  const auto job = ::mqt::test::value(
       device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1, payloads[0],
-                       payloads[1], payloads[2], payloads[3], payloads[4]);
+                       payloads[1], payloads[2], payloads[3], payloads[4]));
   const auto expectedPayloads = payloads;
   for (auto& payload : payloads) {
     payload.clear();
   }
   for (size_t i = 0; i < slots.size(); ++i) {
-    EXPECT_EQ(job.getCustomResult<std::vector<std::byte>>(slots[i]),
+    EXPECT_EQ(::mqt::test::value(
+                  job.getCustomResult<std::vector<std::byte>>(slots[i])),
               expectedPayloads[i]);
   }
-  const auto scalarJob =
+  const auto scalarJob = ::mqt::test::value(
       device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
-                       std::string{"text"}, true, -7, 2.5);
-  EXPECT_EQ(scalarJob.getCustomResult<std::string>(slots[0]), "text");
-  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[1]),
+                       std::string{"text"}, true, -7, 2.5));
+  EXPECT_EQ(
+      ::mqt::test::value(scalarJob.getCustomResult<std::string>(slots[0])),
+      "text");
+  EXPECT_EQ(::mqt::test::value(
+                scalarJob.getCustomResult<std::vector<std::byte>>(slots[1])),
             bytesOf(true));
-  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[2]),
+  EXPECT_EQ(::mqt::test::value(
+                scalarJob.getCustomResult<std::vector<std::byte>>(slots[2])),
             bytesOf(-7));
-  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[3]),
+  EXPECT_EQ(::mqt::test::value(
+                scalarJob.getCustomResult<std::vector<std::byte>>(slots[3])),
             bytesOf(2.5));
-  EXPECT_THROW(
-      static_cast<void>(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3,
-                                         1, std::vector<std::byte>{})),
-      std::invalid_argument);
+  EXPECT_EQ(::mqt::test::errorStatus([&] {
+              return device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
+                                      std::vector<std::byte>{});
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
 
   size_t size = 0;
   ASSERT_EQ(QDMI_device_query_device_property(
@@ -1391,52 +1415,56 @@ TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {
                 static_cast<void*>(rawOperations.data()), nullptr),
             QDMI_SUCCESS);
 
-  const auto operations =
-      device.queryCustomOperations(qdmi::CustomProperty::Custom1);
+  const auto operations = ::mqt::test::value(
+      device.queryCustomOperations(qdmi::CustomProperty::Custom1));
   ASSERT_TRUE(operations.has_value());
   ASSERT_EQ(operations->size(), rawOperations.size());
   EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(0)),
             rawOperations.at(0));
   EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(1)),
             rawOperations.at(1));
-  EXPECT_EQ(operations->at(0).getName(), "custom-rx");
-  EXPECT_EQ(operations->at(0).getQubitsNum(), 1);
-  EXPECT_EQ(operations->at(0).getParametersNum(), 1);
-  EXPECT_EQ(operations->at(1).getName(), "custom-cx");
-  EXPECT_EQ(operations->at(1).getQubitsNum(), 2);
-  EXPECT_EQ(operations->at(1).getParametersNum(), 0);
+  EXPECT_EQ(::mqt::test::value(operations->at(0).getName()), "custom-rx");
+  EXPECT_EQ(::mqt::test::value(operations->at(0).getQubitsNum()), 1);
+  EXPECT_EQ(::mqt::test::value(operations->at(0).getParametersNum()), 1);
+  EXPECT_EQ(::mqt::test::value(operations->at(1).getName()), "custom-cx");
+  EXPECT_EQ(::mqt::test::value(operations->at(1).getQubitsNum()), 2);
+  EXPECT_EQ(::mqt::test::value(operations->at(1).getParametersNum()), 0);
 }
 
 TEST(DeviceRegistrationTest,
      CustomOperationListDistinguishesUnsupportedEmptyAndMalformed) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
 
-  EXPECT_EQ(device.queryCustomOperations(qdmi::CustomProperty::Custom4),
+  EXPECT_EQ(::mqt::test::value(
+                device.queryCustomOperations(qdmi::CustomProperty::Custom4)),
             std::nullopt);
-  const auto empty =
-      device.queryCustomOperations(qdmi::CustomProperty::Custom2);
+  const auto empty = ::mqt::test::value(
+      device.queryCustomOperations(qdmi::CustomProperty::Custom2));
   ASSERT_TRUE(empty.has_value());
   EXPECT_TRUE(empty->empty());
-  EXPECT_THROW(static_cast<void>(
-                   device.queryCustomOperations(qdmi::CustomProperty::Custom3)),
-               std::invalid_argument);
+  EXPECT_EQ(::mqt::test::errorStatus([&] {
+              return device.queryCustomOperations(
+                  qdmi::CustomProperty::Custom3);
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationRetainsOwningDeviceSession) {
   registerSessionTestDevice();
   const auto operation = [] {
-    const auto operations =
-        qdmi::Session::openDevice("test.session-overrides")
-            .queryCustomOperations(qdmi::CustomProperty::Custom1);
+    const auto operations = ::mqt::test::value(
+        ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"))
+            .queryCustomOperations(qdmi::CustomProperty::Custom1));
     if (!operations.has_value() || operations->empty()) {
       throw std::runtime_error("Test provider returned no custom operations");
     }
     return operations->front();
   }();
 
-  EXPECT_EQ(operation.getName(), "custom-rx");
-  EXPECT_EQ(operation.getQubitsNum(), 1);
+  EXPECT_EQ(::mqt::test::value(operation.getName()), "custom-rx");
+  EXPECT_EQ(::mqt::test::value(operation.getQubitsNum()), 1);
 }
 
 TEST(DeviceRegistrationTest,
@@ -1489,22 +1517,26 @@ TEST(DeviceRegistrationTest,
           },
   }));
 
-  const auto first = qdmi::Session::openDevice("test.sc.runtime-one");
-  const auto second = qdmi::Session::openDevice("test.sc.runtime-two");
-  EXPECT_EQ(first.getName(), "SC runtime one");
-  EXPECT_EQ(first.getQubitsNum(), 1);
-  const auto firstSites = first.getSites();
+  const auto first =
+      ::mqt::test::value(qdmi::Session::openDevice("test.sc.runtime-one"));
+  const auto second =
+      ::mqt::test::value(qdmi::Session::openDevice("test.sc.runtime-two"));
+  EXPECT_EQ(::mqt::test::value(first.getName()), "SC runtime one");
+  EXPECT_EQ(::mqt::test::value(first.getQubitsNum()), 1);
+  const auto firstSites = ::mqt::test::value(first.getSites());
   ASSERT_EQ(firstSites.size(), 1);
-  EXPECT_EQ(firstSites[0].getT1(), 10);
-  EXPECT_EQ(firstSites[0].getT2(), 20);
-  const auto firstOperations = first.getOperations();
+  EXPECT_EQ(::mqt::test::value(firstSites[0].getT1()), 10);
+  EXPECT_EQ(::mqt::test::value(firstSites[0].getT2()), 20);
+  const auto firstOperations = ::mqt::test::value(first.getOperations());
   ASSERT_EQ(firstOperations.size(), 1);
-  EXPECT_EQ(firstOperations[0].getName(), "r");
-  EXPECT_EQ(firstOperations[0].getDuration({firstSites[0]}), 7);
-  EXPECT_EQ(firstOperations[0].getFidelity({firstSites[0]}), 0.8);
-  EXPECT_EQ(second.getName(), "SC runtime two");
-  EXPECT_EQ(second.getQubitsNum(), 2);
-  const auto secondCouplingMap = second.getCouplingMap();
+  EXPECT_EQ(::mqt::test::value(firstOperations[0].getName()), "r");
+  EXPECT_EQ(::mqt::test::value(firstOperations[0].getDuration({firstSites[0]})),
+            7);
+  EXPECT_EQ(::mqt::test::value(firstOperations[0].getFidelity({firstSites[0]})),
+            0.8);
+  EXPECT_EQ(::mqt::test::value(second.getName()), "SC runtime two");
+  EXPECT_EQ(::mqt::test::value(second.getQubitsNum()), 2);
+  const auto secondCouplingMap = ::mqt::test::value(second.getCouplingMap());
   ASSERT_TRUE(secondCouplingMap.has_value());
   ASSERT_EQ(secondCouplingMap->size(), 1);
 }
@@ -1514,34 +1546,37 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   std::optional<qdmi::Job> job;
   std::string baseline;
   {
-    auto const device = qdmi::Session::openDevice("test.session-overrides");
-    baseline = device.getName();
-    job.emplace(
-        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
+    auto const device =
+        ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
+    baseline = ::mqt::test::value(device.getName());
+    job.emplace(::mqt::test::value(
+        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1)));
   }
 
   ASSERT_TRUE(job.has_value());
-  EXPECT_EQ(job->getId(), "session-job");
+  EXPECT_EQ(::mqt::test::value(job->getId()), "session-job");
   job.reset();
 
-  const auto probe = qdmi::Session::openDevice("test.session-overrides");
+  const auto probe =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   EXPECT_EQ(queryName(probe), baseline);
 }
 
 TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
   registerSessionTestDevice();
   for (const auto* keys : {"", "00", "00,", ",", "00,11", ",00", "00,,"}) {
-    SCOPED_TRACE(keys);
-    const auto device = qdmi::builtin_driver::openDevice(
+    const auto device = ::mqt::test::value(qdmi::builtin_driver::openDevice(
         "test.session-overrides",
-        std::string{R"({"custom3":")"} + keys + R"("})");
-    const auto job =
-        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2);
+        std::string{R"({"custom3":")"} + keys + R"("})"));
+    const auto job = ::mqt::test::value(
+        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2));
     const std::string_view input(keys);
     if (input == "00,11" || input == ",00" || input == "00,,") {
-      EXPECT_THROW(std::ignore = job.getCounts(), std::runtime_error);
+      EXPECT_TRUE(::mqt::test::errorStatus([&] {
+                    return job.getCounts();
+                  }).has_value());
     } else {
-      const auto counts = job.getCounts();
+      const auto counts = ::mqt::test::value(job.getCounts());
       ASSERT_EQ(counts.size(), 1);
       EXPECT_EQ(counts.at(input.starts_with("00") ? "00" : ""), 5);
     }
@@ -1550,32 +1585,38 @@ TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
 
 TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   constexpr std::array payload{std::byte{0}, std::byte{1}};
 
-  EXPECT_NO_THROW(std::ignore =
-                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
-               std::runtime_error);
+  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(
+                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1)));
+  EXPECT_TRUE(::mqt::test::errorStatus([&] {
+                return device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1,
+                                        size_t{1});
+              }).has_value());
 }
 
 TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
 
-  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
-                                                 QDMI_PROGRAM_FORMAT_QASM2));
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
-                                              QDMI_PROGRAM_FORMAT_QPY),
-               std::invalid_argument);
+  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(device.submitJob(
+                      "OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2)));
+  EXPECT_EQ(::mqt::test::errorStatus([&] {
+              return device.submitJob(std::string{"binary"},
+                                      QDMI_PROGRAM_FORMAT_QPY);
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
   constexpr size_t threadCount = 8;
   constexpr size_t jobCount = 64;
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   size_t freedBefore = 0;
   ASSERT_EQ(QDMI_device_query_device_property(
                 device, QDMI_DEVICE_PROPERTY_CUSTOM5, sizeof(freedBefore),
@@ -1610,12 +1651,14 @@ TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
 
 TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
 
   using namespace std::string_view_literals;
   for (const auto id : {""sv, "session-job\0different-job"sv}) {
-    EXPECT_THROW(std::ignore = device.retrieveJobById(id),
-                 std::invalid_argument);
+    EXPECT_EQ(
+        mqt::test::errorStatus([&] { return device.retrieveJobById(id); }),
+        QDMI_ERROR_INVALIDARGUMENT);
   }
 
   QDMI_Job job = nullptr;
@@ -1639,24 +1682,29 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
             QDMI_ERROR_NOTFOUND);
   EXPECT_EQ(job, nullptr);
 
-  const auto retrievedJob = device.retrieveJobById("session-job");
-  EXPECT_EQ(retrievedJob.getId(), "session-job");
-  EXPECT_EQ(retrievedJob.getNumPrograms(), 2U);
-  EXPECT_EQ(retrievedJob.getNumShots(), 2U);
-  EXPECT_EQ(retrievedJob.getShots(), (std::vector<std::string>{"10", "01"}));
-  EXPECT_EQ(retrievedJob.getProgramBytes(0U),
+  const auto retrievedJob =
+      ::mqt::test::value(device.retrieveJobById("session-job"));
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getId()), "session-job");
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getNumPrograms()), 2U);
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getNumShots()), 2U);
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getShots()),
+            (std::vector<std::string>{"10", "01"}));
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getProgramBytes(0U)),
             (std::vector<std::byte>{std::byte{'x'}, std::byte{0},
                                     std::byte{'y'}, std::byte{0}}));
-  EXPECT_EQ(retrievedJob.getShots(1U), (std::vector<std::string>{"11", "00"}));
-  EXPECT_EQ(retrievedJob.getProgramBytes(1U),
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getShots(1U)),
+            (std::vector<std::string>{"11", "00"}));
+  EXPECT_EQ(::mqt::test::value(retrievedJob.getProgramBytes(1U)),
             (std::vector<std::byte>{std::byte{'z'}, std::byte{0}}));
-  EXPECT_THROW(std::ignore = retrievedJob.getProgramBytes(2U),
-               std::out_of_range);
+  EXPECT_EQ(::mqt::test::errorStatus(
+                [&] { return retrievedJob.getProgramBytes(2U); }),
+            QDMI_ERROR_OUTOFRANGE);
 }
 
 TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   const std::array programs{
       std::vector<std::byte>{
           std::byte{'a'},
@@ -1674,28 +1722,31 @@ TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
       programs[0],
       programs[1],
   };
-  const auto job =
-      device.submitJob(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
-  EXPECT_EQ(job.getNumPrograms(), programs.size());
-  EXPECT_EQ(job.getProgramBytes(0U), programs[0]);
-  EXPECT_EQ(job.getProgramBytes(1U), programs[1]);
+  const auto job = ::mqt::test::value(
+      device.submitJob(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U));
+  EXPECT_EQ(::mqt::test::value(job.getNumPrograms()), programs.size());
+  EXPECT_EQ(::mqt::test::value(job.getProgramBytes(0U)), programs[0]);
+  EXPECT_EQ(::mqt::test::value(job.getProgramBytes(1U)), programs[1]);
 }
 
 TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   const std::array<std::string, 2> programs{"OPENQASM 3.0;", "OPENQASM 3.0;"};
 
-  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U);
-  ASSERT_EQ(job.getNumPrograms(), programs.size());
+  const auto job = ::mqt::test::value(
+      device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U));
+  ASSERT_EQ(::mqt::test::value(job.getNumPrograms()), programs.size());
   for (size_t index = 0U; index < programs.size(); ++index) {
-    EXPECT_EQ(job.getProgram(index), programs[index]);
+    EXPECT_EQ(::mqt::test::value(job.getProgram(index)), programs[index]);
   }
 }
 
 TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
   QDMI_Job handle = nullptr;
   ASSERT_EQ(QDMI_device_create_job(device, &handle), QDMI_SUCCESS);
   const std::unique_ptr<QDMI_Job_impl_d, decltype(&QDMI_job_free)> job{
@@ -1724,12 +1775,13 @@ TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
 
 TEST(DeviceRegistrationTest, RetrievesIndexedHistograms) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
-  const auto job = device.retrieveJobById("session-job");
+  const auto device =
+      ::mqt::test::value(qdmi::Session::openDevice("test.session-overrides"));
+  const auto job = ::mqt::test::value(device.retrieveJobById("session-job"));
 
-  EXPECT_EQ(job.getCounts(0U),
+  EXPECT_EQ(::mqt::test::value(job.getCounts(0U)),
             (std::map<std::string, size_t>{{"10", 1U}, {"01", 1U}}));
-  EXPECT_EQ(job.getCounts(1U),
+  EXPECT_EQ(::mqt::test::value(job.getCounts(1U)),
             (std::map<std::string, size_t>{{"11", 1U}, {"00", 1U}}));
 }
 

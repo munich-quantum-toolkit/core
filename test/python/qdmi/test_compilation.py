@@ -627,5 +627,5 @@ def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat,
             num_shots=shots,
             custom2=True,
         )
-    with pytest.raises(OSError, match="Failed to submit compiled program"):
+    with pytest.raises(RuntimeError, match=r"Submitting job: Not supported\."):
         submit_program(BELL, target=device, program_format=program_format, num_shots=shots, custom2=True)
