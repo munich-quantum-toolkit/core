@@ -20,7 +20,16 @@ from unittest.mock import Mock
 
 import pytest
 from qiskit import qasm2, qasm3, qpy
-from qiskit.circuit import Gate, IfElseOp, QuantumCircuit
+from qiskit.circuit import (
+    BreakLoopOp,
+    ContinueLoopOp,
+    ForLoopOp,
+    Gate,
+    IfElseOp,
+    QuantumCircuit,
+    SwitchCaseOp,
+    WhileLoopOp,
+)
 from qiskit.circuit.library import CU3Gate, CUGate
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.transpiler import Target
@@ -1082,3 +1091,25 @@ def test_declared_options_without_encoding_are_rejected() -> None:
     backend.options.update_options(unmapped=True)
     with pytest.raises(CircuitValidationError, match="Unsupported execution options: unmapped"):
         backend.run(QuantumCircuit(1))
+
+
+@pytest.mark.parametrize(
+    ("name", "operation"),
+    [
+        ("if_else", IfElseOp),
+        ("for_loop", ForLoopOp),
+        ("while_loop", WhileLoopOp),
+        ("switch_case", SwitchCaseOp),
+        ("break_loop", BreakLoopOp),
+        ("continue_loop", ContinueLoopOp),
+    ],
+)
+def test_target_control_flow_requires_device_advertising(name: str, operation: type[Instruction]) -> None:
+    """Variable-width control instructions appear only when advertised."""
+    device = MockQDMIDevice(num_qubits=3, operations=["measure", name])
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    assert backend.target.operation_from_name(name) is operation
+    assert backend.target.instruction_supported(operation_name=name, qargs=(0, 2))
+    other = MockQDMIDevice(num_qubits=3, operations=["measure"])
+    restricted = QDMIBackend(other)  # ty: ignore[invalid-argument-type] Device boundary double.
+    assert name not in restricted.target.operation_names

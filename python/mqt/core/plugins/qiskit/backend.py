@@ -40,7 +40,16 @@ from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3, qpy
-from qiskit.circuit import ControlFlowOp, IfElseOp, QuantumCircuit
+from qiskit.circuit import (
+    BreakLoopOp,
+    ContinueLoopOp,
+    ControlFlowOp,
+    ForLoopOp,
+    IfElseOp,
+    QuantumCircuit,
+    SwitchCaseOp,
+    WhileLoopOp,
+)
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -107,6 +116,11 @@ def _build_gate_mappings_for_backend(
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
         "if_else": IfElseOp,
+        "for_loop": ForLoopOp,
+        "while_loop": WhileLoopOp,
+        "switch_case": SwitchCaseOp,
+        "break_loop": BreakLoopOp,
+        "continue_loop": ContinueLoopOp,
     })
     canonical_gates.update(extra_gates)
 
@@ -160,6 +174,11 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
         "reset",
         "barrier",
         "if_else",
+        "for_loop",
+        "while_loop",
+        "switch_case",
+        "break_loop",
+        "continue_loop",
         "p",
         "x",
         "y",
