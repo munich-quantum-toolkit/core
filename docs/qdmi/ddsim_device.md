@@ -121,7 +121,8 @@ available again. DDSIM requires an LLVM build with threading enabled.
 One failing or cancelled program does not discard completed siblings. Cancelling
 a job stops its active workers and prevents its queued programs from running.
 Freeing a cancelled job releases its payloads without waiting for other jobs. If
-a worker crashes, its assigned program fails. DDSIM starts a new worker for
+a worker crashes, its assigned program fails. Memory exhaustion and failure to
+create a sampling thread terminate that worker. DDSIM starts a new worker for
 future submissions; it does not automatically retry the failed program. The
 worker executable is installed beside the device library and must move with it.
 

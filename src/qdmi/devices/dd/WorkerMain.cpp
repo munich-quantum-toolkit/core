@@ -30,18 +30,16 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_socket_stream.h"
+#include "llvm/Support/thread.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
-#include <future>
 #include <map>
 #include <memory>
 #include <optional>
 #include <random>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -94,7 +92,8 @@ struct Execution {
             *stream_, qdmi::dd::encode(qdmi::dd::WorkerSlots{desired})) ||
         !qdmi::dd::readFrame(*stream_, bytes) ||
         !qdmi::dd::decode(bytes, slots) || slots.count > desired) {
-      throw std::runtime_error("DDSIM worker slot exchange failed");
+      qdmi::diagnostics::error("DDSIM worker slot exchange failed");
+      return 0;
     }
     return slots.count;
   }
@@ -171,6 +170,9 @@ struct Execution {
           automaticWorkers_ ? std::min(maxWorkers_, automatic) : maxWorkers_;
       if (workers > 1) {
         workers = requestWorkers(workers);
+        if (workers == 0) {
+          return false;
+        }
       }
     }
     if (workers == 1) {
@@ -217,6 +219,7 @@ struct Execution {
       std::vector<std::string> parts(workers);
       std::vector<std::string> records(workers);
       std::vector<std::map<std::string, size_t>> counts(workers);
+      std::vector<int64_t> codes(workers);
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
         llvm::raw_string_ostream localOutput(records[i]);
@@ -275,15 +278,16 @@ struct Execution {
         }
         return *code;
       };
-      std::vector<std::future<int64_t>> tasks;
+      std::vector<llvm::thread> tasks;
       tasks.reserve(workers);
       for (size_t i = 0; i < workers; ++i) {
-        tasks.push_back(
-            std::async(std::launch::async, [&, i] { return run(i); }));
+        tasks.emplace_back([&, i] { codes[i] = run(i); });
+      }
+      for (auto& task : tasks) {
+        task.join();
       }
       int64_t firstError = 0;
-      for (auto& task : tasks) {
-        const auto code = task.get();
+      for (const auto code : codes) {
         if (firstError == 0 && code != 0) {
           firstError = code;
         }
@@ -340,12 +344,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;
-  try {
-    response.succeeded =
-        qasm ? execution.qasmProgram() : execution.qirProgram();
-  } catch (const std::exception& error) {
-    qdmi::diagnostics::error("DDSIM program failed: {0}", error.what());
-  }
+  response.succeeded = qasm ? execution.qasmProgram() : execution.qirProgram();
   if (response.succeeded) {
     response.shotCount = execution.shotCount_;
     response.shots = std::move(execution.shots_);
