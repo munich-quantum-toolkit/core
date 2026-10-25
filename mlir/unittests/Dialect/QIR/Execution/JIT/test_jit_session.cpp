@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -778,6 +779,88 @@ TEST(QIRBatchSampling, SeedReproducesBellSamples) {
   EXPECT_THAT(a, testing::Each(testing::AnyOf("00", "11")));
   EXPECT_THAT(a, testing::Contains("00"));
   EXPECT_THAT(a, testing::Contains("11"));
+}
+
+TEST(QIRBatchSampling, TerminalArraysPreserveProjectionAndState) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"qasm(
+OPENQASM 3.0; include "stdgates.inc";
+qubit[2] q; bit[3] c;
+h q[0]; rz(0.6) q[0]; x q[1];
+c[0] = measure q[1];
+c[1] = measure q[0];
+c[2] = measure q[0];
+)qasm");
+  ASSERT_TRUE(mlir::succeeded(qc));
+  auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
+  ASSERT_TRUE(mlir::succeeded(qir));
+  auto ir = std::move(*qir).intoLLVMIR();
+  ASSERT_TRUE(mlir::succeeded(ir));
+  qir::JitSession session(*ir, "terminal-arrays", qir::Execution::Sampling, 17,
+                          nullptr);
+  std::map<std::string, size_t> counts;
+  bool retained = false;
+  ASSERT_EQ(session.sampleCounts(32768, counts, &retained), 0);
+  ASSERT_TRUE(retained);
+  ASSERT_EQ(counts.size(), 2);
+  EXPECT_EQ(counts.at("100") + counts.at("111"), 32768);
+  EXPECT_NEAR(static_cast<double>(counts.at("100")), 16384., 550.);
+  auto state = session.runtime().takeState();
+  const auto vector = dd::getVector(state.edge);
+  ASSERT_EQ(vector.size(), 4);
+  EXPECT_NEAR(std::abs(vector[2] - std::polar(std::sqrt(0.5), -0.3)), 0.,
+              1e-12);
+  EXPECT_NEAR(std::abs(vector[3] - std::polar(std::sqrt(0.5), 0.3)), 0., 1e-12);
+  EXPECT_NEAR(std::abs(vector[0]) + std::abs(vector[1]), 0., 1e-12);
+  state.dd->decRef(state.edge);
+}
+
+TEST(QIRBatchSampling, DeferralFallsBackForMeasuredGatesAndQubitReuse) {
+  for (const bool reuse : {false, true}) {
+    const auto* continuation =
+        reuse ? "%next = call ptr @__quantum__rt__qubit_allocate(ptr null)\n"
+                "call void @__quantum__qis__mz__body(ptr %next, ptr null)\n"
+              : "call void @__quantum__qis__h__body(ptr %q)\n"
+                "call void @__quantum__qis__mz__body(ptr %q, ptr null)\n";
+    const std::string ir =
+        R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__initialize(ptr null)
+  %q = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  call void @__quantum__qis__h__body(ptr %q)
+  call void @__quantum__qis__mz__body(ptr %q, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+)" +
+        std::string(reuse ? "call void @__quantum__rt__qubit_release(ptr %q)\n"
+                          : "") +
+        continuation + R"(
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare ptr @__quantum__rt__qubit_allocate(ptr)
+declare void @__quantum__rt__qubit_release(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+    qir::JitSession session(ir, "deferral-fallback", qir::Execution::Sampling,
+                            17, nullptr);
+    std::map<std::string, size_t> counts;
+    bool retained = true;
+    ASSERT_EQ(session.sampleCounts(32768, counts, &retained), 0);
+    EXPECT_FALSE(retained);
+    EXPECT_EQ(counts.size(), reuse ? 2 : 4);
+    size_t total = 0;
+    for (const auto& [bits, count] : counts) {
+      if (reuse) {
+        EXPECT_EQ(bits.back(), '0');
+      }
+      EXPECT_NEAR(static_cast<double>(count), reuse ? 16384. : 8192., 550.);
+      total += count;
+    }
+    EXPECT_EQ(total, 32768);
+  }
 }
 
 TEST(QIRBatchSampling, RetainedStatePreservesPhaseOrderAndSessionLifetime) {

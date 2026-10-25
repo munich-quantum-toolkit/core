@@ -550,11 +550,12 @@ bool __quantum__rt__read_result(Result* result) noexcept {
 
 void __quantum__rt__result_record_output(Result* result,
                                          const char* label) noexcept {
-  const bool bit = __quantum__rt__read_result(result);
-  auto& runtime = qir::Runtime::getInstance();
-  runtime.outputResult(bit, label);
-  // Accumulate new measurement bit.
-  runtime.appendMeasurementBit(bit);
+  return runtimeCall([&] {
+    auto& runtime = qir::Runtime::getInstance();
+    const auto& value = runtime.deref(result);
+    runtime.outputResult(value.r, label);
+    runtime.appendMeasurementBit(value.r, value.deferredWire);
+  });
 }
 
 void __quantum__rt__bool_record_output(bool value, const char* label) noexcept {
@@ -586,22 +587,24 @@ void __quantum__rt__array_record_output(int64_t size,
 void __quantum__rt__result_array_record_output(const int64_t size,
                                                Result** results,
                                                const char* label) noexcept {
-  if (size < 0 || (size > 0 && results == nullptr)) {
-    fail("Invalid QIR result array output");
-  }
-  auto& runtime = qir::Runtime::getInstance();
-  std::string values;
-  if (runtime.hasOutput()) {
-    values.reserve(static_cast<std::size_t>(size));
-  }
-  for (Result* result : std::span(results, static_cast<std::size_t>(size))) {
-    const auto value = __quantum__rt__read_result(result);
-    if (runtime.hasOutput()) {
-      values.push_back(value ? '1' : '0');
+  return runtimeCall([&] {
+    if (size < 0 || (size > 0 && results == nullptr)) {
+      fail("Invalid QIR result array output");
     }
-    runtime.appendMeasurementBit(value);
-  }
-  runtime.outputResultArray(values, label);
+    auto& runtime = qir::Runtime::getInstance();
+    std::string values;
+    if (runtime.hasOutput()) {
+      values.reserve(static_cast<std::size_t>(size));
+    }
+    for (Result* result : std::span(results, static_cast<std::size_t>(size))) {
+      const auto& value = runtime.deref(result);
+      if (runtime.hasOutput()) {
+        values.push_back(value.r ? '1' : '0');
+      }
+      runtime.appendMeasurementBit(value.r, value.deferredWire);
+    }
+    runtime.outputResultArray(values, label);
+  });
 }
 
 } // extern "C"

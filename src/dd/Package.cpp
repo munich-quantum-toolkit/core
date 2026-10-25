@@ -37,6 +37,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory_resource>
 #include <numeric>
 #include <queue>
@@ -48,6 +49,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dd {
@@ -59,6 +61,28 @@ void checkMeasurementQubit(const vEdge& state, const Qubit index) {
   if (state.isTerminal() || index > state.p->v) {
     throw std::invalid_argument("Measurement qubit is outside the state.");
   }
+}
+
+void checkMeasurementNormalization(const vEdge& state, const fp epsilon) {
+  const auto probability = ComplexNumbers::mag2(state.w);
+  if (!std::isfinite(probability) || state.w.approximatelyZero()) {
+    throw std::runtime_error("Numerical instability in measurement state");
+  }
+  if (std::abs(probability - 1) > epsilon) {
+    std::cerr << "WARNING in MAll: numerical instability occurred during "
+                 "simulation: |alpha|^2 + |beta|^2 = "
+              << probability << ", but should be 1!\n";
+  }
+}
+
+fp measurementProbabilityZero(const vNode& node, const fp epsilon) {
+  const auto p0 = ComplexNumbers::mag2(node.e[0].w);
+  const auto sum = p0 + ComplexNumbers::mag2(node.e[1].w);
+  if (!std::isfinite(sum) || std::abs(sum - 1) > epsilon) {
+    throw std::runtime_error("Added probabilities differ from 1 by " +
+                             std::to_string(std::abs(sum - 1)));
+  }
+  return p0 / sum;
 }
 } // namespace
 
@@ -606,15 +630,7 @@ void Package::clearComputeTables() {
 }
 std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
                                 std::mt19937_64& mt, const fp epsilon) {
-  if (std::abs(ComplexNumbers::mag2(rootEdge.w) - 1.0) > epsilon) {
-    if (rootEdge.w.approximatelyZero()) {
-      throw std::runtime_error(
-          "Numerical instabilities led to a 0-vector! Abort simulation!");
-    }
-    std::cerr << "WARNING in MAll: numerical instability occurred during "
-                 "simulation: |alpha|^2 + |beta|^2 = "
-              << ComplexNumbers::mag2(rootEdge.w) << ", but should be 1!\n";
-  }
+  checkMeasurementNormalization(rootEdge, epsilon);
 
   if (rootEdge.isTerminal()) {
     return "";
@@ -628,15 +644,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
   std::uniform_real_distribution<fp> dist(0.0, 1.0);
 
   for (auto i = numberOfQubits; i > 0; --i) {
-    fp p0 = ComplexNumbers::mag2(cur.p->e.at(0).w);
-    const fp p1 = ComplexNumbers::mag2(cur.p->e.at(1).w);
-    const fp tmp = p0 + p1;
-
-    if (std::abs(tmp - 1.0) > epsilon) {
-      throw std::runtime_error("Added probabilities differ from 1 by " +
-                               std::to_string(std::abs(tmp - 1.0)));
-    }
-    p0 /= tmp;
+    const auto p0 = measurementProbabilityZero(*cur.p, epsilon);
 
     const fp threshold = dist(mt);
     if (threshold < p0) {
@@ -666,6 +674,84 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
   }
 
   return result;
+}
+
+std::map<std::string, size_t> Package::sampleCounts(
+    const vEdge& state, const std::span<const SamplingOutput> outputs,
+    const size_t shots, std::mt19937_64& mt, const fp epsilon) {
+  const size_t width = state.isTerminal() ? 0 : size_t{state.p->v} + 1;
+  std::vector<std::vector<size_t>> positions(width);
+  std::string outcome(outputs.size(), '0');
+  size_t lowest = width;
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    if (const auto* qubit = std::get_if<Qubit>(&outputs[i])) {
+      checkMeasurementQubit(state, *qubit);
+      positions[*qubit].push_back(i);
+      lowest = std::min(lowest, size_t{*qubit});
+    } else {
+      outcome[i] = std::get<bool>(outputs[i]) ? '1' : '0';
+    }
+  }
+  std::map<std::string, size_t> counts;
+  if (shots == 0) {
+    return counts;
+  }
+  checkMeasurementNormalization(state, epsilon);
+  if (lowest == width) {
+    counts.emplace(std::move(outcome), shots);
+    return counts;
+  }
+  const auto write = [&](const vNode& node, const bool one) {
+    for (const auto offset : positions[node.v]) {
+      outcome[offset] = one ? '1' : '0';
+    }
+  };
+  std::uniform_real_distribution<fp> uniform(0., 1.);
+  const auto visit = [&](auto&& self, const vNode* node, size_t count) -> void {
+    while (node != nullptr && node->v >= lowest) {
+      const auto p0 = measurementProbabilityZero(*node, epsilon);
+      // Unobserved branches with the same normalized suffix have the same
+      // output distribution, regardless of their incoming weights or phases.
+      if (positions[node->v].empty() && node->e[0].p == node->e[1].p) {
+        node = node->e[0].p;
+        continue;
+      }
+      if (count < 64) {
+        for (size_t i = 0; i < count; ++i) {
+          for (const auto* current = node;
+               current != nullptr && current->v >= lowest;) {
+            const auto probability =
+                measurementProbabilityZero(*current, epsilon);
+            const bool one = uniform(mt) >= probability;
+            write(*current, one);
+            current = current->e[one ? 1 : 0].p;
+          }
+          ++counts[outcome];
+        }
+        return;
+      }
+      auto zeros = count;
+      if (p0 != 1) {
+        zeros = p0 == 0 ? 0 : std::binomial_distribution<size_t>(count, p0)(mt);
+      }
+      const auto ones = count - zeros;
+      if (zeros != 0 && ones != 0) {
+        const bool smallerOne = ones < zeros;
+        write(*node, smallerOne);
+        self(self, node->e[smallerOne ? 1 : 0].p, smallerOne ? ones : zeros);
+        write(*node, !smallerOne);
+        count = smallerOne ? zeros : ones;
+        node = node->e[smallerOne ? 0 : 1].p;
+      } else {
+        const bool one = zeros == 0;
+        write(*node, one);
+        node = node->e[one ? 1 : 0].p;
+      }
+    }
+    counts[outcome] += count;
+  };
+  visit(visit, state.p, shots);
+  return counts;
 }
 fp Package::assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs) {

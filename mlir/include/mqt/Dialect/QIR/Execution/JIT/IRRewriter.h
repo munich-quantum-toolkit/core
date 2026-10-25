@@ -65,4 +65,10 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint);
 /// Runtime declarations must already have passed the JIT's ABI validation.
 bool canSampleBranches(const llvm::Function& entryPoint);
 
+/// Whether a replayable entry point has no feedback or explicit reset.
+///
+/// Requires @ref canSampleBranches. Runtime tracking must still check gates on
+/// measured wires and qubit reuse before accepting a deferred sampling trial.
+bool canDeferMeasurements(const llvm::Function& entryPoint);
+
 } // namespace qir

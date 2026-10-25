@@ -49,19 +49,20 @@ does not use this seed.
 
 Adaptive sampling selects its worker count automatically by default. QCO
 programs share work before measurements and resets when these operations occur
-in the top-level stream or for/while loops. Other QCO programs and adaptive QIR
-programs can run independent shots in parallel. Terminal measurements still use
-one simulation for all shots. Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM3` to a
-`size_t` maximum worker count (`custom3` in Python). Zero selects automatic
-allocation; one selects serial execution. For QCO and short QIR programs,
-automatic allocation uses roughly one worker per 256 shots, up to eight. Large
-QIR programs with shareable JIT code may use up to 32 workers. The DDSIM device
-reserves one CPU slot for each active program process and shares its remaining
-slots among their shot workers. Programs in one native job each receive at most
-their share of the budget. Set `MQT_CORE_DD_WORKER_BUDGET` to a positive integer
-before starting the parent process to cap the total active slots; the default
-uses LLVM's physical-core-aware thread strategy. An invalid value falls back to
-that default. Each host process has its own budget; coordinate separate host
+in the top-level stream, for/while loops, conditionals or index switches. Other
+QCO programs and adaptive QIR programs can run independent shots in parallel.
+Terminal measurements still use one simulation for all shots. Set
+`QDMI_DEVICE_JOB_PARAMETER_CUSTOM3` to a `size_t` maximum worker count
+(`custom3` in Python). Zero selects automatic allocation; one selects serial
+execution. For QCO and short QIR programs, automatic allocation uses roughly one
+worker per 256 shots, up to eight. Large QIR programs with shareable JIT code
+may use up to 32 workers. The DDSIM device reserves one CPU slot for each active
+program process and shares its remaining slots among their shot workers.
+Programs in one native job each receive at most their share of the budget. Set
+`MQT_CORE_DD_WORKER_BUDGET` to a positive integer before starting the parent
+process to cap the total active slots; the default uses LLVM's
+physical-core-aware thread strategy. An invalid value falls back to that
+default. Each host process has its own budget; coordinate separate host
 processes externally. Direct QCO sampling applies the same setting
 independently. The seed controls sampling, but shot order is unspecified and
 changing the worker count may change sampled outcomes. The C++ and Python QDMI
@@ -81,15 +82,16 @@ Sampling returns individual bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
 histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
 Both results come from the same samples, including mid-circuit measurements. The
 sequence of shots has no defined meaning. Jobs without captured text retain a
-compact histogram and expand shots only when queried. QIR Base or Adaptive
-programs with a static terminal measurement region can sample one prepared DD.
-See the [QIR execution contract](../qir/index.md) for sampling eligibility and
-resource limits. OpenQASM classical registers use reverse declaration order,
-with each register most-significant-bit first. QIR records define increasing
-output-bit indices; the device reverses each recorded bitstring before returning
-shots and counts. Equivalent OpenQASM and QIR programs therefore use the same
-bit positions within each bitstring. Adaptive QIR shots can record different
-numbers of bits; their histogram retains these variable-length outcomes.
+compact histogram and expand shots only when queried. Eligible terminal programs
+in both simulation paths sample populations directly from one prepared DD,
+avoiding a full traversal for every shot when many outcomes coincide. See the
+[QIR execution contract](../qir/index.md) for sampling eligibility and resource
+limits. OpenQASM classical registers use reverse declaration order, with each
+register most-significant-bit first. QIR records define increasing output-bit
+indices; the device reverses each recorded bitstring before returning shots and
+counts. Equivalent OpenQASM and QIR programs therefore use the same bit
+positions within each bitstring. Adaptive QIR shots can record different numbers
+of bits; their histogram retains these variable-length outcomes.
 
 Sparse statevector and probability results use ascending numerical basis-index
 order. Their keys and values share that order. Sparse exports require at most 64

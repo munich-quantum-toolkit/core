@@ -470,4 +470,21 @@ bool canSampleBranches(const llvm::Function& entryPoint) {
   return true;
 }
 
+bool canDeferMeasurements(const llvm::Function& entryPoint) {
+  for (const auto& block : entryPoint) {
+    for (const auto& instruction : block) {
+      const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+      if (call == nullptr) {
+        continue;
+      }
+      const auto name = call->getCalledFunction()->getName();
+      if (name == "__quantum__rt__read_result" ||
+          name == "__quantum__qis__reset__body") {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 } // namespace qir

@@ -40,6 +40,7 @@
 #include <iosfwd>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <random>
 #include <ranges>
 #include <span>
@@ -50,9 +51,13 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dd {
+
+/// A qubit to sample, or a fixed classical bit in the output.
+using SamplingOutput = std::variant<Qubit, bool>;
 
 /// The DD package class
 ///
@@ -655,6 +660,20 @@ public:
   /// probabilities do not sum to 1.
   std::string measureAll(vEdge& rootEdge, bool collapse, std::mt19937_64& mt,
                          fp epsilon = 0.001);
+
+  /// Sample a histogram without changing the state.
+  ///
+  /// Bits follow @p outputs from left to right. Qubits may be repeated; an
+  /// empty projection produces the empty bitstring. Zero shots return an empty
+  /// histogram. Shot populations share DD traversal until small groups are
+  /// cheaper to sample individually. Seeded draws are reproducible within this
+  /// strategy, not interchangeable with @ref measureAll.
+  ///
+  /// @throws std::invalid_argument If an output qubit is outside the state.
+  /// @throws std::runtime_error If numerical instabilities are detected.
+  [[nodiscard]] static std::map<std::string, size_t>
+  sampleCounts(const vEdge& state, std::span<const SamplingOutput> outputs,
+               size_t shots, std::mt19937_64& mt, fp epsilon = 0.001);
 
 private:
   /// Assigns probabilities to nodes in a decision diagram.

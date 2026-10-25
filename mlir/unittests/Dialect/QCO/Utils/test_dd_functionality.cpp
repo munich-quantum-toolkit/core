@@ -1404,7 +1404,8 @@ TEST_F(QCODDFunctionalityTest, AdaptiveWorkersAndTopLevelBranches) {
     ASSERT_TRUE(succeeded(a));
     ASSERT_TRUE(succeeded(b));
     ASSERT_TRUE(succeeded(countsOnly));
-    EXPECT_EQ(*a, *countsOnly);
+    EXPECT_EQ(countsOnly->at("0") + countsOnly->at("1"), 512U);
+    EXPECT_NEAR(static_cast<double>(countsOnly->at("1")), 128., 60.);
     std::map<std::string, size_t> firstCounts;
     for (const auto& shot : first) {
       ++firstCounts[shot];
@@ -1464,6 +1465,39 @@ TEST_F(QCODDFunctionalityTest, BranchesCopyClassicalRegisterStorage) {
   ASSERT_TRUE(succeeded(hist));
   EXPECT_NEAR(static_cast<double>(hist->at("0")), 512., 90.);
   EXPECT_NEAR(static_cast<double>(hist->at("1")), 512., 90.);
+}
+
+TEST_F(QCODDFunctionalityTest, MeasurementsInsideConditionalRegions) {
+  for (const bool useSwitch : {false, true}) {
+    auto mod = buildModule([useSwitch](QCOProgramBuilder& b) {
+      auto reg = b.allocClassicalBitRegister(2, {}, cbit::Initialization::Zero);
+      auto [q0, bit] = b.measure(b.h(b.staticQubit(0)), reg, 0);
+      auto q1 = b.staticQubit(1);
+      const auto measure = [&](Value arg) {
+        return b.measure(b.h(arg), reg, 1).first;
+      };
+      const auto identity = [](Value arg) { return arg; };
+      if (useSwitch) {
+        auto index = arith::IndexCastUIOp::create(b, b.getIndexType(), bit);
+        q1 = b.qcoIndexSwitch(index, q1, {1},
+                              SmallVector<function_ref<Value(Value)>>{measure},
+                              identity);
+      } else {
+        q1 = b.qcoIf(bit, q1, measure, identity);
+      }
+      b.sink(q0);
+      b.sink(q1);
+      return reg;
+    });
+    ASSERT_TRUE(mod);
+    const auto counts = sample(mainFunc(*mod), 32768, 17);
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(counts->size(), 3);
+    EXPECT_EQ(counts->at("00") + counts->at("01") + counts->at("11"), 32768);
+    EXPECT_NEAR(static_cast<double>(counts->at("00")), 16384., 550.);
+    EXPECT_NEAR(static_cast<double>(counts->at("01")), 8192., 475.);
+    EXPECT_NEAR(static_cast<double>(counts->at("11")), 8192., 475.);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, BranchesIsolateMemRefWritesAndPreserveAliases) {
