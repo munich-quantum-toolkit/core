@@ -15,7 +15,8 @@
 
 #include "dd/Package.hpp"
 
-#include <iostream>
+#include "llvm/Support/raw_ostream.h"
+
 #include <string>
 
 namespace dd {
@@ -52,6 +53,6 @@ namespace dd {
 [[nodiscard]] std::string
 getStatisticsString(Package& package, bool includeIndividualTables = false);
 
-void printStatistics(Package& package, std::ostream& os = std::cout);
+void printStatistics(Package& package, llvm::raw_ostream& os = llvm::outs());
 
 } // namespace dd

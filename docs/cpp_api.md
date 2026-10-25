@@ -136,3 +136,16 @@ part of the installed public-header reference above. See
 [device compilation from C++](mlir/target_compilation.md#c-source-tree-api), the
 {doc}`QIR runtime guide <qir/index>`, and the
 {doc}`MLIR dialect and pass references <mlir/index>`.
+
+## DD input and output
+
+DD serializers, DOT exporters, statistics and number printers write to
+`llvm::raw_ostream`. The caller owns the stream and checks any sink errors;
+file-writing overloads report failures with exceptions. Use
+`llvm::raw_string_ostream` to collect output in a `std::string`.
+
+`Package::deserialize` reads borrowed `llvm::StringRef` bytes, including
+embedded NUL bytes. Use `Package::deserializeFile` for a filename. Binary
+serialization retains its native representation and is not portable between
+architectures. Serialized decimal weights are locale-independent; finite
+subnormal values are preserved.

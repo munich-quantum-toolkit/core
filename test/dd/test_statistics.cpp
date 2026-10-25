@@ -21,6 +21,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <clocale>
@@ -45,12 +46,21 @@ TEST(DDStatistics, SerializesIndependentlyOfNumericLocale) {
   dd::Package package(2);
   package.incRef(dd::makeZeroState(2, package));
   const auto serialize = [&] {
+    std::string streamedMemory;
+    llvm::raw_string_ostream(streamedMemory) << memory;
+    std::string streamedPackage;
+    llvm::raw_string_ostream out(streamedPackage);
+    dd::printStatistics(package, out);
+    EXPECT_EQ(streamedMemory, memory.toString());
+    EXPECT_EQ(streamedPackage, dd::getStatisticsString(package, false));
     return std::array{
         memory.toString(),
         table.dd::TableStatistics::toString(),
         table.toString(),
         dd::getStatisticsString(package, true),
         dd::getStatisticsString(package, false),
+        streamedMemory,
+        streamedPackage,
     };
   };
 

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage
+from mqt.core.dd import DDPackage, MatrixDD
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -78,7 +78,7 @@ def test_svg_native_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     dd = package.zero_state(1)
     directory = tmp_path / "folder.with.dot"
     directory.mkdir()
-    filename = directory / "diagram with spaces;literal"
+    filename = directory / "測定 with spaces;literal"
 
     dd.to_svg(str(filename))
 
@@ -95,5 +95,21 @@ def test_svg_native_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
             dd.to_svg(str(filename))
 
         dot.unlink()
-        with pytest.raises(RuntimeError, match="Cannot start Graphviz dot"):
+        with pytest.raises(RuntimeError, match="Cannot find Graphviz dot"):
             dd.to_svg(str(filename))
+
+
+@pytest.mark.parametrize("matrix", [False, True])
+@pytest.mark.parametrize("binary", [False, True])
+def test_serialized_bytes_and_errors(*, matrix: bool, binary: bool) -> None:
+    """Preserve serialized values and translate malformed-input exceptions."""
+    package = DDPackage(2)
+    values = np.array([[1, 2j], [-3, -4j]]) if matrix else np.array([1, 2j, -3, -4j])
+    dd = package.from_matrix(values) if matrix else package.from_vector(values)
+    payload = dd.to_bytes(binary=binary)
+    restored = type(dd).from_bytes(package, payload, binary=binary)
+    actual = restored.get_matrix(1) if isinstance(restored, MatrixDD) else restored.get_vector()
+    np.testing.assert_allclose(actual, values, rtol=1e-14, atol=0)
+    malformed = payload + b"\0" if binary else b"1\ninvalid\n"
+    with pytest.raises(RuntimeError):
+        type(dd).from_bytes(package, malformed, binary=binary)

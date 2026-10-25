@@ -18,7 +18,8 @@
 #include "dd/RealNumber.hpp"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
@@ -27,8 +28,6 @@
 #include <complex>
 #include <cstddef>
 #include <functional>
-#include <iomanip>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -334,14 +333,14 @@ auto printVector(const vEdge& edge) -> void {
       edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
     throw std::out_of_range("Vector dimension does not fit in size_t.");
   }
-  constexpr auto precision = 3;
-  const auto oldPrecision = std::cout.precision();
-  const auto restorePrecision =
-      llvm::scope_exit([oldPrecision] { std::cout.precision(oldPrecision); });
-  std::cout << std::setprecision(precision);
+  auto& output = llvm::outs();
 
   if (edge.isTerminal()) {
-    std::cout << "0: " << static_cast<std::complex<fp>>(edge.w) << "\n";
+    output << "0: "
+           << llvm::format("(%.3g,%.3g)", RealNumber::val(edge.w.r),
+                           RealNumber::val(edge.w.i))
+           << "\n";
+    output.flush();
     return;
   }
   const size_t element = size_t{1} << (edge.p->v + 1U);
@@ -349,11 +348,13 @@ auto printVector(const vEdge& edge) -> void {
     const auto amplitude = getValueByIndex(edge, i);
     const auto n = static_cast<size_t>(edge.p->v) + 1U;
     for (auto j = n; j > 0; --j) {
-      std::cout << ((i >> (j - 1)) & 1ULL);
+      output << ((i >> (j - 1)) & 1ULL);
     }
-    std::cout << ": " << amplitude << "\n";
+    output << ": "
+           << llvm::format("(%.3g,%.3g)", amplitude.real(), amplitude.imag())
+           << "\n";
   }
-  std::cout << std::flush;
+  output.flush();
 }
 
 auto addToVector(const vEdge& edge, CVec& amplitudes) -> void {
@@ -535,25 +536,25 @@ auto printMatrix(const mEdge& edge, const size_t numQubits) -> void {
   if (numQubits >= std::numeric_limits<size_t>::digits) {
     throw std::out_of_range("Matrix dimension does not fit in size_t.");
   }
-  constexpr auto precision = 3;
-  const auto oldPrecision = std::cout.precision();
-  const auto restorePrecision =
-      llvm::scope_exit([oldPrecision] { std::cout.precision(oldPrecision); });
-  std::cout << std::setprecision(precision);
+  auto& output = llvm::outs();
 
   if (numQubits == 0U) {
-    std::cout << static_cast<std::complex<fp>>(edge.w) << "\n";
+    output << llvm::format("(%.3g,%.3g)", RealNumber::val(edge.w.r),
+                           RealNumber::val(edge.w.i))
+           << "\n";
+    output.flush();
     return;
   }
   const size_t element = size_t{1} << numQubits;
   for (size_t i = 0; i < element; ++i) {
     for (size_t j = 0; j < element; ++j) {
       const auto amplitude = getValueByIndex(edge, numQubits, i, j);
-      std::cout << amplitude << " ";
+      output << llvm::format("(%.3g,%.3g)", amplitude.real(), amplitude.imag())
+             << " ";
     }
-    std::cout << "\n";
+    output << "\n";
   }
-  std::cout << std::flush;
+  output.flush();
 }
 
 void traverseMatrix(const mEdge& edge, const std::complex<fp>& amp,

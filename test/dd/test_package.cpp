@@ -31,6 +31,8 @@
 
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
@@ -39,6 +41,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -95,7 +98,8 @@ template <class Node> void checkDotIds() {
     for (const bool classic : {false, true}) {
       for (const bool memory : {false, true}) {
         SCOPED_TRACE(::testing::Message() << colored << classic << memory);
-        std::ostringstream first;
+        std::string firstStorage;
+        llvm::raw_string_ostream first(firstStorage);
         toDot(far, first, colored, true, classic, memory);
         const auto dot = first.str();
         EXPECT_NE(dot.find("root->0["), std::string::npos);
@@ -106,7 +110,8 @@ template <class Node> void checkDotIds() {
         EXPECT_NE(dot.find(memory ? "0:0:s->1[" : "0:0:sw->1["),
                   std::string::npos);
         if (!memory) {
-          std::ostringstream second;
+          std::string secondStorage;
+          llvm::raw_string_ostream second(secondStorage);
           toDot(near, second, colored, true, classic, memory);
           EXPECT_EQ(dot, second.str());
         }
@@ -133,12 +138,12 @@ TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
                                std::filesystem::perm_options::add);
   const auto dotDirectory = temp.path() / "folder.with.dot";
   std::filesystem::create_directory(dotDirectory);
-  const auto dotFile = dotDirectory / "diagram with spaces;literal.dot";
+  const auto dotFile = dotDirectory / "測定 with spaces;literal.dot";
   auto svgFile = dotFile;
   svgFile.replace_extension(".svg");
 
   Package package(1);
-  exportToDot(makeZeroState(1, package), dotFile);
+  exportToDot(makeZeroState(1, package), dotFile.string());
   std::ifstream svg(svgFile);
   std::string rendered;
   std::getline(svg, rendered);
@@ -147,14 +152,14 @@ TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
 
   temp.write("dot", "#!/bin/sh\nexit 7\n");
   try {
-    renderDotToSvg(dotFile);
+    renderDotToSvg(dotFile.string());
     FAIL() << "Graphviz failure should throw";
   } catch (const std::runtime_error& error) {
     EXPECT_STREQ(error.what(), "Graphviz dot exited with code 7");
   }
 
   std::filesystem::remove(executable);
-  EXPECT_THROW(renderDotToSvg(dotFile), std::system_error);
+  EXPECT_THROW(renderDotToSvg(dotFile.string()), std::system_error);
 }
 #endif
 
@@ -334,7 +339,7 @@ TEST(DDPackageTest, BellState) {
   ASSERT_DOUBLE_EQ(dd->fidelity(zeroState, bellState), 0.5);
 
   checkDotFile(bellState, "bell_state.dot");
-  exportEdgeWeights(bellState, std::cout);
+  exportEdgeWeights(bellState, llvm::outs());
 
   printStatistics(*dd);
 }
@@ -369,7 +374,7 @@ TEST(DDPackageTest, QFTState) {
     ASSERT_EQ(dd::getValueByIndex(qftState, qubit).imag(), 0);
   }
 
-  exportEdgeWeights(qftState, std::cout);
+  exportEdgeWeights(qftState, llvm::outs());
 
   printStatistics(*dd);
 }
@@ -601,9 +606,10 @@ TEST(DDPackageTest, VectorSerializationTest) {
   auto dd = std::make_unique<Package>(2);
 
   for (const bool binary : {false, true}) {
-    std::stringstream serialized{};
+    std::string serializedStorage;
+    llvm::raw_string_ostream serialized(serializedStorage);
     serialize(vEdge::one(), serialized, binary);
-    EXPECT_EQ(dd->deserialize<vNode>(serialized, binary), vEdge::one());
+    EXPECT_EQ(dd->deserialize<vNode>(serializedStorage, binary), vEdge::one());
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -613,12 +619,14 @@ TEST(DDPackageTest, VectorSerializationTest) {
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
   serialize(bellState, "bell_state.dd", false);
-  auto deserializedBellState = dd->deserialize<vNode>("bell_state.dd", false);
+  auto deserializedBellState =
+      dd->deserializeFile<vNode>("bell_state.dd", false);
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state.dd");
 
   serialize(bellState, "bell_state_binary.dd", true);
-  deserializedBellState = dd->deserialize<vNode>("bell_state_binary.dd", true);
+  deserializedBellState =
+      dd->deserializeFile<vNode>("bell_state_binary.dd", true);
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state_binary.dd");
 }
@@ -654,9 +662,10 @@ TEST(DDPackageTest, MatrixSerializationTest) {
   auto dd = std::make_unique<Package>(2);
 
   for (const bool binary : {false, true}) {
-    std::stringstream serialized{};
+    std::string serializedStorage;
+    llvm::raw_string_ostream serialized(serializedStorage);
     serialize(mEdge::one(), serialized, binary);
-    EXPECT_EQ(dd->deserialize<mNode>(serialized, binary), mEdge::one());
+    EXPECT_EQ(dd->deserialize<mNode>(serializedStorage, binary), mEdge::one());
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -665,13 +674,14 @@ TEST(DDPackageTest, MatrixSerializationTest) {
   auto const bellMatrix = dd->multiply(cxGate, hGate);
 
   serialize(bellMatrix, "bell_matrix.dd", false);
-  auto deserializedBellMatrix = dd->deserialize<mNode>("bell_matrix.dd", false);
+  auto deserializedBellMatrix =
+      dd->deserializeFile<mNode>("bell_matrix.dd", false);
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix.dd");
 
   serialize(bellMatrix, "bell_matrix_binary.dd", true);
   deserializedBellMatrix =
-      dd->deserialize<mNode>("bell_matrix_binary.dd", true);
+      dd->deserializeFile<mNode>("bell_matrix_binary.dd", true);
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix_binary.dd");
 }
@@ -687,50 +697,52 @@ TEST(DDPackageTest, SerializationErrors) {
   // test non-existing file
   EXPECT_THROW(serialize(bellState, "./path/that/does/not/exist/filename.dd"),
                std::invalid_argument);
-  EXPECT_THROW(
-      dd->deserialize<vNode>("./path/that/does/not/exist/filename.dd", true),
-      std::invalid_argument);
+  EXPECT_THROW(dd->deserializeFile<vNode>(
+                   "./path/that/does/not/exist/filename.dd", true),
+               std::invalid_argument);
 
   // test wrong version number
-  std::stringstream ss{};
+  std::string ssStorage;
+  llvm::raw_string_ostream ss(ssStorage);
   ss << 2 << "\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ss, false), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<vNode>(ssStorage, false), std::runtime_error);
   ss << 2 << "\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ss, false), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<mNode>(ssStorage, false), std::runtime_error);
 
-  ss.str("");
+  ssStorage.clear();
   std::remove_const_t<decltype(SERIALIZATION_VERSION)> version = 2;
   ss.write(reinterpret_cast<const char*>(&version),
            sizeof(decltype(SERIALIZATION_VERSION)));
-  EXPECT_THROW(dd->deserialize<vNode>(ss, true), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<vNode>(ssStorage, true), std::runtime_error);
   ss.write(reinterpret_cast<const char*>(&version),
            sizeof(decltype(SERIALIZATION_VERSION)));
-  EXPECT_THROW(dd->deserialize<mNode>(ss, true), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<mNode>(ssStorage, true), std::runtime_error);
 
   // test wrong format
-  ss.str("");
+  ssStorage.clear();
   ss << "1\n";
   ss << "not_complex\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ss), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<vNode>(ssStorage), std::runtime_error);
   ss << "1\n";
   ss << "not_complex\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ss), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<mNode>(ssStorage), std::runtime_error);
 
-  ss.str("");
+  ssStorage.clear();
   ss << "1\n";
   ss << "1.0\n";
   ss << "no_node_here\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ss), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<vNode>(ssStorage), std::runtime_error);
   ss << "1\n";
   ss << "1.0\n";
   ss << "no_node_here\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ss), std::runtime_error);
+  EXPECT_THROW(dd->deserialize<mNode>(ssStorage), std::runtime_error);
 }
 
 TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
   Package package(2);
   const auto state = makeZeroState(2, package);
-  std::ostringstream binary;
+  std::string binaryStorage;
+  llvm::raw_string_ostream binary(binaryStorage);
   serialize(state, binary, true);
   const auto bytes = binary.str();
   constexpr auto rootOffset = sizeof(SERIALIZATION_VERSION);
@@ -744,11 +756,11 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
            bytes.size() - 1,
        }) {
     SCOPED_TRACE(length);
-    std::istringstream input(bytes.substr(0, length));
+    const std::string input(bytes.substr(0, length));
     EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
   }
   for (const auto* text : {"", "\n", "1\n"}) {
-    std::istringstream input(text);
+    const std::string input(text);
     EXPECT_ANY_THROW(package.deserialize<vNode>(input));
   }
 }
@@ -770,9 +782,9 @@ TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
   for (const auto* unit : {"i", "I", "+i", "+I", "-i", "-I"}) {
     SCOPED_TRACE(unit);
     const std::complex<fp> phase{0., *unit == '-' ? -1. : 1.};
-    std::istringstream root(std::string("1\n") + unit + "\n");
+    const std::string root(std::string("1\n") + unit + "\n");
     EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(root), 0), phase);
-    std::istringstream edge(std::string("1\n1\n0 0 (-1 ") + unit + ") ()\n");
+    const std::string edge(std::string("1\n1\n0 0 (-1 ") + unit + ") ()\n");
     EXPECT_EQ(dd::getValueByIndex(package.deserialize<vNode>(edge), 0), phase);
   }
 }
@@ -800,18 +812,19 @@ TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
            "1\n1\n999999999999999999999999999 0 (-1 1) ()\n",
        }) {
     SCOPED_TRACE(text);
-    std::istringstream input(text);
+    const std::string input(text);
     EXPECT_ANY_THROW(package.deserialize<vNode>(input));
   }
-  std::istringstream valid("1\n1\n2147483648 0 (-1 1) ()\n9223372036854775807 "
-                           "1 (2147483648 1) ()\n");
+  const std::string valid("1\n1\n2147483648 0 (-1 1) ()\n9223372036854775807 "
+                          "1 (2147483648 1) ()\n");
   EXPECT_EQ(package.deserialize<vNode>(valid), makeZeroState(2, package));
 }
 
 TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
   Package package(2);
   const auto state = makeZeroState(2, package);
-  std::ostringstream binary;
+  std::string binaryStorage;
+  llvm::raw_string_ostream binary(binaryStorage);
   serialize(state, binary, true);
   const auto bytes = binary.str();
   constexpr auto rootOffset = sizeof(SERIALIZATION_VERSION);
@@ -825,7 +838,7 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     SCOPED_TRACE(::testing::Message() << offset << ": " << value);
     auto invalid = bytes;
     std::memcpy(&invalid.at(offset), &value, sizeof(value));
-    std::istringstream input(invalid);
+    const std::string input(invalid);
     EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
   };
   reject(nodeOffset, int64_t{-1});
@@ -850,9 +863,10 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     }
   }
   for (const bool isBinary : {false, true}) {
-    std::stringstream stream;
+    std::string streamStorage;
+    llvm::raw_string_ostream stream(streamStorage);
     serialize(state, stream, isBinary);
-    EXPECT_EQ(package.deserialize<vNode>(stream, isBinary), state);
+    EXPECT_EQ(package.deserialize<vNode>(streamStorage, isBinary), state);
   }
 }
 
@@ -865,9 +879,10 @@ TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
       vNode node{};
       node.v = 2;
       node.e = {child, vEdge::zero()};
-      std::stringstream stream;
+      std::string streamStorage;
+      llvm::raw_string_ostream stream(streamStorage);
       serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
-      EXPECT_THROW(package.deserialize<vNode>(stream, binary),
+      EXPECT_THROW(package.deserialize<vNode>(streamStorage, binary),
                    std::runtime_error);
     }
   }
@@ -879,9 +894,10 @@ TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
   const auto low = package.makeGateDD(X_MAT, 0);
   for (const auto& matrix : {high, package.multiply(high, low)}) {
     for (const bool binary : {false, true}) {
-      std::stringstream stream;
+      std::string streamStorage;
+      llvm::raw_string_ostream stream(streamStorage);
       serialize(matrix, stream, binary);
-      EXPECT_EQ(package.deserialize<mNode>(stream, binary), matrix);
+      EXPECT_EQ(package.deserialize<mNode>(streamStorage, binary), matrix);
     }
   }
 }
@@ -1455,7 +1471,8 @@ TEST(DDPackageTest, SpecialCaseTerminal) {
            std::array{false, false, false, false},
            std::array{true, true, false, true},
        }) {
-    std::ostringstream os;
+    std::string osStorage;
+    llvm::raw_string_ostream os(osStorage);
     toDot(one, os, options[0], options[1], options[2], options[3]);
     EXPECT_FALSE(os.str().empty());
   }
@@ -1675,7 +1692,9 @@ TEST(DDPackageTest, NormalizationDominantPhaseIsIndependentOfScale) {
                ComplexValue{0., 0x1p-24},
                ComplexValue{0.5, 0.5},
            }) {
-        SCOPED_TRACE(::testing::Message() << second << " * " << factor);
+        SCOPED_TRACE(::testing::Message()
+                     << ComplexValue::toString(second.r, second.i) << " * "
+                     << ComplexValue::toString(factor.r, factor.i));
         const auto scaled = make(second, factor);
         EXPECT_EQ(scaled.p, reference.p);
         const auto expected = static_cast<ComplexValue>(reference.w) * factor;
@@ -2056,72 +2075,73 @@ TEST(DDPackageTest, FullMeasurementPreservesBitOrder) {
 }
 
 TEST(DDPackageTest, ExportPolarPhaseFormatted) {
-  std::ostringstream phaseString;
+  std::string phaseStringStorage;
+  llvm::raw_string_ostream phaseString(phaseStringStorage);
 
   // zero case
   printPhaseFormatted(phaseString, 0);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ 0)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   // one cases
   printPhaseFormatted(phaseString, 0.5 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ/2)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, -0.5 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(-iπ/2)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, -PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(-iπ)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   // 1/sqrt(2) cases
   printPhaseFormatted(phaseString, SQRT2_2 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ/√2)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 2 * SQRT2_2 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ 2/√2)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 0.5 * SQRT2_2 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ/(2√2))");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 0.75 * SQRT2_2 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ 3/(4√2))");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   // pi cases mhhh pie
   printPhaseFormatted(phaseString, PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 2 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ 2)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 0.5 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ/2)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 0.75 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ 3/4)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   printPhaseFormatted(phaseString, 0.25 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ/4)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 
   // general case
   printPhaseFormatted(phaseString, 0.12345 * PI);
   EXPECT_STREQ(phaseString.str().c_str(), "ℯ(iπ 0.12345)");
-  phaseString.str("");
+  phaseStringStorage.clear();
 }
 
 TEST(DDPackageTest, BasicNumericStabilityTest) {
@@ -2142,7 +2162,7 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
       result.p->e[1].w.toString(false, limits::max_digits10);
   std::cout << topWeight << " | " << leftWeight << " | " << rightWeight << "\n";
   EXPECT_EQ(topWeight, "1");
-  std::ostringstream oss{};
+  std::ostringstream oss;
   oss << std::setprecision(limits::max_digits10) << SQRT2_2;
   EXPECT_EQ(leftWeight, oss.str());
   oss.str("");
@@ -2866,7 +2886,9 @@ TEST(DDPackageTest, AddCacheKeyRetainsCommonScale) {
 TEST(DDPackageTest, WideCoherentAdditionRetainsNormalizationAndPhase) {
   for (const size_t width : {8U, 120U, 150U}) {
     for (const ComplexValue phase : {ComplexValue{1., 0.}, {0., 1.}}) {
-      SCOPED_TRACE(::testing::Message() << width << " / " << phase);
+      SCOPED_TRACE(::testing::Message()
+                   << width << " / "
+                   << ComplexValue::toString(phase.r, phase.i));
       Package package(width);
       const auto plus =
           makeBasisState(width, std::vector(width, BasisStates::plus), package);
@@ -3192,9 +3214,10 @@ TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   Package other(width);
   check(other.transfer(matrix), width, expected);
   for (const bool binary : {false, true}) {
-    std::stringstream stream;
+    std::string streamStorage;
+    llvm::raw_string_ostream stream(streamStorage);
     serialize(matrix, stream, binary);
-    check(other.deserialize<mNode>(stream, binary), width, expected);
+    check(other.deserialize<mNode>(streamStorage, binary), width, expected);
   }
   const auto h = package.makeGateDD(H_MAT, 0);
   for (size_t repetition = 0; repetition < 2; ++repetition) {
@@ -3247,9 +3270,10 @@ TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
     SCOPED_TRACE(value);
     const auto root = mEdge::terminal(package.cn.lookupRoot({value, -value}));
     for (const bool binary : {false, true}) {
-      std::stringstream stream;
+      std::string streamStorage;
+      llvm::raw_string_ostream stream(streamStorage);
       serialize(root, stream, binary);
-      const auto restored = package.deserialize<mNode>(stream, binary);
+      const auto restored = package.deserialize<mNode>(streamStorage, binary);
       EXPECT_EQ(RealNumber::val(restored.w.r), value);
       EXPECT_EQ(RealNumber::val(restored.w.i), -value);
     }
@@ -3311,3 +3335,60 @@ TEST(DDStatistics, ResetMemoryUsageIsFinite) {
   EXPECT_EQ(value.getAsObject()->getNumber("usage_ratio"), 0.);
   EXPECT_EQ(value.getAsObject()->getInteger("num_used_peak"), 1);
 }
+
+namespace dd {
+
+TEST(DDPackageTest, BinarySerializationPreservesNulsAndRejectsTrailingBytes) {
+  std::string bytes;
+  llvm::raw_string_ostream output(bytes);
+  serialize(vEdge::one(), output, true);
+  ASSERT_EQ(bytes.size(), sizeof(SERIALIZATION_VERSION) + (2 * sizeof(fp)));
+  EXPECT_NE(bytes.find('\0'), std::string::npos);
+  EXPECT_EQ(bytes.back(), '\0');
+  std::string expected(bytes.size(), '\0');
+  const auto version = SERIALIZATION_VERSION;
+  const fp real = 1.;
+  std::memcpy(expected.data(), &version, sizeof(version));
+  std::memcpy(std::addressof(expected.at(sizeof(version))), &real,
+              sizeof(real));
+  EXPECT_EQ(bytes, expected);
+  Package package(1);
+  EXPECT_EQ(package.deserialize<vNode>(bytes, true), vEdge::one());
+  bytes.push_back('\0');
+  EXPECT_THROW(package.deserialize<vNode>(bytes, true), std::runtime_error);
+}
+
+TEST(DDPackageTest, OutputFilesCanReuseClosedStandardDescriptors) {
+  const mqt::test::TemporaryDirectory temp;
+  const auto filename = (temp.path() / "output.dd").string();
+  EXPECT_EXIT(
+      {
+        if (llvm::sys::Process::SafelyCloseFileDescriptor(0)) {
+          std::_Exit(1);
+        }
+        serialize(vEdge::one(), filename, true);
+        exportToDot(vEdge::one(), filename, true, false, false, false, false);
+        std::_Exit(0);
+      },
+      testing::ExitedWithCode(0), "");
+}
+
+TEST(DDPackageTest, TextDeserializationPreservesSpacingAndVersionGrammar) {
+  Package package(1);
+  for (const auto* version : {"1", "+1", " 1", "\t1"}) {
+    for (const auto* weight : {"1+2i", "1 + 2i", "1 +2i", "1+ 2i"}) {
+      SCOPED_TRACE(::testing::Message() << version << ": " << weight);
+      const auto state = package.deserialize<vNode>(std::string(version) +
+                                                    "\n" + weight + "\n");
+      EXPECT_EQ(getValueByIndex(state, 0), (std::complex<fp>{1., 2.}));
+    }
+  }
+  for (const auto* weight :
+       {"1+2 3i", "1  + 2i", "1+  2i", "1+2i ", "1+2\ti"}) {
+    SCOPED_TRACE(weight);
+    EXPECT_THROW(package.deserialize<vNode>(std::string("1\n") + weight + "\n"),
+                 std::runtime_error);
+  }
+}
+
+} // namespace dd

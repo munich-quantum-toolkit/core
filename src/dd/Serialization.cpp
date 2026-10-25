@@ -9,21 +9,24 @@
  */
 
 #include "dd/CachedEdge.hpp"
+#include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
+
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <ios>
-#include <istream>
+#include <cstring>
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -79,56 +82,62 @@ Package::deserializeNode(const std::int64_t index, const Qubit v,
   return r;
 }
 
-template <class Node, class Edge, std::size_t N>
-Edge Package::deserialize(std::istream& is, const bool readBinary) {
+template <class Node, class Edge, size_t N>
+Edge Package::deserialize(llvm::StringRef data, const bool readBinary) {
   auto result = CachedEdge<Node>::one();
   ComplexValue rootweight{};
-
-  std::unordered_map<std::int64_t, Node*> nodes{};
-  std::int64_t nodeIndex{};
-  Qubit v{};
-  std::array<ComplexValue, N> edgeWeights{};
-  std::array<std::int64_t, N> edgeIndices{};
-  edgeIndices.fill(-2);
-
+  std::unordered_map<int64_t, Node*> nodes;
+  const auto invalid = [] {
+    return std::runtime_error("Invalid or truncated serialized DD.");
+  };
+  const auto read = [&data]<class T>(T& value) {
+    if (data.size() < sizeof(T)) {
+      return false;
+    }
+    const auto bytes = data.take_front(sizeof(T));
+    std::memcpy(&value, bytes.data(), bytes.size());
+    data = data.drop_front(sizeof(T));
+    return true;
+  };
+  const auto readLine = [&data](std::string& line) {
+    if (data.empty()) {
+      return false;
+    }
+    const auto parts = data.split('\n');
+    line = parts.first.str();
+    data = parts.second;
+    return true;
+  };
   if (readBinary) {
     std::remove_const_t<decltype(SERIALIZATION_VERSION)> version{};
-    is.read(reinterpret_cast<char*>(&version),
-            sizeof(decltype(SERIALIZATION_VERSION)));
-    if (!is) {
-      throw std::runtime_error("Truncated serialized DD version.");
+    if (!read(version) || version != SERIALIZATION_VERSION ||
+        !read(rootweight.r) || !read(rootweight.i) ||
+        !std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
+      throw invalid();
     }
-    if (version != SERIALIZATION_VERSION) {
-      throw std::runtime_error(
-          "Wrong Version of serialization file version. version of file: " +
-          std::to_string(version) +
-          "; current version: " + std::to_string(SERIALIZATION_VERSION));
-    }
-
-    rootweight.readBinary(is);
-    if (!is) {
-      throw std::runtime_error("Truncated serialized DD root weight.");
-    }
-
-    while (is.read(reinterpret_cast<char*>(&nodeIndex),
-                   sizeof(decltype(nodeIndex)))) {
-      is.read(reinterpret_cast<char*>(&v), sizeof(decltype(v)));
-      for (std::size_t i = 0U; i < N; i++) {
-        is.read(reinterpret_cast<char*>(&edgeIndices[i]),
-                sizeof(decltype(edgeIndices[i])));
-        edgeWeights[i].readBinary(is);
+    while (!data.empty()) {
+      int64_t index{};
+      Qubit wire{};
+      std::array<int64_t, N> indices{};
+      std::array<ComplexValue, N> weights{};
+      if (!read(index) || !read(wire)) {
+        throw invalid();
       }
-      if (!is) {
-        throw std::runtime_error("Truncated serialized DD node.");
+      for (size_t i = 0; i < N; ++i) {
+        if (!read(indices[i]) || !read(weights[i].r) || !read(weights[i].i)) {
+          throw invalid();
+        }
       }
-      result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-    }
-    if (!is.eof() || is.gcount() != 0) {
-      throw std::runtime_error("Truncated serialized DD node index.");
+      result = deserializeNode(index, wire, indices, weights, nodes);
     }
   } else {
+    std::int64_t nodeIndex{};
+    Qubit v{};
+    std::array<ComplexValue, N> edgeWeights{};
+    std::array<std::int64_t, N> edgeIndices{};
+    edgeIndices.fill(-2);
     std::string version;
-    if (!std::getline(is, version)) {
+    if (!readLine(version)) {
       throw std::runtime_error("Missing serialized DD version.");
     }
     size_t versionEnd = 0;
@@ -159,7 +168,7 @@ Edge Package::deserialize(std::istream& is, const bool readBinary) {
     std::smatch m;
 
     std::string line;
-    if (!std::getline(is, line) || line.empty()) {
+    if (!readLine(line) || line.empty()) {
       throw std::runtime_error("Missing serialized DD root weight.");
     }
     if (!std::regex_match(line, m, COMPLEX_WEIGHT_REGEX)) {
@@ -167,7 +176,7 @@ Edge Package::deserialize(std::istream& is, const bool readBinary) {
     }
     rootweight.fromString(m.str(1), m.str(2));
 
-    while (std::getline(is, line)) {
+    while (readLine(line)) {
       if (line.empty()) {
         continue;
       }
@@ -207,9 +216,6 @@ Edge Package::deserialize(std::istream& is, const bool readBinary) {
       result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
     }
   }
-  if (is.bad()) {
-    throw std::runtime_error("Cannot read serialized DD.");
-  }
   if (!std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
     throw std::runtime_error("Serialized DD weights must be finite.");
   }
@@ -217,21 +223,20 @@ Edge Package::deserialize(std::istream& is, const bool readBinary) {
 }
 
 template <class Node, class Edge>
-Edge Package::deserialize(const std::string& inputFilename,
-                          const bool readBinary) {
-  auto ifs = std::ifstream(inputFilename, std::ios::binary);
-
-  if (!ifs.good()) {
-    throw std::invalid_argument("Cannot open serialized file: " +
-                                inputFilename);
+Edge Package::deserializeFile(llvm::StringRef inputFilename,
+                              const bool readBinary) {
+  auto input = llvm::MemoryBuffer::getFile(inputFilename);
+  if (!input) {
+    throw std::invalid_argument(
+        "Cannot open serialized file: " + inputFilename.str() + ": " +
+        input.getError().message());
   }
-
-  return deserialize<Node>(ifs, readBinary);
+  return deserialize<Node>((*input)->getBuffer(), readBinary);
 }
 
-template vEdge Package::deserialize<vNode>(std::istream&, bool);
-template mEdge Package::deserialize<mNode>(std::istream&, bool);
-template vEdge Package::deserialize<vNode>(const std::string&, bool);
-template mEdge Package::deserialize<mNode>(const std::string&, bool);
+template vEdge Package::deserialize<vNode>(llvm::StringRef, bool);
+template mEdge Package::deserialize<mNode>(llvm::StringRef, bool);
+template vEdge Package::deserializeFile<vNode>(llvm::StringRef, bool);
+template mEdge Package::deserializeFile<mNode>(llvm::StringRef, bool);
 
 } // namespace dd

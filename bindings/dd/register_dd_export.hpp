@@ -17,12 +17,12 @@
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)
 
-#include <cstring>
-#include <filesystem>
-#include <ios>
-#include <sstream>
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <string>
-#include <utility>
 
 namespace mqt {
 
@@ -33,9 +33,9 @@ void registerDDExport(nanobind::class_<dd::Edge<Node>>& edgeClass) {
   edgeClass.def(
       "to_bytes",
       [](const dd::Edge<Node>& e, const bool binary = true) {
-        std::ostringstream os(std::ios::out | std::ios::binary);
+        std::string data;
+        llvm::raw_string_ostream os(data);
         dd::serialize(e, os, binary);
-        const auto data = os.view();
         return nb::bytes(data.data(), data.size());
       },
       "binary"_a = true, R"pb(Serialize the DD to bytes.
@@ -53,9 +53,8 @@ Notes:
   edgeClass.def_static(
       "from_bytes",
       [](dd::Package& p, const nb::bytes& data, const bool binary = true) {
-        std::istringstream is(std::string(data.c_str(), data.size()),
-                              std::ios::in | std::ios::binary);
-        return p.deserialize<Node>(is, binary);
+        return p.deserialize<Node>(llvm::StringRef(data.c_str(), data.size()),
+                                   binary);
       },
       "dd_package"_a, "data"_a, "binary"_a = true,
       // keep the DD package alive while the returned DD is alive.
@@ -78,9 +77,10 @@ Notes:
       [](const dd::Edge<Node>& e, const bool colored = true,
          const bool edgeLabels = false, const bool classic = false,
          const bool memory = false, const bool formatAsPolar = true) {
-        std::ostringstream os;
+        std::string data;
+        llvm::raw_string_ostream os(data);
         dd::toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
-        return std::move(os).str();
+        return data;
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
       "memory"_a = false, "format_as_polar"_a = true,
@@ -102,8 +102,8 @@ Returns:
          const bool colored = true, const bool edgeLabels = false,
          const bool classic = false, const bool memory = false,
          const bool formatAsPolar = true) {
-        const auto dotFilename =
-            std::filesystem::u8path(filename).replace_extension(".dot");
+        llvm::SmallString<128> dotFilename(filename);
+        llvm::sys::path::replace_extension(dotFilename, ".dot");
         nb::object pygraphviz;
         try {
           pygraphviz = nb::module_::import_("pygraphviz");
@@ -122,16 +122,12 @@ Returns:
                         !usePyGraphviz, formatAsPolar);
         if (usePyGraphviz) {
           auto svgFilename = dotFilename;
-          svgFilename.replace_extension(".svg");
-          const auto utf8Path = [](const std::filesystem::path& path) {
-            const auto bytes = path.u8string();
-            std::string value(bytes.size(), '\0');
-            std::memcpy(value.data(), bytes.data(), bytes.size());
-            return value;
-          };
-          pygraphviz.attr("AGraph")("filename"_a = utf8Path(dotFilename))
-              .attr("draw")(utf8Path(svgFilename), "format"_a = "svg",
-                            "prog"_a = "dot");
+          llvm::sys::path::replace_extension(svgFilename, ".svg");
+          pygraphviz
+              .attr("AGraph")("filename"_a = nb::str(dotFilename.data(),
+                                                     dotFilename.size()))
+              .attr("draw")(nb::str(svgFilename.data(), svgFilename.size()),
+                            "format"_a = "svg", "prog"_a = "dot");
         }
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,

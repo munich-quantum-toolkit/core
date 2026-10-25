@@ -16,9 +16,10 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <bit>
 #include <cstddef>
-#include <iostream>
 #include <stdexcept>
 #include <vector>
 
@@ -148,7 +149,8 @@ public:
   ///
   /// @param os The output stream to print to
   /// @return The output stream
-  std::ostream& printStatistics(std::ostream& os = std::cout) const {
+  llvm::raw_ostream&
+  printStatistics(llvm::raw_ostream& os = llvm::outs()) const {
     return os << stats;
   }
 

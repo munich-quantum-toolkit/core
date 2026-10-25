@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <array>
 #include <complex>
 #include <cstddef>
@@ -21,7 +23,6 @@
 #include <map>
 #include <numbers>
 #include <set>
-#include <sstream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -60,10 +61,11 @@ struct Control {
   // NOLINTEND(misc-explicit-constructor)
 
   [[nodiscard]] std::string toString() const {
-    std::ostringstream oss{};
-    oss << "Control(qubit=" << qubit << ", type_=\""
+    std::string result;
+    llvm::raw_string_ostream(result)
+        << "Control(qubit=" << qubit << ", type_=\""
         << (type == Type::Pos ? "Pos" : "Neg") << "\")";
-    return oss.str();
+    return result;
   }
 };
 
