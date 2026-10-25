@@ -127,10 +127,10 @@ Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
 
 ## Handle native errors
 
-Fallible DD operations return `llvm::Expected<T>` or `llvm::Error`. Check an
-`Expected` before accessing its value; consume or propagate its `takeError()` on
-failure. An `Error` converts to true on failure. Infallible operations return
-ordinary values or `void`.
+DD construction and numerical operations return `llvm::Expected<T>` or
+`llvm::Error` on fallible paths. Check an `Expected` before accessing its value;
+consume or propagate its `takeError()` on failure. An `Error` converts to true
+on failure. Infallible operations return ordinary values or `void`.
 
 Use `create(...)` for fallible construction:
 

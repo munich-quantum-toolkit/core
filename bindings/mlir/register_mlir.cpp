@@ -936,7 +936,8 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
           "dense statevector dimensions exceed addressable memory");
     }
   }
-  auto dataPtr = std::make_unique<dd::CVec>(dd::getVector(state));
+  auto dataPtr =
+      std::make_unique<dd::CVec>(bindings::unwrap(dd::getVector(state)));
   auto* const data = dataPtr->data();
   const auto size = dataPtr->size();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {

@@ -30,11 +30,11 @@
 #include <cstddef>
 #include <functional>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <tuple>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 using namespace dd;
