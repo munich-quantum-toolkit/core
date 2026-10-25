@@ -453,6 +453,7 @@ markers = [
   "qiskit_c_api: Qiskit C API adoption-script tests (requires a source checkout)",
 ]
 minversion = "9.0"
+pythonpath = [ "test/python" ]
 strict = true
 testpaths = [ "test/python" ]
 

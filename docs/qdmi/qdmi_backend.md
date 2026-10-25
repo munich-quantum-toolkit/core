@@ -365,6 +365,44 @@ backend batch; different shot counts or precisions follow Qiskit's scheduling.
 Primitive-job cancellation follows Qiskit's future semantics: it does not abort
 an already-running backend call.
 
+### Exact local expectations
+
+{py:class}`~mqt.core.plugins.qiskit.estimator.DDEstimator` evaluates real sparse
+Pauli sums with Core's local DD engine. It prepares each bound circuit once for
+all its broadcast observables without materializing a dense state or observable
+matrix. This entry point does not use a QDMI device; `backend.estimator()`
+remains the sampled estimator above.
+
+```{code-cell} ipython3
+from mqt.core.plugins.qiskit import DDEstimator
+
+exact = DDEstimator().run([(circuit, ["XX", "ZZ"])]).result()[0]
+assert all(abs(value - 1) < 1e-12 for value in exact.data.evs)
+assert all(value == 0 for value in exact.data.stds)
+assert exact.metadata["method"] == "exact"
+```
+
+Qiskit's PUB parameter ordering and observable/binding broadcasting apply. PUB
+precision overrides run precision, which overrides `default_precision=0`. Every
+finite nonnegative precision uses the same exact numerical calculation. Zero
+`stds` means zero sampling uncertainty, not zero quantum variance or
+floating-point error. Metadata records the requested precision and circuit
+metadata without a shot count.
+
+Eligible terminal measurements are deferred, so expectations describe the
+uncollapsed state before readout. Resets, feedback and other nonterminal
+measurements are rejected. For bound OpenQASM or existing compiler programs,
+{py:meth}`~mqt.core.mlir.QCOProgram.expectation_values` exposes the same native
+calculation with a sequence of mappings from Pauli strings to real coefficients.
+Labels span all program wires; the rightmost character acts on wire zero.
+
+Qiskit's normal observable coercion rejects zero or cancelled sums. The native
+program API accepts an empty mapping for zero. An exact Qiskit PUB can instead
+use a prepared public container such as
+`ObservablesArray(SparseObservable.from_list([("II", 0.0)]), validate=False)`
+for a two-qubit zero observable. This preserves Qiskit's PUB validation without
+adding another observable parser.
+
 ### Backend requirements
 
 | Feature                                    | Required QDMI result support  |
