@@ -204,6 +204,9 @@ def test_backend_binds_parameters(ddsim_backend: QDMIBackend, binding: str) -> N
     result = ddsim_backend.run(circuit, parameter_values=values, shots=100).result()
     assert result.success
     assert result.get_counts() == {"1": 100}
+    assert result.get_counts(circuit) == {"1": 100}
+    if binding != "manual":
+        assert list(circuit.parameters) == [theta]
 
 
 def test_backend_run_multiple_circuits_with_parameter_values(ddsim_backend: QDMIBackend) -> None:

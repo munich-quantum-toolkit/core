@@ -876,6 +876,7 @@ class QDMIBackend(BackendV2):
             if parameter_values is not None:
                 try:
                     bound_circuit = circuit.assign_parameters(parameter_values[idx])
+                    bound_circuit.name = circuit.name
                 except Exception as exc:
                     msg = f"Failed to bind parameters for circuit {idx}: {exc}"
                     raise CircuitValidationError(msg) from exc
