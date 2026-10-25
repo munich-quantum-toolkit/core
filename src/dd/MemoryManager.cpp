@@ -15,7 +15,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <new>
 #include <stdexcept>
 #include <utility>
 
@@ -35,9 +37,11 @@ MemoryManager::MemoryManager(size_t entrySize,
   if (initialAllocationSize == 0) {
     throw std::invalid_argument("Initial DD allocation size must be positive.");
   }
-  chunks[0] = {std::make_unique_for_overwrite<Storage>(initialAllocationSize *
-                                                       entrySize),
-               initialAllocationSize * entrySize};
+  if (initialAllocationSize > std::numeric_limits<size_t>::max() / entrySize) {
+    throw std::bad_alloc();
+  }
+  const auto bytes = initialAllocationSize * entrySize;
+  chunks[0] = {std::make_unique_for_overwrite<Storage>(bytes), bytes};
   // The first slab must exist before its bounds can be initialized.
   // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
   chunkIt = chunks[0].first.get();
@@ -104,12 +108,14 @@ LLBase* MemoryManager::getEntryFromAvailableList() noexcept {
 void MemoryManager::allocateNewChunk() {
   assert(!entryAvailableInChunk());
 
-  const auto numPrevEntries = chunks.back().second / entrySize_;
-  const auto numNewEntries = numPrevEntries * GROWTH_FACTOR;
+  const auto previousBytes = chunks.back().second;
+  if (previousBytes > std::numeric_limits<size_t>::max() / GROWTH_FACTOR) {
+    throw std::bad_alloc();
+  }
+  const auto bytes = previousBytes * GROWTH_FACTOR;
+  const auto numNewEntries = bytes / entrySize_;
 
-  chunks.emplace_back(
-      std::make_unique_for_overwrite<Storage>(numNewEntries * entrySize_),
-      numNewEntries * entrySize_);
+  chunks.emplace_back(std::make_unique_for_overwrite<Storage>(bytes), bytes);
   chunkIt = chunks.back().first.get();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   chunkEndIt = chunks.back().first.get() + chunks.back().second;

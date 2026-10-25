@@ -28,10 +28,17 @@
 #include <cstdint>
 #include <functional>
 #include <gtest/gtest.h>
+#include <limits>
+#include <new>
 #include <stdexcept>
 #include <vector>
 
 using namespace dd;
+TEST(DDTableTest, MemoryManagerRejectsOverflowingInitialSlab) {
+  const auto entries = (std::numeric_limits<size_t>::max() / sizeof(vNode)) + 1;
+  EXPECT_THROW(MemoryManager::create<vNode>(entries), std::bad_alloc);
+}
+
 TEST(DDTableTest, CanonicalHashesAreIndependentOfAllocationAddresses) {
   Package first(2);
   Package second(2);
