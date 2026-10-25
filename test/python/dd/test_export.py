@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage, MatrixDD
+from mqt.core.dd import DDPackage, MatrixDD, VectorDD
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -113,3 +113,24 @@ def test_serialized_bytes_and_errors(*, matrix: bool, binary: bool) -> None:
     malformed = payload + b"\0" if binary else b"1\ninvalid\n"
     with pytest.raises(RuntimeError):
         type(dd).from_bytes(package, malformed, binary=binary)
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        (b"\n1\n", ValueError),
+        (b"invalid\n1\n", ValueError),
+        (b"+-1\n1\n", ValueError),
+        (b"2\n1\n", RuntimeError),
+        (b"1x\n1\n", RuntimeError),
+        (b"1\ninvalid\n", RuntimeError),
+        (b"2147483648\n1\n", IndexError),
+        (b"1\n1e400\n", IndexError),
+        (b"1\n1e-400\n", IndexError),
+    ],
+)
+def test_serialized_text_error_categories(payload: bytes, error: type[Exception]) -> None:
+    """Retain numeric syntax, numeric range, and serialized-format error classes."""
+    package = DDPackage(1)
+    with pytest.raises(error):
+        VectorDD.from_bytes(package, payload, binary=False)

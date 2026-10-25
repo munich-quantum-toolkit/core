@@ -19,8 +19,8 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Process.h"
@@ -28,7 +28,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 
@@ -44,8 +43,8 @@ std::string conditionalFormat(const Complex& a, bool formatAsPolar = true);
 
 /// Render a DOT file as a sibling SVG using Graphviz.
 ///
-/// Requires `dot` on PATH and throws if rendering fails.
-void renderDotToSvg(llvm::StringRef dotFilename);
+/// Requires `dot` on PATH and returns an error if rendering fails.
+[[nodiscard]] llvm::Error renderDotToSvg(llvm::StringRef dotFilename);
 
 template <class Node>
 static llvm::raw_ostream& header(const Edge<Node>& e, llvm::raw_ostream& os,
@@ -251,36 +250,37 @@ void toDot(const Edge<Node>& e, llvm::raw_ostream& os, bool colored = true,
            bool formatAsPolar = true);
 
 template <class Node>
-static void exportToDot(Edge<Node> basic, llvm::StringRef outputFilename,
-                        bool colored = true, bool edgeLabels = false,
-                        bool classic = false, bool memory = false,
-                        bool show = true, bool formatAsPolar = true) {
+[[nodiscard]] static llvm::Error
+exportToDot(Edge<Node> basic, llvm::StringRef outputFilename,
+            bool colored = true, bool edgeLabels = false, bool classic = false,
+            bool memory = false, bool show = true, bool formatAsPolar = true) {
   int descriptor = -1;
   auto error = llvm::sys::fs::openFileForWrite(outputFilename, descriptor);
   if (error) {
-    throw std::runtime_error("Cannot open DOT file: " + error.message());
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot open DOT file: %s",
+                                   error.message().c_str());
   }
-  {
-    llvm::raw_fd_ostream output(descriptor, false);
-    const llvm::scope_exit close([&] {
-      output.flush();
-      error = output.error();
-      output.clear_error();
-      const auto closeError =
+  llvm::raw_fd_ostream output(descriptor, false);
+  toDot(basic, output, colored, edgeLabels, classic, memory, formatAsPolar);
+  output.flush();
+  error = output.error();
+  output.clear_error();
+  if (const auto closeError =
           llvm::sys::Process::SafelyCloseFileDescriptor(descriptor);
-      if (!error) {
-        error = closeError;
-      }
-    });
-    toDot(basic, output, colored, edgeLabels, classic, memory, formatAsPolar);
+      !error) {
+    error = closeError;
   }
   if (error) {
-    throw std::runtime_error("Cannot write DOT file: " + error.message());
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot write DOT file: %s",
+                                   error.message().c_str());
   }
 
   if (show) {
-    renderDotToSvg(outputFilename);
+    return renderDotToSvg(outputFilename);
   }
+  return llvm::Error::success();
 }
 
 ///
@@ -295,32 +295,32 @@ void serialize(const vEdge& basic, llvm::raw_ostream& os,
 void serialize(const mEdge& basic, llvm::raw_ostream& os,
                bool writeBinary = false);
 template <class Node>
-static void serialize(const Edge<Node>& basic, llvm::StringRef outputFilename,
-                      bool writeBinary = false) {
+[[nodiscard]] static llvm::Error serialize(const Edge<Node>& basic,
+                                           llvm::StringRef outputFilename,
+                                           bool writeBinary = false) {
   int descriptor = -1;
   auto error = llvm::sys::fs::openFileForWrite(outputFilename, descriptor);
   if (error) {
-    throw std::invalid_argument("Cannot open serialized file: " +
-                                error.message());
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot open serialized file: %s",
+                                   error.message().c_str());
   }
-  {
-    llvm::raw_fd_ostream output(descriptor, false);
-    const llvm::scope_exit close([&] {
-      output.flush();
-      error = output.error();
-      output.clear_error();
-      const auto closeError =
+  llvm::raw_fd_ostream output(descriptor, false);
+  serialize(basic, output, writeBinary);
+  output.flush();
+  error = output.error();
+  output.clear_error();
+  if (const auto closeError =
           llvm::sys::Process::SafelyCloseFileDescriptor(descriptor);
-      if (!error) {
-        error = closeError;
-      }
-    });
-    serialize(basic, output, writeBinary);
+      !error) {
+    error = closeError;
   }
   if (error) {
-    throw std::runtime_error("Cannot write serialized file: " +
-                             error.message());
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot write serialized file: %s",
+                                   error.message().c_str());
   }
+  return llvm::Error::success();
 }
 
 template <typename Node>

@@ -1571,20 +1571,21 @@ public:
 
   /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from borrowed bytes.
   template <class Node, class Edge = Edge<Node>,
-            std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  Edge deserialize(llvm::StringRef data, bool readBinary = false);
+            size_t N = std::tuple_size_v<decltype(Node::e)>>
+  [[nodiscard]] llvm::Expected<Edge> deserialize(llvm::StringRef data,
+                                                 bool readBinary = false);
 
   /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a file.
   template <class Node, class Edge = Edge<Node>>
-  Edge deserializeFile(llvm::StringRef inputFilename, bool readBinary);
+  [[nodiscard]] llvm::Expected<Edge>
+  deserializeFile(llvm::StringRef inputFilename, bool readBinary);
 
 private:
-  template <class Node, std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  CachedEdge<Node>
-  deserializeNode(std::int64_t index, Qubit v,
-                  std::array<std::int64_t, N>& edgeIdx,
+  template <class Node, size_t N = std::tuple_size_v<decltype(Node::e)>>
+  llvm::Expected<CachedEdge<Node>>
+  deserializeNode(int64_t index, Qubit v, const std::array<int64_t, N>& edgeIdx,
                   const std::array<ComplexValue, N>& edgeWeight,
-                  std::unordered_map<std::int64_t, Node*>& nodes);
+                  std::unordered_map<int64_t, Node*>& nodes);
 };
 
 } // namespace dd

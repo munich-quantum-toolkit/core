@@ -20,6 +20,7 @@
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -36,7 +37,6 @@
 #include <optional>
 #include <queue>
 #include <stack>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <unordered_map>
@@ -45,16 +45,17 @@
 
 namespace dd {
 
-void renderDotToSvg(llvm::StringRef dotFilename) {
+llvm::Error renderDotToSvg(llvm::StringRef dotFilename) {
   llvm::SmallString<128> input(dotFilename);
   if (const auto error = llvm::sys::fs::make_absolute(input)) {
-    throw std::system_error(error, "Cannot resolve DOT filename");
+    return llvm::createStringError(error, "Cannot resolve DOT filename");
   }
   auto output = input;
   llvm::sys::path::replace_extension(output, ".svg");
   auto program = llvm::sys::findProgramByName("dot");
   if (!program) {
-    throw std::system_error(program.getError(), "Cannot find Graphviz dot");
+    return llvm::createStringError(program.getError(),
+                                   "Cannot find Graphviz dot");
   }
   const std::array<llvm::StringRef, 5> args{
       *program, "-Tsvg", input, "-o", output,
@@ -63,12 +64,15 @@ void renderDotToSvg(llvm::StringRef dotFilename) {
   const auto exitCode = llvm::sys::ExecuteAndWait(*program, args, std::nullopt,
                                                   {}, 0, 0, &message);
   if (exitCode < 0) {
-    throw std::runtime_error("Cannot run Graphviz dot: " + message);
+    return llvm::createStringError(std::make_error_code(std::errc::io_error),
+                                   "Cannot run Graphviz dot: " + message);
   }
   if (exitCode != 0) {
-    throw std::runtime_error("Graphviz dot exited with code " +
-                             std::to_string(exitCode));
+    return llvm::createStringError(
+        std::make_error_code(std::errc::state_not_recoverable),
+        "Graphviz dot exited with code " + std::to_string(exitCode));
   }
+  return llvm::Error::success();
 }
 
 std::string colorFromPhase(const Complex& a) {

@@ -14,6 +14,8 @@
 #include "dd/Export.hpp"
 #include "dd/Package.hpp"
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)
 
@@ -53,8 +55,8 @@ Notes:
   edgeClass.def_static(
       "from_bytes",
       [](dd::Package& p, const nb::bytes& data, const bool binary = true) {
-        return p.deserialize<Node>(llvm::StringRef(data.c_str(), data.size()),
-                                   binary);
+        return bindings::unwrap(p.deserialize<Node>(
+            llvm::StringRef(data.c_str(), data.size()), binary));
       },
       "dd_package"_a, "data"_a, "binary"_a = true,
       // keep the DD package alive while the returned DD is alive.
@@ -118,8 +120,9 @@ Returns:
             pygraphviz &&
             std::stoi(nb::cast<std::string>(pygraphviz.attr("__version__"))) >=
                 2;
-        dd::exportToDot(e, dotFilename, colored, edgeLabels, classic, memory,
-                        !usePyGraphviz, formatAsPolar);
+        bindings::unwrap(dd::exportToDot(e, dotFilename, colored, edgeLabels,
+                                         classic, memory, !usePyGraphviz,
+                                         formatAsPolar));
         if (usePyGraphviz) {
           auto svgFilename = dotFilename;
           llvm::sys::path::replace_extension(svgFilename, ".svg");

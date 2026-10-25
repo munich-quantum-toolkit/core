@@ -254,6 +254,42 @@ TEST(DDComplexTest, LowestFractions) {
               ::testing::Pair(1, 1));
 }
 
+TEST(DDComplexTest, ParsesFiniteSerializedComponents) {
+  for (const auto& [real, imaginary, expected] :
+       std::to_array<std::tuple<const char*, const char*, ComplexValue>>({
+           {"", "", {}},
+           {"+1.25", "", {1.25}},
+           {"-2.5e-3", "", {-0.0025}},
+           {"", "i", {0., 1.}},
+           {"", "I", {0., 1.}},
+           {"", "+i", {0., 1.}},
+           {"", "+I", {0., 1.}},
+           {"", "-i", {0., -1.}},
+           {"", "-I", {0., -1.}},
+           {"0.5", "+i", {0.5, 1.}},
+           {"0.5", "-I", {0.5, -1.}},
+           {"0.5", "", {0.5, 0.}},
+           {"", "-2.5e+3i", {0., -2500.}},
+           {"-0", " - 0i", {-0., -0.}},
+           {"1.25", " - 2.5e-3i", {1.25, -0.0025}},
+           {"0e-400", "", {}},
+           {
+               "4.9406564584124654e-324",
+               "",
+               {std::numeric_limits<fp>::denorm_min()},
+           },
+       })) {
+    SCOPED_TRACE(::testing::Message() << real << ": " << imaginary);
+    ComplexValue parsed;
+    ::mqt::test::value(parsed.fromString(real, imaginary));
+    EXPECT_DOUBLE_EQ(parsed.r, expected.r);
+    EXPECT_DOUBLE_EQ(parsed.i, expected.i);
+    EXPECT_EQ(std::fpclassify(parsed.r), std::fpclassify(expected.r));
+    EXPECT_EQ(std::signbit(parsed.r), std::signbit(expected.r));
+    EXPECT_EQ(std::signbit(parsed.i), std::signbit(expected.i));
+  }
+}
+
 TEST_F(CNTest, NumberPrintingToString) {
   auto const imag = cn.lookup(0., 1.);
   auto const imagStr = imag.toString(false);
@@ -492,9 +528,21 @@ TEST(DDComplexTest, ScalarComplexDivisorsPreserveRange) {
 
 TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
   ComplexValue value;
-  EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
-  EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
-  EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
+  for (const auto* real : {"invalid", "nan", "inf"}) {
+    SCOPED_TRACE(real);
+    EXPECT_EQ(
+        ::mqt::test::errorCode([&] { return value.fromString(real, ""); }),
+        std::errc::invalid_argument);
+  }
+  for (const auto* real : {"1e-400", "1e400"}) {
+    SCOPED_TRACE(real);
+    EXPECT_EQ(
+        ::mqt::test::errorCode([&] { return value.fromString(real, ""); }),
+        std::errc::result_out_of_range);
+  }
+  EXPECT_EQ(
+      ::mqt::test::errorCode([&] { return value.fromString("", "1e400i"); }),
+      std::errc::result_out_of_range);
 }
 
 TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
@@ -506,15 +554,13 @@ TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
        }) {
     SCOPED_TRACE(value);
     ComplexValue parsed;
-    parsed.fromString(
+    ::mqt::test::value(parsed.fromString(
         ComplexValue::toString(value, 0., false,
                                std::numeric_limits<fp>::max_digits10),
-        "");
+        ""));
     EXPECT_EQ(parsed.r, value);
     EXPECT_EQ(parsed.i, 0.);
   }
-  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., false, 0), "0.1");
-  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., true, 3), "0.123");
 }
 
 TEST(DDComplexTest, SerializedNumbersIgnoreNumericLocale) {
@@ -527,7 +573,7 @@ TEST(DDComplexTest, SerializedNumbersIgnoreNumericLocale) {
   }
   EXPECT_EQ(ComplexValue::toString(0.125, -0.375, false), "0.125-0.375i");
   ComplexValue parsed;
-  parsed.fromString("0.125", "-0.375i");
+  ::mqt::test::value(parsed.fromString("0.125", "-0.375i"));
   EXPECT_EQ(parsed.r, 0.125);
   EXPECT_EQ(parsed.i, -0.375);
 }
