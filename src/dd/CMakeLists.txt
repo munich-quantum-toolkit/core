@@ -44,7 +44,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
         BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
         FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_dd_export.h)
     target_link_libraries(${dd_target} PUBLIC LLVMSupport)
-    target_include_directories(${dd_target} SYSTEM PUBLIC $<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>)
   endforeach()
 
   set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-dd PARENT_SCOPE)

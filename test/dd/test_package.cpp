@@ -31,6 +31,7 @@
 
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -44,16 +45,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
+#include <format>
 #include <limits>
 #include <memory>
 #include <numbers>
 #include <numeric>
 #include <random>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -67,10 +65,10 @@ namespace {
 template <class Node>
 void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
   exportToDot(edge, filename, true, true, false, false, false);
-  std::ifstream is(filename);
-  EXPECT_TRUE(is.good());
-  EXPECT_NE(is.peek(), std::ifstream::traits_type::eof());
-  is.close();
+  auto input = llvm::MemoryBuffer::getFile(filename);
+  ASSERT_TRUE(input);
+  EXPECT_FALSE((*input)->getBuffer().empty());
+  input->reset();
   std::filesystem::remove(filename);
 }
 
@@ -144,10 +142,9 @@ TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
 
   Package package(1);
   exportToDot(makeZeroState(1, package), dotFile.string());
-  std::ifstream svg(svgFile);
-  std::string rendered;
-  std::getline(svg, rendered);
-  EXPECT_EQ(rendered, "native dot");
+  auto svg = llvm::MemoryBuffer::getFile(svgFile.string());
+  ASSERT_TRUE(svg);
+  EXPECT_EQ((*svg)->getBuffer().trim(), "native dot");
   EXPECT_TRUE(std::filesystem::exists(dotFile));
 
   temp.write("dot", "#!/bin/sh\nexit 7\n");
@@ -391,7 +388,7 @@ TEST(DDPackageTest, CorruptedBellState) {
   bellState.w = dd->cn.lookup(0.5, 0);
   // prints a warning
   std::mt19937_64 mt; // NOLINT(cert-msc51-cpp)
-  std::cout << dd->measureAll(bellState, false, mt) << "\n";
+  llvm::outs() << dd->measureAll(bellState, false, mt) << "\n";
 
   bellState.w = Complex::zero();
 
@@ -789,6 +786,17 @@ TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
   }
 }
 
+TEST(DDPackageTest, DeserializationRespectsTextSliceBounds) {
+  Package package(1);
+  const std::string storage = "1\n1\n0 0 (-1 1) ()suffix";
+  const llvm::StringRef input(storage.data(), storage.size() - 6);
+  EXPECT_EQ(package.deserialize<vNode>(input), makeZeroState(1, package));
+  std::string embeddedNull(input);
+  embeddedNull += '\0';
+  embeddedNull += "ignored";
+  EXPECT_THROW(package.deserialize<vNode>(embeddedNull), std::runtime_error);
+}
+
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
   Package package(2);
   for (const auto* text : {
@@ -944,7 +952,7 @@ TEST(DDPackageTest, GarbageVector) {
   auto const cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
   auto const zeroState = makeZeroState(2, *dd);
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
-  std::cout << "Bell State:\n";
+  llvm::outs() << "Bell State:\n";
   dd::printVector(bellState);
 
   dd->incRef(bellState);
@@ -958,14 +966,14 @@ TEST(DDPackageTest, GarbageVector) {
   dd->incRef(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {false, true, false, false});
   auto vec = dd::getVector(reducedBellState);
-  std::cout << "Reduced Bell State (q1 garbage):\n";
+  llvm::outs() << "Reduced Bell State (q1 garbage):\n";
   dd::printVector(reducedBellState);
   EXPECT_EQ(vec[2], 0.);
   EXPECT_EQ(vec[3], 0.);
 
   dd->incRef(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {true, false, false, false});
-  std::cout << "Reduced Bell State (q0 garbage):\n";
+  llvm::outs() << "Reduced Bell State (q0 garbage):\n";
   dd::printVector(reducedBellState);
   vec = dd::getVector(reducedBellState);
   EXPECT_EQ(vec[1], 0.);
@@ -1015,13 +1023,13 @@ TEST(DDPackageTest, ReduceGarbageVector) {
   auto const hGate = getDD(TestGate(2, Fixture::H), *dd);
   auto const zeroState = makeZeroState(3, *dd);
   auto initialState = dd->multiply(dd->multiply(hGate, xGate), zeroState);
-  std::cout << "Initial State:\n";
+  llvm::outs() << "Initial State:\n";
   dd::printVector(initialState);
 
   dd->incRef(initialState);
   auto const reducedState =
       dd->reduceGarbage(initialState, {false, true, true});
-  std::cout << "After reduceGarbage():\n";
+  llvm::outs() << "After reduceGarbage():\n";
   dd::printVector(reducedState);
   EXPECT_EQ(reducedState, makeZeroState(3, *dd));
 
@@ -1042,13 +1050,13 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   auto const zeroState = makeZeroState(nqubits, *dd);
   auto initialState = dd->multiply(
       dd->multiply(tdgGate0, dd->multiply(xGate0, xGate1)), zeroState);
-  std::cout << "Initial State:\n";
+  llvm::outs() << "Initial State:\n";
   dd::printVector(initialState);
 
   dd->incRef(initialState);
   auto const reducedState =
       dd->reduceGarbage(initialState, {false, false}, true);
-  std::cout << "After reduceGarbage():\n";
+  llvm::outs() << "After reduceGarbage():\n";
   dd::printVector(reducedState);
   EXPECT_EQ(reducedState,
             dd->multiply(dd->multiply(xGate0, xGate1), zeroState));
@@ -1061,13 +1069,13 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
 
   auto const initialState = dd->multiply(hGate, cNotGate);
 
-  std::cout << "Initial State:\n";
+  llvm::outs() << "Initial State:\n";
   dd::printMatrix(initialState, dd->qubits());
 
   dd->incRef(initialState);
   auto const reducedState1 =
       dd->reduceGarbage(initialState, {false, true, true}, true, true);
-  std::cout << "After reduceGarbage(q1 and q2 are garbage):\n";
+  llvm::outs() << "After reduceGarbage(q1 and q2 are garbage):\n";
   dd::printMatrix(reducedState1, dd->qubits());
 
   auto const expectedMatrix1 = CMat{
@@ -1085,7 +1093,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   dd->incRef(initialState);
   auto const reducedState2 =
       dd->reduceGarbage(initialState, {true, false, false}, true, true);
-  std::cout << "After reduceGarbage(q0 is garbage):\n";
+  llvm::outs() << "After reduceGarbage(q0 is garbage):\n";
   dd::printMatrix(reducedState2, dd->qubits());
 
   auto const expectedMatrix2 = CMat{
@@ -1112,16 +1120,16 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
       dd->multiply(hGate, dd->multiply(zGate, controlledSwapGate)));
   auto const c2 = dd->multiply(controlledHGate, xGate);
 
-  std::cout << "c1:\n";
+  llvm::outs() << "c1:\n";
   dd::printMatrix(c1, dd->qubits());
-  std::cout << "reduceGarbage:\n";
+  llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c1);
   auto const c1Reduced = dd->reduceGarbage(c1, {false, true, true}, true, true);
   dd::printMatrix(c1Reduced, dd->qubits());
 
-  std::cout << "c2:\n";
+  llvm::outs() << "c2:\n";
   dd::printMatrix(c2, dd->qubits());
-  std::cout << "reduceGarbage:\n";
+  llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, true, true}, true, true);
   dd::printMatrix(c2Reduced, dd->qubits());
@@ -1138,9 +1146,9 @@ TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
   auto const c1 = Package::makeIdent();
   auto const c2 = dd->multiply(tdgGate0, tdgGate1);
 
-  std::cout << "c2:\n";
+  llvm::outs() << "c2:\n";
   dd::printMatrix(c2, dd->qubits());
-  std::cout << "reduceGarbage:\n";
+  llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, false}, true, true);
   dd::printMatrix(c2Reduced, dd->qubits());
@@ -1157,16 +1165,16 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
   auto const c1 = Package::makeIdent();
   auto const c2 = dd->multiply(tdgGate0, tdgGate1);
 
-  std::cout << "c1:\n";
+  llvm::outs() << "c1:\n";
   dd::printMatrix(c1, dd->qubits());
-  std::cout << "reduceGarbage:\n";
+  llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c1);
   auto const c1Reduced = dd->reduceGarbage(c1, {false, true}, true, true);
   dd::printMatrix(c1Reduced, dd->qubits());
 
-  std::cout << "c2:\n";
+  llvm::outs() << "c2:\n";
   dd::printMatrix(c2, dd->qubits());
-  std::cout << "reduceGarbage:\n";
+  llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, true}, true, true);
   dd::printMatrix(c2Reduced, dd->qubits());
@@ -1236,7 +1244,7 @@ TEST(DDPackageTest, PackageReset) {
   const auto& table = unique[0];
   auto const ihash = dd->mUniqueTable.hash(*xGate.p);
   const auto* node = table[ihash];
-  std::cout << ihash << ": " << reinterpret_cast<uintptr_t>(xGate.p) << "\n";
+  llvm::outs() << ihash << ": " << reinterpret_cast<uintptr_t>(xGate.p) << "\n";
   // node should be the first in this unique table bucket
   EXPECT_EQ(node, xGate.p);
   (*dd).reset();
@@ -1444,7 +1452,7 @@ TEST(DDPackageTest, UniqueTableAllocation) {
   auto dd = std::make_unique<Package>(1);
 
   auto const allocs = dd->vMemoryManager.getStats().numAllocated;
-  std::cout << allocs << "\n";
+  llvm::outs() << allocs << "\n";
   std::vector<vNode*> nodes{allocs};
   // get all the nodes that are pre-allocated
   for (auto i = 0U; i < allocs; ++i) {
@@ -2160,14 +2168,12 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
       result.p->e[0].w.toString(false, limits::max_digits10);
   const auto rightWeight =
       result.p->e[1].w.toString(false, limits::max_digits10);
-  std::cout << topWeight << " | " << leftWeight << " | " << rightWeight << "\n";
+  llvm::outs() << topWeight << " | " << leftWeight << " | " << rightWeight
+               << "\n";
   EXPECT_EQ(topWeight, "1");
-  std::ostringstream oss;
-  oss << std::setprecision(limits::max_digits10) << SQRT2_2;
-  EXPECT_EQ(leftWeight, oss.str());
-  oss.str("");
-  oss << -SQRT2_2;
-  EXPECT_EQ(rightWeight, oss.str());
+  EXPECT_EQ(leftWeight, std::format("{:.{}g}", SQRT2_2, limits::max_digits10));
+  EXPECT_EQ(rightWeight,
+            std::format("{:.{}g}", -SQRT2_2, limits::max_digits10));
 }
 
 TEST(DDPackageTest, NormalizationNumericStabilityTest) {
@@ -2177,9 +2183,6 @@ TEST(DDPackageTest, NormalizationNumericStabilityTest) {
   };
   for (std::size_t x = 23; x <= 50; ++x) {
     const auto lambda = PI / static_cast<fp>(1ULL << x);
-    std::cout << std::setprecision(17) << "x: " << x << " | lambda: " << lambda
-              << " | cos(lambda): " << std::cos(lambda)
-              << " | sin(lambda): " << std::sin(lambda) << "\n";
     auto const p = dd->makeGateDD(phaseMatrix(lambda), 0);
     auto const pdag = dd->makeGateDD(phaseMatrix(-lambda), 0);
     auto const result = dd->multiply(p, pdag);
@@ -2819,7 +2822,7 @@ TEST(DDPackageTest, DDStatistics) {
   const auto statsString = getStatisticsString(*dd, true);
   auto stats = llvm::cantFail(llvm::json::parse(statsString));
 
-  std::cout << statsString << "\n";
+  llvm::outs() << statsString << "\n";
   EXPECT_TRUE(stats.getAsObject()->get("vector"));
   ASSERT_TRUE(stats.getAsObject()->get("matrix"));
   EXPECT_TRUE(stats.getAsObject()->get("real_numbers"));
@@ -3023,10 +3026,10 @@ TEST(DDPackageTest, VectorConjugate) {
   };
 
   const auto vecDD = makeStateFromVector(vec, *dd);
-  std::cout << "Vector:\n";
+  llvm::outs() << "Vector:\n";
   dd::printVector(vecDD);
   const auto conjVecDD = dd->conjugate(vecDD);
-  std::cout << "Conjugated vector:\n";
+  llvm::outs() << "Conjugated vector:\n";
   dd::printVector(conjVecDD);
 
   const auto conjVec = dd::getVector(conjVecDD);

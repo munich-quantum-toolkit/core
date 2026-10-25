@@ -48,16 +48,15 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <limits>
 #include <memory>
-#include <ostream>
 #include <string>
 
 using namespace mlir;
@@ -69,17 +68,7 @@ struct QCTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QCProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QCProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCTestCase& info) {
-  return os << "QC{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCTest : public testing::TestWithParam<QCTestCase> {
 protected:
@@ -109,6 +98,11 @@ static Value measureRegister(QCProgramBuilder& b, ValueRange qubits) {
 }
 
 TEST_P(QCTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QC: {0}, original={1}, reference={2}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;

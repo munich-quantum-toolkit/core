@@ -48,14 +48,13 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <variant>
@@ -90,17 +89,7 @@ struct QIRTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
-  return os << "QIR{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
@@ -120,6 +109,11 @@ protected:
 } // namespace
 
 TEST_P(QIRTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QIR: {0}, original={1}, reference={2}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;

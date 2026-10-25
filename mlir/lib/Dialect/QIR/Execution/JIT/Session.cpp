@@ -52,6 +52,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
@@ -68,7 +69,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -138,11 +138,11 @@ static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
-    std::string actual;
-    llvm::raw_string_ostream stream(actual);
-    type->print(stream);
-    throw std::runtime_error("QIR entry point '" + entryPoint.getName().str() +
-                             "' must have type i64 (), but has type " + actual);
+    throw std::runtime_error(
+        llvm::formatv(
+            "QIR entry point '{0}' must have type i64 (), but has type {1}",
+            entryPoint.getName(), *type)
+            .str());
   }
   return entryPoint;
 }
@@ -240,7 +240,8 @@ static auto matches(const llvm::FunctionType& actual,
 }
 
 static auto describe(const RuntimeSymbol& symbol) -> std::string {
-  std::ostringstream description;
+  std::string descriptionStorage;
+  llvm::raw_string_ostream description(descriptionStorage);
   description << abiTypeName(symbol.result) << " (";
   for (std::size_t i = 0; i < symbol.parameters.size(); ++i) {
     if (i != 0) {
@@ -249,7 +250,7 @@ static auto describe(const RuntimeSymbol& symbol) -> std::string {
     description << abiTypeName(symbol.parameters[i]);
   }
   description << ")";
-  return description.str();
+  return descriptionStorage;
 }
 
 template <typename Function>
@@ -390,14 +391,11 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
                       "QIR runtime declaration '" + function.getName() + "'");
     const auto& symbol = it->second;
     if (!matches(*function.getFunctionType(), symbol)) {
-      std::string actual;
-      llvm::raw_string_ostream stream(actual);
-      function.getFunctionType()->print(stream);
-      std::ostringstream message;
-      message << "QIR declaration '" << function.getName().str()
-              << "' has unsupported type " << actual << "; expected "
-              << describe(symbol);
-      throw std::runtime_error(message.str());
+      throw std::runtime_error(
+          llvm::formatv(
+              "QIR declaration '{0}' has unsupported type {1}; expected {2}",
+              function.getName(), *function.getFunctionType(), describe(symbol))
+              .str());
     }
     selected.emplace_back(function.getName().str(), symbol.address);
   }

@@ -54,13 +54,12 @@
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <utility>
 
@@ -72,19 +71,7 @@ struct QCToQIRAdaptiveTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QCToQIRAdaptiveTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os,
-                         const QCToQIRAdaptiveTestCase& info) {
-  return os << "QCToQIRAdaptive{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCToQIRAdaptiveTest
     : public testing::TestWithParam<QCToQIRAdaptiveTestCase> {
@@ -1160,6 +1147,12 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsClassicalMemrefOutput) {
 }
 
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QCToQIRAdaptive: {0}, original={1}, reference={2}",
+                    GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;

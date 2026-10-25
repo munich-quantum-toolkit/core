@@ -64,7 +64,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <utility>
 
@@ -77,18 +76,7 @@ struct JeffRoundTripTestCase {
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectPowAfterCleanup = false;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const JeffRoundTripTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
-  return os << "JeffRoundTrip{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
 protected:
@@ -1467,6 +1455,12 @@ module {
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("JeffRoundTrip: {0}, original={1}, reference={2}",
+                    GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [nameStr, programBuilder, referenceBuilder,
                expectPowAfterCleanup] = GetParam();
   const auto name = " (" + nameStr + ")";

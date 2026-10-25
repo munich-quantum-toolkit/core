@@ -28,9 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <ios>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -86,6 +84,12 @@ TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
   __quantum__rt__qubit_release(qubit);
   __quantum__rt__result_release(result);
 
+  EXPECT_THAT([&] { Runtime::getInstance().reset(std::array{qubit}); },
+              testing::ThrowsMessage<std::out_of_range>(
+                  testing::HasSubstr("Qubit not allocated")));
+  EXPECT_THAT([&] { return Runtime::getInstance().deref(result); },
+              testing::ThrowsMessage<std::out_of_range>(
+                  testing::HasSubstr("Result not allocated")));
   EXPECT_DEATH(__quantum__qis__x__body(qubit), "Qubit not allocated");
   EXPECT_DEATH(__quantum__rt__read_result(result), "Result not allocated");
   EXPECT_DEATH(__quantum__rt__qubit_release(qubit),
@@ -208,7 +212,8 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
     runtime.outputArray(3, "array_label");
     runtime.outputShotEnd();
     const auto* schema = ordered ? "ordered" : "labeled";
-    std::ostringstream expected;
+    std::string expectedStorage;
+    llvm::raw_string_ostream expected(expectedStorage);
     expected << "HEADER\tschema_id\t" << schema << "\n"
              << "HEADER\tschema_version\t2.1\n"
              << "START\n"
@@ -459,7 +464,8 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
   Runtime::getInstance().outputShotEnd();
-  std::ostringstream expected;
+  std::string expectedStorage;
+  llvm::raw_string_ostream expected(expectedStorage);
   expected << "OUTPUT\tRESULT\t0\tr0\n"
            << "OUTPUT\tRESULT\t1\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
@@ -676,9 +682,10 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
   Runtime::getInstance().outputShotEnd();
-  std::ostringstream expected;
-  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
-           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  std::string expectedStorage;
+  llvm::raw_string_ostream expected(expectedStorage);
+  expected << "OUTPUT\tRESULT\t" << (m1 ? '1' : '0') << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << (m2 ? '1' : '0') << "\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
 }
 
@@ -702,9 +709,10 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
   Runtime::getInstance().outputShotEnd();
-  std::ostringstream expected;
-  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
-           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  std::string expectedStorage;
+  llvm::raw_string_ostream expected(expectedStorage);
+  expected << "OUTPUT\tRESULT\t" << (m1 ? '1' : '0') << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << (m2 ? '1' : '0') << "\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
   __quantum__rt__result_release(r0);
   __quantum__rt__result_release(r1);
@@ -728,9 +736,10 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
   Runtime::getInstance().outputShotEnd();
-  std::ostringstream expected;
-  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
-           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  std::string expectedStorage;
+  llvm::raw_string_ostream expected(expectedStorage);
+  expected << "OUTPUT\tRESULT\t" << (m1 ? '1' : '0') << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << (m2 ? '1' : '0') << "\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
 }
 
@@ -754,9 +763,10 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
   Runtime::getInstance().outputShotEnd();
-  std::ostringstream expected;
-  expected << "OUTPUT\tRESULT\t" << m1 << "\tr0\n"
-           << "OUTPUT\tRESULT\t" << m2 << "\tr1\n";
+  std::string expectedStorage;
+  llvm::raw_string_ostream expected(expectedStorage);
+  expected << "OUTPUT\tRESULT\t" << (m1 ? '1' : '0') << "\tr0\n"
+           << "OUTPUT\tRESULT\t" << (m2 ? '1' : '0') << "\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
   __quantum__rt__result_release(r0);
   __quantum__rt__result_release(r1);
@@ -889,13 +899,13 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__double_record_output(mean, "mean");
   Runtime::getInstance().outputShotEnd();
 
-  std::ostringstream expected;
-  expected.setf(std::ios::boolalpha);
+  std::string expectedStorage;
+  llvm::raw_string_ostream expected(expectedStorage);
   expected << "OUTPUT\tTUPLE\t3\toutputs\n"
            << "OUTPUT\tARRAY\t3\tmeasurements\n"
-           << "OUTPUT\tBOOL\t" << b0 << "\tm0\n"
-           << "OUTPUT\tBOOL\t" << b1 << "\tm1\n"
-           << "OUTPUT\tBOOL\t" << b2 << "\tm2\n"
+           << "OUTPUT\tBOOL\t" << (b0 ? "true" : "false") << "\tm0\n"
+           << "OUTPUT\tBOOL\t" << (b1 ? "true" : "false") << "\tm1\n"
+           << "OUTPUT\tBOOL\t" << (b2 ? "true" : "false") << "\tm2\n"
            << "OUTPUT\tINT\t" << weight << "\thamming_weight\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
   const std::string prefix = "OUTPUT\tDOUBLE\t";

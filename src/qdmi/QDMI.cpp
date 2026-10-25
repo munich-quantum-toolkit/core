@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
@@ -32,7 +33,6 @@
 #include <mutex>
 #include <optional>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -98,14 +98,15 @@ getSparseResult(const detail::DriverAPI& api, QDMI_Job job, size_t programIndex,
     result[""] = values.front();
     return result;
   }
-  std::istringstream keysStream(std::move(keys));
-  std::string key;
+  llvm::StringRef remaining(keys);
   size_t idx = 0;
-  while (std::getline(keysStream, key, ',')) {
+  while (!remaining.empty()) {
+    const auto [key, rest] = remaining.split(',');
+    remaining = rest;
     if (idx >= values.size()) {
       throw std::runtime_error(mismatch);
     }
-    result[key] = values[idx];
+    result[key.str()] = values[idx];
     ++idx;
   }
 
@@ -1195,10 +1196,11 @@ Session::Session(const SessionConfig& config) {
       return;
     }
     if (status != QDMI_SUCCESS) {
-      std::ostringstream message;
-      message << "Setting session parameter " << qdmi::toString(param) << ": "
-              << qdmi::toString(status) << " (status = " << status << ")";
-      qdmi::throwIfError(status, message.str());
+      qdmi::throwIfError(
+          status,
+          llvm::formatv("Setting session parameter {0}: {1} (status = {2})",
+                        qdmi::toString(param), qdmi::toString(status), status)
+              .str());
     }
   };
 

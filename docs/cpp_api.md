@@ -21,10 +21,11 @@ builtin driver's C interface. Its bundle contains only the DDSIM device. Save it
 as `main.cpp`:
 
 ```cpp
-#include <qdmi/client.h>
+#include "qdmi/client.h"
+
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -39,8 +40,9 @@ int main() {
   check(QDMI_session_alloc(&session));
   check(QDMI_session_init(session));
   QDMI_Device device = nullptr;
-  check(QDMI_session_query_session_property(
-      session, QDMI_SESSION_PROPERTY_DEVICES, sizeof(device), &device, nullptr));
+  check(QDMI_session_query_session_property(session,
+                                            QDMI_SESSION_PROPERTY_DEVICES,
+                                            sizeof(device), &device, nullptr));
 
   QDMI_Job job = nullptr;
   check(QDMI_device_create_job(device, &job));
@@ -49,7 +51,8 @@ int main() {
   const void* program = circuit;
   const size_t length = sizeof(circuit);
   const size_t shots = 1;
-  check(QDMI_job_set_programs(job, QDMI_PROGRAM_FORMAT_QASM3, 1, &length, &program));
+  check(QDMI_job_set_programs(job, QDMI_PROGRAM_FORMAT_QASM3, 1, &length,
+                              &program));
   check(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM, sizeof(shots),
                                &shots));
   check(QDMI_job_submit(job));
@@ -63,7 +66,7 @@ int main() {
   if (std::string(result) != "1") {
     return 1;
   }
-  std::cout << "DDSIM result: " << result << '\n';
+  llvm::outs() << "DDSIM result: " << result << '\n';
 }
 ```
 
@@ -72,24 +75,18 @@ Save the following as `CMakeLists.txt`:
 ```cmake
 cmake_minimum_required(VERSION 3.28)
 project(qdmi-example LANGUAGES CXX)
-if(APPLE)
-  set(CMAKE_BUILD_RPATH "@loader_path")
-elseif(UNIX)
-  set(CMAKE_BUILD_RPATH "$ORIGIN")
-endif()
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Runtime)
 add_executable(qdmi-example main.cpp)
-target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver)
+target_compile_features(qdmi-example PRIVATE cxx_std_20)
+target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver LLVMSupport)
 mqt_copy_qdmi_runtime(qdmi-example MQT::CoreQDMI_DDSIM_Device)
 
 enable_testing()
 add_test(NAME qdmi-runtime COMMAND qdmi-example)
-add_test(NAME compiler COMMAND MQT::mqt-cc --version)
-add_test(NAME benchmark COMMAND MQT::mqt-core-bench list)
-set_tests_properties(qdmi-runtime compiler benchmark PROPERTIES TIMEOUT 60)
 ```
 
-With the wheel installed in the active environment, run:
+With the wheel installed in the active environment and an LLVM SDK matching the
+major and minor version used to build MQT Core, run:
 
 ```console
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core-cli --cmake_dir)"
@@ -97,8 +94,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The application prints `DDSIM result: 1`. CTest also runs both imported tools.
-No LLVM/MLIR installation is required.
+The application prints `DDSIM result: 1`.
 
 CMake also provides `MQT::mqt-cc` and `MQT::mqt-core-bench` imported executable
 targets. Use them in custom commands, or run `mqt-cc` and `mqt-core-bench` from

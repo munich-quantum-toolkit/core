@@ -15,13 +15,13 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/MemoryBuffer.h"
+
 #include <cassert>
 #include <complex>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -147,18 +147,20 @@ size_t querySize(MQT_DDSIM_QDMI_Device_Job job, QDMI_Job_Result result) {
 
 std::string getQIRProgram(const std::string_view file) {
   const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
-  std::ifstream stream(path);
-  EXPECT_TRUE(stream.is_open()) << "Failed to open " << path;
-  return {std::istreambuf_iterator<char>{stream}, {}};
+  auto buffer = llvm::MemoryBuffer::getFile(path.string());
+  if (!buffer) {
+    ADD_FAILURE() << "Failed to open " << path << ": "
+                  << buffer.getError().message();
+    return {};
+  }
+  return (*buffer)->getBuffer().str();
 }
 
 std::vector<std::string> splitCSV(const std::string& csv) {
   std::vector<std::string> out;
-  std::stringstream ss(csv);
-  std::string tok;
-  while (std::getline(ss, tok, ',')) {
+  for (const auto tok : llvm::split(csv, ',')) {
     if (!tok.empty()) {
-      out.emplace_back(tok);
+      out.emplace_back(tok.str());
     }
   }
   return out;

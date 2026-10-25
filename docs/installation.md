@@ -82,7 +82,7 @@ macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
 exports. Wheels include the QDMI driver and device bundles, `mqt-cc`, and
 `mqt-core-bench`. Their CMake package exposes the QDMI C interfaces and tool
-targets without requiring LLVM/MLIR. See {doc}`cpp_api` for native consumers.
+targets. Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`.
 C++ development libraries and headers are available from source installations;
 the DD library is static.
 

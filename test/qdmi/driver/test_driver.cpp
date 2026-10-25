@@ -19,6 +19,8 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
+#include "llvm/Support/MemoryBuffer.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -29,7 +31,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <future>
 #include <iterator>
 #include <map>
@@ -1221,10 +1222,9 @@ TEST(DeviceRegistrationTest,
 }
 
 TEST(DeviceRegistrationTest, SynthesizesManifestForMetadataOnlyTarget) {
-  std::ifstream manifest(MQT_CORE_QDMI_METADATA_MANIFEST);
+  auto manifest = llvm::MemoryBuffer::getFile(MQT_CORE_QDMI_METADATA_MANIFEST);
   ASSERT_TRUE(manifest);
-  const std::string contents{std::istreambuf_iterator<char>(manifest),
-                             std::istreambuf_iterator<char>()};
+  const auto contents = (*manifest)->getBuffer().str();
   EXPECT_THAT(contents, testing::HasSubstr("\"id\": \"test.metadata-only\""));
   EXPECT_THAT(contents, testing::HasSubstr("\"prefix\": \"TEST_METADATA\""));
   EXPECT_THAT(contents, testing::HasSubstr("mqt-core-qdmi-metadata-device"));
@@ -1530,18 +1530,20 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
 
 TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
   registerSessionTestDevice();
-  for (const auto* keys : {"", "00", "00,11"}) {
+  for (const auto* keys : {"", "00", "00,", ",", "00,11", ",00", "00,,"}) {
+    SCOPED_TRACE(keys);
     const auto device = qdmi::builtin_driver::openDevice(
         "test.session-overrides",
         std::string{R"({"custom3":")"} + keys + R"("})");
     const auto job =
         device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2);
-    if (std::string_view(keys) == "00,11") {
+    const std::string_view input(keys);
+    if (input == "00,11" || input == ",00" || input == "00,,") {
       EXPECT_THROW(std::ignore = job.getCounts(), std::runtime_error);
     } else {
       const auto counts = job.getCounts();
       ASSERT_EQ(counts.size(), 1);
-      EXPECT_EQ(counts.at(keys), 5);
+      EXPECT_EQ(counts.at(input.starts_with("00") ? "00" : ""), 5);
     }
   }
 }

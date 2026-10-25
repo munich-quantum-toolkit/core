@@ -314,7 +314,7 @@ test-sources = []
 [[tool.cibuildwheel.overrides]]
 # Native executables are shared by all interpreters using the same ABI3 wheel.
 select = [ "cp311-*", "cp3??t-*" ]
-test-command = "python scripts/check_wheel_runtime.py"
+test-command = 'python scripts/check_wheel_runtime.py "{project}"'
 test-sources = [ "docs/cpp_api.md", "scripts/check_wheel_runtime.py" ]
 inherit.test-command = "prepend"
 inherit.test-sources = "append"

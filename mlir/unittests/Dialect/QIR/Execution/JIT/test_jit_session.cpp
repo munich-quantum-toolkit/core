@@ -22,7 +22,9 @@
 
 #include "mlir/IR/BuiltinOps.h"
 
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
@@ -32,11 +34,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <future>
 #include <iterator>
 #include <map>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -47,9 +47,13 @@
 
 static std::string getProgram(const std::string_view file) {
   const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
-  std::ifstream stream(path);
-  EXPECT_TRUE(stream.is_open()) << "Failed to open " << path;
-  return {std::istreambuf_iterator<char>{stream}, {}};
+  auto buffer = llvm::MemoryBuffer::getFile(path.string());
+  if (!buffer) {
+    ADD_FAILURE() << "Failed to open " << path << ": "
+                  << buffer.getError().message();
+    return {};
+  }
+  return (*buffer)->getBuffer().str();
 }
 
 static void expectOpenQASMSampling(std::string_view source,
@@ -747,7 +751,8 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
     EXPECT_EQ(results, std::vector<std::string>(2, "100"));
     const std::string label =
         schema == qir::Runtime::OutputSchema::Labeled ? "\titems" : "";
-    std::ostringstream expectedRecords;
+    std::string expectedRecordsStorage;
+    llvm::raw_string_ostream expectedRecords(expectedRecordsStorage);
     expectedRecords << "OUTPUT\tTUPLE\t4" << label << "\n"
                     << "OUTPUT\tARRAY\t2" << label << "\n"
                     << "OUTPUT\tRESULT\t1" << label << "\n"
@@ -913,13 +918,11 @@ TEST(QIRBatchSampling, TextOutputPreservesTerminalSamplesAndState) {
   ASSERT_TRUE(stateAvailable);
   EXPECT_THAT(results, testing::Contains("00"));
   EXPECT_THAT(results, testing::Contains("11"));
-  std::istringstream records(output.str());
-  std::string line;
   size_t shot = 0;
   std::string bits;
-  while (std::getline(records, line)) {
+  for (auto line : llvm::split(output.str(), '\n')) {
     if (line.starts_with("OUTPUT\tRESULT\t")) {
-      bits += line.at(std::string_view("OUTPUT\tRESULT\t").size());
+      bits += line[std::string_view("OUTPUT\tRESULT\t").size()];
     } else if (line == "END\t0") {
       ASSERT_LT(shot, results.size());
       EXPECT_EQ(bits, results[shot++]);
@@ -954,11 +957,9 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
             3, [&](std::string_view shot) { results.emplace_back(shot); }),
         0);
     EXPECT_EQ(results, std::vector<std::string>(3));
-    std::istringstream records(output);
-    std::string line;
     size_t starts = 0;
     size_t ends = 0;
-    while (std::getline(records, line)) {
+    for (auto line : llvm::split(output, '\n')) {
       starts += static_cast<size_t>(line == "START");
       ends += static_cast<size_t>(line == "END\t0");
     }
@@ -1200,7 +1201,8 @@ TEST(QIRBatchSampling, PreservesWideSeededOutputMappings) {
     const auto pointer = [](size_t q) {
       return "ptr inttoptr (i64 " + std::to_string(q) + " to ptr)";
     };
-    std::ostringstream ir;
+    std::string irStorage;
+    llvm::raw_string_ostream ir(irStorage);
     ir << "define i64 @main() #0 {\n";
     for (const size_t q : {0, 5, 63}) {
       ir << "call void @__quantum__qis__x__body(" << pointer(q) << ")\n";

@@ -13,10 +13,12 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "qdmi/common/Diagnostics.hpp"
+
 #include "qdmi/constants.h"
 
-#include <iostream>
-#include <sstream>
+#include "llvm/Support/FormatVariadic.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -26,18 +28,17 @@ auto throwIfError(const int result, const std::string& msg) -> void {
   case QDMI_SUCCESS:
     break;
   case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << '\n';
+    qdmi::diagnostics::warn("{}", msg);
     break;
   default:
-    std::ostringstream ss;
-    ss << msg << ": " << toString(res) << ".";
+    const auto message = llvm::formatv("{0}: {1}.", msg, toString(res)).str();
     switch (res) {
     case QDMI_ERROR_OUTOFMEM:
       throw std::bad_alloc();
     case QDMI_ERROR_OUTOFRANGE:
-      throw std::out_of_range(ss.str());
+      throw std::out_of_range(message);
     case QDMI_ERROR_INVALIDARGUMENT:
-      throw std::invalid_argument(ss.str());
+      throw std::invalid_argument(message);
     case QDMI_ERROR_FATAL:
     case QDMI_ERROR_NOTIMPLEMENTED:
     case QDMI_ERROR_LIBNOTFOUND:
@@ -46,9 +47,9 @@ auto throwIfError(const int result, const std::string& msg) -> void {
     case QDMI_ERROR_NOTSUPPORTED:
     case QDMI_ERROR_BADSTATE:
     case QDMI_ERROR_TIMEOUT:
-      throw std::runtime_error(ss.str());
+      throw std::runtime_error(message);
     default:
-      throw std::runtime_error("Unknown QDMI error code. " + ss.str());
+      throw std::runtime_error("Unknown QDMI error code. " + message);
     }
   }
 }

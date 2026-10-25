@@ -79,6 +79,10 @@ comment, data-structure, diagnostic, and debugging guidance.
 - Use `#pragma once`, direct includes, and standard-library facilities before
   adding abstractions. Use C typedefs such as `size_t` and `uint64_t` without
   `std::`. Do not use C-style casts, including casts to `void`.
+- Use LLVM streams and buffers for I/O and `StringRef` for borrowed text. Use
+  existing synchronized diagnostics for concurrent logging. Do not include STL
+  stream headers, including in tests. Keep owned strings when ownership is
+  required.
 - Use `//` for ordinary code comments. Never use `///` for them.
 - Use `///` for Doxygen documentation, including structural commands. Start
   descriptions with a short summary paragraph, separated from further content by

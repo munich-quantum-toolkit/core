@@ -13,13 +13,16 @@
 
 #pragma once
 
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 
 namespace mqt::test {
@@ -90,8 +93,16 @@ public:
         const std::string& contents) const {
     const auto path = path_ / relative;
     std::filesystem::create_directories(path.parent_path());
-    std::ofstream output(path);
+    // Truncate in place to preserve permissions of executable test fixtures.
+    std::error_code error;
+    const auto utf8 = path.u8string();
+    llvm::raw_fd_ostream output(std::string(utf8.begin(), utf8.end()), error);
+    llvm::cantFail(llvm::errorCodeToError(error));
     output << contents;
+    output.close();
+    error = output.error();
+    output.clear_error();
+    llvm::cantFail(llvm::errorCodeToError(error));
     return path;
   }
 

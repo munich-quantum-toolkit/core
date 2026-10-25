@@ -21,6 +21,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
@@ -35,7 +36,6 @@
 #include <optional>
 #include <random>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -171,10 +171,10 @@ auto Runtime::resolveAddress(const Qubit* qubit) -> dd::Qubit {
 
   const auto it = qRegister.find(qubit);
   if (it == qRegister.end()) {
-    std::ostringstream ss;
-    ss << __FILE__ << ":" << __LINE__
-       << ": Qubit not allocated (not found): " << qubit;
-    throw std::out_of_range(ss.str());
+    throw std::out_of_range(
+        llvm::formatv("{0}:{1}: Qubit not allocated (not found): {2}", __FILE__,
+                      __LINE__, qubit)
+            .str());
   }
   return it->second;
 }
@@ -448,10 +448,10 @@ auto Runtime::deref(Result* result) -> ResultStruct& {
   auto it = rRegister.find(result);
   if (it == rRegister.end()) {
     if (resultMode == ResourceMode::DYNAMIC) {
-      std::stringstream ss;
-      ss << __FILE__ << ":" << __LINE__
-         << ": Result not allocated (not found): " << result;
-      throw std::out_of_range(ss.str());
+      throw std::out_of_range(
+          llvm::formatv("{0}:{1}: Result not allocated (not found): {2}",
+                        __FILE__, __LINE__, result)
+              .str());
     }
     resultMode = ResourceMode::STATIC;
     it = rRegister.emplace(result, ResultStruct{.r = false}).first;

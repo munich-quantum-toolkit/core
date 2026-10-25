@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include "WorkerProtocol.hpp"
 
@@ -35,7 +36,6 @@
 #include <cstdint>
 #include <exception>
 #include <future>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -106,7 +106,7 @@ struct Execution {
     // NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
     auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
     if (entryPoint == nullptr) {
-      std::cerr << "QCO program has no entry point" << '\n';
+      qdmi::diagnostics::error("QCO program has no entry point");
       return false;
     }
     if (numShots_ != 0) {
@@ -188,7 +188,7 @@ struct Execution {
         rc = jitSession.sampleCounts(numShots_, outcomes, &stateAvailable);
       }
       if (rc != 0) {
-        std::cerr << "QIR program returned exit code " << rc << '\n';
+        qdmi::diagnostics::error("QIR program returned exit code {}", rc);
         return false;
       }
       if (terminalOutput) {
@@ -258,7 +258,8 @@ struct Execution {
         }
       }
       if (firstError != 0) {
-        std::cerr << "QIR program returned exit code " << firstError << '\n';
+        qdmi::diagnostics::error("QIR program returned exit code {}",
+                                 firstError);
         return false;
       }
       size_t packedSize = 0;
@@ -308,7 +309,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
     response.succeeded =
         qasm ? execution.qasmProgram() : execution.qirProgram();
   } catch (const std::exception& error) {
-    std::cerr << "DDSIM program failed: " << error.what() << '\n';
+    qdmi::diagnostics::error("DDSIM program failed: {}", error.what());
   }
   if (response.succeeded) {
     response.shotCount = execution.shotCount_;
