@@ -44,6 +44,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <algorithm>
 #include <array>
@@ -54,7 +55,6 @@
 #include <memory>
 #include <numbers>
 #include <optional>
-#include <ostream>
 #include <string>
 #include <utility>
 
@@ -67,17 +67,7 @@ struct OpenQASMTranslationTestCase {
   std::string name;
   std::string source;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const OpenQASMTranslationTestCase& test);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os,
-                         const OpenQASMTranslationTestCase& test) {
-  return os << "OpenQASMTranslation{" << test.name << ", reference="
-            << ::mqt::test::displayName(test.referenceBuilder.name) << "}";
-}
 
 class OpenQASMTranslationTest
     : public testing::TestWithParam<OpenQASMTranslationTestCase> {
@@ -964,6 +954,10 @@ static LogicalResult convertQCToQCO(ModuleOp moduleOp) {
 }
 
 TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("OpenQASMTranslation: {0}, reference={1}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
   const auto referenceBuilder = GetParam().referenceBuilder;

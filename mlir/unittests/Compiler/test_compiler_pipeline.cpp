@@ -90,6 +90,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -102,7 +103,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
-#include <iosfwd>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -151,25 +151,7 @@ struct CompilerPipelineTestCase {
   QIRProgramBuilderFn qirReferenceBuilder;
   bool convertToQIR = true;
   std::string qcoPipeline = "mqt-qco-default";
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const CompilerPipelineTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os,
-                         const CompilerPipelineTestCase& info) {
-  os << "CompilerPipeline{" << info.name
-     << ", original=" << displayName(info.qcProgramBuilder.name);
-  os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
-  if (info.convertToQIR) {
-    os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
-  }
-  if (info.qcoPipeline != "mqt-qco-default") {
-    os << ", qcoPipeline=" << info.qcoPipeline;
-  }
-  return os << "}";
-}
 
 class CompilerPipelineTest
     : public testing::TestWithParam<CompilerPipelineTestCase> {
@@ -374,6 +356,15 @@ constexpr llvm::StringLiteral QCO_INDEX_SWITCH_SOURCE = R"mlir(
 )mlir";
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
+  SCOPED_TRACE(
+      llvm::formatv("CompilerPipeline: {0}, original={1}, qcReference={2}, "
+                    "qirReference={3}, qcoPipeline={4}",
+                    GetParam().name,
+                    displayName(GetParam().qcProgramBuilder.name),
+                    displayName(GetParam().qcReferenceBuilder.name),
+                    displayName(GetParam().qirReferenceBuilder.name),
+                    GetParam().qcoPipeline)
+          .str());
   const auto& testCase = GetParam();
   const auto name = " (" + testCase.name + ")";
   DeferredPrinter printer;
