@@ -711,11 +711,12 @@ TEST(CompilerQDMIAdapterTest, DynamicQIRIndexingDoesNotRequireLoops) {
     return capability.id == mlir::ProgramCapability::CONDITIONAL_LOOP ||
            capability.id == mlir::ProgramCapability::COUNTED_ITERATION;
   });
-  EXPECT_TRUE(mlir::succeeded(mlir::runDefaultPipeline(
+  auto result = mlir::runDefaultPipeline(
       std::move(*input), mlir::ProgramFormat::QIRAdaptive,
       mlir::TargetEnvironment(target,
                               llvm::cantFail(mlir::PayloadSpecification::create(
-                                  baseline.format(), capabilities))))));
+                                  baseline.format(), capabilities))));
+  EXPECT_TRUE(static_cast<bool>(result)) << llvm::toString(result.takeError());
 }
 
 TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
@@ -758,13 +759,14 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
       return %bits : !cbit.reg<2>
     }
   })mlir");
-  ASSERT_TRUE(mlir::succeeded(program));
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
   ASSERT_TRUE(mlir::succeeded(program->cleanup()));
   auto qco = std::move(*program).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
-  program = std::move(*qco).intoQC();
-  ASSERT_TRUE(mlir::succeeded(program));
-  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Adaptive);
+  auto restored = std::move(*qco).intoQC();
+  ASSERT_TRUE(mlir::succeeded(restored));
+  auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
   ASSERT_TRUE(mlir::succeeded(qir));
   auto ir = std::move(*qir).intoLLVMIR();
   ASSERT_TRUE(mlir::succeeded(ir));
@@ -1010,7 +1012,8 @@ TEST(CompilerQDMIAdapterTest, RejectsScalarProgramOutputs) {
         "module { func.func @main() -> i64 attributes {mqt.entry_point} { "
         "%value = arith.constant " +
         std::to_string(value) + " : i64 return %value : i64 } }");
-    ASSERT_TRUE(mlir::succeeded(scalar));
+    ASSERT_TRUE(static_cast<bool>(scalar))
+        << llvm::toString(scalar.takeError());
     auto compiled = mlir::compileProgram(scalar->copy(), device,
                                          QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING);
     ASSERT_FALSE(static_cast<bool>(compiled));
