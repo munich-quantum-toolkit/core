@@ -15,6 +15,7 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
+#include "dd/ResourceControl.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
 #include "llvm/Support/raw_ostream.h"
@@ -131,15 +132,18 @@ private:
   /// Typedef for a bucket in the table.
   using Bucket = RealNumber*;
   /// Typedef for the table.
-  using Table = std::vector<Bucket>;
+  using Table = std::vector<Bucket, detail::ResourceAllocator<Bucket>>;
 
   /// Intrusive bucket chains; rehashing preserves entry addresses and flags.
-  Table table = Table(NBUCKET);
+  Table table;
   /// Matrix root weights share the memory manager and mark/sweep ownership.
   ///
   /// Exact keys keep lookup independent of tolerance and avoid tiny-value
   /// chains.
-  std::unordered_map<fp, RealNumber*> exactRoots;
+  std::unordered_map<
+      fp, RealNumber*, std::hash<fp>, std::equal_to<fp>,
+      detail::ResourceAllocator<std::pair<const fp, RealNumber*>>>
+      exactRoots;
 
   /// A power-of-two cell width between eight and sixteen times the tolerance
   /// keeps each tolerance interval within the central and adjacent cells.

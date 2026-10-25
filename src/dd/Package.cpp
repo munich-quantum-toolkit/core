@@ -22,6 +22,7 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
+#include "dd/ResourceControl.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
@@ -87,12 +88,14 @@ fp measurementProbabilityZero(const vNode& node, const fp epsilon) {
 }
 } // namespace
 
-Package::Package(const std::size_t nq, const DDPackageConfig& config)
-    : nqubits(nq), config_(config) {
+Package::Package(const std::size_t nq, const DDPackageConfig& config,
+                 ResourceControl* resources)
+    : nqubits(nq), config_(config), resources_(resources) {
   resize(nq);
 }
 
 void Package::resize(const std::size_t nq) {
+  checkResources();
   if (nq < nqubits) {
     throw std::invalid_argument("A DD package cannot be shrunk.");
   }
@@ -123,6 +126,7 @@ void Package::reset() {
 }
 
 bool Package::garbageCollect(bool force) {
+  checkResources();
   using flags = std::tuple<bool, bool, bool>;
 
   // return immediately if no table needs collection
@@ -176,6 +180,7 @@ bool Package::garbageCollect(bool force) {
       matrixVectorMultiplication.resize(buckets);
     }
   }
+  checkResources();
   return invC || invV || invM;
 }
 
@@ -918,6 +923,7 @@ vEdge Package::conjugate(const vEdge& a) {
   return {.p = r.p, .w = cn.lookup(r.w)};
 }
 vCachedEdge Package::conjugateRec(const vEdge& a) {
+  checkResources();
   if (a.isZeroTerminal()) {
     return vCachedEdge::zero();
   }
@@ -943,6 +949,7 @@ mEdge Package::conjugateTranspose(const mEdge& a) {
   return cn.lookup(r);
 }
 mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
+  checkResources();
   if (a.isTerminal()) { // terminal case
     return {a.p, ComplexNumbers::conj(a.w)};
   }
@@ -1017,6 +1024,7 @@ fp Package::fidelityOfMeasurementOutcomes(const vEdge& e,
 }
 ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y,
                                    const Qubit var) {
+  checkResources();
   const auto xWeight = static_cast<ComplexValue>(x.w);
   if (xWeight.approximatelyZero()) {
     return 0;
@@ -1109,7 +1117,8 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
-  std::vector<size_t> eliminatedBelow(eliminate.size() + 1);
+  std::vector<size_t, detail::ResourceAllocator<size_t>> eliminatedBelow(
+      eliminate.size() + 1, detail::ResourceAllocator<size_t>{resources_});
   for (size_t q = 0; q < eliminate.size(); ++q) {
     eliminatedBelow[q + 1] =
         eliminatedBelow[q] + static_cast<size_t>(eliminate[q]);
@@ -1118,10 +1127,12 @@ mEdge Package::partialTrace(const mEdge& a,
   return cn.lookup(r);
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
+  checkResources();
   if (dd::isIdentity(a)) {
     return static_cast<ComplexValue>(a.w);
   }
-  std::vector<size_t> eliminatedBelow(numQubits + 1);
+  std::vector<size_t, detail::ResourceAllocator<size_t>> eliminatedBelow(
+      numQubits + 1, detail::ResourceAllocator<size_t>{resources_});
   std::iota(eliminatedBelow.begin(), eliminatedBelow.end(), size_t{0});
   return trace(a, eliminatedBelow).w;
 }
@@ -1133,6 +1144,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
 }
 mCachedEdge Package::trace(const mEdge& a,
                            const std::span<const size_t> eliminatedBelow) {
+  checkResources();
   const auto aWeight = static_cast<ComplexValue>(a.w);
   if (aWeight.exactlyZero()) {
     return mCachedEdge::zero();
@@ -1395,6 +1407,7 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
                                              const std::vector<bool>& ancillary,
                                              const Qubit lowerbound,
                                              const bool regular) {
+  checkResources();
   if (p->v < lowerbound) {
     return {p, 1.};
   }
@@ -1481,6 +1494,7 @@ vCachedEdge Package::reduceGarbageRecursion(vNode* p,
                                             const std::vector<bool>& garbage,
                                             const Qubit lowerbound,
                                             const bool normalizeWeights) {
+  checkResources();
   if (!normalizeWeights && p->v < lowerbound) {
     return {p, 1.};
   }
@@ -1529,6 +1543,7 @@ mCachedEdge Package::reduceGarbageRecursion(mNode* p,
                                             const Qubit lowerbound,
                                             const bool regular,
                                             const bool normalizeWeights) {
+  checkResources();
   if (!normalizeWeights && p->v < lowerbound) {
     return {p, 1.};
   }

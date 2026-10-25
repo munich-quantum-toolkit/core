@@ -135,6 +135,55 @@ Collection and reset retain grown table capacities. Node pools retain their
 slabs until reset or destruction and zero fresh entries on acquisition, so
 unused reserved slots need not occupy resident memory.
 
+### C++ resource limits and cancellation
+
+Pass an optional `dd::ResourceControl` to `dd::Package` to limit accounted
+storage, set a deadline, or request cancellation through `std::stop_token`:
+
+```cpp
+#include "dd/Package.hpp"
+#include "dd/ResourceControl.hpp"
+
+#include <chrono>
+#include <stop_token>
+
+std::stop_source stop;
+dd::ResourceControl control({
+    .stop = stop.get_token(),
+    .deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10),
+    .maxBytes = 64 * 1024 * 1024,
+});
+try {
+  dd::Package package(20, {}, &control);
+  // Perform DD operations here; another thread may call stop.request_stop().
+} catch (const dd::ResourceLimitExceeded& error) {
+  // The package has been destroyed. Inspect error.reason() for the limit.
+}
+```
+
+The control must outlive its packages and any containers using it. Separate
+packages may share one control across threads; a package itself is not safe for
+concurrent mutation. A shared control shares all three limits. Existing callers
+that omit it keep unrestricted allocation and do not poll a cancellation token.
+
+`allocatedBytes()` reports currently reserved bytes, and `peakBytes()` records
+the high-water mark of successful allocation reservations. These are not
+cumulative allocation volume or live DD node counts: slabs retain freed nodes
+for reuse. Accounting includes node and weight slabs, unique and compute tables,
+root maps, and trace-operation scratch, including old and new storage during
+replacement. Allocator overhead, stack storage, dense exports, sampling,
+serialization, and statistics scratch are excluded. This is not a process-memory
+or RSS bound.
+
+Cancellation and deadlines are cooperative. Allocation and recursive arithmetic
+check for stopping; an allocation or garbage-collection pass can delay a check.
+Dense export, sampling, serialization, and statistics do not provide
+cancellation checkpoints. After `ResourceLimitExceeded`, destroy the affected
+package rather than reusing it: interrupted arithmetic can leave temporary roots
+or compute entries incomplete. Destruction releases its accounted storage even
+when the control remains cancelled. The control does not change DD numerical
+tolerances.
+
 ## How do Quantum Decision Diagrams Work?
 
 Decision diagrams were introduced in the 1980s as a data structure for the

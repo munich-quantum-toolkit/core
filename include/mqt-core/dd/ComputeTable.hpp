@@ -14,6 +14,7 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/ResourceControl.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "llvm/Support/raw_ostream.h"
@@ -39,7 +40,11 @@ public:
   /// Default constructor
   ///
   /// @param numBuckets Number of hash table buckets. Must be a power of two.
-  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
+  /// @param resource Storage allocator; must outlive the table.
+  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS,
+                        ResourceControl* resource = nullptr)
+      : table(detail::ResourceAllocator<Entry>{resource}),
+        valid(detail::ResourceAllocator<bool>{resource}) {
     // numBuckets must be a power of two
     if (!std::has_single_bit(numBuckets)) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
@@ -138,7 +143,7 @@ public:
   /// The capacity must be a power of two. Invalidates lookup result pointers.
   /// The replacement storage is allocated on its first insertion.
   void resize(const size_t numBuckets) {
-    ComputeTable replacement(numBuckets);
+    ComputeTable replacement(numBuckets, table.get_allocator().control());
     table.swap(replacement.table);
     valid.swap(replacement.valid);
     stats.numBuckets = numBuckets;
@@ -159,16 +164,18 @@ private:
     if (!table.empty()) {
       return;
     }
-    std::vector<Entry> entries(stats.numBuckets);
-    std::vector<bool> occupied(stats.numBuckets, false);
+    std::vector<Entry, detail::ResourceAllocator<Entry>> entries(
+        stats.numBuckets, table.get_allocator());
+    std::vector<bool, detail::ResourceAllocator<bool>> occupied(
+        stats.numBuckets, false, valid.get_allocator());
     table.swap(entries);
     valid.swap(occupied);
   }
 
   /// The actual table storing the entries
-  std::vector<Entry> table;
+  std::vector<Entry, detail::ResourceAllocator<Entry>> table;
   /// Dynamic bitset to mark valid entries
-  std::vector<bool> valid;
+  std::vector<bool, detail::ResourceAllocator<bool>> valid;
   /// Statistics of the compute table
   TableStatistics stats{};
 };

@@ -14,6 +14,7 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/ResourceControl.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
 #include <bit>
@@ -32,8 +33,14 @@ public:
   /// Default number of buckets for the compute table
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 32768U;
 
-  /// Default constructor
-  explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
+  /// Construct a lazily allocated table.
+  ///
+  /// @param numBuckets Number of hash table buckets. Must be a power of two.
+  /// @param resource Storage allocator; must outlive the table.
+  explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS,
+                             ResourceControl* resource = nullptr)
+      : table(detail::ResourceAllocator<Entry>{resource}),
+        valid(detail::ResourceAllocator<bool>{resource}) {
     // numBuckets must be a power of two
     if (!std::has_single_bit(numBuckets)) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
@@ -115,16 +122,18 @@ private:
     if (!table.empty()) {
       return;
     }
-    std::vector<Entry> entries(stats.numBuckets);
-    std::vector<bool> occupied(stats.numBuckets, false);
+    std::vector<Entry, detail::ResourceAllocator<Entry>> entries(
+        stats.numBuckets, table.get_allocator());
+    std::vector<bool, detail::ResourceAllocator<bool>> occupied(
+        stats.numBuckets, false, valid.get_allocator());
     table.swap(entries);
     valid.swap(occupied);
   }
 
   /// The actual table storing the entries
-  std::vector<Entry> table;
+  std::vector<Entry, detail::ResourceAllocator<Entry>> table;
   /// Dynamic bitset to mark valid entries
-  std::vector<bool> valid;
+  std::vector<bool, detail::ResourceAllocator<bool>> valid;
   /// Statistics of the compute table
   TableStatistics stats{};
 };

@@ -16,6 +16,7 @@
 #include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
+#include "dd/ResourceControl.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
 #include "llvm/Support/Format.h"
@@ -26,6 +27,7 @@
 #include <functional>
 #include <limits>
 #include <ranges>
+#include <scoped_allocator>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -215,7 +217,7 @@ private:
   /// Typedef for a bucket in the table
   using Bucket = NodeBase*;
   /// Typedef for the table
-  using Table = std::vector<Bucket>;
+  using Table = std::vector<Bucket, detail::ResourceAllocator<Bucket>>;
 
   UniqueTableConfig cfg;
 
@@ -230,10 +232,14 @@ private:
   /// Each hash table is an array of buckets. Each bucket is a linked
   /// list of entries. The linked list is implemented by using the next pointer
   /// of the entries.
-  std::vector<Table> tables;
+  std::vector<Table,
+              std::scoped_allocator_adaptor<detail::ResourceAllocator<Table>>>
+      tables;
 
   /// A collection of statistics
-  std::vector<UniqueTableStatistics> stats;
+  std::vector<UniqueTableStatistics,
+              detail::ResourceAllocator<UniqueTableStatistics>>
+      stats;
 
   /// Total entries across all levels, used by per-operation collection checks.
   std::size_t entryCount_ = 0U;
@@ -242,7 +248,7 @@ private:
   uint32_t nextId_ = 0U;
 
   template <class Node> void grow(const size_t v) {
-    Table old(tables[v].size() * 2U);
+    Table old(tables[v].size() * 2U, tables.get_allocator());
     tables[v].swap(old);
     for (auto* bucket : old) {
       auto* node = static_cast<Node*>(bucket);

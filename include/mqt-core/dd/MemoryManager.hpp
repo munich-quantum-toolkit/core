@@ -13,13 +13,14 @@
 
 #pragma once
 
+#include "dd/ResourceControl.hpp"
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
 #include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <memory>
-#include <utility>
+#include <new>
 #include <vector>
 
 namespace dd {
@@ -33,7 +34,8 @@ struct LLBase;
 /// Returned objects enter a free list and are reused before allocating from a
 /// chunk, reducing allocation overhead for DD nodes and edge weights.
 class MemoryManager {
-  MemoryManager(size_t entrySize, std::size_t initialAllocationSize);
+  MemoryManager(size_t entrySize, std::size_t initialAllocationSize,
+                ResourceControl* resource);
 
 public:
   // delete copy construction and assignment
@@ -51,15 +53,21 @@ public:
   /// Construct a new MemoryManager object for objects of type T.
   ///
   /// @param initialAllocationSize The positive initial number of entries
+  /// @param resource Storage allocator; must outlive the manager.
   /// @tparam T The type of the entries
   /// @throws std::invalid_argument If initialAllocationSize is zero.
   template <class T>
   static MemoryManager
-  create(const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE) {
-    return {sizeof(T), initialAllocationSize};
+  create(const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE,
+         ResourceControl* resource = nullptr) {
+    return {sizeof(T), initialAllocationSize, resource};
   }
 
   ~MemoryManager() = default;
+
+  [[nodiscard]] ResourceControl* getMemoryResource() const noexcept {
+    return chunks.get_allocator().control();
+  }
 
   /// Get an entry from the manager.
   ///
@@ -129,7 +137,19 @@ private:
   /// runtime.
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
   using Storage = std::byte[];
-  using Chunk = std::pair<std::unique_ptr<Storage>, size_t>;
+  struct ChunkDeleter {
+    ResourceControl* resource;
+    size_t bytes;
+    void operator()(std::byte* pointer) const noexcept {
+      if (resource != nullptr) {
+        resource->deallocate(pointer, bytes);
+      } else {
+        ::operator delete(pointer);
+      }
+    }
+  };
+  using Chunk = std::unique_ptr<Storage, ChunkDeleter>;
+  [[nodiscard]] Chunk allocateChunk(size_t bytes) const;
 
   /// A linked list of entries that are available for (re-)use
   ///
@@ -144,7 +164,7 @@ private:
   ///
   /// The MemoryManager maintains a vector of chunks. Each chunk is a
   /// byte buffer. Entries in a chunk are allocated contiguously.
-  std::vector<Chunk> chunks;
+  std::vector<Chunk, detail::ResourceAllocator<Chunk>> chunks;
 
   /// Iterator to the next available entry in the current chunk
   ///

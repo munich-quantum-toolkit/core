@@ -12,6 +12,7 @@
 
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
+#include "dd/ResourceControl.hpp"
 
 #include "statistics/StatisticsJson.hpp"
 
@@ -20,6 +21,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstddef>
+#include <scoped_allocator>
 #include <stdexcept>
 #include <string>
 
@@ -27,7 +29,11 @@ namespace dd {
 
 UniqueTable::UniqueTable(MemoryManager& manager,
                          const UniqueTableConfig& config)
-    : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager) {
+    : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager),
+      tables(std::scoped_allocator_adaptor<detail::ResourceAllocator<Table>>{
+          manager.getMemoryResource()}),
+      stats(detail::ResourceAllocator<UniqueTableStatistics>{
+          manager.getMemoryResource()}) {
   if (!std::has_single_bit(cfg.nBuckets) ||
       !std::has_single_bit(cfg.maxBuckets) || cfg.maxBuckets < cfg.nBuckets) {
     throw std::invalid_argument(

@@ -13,6 +13,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/ResourceControl.hpp"
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
@@ -26,12 +27,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <utility>
 
 namespace dd {
 
 RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
                                              const std::size_t initialGCLim)
-    : memoryManager(&manager), initialGCLimit(initialGCLim) {
+    : table(NBUCKET,
+            detail::ResourceAllocator<Bucket>{manager.getMemoryResource()}),
+      exactRoots(detail::ResourceAllocator<std::pair<const fp, RealNumber*>>{
+          manager.getMemoryResource()}),
+      memoryManager(&manager), initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
   stats.numBuckets = NBUCKET + exactRoots.bucket_count();
   RealNumber::immortalize(lookupNonNegative(0.5));
@@ -162,7 +168,7 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
 }
 
 void RealNumberUniqueTable::rehash(const std::size_t size, const int exponent) {
-  Table next(size);
+  Table next(size, table.get_allocator());
   table.swap(next);
   cellExponent = exponent;
   for (auto* head : next) {
