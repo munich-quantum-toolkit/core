@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import gc
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -194,3 +195,41 @@ def test_concurrent_borrowed_checks_share_no_mutable_options() -> None:
         futures = [workers.submit(verify, program, program) for _ in range(2)]
         results = [future.result(timeout=20) for future in futures]
     assert all(result.verdict is VerificationVerdict.EQUIVALENT for result in results)
+
+
+def test_concurrent_unsupported_checks_keep_their_diagnostics() -> None:
+    """Unsupported traces must report the failure from their own caller."""
+    program = QCOProgram.from_mlir_str("""
+module {
+  func.func @main(%n: index, %reset: i1, %theta: f64) attributes {mqt.entry_point} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %q = qco.static 0 : !qco.qubit
+    %r = scf.for %i = %c0 to %n step %c1 iter_args(%a = %q) -> !qco.qubit {
+      %x = qco.x %a : !qco.qubit
+      scf.yield %x : !qco.qubit
+    }
+    %out = qco.if %reset args(%a = %r) -> !qco.qubit {
+      %x = qco.reset %a : !qco.qubit
+      qco.yield %x : !qco.qubit
+    } else args(%a = %r) {
+      %x = qco.rx(%theta) %a : !qco.qubit
+      qco.yield %x : !qco.qubit
+    }
+    qco.sink %out : !qco.qubit
+    return
+  }
+}
+""")
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        for _ in range(3):
+            reset = workers.submit(verify, program, program, left_bindings={0: 20_000, 1: True})
+            # Stagger bounded traces to exercise overlapping context handlers.
+            time.sleep(0.002)
+            unbound = workers.submit(verify, program, program, left_bindings={0: 100_000, 1: False})
+            reset_result = reset.result(timeout=20)
+            unbound_result = unbound.result(timeout=20)
+            assert reset_result.verdict is VerificationVerdict.UNSUPPORTED
+            assert unbound_result.verdict is VerificationVerdict.UNSUPPORTED
+            assert "resets are not supported" in reset_result.reason
+            assert "no concrete QCO DD binding" in unbound_result.reason

@@ -86,6 +86,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -2841,13 +2842,17 @@ DDResolvedExecution resolveExecution(func::FuncOp func,
                                      const DDArgumentBindings& argumentBindings,
                                      const DDTraceOptions& options) {
   DDResolvedExecution result;
-  ScopedDiagnosticHandler diagnostics(func.getContext(),
-                                      [&](Diagnostic& diagnostic) {
-                                        if (result.message.empty()) {
-                                          result.message = diagnostic.str();
-                                        }
-                                        return success();
-                                      });
+  const auto caller = std::this_thread::get_id();
+  ScopedDiagnosticHandler diagnostics(
+      func.getContext(), [&](Diagnostic& diagnostic) {
+        if (std::this_thread::get_id() != caller) {
+          return failure();
+        }
+        if (result.message.empty()) {
+          result.message = diagnostic.str();
+        }
+        return success();
+      });
   if (func.isDeclaration() || !func.getBody().hasOneBlock()) {
     result.message = "execution tracing requires a one-block function body";
     return result;
