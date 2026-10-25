@@ -118,8 +118,8 @@ Returns:
             pygraphviz &&
             std::stoi(nb::cast<std::string>(pygraphviz.attr("__version__"))) >=
                 2;
-        dd::export2Dot(e, dotFilename, colored, edgeLabels, classic, memory,
-                       !usePyGraphviz, formatAsPolar);
+        dd::exportToDot(e, dotFilename, colored, edgeLabels, classic, memory,
+                        !usePyGraphviz, formatAsPolar);
         if (usePyGraphviz) {
           auto svgFilename = dotFilename;
           svgFilename.replace_extension(".svg");

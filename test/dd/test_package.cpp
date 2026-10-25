@@ -63,7 +63,7 @@ namespace dd {
 namespace {
 template <class Node>
 void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
-  export2Dot(edge, filename, true, true, false, false, false);
+  exportToDot(edge, filename, true, true, false, false, false);
   std::ifstream is(filename);
   EXPECT_TRUE(is.good());
   EXPECT_NE(is.peek(), std::ifstream::traits_type::eof());
@@ -138,7 +138,7 @@ TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
   svgFile.replace_extension(".svg");
 
   Package package(1);
-  export2Dot(makeZeroState(1, package), dotFile);
+  exportToDot(makeZeroState(1, package), dotFile);
   std::ifstream svg(svgFile);
   std::string rendered;
   std::getline(svg, rendered);
