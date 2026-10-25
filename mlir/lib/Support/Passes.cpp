@@ -113,7 +113,6 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
 void populateQIRPreparationPipeline(OpPassManager& pm,
                                     mqt::PayloadSpecAttr payload) {
   pm.addPass(createInlinerPass());
-  pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(mqt::createUnrollModifiers());
   if (payload.getFormat().getProfile() == "base") {
     qco::UnrollLoopsForPayloadOptions options;
@@ -124,6 +123,7 @@ void populateQIRPreparationPipeline(OpPassManager& pm,
     pm.addPass(mqt::createPromoteClassicalMemory());
   }
   pm.addPass(createCanonicalizerPass());
+  pm.addPass(mqt::createNormalizeGlobalPhases());
 }
 
 void populateQubitReusePipeline(OpPassManager& pm) {
@@ -189,7 +189,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
   return pm.run(moduleOp);
 }
 
-void populateQCExportPipeline(OpPassManager& pm) {
+void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(
@@ -198,10 +198,6 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
-}
-
-void populateQCCleanupPipeline(OpPassManager& pm) {
-  populateQCExportPipeline(pm);
   pm.addPass(createRemoveDeadValuesPass());
 }
 

@@ -41,4 +41,15 @@ def QIRCleanupPass : Pass<"qir-cleanup", "mlir::ModuleOp"> {
   }];
 }
 
+def QIRDropGlobalPhase : Pass<"qir-drop-global-phase", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
+  let summary = "Drop finite constant global phases for sample-only output";
+  let description = [{
+    Removes direct `__quantum__qis__gphase__body` calls with a finite constant
+    angle. Rejects other global-phase signatures and dynamic or non-finite
+    angles. Controlled phases are relative phases and remain unchanged.
+    Use only when the output contract disregards global phase, such as IQM JSON.
+  }];
+}
+
 #endif // MLIR_DIALECT_QIR_TRANSFORMS_PASSES_TD

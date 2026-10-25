@@ -287,6 +287,8 @@ TEST(OperationProperties, ArbitraryPositiveControlsMetadata) {
       "while_loop",
       "break_loop",
       "continue_loop",
+      "store",
+      "switch_case",
   };
 
   const qdmi_test::SessionGuard s{};

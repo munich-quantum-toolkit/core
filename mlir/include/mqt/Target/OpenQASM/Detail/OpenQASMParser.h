@@ -146,8 +146,7 @@ private:
     case TokenKind::Gate:
       return parseGateStatement();
     case TokenKind::Opaque:
-      return sink.error(current().loc,
-                        "opaque gate declarations are not supported");
+      return parseGateStatement(/*opaque=*/true);
     case TokenKind::Barrier:
       return parseBarrier();
     case TokenKind::Reset:
@@ -898,9 +897,9 @@ private:
 
   //===--- Gate definitions and calls -----------------------------------===//
 
-  [[nodiscard]] LogicalResult parseGateStatement() {
+  [[nodiscard]] LogicalResult parseGateStatement(bool opaque = false) {
     const auto loc = current().loc;
-    advance(); // gate
+    advance(); // gate or opaque
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected gate name");
     }
@@ -925,11 +924,16 @@ private:
     if (failed(parseIdentifierList(targets))) {
       return failure();
     }
+    if (opaque) {
+      return sink.gateDefinition(
+          loc, id, parameters, targets,
+          [this] { return expect(TokenKind::Semicolon); },
+          /*opaque=*/true);
+    }
     if (current().kind != TokenKind::LBrace) {
       return sink.error(current().loc,
                         "expected '{' to begin gate definition body");
     }
-
     return sink.gateDefinition(loc, id, parameters, targets,
                                [this] { return parseBlock(); });
   }

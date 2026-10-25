@@ -388,7 +388,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert isinstance(direct, OpenQASMProgram)
     assert not source.is_valid
     assert direct.source == preserved.source
-    assert direct.source.startswith("OPENQASM 3.1;")
+    assert direct.source.startswith("OPENQASM 3;")
     assert str(direct) == direct.source
 
     path = tmp_path / "program.qasm"
@@ -411,7 +411,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert compiled.operation_counts()["llvm.func"] >= 1
 
 
-@pytest.mark.parametrize("frontend", ["openqasm", "qiskit"])
+@pytest.mark.parametrize("frontend", ["openqasm", "qiskit", "native_qiskit"])
 def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
     """Preserve the PRX/CZ unitary and permuted readout across both frontends."""
     circuit = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(1, "a"), ClassicalRegister(1, "a_0"))
@@ -422,14 +422,22 @@ def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
     circuit.r(-0.461, -0.937, 1)
     expected = Operator(circuit)
     circuit.measure([0, 1], [1, 0])
-    if frontend == "qiskit":
+    if frontend in {"qiskit", "native_qiskit"}:
         if not supports_qiskit_translation():
             pytest.skip("Qiskit version has no compiler translation adapter")
         source = circuit
     else:
         source = qasm3.dumps(circuit)
     target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
-    direct = compile_program(source, target=target, output=OutputFormat.IQM_JSON)
+    if frontend == "native_qiskit":
+        qir = QCProgram.from_qiskit(circuit, native=True).to_qir(QIRProfile.BASE)
+        original = qir.ir
+        direct = qir.to_iqm_json(target, copy=True)
+        assert qir.ir == original
+        assert qir.to_iqm_json(target).source == direct.source
+        assert not qir.is_valid
+    else:
+        direct = compile_program(source, target=target, output=OutputFormat.IQM_JSON)
     assert_type(direct, IQMJSONProgram)
     assert isinstance(direct, IQMJSONProgram)
     assert str(direct) == direct.source
@@ -495,7 +503,7 @@ def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
 
     assert round_tripped.num_clbits == 0
     assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
-    assert program.to_qir(QIRProfile.BASE).is_valid
+    assert compile_program(program, output=OutputFormat.QIR_BASE).is_valid
 
 
 def test_compile_program_convert_to_qir() -> None:
@@ -1443,7 +1451,7 @@ def test_fixed_r_and_rzz_compilation_preserves_full_unitary() -> None:
 
 
 @requires_qiskit_translation
-def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
+def test_target_compilation_exports_canonical_native_qiskit_circuit() -> None:
     """Export a mapped program with the complete compiler target."""
     target = CompilerTarget(
         5,
@@ -2296,3 +2304,15 @@ def test_compiled_native_r_jeff_round_trip(name: str) -> None:
         serialized = program.to_jeff().to_bytes()
         result = JeffProgram.from_bytes(serialized).to_qco().to_qiskit()
         assert np.allclose(Operator(result).data, Operator(bound).data)
+
+
+def test_openqasm2_opaque_gate_preserves_receiver_semantics() -> None:
+    """An opaque declaration is not an empty identity-gate definition."""
+    program = QCProgram.from_openqasm_str("OPENQASM 2.0; opaque hop(theta) a,b; qreg q[3]; hop(0.125) q[2],q[0];")
+    assert "func.func private @hop(f64, !qc.qubit, !qc.qubit)" in program.ir
+    source = program.to_openqasm3(copy=True).source
+    assert "hop(0.125)" in source
+    assert "gate hop" not in source
+    assert "opaque" not in source  # OpenQASM 3 has no opaque declarations.
+    with pytest.raises(ValueError, match="callee must have a body"):
+        sample(program, shots=1)

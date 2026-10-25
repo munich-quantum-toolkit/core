@@ -1,14 +1,12 @@
 # Qiskit compatibility
 
-MQT Core exposes two distinct Qiskit interfaces:
+Install `mqt-core[qiskit]` for Qiskit `>=2.5,<2.7` support in the
+{doc}`QDMI backend <../qdmi/qdmi_backend>` and
+{doc}`MQT Compiler Collection <mqt_compiler_collection>`. The compiler checks
+the native API version before reading circuit data.
 
-| Interface                                                | Supported Qiskit versions | Purpose                                                          |
-| -------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------- |
-| {doc}`QDMI backend <../qdmi/qdmi_backend>`               | 2.1 and newer             | Execute circuits through device-specific serializers.            |
-| {doc}`MQT Compiler Collection <mqt_compiler_collection>` | `>=2.5.0,<2.7.0`          | Import and export circuits through the versioned native adapter. |
-
-Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
-the narrower range above; the adapter checks it before inspecting a circuit.
+Use `QCProgram.from_openqasm_str(source).to_qiskit()` to convert supported
+OpenQASM input.
 
 ## QPY files
 
@@ -44,7 +42,7 @@ failure, serialize to `io.BytesIO` before opening the destination.
 Pass a Qiskit `BackendV2` or `Target` to
 {py:func}`~mqt.core.mlir.compile_program` to compile for its gates, topology,
 and advertised standard control flow. The default result is a `QuantumCircuit`
-with physical qubits; its layout records placement and routing of logical input
+with device qubits; its layout records placement and routing of program input
 qubits. An explicit `output` selects another compiler representation. Omit
 `target` for target-independent optimization, which preserves the input's
 program family and may remove idle qubits. See the
@@ -90,7 +88,7 @@ this snapshot permits all control-flow forms supported by the exporter.
 
 Target-native synthesis requires a common single-qubit basis across sites and a
 common entangler across routing edges. For explicit pipelines, export with
-`program.to_qiskit(target=target)` to map compiler site IDs to physical qubits.
+`program.to_qiskit(target=target)` to map compiler site IDs to device qubits.
 
 ## Circuit translation contract
 
@@ -125,14 +123,11 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
-target and not by a control-flow block. External runtime inputs remain
-unsupported.
+target and not by a control-flow block. External runtime inputs are unsupported.
 
 Private gate parameters bind by position and receive generated local names
 during Qiskit export; their original names and grouping are not preserved.
-Public program inputs still require explicit names. OpenQASM custom gates can
-therefore use `QCProgram.from_openqasm_str(source).to_qiskit()` directly within
-the supported subset below.
+Public program inputs require explicit names.
 
 Export folds scalar expressions in the consumed QC program. Constant arithmetic,
 casts, and idempotent expressions can therefore disappear; expression-tree shape
@@ -153,15 +148,15 @@ every formal parameter.
 
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding
-across a round trip; similarly named standalone parameters remain standalone.
-Elements used in different structured-control blocks are restored into one
-shared vector for the complete circuit tree. Free parameter vectors and their
-combined declared size in one translated circuit are each limited to 65,536
-elements. Parameter-expression trees support at most 64 levels and 32,768 nodes.
-Import balances addition and subtraction chains before applying the depth limit.
-Fusing runtime rotations can expand these expressions. For repeated numerical
-runs, bind parameters in Core before export to avoid Qiskit's symbolic binding
-cost and stack limits on long addition chains. The limits above bound conversion
+across a round trip; standalone parameters use separate identities. Elements
+used in different structured-control blocks are restored into one shared vector
+for the complete circuit tree. Free parameter vectors and their combined
+declared size in one translated circuit are each limited to 65,536 elements.
+Parameter-expression trees support at most 64 levels and 32,768 nodes. Import
+balances addition and subtraction chains before applying the depth limit. Fusing
+runtime rotations can expand these expressions. For repeated numerical runs,
+bind parameters in Core before export to avoid Qiskit's symbolic binding cost
+and stack limits on long addition chains. The limits above bound conversion
 work; they do not bound Qiskit's internal expression depth.
 
 Import and export support real addition, subtraction, multiplication, division,
@@ -169,15 +164,15 @@ power, negation, trigonometric and inverse trigonometric functions, exponential,
 logarithm, absolute value, and real conjugation. Export also folds signed and
 unsigned integer-to-float casts of constants. Other parameter-expression
 functions are rejected. Lexically bound {code}`for`-loop induction parameters
-are supported and remain distinct from free symbols. Parameterized
-custom-instruction definitions are expanded after their symbols and expressions
-are resolved. Definition expansion rejects missing definitions, cycles, operand
-arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
-operations. Permutation patterns lower directly to SWAPs in Core, including
-inside nested definitions and gate modifiers. Other array-valued custom
-parameters are represented by the circuit definition rather than scalar program
-inputs. Operations without a supported definition are rejected with a Python
-exception; arbitrary Python parameter objects are not preserved on export.
+have lexical scope. Parameterized custom-instruction definitions are expanded
+after their symbols and expressions are resolved. Definition expansion rejects
+missing definitions, cycles, operand arity mismatches, nesting beyond 64 levels,
+and more than 10 million expanded operations. Permutation patterns lower
+directly to SWAPs in Core, including inside nested definitions and gate
+modifiers. Other array-valued custom parameters are represented by the circuit
+definition rather than scalar program inputs. Operations without a supported
+definition are rejected with a Python exception; arbitrary Python parameter
+objects are not preserved on export.
 
 Controlled-gate import supports multiple targets and open controls. Open
 controls use X conjugation from the gate's circuit definition;
@@ -194,16 +189,15 @@ parallel-assignment semantics, including swaps and unequal before/after tuples.
 
 `break` and `continue` target the innermost loop. `continue` skips the remaining
 body, advances a for-loop iterator, and then reevaluates the loop condition.
-Both imports use SCF control flow, so export preserves behavior without
-requiring the original jump statement to survive normalization.
+Import represents loop jumps with structured control flow; export preserves
+their behavior.
 
-Local scalar state covers Boolean values, fixed-width integers, and `f64` using
-supported backend operations. It uses native `expr.Var` declarations, `Store`
-assignments, and captures in nested circuits. Compiler variables do not increase
-the classical-bit or register counts. Import accepts initialized local variables
-and captures from enclosing supported circuits. External runtime inputs remain
-unsupported. Runtime classical values cannot be used as symbolic gate
-parameters.
+Local scalar state covers Boolean values, fixed-width integers, and `f64`.
+Export uses Qiskit `expr.Var` declarations, `Store` assignments, and captures in
+nested circuits. Compiler variables do not increase the classical-bit or
+register counts. Import accepts initialized local variables and captures from
+enclosing supported circuits. External runtime inputs are unsupported. Runtime
+classical values cannot be used as symbolic gate parameters.
 
 Canonical short-circuit Boolean expressions retain their native expression form.
 A live {code}`scf.for` induction value must reduce to an affine {code}`f64` gate
@@ -257,12 +251,23 @@ Other uses of the result read a snapshot, including classical expressions,
 copies to dynamic indices, and stores in branches. Later measurements may reuse
 a destination; saved snapshots retain the earlier result.
 
-Dense numeric unitaries remain explicit matrix operations during import and
-export. Target compilation synthesizes supported one- and two-qubit matrices to
-the target gate set. Dense unitary operations support at most eight qubits.
-Qiskit import preserves inverse, numeric power, and closed-control modifiers on
+Dense numeric unitaries use explicit matrix operations during import and export.
+Target compilation synthesizes supported one- and two-qubit matrices to the
+target gate set. Dense unitary operations support at most eight qubits. Qiskit
+import preserves inverse, numeric power, and closed-control modifiers on
 dense-unitary operations. Export preserves inverse and closed-control modifiers.
 Other powers require canonicalization or synthesis.
+
+`QCProgram.from_qiskit(circuit)` imports a program for compilation. Use
+`native=True` for a circuit already compiled for a device: circuit qubit indices
+become device positions, and gate names and operands are preserved without
+importing their definitions. The caller validates device support and placements.
+Layout metadata does not remap these positions.
+
+Native serialization rejects operations the selected format cannot encode;
+compile them before submission. Lower annotated operations and custom non-gate
+instructions before native import. OpenQASM gate names must be valid
+identifiers.
 
 ### Transpiler layouts
 
@@ -289,18 +294,5 @@ Loop lists with jumps and switch cases with variables are supported within the
 64-level nesting and definition-expansion limits. Unsupported programs fail
 without exposing a partial result.
 
-The binding imports Qiskit only when circuit translation is requested. It
-accepts versions in the registered {code}`>=2.5.0,<2.7.0` range and verifies the
-native API version before reading a circuit.
-
-Qiskit 2.6 uses borrowed C API instruction views and reads numeric gate
-parameters and global phases natively. Both adapters construct circuits,
-registers, and empty control-flow blocks through the C API. Tuple conditions
-become C++ equality trees directly; their public Python values remain
-authoritative because native conditions can be stale after a condition edit.
-Symbolic expressions retain the Python fallback because the C API does not
-expose their expression trees or parameter identities. Custom Python gates and
-classical expressions also retain their Python fallbacks. The new native
-custom-operation API defines operations; it does not inspect existing Python
-gate definitions. Delay instructions remain unsupported because the compiler
-does not represent their timing semantics.
+Delay instructions are unsupported because the compiler does not represent their
+timing semantics.

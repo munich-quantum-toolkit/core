@@ -63,12 +63,18 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Inputs                     | Global `input float name;` and `input float[64] name;` become named `f64` entry-point arguments in declaration order. Other input types and widths are diagnosed; names beginning `_mqt_` are reserved. Inputs are not implicit outputs.                           |
 | Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global scalars and bit registers become outputs.                                                                                                                        |
 | Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected.   |
-| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                              |
+| Quantum statements         | Measurement, reset, barrier, program qubits, and device qubits are supported. The QC translation rejects programs that mix program allocation with device qubits.                                                                                                  |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                      |
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                             |
 | Dynamic indexing           | Classical bit and array indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                         |
 | Classical arrays           | Global, fixed-size arrays of `bool`, `int`, `uint`, `float`, and `angle`, with up to seven dimensions and the scalar widths above.                                                                                                                                 |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and other array forms are diagnosed.                                                                                                                                                                     |
+
+OpenQASM 2 `opaque` declarations become private external functions with scalar
+parameters followed by qubit operands. They preserve a receiving device's gate
+interface without supplying a simulation or decomposition. OpenQASM 3 export
+emits calls to these gates; the receiver must supply their definitions.
+Unresolved calls cannot be simulated.
 
 The importer recognizes custom gates containing unitary gate calls and
 constant-range `for` loops as unitary, including nested loops and their callers.
@@ -355,16 +361,17 @@ mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
 The compiler-pipeline path performs target compilation when requested, runs the
 QCO optimization pipeline, converts back to QC, and then exports. Calling
 {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` or
-{code}`mlir::QCProgram::intoOpenQASM3` applies the QC cleanup pipeline but
-bypasses that QCO optimization round trip. Both consume the input, including on
-failure. In Python, set `copy=True` to preserve it. The low-level translation
-API also consumes its module; only the output stream is unchanged on failure.
+{code}`mlir::QCProgram::intoOpenQASM3` legalizes classical operations without
+inlining gate definitions or optimizing the program. Both consume the input,
+including on failure. In Python, set `copy=True` to preserve it. The low-level
+translation API also consumes its module; only the output stream is unchanged on
+failure.
 
 ### Export and round-trip support
 
 | QC or MLIR concept        | Export support                                                                                                                                                                                                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Logical qubit and CBit indices can be dynamic. Mapped programs require static physical qubits; indexed tensor loops must be specialized before export.    |
+| Qubits and classical bits | Program and device qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Program qubit and CBit indices can be dynamic. Mapped programs require static device qubits; indexed tensor loops must be specialized before export.        |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u` and `u2` use a shared helper that compensates the OpenQASM 3 `U` global phase. |
 | Program parameters        | Named `f64` entry-point arguments become `input float[64]` declarations in argument order. Names must be unique, valid OpenQASM identifiers that do not conflict with standard gates or use the reserved `_mqt_` prefix.                                            |
 | Reusable gates            | Private single-block functions with leading `f64` parameters followed by scalar qubit arguments and no results. Unitary functions, including statically bounded `for` loops over unitary gates, use `qc.call`. Other structured gate functions use `func.call`.     |
@@ -416,6 +423,9 @@ undefined bits before their first store remain undefined behavior; promotion may
 choose zero for those values. Whole-register reads preserve snapshots, and
 returned registers preserve their names and bit order. The promotion bound does
 not limit output register widths.
+
+Export emits `OPENQASM 3;` for its OpenQASM 3.0 subset and `OPENQASM 3.1;` when
+it emits a `switch`, including switches generated from indexed tables.
 
 Export retains private gate-shaped helper functions. Other defined helpers,
 including functions with integer or register arguments or classical results, are

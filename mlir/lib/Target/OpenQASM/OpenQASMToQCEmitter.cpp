@@ -1046,7 +1046,17 @@ private:
 
     builder.setLoc(getLocation(gate.location));
     func::FuncOp function;
-    if (!statementsAreUnitary(gate.body)) {
+    if (gate.opaque) {
+      OpBuilder::InsertionGuard guard(builder);
+      auto moduleOp = builder.getInsertionBlock()
+                          ->getParentOp()
+                          ->getParentOfType<ModuleOp>();
+      builder.setInsertionPointToStart(moduleOp.getBody());
+      function =
+          func::FuncOp::create(builder, builder.getLoc(), gate.name,
+                               builder.getFunctionType(argumentTypes, {}));
+      function.setPrivate();
+    } else if (!statementsAreUnitary(gate.body)) {
       function = builder.createFunction(gate.name, argumentTypes,
                                         [&](ValueRange arguments) {
                                           emitBody(arguments);

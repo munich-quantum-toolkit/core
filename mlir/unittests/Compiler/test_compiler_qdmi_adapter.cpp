@@ -758,9 +758,13 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   ASSERT_TRUE(mlir::succeeded(qco));
   program = std::move(*qco).intoQC();
   ASSERT_TRUE(mlir::succeeded(program));
-  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(mlir::succeeded(qir));
-  auto ir = std::move(*qir).intoLLVMIR();
+  EXPECT_TRUE(
+      mlir::failed(program->copy().intoQIR(mlir::QIRProfile::Adaptive)));
+  auto compiled =
+      mlir::runDefaultPipeline(mlir::CompilerInput{std::move(*program)},
+                               mlir::ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(mlir::succeeded(compiled));
+  auto ir = std::get<mlir::QIRProgram>(std::move(*compiled)).intoLLVMIR();
   ASSERT_TRUE(mlir::succeeded(ir));
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   auto job = device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);

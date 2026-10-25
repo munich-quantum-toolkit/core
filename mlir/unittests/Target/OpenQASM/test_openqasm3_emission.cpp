@@ -276,7 +276,7 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
       succeeded(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
   stream.flush();
   EXPECT_EQ(streamedSource, *source);
-  EXPECT_TRUE(source->starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(source->starts_with("OPENQASM 3;\n"));
   EXPECT_NE(source->find("include \"stdgates.inc\";"), std::string::npos);
   EXPECT_NE(source->find("cx q[0], q[1];"), std::string::npos);
   EXPECT_NE(source->find("output bit[2] c;"), std::string::npos);
@@ -1261,6 +1261,7 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(emitted->find("switch (1)"), std::string::npos);
   EXPECT_NE(emitted->find("case 1 {"), std::string::npos);
   EXPECT_NE(emitted->find("default {"), std::string::npos);
@@ -2405,6 +2406,7 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   auto repeated = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   EXPECT_EQ(emitted->find("array["), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);

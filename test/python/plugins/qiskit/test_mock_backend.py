@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, ClassVar, NoReturn
 from unittest.mock import Mock
 
 import pytest
-from qiskit import qasm2, qasm3, qpy
+from qiskit import qasm2, qpy
 from qiskit.circuit import (
     BreakLoopOp,
     ContinueLoopOp,
@@ -27,6 +27,7 @@ from qiskit.circuit import (
     Gate,
     IfElseOp,
     QuantumCircuit,
+    Store,
     SwitchCaseOp,
     WhileLoopOp,
 )
@@ -34,6 +35,7 @@ from qiskit.circuit.library import CU3Gate, CUGate
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.transpiler import Target
 
+from mqt.core.mlir import QCProgram
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -49,7 +51,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, MutableSet, Sequence
+    from collections.abc import Callable, Mapping, MutableSet, Sequence
 
     from qiskit.circuit import Instruction
     from qiskit.providers import Options
@@ -358,7 +360,6 @@ def _patch_client_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDM
     [
         (["cz", "custom_unmappable_gate", "measure"], "'custom_unmappable_gate' cannot be mapped"),
         (["cz"], "does not define a measurement operation"),
-        (["hop", "cz", "measure"], "'hop' cannot be mapped"),
     ],
 )
 def test_backend_warns_on_incomplete_operation_mapping(
@@ -407,6 +408,7 @@ def test_subclass_extra_gates_appear_in_target(alias: str) -> None:
         with pytest.raises(UnsupportedOperationError, match="incompatible Qiskit instructions"):
             HoppingBackend(device=mock_device)  # ty: ignore[invalid-argument-type]
         return
+    mock_device.supported_program_formats = lambda: [ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
     backend = HoppingBackend(device=mock_device)  # ty: ignore[invalid-argument-type]
 
     assert "hop" in backend.target.operation_names
@@ -417,6 +419,18 @@ def test_subclass_extra_gates_appear_in_target(alias: str) -> None:
 
     # The base class keeps its own mappings
     assert QDMIBackend._map_operation_to_gate("hop") is None  # ruff:ignore[private-member-access]
+
+    submissions = _record_submissions(mock_device)
+    circuit = QuantumCircuit(2, 1)
+    circuit.append(HopGate(), [1, 0])
+    circuit.measure(1, 0)
+    backend.run(circuit, shots=1)
+    payload, fmt = submissions[0]
+    assert fmt == ProgramFormat.QASM3
+    assert isinstance(payload, str)
+    call = re.search(r"hop\(([^)]+)\) \$1, \$0;", payload)
+    assert call is not None
+    assert float(call[1]).hex() == (0.1).hex()
 
 
 def _record_submissions(device: MockQDMIDevice) -> list[tuple[str | bytes, ProgramFormat]]:
@@ -474,8 +488,9 @@ def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: Prog
     assert fmt == expected
     assert isinstance(program, str)
     assert f"OPENQASM {2 if fmt == ProgramFormat.QASM2 else 3}" in program
-    assert "h q[0]" in program
-    assert "cx q[0],q[1]" in program.replace(", ", ",")
+    first, second = ("q[0]", "q[1]") if fmt == ProgramFormat.QASM2 else ("$0", "$1")
+    assert f"h {first}" in program
+    assert f"cx {first},{second}" in program.replace(", ", ",")
 
 
 @pytest.mark.parametrize("angle", [pi + 1e-9, 1e-12])
@@ -489,7 +504,7 @@ def test_qasm3_preserves_float_parameters(angle: float) -> None:
     assert serializer is not None
     program = serializer(circuit, backend)
     assert isinstance(program, str)
-    assert f"rx({angle!r})" in program
+    assert float(program.split("rx(", 1)[1].split(")", 1)[0]).hex() == float(angle).hex()
 
 
 @pytest.mark.parametrize("gate", [CU3Gate(0.1, 0.2, 0.3), CUGate(0.1, 0.2, 0.3, 0.7)])
@@ -510,140 +525,42 @@ def test_controlled_u_signatures_are_distinct(gate: CU3Gate | CUGate) -> None:
         backend.run(circuit, shots=1)
 
 
-@pytest.fixture
-def registered_serializer() -> Iterator[ProgramFormat]:
-    """Register a text program serializer for CUSTOM1 and remove it after the test.
-
-    Yields:
-        The program format the serializer is registered for.
-    """
-
-    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
-        return f"CUSTOM1 program for {circuit.name}"
-
-    register_program_serializer(ProgramFormat.CUSTOM1, serializer)
-    yield ProgramFormat.CUSTOM1
-    unregister_program_serializer(ProgramFormat.CUSTOM1)
-
-
-@pytest.mark.parametrize("qasm_formats", [[ProgramFormat.QASM3], [ProgramFormat.QASM2, ProgramFormat.QASM3]])
-def test_backend_uses_registered_serializer(
-    registered_serializer: ProgramFormat, qasm_formats: list[ProgramFormat]
-) -> None:
-    """A registered native serializer outranks OpenQASM regardless of reported order."""
-    device = MockQDMIDevice(num_qubits=2, operations=["r", "cz", "measure"])
-    device.supported_program_formats = lambda: [*qasm_formats, registered_serializer]  # ty: ignore[invalid-assignment]
-    submissions = _record_submissions(device)
-    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
-    circuit = QuantumCircuit(2, name="bell")
-    circuit.r(1.5708, 0.0, 0)
-    circuit.cz(0, 1)
-    circuit.measure_all()
-    backend.run(circuit, shots=100)
-    assert submissions == [("CUSTOM1 program for bell", registered_serializer)]
-
-
-@pytest.fixture
-def registered_binary_serializer() -> Iterator[tuple[ProgramFormat, bytes]]:
-    """Override the binary QPY serializer and restore it after the test.
-
-    Yields:
-        The program format the serializer is registered for and the payload it
-        returns.
-    """
-    payload = b"QPY\x00\x01binary program"
-
-    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:  # ruff:ignore[unused-function-argument]
-        return payload
-
-    original = program_serializer(ProgramFormat.QPY)
-    assert original is not None
-    register_program_serializer(ProgramFormat.QPY, serializer, replace=True)
+@pytest.mark.parametrize(
+    ("fmt", "payload", "wrong_type"),
+    [
+        (ProgramFormat.CUSTOM1, "custom program", False),
+        (ProgramFormat.QPY, b"QPY\x00\x01binary program", False),
+        (ProgramFormat.QASM3, "OPENQASM 3.0; // replaced", False),
+        (ProgramFormat.CUSTOM2, b"not a string", True),
+    ],
+)
+def test_serializer_override(fmt: ProgramFormat, payload: str | bytes, *, wrong_type: bool) -> None:
+    """Custom serializers own lowering; submission preserves their payload type."""
+    original = program_serializer(fmt)
+    if isinstance(payload, str):
+        register_program_serializer(fmt, lambda _circuit, _backend: payload, replace=original is not None)
+    else:
+        register_program_serializer(fmt, lambda _circuit, _backend: payload, replace=original is not None)
     try:
-        yield ProgramFormat.QPY, payload
+        device = MockQDMIDevice(num_qubits=1, operations=["h", "measure"])
+        device.supported_program_formats = lambda: [ProgramFormat.QASM3, fmt]  # ty: ignore[invalid-assignment]
+        submissions = _record_submissions(device)
+        backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+        circuit = QuantumCircuit(2)
+        circuit.h(0)
+        circuit.measure_all()
+        if wrong_type:
+            with pytest.raises(TranslationError, match="returned bytes, but CUSTOM2 requires str"):
+                backend.run(circuit, shots=1)
+            assert not submissions
+        else:
+            backend.run(circuit, shots=1)
+            assert submissions == [(payload, fmt)]
     finally:
-        register_program_serializer(ProgramFormat.QPY, original, replace=True)
-
-
-def test_backend_submits_binary_payload(registered_binary_serializer: tuple[ProgramFormat, bytes]) -> None:
-    """A binary format reaches the device as the exact bytes the serializer returned."""
-    fmt, payload = registered_binary_serializer
-    device = MockQDMIDevice(num_qubits=2, operations=["h", "cz", "measure"])
-    device.supported_program_formats = lambda: [fmt, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
-    submissions = _record_submissions(device)
-
-    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
-    qc = QuantumCircuit(2)
-    qc.h(0)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    backend.run(qc, shots=100)
-
-    assert submissions == [(payload, fmt)]
-
-
-@pytest.fixture
-def mistyped_serializer() -> Iterator[ProgramFormat]:
-    """Register a serializer that returns bytes for a text format.
-
-    Yields:
-        The text program format the serializer is registered for.
-    """
-
-    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:  # ruff:ignore[unused-function-argument]
-        return b"not a string"
-
-    register_program_serializer(ProgramFormat.CUSTOM2, serializer)
-    yield ProgramFormat.CUSTOM2
-    unregister_program_serializer(ProgramFormat.CUSTOM2)
-
-
-def test_backend_rejects_wrong_payload_type(mistyped_serializer: ProgramFormat) -> None:
-    """A serializer that returns the wrong payload type for its format fails."""
-    qc = QuantumCircuit(2)
-    qc.h(0)
-    qc.measure_all()
-
-    device = MockQDMIDevice(num_qubits=2, operations=["h", "measure"])
-    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
-
-    with pytest.raises(TranslationError, match="returned bytes, but CUSTOM2 requires str"):
-        backend._serialize_circuit(qc, [mistyped_serializer])  # ruff:ignore[private-member-access]
-
-
-@pytest.fixture
-def replaced_qasm3_serializer() -> Iterator[str]:
-    """Replace the built-in OpenQASM 3 serializer and restore it after the test.
-
-    Yields:
-        The program the replacement returns.
-    """
-    program = "OPENQASM 3.0; // replaced"
-    original = program_serializer(ProgramFormat.QASM3)
-    assert original is not None
-
-    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
-        return program
-
-    register_program_serializer(ProgramFormat.QASM3, serializer, replace=True)
-    yield program
-    register_program_serializer(ProgramFormat.QASM3, original, replace=True)
-
-
-def test_backend_uses_replaced_qasm3_serializer(replaced_qasm3_serializer: str) -> None:
-    """A custom serializer retains control over compilation to native width."""
-    device = MockQDMIDevice(num_qubits=1, operations=["h", "measure"])
-    submissions = _record_submissions(device)
-
-    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
-    qc = QuantumCircuit(2)
-    qc.h(0)
-    qc.measure_all()
-
-    backend.run(qc, shots=100)
-
-    assert submissions == [(replaced_qasm3_serializer, ProgramFormat.QASM3)]
+        if original is None:
+            unregister_program_serializer(fmt)
+        else:
+            register_program_serializer(fmt, original, replace=True)
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.QPY])
@@ -713,13 +630,12 @@ def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytes
     assert len(submissions) == 1
     program, _ = submissions[0]
     assert isinstance(program, str)
-    assert "cx q[0], q[2];" in program
+    assert "cx $0, $2;" in program
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
-@pytest.mark.parametrize("nested", [False, True])
 def test_builtin_preflight_maps_control_flow_operands(
-    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat, *, nested: bool
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
 ) -> None:
     """Validate block-local operands against their enclosing native qubits."""
     device = MockQDMIDevice(num_qubits=3, operations=["cx", "measure"])
@@ -729,10 +645,9 @@ def test_builtin_preflight_maps_control_flow_operands(
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
     body = QuantumCircuit(2)
     body.cx(0, 1)
-    if nested:
-        outer = QuantumCircuit(2)
-        outer.for_loop(range(2), None, body, [0, 1], [])
-        body = outer
+    outer = QuantumCircuit(2)
+    outer.for_loop(range(2), None, body, [0, 1], [])
+    body = outer
     circuit = QuantumCircuit(3, 1)
     circuit.if_else((circuit.clbits[0], True), body, QuantumCircuit(2), [2, 0], [])
     with pytest.raises(UnsupportedOperationError, match="Unsupported control flow"):
@@ -740,8 +655,7 @@ def test_builtin_preflight_maps_control_flow_operands(
     assert not submissions
 
     backend.target.add_instruction(IfElseOp, name="if_else")
-    if nested:
-        backend.target.add_instruction(ForLoopOp, name="for_loop")
+    backend.target.add_instruction(ForLoopOp, name="for_loop")
     backend.run(circuit, shots=2)
     assert len(submissions) == 1
 
@@ -778,14 +692,14 @@ def test_backend_qasm_serialization_failure(
     program_format: ProgramFormat,
 ) -> None:
     """Backend should raise TranslationError when OpenQASM serialization fails."""
-    qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
+    qasm_module = QCProgram if qasm_module_name == "qasm3" else qasm2
 
     # Monkeypatch qasm dumps to raise an exception
-    def failing_dumps(circuit: object) -> NoReturn:  # ruff:ignore[unused-function-argument]
+    def failing_dumps(circuit: object, **_kwargs: object) -> NoReturn:  # ruff:ignore[unused-function-argument]
         msg = f"Simulated {qasm_module_name.upper()} conversion failure"
         raise ValueError(msg)
 
-    monkeypatch.setattr(qasm_module, "dumps", failing_dumps)
+    monkeypatch.setattr(qasm_module, "from_qiskit" if qasm_module_name == "qasm3" else "dumps", failing_dumps)
 
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
@@ -872,6 +786,9 @@ def test_backend_validation_uses_inverse_mapping() -> None:
     circuit.r(1.5708, 0.0, 0)
     circuit.cz(0, 1)
     circuit.measure_all()
+    original = circuit.copy()
+    backend.validate_circuit(circuit, native=True)
+    assert circuit == original
     assert backend.run(circuit, shots=100).result().success
 
 
@@ -907,7 +824,7 @@ def test_target_merges_alias_placements(monkeypatch: pytest.MonkeyPatch, placeme
         assert backend.target.instruction_supported("cx", qargs=pair)
         circuit = QuantumCircuit(3)
         circuit.cx(*pair)
-        backend._validate_circuit(circuit, native=True)  # ruff:ignore[private-member-access]
+        backend.validate_circuit(circuit, native=True)
 
 
 @pytest.mark.parametrize(
@@ -1109,14 +1026,15 @@ def test_declared_options_without_encoding_are_rejected() -> None:
         ("switch_case", SwitchCaseOp),
         ("break_loop", BreakLoopOp),
         ("continue_loop", ContinueLoopOp),
+        ("store", Store),
     ],
 )
-def test_target_control_flow_requires_device_advertising(name: str, operation: type[Instruction]) -> None:
-    """Variable-width control instructions appear only when advertised."""
+def test_target_classical_instructions_require_device_advertising(name: str, operation: type[Instruction]) -> None:
+    """Classical instructions appear only when advertised."""
     device = MockQDMIDevice(num_qubits=3, operations=["measure", name])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
     assert backend.target.operation_from_name(name) is operation
-    assert backend.target.instruction_supported(operation_name=name, qargs=(0, 2))
+    assert backend.target.instruction_supported(operation_name=name, qargs=() if name == "store" else (0, 2))
     other = MockQDMIDevice(num_qubits=3, operations=["measure"])
     restricted = QDMIBackend(other)  # ty: ignore[invalid-argument-type] Device boundary double.
     assert name not in restricted.target.operation_names

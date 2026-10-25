@@ -60,9 +60,14 @@ QIR 2.1 and whether dynamic resource management is used.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions
-consume that program unless `copy=True` is set. The `compile_program` function
-also consumes typed MLIR programs unless `copy=True` is set, and runs the
-coordinated optimization pipeline.
+consume that program unless `copy=True` is set. Direct conversion preserves gate
+calls; Base requires per-qubit terminal measurements and no loops. It collects
+measurements into the final measurement block without changing gate order.
+Opaque gates become external QIS functions whose implementations the consumer
+must provide; these gates must act only on their qubit operands. Use
+`compile_program` to inline definitions, unroll static loops for Base, and
+optimize the program. It also consumes typed MLIR programs unless `copy=True` is
+set.
 
 ## Execute LLVM text or bitcode
 
@@ -410,6 +415,6 @@ wires, so the exported state retains all allocated wires in allocation order,
 including unused and released wires. The qubit limit therefore applies to all
 allocations in one extraction run. Each run resets the quantum runtime. Output
 records are suppressed, and unsupported operations produce a failed QDMI job.
-Both profiles preserve global phase and logical wire order, including SWAPs.
+Both profiles preserve global phase and program wire order, including SWAPs.
 LLVM target triples must match the host architecture and operating system
 because the JIT executes in process.

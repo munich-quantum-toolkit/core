@@ -1063,7 +1063,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .value("OPENQASM3", OutputFormat::OpenQASM3,
              "OpenQASM 3 after the optimized QCO round trip.")
       .value("IQM_JSON", OutputFormat::IQMJSON,
-             "An IQM circuit for an explicit physical target.")
+             "An IQM circuit for an explicit device target.")
       .value("JEFF", OutputFormat::Jeff, "Serializable ``jeff`` MLIR.")
       .value("QIR_BASE", OutputFormat::QIRBase, "QIR for the Base Profile.")
       .value("QIR_ADAPTIVE", OutputFormat::QIRAdaptive,
@@ -1489,7 +1489,7 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
                           "collections.abc.Iterable[str] | None = None) -> "
                           "mqt.core.mlir.CompilerTarget.NativeOperations"),
                   "Import gate capabilities and parameter constraints, "
-                  "ignoring physical placement.\n\n"
+                  "ignoring device placement.\n\n"
                   "Unsupported explicit selections raise ValueError; otherwise "
                   "they warn and are omitted.")
       .def_static("unrestricted",
@@ -1804,7 +1804,7 @@ Counts allocated qubits or distinct static site IDs. ``None`` means the width
 is unknown. Resource inspection includes helper functions and excludes nested
 modules; it describes declared capacity rather than peak live width.)pb")
       .def_ro("static_qubits", &mlir::QuantumProgramInfo::staticQubits,
-              R"pb(Sorted distinct physical site IDs.
+              R"pb(Sorted distinct device site IDs.
 
 Includes declarations in helper functions and excludes nested modules.)pb")
       .def_ro("has_control_flow", &mlir::QuantumProgramInfo::hasControlFlow,
@@ -1864,13 +1864,17 @@ Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
           "from_qiskit", &bindings::qiskit::importCircuit, "circuit"_a,
-          nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
-                  "-> QCProgram"),
+          nb::kw_only(), "native"_a = false,
+          nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, "
+                  "native: bool = False) -> QCProgram"),
           R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
 
 Args:
     circuit: Circuit to import. A complete transpiler layout is retained as
-        metadata.)pb")
+        metadata.
+    native: Whether the circuit is already compiled for a device. Fixes circuit
+        indices to device qubits and preserves gate names and operands without
+        importing definitions. The caller validates device support and placements.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
@@ -1889,8 +1893,9 @@ Args:
                 [&] { return std::move(source).intoOpenQASM3(); });
           },
           nb::kw_only(), "copy"_a = false,
-          R"pb(Clean up and emit this QC program as OpenQASM 3 without QCO optimization.
+          R"pb(Emit this QC program as OpenQASM 3.
 
+Export legalizes classical operations without compiling gate definitions or optimizing.
 The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
 Args:
@@ -1940,7 +1945,10 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
 Entry results may be direct measurements or CBit registers. Adaptive Profile
 also supports computed Boolean (``i1``) results. Other scalar outputs are
 unsupported. The generated QIR returns a zero execution status.
-Base conversion unrolls static counted loops; Adaptive conversion retains them.
+Opaque gates become external QIS functions supplied by the consumer. Base requires
+per-qubit terminal measurements and rejects loops. Measurements are collected in
+the final measurement block. Adaptive conversion retains loops. Use
+``compile_program`` for gate inlining, static loop unrolling, and optimization.
 The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
@@ -2236,6 +2244,23 @@ LLVM bitcode.)pb");
            "Return an independent copy of this program.")
       .def("cleanup", &FallibleMemberAdapter<&mlir::QIRProgram::cleanup>::call,
            "Run the standard QIR cleanup pipeline in place.")
+      .def(
+          "to_iqm_json",
+          [](mlir::QIRProgram& value, const mlir::CompilerTarget& target,
+             const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "cannot export QIR as IQM JSON",
+                [&] { return std::move(source).intoIQMJSON(target); });
+          },
+          "target"_a, nb::kw_only(), "copy"_a = false,
+          R"pb(Consume this program and emit an IQM circuit for device target sites.
+
+Accepts PRX/CZ gates and complete, unique terminal readout. The target supplies
+site names; callers validate gate support and placements. No synthesis or
+routing is performed. The source is consumed even
+on failure; set ``copy=True`` to preserve it.)pb")
       .def_prop_ro("profile", &mlir::QIRProgram::profile,
                    "The QIR target profile used to produce this program.")
       .def(

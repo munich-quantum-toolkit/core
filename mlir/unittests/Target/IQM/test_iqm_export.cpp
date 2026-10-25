@@ -28,6 +28,7 @@
 #include <clocale>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -62,6 +63,7 @@ protected:
       declare void @__quantum__rt__initialize(ptr)
       declare void @__quantum__qis__prx__body(double, double, ptr)
       declare void @__quantum__qis__cz__body(ptr, ptr)
+      declare void @__quantum__qis__gphase__body(double)
       declare void @__quantum__qis__mz__body(ptr, ptr)
       declare void @__quantum__rt__array_record_output(i64, ptr)
       declare void @__quantum__rt__result_record_output(ptr, ptr)
@@ -85,6 +87,15 @@ protected:
     ret i64 0
   )qir";
 };
+
+TEST_F(IQMExportTest, RequiresExplicitGlobalPhaseRemoval) {
+  auto module = parse("call void @__quantum__qis__gphase__body(double 1.25)\n" +
+                      std::string(MEASURE_AND_RECORD));
+  ASSERT_TRUE(module);
+  auto result = qir::exportIQMJSON(*module, target());
+  EXPECT_FALSE(static_cast<bool>(result));
+  llvm::consumeError(result.takeError());
+}
 
 TEST_F(IQMExportTest, PreservesNativeParametersAndRecordedOutputOrder) {
   auto module = parse(R"qir(

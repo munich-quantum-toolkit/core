@@ -136,7 +136,7 @@ def _run_tests(
     session: nox.Session,
     *,
     install_args: Sequence[str] = (),
-    extra_command: Sequence[str] = (),
+    uv_run_args: Sequence[str] = (),
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
@@ -167,13 +167,11 @@ def _run_tests(
         *install_args,
         env=env,
     )
-    if extra_command:
-        session.run(*extra_command, env=env)
     session.run(
         "uv",
         "run",
         "--no-sync",  # do not sync as everything is already installed
-        *install_args,
+        *uv_run_args,
         "pytest",
         *pytest_run_args,
         *session.posargs,
@@ -207,7 +205,7 @@ def qiskit_compat(session: nox.Session, qiskit_minor: str) -> None:
     """Test compiler integration against older supported Qiskit minors."""
     _run_tests(
         session,
-        extra_command=["uv", "pip", "install", "--upgrade-package", "qiskit", f"qiskit~={qiskit_minor}.0"],
+        uv_run_args=["--with", f"qiskit~={qiskit_minor}.0"],
         pytest_run_args=[
             "test/python/test_mlir_qiskit_translation.py",
             "test/python/test_mlir_qiskit_target.py",
@@ -222,82 +220,82 @@ def qiskit_compat(session: nox.Session, qiskit_minor: str) -> None:
 def qiskit(session: nox.Session) -> None:
     """Test against Qiskit main with its exact extension headers."""
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-    with preserve_lockfile():
-        if shutil.which("cmake") is None:
-            session.install("cmake")
-        if shutil.which("ninja") is None:
-            session.install("ninja")
-        session.run(
-            "uv",
-            "sync",
-            "--inexact",
-            "--only-group",
-            "build",
-            "--only-group",
-            "test",
-            env=env,
-        )
-        session.run(
-            "uv",
-            "pip",
-            "install",
-            "--reinstall",
-            "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git",
-            env=env,
-        )
-        details = session.run(
-            "uv",
-            "run",
-            "--no-sync",
-            "python",
-            "-c",
-            ("import qiskit; from qiskit import capi; print(qiskit.__version__); print(capi.get_include())"),
-            env=env,
-            silent=True,
-        )
-        if details is None:
-            session.error("failed to inspect the installed Qiskit build")
-        detail_lines = details.strip().splitlines()
-        if len(detail_lines) < 2:
-            session.error("installed Qiskit did not report its version and C API include directory")
-        version, include = detail_lines[-2:]
-        include_path = Path(include).resolve(strict=True)
-        cmake_args = [
-            argument
-            for argument in os.environ.get("SKBUILD_CMAKE_ARGS", "").split(";")
-            if argument
-            and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
-            and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
-        ]
-        cmake_args.extend([
-            f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include_path}",
-            f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
-        ])
-        env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
-        env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
-        session.run(
-            "uv",
-            "sync",
-            "--inexact",
-            "--no-dev",
-            "--no-build-isolation-package",
-            "mqt-core",
-            "--no-install-package",
-            "qiskit",
-            env=env,
-        )
-        session.run(
-            "uv",
-            "run",
-            "--no-sync",
-            "pytest",
-            "-m",
-            "not (linkcheck or slurm)",
-            *session.posargs,
-            "--cov-config=pyproject.toml",
-            env=env,
-        )
-        session.run("uv", "pip", "show", "qiskit", env=env)
+    if shutil.which("cmake") is None:
+        session.install("cmake")
+    if shutil.which("ninja") is None:
+        session.install("ninja")
+    session.run(
+        "uv",
+        "sync",
+        "--locked",
+        "--inexact",
+        "--only-group",
+        "build",
+        "--only-group",
+        "test",
+        env=env,
+    )
+    session.run(
+        "uv",
+        "pip",
+        "install",
+        "--reinstall",
+        "qiskit @ git+https://github.com/Qiskit/qiskit.git",
+        env=env,
+    )
+    details = session.run(
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-c",
+        ("import qiskit; from qiskit import capi; print(qiskit.__version__); print(capi.get_include())"),
+        env=env,
+        silent=True,
+    )
+    if details is None:
+        session.error("failed to inspect the installed Qiskit build")
+    detail_lines = details.strip().splitlines()
+    if len(detail_lines) < 2:
+        session.error("installed Qiskit did not report its version and C API include directory")
+    version, include = detail_lines[-2:]
+    include_path = Path(include).resolve(strict=True)
+    cmake_args = [
+        argument
+        for argument in os.environ.get("SKBUILD_CMAKE_ARGS", "").split(";")
+        if argument
+        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
+        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
+    ]
+    cmake_args.extend([
+        f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include_path}",
+        f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
+    ])
+    env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
+    env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
+    session.run(
+        "uv",
+        "sync",
+        "--locked",
+        "--inexact",
+        "--no-dev",
+        "--no-build-isolation-package",
+        "mqt-core",
+        "--no-install-package",
+        "qiskit",
+        env=env,
+    )
+    session.run(
+        "uv",
+        "run",
+        "--no-sync",
+        "pytest",
+        "-m",
+        "not (linkcheck or slurm)",
+        *session.posargs,
+        "--cov-config=pyproject.toml",
+        env=env,
+    )
 
 
 @nox.session(python="3.14", reuse_venv=True)

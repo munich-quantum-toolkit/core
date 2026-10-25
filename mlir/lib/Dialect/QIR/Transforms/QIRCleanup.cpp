@@ -30,6 +30,7 @@
 namespace mlir::qir {
 
 #define GEN_PASS_DEF_QIRCLEANUPPASS
+#define GEN_PASS_DEF_QIRDROPGLOBALPHASE
 #include "mqt/Dialect/QIR/Transforms/Passes.h.inc"
 
 [[nodiscard]] static StringRef getCalleeName(LLVM::CallOp callOp) {
@@ -55,6 +56,39 @@ static void dropUnusedExternalDeclarations(ModuleOp module) {
 }
 
 namespace {
+
+struct QIRDropGlobalPhase final
+    : impl::QIRDropGlobalPhaseBase<QIRDropGlobalPhase> {
+protected:
+  void runOnOperation() override {
+    SmallVector<LLVM::CallOp> phases;
+    const auto result = getOperation().walk([&](LLVM::CallOp call) {
+      if (call.getCallee() != QIR_GPHASE) {
+        return WalkResult::advance();
+      }
+      auto constant = call.getNumOperands() == 1
+                          ? call.getOperand(0).getDefiningOp<LLVM::ConstantOp>()
+                          : LLVM::ConstantOp{};
+      auto angle =
+          constant ? dyn_cast<FloatAttr>(constant.getValue()) : FloatAttr{};
+      if (call.getNumResults() != 0 || !angle || !angle.getType().isF64() ||
+          !angle.getValue().isFinite()) {
+        call.emitError("dropping global phase requires one finite constant "
+                       "f64 angle and no results");
+        return WalkResult::interrupt();
+      }
+      phases.push_back(call);
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
+    for (auto phase : phases) {
+      phase.erase();
+    }
+  }
+};
 
 /// Remove matching allocation-release pairs of qubit arrays.
 ///

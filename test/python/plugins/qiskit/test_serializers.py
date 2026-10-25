@@ -164,21 +164,31 @@ def test_serializer_is_discovered_from_entry_point(fmt: ProgramFormat) -> None:
     assert registry.get(fmt) is _serializer
 
 
-def test_qpy_registration_replaces_fallback() -> None:
-    """Explicit QPY registration takes precedence over the fallback after lookup."""
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        ProgramFormat.QASM2,
+        ProgramFormat.QASM3,
+        ProgramFormat.QPY,
+        ProgramFormat.IQM_JSON,
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+def test_provider_overrides_and_removal_of_builtin_fallbacks(fmt: ProgramFormat) -> None:
+    """Provider serializers win; explicit removal cannot resurrect a fallback."""
     registry = _registry()
-    assert registry.get(ProgramFormat.QPY) is not None
-    registry.register(ProgramFormat.QPY, _serializer)
-    assert registry.get(ProgramFormat.QPY) is _serializer
-
-
-def test_qpy_fallback_can_be_removed() -> None:
-    """Explicit removal disables the fallback but allows later registration."""
-    registry = _registry()
-    registry.unregister(ProgramFormat.QPY)
-    assert registry.get(ProgramFormat.QPY) is None
-    registry.register(ProgramFormat.QPY, _serializer)
-    assert registry.get(ProgramFormat.QPY) is _serializer
+    assert registry.get(fmt) is not None
+    registry.register(fmt, _serializer)
+    assert registry.get(fmt) is _serializer
+    registry.unregister(fmt)
+    assert registry.get(fmt) is None
+    registry.register(fmt, _serializer)
+    assert registry.get(fmt) is _serializer
+    discovered = _registry([_entry_point(fmt.name, "pkg.mod:serializer", _serializer)])
+    assert discovered.get(fmt) is _serializer
 
 
 def test_entry_points_are_read_once() -> None:
@@ -292,6 +302,7 @@ def test_preferred_program_formats_orders_a_shuffled_list() -> None:
         ProgramFormat.QASM2,
         ProgramFormat.QPY,
         ProgramFormat.IQM_JSON,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
         ProgramFormat.QASM3,
         ProgramFormat.QIR_BASE_STRING,
     ]
@@ -300,6 +311,7 @@ def test_preferred_program_formats_orders_a_shuffled_list() -> None:
         ProgramFormat.IQM_JSON,
         ProgramFormat.QPY,
         ProgramFormat.QASM3,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
         ProgramFormat.QIR_BASE_STRING,
         ProgramFormat.QASM2,
     ]

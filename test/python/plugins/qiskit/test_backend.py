@@ -12,27 +12,31 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, get_type_hints
 
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit, transpile
-from qiskit.circuit import ClassicalRegister, Clbit, Parameter, QuantumRegister
+from qiskit.circuit import ClassicalRegister, Gate, Parameter, QuantumRegister
+from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
+    TranslationError,
     UnsupportedOperationError,
-    program_serializer,
 )
 from mqt.core.qdmi import ProgramFormat, open_device
 from mqt.core.qdmi.builtin_driver import open_device as open_default_device
 from mqt.core.typing import QDMISessionParameters
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from mqt.core.qdmi import Device as QDMIDevice
 
 
@@ -378,23 +382,13 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
 
 
 def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBackend) -> None:
-    """Initialize nonempty registers once and loose bits individually before measurement."""
-    qc = QuantumCircuit(1)
-    qc.add_bits([Clbit()])
-    qc.add_register(ClassicalRegister(0, "empty"), ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
-    qc.measure(0, 3)
+    """Unwritten bits remain zero, including across measurement feedback."""
+    qc = QuantumCircuit(QuantumRegister(1, "q"), ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
+    with qc.if_test((qc.cregs[0], 0)):
+        qc.x(0)
+    qc.measure(0, 2)
     original = qc.copy()
-
-    serializer = program_serializer(ProgramFormat.QASM3)
-    assert serializer is not None
-    program = serializer(qc, ddsim_backend)
-
-    assert isinstance(program, str)
-    for assignment in ("a = 0;", "b = 0;", "_bit0 = false;"):
-        assert program.count(assignment) == 1
-        assert program.index(assignment) < program.index("b[1] = measure q[0];")
-    assert "empty =" not in program
-    assert program.count("= false;") == 1
+    assert ddsim_backend.run(qc, shots=8).result().get_counts() == {"010 0": 8}
     assert qc == original
 
 
@@ -478,7 +472,9 @@ def test_backend_loops_and_nested_jumps(
     circuit.measure([2, 1, 3], readout)
     if compile_first:
         circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    original = circuit.copy()
     result = ddsim_backend.run(circuit, shots=16, memory=True).result()
+    assert circuit == original
     assert result.get_counts() == {expected: 16}
     assert result.get_memory() == [expected] * 16
 
@@ -492,3 +488,149 @@ def test_backend_for_loop_binds_external_parameters(ddsim_backend: QDMIBackend) 
     circuit.measure([0, 1], [0, 1])
     result = ddsim_backend.run(circuit, parameter_values=[{theta: np.pi / 4}], shots=16).result()
     assert result.get_counts() == {"10": 16}
+
+
+@pytest.mark.parametrize(
+    ("value", "readout_name", "expected"),
+    [(0, "readout", "01 01"), (1, "if", "10 00"), (2, "測定", "01 11"), (3, "readout", "11 11")],
+)
+@pytest.mark.parametrize("compile_first", [False, True])
+def test_backend_switch_preserves_only_register_outputs(
+    ddsim_backend: QDMIBackend, value: int, readout_name: str, expected: str, *, compile_first: bool
+) -> None:
+    """Nested switches snapshot their target and exclude temporary integers from results."""
+    selector = ClassicalRegister(2, "switch_dummy")
+    readout = ClassicalRegister(2, readout_name)
+    circuit = QuantumCircuit(QuantumRegister(4, "q"), selector, readout)
+    for bit in range(2):
+        if value & (1 << bit):
+            circuit.x(bit)
+    circuit.measure([0, 1], selector)
+    with circuit.for_loop(range(1)), circuit.switch(selector) as case:
+        with case(0, 2):
+            circuit.x(2)
+            circuit.measure(2, selector[0])
+        with case(1):
+            circuit.x(3)
+            circuit.reset(0)
+            circuit.measure(0, selector[0])
+        with case(case.DEFAULT):
+            circuit.x(2)
+            circuit.x(3)
+    circuit.measure([2, 3], readout)
+    if compile_first:
+        circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    original = circuit.copy()
+    result = ddsim_backend.run(circuit, shots=16, memory=True).result()
+    assert circuit == original
+    assert result.get_counts() == {expected: 16}
+    assert result.get_memory() == [expected] * 16
+    sampled = ddsim_backend.sampler(default_shots=16).run([circuit]).result()[0]
+    assert sampled.data[readout_name].get_counts() == {expected.split(maxsplit=1)[0]: 16}
+    assert sampled.data[selector.name].get_counts() == {expected.split()[1]: 16}
+
+
+@pytest.mark.parametrize("compile_first", [False, True])
+def test_backend_classical_assignments(ddsim_backend: QDMIBackend, *, compile_first: bool) -> None:
+    """Stores update captured locals and output bits through the public backend."""
+    flag, output = ClassicalRegister(1, "flag"), ClassicalRegister(3, "output")
+    circuit = QuantumCircuit(QuantumRegister(1), flag, output)
+    counter = circuit.add_var("counter", expr.Value(0, types.Uint(3)))
+    circuit.store(
+        flag[0],
+        True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit Store arguments are positional-only.
+    )
+    with circuit.while_loop(expr.less(counter, 2)):
+        circuit.store(counter, expr.add(counter, 1))
+    with circuit.if_test((flag[0], True)):
+        circuit.store(output, counter)
+        circuit.store(
+            expr.index(output, 0),
+            True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit Store arguments are positional-only.
+        )
+        circuit.x(0)
+    circuit.measure(0, flag[0])
+    if compile_first:
+        circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    result = ddsim_backend.run(circuit, shots=8, memory=True).result()
+    assert result.get_counts() == {"011 1": 8}
+    assert result.get_memory() == ["011 1"] * 8
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+def test_qir_serializers_preserve_physical_sites_and_outputs(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """QIR keeps unused physical holes, phase, and asymmetric register outputs."""
+    circuit = QuantumCircuit(QuantumRegister(3), ClassicalRegister(1, "a"), ClassicalRegister(1, "b"))
+    circuit.global_phase = 0.125
+    gate = Gate("x", 1, [])
+    gate.definition = QuantumCircuit(1)
+    gate.definition.z(0)
+    circuit.append(gate, [2])
+    circuit.x(2)
+    circuit.x(2)
+    circuit.cx(0, 2)
+    circuit.measure([2, 0], [0, 1])
+    serialize = ddsim_backend._serialize_circuit  # ruff: ignore[private-member-access] Select one advertised format.
+    payloads: list[str | bytes] = []
+
+    def select_format(circuit: QuantumCircuit, _formats: Iterable[ProgramFormat]) -> tuple[str | bytes, ProgramFormat]:
+        payload, selected = serialize(circuit, [fmt])
+        payloads.append(payload)
+        return payload, selected
+
+    monkeypatch.setattr(ddsim_backend, "_serialize_circuit", select_format)
+    result = ddsim_backend.run(circuit, shots=8, memory=True).result()
+    assert result.get_counts() == {"0 1": 8}
+    assert result.get_memory() == ["0 1"] * 8
+    payload = payloads[0]
+    if isinstance(payload, str):
+        assert re.search(r"call void @__quantum__qis__x__body\(ptr inttoptr \(i64 2 to ptr\)\)", payload)
+        assert "call void @__quantum__qis__gphase__body(double 1.250000e-01)" in payload
+        assert payload.count("call void @__quantum__qis__x__body(") == 3
+        assert "__quantum__qis__z__body" not in payload
+    else:
+        assert payload.startswith(b"BC\xc0\xde")
+
+
+def test_iqm_serializer_preserves_native_sites_and_readout() -> None:
+    """IQM payloads use device site names and classical output order."""
+    backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
+    circuit = QuantumCircuit(QuantumRegister(4), ClassicalRegister(1, "a"), ClassicalRegister(1, "b"))
+    circuit.global_phase = 0.125
+    circuit.r(0.731, -0.419, 3)
+    circuit.cz(0, 3)
+    circuit.measure([3, 0], [1, 0])
+    payload, fmt = backend._serialize_circuit(circuit, [ProgramFormat.IQM_JSON])  # ruff: ignore[private-member-access]
+    assert fmt == ProgramFormat.IQM_JSON
+    assert isinstance(payload, str)
+    instructions = json.loads(payload)["instructions"]
+    names = [site.name() for site in backend.device.sites()]
+    assert instructions[0] == {"name": "prx", "locus": [names[3]], "args": {"angle": 0.731, "phase": -0.419}}
+    assert instructions[1] == {"name": "cz", "locus": [names[0], names[3]], "args": {}}
+    assert [instruction["locus"] for instruction in instructions[2:]] == [[names[0]], [names[3]]]
+    assert [instruction["name"] for instruction in instructions] == ["prx", "cz", "measure", "measure"]
+
+
+@pytest.mark.parametrize("kind", ["partial", "repeated", "feedback"])
+def test_iqm_serializer_rejects_unsupported_readout(kind: str) -> None:
+    """IQM readout must fit the compiler exporter's terminal measurement contract."""
+    backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
+    circuit = QuantumCircuit(2, 2)
+    circuit.measure(0, 0)
+    if kind == "repeated":
+        circuit.measure(0, 1)
+    elif kind == "feedback":
+        circuit.r(0.5, 0.25, 0)
+        circuit.measure(1, 1)
+    with pytest.raises(TranslationError):
+        backend._serialize_circuit(circuit, [ProgramFormat.IQM_JSON])  # ruff: ignore[private-member-access]

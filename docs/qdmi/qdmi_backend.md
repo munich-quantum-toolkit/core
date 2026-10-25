@@ -477,23 +477,81 @@ rounding them to nearby constants. Qiskit's OpenQASM 2 exporter can round values
 near zero or multiples of pi and offers no option to disable this behavior. Use
 OpenQASM 3 when these differences matter.
 
+The standard `if_else`, `for_loop`, `while_loop`, `switch_case`, `break_loop`,
+`continue_loop`, and `store` instructions are mapped only when the device
+advertises them.
+
 Control-flow instructions require explicit support in the backend's Target;
 their bodies are checked recursively using the enclosing circuit's qubits.
 Advertising OpenQASM 3 or QPY alone does not enable control flow. Custom
 serializers retain responsibility for validating the native programs they
 produce.
 
+The OpenQASM 3 serializer uses MQT Core's Qiskit importer and exporter. Native
+import preserves device qubit indices as `$0`, `$1`, and so on, and represents
+opaque gates as external function calls. It does not optimize, route, or expand
+gate definitions. The backend validates device operations and ordered placements
+before conversion. Call
+{py:meth}`~mqt.core.plugins.qiskit.backend.QDMIBackend.validate_circuit` with
+`native=True` to perform these checks without submitting or changing a circuit.
+
+Opaque gate implementations belong to the receiving device. Gate names must be
+valid OpenQASM identifiers, and parameters must be supported finite scalar
+expressions. Conversion failures raise `TranslationError` before submission. The
+exporter emits `OPENQASM 3;` unless the program uses `switch`, which requires
+`OPENQASM 3.1;`. Devices must accept the constructs in the submitted program.
+OpenQASM 2 devices use Qiskit's OpenQASM 2 exporter.
+
+```{code-cell} ipython3
+from qiskit import QuantumCircuit
+from mqt.core.plugins.qiskit import QDMIBackend
+
+backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+circuit = QuantumCircuit(2, 2)
+
+# Measure a random bit and use it to control the second qubit.
+circuit.h(0)
+circuit.measure(0, 0)
+with circuit.if_test((circuit.clbits[0], 1)):
+    circuit.x(1)
+circuit.measure(1, 1)
+
+counts = backend.run(circuit, shots=1024).result().get_counts()
+assert sum(counts.values()) == 1024
+assert set(counts) <= {"00", "11"}
+print(counts)
+```
+
 ### Program Serializers
 
 A _program serializer_ turns one circuit into one program in one program format.
-MQT Core provides the serializers for OpenQASM 2, OpenQASM 3, and QPY. Every
-other format belongs to the package that owns the device, which registers its
-serializer through the same registry.
+MQT Core provides serializers for OpenQASM 2 and 3, QPY, IQM JSON, and
+Base/Adaptive QIR in text and bitcode form. Device packages can supply
+serializers through the same registry.
+
+Backend submission expects a circuit already compiled for the device. The
+compiler-backed serializers preserve device qubit indices and native gate calls
+without importing definitions, optimizing, or routing. QIR maps recognized gates
+to their standard QIS signatures and emits other gates as external
+`__quantum__qis__<name>__body` functions. The consumer supplies these functions,
+with scalar angle parameters followed by qubit operands. These gates must act
+only on their qubit operands. QIR omits barriers, which are compiler directives.
+Base requires per-qubit terminal measurements and groups them into the final
+measurement block. It rejects control flow and outputs that are not
+measurements; Adaptive also supports classical control and computed Boolean
+outputs. IQM accepts PRX/CZ gates and complete, unique terminal readout, using
+device site names. Unconditional global phase is omitted from IQM JSON because
+it cannot affect samples. MOVE and partial or repeated IQM readout are
+unsupported. Conversion failures raise `TranslationError` before submission; the
+backend does not retry with a different format.
+
+OpenQASM 2 retains Qiskit's legacy exporter, which may include gate definitions,
+rename gates, or invoke custom decomposition hooks. Use OpenQASM 3, QPY, or a
+suitable provider serializer when native gate identity must be preserved.
 
 The QPY serializer sends one Qiskit circuit, including serializable metadata.
-Qiskit 2.5 and 2.6 write QPY version 17 with their native writer. Older
-installations use their latest supported version up to 17. The receiver must
-support the selected version and the circuit's instructions; QDMI does not
+Qiskit 2.5 and 2.6 write QPY version 17 with their native writer. The receiver
+must support the selected version and the circuit's instructions; QDMI does not
 negotiate QPY versions. Register a custom serializer for a device that needs a
 different version. For compiler program import and export, see
 [QPY files](../mlir/qiskit.md#qpy-files).
@@ -538,10 +596,10 @@ from mqt.core.qdmi import ProgramFormat
 register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
 ```
 
-Pass `replace=True` to take over a format that already has a serializer,
-including OpenQASM 2 and OpenQASM 3. For QPY, package entry points and explicit
-registrations take precedence over the built-in fallback. Unregistering QPY
-disables the fallback too.
+Package entry points and explicit registrations take precedence over every
+built-in serializer, including OpenQASM 2 and 3. Pass `replace=True` to replace
+an existing registration. Unregistering a format disables its built-in fallback
+too.
 
 A device usually accepts several formats. The backend walks them in the order of
 {py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
@@ -550,15 +608,15 @@ not the order the device reports:
 
 ```text
 IQM_JSON, CUSTOM1 ... CUSTOM5,
-QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
 QPY, QASM3,
+QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
 QIR_BASE_MODULE, QIR_BASE_STRING,
 QASM2
 ```
 
-Device-native formats take precedence. Among standard formats, those with
-classical control precede restricted profiles; binary encoding wins ties within
-a QIR profile.
+Device-native formats take precedence. QPY and OpenQASM 3 preserve native gate
+names without QIR lowering. Adaptive QIR precedes Base QIR; binary encoding wins
+ties within each profile.
 
 ### Device-specific execution options
 

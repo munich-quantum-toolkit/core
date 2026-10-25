@@ -44,7 +44,8 @@ def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
   let summary = "Normalize scoped QC and QCO global phases";
   let description = [{
     Combines direct `qc.gphase` and `qco.gphase` operations into at most one
-    operation per basic block, placed immediately before the block terminator.
+    operation per basic block, placed after the leading constants and any
+    definitions of dynamic angle operands, before subsequent instructions.
     Nested regions are normalized independently, except power subtrees, which
     remain unchanged: phase rounding can be amplified by a large exponent.
 

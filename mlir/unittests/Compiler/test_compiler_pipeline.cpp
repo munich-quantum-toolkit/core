@@ -1027,10 +1027,11 @@ if (flag) {
   auto restoredQC = std::move(*qco).intoQC();
   ASSERT_TRUE(mlir::succeeded(restoredQC));
   ASSERT_TRUE(mlir::succeeded(restoredQC->cleanup()));
-  auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
-  ASSERT_TRUE(mlir::succeeded(qir));
-  ASSERT_TRUE(mlir::succeeded(qir->cleanup()));
-  EXPECT_TRUE(mlir::succeeded(std::move(*qir).intoLLVMIR()));
+  auto compiled = runDefaultPipeline(CompilerInput{std::move(*restoredQC)},
+                                     ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(succeeded(compiled));
+  auto qir = std::get<QIRProgram>(std::move(*compiled));
+  EXPECT_TRUE(mlir::succeeded(std::move(qir).intoLLVMIR()));
 }
 
 TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
@@ -1111,19 +1112,21 @@ TEST_F(CompilerPipelineTest, BaseUnrollsBoundArrayLoops) {
         TargetEnvironment(makeUnrestrictedTarget(),
                           llvm::cantFail(PayloadSpecification::forProgramFormat(
                               ProgramFormat::QIRAdaptive))));
-    if (replay) {
+    {
       const auto payload = llvm::cantFail(
           PayloadSpecification::forProgramFormat(ProgramFormat::QIRBase));
       PassManager pm(input.module().getContext(), ModuleOp::getOperationName());
       populateQIRPreparationPipeline(
           pm, payload.materialize(*input.module().getContext()));
-      std::string pipeline;
-      llvm::raw_string_ostream stream(pipeline);
-      pm.printAsTextualPipeline(stream);
-      registerMQTCompilerPasses();
-      auto parsed = parsePassPipeline(pipeline);
-      ASSERT_TRUE(succeeded(parsed));
-      static_cast<OpPassManager&>(pm) = std::move(*parsed);
+      if (replay) {
+        std::string pipeline;
+        llvm::raw_string_ostream stream(pipeline);
+        pm.printAsTextualPipeline(stream);
+        registerMQTCompilerPasses();
+        auto parsed = parsePassPipeline(pipeline);
+        ASSERT_TRUE(succeeded(parsed));
+        static_cast<OpPassManager&>(pm) = std::move(*parsed);
+      }
       ASSERT_TRUE(succeeded(runWithCompilationOptions(pm, input.module(), {})));
       EXPECT_EQ(input.inspect().controlFlowCounts.count("scf.for"), 0U);
     }
@@ -1149,12 +1152,15 @@ TEST_F(CompilerPipelineTest, BasePromotesUnrolledClassicalArrays) {
       "for int i in [0:1] { ry(angles[i]) q; } "
       "output bit result; result = measure q;");
   ASSERT_TRUE(succeeded(qc));
-  auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
-  ASSERT_TRUE(succeeded(qir));
-  EXPECT_TRUE(succeeded(std::move(*qir).intoLLVMIR()));
+  auto compiled =
+      runDefaultPipeline(CompilerInput{std::move(*qc)}, ProgramFormat::QIRBase);
+  ASSERT_TRUE(succeeded(compiled));
+  EXPECT_TRUE(
+      succeeded(std::get<QIRProgram>(std::move(*compiled)).intoLLVMIR()));
 }
 
-TEST_F(CompilerPipelineTest, BaseRejectsDynamicAndExcessiveLoopExpansion) {
+TEST_F(CompilerPipelineTest,
+       BaseCompilationRejectsDynamicAndExcessiveLoopExpansion) {
   for (const bool dynamic : {false, true}) {
     const std::string bound =
         dynamic ? "%control = qc.alloc : !qc.qubit\n"
@@ -1179,8 +1185,21 @@ TEST_F(CompilerPipelineTest, BaseRejectsDynamicAndExcessiveLoopExpansion) {
         "qc.dealloc %q : !qc.qubit\n"
         "return }}");
     ASSERT_TRUE(succeeded(qc));
-    EXPECT_TRUE(failed(std::move(*qc).intoQIR(QIRProfile::Base)));
-    EXPECT_FALSE(qc->isValid());
+    const auto payload = llvm::cantFail(
+        PayloadSpecification::forProgramFormat(ProgramFormat::QIRBase));
+    const auto prepared = runWithPassManager(
+        qc->module(),
+        [&](OpPassManager& pm) {
+          populateQIRPreparationPipeline(
+              pm, payload.materialize(*qc->module().getContext()));
+        },
+        "failed to prepare QC for QIR");
+    if (dynamic) {
+      ASSERT_TRUE(succeeded(prepared));
+      EXPECT_TRUE(failed(std::move(*qc).intoQIR(QIRProfile::Base)));
+    } else {
+      EXPECT_TRUE(failed(prepared));
+    }
   }
 }
 
@@ -1678,9 +1697,11 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
     EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{"1", 4}}));
     auto restored = std::move(*program).intoQC();
     ASSERT_TRUE(mlir::succeeded(restored));
-    auto qir = std::move(*restored).intoQIR(QIRProfile::Adaptive);
-    ASSERT_TRUE(mlir::succeeded(qir));
-    const auto llvmIR = std::move(*qir).intoLLVMIR();
+    auto compiled = runDefaultPipeline(CompilerInput{std::move(*restored)},
+                                       ProgramFormat::QIRAdaptive);
+    ASSERT_TRUE(succeeded(compiled));
+    auto qir = std::get<QIRProgram>(std::move(*compiled));
+    const auto llvmIR = std::move(qir).intoLLVMIR();
     ASSERT_TRUE(mlir::succeeded(llvmIR));
     ::qir::JitSession session(*llvmIR, "classical-arrays",
                               ::qir::Execution::Sampling, 42);
@@ -2292,7 +2313,7 @@ bit[2] c = measure q;
   auto direct = std::move(*directQC).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(direct));
   EXPECT_FALSE(directQC->isValid());
-  EXPECT_TRUE(direct->source().starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(direct->source().starts_with("OPENQASM 3;\n"));
   EXPECT_EQ(direct->str(), direct->source());
   EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
   EXPECT_TRUE(failed(direct->write(std::filesystem::path(testing::TempDir()) /
@@ -2324,7 +2345,7 @@ bit[2] c = measure q;
   ASSERT_TRUE(mlir::succeeded(result));
   ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*result));
   const auto& optimized = std::get<OpenQASMProgram>(*result);
-  EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3;\n"));
   auto reparsed = QCProgram::fromOpenQASMString(optimized.source());
   ASSERT_TRUE(mlir::succeeded(reparsed));
   auto adaptiveQIR = std::move(*reparsed).intoQIR(QIRProfile::Adaptive);
@@ -2497,7 +2518,19 @@ TEST_F(CompilerPipelineTest, QCProgramPreparesNestedUnitaryCallsForQIR) {
   ASSERT_TRUE(mlir::succeeded(program));
 
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
-    auto qir = program->copy().intoQIR(profile);
+    auto input = program->copy();
+    ASSERT_TRUE(succeeded(runWithPassManager(
+        input.module(),
+        [&](OpPassManager& pm) {
+          const auto payload =
+              llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  profile == QIRProfile::Base ? ProgramFormat::QIRBase
+                                              : ProgramFormat::QIRAdaptive));
+          populateQIRPreparationPipeline(
+              pm, payload.materialize(*input.module().getContext()));
+        },
+        "failed to prepare QC for QIR")));
+    auto qir = std::move(input).intoQIR(profile);
     ASSERT_TRUE(mlir::succeeded(qir));
     EXPECT_NE(qir->str().find("llvm.call @__quantum__qis__cu3__body"),
               std::string::npos);
@@ -6542,5 +6575,117 @@ INSTANTIATE_TEST_SUITE_P(
             nullptr,
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXOnIndividualQubits),
             true, "reuse-qubits,mqt-qco-default"}));
+
+TEST(ProgramSerialization, PreservesGateCallsAndStaticQubits) {
+  auto program = mlir::QCProgram::fromMLIRString(R"mlir(
+module {
+  func.func private @pulse(!qc.qubit) attributes {mqt.source_name = "x"}
+  func.func private @rotation(f64, f64, !qc.qubit)
+      attributes {mqt.source_name = "r"}
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.static 2 : !qc.qubit
+    %theta = arith.constant 0.25 : f64
+    %phi = arith.constant 0.5 : f64
+    call @pulse(%q) : (!qc.qubit) -> ()
+    call @pulse(%q) : (!qc.qubit) -> ()
+    call @rotation(%theta, %phi, %q) : (f64, f64, !qc.qubit) -> ()
+    return
+  }
+})mlir");
+  ASSERT_TRUE(mlir::succeeded(program));
+  auto qasm = program->copy().intoOpenQASM3();
+  ASSERT_TRUE(mlir::succeeded(qasm));
+  EXPECT_NE(qasm->source().find("x $2;\n  x $2;"), std::string::npos);
+  for (const auto profile :
+       {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
+    auto qir = program->copy().intoQIR(profile);
+    ASSERT_TRUE(mlir::succeeded(qir));
+    auto text = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(mlir::succeeded(text));
+    const auto first = text->find("call void @__quantum__qis__x__body");
+    ASSERT_NE(first, std::string::npos);
+    const auto second =
+        text->find("call void @__quantum__qis__x__body", first + 1);
+    ASSERT_NE(second, std::string::npos);
+    const auto rotation = text->find("call void @__quantum__qis__prx__body");
+    ASSERT_NE(rotation, std::string::npos);
+    EXPECT_GT(rotation, second);
+    EXPECT_NE(text->find("i64 2 to ptr"), std::string::npos);
+  }
+}
+
+TEST(ProgramSerialization, BasePreservesProgramPhaseWithMeasurements) {
+  auto program = mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; gphase(0.125); bit c = measure $2;");
+  ASSERT_TRUE(mlir::succeeded(program));
+  auto qir = program->copy().intoQIR(mlir::QIRProfile::Base);
+  ASSERT_TRUE(mlir::succeeded(qir));
+  auto text = std::move(*qir).intoLLVMIR();
+  ASSERT_TRUE(mlir::succeeded(text));
+  EXPECT_NE(text->find(
+                "call void @__quantum__qis__gphase__body(double 1.250000e-01)"),
+            std::string::npos);
+}
+
+TEST(ProgramSerialization, BaseRequiresAlreadyLoweredControlFlow) {
+  auto program = mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; "
+      "for int i in [0:1] { x $2; }");
+  ASSERT_TRUE(mlir::succeeded(program));
+  EXPECT_TRUE(mlir::succeeded(runDefaultPipeline(
+      mlir::CompilerInput{program->copy()}, mlir::ProgramFormat::QIRBase)));
+  EXPECT_TRUE(mlir::failed(program->copy().intoQIR(mlir::QIRProfile::Base)));
+  EXPECT_TRUE(
+      mlir::succeeded(program->copy().intoQIR(mlir::QIRProfile::Adaptive)));
+}
+
+TEST(ProgramSerialization, PreservesOpaqueQISAndResourceTypes) {
+  auto program = mlir::QCProgram::fromMLIRString(R"mlir(
+module {
+  func.func private @pulse(f64, !qc.qubit) attributes {mqt.source_name = "calibrated_pulse"}
+  func.func @main() -> i1 attributes {mqt.entry_point} {
+    %q = qc.static 5 : !qc.qubit
+    %measured = qc.static 0 : !qc.qubit
+    %angle = arith.constant 0.125 : f64
+    call @pulse(%angle, %q) : (f64, !qc.qubit) -> ()
+    %result = qc.measure %measured : !qc.qubit -> i1
+    return %result : i1
+  }
+})mlir");
+  ASSERT_TRUE(mlir::succeeded(program));
+  for (const auto profile :
+       {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
+    auto qir = program->copy().intoQIR(profile);
+    ASSERT_TRUE(mlir::succeeded(qir));
+    auto text = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(mlir::succeeded(text));
+    EXPECT_NE(
+        text->find("call void @__quantum__qis__calibrated_pulse__body(double "
+                   "1.250000e-01, ptr inttoptr (i64 5 to ptr))"),
+        std::string::npos);
+    EXPECT_NE(text->find("\"required_num_qubits\"=\"6\""), std::string::npos);
+    EXPECT_NE(text->find(profile == mlir::QIRProfile::Base
+                             ? "\"required_num_results\"=\"1\""
+                             : "\"required_num_results\"=\"0\""),
+              std::string::npos);
+  }
+}
+
+TEST(ProgramSerialization, RejectsMismatchedReservedQISSignatures) {
+  for (const auto* name : {"rx", "cx"}) {
+    auto program = mlir::QCProgram::fromMLIRString(
+        "module { "
+        "func.func private @gate(!qc.qubit) attributes {mqt.source_name = \"" +
+        std::string(name) +
+        "\"} func.func @main() attributes {mqt.entry_point} { "
+        "%q = qc.static 2 : !qc.qubit "
+        "call @gate(%q) : (!qc.qubit) -> () return } }");
+    ASSERT_TRUE(mlir::succeeded(program));
+    for (const auto profile :
+         {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
+      EXPECT_TRUE(mlir::failed(program->copy().intoQIR(profile)));
+    }
+  }
+}
 
 } // namespace mqt::test::compiler

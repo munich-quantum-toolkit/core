@@ -17,10 +17,14 @@
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
@@ -35,6 +39,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
@@ -88,10 +93,70 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
+/// Give opaque quantum functions QIS symbols without expanding their bodies.
+static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    if (!function.isExternal() ||
+        !llvm::any_of(function.getArgumentTypes(),
+                      [](Type type) { return isa<qc::QubitType>(type); })) {
+      continue;
+    }
+    auto source = function->getAttrOfType<StringAttr>(
+        mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+    StringRef name = source ? source.getValue() : function.getSymName();
+    auto baseName = name;
+    size_t controls = 0;
+    // Resolve standard scalar aliases; other names remain opaque.
+    while (controls < 2 && baseName.consume_front("c")) {
+      ++controls;
+    }
+    std::string symbol = (Twine("__quantum__qis__") + name + "__body").str();
+    auto types = function.getArgumentTypes();
+    const auto parameters =
+        llvm::count_if(types, [](Type type) { return type.isF64(); });
+    const auto qubits = types.size() - parameters;
+    bool validSignature = true;
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
+  if (baseName == qc::KEY##Op::getBaseSymbol()) {                              \
+    symbol = qir::getFnName##GETTER(controls);                                 \
+    validSignature = parameters == (PARAMS) && qubits == (TARGETS) + controls; \
+  }
+#include "mqt/Conversion/GateTable.def"
+    if (!validSignature || function.getNumResults() != 0 ||
+        !llvm::all_of(types.take_front(parameters),
+                      [](Type type) { return type.isF64(); }) ||
+        !llvm::all_of(types.drop_front(parameters),
+                      [](Type type) { return isa<qc::QubitType>(type); })) {
+      return function.emitError("unsupported opaque QIR gate signature: ")
+             << name;
+    }
+    if (moduleOp.lookupSymbol(symbol) != nullptr) {
+      return function.emitError("conflicting opaque QIR gate declaration: ")
+             << symbol;
+    }
+    if (failed(SymbolTable::replaceAllSymbolUses(
+            function, StringAttr::get(moduleOp.getContext(), symbol),
+            moduleOp))) {
+      return function.emitError("could not resolve opaque QIR gate uses");
+    }
+    function.setSymName(symbol);
+    for (size_t index = parameters; index < types.size(); ++index) {
+      function.setArgAttr(index, qir::QIR_QUBIT_ARG_ATTR,
+                          UnitAttr::get(moduleOp.getContext()));
+    }
+  }
+  return success();
+}
+
 FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
   auto storage = std::move(*this).releaseStorage();
-  if (failed(runWithPassManager(*storage.mod, populateQCExportPipeline,
-                                "failed to prepare QC for OpenQASM export"))) {
+  if (failed(runWithPassManager(
+          *storage.mod,
+          [&](OpPassManager& pm) {
+            pm.addPass(mqt::createSimplifyClassicalControl());
+            pm.addPass(mqt::createPromoteClassicalMemory());
+          },
+          "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
   auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
@@ -104,20 +169,25 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
 FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
+  if (failed(nameOpaqueQIRGates(moduleOp))) {
+    return failure();
+  }
   const auto payload = llvm::cantFail(PayloadSpecification::forProgramFormat(
       profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
                                       : ProgramFormat::QIRBase));
   if (failed(runWithPassManager(
           moduleOp,
           [&](OpPassManager& pm) {
-            populateQIRPreparationPipeline(
-                pm, payload.materialize(*moduleOp.getContext()));
+            if (profile == QIRProfile::Adaptive) {
+              pm.addPass(mqt::createPromoteClassicalMemory());
+            }
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
             } else {
               pm.addPass(createQCToQIRBase());
             }
-            populateQIRCleanupPipeline(pm, profile == QIRProfile::Adaptive);
+            pm.addPass(qir::createQIRSetAttributesAndMetadata(
+                {profile == QIRProfile::Adaptive}));
           },
           "failed to convert QC to QIR"))) {
     return failure();
@@ -384,6 +454,30 @@ LogicalResult QIRProgram::cleanup() {
 
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
+FailureOr<IQMJSONProgram>
+QIRProgram::intoIQMJSON(const CompilerTarget& target) && {
+  auto storage = std::move(*this).releaseStorage();
+  if (failed(runWithPassManager(
+          *storage.mod,
+          [](OpPassManager& pm) {
+            pm.addPass(qir::createQIRDropGlobalPhase());
+          },
+          "failed to drop global phase for IQM JSON"))) {
+    return failure();
+  }
+  llvm::LLVMContext context;
+  auto llvmModule = qir::translateQIRToLLVM(*storage.mod, context);
+  if (!llvmModule) {
+    return failure();
+  }
+  auto source = qir::exportIQMJSON(*llvmModule, target);
+  if (!source) {
+    storage.mod->emitError() << llvm::toString(source.takeError());
+    return failure();
+  }
+  return IQMJSONProgram(std::move(*source));
+}
+
 FailureOr<std::string> QIRProgram::intoLLVMIR() && {
   auto storage = std::move(*this).releaseStorage();
   std::string result;
@@ -554,22 +648,32 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   const auto profile = output == ProgramFormat::QIRAdaptive
                            ? QIRProfile::Adaptive
                            : QIRProfile::Base;
+  if (failed(runWithPassManager(
+          qc->module(),
+          [&](OpPassManager& pm) {
+            const auto payload =
+                llvm::cantFail(PayloadSpecification::forProgramFormat(
+                    profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
+                                                    : ProgramFormat::QIRBase));
+            populateQIRPreparationPipeline(
+                pm, payload.materialize(*qc->module().getContext()));
+          },
+          "failed to prepare compiled QC for QIR"))) {
+    return failure();
+  }
   auto qir = std::move(*qc).intoQIR(profile);
   if (failed(qir)) {
     return failure();
   }
+  if (failed(qir->cleanup())) {
+    return failure();
+  }
   if (output == ProgramFormat::IQMJSON) {
-    llvm::LLVMContext context;
-    auto llvmModule = qir::translateQIRToLLVM(qir->module(), context);
-    if (!llvmModule) {
+    auto json = std::move(*qir).intoIQMJSON(environment->target());
+    if (failed(json)) {
       return failure();
     }
-    auto source = qir::exportIQMJSON(*llvmModule, environment->target());
-    if (!source) {
-      qir->module().emitError() << llvm::toString(source.takeError());
-      return failure();
-    }
-    return CompilerProgram(IQMJSONProgram(std::move(*source)));
+    return CompilerProgram(std::move(*json));
   }
   return CompilerProgram(std::move(*qir));
 }

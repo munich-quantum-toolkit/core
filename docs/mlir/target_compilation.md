@@ -137,7 +137,7 @@ and fallback behavior.
 ### Choose a format
 
 For a submission payload, the compiler selects the first supported format in
-this order: Adaptive QIR (binary, then text), OpenQASM 3.1, IQM JSON, then Base
+this order: Adaptive QIR (binary, then text), OpenQASM 3, IQM JSON, then Base
 QIR (binary, then text). To select an exact execution format, compile and submit
 in one call:
 
@@ -572,8 +572,15 @@ pass `program_format=ProgramFormat.IQM_JSON` to `submit_program` to select the
 execution format explicitly.
 
 Compilation lowers the placed circuit to Base Profile QIR, then converts its PRX
-and CZ calls to IQM JSON. PRX angle and phase use radians. Physical QIR qubit
-handles map to target site IDs, not positions in the target's site list.
+and CZ calls to IQM JSON. PRX angle and phase use radians. Device QIR qubit
+handles map to target site IDs, not positions in the target's site list. The
+`qir-drop-global-phase` pass removes finite constant global phases before IQM
+conversion because they do not affect measurement probabilities.
+
+For already placed Base QIR, use `program.to_iqm_json(target)`. This consumes
+the program; pass `copy=True` to preserve it. The target supplies site names.
+The caller validates device gate support and placements; conversion performs no
+synthesis or routing.
 
 The converter emits one IQM measurement per QIR result record, in record order.
 Array labels, sizes, and positions provide IQM Qiskit SDK measurement keys:
@@ -587,7 +594,7 @@ source instruction order differs. Complete terminal readout gives each output
 slot exactly one measurement of a distinct qubit. IQM measurement columns
 therefore already follow the source slots; QDMI-on-IQM reverses them into QDMI
 bit strings, and Qiskit formats the original registers without a decoding hook.
-This does not require measuring unused physical target qubits.
+This does not require measuring unused device qubits.
 
 Qiskit initializes untouched classical bits to zero. The IQM JSON result path
 does not reconstruct those slots, so compilation requires complete readout even
@@ -697,7 +704,7 @@ for native payload export.
 
 QDMI's supported-format list does not provide per-format capability
 restrictions. The adapter therefore uses the compiler-supported baseline for the
-selected format (OpenQASM 3.1, IQM JSON, or QIR 2.1), with optional capability
+selected format (OpenQASM 3, IQM JSON, or QIR 2.1), with optional capability
 metadata marked as unknown. Use `TargetEnvironment` and `PayloadSpecification`
 for staged compilation with explicit restrictions.
 

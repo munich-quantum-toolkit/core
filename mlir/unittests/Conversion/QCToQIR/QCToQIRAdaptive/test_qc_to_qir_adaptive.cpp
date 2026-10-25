@@ -12,6 +12,7 @@
 #include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -504,7 +505,7 @@ TEST_F(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest,
-       NormalizesFactorableControlledGlobalPhaseBeforeLowering) {
+       ConvertsExplicitlyNormalizedControlledGlobalPhase) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   auto control = builder.allocQubit();
@@ -516,6 +517,9 @@ TEST_F(QCToQIRAdaptiveNativeTest,
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> unprepared = moduleOp->clone();
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*unprepared)));
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
   EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*moduleOp)));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }

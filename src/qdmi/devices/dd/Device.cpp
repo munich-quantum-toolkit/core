@@ -211,10 +211,21 @@ constexpr std::array OPERATIONS{
         .isVariadic = true,
     },
     OperationInfo{
+        .name = "switch_case",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
         .name = "break_loop",
         .numSites = 0,
         .numParams = 0,
         .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "store",
+        .numSites = 0,
+        .numParams = 0,
     },
     OperationInfo{
         .name = "continue_loop",

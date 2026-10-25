@@ -49,6 +49,7 @@ class OpenQASMProgram;
 class IQMJSONProgram;
 class QIRProgram;
 class TargetEnvironment;
+class CompilerTarget;
 
 /// A value for a scalar or statically sized one-dimensional f64 input.
 using ParameterValue = std::variant<std::vector<double>, double>;
@@ -297,7 +298,7 @@ public:
   /// Normalize scoped global phases in place.
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
-  /// Consume this program and translate it to portable OpenQASM 3.1.
+  /// Consume this program and translate it to portable OpenQASM 3.
   ///
   /// Run QC cleanup before export. The program is consumed even when export
   /// fails; call copy() first to preserve it.
@@ -549,6 +550,11 @@ public:
 
   /// Return the selected QIR profile.
   [[nodiscard]] QIRProfile profile() const noexcept;
+
+  /// Consume physical Base QIR and export PRX/CZ gates and terminal readout.
+  /// The target supplies site names; callers validate operation support.
+  [[nodiscard]] FailureOr<IQMJSONProgram>
+  intoIQMJSON(const CompilerTarget& target) &&;
 
   /// Consume this QIR program and translate it to LLVM IR text.
   [[nodiscard]] FailureOr<std::string> intoLLVMIR() &&;

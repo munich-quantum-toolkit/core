@@ -362,7 +362,9 @@ public:
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual std::optional<mlir::mqt::QubitLayout>
   layout() const = 0;
-  [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
+  /// Native mode retains gate spellings instead of normalizing modifiers.
+  [[nodiscard]] virtual Instruction instruction(size_t index,
+                                                bool native = false) const = 0;
   [[nodiscard]] virtual ClassicalAssignment store(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
   unitary(size_t index, const Instruction& instruction) const = 0;

@@ -14,7 +14,6 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
-#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
@@ -541,10 +540,6 @@ protected:
       return;
     }
     auto entryPointName = entryPoint.getSymNameAttr();
-    if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
-      signalPassFailure();
-      return;
-    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
 

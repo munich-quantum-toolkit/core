@@ -688,6 +688,16 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
       return;
     }
+    const auto isQubitRegister = [](Type type) {
+      auto memref = dyn_cast<MemRefType>(type);
+      return memref && isa<QubitType>(memref.getElementType());
+    };
+    if (llvm::any_of(operation->getOperandTypes(), isQubitRegister) ||
+        llvm::any_of(operation->getResultTypes(), isQubitRegister)) {
+      operation->emitError("QIR conversion requires quantum-register calls to "
+                           "be inlined; compile the program before export");
+      hasInvalidMemory = true;
+    }
     const auto isRegister = [](Type type) {
       return isa<cbit::RegisterType>(type);
     };

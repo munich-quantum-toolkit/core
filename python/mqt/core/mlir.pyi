@@ -78,7 +78,7 @@ class OutputFormat(enum.Enum):
     """OpenQASM 3 after the optimized QCO round trip."""
 
     IQM_JSON = 8
-    """An IQM circuit for an explicit physical target."""
+    """An IQM circuit for an explicit device target."""
 
     JEFF = 5
     """Serializable ``jeff`` MLIR."""
@@ -505,7 +505,7 @@ class CompilerTarget:
             *,
             operation_names: Iterable[str] | None = None,
         ) -> CompilerTarget.NativeOperations:
-            """Import gate capabilities and parameter constraints, ignoring physical placement.
+            """Import gate capabilities and parameter constraints, ignoring device placement.
 
             Unsupported explicit selections raise ValueError; otherwise they warn and are omitted.
             """
@@ -738,7 +738,7 @@ class QuantumProgramInfo:
 
     @property
     def static_qubits(self) -> list[int]:
-        """Sorted distinct physical site IDs.
+        """Sorted distinct device site IDs.
 
         Includes declarations in helper functions and excludes nested modules.
         """
@@ -823,12 +823,15 @@ class QCProgram(Program):
         """
 
     @staticmethod
-    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
+    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, native: bool = False) -> QCProgram:
         """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
 
         Args:
             circuit: Circuit to import. A complete transpiler layout is retained as
                 metadata.
+            native: Whether the circuit is already compiled for a device. Fixes circuit
+                indices to device qubits and preserves gate names and operands without
+                importing definitions. The caller validates device support and placements.
         """
 
     def copy(self) -> QCProgram:
@@ -841,8 +844,9 @@ class QCProgram(Program):
         """Normalize scoped global phases in place."""
 
     def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
-        """Clean up and emit this QC program as OpenQASM 3 without QCO optimization.
+        """Emit this QC program as OpenQASM 3.
 
+        Export legalizes classical operations without compiling gate definitions or optimizing.
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
         Args:
@@ -876,7 +880,10 @@ class QCProgram(Program):
         Entry results may be direct measurements or CBit registers. Adaptive Profile
         also supports computed Boolean (``i1``) results. Other scalar outputs are
         unsupported. The generated QIR returns a zero execution status.
-        Base conversion unrolls static counted loops; Adaptive conversion retains them.
+        Opaque gates become external QIS functions supplied by the consumer. Base requires
+        per-qubit terminal measurements and rejects loops. Measurements are collected in
+        the final measurement block. Adaptive conversion retains loops. Use
+        ``compile_program`` for gate inlining, static loop unrolling, and optimization.
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
 
@@ -1256,6 +1263,15 @@ class QIRProgram(Program):
 
     def cleanup(self) -> None:
         """Run the standard QIR cleanup pipeline in place."""
+
+    def to_iqm_json(self, target: CompilerTarget, *, copy: bool = False) -> IQMJSONProgram:
+        """Consume this program and emit an IQM circuit for device target sites.
+
+        Accepts PRX/CZ gates and complete, unique terminal readout. The target supplies
+        site names; callers validate gate support and placements. No synthesis or
+        routing is performed. The source is consumed even
+        on failure; set ``copy=True`` to preserve it.
+        """
 
     @property
     def profile(self) -> QIRProfile:

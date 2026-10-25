@@ -108,6 +108,51 @@ protected:
 
 } // namespace
 
+TEST(QIRGlobalPhase, DropsOnlyFiniteConstantGlobalPhase) {
+  MLIRContext context;
+  context.loadDialect<LLVM::LLVMDialect>();
+  for (const auto* angle : {"1.25", "0x7FF0000000000000"}) {
+    auto module = parseSourceString<ModuleOp>(std::string(R"mlir(
+          llvm.func @__quantum__qis__gphase__body(f64)
+          llvm.func @__quantum__qis__p__body(f64, !llvm.ptr)
+          llvm.func @main() {
+            %q = llvm.mlir.zero : !llvm.ptr
+            %angle = llvm.mlir.constant()mlir") + angle +
+                                                  R"mlir(: f64) : f64
+            llvm.call @__quantum__qis__gphase__body(%angle) : (f64) -> ()
+            llvm.call @__quantum__qis__p__body(%angle, %q) : (f64, !llvm.ptr) -> ()
+            llvm.return
+          }
+        )mlir",
+                                              &context);
+    ASSERT_TRUE(module);
+    PassManager manager(&context);
+    manager.addPass(qir::createQIRDropGlobalPhase());
+    const bool finite = StringRef(angle) == "1.25";
+    EXPECT_EQ(succeeded(manager.run(*module)), finite);
+    size_t phases = 0;
+    size_t relative = 0;
+    module->walk([&](LLVM::CallOp call) {
+      phases += call.getCallee() == QIR_GPHASE;
+      relative += call.getCallee() == QIR_P;
+    });
+    EXPECT_EQ(phases, finite ? 0U : 1U);
+    EXPECT_EQ(relative, 1U);
+  }
+  auto dynamic = parseSourceString<ModuleOp>(R"mlir(
+    llvm.func @__quantum__qis__gphase__body(f64)
+    llvm.func @main(%angle: f64) {
+      llvm.call @__quantum__qis__gphase__body(%angle) : (f64) -> ()
+      llvm.return
+    }
+  )mlir",
+                                             &context);
+  ASSERT_TRUE(dynamic);
+  PassManager manager(&context);
+  manager.addPass(qir::createQIRDropGlobalPhase());
+  EXPECT_TRUE(failed(manager.run(*dynamic)));
+}
+
 TEST_P(QIRTest, ProgramEquivalence) {
   SCOPED_TRACE(
       llvm::formatv("QIR: {0}, original={1}, reference={2}", GetParam().name,
@@ -814,6 +859,7 @@ TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
 TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     llvm.func @__quantum__qis__x__body(!llvm.ptr)
+    llvm.func @trace(!llvm.ptr {llvm.noundef}, ...)
     llvm.func @main(%index: i64) attributes {passthrough = ["entry_point"]} {
       %two = llvm.mlir.constant(2 : i64) : i64
       %seven = llvm.mlir.constant(7 : i64) : i64
@@ -830,6 +876,7 @@ TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
       %slot = llvm.getelementptr %qubits[%index] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.ptr
       %selected = llvm.load %slot : !llvm.ptr -> !llvm.ptr
       llvm.call @__quantum__qis__x__body(%selected) : (!llvm.ptr) -> ()
+      llvm.call @trace(%zero, %other) vararg(!llvm.func<void (ptr, ...)>) : (!llvm.ptr, !llvm.ptr) -> ()
       llvm.return
     }
   })mlir",

@@ -307,7 +307,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   }
 }
 
-TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
+TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockStart) {
   auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
@@ -326,9 +326,32 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<qco::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
-  EXPECT_EQ(phases.front()->getNextNode(),
-            func.getBody().front().getTerminator());
+  EXPECT_TRUE(isa<arith::ConstantOp>(phases.front()->getPrevNode()));
+  EXPECT_TRUE(isa<qco::XOp>(phases.front()->getNextNode()));
   expectFoldableGlobalPhase(phases.front().getTheta(), 0.75);
+}
+
+TEST_F(GlobalPhaseNormalizationTest, KeepsDynamicPhaseAfterItsDependencies) {
+  auto moduleOp = parse(R"mlir(
+    func.func @test(%q: !qc.qubit, %theta: f64) -> i1 {
+      %result = qc.measure %q : !qc.qubit -> i1
+      %zero = arith.constant 0.0 : f64
+      %angle = arith.select %result, %theta, %zero : f64
+      qc.x %q : !qc.qubit
+      qc.gphase(%angle)
+      return %result : i1
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  auto phase = *function.getBody().getOps<qc::GPhaseOp>().begin();
+  EXPECT_EQ(phase->getPrevNode(), phase.getTheta().getDefiningOp());
+  EXPECT_TRUE(isa<qc::XOp>(phase->getNextNode()));
+  const auto count = llvm::range_size(function.getBody().front());
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  EXPECT_EQ(llvm::range_size(function.getBody().front()), count);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,

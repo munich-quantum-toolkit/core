@@ -557,8 +557,8 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
           .source = "OPENQASM 3.1; duration delay;",
       },
       {
-          .name = "unsupported-opaque",
-          .source = "OPENQASM 3.1; opaque custom q;",
+          .name = "opaque-with-body",
+          .source = "OPENQASM 2.0; opaque custom q {}",
       },
       {.name = "output-qubit", .source = "OPENQASM 3.1; output qubit q;"},
       {.name = "const-qubit", .source = "OPENQASM 3.1; const qubit q;"},

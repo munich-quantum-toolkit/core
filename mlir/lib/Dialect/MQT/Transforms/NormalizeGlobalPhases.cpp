@@ -77,6 +77,28 @@ public:
     return constant && *constant == 0.0;
   }
 
+  [[nodiscard]] Operation* insertionPoint(Block& block) const {
+    Operation* latest = nullptr;
+    for (const auto& instruction : instructions) {
+      const auto* value = std::get_if<Value>(&instruction);
+      auto* definition = value != nullptr ? value->getDefiningOp() : nullptr;
+      if (definition == nullptr) {
+        continue;
+      }
+      auto* ancestor = block.findAncestorOpInBlock(*definition);
+      if (ancestor != nullptr &&
+          (latest == nullptr || latest->isBeforeInBlock(ancestor))) {
+        latest = ancestor;
+      }
+    }
+    auto* point = latest != nullptr ? latest->getNextNode() : &block.front();
+    // Keep the constant prefix ahead of uses when a caller uniques constants.
+    while (point->hasTrait<OpTrait::ConstantLike>()) {
+      point = point->getNextNode();
+    }
+    return point;
+  }
+
   void add(PhaseExpression&& other) {
     if (isZero()) {
       *this = std::move(other);
@@ -349,9 +371,10 @@ private:
       return aggregate;
     }
 
-    // Preserve already-normalized exit phases, including dynamic angles.
+    // Dynamic angles must remain after their definitions.
+    auto* insertionPoint = aggregate.expression.insertionPoint(block);
     if (contributions.size() == 1 && directPhases.size() == 1 &&
-        directPhases.front()->getNextNode() == block.getTerminator()) {
+        directPhases.front() == insertionPoint) {
       const auto constant =
           getConstantAngle(directPhases.front()->getOperand(0));
       if (!constant ||
@@ -360,13 +383,17 @@ private:
       }
     }
 
+    // Skip phases that are about to be erased.
+    while (isa<qc::GPhaseOp, qco::GPhaseOp>(insertionPoint)) {
+      insertionPoint = insertionPoint->getNextNode();
+    }
     for (auto* phase : directPhases) {
       rewriter.eraseOp(phase);
     }
     if (aggregate.expression.isZero()) {
       return std::nullopt;
     }
-    rewriter.setInsertionPoint(block.getTerminator());
+    rewriter.setInsertionPoint(insertionPoint);
     auto angle = aggregate.expression.materialize(rewriter, aggregate.loc);
     if (aggregate.dialect == PhaseDialect::QC) {
       qc::GPhaseOp::create(rewriter, aggregate.loc, angle);
