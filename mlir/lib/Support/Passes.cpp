@@ -26,6 +26,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassInstrumentation.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
@@ -38,10 +39,33 @@
 
 #include <bit>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <string>
 
 using namespace mlir;
+
+namespace {
+
+class PassLoggingInstrumentation final : public PassInstrumentation {
+public:
+  void runBeforePass(Pass* pass, Operation*) override { log(pass, "started"); }
+
+  void runAfterPass(Pass* pass, Operation*) override { log(pass, "completed"); }
+
+  void runAfterPassFailed(Pass* pass, Operation*) override {
+    log(pass, "failed");
+  }
+
+private:
+  static void log(Pass* pass, const char* status) {
+    const auto message =
+        "[mqt-core] pass " + pass->getName().str() + " " + status + "\n";
+    std::fwrite(message.data(), sizeof(char), message.size(), stderr);
+  }
+};
+
+} // namespace
 
 static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
@@ -166,6 +190,9 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
   DialectRegistry registry;
   memref::registerMemorySlotExternalModels(registry);
   moduleOp.getContext()->appendDialectRegistry(registry);
+  if (options.enablePassLogging) {
+    pm.addInstrumentation(std::make_unique<PassLoggingInstrumentation>());
+  }
   if (options.enableTiming) {
     pm.enableTiming();
   }

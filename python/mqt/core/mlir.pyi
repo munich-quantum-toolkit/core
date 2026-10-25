@@ -703,6 +703,8 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
+        enable_pass_logging: bool = False,
+        profile_actions_to: str = "",
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -720,6 +722,18 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
+    @property
+    def enable_pass_logging(self) -> bool:
+        """Write pass names and execution status to stderr."""
+
+    @enable_pass_logging.setter
+    def enable_pass_logging(self, arg: bool, /) -> None: ...
+    @property
+    def profile_actions_to(self) -> str:
+        """Write native MLIR action traces during compile_program; empty disables."""
+
+    @profile_actions_to.setter
+    def profile_actions_to(self, arg: str, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.

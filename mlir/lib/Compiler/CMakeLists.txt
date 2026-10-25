@@ -118,6 +118,8 @@ add_mlir_library(
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
+  PRIVATE
+  MLIRDebug
   PUBLIC
   MLIRPass
   MLIRTransforms

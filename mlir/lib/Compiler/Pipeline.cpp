@@ -32,13 +32,17 @@
 #include "jeff/Translation/Serialize.hpp"
 #include "kj/array.h"
 
+#include "mlir/Debug/ExecutionContext.h"
+#include "mlir/Debug/Observers/ActionProfiler.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/LLVMContext.h"
@@ -51,9 +55,12 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -432,6 +439,52 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
                     "IQM operations.\n";
     return failure();
   }
+  std::optional<llvm::raw_fd_ostream> profileStream;
+  std::optional<tracing::ActionProfiler> profiler;
+  std::optional<tracing::ExecutionContext> executionContext;
+  std::shared_ptr<MLIRContext> profileContext;
+  const llvm::scope_exit clearHandler([&] {
+    if (profileContext) {
+      profileContext->registerActionHandler(nullptr);
+    }
+  });
+  if (!options.profileActionsTo.empty()) {
+    const bool hasActionHandler = std::visit(
+        []<typename T>(const T& input) {
+          if constexpr (std::is_same_v<T, OpenQASMProgram>) {
+            return false;
+          } else {
+            return input.context()->hasActionHandler();
+          }
+        },
+        program);
+    if (hasActionHandler) {
+      llvm::errs() << "action profiling requires a context without an existing "
+                      "action handler\n";
+      return failure();
+    }
+    std::error_code error;
+    profileStream.emplace(options.profileActionsTo, error);
+    if (error) {
+      llvm::errs() << "failed to open action profile '"
+                   << options.profileActionsTo << "': " << error.message()
+                   << '\n';
+      return failure();
+    }
+    profiler.emplace(*profileStream);
+    executionContext.emplace().registerObserver(&*profiler);
+  }
+  const auto profileProgram = [&](const Program& input) {
+    if (!profiler) {
+      return;
+    }
+    profileContext = input.context();
+    profileContext->registerActionHandler(
+        [&](llvm::function_ref<void()> transform,
+            const tracing::Action& action) {
+          (*executionContext)(transform, action);
+        });
+  };
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
     llvm::errs() << "a custom QCO pass pipeline cannot be used with an output "
@@ -457,9 +510,10 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   auto qco = std::visit(
       // Every consuming branch below explicitly forwards the value.
       // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-      []<typename T>(T&& value) -> FailureOr<QCOProgram> {
+      [&]<typename T>(T&& value) -> FailureOr<QCOProgram> {
         using ProgramType = std::remove_cvref_t<T>;
         if constexpr (std::is_same_v<ProgramType, QCOProgram>) {
+          profileProgram(value);
           if (failed(qco::verifyLinearity(value.module()))) {
             return failure();
           }
@@ -469,8 +523,10 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
           if (failed(qc)) {
             return failure();
           }
+          profileProgram(*qc);
           return std::move(*qc).intoQCO();
         } else {
+          profileProgram(value);
           return std::forward<T>(value).intoQCO();
         }
       },

@@ -100,10 +100,12 @@ compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
 The same `options` argument is available on typed compilation methods and source
-submission. Set `enable_timing` and `enable_statistics` on this object; compiler
-entry points accept these controls only through `options`. An explicit seed
-overrides compiler randomness, including custom pass seeds; `None` preserves
-existing pass settings. Execution sampling has a separate seed. For the CLI:
+submission. Set `enable_pass_logging`, `enable_timing`, and `enable_statistics`
+on this object; compiler entry points accept these controls only through
+`options`. See {ref}`compiler profiling <compiler-profiling>` for examples and
+coverage. An explicit seed overrides compiler randomness, including custom pass
+seeds; `None` preserves existing pass settings. Execution sampling has a
+separate seed. For the CLI:
 
 ```console
 mqt-cc input.qasm --qdmi-device mqt.sc.iqm.garnet \

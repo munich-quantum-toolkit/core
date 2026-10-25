@@ -84,6 +84,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -96,6 +97,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -2961,8 +2963,11 @@ cx q[0], q[2];
 
   EXPECT_TRUE(mlir::succeeded(qco.fuseSingleQubitUnitaryRuns("zyz")));
   EXPECT_NE(qco.str(), beforeFusion);
-  EXPECT_TRUE(mlir::succeeded(qco.runPassPipeline(
-      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true})));
+  EXPECT_TRUE(mlir::succeeded(
+      qco.runPassPipeline("mqt-qco-default", {.seed = {},
+                                              .enableTiming = true,
+                                              .enableStatistics = true,
+                                              .mapping = {}})));
 
   auto loopModule = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
@@ -2993,7 +2998,8 @@ TEST_F(CompilerPipelineTest,
   registerMQTCompilerPasses();
   pm.enableCrashReproducerGeneration(path);
   pm.addPass(qco::createVerifyTargetConformance());
-  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
+  EXPECT_TRUE(failed(runWithCompilationOptions(
+      pm, moduleOp, {.seed = 9876, .mapping = {}, .enablePassLogging = true})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
   auto reproducer = llvm::MemoryBuffer::getFile(path);
   ASSERT_TRUE(reproducer);
@@ -3332,7 +3338,9 @@ TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
   program->module()->setAttr("mqt.layout",
                              mlir::mqt::QubitLayout{
                                  .initial = {1, 0},
+                                 .routing = {},
                                  .inputCount = 1,
+                                 .sites = {},
                              }
                                  .toAttr(program->module().getContext()));
   const auto target = llvm::cantFail(
@@ -3488,7 +3496,7 @@ TEST_F(CompilerPipelineTest,
   }
 
   const std::vector<ProgramCapability> invalid{
-      {.id = "forward-branching", .value = 1},
+      {.id = "forward-branching", .value = 1, .constraints = {}},
       {
           .id = "forward-branching",
           .constraints = {{.id = "max-case-count", .value = 1}},
@@ -3724,8 +3732,12 @@ TEST_F(CompilerPipelineTest,
       program->module(),
       TargetEnvironment(
           makeUnrestrictedTarget(),
-          makeControlPayloadSpecification(
-              {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+          makeControlPayloadSpecification({
+              {
+                  .id = ProgramCapability::COUNTED_ITERATION.str(),
+                  .constraints = {},
+              },
+          })));
   ASSERT_TRUE(
       mlir::succeeded(program->runPassPipeline("unroll-loops-for-payload")));
   EXPECT_TRUE(succeeded(verify(program->module())));
@@ -3772,8 +3784,12 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesInnerTensorSweepWithinBudget) {
         program->module(),
         TargetEnvironment(
             makeUnrestrictedTarget(),
-            makeControlPayloadSpecification(
-                {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+            makeControlPayloadSpecification({
+                {
+                    .id = ProgramCapability::COUNTED_ITERATION.str(),
+                    .constraints = {},
+                },
+            })));
     ScopedDiagnosticHandler handler(program->module()->getContext(),
                                     [](Diagnostic&) { return success(); });
     EXPECT_EQ(succeeded(program->runPassPipeline(
@@ -3826,8 +3842,12 @@ TEST_F(CompilerPipelineTest, PayloadSpecializationRemovesIdentityRepetition) {
       program->module(),
       TargetEnvironment(
           makeUnrestrictedTarget(),
-          makeControlPayloadSpecification(
-              {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+          makeControlPayloadSpecification({
+              {
+                  .id = ProgramCapability::COUNTED_ITERATION.str(),
+                  .constraints = {},
+              },
+          })));
   ASSERT_TRUE(succeeded(program->runPassPipeline("unroll-loops-for-payload")));
   EXPECT_TRUE(succeeded(verify(program->module())));
   EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
@@ -3871,7 +3891,8 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesDependentOuterLoops) {
     package->decRef(*expectedDD);
     ASSERT_TRUE(succeeded(program->compileForTarget(TargetEnvironment(
         target, makeControlPayloadSpecification(
-                    {{.id = ProgramCapability::COUNTED_ITERATION.str()}})))));
+                    {{.id = ProgramCapability::COUNTED_ITERATION.str(),
+                      .constraints = {}}})))));
     EXPECT_EQ(StringRef(program->str()).contains("scf.for"), retainsLoop);
     EXPECT_TRUE(succeeded(verify(program->module())));
     EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
@@ -4255,7 +4276,8 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   diagnostics.clear();
   ASSERT_TRUE(compileForTargetWithDiagnostics(
       *overflowing,
-      makeControlPayloadSpecification({{.id = "counted-iteration"}}),
+      makeControlPayloadSpecification(
+          {{.id = "counted-iteration", .constraints = {}}}),
       diagnostics));
   size_t largeLoops = 0U;
   overflowing->module().walk([&](scf::ForOp loop) {
@@ -4585,9 +4607,10 @@ TEST_F(CompilerPipelineTest, PayloadControlLowersClassicalSCFIndexSwitch) {
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(mlir::succeeded(program));
   attachTargetEnvironment(
-      program->module(), TargetEnvironment(makeUnrestrictedTarget(),
-                                           makeControlPayloadSpecification(
-                                               {{.id = "forward-branching"}})));
+      program->module(),
+      TargetEnvironment(makeUnrestrictedTarget(),
+                        makeControlPayloadSpecification(
+                            {{.id = "forward-branching", .constraints = {}}})));
   ASSERT_TRUE(
       mlir::succeeded(program->runPassPipeline("legalize-control-flow")));
   EXPECT_FALSE(StringRef(program->str()).contains("scf.index_switch"));
@@ -4644,6 +4667,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
       ASSERT_TRUE(mlir::succeeded(program));
       ProgramCapability capability{
           .id = native ? "multiway-branching" : "forward-branching",
+          .constraints = {},
       };
       if (depth != 0) {
         capability.constraints.push_back(
@@ -4740,9 +4764,13 @@ TEST_F(CompilerPipelineTest, PayloadControlPreservesSwitchSelectionAndState) {
       ASSERT_TRUE(mlir::succeeded(program));
       attachTargetEnvironment(
           program->module(),
-          TargetEnvironment(
-              makeUnrestrictedTarget(),
-              makeControlPayloadSpecification({{.id = "forward-branching"}})));
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification({
+                                {
+                                    .id = "forward-branching",
+                                    .constraints = {},
+                                },
+                            })));
       ASSERT_TRUE(
           mlir::succeeded(program->runPassPipeline("legalize-control-flow")));
       EXPECT_FALSE(StringRef(program->str()).contains("index_switch"));
@@ -4780,9 +4808,13 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsMovedCaseDepth) {
       ASSERT_TRUE(mlir::succeeded(program));
       attachTargetEnvironment(
           program->module(),
-          TargetEnvironment(
-              makeUnrestrictedTarget(),
-              makeControlPayloadSpecification({{.id = "forward-branching"}})));
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification({
+                                {
+                                    .id = "forward-branching",
+                                    .constraints = {},
+                                },
+                            })));
       const auto before = program->str();
       ScopedDiagnosticHandler handler(program->module()->getContext(),
                                       [](Diagnostic&) { return success(); });
@@ -4897,10 +4929,10 @@ TEST_F(CompilerPipelineTest,
   )mlir";
 
   const auto payload = makeControlPayloadSpecification({
-      {.id = "forward-branching"},
-      {.id = "counted-iteration"},
-      {.id = "conditional-loop"},
-      {.id = "multiway-branching"},
+      {.id = "forward-branching", .constraints = {}},
+      {.id = "counted-iteration", .constraints = {}},
+      {.id = "conditional-loop", .constraints = {}},
+      {.id = "multiway-branching", .constraints = {}},
   });
   const std::vector<std::pair<llvm::StringRef, llvm::StringRef>> cases{
       {ifResult, "scf.if"},
@@ -5100,7 +5132,8 @@ TEST_F(CompilerPipelineTest,
   ASSERT_TRUE(mlir::succeeded(unconstrained));
   ASSERT_TRUE(mlir::succeeded(unconstrained->compileForTarget(TargetEnvironment(
       makeUnrestrictedTarget(),
-      makeControlPayloadSpecification({{.id = "conditional-loop"}})))));
+      makeControlPayloadSpecification(
+          {{.id = "conditional-loop", .constraints = {}}})))));
   EXPECT_TRUE(StringRef(unconstrained->str()).contains("scf.while"));
 
   auto constrained = QCOProgram::fromMLIRString(source.str());
@@ -6279,6 +6312,38 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
   EXPECT_NE(compositeQCO->str().find("qco.reset"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
+  std::atomic<size_t> actions = 0;
+  auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+  ASSERT_TRUE(succeeded(input));
+  auto unprofiled = input->copy();
+  auto inputContext = input->context();
+  inputContext->registerActionHandler(
+      [&](llvm::function_ref<void()> transform, const tracing::Action&) {
+        ++actions;
+        transform();
+      });
+  llvm::SmallString<128> path;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json", path));
+  const llvm::FileRemover cleanup(path);
+  std::ofstream(path.c_str()) << "existing trace";
+  CompilationOptions options;
+  options.profileActionsTo = path.str().str();
+
+  EXPECT_TRUE(failed(runDefaultPipeline(CompilerInput{std::move(*input)},
+                                        ProgramFormat::QC, "mqt-qco-default",
+                                        options)));
+  EXPECT_EQ(actions.load(), 0U);
+  auto profile = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(profile);
+  EXPECT_EQ((*profile)->getBuffer(), "existing trace");
+
+  EXPECT_TRUE(succeeded(runDefaultPipeline(CompilerInput{std::move(unprofiled)},
+                                           ProgramFormat::QC)));
+  EXPECT_GT(actions.load(), 0U);
+}
+
 // Test: default compilation returns the requested typed program format
 TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
   const std::string qasm = R"(OPENQASM 3.0;
@@ -6307,11 +6372,27 @@ h q;
 
   auto profiledInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(mlir::succeeded(profiledInput));
-  auto profiled = runDefaultPipeline(
-      CompilerInput{std::move(*profiledInput)}, ProgramFormat::QCOOptimized,
-      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true});
+  llvm::SmallString<128> profilePath;
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json",
+                                                  profilePath));
+  const llvm::FileRemover cleanup(profilePath);
+  auto profiled =
+      runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
+                         ProgramFormat::QCOOptimized, "mqt-qco-default",
+                         {
+                             .seed = {},
+                             .enableTiming = true,
+                             .enableStatistics = true,
+                             .mapping = {},
+                             .enablePassLogging = true,
+                             .profileActionsTo = profilePath.str().str(),
+                         });
   ASSERT_TRUE(mlir::succeeded(profiled));
-  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+  ASSERT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+  EXPECT_FALSE(std::get<QCOProgram>(*profiled).context()->hasActionHandler());
+  auto profile = llvm::MemoryBuffer::getFile(profilePath);
+  ASSERT_TRUE(profile);
+  EXPECT_TRUE((*profile)->getBuffer().contains("QCToQCO"));
 
   auto customPipelineInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(mlir::succeeded(customPipelineInput));
@@ -6374,8 +6455,8 @@ h q;
   ASSERT_TRUE(mlir::succeeded(input));
   CompilerInput program{std::move(*input)};
   auto& sourceProgram = std::get<QCProgram>(program);
-  const auto payload = llvm::cantFail(
-      PayloadSpecification::create({.id = "unsupported", .version = "1.0.0"}));
+  const auto payload = llvm::cantFail(PayloadSpecification::create(
+      {.id = "unsupported", .version = "1.0.0", .profile = {}}));
   const TargetEnvironment environment(
       llvm::cantFail(CompilerTarget::create(
           1, CompilerTarget::Connectivity::allToAll(),

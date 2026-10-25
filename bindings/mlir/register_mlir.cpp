@@ -693,10 +693,22 @@ payloadForOutput(OutputFormat output) {
     return takeResult(mlir::PayloadSpecification::create(
         {.id = "mqt", .version = "1.0", .profile = ""},
         {
-            {.id = mlir::ProgramCapability::FORWARD_BRANCHING.str()},
-            {.id = mlir::ProgramCapability::COUNTED_ITERATION.str()},
-            {.id = mlir::ProgramCapability::CONDITIONAL_LOOP.str()},
-            {.id = mlir::ProgramCapability::MULTIWAY_BRANCHING.str()},
+            {
+                .id = mlir::ProgramCapability::FORWARD_BRANCHING.str(),
+                .constraints = {},
+            },
+            {
+                .id = mlir::ProgramCapability::COUNTED_ITERATION.str(),
+                .constraints = {},
+            },
+            {
+                .id = mlir::ProgramCapability::CONDITIONAL_LOOP.str(),
+                .constraints = {},
+            },
+            {
+                .id = mlir::ProgramCapability::MULTIWAY_BRANCHING.str(),
+                .constraints = {},
+            },
         }));
   }
 }
@@ -782,10 +794,14 @@ payloadForOutput(OutputFormat output) {
 }
 
 /// Compile a scalar input or a homogeneous sequence using one target snapshot.
-[[nodiscard]] static nb::object compilePythonProgram(
-    PythonInputTypes& types, const nb::handle program, const nb::handle target,
-    std::optional<OutputFormat> output, bool copy,
-    const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
+[[nodiscard]] static nb::object
+compilePythonProgram(PythonInputTypes& types, const nb::handle program,
+                     const nb::handle target,
+                     std::optional<OutputFormat> output, bool copy,
+                     const std::string& qcoPipeline,
+                     // Snapshot options before releasing the GIL.
+                     // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                     mlir::CompilationOptions options) {
   if (!target.is_none() && qcoPipeline != "mqt-qco-default") {
     throw nb::value_error(
         "A custom QCO pipeline cannot be combined with a target");
@@ -865,6 +881,8 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
               const std::optional<PythonCustomJobParameter>& custom3,
               const std::optional<PythonCustomJobParameter>& custom4,
               const std::optional<PythonCustomJobParameter>& custom5,
+              // Snapshot mutable Python options before releasing the GIL.
+              // NOLINTNEXTLINE(performance-unnecessary-value-param)
               std::optional<mlir::CompilationOptions> options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
@@ -1784,14 +1802,21 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(
-          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
-          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
+      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
+                    bool, std::string>(),
+           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
+           "enable_pass_logging"_a = false, "profile_actions_to"_a = "")
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping);
+      .def_rw("mapping", &mlir::CompilationOptions::mapping)
+      .def_rw("enable_pass_logging",
+              &mlir::CompilationOptions::enablePassLogging,
+              "Write pass names and execution status to stderr.")
+      .def_rw("profile_actions_to", &mlir::CompilationOptions::profileActionsTo,
+              "Write native MLIR action traces during compile_program; empty "
+              "disables.");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
@@ -1968,7 +1993,7 @@ operations.)pb");
       .def(
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
-             mlir::CompilationOptions options) {
+             const mlir::CompilationOptions& options) {
             requireValid(program);
             requireSuccess(program.runPassPipeline(pipeline, options));
           },

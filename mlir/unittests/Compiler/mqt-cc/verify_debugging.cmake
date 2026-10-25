@@ -26,15 +26,45 @@ function(reject_compiler expected_diagnostic)
   endif()
 endfunction()
 
+function(check_action_profile path expected_pass)
+  file(READ "${path}" profile)
+  string(JSON profile_type TYPE "${profile}")
+  string(JSON event_count LENGTH "${profile}")
+  if(NOT profile_type STREQUAL "ARRAY" OR event_count LESS 2)
+    message(FATAL_ERROR "Expected a nonempty action profile: ${profile}")
+  endif()
+  math(EXPR last_event "${event_count} - 1")
+  string(JSON first_phase GET "${profile}" 0 ph)
+  string(JSON last_phase GET "${profile}" ${last_event} ph)
+  if(NOT first_phase STREQUAL "B"
+     OR NOT last_phase STREQUAL "E"
+     OR NOT profile MATCHES "pass-execution" OR NOT profile MATCHES "${expected_pass}")
+    message(FATAL_ERROR "Action profile is missing ${expected_pass} or its events: ${profile}")
+  endif()
+endfunction()
+
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 # The default checkpoint is QC, including when the input format is explicit.
 run_compiler(0 "${QASM_INPUT}")
 set(default_output "${output}")
-run_compiler(0 "${QASM_INPUT}" --input-format=openqasm --emit=qc)
+set(normal_profile "${OUTPUT_DIR}/normal-profile.json")
+file(REMOVE "${normal_profile}")
+run_compiler(
+  0
+  "${QASM_INPUT}"
+  --input-format=openqasm
+  --emit=qc
+  "--profile-actions-to=${normal_profile}"
+  --mlir-timing
+  --mlir-pass-statistics)
 if(NOT output STREQUAL default_output OR NOT output MATCHES "qc.h")
   message(FATAL_ERROR "Default and explicit QC checkpoints disagree: ${output}")
 endif()
+if(NOT error MATCHES "Execution time report" OR NOT error MATCHES "Pass statistics report")
+  message(FATAL_ERROR "MLIR timing or statistics report missing: ${error}")
+endif()
+check_action_profile("${normal_profile}" "QCToQCO")
 set(openqasm_text "${OUTPUT_DIR}/program.txt")
 configure_file("${QASM_INPUT}" "${openqasm_text}" COPYONLY)
 run_compiler(0 "${openqasm_text}" --input-format=openqasm --emit=qc)
@@ -43,6 +73,10 @@ if(NOT output STREQUAL default_output)
 endif()
 reject_compiler("Could not determine the input format" "${QASM_INPUT}" --input-format=qasm)
 reject_compiler("Unknown output format" "${QASM_INPUT}" --emit=mlir)
+
+foreach(option IN ITEMS profile-actions-to log-actions-to)
+  reject_compiler("Opening file for --${option} failed" "${QASM_INPUT}" "--${option}=${OUTPUT_DIR}")
+endforeach()
 
 set(reduced "${OUTPUT_DIR}/reduced.mlir")
 file(
@@ -67,10 +101,20 @@ if(NOT gate_count EQUAL 2)
 endif()
 
 foreach(option IN ITEMS pass-pipeline passes)
-  run_compiler(0 "${reduced}" --run-pipeline
-               "--${option}=builtin.module(func.func(canonicalize,cse))")
+  run_compiler(
+    0
+    "${reduced}"
+    --run-pipeline
+    "--${option}=builtin.module(func.func(canonicalize,cse))"
+    --mlir-timing
+    --mlir-timing-display=list
+    --mlir-output-format=json)
   if(output MATCHES "qco.h")
     message(FATAL_ERROR "${option} did not run the registered cleanup passes: ${output}")
+  endif()
+  string(JSON timing_type TYPE "${error}")
+  if(NOT timing_type STREQUAL "ARRAY" OR NOT error MATCHES "CanonicalizerPass")
+    message(FATAL_ERROR "Isolated pipeline JSON timing report missing: ${error}")
   endif()
 endforeach()
 
@@ -152,7 +196,8 @@ module {
 }
 ]=])
 set(reproducer "${OUTPUT_DIR}/failure.mlir")
-file(REMOVE "${reproducer}")
+set(failure_profile "${OUTPUT_DIR}/failure-profile.json")
+file(REMOVE "${reproducer}" "${failure_profile}")
 run_compiler(
   1
   "${unsupported}"
@@ -161,7 +206,8 @@ run_compiler(
   --mlir-print-op-on-diagnostic
   --mlir-print-stacktrace-on-diagnostic
   --mlir-disable-threading
-  "--mlir-pass-pipeline-crash-reproducer=${reproducer}")
+  "--mlir-pass-pipeline-crash-reproducer=${reproducer}"
+  "--profile-actions-to=${failure_profile}")
 if(
   NOT
   EXISTS
@@ -194,6 +240,7 @@ if(
   message(
     FATAL_ERROR "Failure diagnostics, source excerpts, notes, or reproducer missing: ${error}")
 endif()
+check_action_profile("${failure_profile}" "QCToQCO")
 
 # Retain stdin's source buffer through the later conversion failure as well.
 execute_process(
@@ -274,13 +321,27 @@ endforeach()
 
 # The initial jeff conversion is part of the requested instrumentation.
 set(jeff "${OUTPUT_DIR}/input.jeff")
+set(jeff_profile "${OUTPUT_DIR}/jeff-profile.json")
+file(REMOVE "${jeff_profile}")
 run_compiler(0 "${QASM_INPUT}" --emit=jeff -o "${jeff}")
 reject_compiler("without disabling multi-threading" "${jeff}" --emit=qco
                 --mlir-print-ir-module-scope --mlir-disable-threading=false)
-run_compiler(0 "${jeff}" --emit=qco --mlir-print-ir-before-all --mlir-print-ir-module-scope
-             --mlir-disable-threading)
+run_compiler(
+  0
+  "${jeff}"
+  --emit=qco
+  --mlir-print-ir-before-all
+  --mlir-print-ir-module-scope
+  --mlir-disable-threading
+  --mlir-timing
+  "--profile-actions-to=${jeff_profile}")
 if(NOT error MATCHES "Before JeffToQCO" OR NOT output MATCHES "qco[.]")
   message(FATAL_ERROR "Initial jeff conversion was not instrumented: ${error}")
+endif()
+check_action_profile("${jeff_profile}" "JeffToQCO")
+if(NOT error MATCHES "Execution time report"
+   OR NOT error MATCHES "\n[ \t]+[0-9.]+[ \t]+[(][ 0-9.]+%[)][ \t]+JeffToQCO\n")
+  message(FATAL_ERROR "Initial jeff conversion timing report missing: ${error}")
 endif()
 
 # Reusable calls must be inlined before a custom QCO pipeline on the QIR route.
@@ -301,10 +362,19 @@ module {
   }
 }
 ]=])
-run_compiler(0 "${reusable}" --emit=qir-adaptive "--pass-pipeline=builtin.module(hadamard-lifting)"
-             --mlir-print-ir-before-all --mlir-disable-threading)
+set(qir_profile "${OUTPUT_DIR}/qir-profile.json")
+file(REMOVE "${qir_profile}")
+run_compiler(
+  0
+  "${reusable}"
+  --emit=qir-adaptive
+  "--pass-pipeline=builtin.module(hadamard-lifting)"
+  --mlir-print-ir-before-all
+  --mlir-disable-threading
+  "--profile-actions-to=${qir_profile}")
 string(FIND "${error}" "Before Inliner" inliner)
 string(FIND "${error}" "Before HadamardLifting" custom_pass)
 if(inliner LESS 0 OR NOT inliner LESS custom_pass OR NOT output MATCHES "define i64 @main")
   message(FATAL_ERROR "Custom pipeline discarded required inlining: ${error}")
 endif()
+check_action_profile("${qir_profile}" "ReconcileUnrealizedCasts")
