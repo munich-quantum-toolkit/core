@@ -866,15 +866,15 @@ public:
                                    const std::string_view name,
                                    nb::handle parameters) {
     const nb::tuple parameterTuple(parameters);
-    auto parameterHash = PyObject_Hash(parameterTuple.ptr());
-    if (parameterHash == -1) {
-      if (PyErr_ExceptionMatches(PyExc_TypeError) == 0) {
-        throwPythonError("Qiskit Gate parameter hashing failed");
+    Py_hash_t parameterHash = 0;
+    try {
+      parameterHash = nb::hash(parameterTuple);
+    } catch (const nb::python_error& error) {
+      if (!error.matches(nb::module_::import_("builtins").attr("TypeError"))) {
+        throwPythonError("Qiskit Gate parameter hashing failed", error);
       }
       // Array-valued parameters specialize the definition, not its scalar
       // call signature. Compare those definitions in one fallback bucket.
-      PyErr_Clear();
-      parameterHash = 0;
     }
     // ponytail: use a structural circuit hash if many same-signature Gate
     // definitions become common.
@@ -2745,7 +2745,8 @@ private:
                     metadata.identity);
               } catch (const nb::python_error& error) {
                 // Other frontends can use non-UUID group identities.
-                if (!error.matches(nb::handle(PyExc_ValueError))) {
+                if (!error.matches(
+                        nb::module_::import_("builtins").attr("ValueError"))) {
                   throw;
                 }
               }
@@ -3142,9 +3143,7 @@ public:
           throw nb::value_error(message.c_str());
         }
         message += "; omitting it from the compiler target";
-        if (PyErr_WarnEx(PyExc_UserWarning, message.c_str(), 1) < 0) {
-          throw nb::python_error();
-        }
+        nb::module_::import_("warnings").attr("warn")(message);
         continue;
       }
 

@@ -23,6 +23,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <numbers>
@@ -32,8 +33,8 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
-  auto program = generate(GroverWeakMeasurement{
-      {.markedBitstring = "01", .measurementStrength = 0.5}});
+  auto program = generate(llvm::cantFail(GroverWeakMeasurement::create(
+      {.markedBitstring = "01", .measurementStrength = 0.5})));
   ASSERT_TRUE(mlir::succeeded(program));
   auto moduleOp = program->module();
 
@@ -90,8 +91,8 @@ TEST(GenerateProgramTest, EmitsWeakMeasurementAfterEachGroverIteration) {
 }
 
 TEST(GenerateProgramTest, SamplesGroverWeakMeasurementAgainstReference) {
-  auto program =
-      test::generateQCO(GroverWeakMeasurement{{.markedBitstring = "110"}});
+  auto program = test::generateQCO(llvm::cantFail(
+      GroverWeakMeasurement::create({.markedBitstring = "110"})));
   ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);

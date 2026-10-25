@@ -31,6 +31,8 @@ using Counts = std::map<std::string, size_t>;
 
 /// Comparison of sampled counts with a benchmark's ideal reference.
 struct Evaluation {
+  /// Total number of evaluated shots.
+  size_t shots = 0;
   /// Total variation distance.
   ///
   /// Zero is an exact match.

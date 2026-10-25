@@ -16,7 +16,6 @@
 #include "Driver.hpp"
 
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
@@ -28,6 +27,8 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -46,13 +47,20 @@
 using mlir::CompilerTarget;
 
 static qdmi::Device openScDevice(const char* filename) {
-  const auto config = nlohmann::json{
+  auto config = llvm::json::Object{
       {
           "device-config",
-          {{"file", std::string{MQT_CORE_MLIR_SC_CONFIG_DIR} + "/" + filename}},
+          llvm::json::Object{
+              {
+                  "file",
+                  std::string{MQT_CORE_MLIR_SC_CONFIG_DIR} + "/" + filename,
+              },
+          },
       },
   };
-  return qdmi::builtin_driver::openDevice("mqt.sc.default", config.dump());
+  return qdmi::builtin_driver::openDevice(
+      "mqt.sc.default",
+      llvm::formatv("{0}", llvm::json::Value(std::move(config))).str());
 }
 
 [[nodiscard]] static const CompilerTarget::OperationCapability&
@@ -530,10 +538,13 @@ TEST(CompilerQDMIAdapterTest,
   ASSERT_TRUE(static_cast<bool>(compiled))
       << llvm::toString(compiled.takeError());
   EXPECT_EQ(compiled->programFormat(), QDMI_PROGRAM_FORMAT_IQMJSON);
-  const auto json = nlohmann::json::parse(compiled->payload());
-  EXPECT_EQ(json["instructions"].back()["name"], "measure");
-  EXPECT_EQ(json["instructions"].back()["args"]["key"], "c_2_0_1");
-  EXPECT_EQ(json["instructions"].back()["locus"].size(), 1);
+  const auto json = llvm::cantFail(llvm::json::parse(compiled->payload()));
+  const auto& measurement =
+      json.getAsObject()->getArray("instructions")->back();
+  EXPECT_EQ(measurement.getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(measurement.getAsObject()->getObject("args")->getString("key"),
+            "c_2_0_1");
+  EXPECT_EQ(measurement.getAsObject()->getArray("locus")->size(), 1);
   EXPECT_EQ(creations, 0);
   EXPECT_TRUE(
       llvm::errorToBool(mlir::submitProgram(device, *compiled).takeError()));
@@ -1040,7 +1051,9 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
               {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))})),
           llvm::cantFail(CompilerTarget::OperationCapability::create(
               "cnot", 2, 0,
-              {llvm::cantFail(CompilerTarget::SiteTuple::create({1, 2}))})),
+              {
+                  llvm::cantFail(CompilerTarget::SiteTuple::create({1, 2})),
+              })),
       })));
   mlir::attachTargetEnvironment(
       program->module(),

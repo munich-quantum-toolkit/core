@@ -43,7 +43,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
       FILE_SET HEADERS
         BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
         FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_dd_export.h)
-    target_link_libraries(${dd_target} PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+    target_link_libraries(${dd_target} PRIVATE LLVMSupport)
   endforeach()
 
   set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-dd PARENT_SCOPE)

@@ -9,13 +9,15 @@
  */
 
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
@@ -288,12 +290,15 @@ TEST(CompilerCLI, EmitsTargetedIQMJSONAndPreservesOutputOnFailure) {
       0);
   auto output = llvm::MemoryBuffer::getFile(outputPath);
   ASSERT_TRUE(output);
-  const auto circuit = nlohmann::json::parse((*output)->getBuffer().str());
-  const auto& instructions = circuit.at("instructions");
-  EXPECT_EQ(instructions.back().at("name"), "measure");
-  EXPECT_EQ(instructions.back().at("locus").size(), 1U);
-  for (const auto& site : instructions.back().at("locus")) {
-    EXPECT_TRUE(site == "physical-a" || site == "physical-b") << site;
+  const auto circuit =
+      llvm::cantFail(llvm::json::parse((*output)->getBuffer().str()));
+  const auto& instructions = *circuit.getAsObject()->getArray("instructions");
+  EXPECT_EQ(instructions.back().getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions.back().getAsObject()->getArray("locus")->size(), 1U);
+  for (const auto& site :
+       *instructions.back().getAsObject()->getArray("locus")) {
+    EXPECT_TRUE(site == "physical-a" || site == "physical-b")
+        << llvm::formatv("{0}", site).str();
   }
   args[2] = "--target=#mqt.compilation_target<sites = [<id = 5>, <id = 17>], "
             "connectivity = all_to_all, couplings = [], native_operations = "

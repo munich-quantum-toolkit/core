@@ -14,19 +14,26 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/Support/Error.h"
+
+#include <cassert>
 #include <cmath>
 #include <numbers>
-#include <stdexcept>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bench {
 
 Multiplexer::Multiplexer(MultiplexerOptions options)
-    : options_(options), output_{.name = "result", .width = options_.qubits} {
-  if (options_.qubits < 2 || options_.qubits > MultiplexerOptions::MAX_QUBITS) {
-    throw std::invalid_argument(
+    : options_(options), output_{.name = "result", .width = options_.qubits} {}
+
+llvm::Expected<Multiplexer> Multiplexer::create(MultiplexerOptions options) {
+  if (options.qubits < 2 || options.qubits > MultiplexerOptions::MAX_QUBITS) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "multiplexer qubits must be between 2 and 1024");
   }
+  return Multiplexer(options);
 }
 
 const MultiplexerOptions& Multiplexer::options() const noexcept {
@@ -36,7 +43,8 @@ const MultiplexerOptions& Multiplexer::options() const noexcept {
 const Output& Multiplexer::output() const noexcept { return output_; }
 
 double Multiplexer::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
 
   // Compute target-zero amplitudes from 1-x to avoid cancellation.
   const auto target = outcome.back();
@@ -54,7 +62,7 @@ double Multiplexer::probability(const std::string_view outcome) const {
                     1 - static_cast<int>(options_.qubits));
 }
 
-Evaluation Multiplexer::evaluate(const Counts& counts) const {
+llvm::Expected<Evaluation> Multiplexer::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts);
 }
 

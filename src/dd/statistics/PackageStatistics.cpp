@@ -20,7 +20,10 @@
 
 #include "StatisticsJson.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <ostream>
 #include <string>
@@ -55,160 +58,128 @@ double computePeakMemoryMiB(const Package& package) {
 }
 
 namespace {
-[[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics();
+[[nodiscard]] llvm::json::Value getDataStructureStatistics();
 
-[[nodiscard]] nlohmann::basic_json<>
-getStatistics(Package& package, const bool includeIndividualTables) {
-  nlohmann::basic_json<> j;
-
-  j["data_structure"] = getDataStructureStatistics();
-
+void writeStatistics(llvm::json::OStream& json, Package& package,
+                     const bool includeIndividualTables) {
   const auto activeCounts = package.computeActiveCounts();
-
-  auto& vector = j["vector"];
-  auto& vectorUniqueTable = vector["unique_table"];
-  vectorUniqueTable = toJson(package.vUniqueTable, includeIndividualTables);
-  if (vectorUniqueTable != "unused") {
-    vectorUniqueTable["total"]["num_active_entries"] = activeCounts.vector;
-  }
-  vector["memory_manager"] = toJson(package.vMemoryManager.getStats());
-
-  auto& matrix = j["matrix"];
-  auto& matrixUniqueTable = matrix["unique_table"];
-  matrixUniqueTable = toJson(package.mUniqueTable, includeIndividualTables);
-  if (matrixUniqueTable != "unused") {
-    matrixUniqueTable["total"]["num_active_entries"] = activeCounts.matrix;
-  }
-  matrix["memory_manager"] = toJson(package.mMemoryManager.getStats());
-
-  auto& realNumbers = j["real_numbers"];
-  auto& realNumbersUniqueTable = realNumbers["unique_table"];
-  realNumbersUniqueTable = toJson(package.cUniqueTable.getStats());
-  if (realNumbersUniqueTable != "unused") {
-    realNumbersUniqueTable["num_active_entries"] = activeCounts.reals;
-  }
-  realNumbers["memory_manager"] = toJson(package.cMemoryManager.getStats());
-
-  auto& computeTables = j["compute_tables"];
-  computeTables["vector_add"] = toJson(package.vectorAdd.getStats());
-  computeTables["matrix_add"] = toJson(package.matrixAdd.getStats());
-  computeTables["matrix_conjugate_transpose"] =
-      toJson(package.conjugateMatrixTranspose.getStats());
-  computeTables["matrix_vector_mult"] =
-      toJson(package.matrixVectorMultiplication.getStats());
-  computeTables["matrix_matrix_mult"] =
-      toJson(package.matrixMatrixMultiplication.getStats());
-  computeTables["vector_kronecker"] =
-      toJson(package.vectorKronecker.getStats());
-  computeTables["matrix_kronecker"] =
-      toJson(package.matrixKronecker.getStats());
-  computeTables["vector_inner_product"] =
-      toJson(package.vectorInnerProduct.getStats());
-
-  j["active_memory_mib"] = estimateMemoryMiB(activeCounts);
-  j["peak_memory_mib"] = computePeakMemoryMiB(package);
-
-  return j;
+  const auto attribute = [&](llvm::StringRef name, const auto& statistics) {
+    json.attributeBegin(name);
+    writeJson(json, statistics);
+    json.attributeEnd();
+  };
+  json.object([&] {
+    json.attribute("data_structure", getDataStructureStatistics());
+    json.attributeObject("vector", [&] {
+      json.attributeBegin("unique_table");
+      writeJson(json, package.vUniqueTable, includeIndividualTables,
+                activeCounts.vector);
+      json.attributeEnd();
+      attribute("memory_manager", package.vMemoryManager.getStats());
+    });
+    json.attributeObject("matrix", [&] {
+      json.attributeBegin("unique_table");
+      writeJson(json, package.mUniqueTable, includeIndividualTables,
+                activeCounts.matrix);
+      json.attributeEnd();
+      attribute("memory_manager", package.mMemoryManager.getStats());
+    });
+    json.attributeObject("real_numbers", [&] {
+      json.attributeBegin("unique_table");
+      writeJson(json, package.cUniqueTable.getStats(), activeCounts.reals);
+      json.attributeEnd();
+      attribute("memory_manager", package.cMemoryManager.getStats());
+    });
+    json.attributeObject("compute_tables", [&] {
+      attribute("vector_add", package.vectorAdd.getStats());
+      attribute("matrix_add", package.matrixAdd.getStats());
+      attribute("matrix_conjugate_transpose",
+                package.conjugateMatrixTranspose.getStats());
+      attribute("matrix_vector_mult",
+                package.matrixVectorMultiplication.getStats());
+      attribute("matrix_matrix_mult",
+                package.matrixMatrixMultiplication.getStats());
+      attribute("vector_kronecker", package.vectorKronecker.getStats());
+      attribute("matrix_kronecker", package.matrixKronecker.getStats());
+      attribute("vector_inner_product", package.vectorInnerProduct.getStats());
+    });
+    writeStatistic(json, "active_memory_mib", estimateMemoryMiB(activeCounts));
+    writeStatistic(json, "peak_memory_mib", computePeakMemoryMiB(package));
+  });
 }
 
-[[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics() {
-  nlohmann::basic_json<> j;
+template <class T> [[nodiscard]] llvm::json::Object typeStatistics() {
+  return llvm::json::Object{{"size_B", sizeof(T)}, {"alignment_B", alignof(T)}};
+}
 
-  // Information about key data structures
-  // For every entry, we store the size in bytes and the alignment in bytes
-  auto& ddPackage = j["Package"];
-  ddPackage["size_B"] = sizeof(Package);
-  ddPackage["alignment_B"] = alignof(Package);
-
-  auto& vectorNode = j["vNode"];
-  vectorNode["size_B"] = sizeof(vNode);
-  vectorNode["alignment_B"] = alignof(vNode);
-
-  auto& matrixNode = j["mNode"];
-  matrixNode["size_B"] = sizeof(mNode);
-  matrixNode["alignment_B"] = alignof(mNode);
-
-  auto& vectorEdge = j["vEdge"];
-  vectorEdge["size_B"] = sizeof(Edge<vNode>);
-  vectorEdge["alignment_B"] = alignof(Edge<vNode>);
-
-  auto& matrixEdge = j["mEdge"];
-  matrixEdge["size_B"] = sizeof(Edge<mNode>);
-  matrixEdge["alignment_B"] = alignof(Edge<mNode>);
-
-  auto& realNumber = j["RealNumber"];
-  realNumber["size_B"] = sizeof(RealNumber);
-  realNumber["alignment_B"] = alignof(RealNumber);
-
-  auto& complexValue = j["ComplexValue"];
-  complexValue["size_B"] = sizeof(ComplexValue);
-  complexValue["alignment_B"] = alignof(ComplexValue);
-
-  auto& complex = j["Complex"];
-  complex["size_B"] = sizeof(Complex);
-  complex["alignment_B"] = alignof(Complex);
-
-  auto& complexNumbers = j["ComplexNumbers"];
-  complexNumbers["size_B"] = sizeof(ComplexNumbers);
-  complexNumbers["alignment_B"] = alignof(ComplexNumbers);
-
-  // Information about all the compute table entries
-  // For every entry, we store the size in bytes and the alignment in bytes
-  auto& ctEntries = j["ComplexTableEntries"];
-  auto& vectorAdd = ctEntries["vector_add"];
-  vectorAdd["size_B"] = sizeof(decltype(Package::vectorAdd)::Entry);
-  vectorAdd["alignment_B"] = alignof(decltype(Package::vectorAdd)::Entry);
-
-  auto& matrixAdd = ctEntries["matrix_add"];
-  matrixAdd["size_B"] = sizeof(decltype(Package::matrixAdd)::Entry);
-  matrixAdd["alignment_B"] = alignof(decltype(Package::matrixAdd)::Entry);
-
-  auto& conjugateMatrixTranspose = ctEntries["conjugate_matrix_transpose"];
-  conjugateMatrixTranspose["size_B"] =
-      sizeof(decltype(Package::conjugateMatrixTranspose)::Entry);
-  conjugateMatrixTranspose["alignment_B"] =
-      alignof(decltype(Package::conjugateMatrixTranspose)::Entry);
-
-  auto& matrixVectorMult = ctEntries["matrix_vector_mult"];
-  matrixVectorMult["size_B"] =
-      sizeof(decltype(Package::matrixVectorMultiplication)::Entry);
-  matrixVectorMult["alignment_B"] =
-      alignof(decltype(Package::matrixVectorMultiplication)::Entry);
-
-  auto& matrixMatrixMult = ctEntries["matrix_matrix_mult"];
-  matrixMatrixMult["size_B"] =
-      sizeof(decltype(Package::matrixMatrixMultiplication)::Entry);
-  matrixMatrixMult["alignment_B"] =
-      alignof(decltype(Package::matrixMatrixMultiplication)::Entry);
-
-  auto& vectorKronecker = ctEntries["vector_kronecker"];
-  vectorKronecker["size_B"] = sizeof(decltype(Package::vectorKronecker)::Entry);
-  vectorKronecker["alignment_B"] =
-      alignof(decltype(Package::vectorKronecker)::Entry);
-
-  auto& matrixKronecker = ctEntries["matrix_kronecker"];
-  matrixKronecker["size_B"] = sizeof(decltype(Package::matrixKronecker)::Entry);
-  matrixKronecker["alignment_B"] =
-      alignof(decltype(Package::matrixKronecker)::Entry);
-
-  auto& vectorInnerProduct = ctEntries["vector_inner_product"];
-  vectorInnerProduct["size_B"] =
-      sizeof(decltype(Package::vectorInnerProduct)::Entry);
-  vectorInnerProduct["alignment_B"] =
-      alignof(decltype(Package::vectorInnerProduct)::Entry);
-
-  return j;
+[[nodiscard]] llvm::json::Value getDataStructureStatistics() {
+  return llvm::json::Object{
+      {"Package", typeStatistics<Package>()},
+      {"vNode", typeStatistics<vNode>()},
+      {"mNode", typeStatistics<mNode>()},
+      {"vEdge", typeStatistics<Edge<vNode>>()},
+      {"mEdge", typeStatistics<Edge<mNode>>()},
+      {"RealNumber", typeStatistics<RealNumber>()},
+      {"ComplexValue", typeStatistics<ComplexValue>()},
+      {"Complex", typeStatistics<Complex>()},
+      {"ComplexNumbers", typeStatistics<ComplexNumbers>()},
+      {
+          "ComplexTableEntries",
+          llvm::json::Object{
+              {
+                  "vector_add",
+                  typeStatistics<decltype(Package::vectorAdd)::Entry>(),
+              },
+              {
+                  "matrix_add",
+                  typeStatistics<decltype(Package::matrixAdd)::Entry>(),
+              },
+              {
+                  "conjugate_matrix_transpose",
+                  typeStatistics<
+                      decltype(Package::conjugateMatrixTranspose)::Entry>(),
+              },
+              {
+                  "matrix_vector_mult",
+                  typeStatistics<
+                      decltype(Package::matrixVectorMultiplication)::Entry>(),
+              },
+              {
+                  "matrix_matrix_mult",
+                  typeStatistics<
+                      decltype(Package::matrixMatrixMultiplication)::Entry>(),
+              },
+              {
+                  "vector_kronecker",
+                  typeStatistics<decltype(Package::vectorKronecker)::Entry>(),
+              },
+              {
+                  "matrix_kronecker",
+                  typeStatistics<decltype(Package::matrixKronecker)::Entry>(),
+              },
+              {
+                  "vector_inner_product",
+                  typeStatistics<
+                      decltype(Package::vectorInnerProduct)::Entry>(),
+              },
+          },
+      },
+  };
 }
 
 } // namespace
 
 std::string getDataStructureStatisticsString() {
-  return getDataStructureStatistics().dump(2U);
+  return llvm::formatv("{0:2}", getDataStructureStatistics()).str();
 }
 
 std::string getStatisticsString(Package& package,
                                 const bool includeIndividualTables) {
-  return getStatistics(package, includeIndividualTables).dump(2U);
+  std::string result;
+  llvm::raw_string_ostream out(result);
+  llvm::json::OStream json(out, 2);
+  writeStatistics(json, package, includeIndividualTables);
+  return result;
 }
 
 void printStatistics(Package& package, std::ostream& os) {

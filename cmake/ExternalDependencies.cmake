@@ -42,11 +42,6 @@ if(MSVC AND TARGET capnp)
   target_compile_options(capnp PRIVATE /wd4068)
 endif()
 
-set(JSON_VERSION 3.12.0 CACHE STRING "nlohmann_json version")
-set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}/json.tar.xz)
-fetchcontent_declare(nlohmann_json URL ${JSON_URL} SYSTEM FIND_PACKAGE_ARGS ${JSON_VERSION})
-list(APPEND FETCH_PACKAGES nlohmann_json)
-
 if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
   # Disable the install instructions for GTest, as we do not need them.

@@ -47,24 +47,22 @@ add_subdirectory(dd)
 
 add_subdirectory(qdmi)
 
-# Keep statically linked LLVM implementation symbols out of the native shared-library ABI.
+# Keep statically linked LLVM implementation symbols out of the QDMI shared-library ABI.
 if(BUILD_MQT_CORE_SHARED_LIBS)
   foreach(llvm_library LLVMSupport LLVMDemangle)
     get_target_property(llvm_library_type ${llvm_library} TYPE)
     if(NOT llvm_library_type STREQUAL "STATIC_LIBRARY")
       continue()
     endif()
-    foreach(native_library ${MQT_CORE_TARGET_NAME}-bench-library ${MQT_CORE_TARGET_NAME}-qdmi)
-      if(APPLE)
-        set_property(
-          TARGET ${native_library}
-          PROPERTY LINK_LIBRARY_OVERRIDE_${llvm_library} mqt_llvm_hidden)
-      elseif(UNIX)
-        target_link_options(
-          ${native_library}
-          PRIVATE "LINKER:--exclude-libs,$<TARGET_FILE_NAME:${llvm_library}>")
-      endif()
-    endforeach()
+    if(APPLE)
+      set_property(
+        TARGET ${MQT_CORE_TARGET_NAME}-qdmi
+        PROPERTY LINK_LIBRARY_OVERRIDE_${llvm_library} mqt_llvm_hidden)
+    elseif(UNIX)
+      target_link_options(
+        ${MQT_CORE_TARGET_NAME}-qdmi
+        PRIVATE "LINKER:--exclude-libs,$<TARGET_FILE_NAME:${llvm_library}>")
+    endif()
   endforeach()
 endif()
 

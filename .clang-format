@@ -6,7 +6,7 @@ IncludeCategories:
     Priority: 1
   - Regex: '^"qdmi/.*\.hpp"'
     Priority: 1
-  - Regex: '^"((capnp|gmock|gtest|kj|nanobind|nlohmann|qdmi|qiskit)/|jeff[./])'
+  - Regex: '^"((capnp|gmock|gtest|kj|nanobind|qdmi|qiskit)/|jeff[./])'
     Priority: 3
   - Regex: '^"mlir/'
     Priority: 4
