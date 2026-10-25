@@ -102,7 +102,7 @@ void checkDotOptions(const Edge<Node>& edge, const bool polar = true) {
 
 template <class Node>
 void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
-  export2Dot(edge, filename, true, true, false, false, false);
+  exportToDot(edge, filename, true, true, false, false, false);
   std::ifstream file(filename);
   ASSERT_TRUE(file.good());
   EXPECT_NE(file.peek(), std::ifstream::traits_type::eof());
@@ -1180,9 +1180,9 @@ TEST(DDPackageTest, UniqueTableAllocation) {
 TEST(DDPackageTest, SpecialCaseTerminal) {
   auto dd = std::make_unique<Package>(2);
   auto const one = vEdge::one();
-  export2Dot(one, "oneColored.dot", true, false, false, false, false);
-  export2Dot(one, "oneClassic.dot", false, false, false, false, false);
-  export2Dot(one, "oneMemory.dot", true, true, false, true, false);
+  exportToDot(one, "oneColored.dot", true, false, false, false, false);
+  exportToDot(one, "oneClassic.dot", false, false, false, false, false);
+  exportToDot(one, "oneMemory.dot", true, true, false, true, false);
 
   const auto filenames = {
       "oneColored.dot",

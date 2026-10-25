@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` ([#2826])
+  ([**@denialhaag**])
 - ⚡ Prefetch the next reusable DD entry during allocation ([#2826], [#2831])
   ([**@burgholzer**], [**@denialhaag**])
 - 💥 Propagate DD allocation and table-index errors through exceptions instead

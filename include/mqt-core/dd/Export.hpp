@@ -314,10 +314,10 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
 
 namespace detail {
 template <class Node>
-void export2DotFile(Edge<Node> basic,
-                    const std::filesystem::path& outputFilename, bool colored,
-                    bool edgeLabels, bool classic, bool memory, bool show,
-                    bool formatAsPolar) {
+void exportToDotFile(Edge<Node> basic,
+                     const std::filesystem::path& outputFilename, bool colored,
+                     bool edgeLabels, bool classic, bool memory, bool show,
+                     bool formatAsPolar) {
   std::ofstream init(outputFilename);
   if (!init) {
     throw std::runtime_error("Cannot open DOT file");
@@ -339,11 +339,11 @@ void export2DotFile(Edge<Node> basic,
 /// Throws if the file cannot be written or Graphviz fails.
 template <class Node>
 [[maybe_unused]] static void
-export2Dot(Edge<Node> basic, const std::string& outputFilename,
-           bool colored = true, bool edgeLabels = false, bool classic = false,
-           bool memory = false, bool show = true, bool formatAsPolar = true) {
-  detail::export2DotFile(basic, outputFilename, colored, edgeLabels, classic,
-                         memory, show, formatAsPolar);
+exportToDot(Edge<Node> basic, const std::string& outputFilename,
+            bool colored = true, bool edgeLabels = false, bool classic = false,
+            bool memory = false, bool show = true, bool formatAsPolar = true) {
+  detail::exportToDotFile(basic, outputFilename, colored, edgeLabels, classic,
+                          memory, show, formatAsPolar);
 }
 
 ///

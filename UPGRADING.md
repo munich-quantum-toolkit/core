@@ -18,7 +18,11 @@ Invalid requests now throw `std::out_of_range` in C++; Python
 requirements from corresponding member-function pointer types and handle
 exceptions in wrappers that assumed these calls could not throw.
 
-C++ `dd::export2Dot` and Python `to_svg` now report DOT file failures through
+### DD export
+
+Replace C++ calls to `dd::export2Dot` with `dd::exportToDot`.
+
+C++ `dd::exportToDot` and Python `to_svg` now report DOT file failures through
 exceptions. The native Graphviz fallback also throws when the executable cannot
 start or rendering fails; Python receives `RuntimeError`. Handle these failures
 at the call site. On Windows, put Graphviz's `dot.exe` on `PATH`.
