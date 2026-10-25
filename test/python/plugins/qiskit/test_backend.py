@@ -204,6 +204,9 @@ def test_backend_binds_parameters(ddsim_backend: QDMIBackend, binding: str) -> N
     result = ddsim_backend.run(circuit, parameter_values=values, shots=100).result()
     assert result.success
     assert result.get_counts() == {"1": 100}
+    assert result.get_counts(circuit) == {"1": 100}
+    if binding != "manual":
+        assert list(circuit.parameters) == [theta]
 
 
 def test_backend_run_multiple_circuits_with_parameter_values(ddsim_backend: QDMIBackend) -> None:
@@ -304,6 +307,22 @@ def test_backend_results_queryable_by_name(ddsim_backend: QDMIBackend, name: str
     assert result.results is not None
     assert result.results[0].header["name"] == circuit.name
     assert result.get_counts(circuit.name) == result.get_counts() == {"00": 100}
+
+
+def test_backend_advertised_classical_feedback(ddsim_backend: QDMIBackend) -> None:
+    """Advertised if/else executes with its measured classical condition."""
+    assert "if_else" in ddsim_backend.target.operation_names
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)) as otherwise:
+        circuit.x(1)
+    with otherwise:
+        circuit.z(1)
+    circuit.measure(1, 1)
+    counts = ddsim_backend.run(circuit, shots=128).result().get_counts(circuit)
+    assert sum(counts.values()) == 128
+    assert set(counts) == {"00", "11"}
 
 
 def test_job_get_counts_default(ddsim_backend: QDMIBackend) -> None:

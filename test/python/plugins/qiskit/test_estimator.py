@@ -211,3 +211,25 @@ def test_estimator_identity_observable_only(estimator: BackendEstimatorV2) -> No
     # Expectation of I is always 1
     # Result should be a scalar array 1.0
     assert float(evs) == pytest.approx(1.0)
+
+
+def test_estimator_reset_channel(estimator: BackendEstimatorV2) -> None:
+    """Sampled estimation preserves a reset before its basis measurement."""
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+    circuit.reset(0)
+    result = estimator.run([(circuit, "Z")]).result()[0]
+    np.testing.assert_allclose(result.data["evs"], 1, atol=1e-12)
+
+
+def test_estimator_feedback_ensemble(estimator: BackendEstimatorV2) -> None:
+    """Feedback produces a classical ensemble with zero target-Z mean."""
+    circuit = QuantumCircuit(2, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.x(1)
+    result = estimator.run([(circuit, "ZI")], precision=1 / 64).result()[0]
+    # Hoeffding: P(|mean| >= .1) <= 2 exp(-4096 * .1**2 / 2) < 3e-9.
+    assert abs(float(result.data["evs"])) < 0.1
+    assert result.metadata["shots"] == 4096
