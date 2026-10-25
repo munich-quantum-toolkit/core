@@ -154,10 +154,20 @@ filters when useful, such as
 `build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`. Python
 3.14 test sessions are `tests-3.14` and `minimums-3.14`.
 
+Before pushing native code, dependency, or CMake changes, build and test the
+affected targets in both assertion-enabled Debug and optimized Release. Include
+affected shared libraries, Python bindings, and consumers; a focused test
+executable alone does not check their link requirements. Inspect the CI matrix
+and actual compiler and SDK flags, especially RTTI, exceptions, and assertions.
+Before removing a build setting, check its history and rerun the configuration
+that required it.
+
 C++ lint checks every line of each changed C++ file against `origin/main` by
 default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
-Keep pass and option documentation aligned with actual scope, defaults,
-supported shapes, limitations, and failure modes.
+Stage intended new files before repository lint, or pass them explicitly: an
+all-files hook run can omit untracked files. Rerun hooks after their fixes. Keep
+pass and option documentation aligned with actual scope, defaults, supported
+shapes, limitations, and failure modes.
 
 Inspect the final diff and status. Check changed comments and docstrings against
 the documentation policy. Exclude generated, secret, and unrelated files. Tie
@@ -165,6 +175,10 @@ validation to the final code: rerun affected checks following edits and
 distinguish passes from skipped, blocked, or pending checks. Report checks run
 and their outcomes; stop after required gates pass unless a concrete remaining
 risk justifies more validation.
+
+For CI fixes, read every failed job's log on the current PR revision, reproduce
+the cause locally when possible, and check the affected hosted jobs after
+pushing. Report a fix as locally validated while those jobs remain pending.
 
 ## Plans and audits
 

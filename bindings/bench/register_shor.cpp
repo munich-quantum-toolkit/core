@@ -23,6 +23,7 @@
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -100,7 +101,7 @@ void registerShor(nb::module_& m) {
             },
             {.maxAttempts = maxAttempts, .seed = seed});
         if (callbackError) {
-          llvm::consumeError(result.takeError());
+          llvm::logAllUnhandledErrors(result.takeError(), llvm::nulls());
           std::rethrow_exception(callbackError);
         }
         return unwrapBenchmark(std::move(result));

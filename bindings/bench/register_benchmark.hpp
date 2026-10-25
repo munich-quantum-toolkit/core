@@ -19,7 +19,6 @@
 #include "llvm/Support/Error.h"
 
 #include <memory>
-#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -28,13 +27,13 @@ namespace mqt {
 
 template <class T> T unwrapBenchmark(llvm::Expected<T> result) {
   if (!result) {
-    std::string message;
+    auto error = result.takeError();
     bool overflow = false;
-    llvm::handleAllErrors(
-        result.takeError(), [&](const llvm::ErrorInfoBase& error) {
-          message = error.message();
-          overflow = error.convertToErrorCode() == std::errc::value_too_large;
-        });
+    llvm::visitErrors(error, [&](const llvm::ErrorInfoBase& info) {
+      overflow = info.convertToErrorCode() == std::errc::value_too_large;
+    });
+    // Consume inside LLVM, whose RTTI setting may differ from nanobind's.
+    const auto message = llvm::toString(std::move(error));
     if (overflow) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind API.
       nanobind::chain_error(
