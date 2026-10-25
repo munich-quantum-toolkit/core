@@ -100,6 +100,7 @@ struct ComplexValue {
   /// @param os The output stream to write to.
   /// @param num The number to print.
   /// @param imaginary Whether the number is imaginary.
+  /// @param precision Significant decimal digits; negative uses six, zero one.
   static void printFormatted(llvm::raw_ostream& os, fp num,
                              bool imaginary = false, int precision = -1);
 
@@ -108,7 +109,7 @@ struct ComplexValue {
   /// @param real The real part of the complex number.
   /// @param imag The imaginary part of the complex number.
   /// @param formatted Whether to pretty print the number.
-  /// @param precision The precision to use for printing numbers..
+  /// @param precision Significant decimal digits; negative uses six, zero one.
   /// @returns The string representation of the complex number.
   static std::string toString(const fp& real, const fp& imag,
                               bool formatted = true, int precision = -1);
