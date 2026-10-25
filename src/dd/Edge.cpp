@@ -35,6 +35,15 @@
 #include <utility>
 
 namespace dd {
+namespace {
+
+void checkMatrixWidth(const mEdge& edge, const size_t width) {
+  if (!edge.isTerminal() && width <= static_cast<size_t>(edge.p->v)) {
+    throw std::out_of_range("Matrix width is smaller than the DD dimension.");
+  }
+}
+
+} // namespace
 
 ///-----------------------------------------------------------------------------
 ///                      \n General purpose methods \n
@@ -44,6 +53,9 @@ template <class Node>
 auto Edge<Node>::getValueByPath(const std::size_t numQubits,
                                 const std::string& decisions) const
     -> std::complex<fp> {
+  if (!isTerminal() && numQubits <= static_cast<size_t>(p->v)) {
+    throw std::out_of_range("Decision path does not cover the DD dimension.");
+  }
   if (decisions.size() < numQubits) {
     throw std::out_of_range(
         "Decision path is shorter than the number of qubits.");
@@ -232,8 +244,11 @@ auto Edge<Node>::getVector(const fp threshold) const -> CVec
   if (isTerminal()) {
     return {static_cast<std::complex<fp>>(w)};
   }
+  if (p->v >= std::numeric_limits<size_t>::digits - 1U) {
+    throw std::out_of_range("Vector dimension does not fit in size_t.");
+  }
 
-  const std::size_t dim = 2ULL << p->v;
+  const size_t dim = size_t{1} << (p->v + 1U);
   auto vec = CVec(dim, 0.);
   traverseVector(
       1., 0,
@@ -249,6 +264,9 @@ auto Edge<Node>::getSparseVector(const fp threshold) const -> SparseCVec
   if (isTerminal()) {
     return {{0, static_cast<std::complex<fp>>(w)}};
   }
+  if (p->v >= std::numeric_limits<size_t>::digits) {
+    throw std::out_of_range("Vector basis indices do not fit in size_t.");
+  }
 
   auto vec = SparseCVec{};
   traverseVector(
@@ -262,6 +280,9 @@ template <class Node>
 auto Edge<Node>::printVector() const -> void
   requires IsVector<Node>
 {
+  if (!isTerminal() && p->v >= std::numeric_limits<size_t>::digits - 1U) {
+    throw std::out_of_range("Vector dimension does not fit in size_t.");
+  }
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
   std::cout << std::setprecision(precision);
@@ -270,8 +291,8 @@ auto Edge<Node>::printVector() const -> void
     std::cout << "0: " << static_cast<std::complex<fp>>(w) << "\n";
     return;
   }
-  const std::size_t element = 2ULL << p->v;
-  for (auto i = 0ULL; i < element; i++) {
+  const size_t element = size_t{1} << (p->v + 1U);
+  for (size_t i = 0; i < element; ++i) {
     const auto amplitude = getValueByIndex(i);
     const auto n = static_cast<std::size_t>(p->v) + 1U;
     for (auto j = n; j > 0; --j) {
@@ -288,8 +309,17 @@ auto Edge<Node>::addToVector(CVec& amplitudes) const -> void
   requires IsVector<Node>
 {
   if (isTerminal()) {
+    if (amplitudes.empty()) {
+      throw std::out_of_range("Destination vector is too small.");
+    }
     amplitudes[0] += static_cast<std::complex<fp>>(w);
     return;
+  }
+  if (p->v >= std::numeric_limits<size_t>::digits - 1U) {
+    throw std::out_of_range("Vector dimension does not fit in size_t.");
+  }
+  if (amplitudes.size() < (size_t{1} << (p->v + 1U))) {
+    throw std::out_of_range("Destination vector is too small.");
   }
 
   traverseVector(1., 0,
@@ -320,7 +350,7 @@ void Edge<Node>::traverseVector(const std::complex<fp>& amp,
     e.traverseVector(c, i, f, threshold);
   }
   if (const auto& e = p->e[1]; !e.w.exactlyZero()) {
-    e.traverseVector(c, i | (1ULL << p->v), f, threshold);
+    e.traverseVector(c, i | (size_t{1} << p->v), f, threshold);
   }
 }
 
@@ -414,6 +444,7 @@ auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
     -> std::complex<fp>
   requires IsMatrix<Node>
 {
+  checkMatrixWidth(*this, numQubits);
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
     throw std::out_of_range("Matrix index is out of range.");
@@ -447,11 +478,15 @@ auto Edge<Node>::getMatrix(const std::size_t numQubits,
                            const fp threshold) const -> CMat
   requires IsMatrix<Node>
 {
+  checkMatrixWidth(*this, numQubits);
+  if (numQubits >= std::numeric_limits<size_t>::digits) {
+    throw std::out_of_range("Matrix dimension does not fit in size_t.");
+  }
   if (numQubits == 0U) {
     return CMat{1, {static_cast<std::complex<fp>>(w)}};
   }
 
-  const std::size_t dim = 1ULL << numQubits;
+  const size_t dim = size_t{1} << numQubits;
   auto mat = CMat(dim, CVec(dim, 0.));
   traverseMatrix(
       1, 0ULL, 0ULL,
@@ -466,6 +501,7 @@ auto Edge<Node>::getSparseMatrix(const std::size_t numQubits,
                                  const fp threshold) const -> SparseCMat
   requires IsMatrix<Node>
 {
+  checkMatrixWidth(*this, numQubits);
   if (numQubits == 0U) {
     return {{{0U, 0U}, static_cast<std::complex<fp>>(w)}};
   }
@@ -484,6 +520,10 @@ template <class Node>
 auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
   requires IsMatrix<Node>
 {
+  checkMatrixWidth(*this, numQubits);
+  if (numQubits >= std::numeric_limits<size_t>::digits) {
+    throw std::out_of_range("Matrix dimension does not fit in size_t.");
+  }
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
   std::cout << std::setprecision(precision);
@@ -492,10 +532,9 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
     std::cout << static_cast<std::complex<fp>>(w) << "\n";
     return;
   }
-  assert(isTerminal() || numQubits > p->v);
-  const std::size_t element = 1ULL << numQubits;
-  for (auto i = 0ULL; i < element; ++i) {
-    for (auto j = 0ULL; j < element; ++j) {
+  const size_t element = size_t{1} << numQubits;
+  for (size_t i = 0; i < element; ++i) {
+    for (size_t j = 0; j < element; ++j) {
       const auto amplitude = getValueByIndex(numQubits, i, j);
       std::cout << amplitude << " ";
     }
@@ -512,6 +551,10 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
                                 const fp threshold) const
   requires IsMatrix<Node>
 {
+  if (level > std::numeric_limits<size_t>::digits) {
+    throw std::out_of_range("Matrix basis indices do not fit in size_t.");
+  }
+  checkMatrixWidth(*this, level);
   traverseMatrixImpl(amp, i, j, f, level, threshold);
 }
 
@@ -536,8 +579,8 @@ void Edge<Node>::traverseMatrixImpl(const std::complex<fp>& amp,
   }
 
   const auto nextLevel = static_cast<Qubit>(level - 1U);
-  const std::size_t x = i | (1ULL << nextLevel);
-  const std::size_t y = j | (1ULL << nextLevel);
+  const size_t x = i | (size_t{1} << nextLevel);
+  const size_t y = j | (size_t{1} << nextLevel);
   if (isTerminal() || p->v < nextLevel) {
     traverseMatrixImpl(amp, i, j, f, nextLevel, threshold);
     traverseMatrixImpl(amp, x, y, f, nextLevel, threshold);

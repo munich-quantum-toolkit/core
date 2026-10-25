@@ -187,7 +187,7 @@ public:
   /// Add the DD to a tracking hashset and update its reference count.
   /// @tparam Node The node type of the edge.
   /// @param e The edge to increase the reference count of.
-  template <class Node> void incRef(const Edge<Node>& e) noexcept {
+  template <class Node> void incRef(const Edge<Node>& e) {
     if (Edge<Node>::trackingRequired(e)) {
       roots.addToRoots(e);
     }
@@ -221,7 +221,7 @@ private:
                                        std::hash<Edge<Node>>, RootEqual<Node>>;
 
     /// Add to respective root set.
-    template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
+    template <class Node> void addToRoots(const Edge<Node>& e) {
       ++getRoots<Node>()[e];
     }
 

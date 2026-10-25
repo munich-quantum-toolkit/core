@@ -24,58 +24,32 @@
 #include <string>
 
 namespace dd {
+namespace {
 
-static constexpr auto V_NODE_MEMORY_MIB =
+constexpr auto V_NODE_MEMORY_MIB =
     static_cast<double>(sizeof(vNode)) / static_cast<double>(1ULL << 20U);
-static constexpr auto M_NODE_MEMORY_MIB =
+constexpr auto M_NODE_MEMORY_MIB =
     static_cast<double>(sizeof(mNode)) / static_cast<double>(1ULL << 20U);
-static constexpr auto REAL_NUMBER_MEMORY_MIB =
+constexpr auto REAL_NUMBER_MEMORY_MIB =
     static_cast<double>(sizeof(RealNumber)) / static_cast<double>(1ULL << 20U);
 
-static constexpr auto V_EDGE_MEMORY_MIB =
-    static_cast<double>(sizeof(Edge<vNode>)) / static_cast<double>(1ULL << 20U);
-static constexpr auto M_EDGE_MEMORY_MIB =
-    static_cast<double>(sizeof(Edge<mNode>)) / static_cast<double>(1ULL << 20U);
+double estimateMemoryMiB(const Package::ActiveCounts& counts) {
+  return (static_cast<double>(counts.vector) * V_NODE_MEMORY_MIB) +
+         (static_cast<double>(counts.matrix) * M_NODE_MEMORY_MIB) +
+         (static_cast<double>(counts.reals) * REAL_NUMBER_MEMORY_MIB);
+}
+} // namespace
 
 double computeActiveMemoryMiB(Package& package) {
-  const auto [vectorNodes, matrixNodes, realNumbers] =
-      package.computeActiveCounts();
-  const auto vActiveEntries = static_cast<double>(vectorNodes);
-  const auto mActiveEntries = static_cast<double>(matrixNodes);
-
-  const auto vMemoryForNodes = vActiveEntries * V_NODE_MEMORY_MIB;
-  const auto mMemoryForNodes = mActiveEntries * M_NODE_MEMORY_MIB;
-  const auto memoryForNodes = vMemoryForNodes + mMemoryForNodes;
-
-  const auto vMemoryForEdges = vActiveEntries * V_EDGE_MEMORY_MIB;
-  const auto mMemoryForEdges = mActiveEntries * M_EDGE_MEMORY_MIB;
-  const auto memoryForEdges = vMemoryForEdges + mMemoryForEdges;
-
-  const auto activeRealNumbers = static_cast<double>(realNumbers);
-  const auto memoryForRealNumbers = activeRealNumbers * REAL_NUMBER_MEMORY_MIB;
-
-  return memoryForNodes + memoryForEdges + memoryForRealNumbers;
+  return estimateMemoryMiB(package.computeActiveCounts());
 }
 
 double computePeakMemoryMiB(const Package& package) {
-  const auto vPeakUsedEntries =
-      static_cast<double>(package.vMemoryManager.getStats().peakNumUsed);
-  const auto mPeakUsedEntries =
-      static_cast<double>(package.mMemoryManager.getStats().peakNumUsed);
-
-  const auto vMemoryForNodes = vPeakUsedEntries * V_NODE_MEMORY_MIB;
-  const auto mMemoryForNodes = mPeakUsedEntries * M_NODE_MEMORY_MIB;
-  const auto memoryForNodes = vMemoryForNodes + mMemoryForNodes;
-
-  const auto vMemoryForEdges = vPeakUsedEntries * V_EDGE_MEMORY_MIB;
-  const auto mMemoryForEdges = mPeakUsedEntries * M_EDGE_MEMORY_MIB;
-  const auto memoryForEdges = vMemoryForEdges + mMemoryForEdges;
-
-  const auto peakRealNumbers =
-      static_cast<double>(package.cMemoryManager.getStats().peakNumUsed);
-  const auto memoryForRealNumbers = peakRealNumbers * REAL_NUMBER_MEMORY_MIB;
-
-  return memoryForNodes + memoryForEdges + memoryForRealNumbers;
+  return estimateMemoryMiB({
+      .vector = package.vMemoryManager.getStats().peakNumUsed,
+      .matrix = package.mMemoryManager.getStats().peakNumUsed,
+      .reals = package.cMemoryManager.getStats().peakNumUsed,
+  });
 }
 
 namespace {
@@ -87,14 +61,13 @@ getStatistics(Package& package, const bool includeIndividualTables) {
 
   j["data_structure"] = getDataStructureStatistics();
 
-  const auto [activeVectorNodes, activeMatrixNodes, activeRealNumbers] =
-      package.computeActiveCounts();
+  const auto activeCounts = package.computeActiveCounts();
 
   auto& vector = j["vector"];
   auto& vectorUniqueTable = vector["unique_table"];
   vectorUniqueTable = toJson(package.vUniqueTable, includeIndividualTables);
   if (vectorUniqueTable != "unused") {
-    vectorUniqueTable["total"]["num_active_entries"] = activeVectorNodes;
+    vectorUniqueTable["total"]["num_active_entries"] = activeCounts.vector;
   }
   vector["memory_manager"] = toJson(package.vMemoryManager.getStats());
 
@@ -102,7 +75,7 @@ getStatistics(Package& package, const bool includeIndividualTables) {
   auto& matrixUniqueTable = matrix["unique_table"];
   matrixUniqueTable = toJson(package.mUniqueTable, includeIndividualTables);
   if (matrixUniqueTable != "unused") {
-    matrixUniqueTable["total"]["num_active_entries"] = activeMatrixNodes;
+    matrixUniqueTable["total"]["num_active_entries"] = activeCounts.matrix;
   }
   matrix["memory_manager"] = toJson(package.mMemoryManager.getStats());
 
@@ -110,7 +83,7 @@ getStatistics(Package& package, const bool includeIndividualTables) {
   auto& realNumbersUniqueTable = realNumbers["unique_table"];
   realNumbersUniqueTable = toJson(package.cUniqueTable.getStats());
   if (realNumbersUniqueTable != "unused") {
-    realNumbersUniqueTable["num_active_entries"] = activeRealNumbers;
+    realNumbersUniqueTable["num_active_entries"] = activeCounts.reals;
   }
   realNumbers["memory_manager"] = toJson(package.cMemoryManager.getStats());
 
@@ -130,7 +103,7 @@ getStatistics(Package& package, const bool includeIndividualTables) {
   computeTables["vector_inner_product"] =
       toJson(package.vectorInnerProduct.getStats());
 
-  j["active_memory_mib"] = computeActiveMemoryMiB(package);
+  j["active_memory_mib"] = estimateMemoryMiB(activeCounts);
   j["peak_memory_mib"] = computePeakMemoryMiB(package);
 
   return j;

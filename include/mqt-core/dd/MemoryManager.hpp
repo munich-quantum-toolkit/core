@@ -85,10 +85,10 @@ public:
   /// the first chunk is resized to the total number of entries. This increases
   /// memory locality and reduces the number of allocations when the manager is
   /// used again. However, it might also require a huge contiguous block of
-  /// memory to be allocated.
+  /// memory to be allocated. Allocation failure leaves the manager unchanged.
   /// @param resizeToTotal If set to true, the first chunk is resized to the
   /// total number of entries.
-  void reset(bool resizeToTotal = false) noexcept;
+  void reset(bool resizeToTotal = false);
 
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }

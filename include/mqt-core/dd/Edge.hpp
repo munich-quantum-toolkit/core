@@ -97,11 +97,12 @@ template <class Node> struct Edge {
   }
 
   /// Get a single element of the vector or matrix represented by the DD
+  ///
   /// @param numQubits number of qubits in the considered DD
   /// @param decisions string {0, 1, 2, 3}^n describing which outgoing edge
   /// should be followed (for vectors entries are limited to 0 and 1) If string
   /// is longer than required, the additional characters are ignored.
-  /// @throws std::out_of_range if the path is too short
+  /// @throws std::out_of_range if the path or requested width is too short
   /// @throws std::invalid_argument if a used path digit is outside the radix
   /// @return the complex amplitude of the specified element
   [[nodiscard]] std::complex<fp>
@@ -147,26 +148,35 @@ public:
     requires IsVector<Node>;
 
   /// Get the vector represented by the DD
+  ///
   /// @param threshold amplitudes with a magnitude below this threshold will be
   /// ignored
+  /// @throws std::out_of_range if the vector dimension does not fit in size_t.
   /// @return the vector
   [[nodiscard]] CVec getVector(fp threshold = 0.) const
     requires IsVector<Node>;
 
   /// Get the sparse vector represented by the DD
+  ///
   /// @param threshold amplitudes with a magnitude below this threshold will be
   /// ignored
+  /// @throws std::out_of_range if basis indices do not fit in size_t.
   /// @return the sparse vector
   [[nodiscard]] SparseCVec getSparseVector(fp threshold = 0.) const
     requires IsVector<Node>;
 
   /// Print the vector represented by the DD
+  ///
   /// @note This function scales exponentially with the number of qubits.
+  /// @throws std::out_of_range if the vector dimension does not fit in size_t.
   void printVector() const
     requires IsVector<Node>;
 
   /// Add the amplitudes of a vector DD to a vector
-  /// @param amplitudes the vector to add to
+  ///
+  /// @param amplitudes the destination vector, sized for the full DD dimension
+  /// @throws std::out_of_range if the DD dimension does not fit in size_t or
+  /// the destination vector is too small.
   void addToVector(CVec& amplitudes) const
     requires IsVector<Node>;
 
@@ -213,35 +223,46 @@ public:
   }
 
   /// Get a single element of the matrix represented by the DD
+  ///
   /// @param numQubits number of qubits in the considered DD
   /// @param i row index of the element
   /// @param j column index of the element
-  /// @throws std::out_of_range if either index is outside the matrix
+  /// @throws std::out_of_range if either index is outside the matrix or the
+  /// requested width does not cover the DD.
   /// @return the complex value of the entry
   [[nodiscard]] std::complex<fp>
   getValueByIndex(std::size_t numQubits, std::size_t i, std::size_t j) const
     requires IsMatrix<Node>;
 
   /// Get the matrix represented by the DD
+  ///
   /// @param numQubits number of qubits in the considered DD
   /// @param threshold entries with a magnitude below this threshold will be
   /// ignored
+  /// @throws std::out_of_range if the width does not cover the DD or the matrix
+  /// dimension does not fit in size_t.
   /// @return the matrix
   [[nodiscard]] CMat getMatrix(std::size_t numQubits, fp threshold = 0.) const
     requires IsMatrix<Node>;
 
   /// Get the sparse matrix represented by the DD
+  ///
   /// @param numQubits number of qubits in the considered DD
   /// @param threshold entries with a magnitude below this threshold will be
   /// ignored
+  /// @throws std::out_of_range if the width does not cover the DD or basis
+  /// indices do not fit in size_t.
   /// @return the sparse matrix
   [[nodiscard]] SparseCMat getSparseMatrix(std::size_t numQubits,
                                            fp threshold = 0.) const
     requires IsMatrix<Node>;
 
   /// Print the matrix represented by the DD
+  ///
   /// @param numQubits number of qubits in the considered DD
   /// @note This function scales exponentially with the number of qubits.
+  /// @throws std::out_of_range if the width does not cover the DD or the matrix
+  /// dimension does not fit in size_t.
   void printMatrix(std::size_t numQubits) const
     requires IsMatrix<Node>;
 
@@ -258,6 +279,8 @@ public:
   /// nodes and is 0 for the terminal node)
   /// @param threshold entries with a magnitude below this threshold will be
   /// ignored
+  /// @throws std::out_of_range if the level does not cover the DD or basis
+  /// indices do not fit in size_t.
   void traverseMatrix(const std::complex<fp>& amp, std::size_t i, std::size_t j,
                       MatrixEntryFunc f, std::size_t level,
                       fp threshold = 0.) const

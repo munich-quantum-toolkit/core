@@ -81,6 +81,35 @@ constexpr ThreeQubitGateMatrix RCCX_MAT = [] {
 }();
 constexpr GateMatrix ZERO_PROJECTOR{1, 0, 0, 0};
 constexpr GateMatrix ONE_PROJECTOR{0, 0, 0, 1};
+
+template <class Node>
+void checkDotOptions(const Edge<Node>& edge, const bool polar = true) {
+  for (const bool colored : {false, true}) {
+    for (const bool labels : {false, true}) {
+      for (const bool classic : {false, true}) {
+        SCOPED_TRACE(::testing::Message()
+                     << colored << labels << classic << polar);
+        std::ostringstream os;
+        toDot(edge, os, colored, labels, classic, false, polar);
+        EXPECT_FALSE(os.str().empty());
+      }
+    }
+  }
+  std::ostringstream os;
+  toDot(edge, os, false, true, true, true, polar);
+  EXPECT_FALSE(os.str().empty());
+}
+
+template <class Node>
+void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
+  exportToDot(edge, filename, true, true, false, false, false);
+  std::ifstream file(filename);
+  ASSERT_TRUE(file.good());
+  EXPECT_NE(file.peek(), std::ifstream::traits_type::eof());
+  file.close();
+  std::filesystem::remove(filename);
+}
+
 template <class Node> void checkDotIds() {
   /// Node IDs must distinguish addresses that differ by a multiple of 2 MiB.
   constexpr size_t distance = std::lcm(size_t{1} << 21U, sizeof(Node));
@@ -196,41 +225,9 @@ TEST(DDPackageTest, BellState) {
 
   ASSERT_DOUBLE_EQ(dd->fidelity(zeroState, bellState), 0.5);
 
-  export2Dot(bellState, "bell_state_colored_labels.dot", true, true, false,
-             false, false);
-  export2Dot(bellState, "bell_state_colored_labels_classic.dot", true, true,
-             true, false, false);
-  export2Dot(bellState, "bell_state_mono_labels.dot", false, true, false, false,
-             false);
-  export2Dot(bellState, "bell_state_mono_labels_classic.dot", false, true, true,
-             false, false);
-  export2Dot(bellState, "bell_state_colored.dot", true, false, false, false,
-             false);
-  export2Dot(bellState, "bell_state_colored_classic.dot", true, false, true,
-             false, false);
-  export2Dot(bellState, "bell_state_mono.dot", false, false, false, false,
-             false);
-  export2Dot(bellState, "bell_state_mono_classic.dot", false, false, true,
-             false, false);
-  export2Dot(bellState, "bell_state_memory.dot", false, true, true, true,
-             false);
+  checkDotOptions(bellState);
+  checkDotFile(bellState, "bell_state.dot");
   exportEdgeWeights(bellState, std::cout);
-
-  const auto filenames = {
-      "bell_state_colored_labels.dot", "bell_state_colored_labels_classic.dot",
-      "bell_state_mono_labels.dot",    "bell_state_mono_labels_classic.dot",
-      "bell_state_colored.dot",        "bell_state_colored_classic.dot",
-      "bell_state_mono.dot",           "bell_state_mono_classic.dot",
-      "bell_state_memory.dot",
-  };
-
-  for (const auto* const filename : filenames) {
-    std::ifstream ifs(filename);
-    ASSERT_TRUE(ifs.good());
-    ASSERT_NE(ifs.peek(), std::ifstream::traits_type::eof());
-    ifs.close();
-    std::filesystem::remove(filename);
-  }
 
   printStatistics(*dd);
 }
@@ -266,101 +263,11 @@ TEST(DDPackageTest, QFTState) {
     ASSERT_EQ(qftState.getValueByIndex(qubit).imag(), 0);
   }
 
-  // export in all different variations
-  export2Dot(qftState, "qft_state_colored_labels.dot", true, true, false, false,
-             false);
-  export2Dot(qftState, "qft_state_colored_labels_classic.dot", true, true, true,
-             false, false);
-  export2Dot(qftState, "qft_state_mono_labels.dot", false, true, false, false,
-             false);
-  export2Dot(qftState, "qft_state_mono_labels_classic.dot", false, true, true,
-             false, false);
-  export2Dot(qftState, "qft_state_colored.dot", true, false, false, false,
-             false);
-  export2Dot(qftState, "qft_state_colored_classic.dot", true, false, true,
-             false, false);
-  export2Dot(qftState, "qft_state_mono.dot", false, false, false, false, false);
-  export2Dot(qftState, "qft_state_mono_classic.dot", false, false, true, false,
-             false);
-  export2Dot(qftState, "qft_state_memory.dot", false, true, true, true, false);
+  checkDotOptions(qftState);
+  checkDotOptions(qftOp);
+  checkDotOptions(qftOp, false);
   exportEdgeWeights(qftState, std::cout);
 
-  export2Dot(qftOp, "qft_op_polar_colored_labels.dot", true, true, false, false,
-             false, true);
-  export2Dot(qftOp, "qft_op_polar_colored_labels_classic.dot", true, true, true,
-             false, false, true);
-  export2Dot(qftOp, "qft_op_polar_mono_labels.dot", false, true, false, false,
-             false, true);
-  export2Dot(qftOp, "qft_op_polar_mono_labels_classic.dot", false, true, true,
-             false, false, true);
-  export2Dot(qftOp, "qft_op_polar_colored.dot", true, false, false, false,
-             false, true);
-  export2Dot(qftOp, "qft_op_polar_colored_classic.dot", true, false, true,
-             false, false, true);
-  export2Dot(qftOp, "qft_op_polar_mono.dot", false, false, false, false, false,
-             true);
-  export2Dot(qftOp, "qft_op_polar_mono_classic.dot", false, false, true, false,
-             false, true);
-  export2Dot(qftOp, "qft_op_polar_memory.dot", false, true, true, true, false,
-             true);
-
-  export2Dot(qftOp, "qft_op_rectangular_colored_labels.dot", true, true, false,
-             false, false, false);
-  export2Dot(qftOp, "qft_op_rectangular_colored_labels_classic.dot", true, true,
-             true, false, false, false);
-  export2Dot(qftOp, "qft_op_rectangular_mono_labels.dot", false, true, false,
-             false, false, false);
-  export2Dot(qftOp, "qft_op_rectangular_mono_labels_classic.dot", false, true,
-             true, false, false, false);
-  export2Dot(qftOp, "qft_op_rectangular_colored.dot", true, false, false, false,
-             false, false);
-  export2Dot(qftOp, "qft_op_rectangular_colored_classic.dot", true, false, true,
-             false, false, false);
-  export2Dot(qftOp, "qft_op_rectangular_mono.dot", false, false, false, false,
-             false, false);
-  export2Dot(qftOp, "qft_op_rectangular_mono_classic.dot", false, false, true,
-             false, false, false);
-  export2Dot(qftOp, "qft_op_rectangular_memory.dot", false, true, true, true,
-             false, false);
-
-  const auto filenames = {
-      "qft_state_colored_labels.dot",
-      "qft_state_colored_labels_classic.dot",
-      "qft_state_mono_labels.dot",
-      "qft_state_mono_labels_classic.dot",
-      "qft_state_colored.dot",
-      "qft_state_colored_classic.dot",
-      "qft_state_mono.dot",
-      "qft_state_mono_classic.dot",
-      "qft_state_memory.dot",
-      "qft_op_polar_colored_labels.dot",
-      "qft_op_polar_colored_labels_classic.dot",
-      "qft_op_polar_mono_labels.dot",
-      "qft_op_polar_mono_labels_classic.dot",
-      "qft_op_polar_colored.dot",
-      "qft_op_polar_colored_classic.dot",
-      "qft_op_polar_mono.dot",
-      "qft_op_polar_mono_classic.dot",
-      "qft_op_polar_memory.dot",
-      "qft_op_rectangular_colored_labels.dot",
-      "qft_op_rectangular_colored_labels_classic.dot",
-      "qft_op_rectangular_mono_labels.dot",
-      "qft_op_rectangular_mono_labels_classic.dot",
-      "qft_op_rectangular_colored.dot",
-      "qft_op_rectangular_colored_classic.dot",
-      "qft_op_rectangular_mono.dot",
-      "qft_op_rectangular_mono_classic.dot",
-      "qft_op_rectangular_memory.dot",
-  };
-
-  // cleanup files
-  for (const auto* const filename : filenames) {
-    std::ifstream ifs(filename);
-    ASSERT_TRUE(ifs.good());
-    ASSERT_NE(ifs.peek(), std::ifstream::traits_type::eof());
-    ifs.close();
-    std::filesystem::remove(filename);
-  }
   printStatistics(*dd);
 }
 
@@ -559,27 +466,6 @@ TEST(DDPackageTest, PartialTraceComplexity) {
   }
 }
 
-TEST(DDPackageTest, StateGenerationManipulation) {
-  constexpr std::size_t nqubits = 6;
-  auto dd = std::make_unique<Package>(nqubits);
-  auto b = std::vector<bool>(nqubits, false);
-  b[0] = b[1] = true;
-  auto const e = makeBasisState(nqubits, b, *dd);
-  auto const f = makeBasisState(nqubits,
-                                {
-                                    BasisStates::zero,
-                                    BasisStates::one,
-                                    BasisStates::plus,
-                                    BasisStates::minus,
-                                    BasisStates::left,
-                                    BasisStates::right,
-                                },
-                                *dd);
-  dd->vUniqueTable.print<vNode>();
-  dd->decRef(e);
-  dd->decRef(f);
-}
-
 TEST(DDPackageTest, VectorSerializationTest) {
   auto dd = std::make_unique<Package>(2);
 
@@ -648,44 +534,8 @@ TEST(DDPackageTest, BellMatrix) {
   auto const goalMatrix = CMat{goalRow0, goalRow1, goalRow2, goalRow3};
   ASSERT_EQ(bellMatrix.getMatrix(dd->qubits()), goalMatrix);
 
-  export2Dot(bellMatrix, "bell_matrix_colored_labels.dot", true, true, false,
-             false, false);
-  export2Dot(bellMatrix, "bell_matrix_colored_labels_classic.dot", true, true,
-             true, false, false);
-  export2Dot(bellMatrix, "bell_matrix_mono_labels.dot", false, true, false,
-             false, false);
-  export2Dot(bellMatrix, "bell_matrix_mono_labels_classic.dot", false, true,
-             true, false, false);
-  export2Dot(bellMatrix, "bell_matrix_colored.dot", true, false, false, false,
-             false);
-  export2Dot(bellMatrix, "bell_matrix_colored_classic.dot", true, false, true,
-             false, false);
-  export2Dot(bellMatrix, "bell_matrix_mono.dot", false, false, false, false,
-             false);
-  export2Dot(bellMatrix, "bell_matrix_mono_classic.dot", false, false, true,
-             false, false);
-  export2Dot(bellMatrix, "bell_matrix_memory.dot", false, true, true, true,
-             false);
-
-  const auto filenames = {
-      "bell_matrix_colored_labels.dot",
-      "bell_matrix_colored_labels_classic.dot",
-      "bell_matrix_mono_labels.dot",
-      "bell_matrix_mono_labels_classic.dot",
-      "bell_matrix_colored.dot",
-      "bell_matrix_colored_classic.dot",
-      "bell_matrix_mono.dot",
-      "bell_matrix_mono_classic.dot",
-      "bell_matrix_memory.dot",
-  };
-
-  for (const auto* const filename : filenames) {
-    std::ifstream ifs(filename);
-    ASSERT_TRUE(ifs.good());
-    ASSERT_NE(ifs.peek(), std::ifstream::traits_type::eof());
-    ifs.close();
-    std::filesystem::remove(filename);
-  }
+  checkDotOptions(bellMatrix);
+  checkDotFile(bellMatrix, "bell_matrix.dot");
 
   printStatistics(*dd);
 }
@@ -1330,9 +1180,9 @@ TEST(DDPackageTest, UniqueTableAllocation) {
 TEST(DDPackageTest, SpecialCaseTerminal) {
   auto dd = std::make_unique<Package>(2);
   auto const one = vEdge::one();
-  export2Dot(one, "oneColored.dot", true, false, false, false, false);
-  export2Dot(one, "oneClassic.dot", false, false, false, false, false);
-  export2Dot(one, "oneMemory.dot", true, true, false, true, false);
+  exportToDot(one, "oneColored.dot", true, false, false, false, false);
+  exportToDot(one, "oneClassic.dot", false, false, false, false, false);
+  exportToDot(one, "oneMemory.dot", true, true, false, true, false);
 
   const auto filenames = {
       "oneColored.dot",
@@ -1582,62 +1432,9 @@ TEST(DDPackageTest, ExportPolarPhaseFormatted) {
   phaseString.str("");
 }
 
-TEST(DDPackageTest, BasicNumericInstabilityTest) {
-  constexpr auto zero = 0.0;
-  constexpr auto half = 0.5;
-  constexpr auto one = 1.0;
-  constexpr auto two = 2.0;
-
-  std::cout << std::setprecision(std::numeric_limits<fp>::max_digits10);
-
-  std::cout << "The 1/sqrt(2) constant used in this package is " << SQRT2_2
-            << ", which is the closest floating point value to the actual "
-               "value of 1/sqrt(2).\n";
-  std::cout << "Computing std::sqrt(0.5) actually computes this value, i.e. "
-            << std::sqrt(half) << "\n";
-  EXPECT_EQ(SQRT2_2, std::sqrt(half));
-
-  std::cout << "However, computing 1/std::sqrt(2.) leads to "
-            << one / std::sqrt(two) // NOLINT(modernize-use-std-numbers)
-            << ", which differs by 1 ULP from std::sqrt(0.5)\n";
-  EXPECT_EQ(one / std::sqrt(two), std::nextafter(std::sqrt(half), zero));
-
-  std::cout << "In the same fashion, computing std::sqrt(2.) leads to "
-            << std::sqrt(two) // NOLINT(modernize-use-std-numbers)
-            << ", while computing 1/std::sqrt(0.5) leads to "
-            << one / std::sqrt(half) << ", which differ by exactly 1 ULP\n";
-  EXPECT_EQ(std::sqrt(two), std::nextafter(one / std::sqrt(half), two));
-
-  std::cout << "Another inaccuracy occurs when computing 1/sqrt(2) * "
-               "1/sqrt(2), which should equal to 0.5 but is off by 1 ULP: "
-            << std::sqrt(half) * std::sqrt(half) << "\n";
-  EXPECT_EQ(std::sqrt(half) * std::sqrt(half), std::nextafter(half, one));
-
-  std::cout << "This inaccuracy even persists when computing std::sqrt(0.5) * "
-               "std::sqrt(0.5): "
-            << std::sqrt(half) * std::sqrt(half) << "\n";
-  EXPECT_EQ(std::sqrt(half) * std::sqrt(half), std::nextafter(half, one));
-
-  std::cout << "Interestingly, calculating powers of SQRT2_2 can be "
-               "conducted very precisely, i.e., with an error of only 1 ULP.\n";
-  fp accumulator = SQRT2_2 * SQRT2_2;
-  constexpr std::size_t nq = 64;
-  for (std::size_t i = 1; i < nq; i += 2) {
-    const std::size_t power = (i + 1) / 2;
-    const std::size_t denom = static_cast<std::size_t>(1U) << power;
-    const fp target = 1. / static_cast<double>(denom);
-    const fp diff = std::abs(target - accumulator);
-    const auto ulps = ulpDistance(accumulator, target);
-    std::cout << accumulator << ", numerical error: " << diff
-              << ", ulps: " << ulps << "\n";
-    EXPECT_EQ(ulps, 1);
-    accumulator *= SQRT2_2;
-    accumulator *= SQRT2_2;
-  }
-}
-
 TEST(DDPackageTest, BasicNumericStabilityTest) {
   using limits = std::numeric_limits<fp>;
+  EXPECT_EQ(SQRT2_2, std::sqrt(0.5));
 
   auto dd = std::make_unique<Package>(1);
   auto const tol = RealNumber::eps;
@@ -1816,8 +1613,7 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
 }
 
 TEST(DDPackageTest, calCulpDistance) {
-  constexpr auto nrQubits = 1U;
-  auto const dd = std::make_unique<Package>(nrQubits);
+  EXPECT_EQ(ulpDistance(1., std::nextafter(1., 2.)), 1U);
   const auto tmp0 = ulpDistance(1 + 1e-12, 1);
   const auto tmp1 = ulpDistance(1, 1);
   EXPECT_TRUE(tmp0 > 0);
@@ -2647,30 +2443,7 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   EXPECT_NEAR(dd->expectationValue(op, evolvedState), -0.416, 0.001);
 }
 
-/**
- * @brief This is a regression test for a long lasting memory leak in the DD
- * package.
- * @details The memory leak was caused by a bug in the normalization routine
- * which was not properly returning a node to the memory manager. This occurred
- * whenever the multiplication of two DDs resulted in a zero terminal.
- */
-TEST(DDPackageTest, DDNodeLeakRegressionTest) {
-  constexpr auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
-
-  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
-  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
-  dd->multiply(dd1, dd2);
-  dd->garbageCollect(true);
-  EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
-}
-
-/**
- * @brief This is a regression test for a compute table bug with terminals.
- * @details The bug was caused by the assumption that `result.p == nullptr`
- * indicates that the lookup was unsuccessful. However, this is not the case
- * anymore since terminal DD nodes were replaced by a `nullptr` pointer.
- */
+// A cached terminal has a null node pointer and must still count as a hit.
 TEST(DDPackageTest, CTPerformanceRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
@@ -2685,7 +2458,7 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
   EXPECT_EQ(ct.getStats().lookups, repetitions);
   EXPECT_EQ(ct.getStats().hits, repetitions - 1U);
 
-  // This additional check makes sure that no nodes are leaked.
+  // Normalization must return temporary nodes when multiplication yields zero.
   dd->garbageCollect(true);
   EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
 }
@@ -2710,8 +2483,10 @@ TEST(DDPackageTest, DataStructureStatistics) {
 TEST(DDPackageTest, DDStatistics) {
   constexpr auto nqubits = 2U;
   const auto dd = std::make_unique<Package>(nqubits);
+  const auto initialPeakMemoryMiB = computePeakMemoryMiB(*dd);
   const auto dummyGate = getDD(qc::StandardOperation(0U, qc::X), *dd);
   EXPECT_NE(dummyGate.p, nullptr);
+  dd->incRef(dummyGate);
   const auto statsString = getStatisticsString(*dd, true);
   const auto stats = nlohmann::json::parse(statsString);
 
@@ -2720,6 +2495,11 @@ TEST(DDPackageTest, DDStatistics) {
   ASSERT_TRUE(stats.contains("matrix"));
   EXPECT_TRUE(stats.contains("real_numbers"));
   EXPECT_TRUE(stats.contains("compute_tables"));
+  const auto nodeMemoryMiB = static_cast<double>(sizeof(mNode)) / (1ULL << 20U);
+  EXPECT_EQ(stats["active_memory_mib"], nodeMemoryMiB);
+  EXPECT_EQ(stats["peak_memory_mib"], initialPeakMemoryMiB + nodeMemoryMiB);
+  EXPECT_EQ(computeActiveMemoryMiB(*dd), nodeMemoryMiB);
+  EXPECT_EQ(computePeakMemoryMiB(*dd), initialPeakMemoryMiB + nodeMemoryMiB);
   const auto& matrixStats = stats["matrix"];
   ASSERT_TRUE(matrixStats.contains("unique_table"));
   const auto& uniqueTableStats = matrixStats["unique_table"];
@@ -2730,6 +2510,7 @@ TEST(DDPackageTest, DDStatistics) {
   EXPECT_GT(uniqueTableStats["0"]["num_buckets"], 0);
   ASSERT_TRUE(uniqueTableStats["total"].contains("num_buckets"));
   EXPECT_GT(uniqueTableStats["total"]["num_buckets"], 0);
+  dd->decRef(dummyGate);
 }
 
 TEST(DDPackageTest, ReduceAncillaRegression) {

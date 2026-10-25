@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -166,10 +167,33 @@ TEST(DDTableTest, InitialLevelsAndCapacityValidation) {
   node->e = {vEdge::one(), vEdge::zero()};
   EXPECT_EQ(table.lookup(node), node);
   EXPECT_EQ(table.getStats(0).numBuckets, 1);
+  EXPECT_THROW(static_cast<void>(table.getStats(1)), std::out_of_range);
   EXPECT_EQ(table.lookup(node), node);
   table.clear();
   EXPECT_EQ(table.getNumEntries(), 0);
 }
+
+TEST(DDTableTest, FailedLevelGrowthPreservesCapacity) {
+  constexpr auto oversized = size_t{1}
+                             << (std::numeric_limits<size_t>::digits - 1U);
+  auto manager = MemoryManager::create<vNode>();
+  UniqueTable table(manager, {.nBuckets = oversized, .maxBuckets = oversized});
+  EXPECT_THROW(table.resize(1), std::length_error);
+  EXPECT_TRUE(table.getTables().empty());
+  EXPECT_THROW(static_cast<void>(table.getStats(0)), std::out_of_range);
+
+  DDPackageConfig config;
+  config.utMatNumBucket = oversized;
+  config.utMaxNumBucket = oversized;
+  Package package(0, config);
+  EXPECT_THROW(package.resize(1), std::length_error);
+  EXPECT_EQ(package.qubits(), 0);
+  EXPECT_THROW(static_cast<void>(package.mUniqueTable.getStats(0)),
+               std::out_of_range);
+  package.resize(0);
+  EXPECT_TRUE(package.vUniqueTable.getTables().empty());
+}
+
 TEST(DDTableTest, FixedCapacityUsesMatchingInitialAndMaximum) {
   auto manager = MemoryManager::create<vNode>();
   UniqueTable table(manager, {.nVars = 1, .nBuckets = 1, .maxBuckets = 1});
@@ -292,10 +316,13 @@ TEST(DDTableTest, MemoryManagerGrowthReuseAndResetStatistics) {
     EXPECT_EQ(manager.template get<T>(), first);
     EXPECT_EQ(stats.numAvailableForReuse, 0);
     EXPECT_EQ(stats.numUsed, 3);
+    manager.returnEntry(*third);
+    EXPECT_EQ(stats.numAvailableForReuse, 1);
     manager.reset(true);
     EXPECT_EQ(stats.numAllocated, 6);
     EXPECT_EQ(stats.numAllocations, 3);
     EXPECT_EQ(stats.numUsed, 0);
+    EXPECT_EQ(stats.numAvailableForReuse, 0);
     EXPECT_EQ(stats.peakNumUsed, 3);
     EXPECT_EQ(stats.peakNumAvailableForReuse, 2);
     manager.reset(true);

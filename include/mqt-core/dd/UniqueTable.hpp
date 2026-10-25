@@ -143,9 +143,10 @@ public:
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
-  /// Get a reference to individual statistics
-  [[nodiscard]] const UniqueTableStatistics&
-  getStats(std::size_t idx) const noexcept;
+  /// Get the statistics for a level.
+  ///
+  /// @throws std::out_of_range If idx does not name an allocated level.
+  [[nodiscard]] const UniqueTableStatistics& getStats(std::size_t idx) const;
 
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;

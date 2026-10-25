@@ -53,6 +53,17 @@ def test_matrix_array_ownership() -> None:
     assert np.allclose(view[0, 0], -1j)
 
 
+def test_matrix_invalid_width() -> None:
+    """Reject matrix widths that omit DD levels or exceed the dense limit."""
+    package = DDPackage(2)
+    matrix = package.single_qubit_gate(np.array([[0, 1], [1, 0]], dtype=np.complex128), 1)
+    for width in (0, 1):
+        with pytest.raises(ValueError, match="does not cover"):
+            matrix.get_matrix(width)
+    with pytest.raises(ValueError, match="20-qubit"):
+        package.identity().get_matrix(21)
+
+
 def test_identity() -> None:
     """Test the identity matrix."""
     p = DDPackage(3)

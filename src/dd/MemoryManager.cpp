@@ -17,6 +17,14 @@
 #include <cstring>
 #include <memory>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#ifdef _M_X64
+#include <xmmintrin.h>
+#elif defined(_M_ARM64)
+#include <intrin.h>
+#endif
+#endif
+
 namespace dd {
 
 MemoryManager::MemoryManager(size_t entrySize,
@@ -52,11 +60,8 @@ void MemoryManager::returnEntry(LLBase& entry) noexcept {
   stats.trackReturnedEntry();
 }
 
-void MemoryManager::reset(const bool resizeToTotal) noexcept {
-  available = nullptr;
-
+void MemoryManager::reset(const bool resizeToTotal) {
   auto numAllocations = stats.numAllocations;
-  chunks.resize(1U);
   if (resizeToTotal && chunks[0].second != stats.numAllocated * entrySize_) {
     chunks[0] = {std::make_unique_for_overwrite<Storage>(stats.numAllocated *
                                                          entrySize_),
@@ -64,6 +69,8 @@ void MemoryManager::reset(const bool resizeToTotal) noexcept {
     ++numAllocations;
   }
 
+  chunks.resize(1U);
+  available = nullptr;
   chunkIt = chunks[0].first.get();
   /// NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   chunkEndIt = chunks[0].first.get() + chunks[0].second;
@@ -82,6 +89,15 @@ LLBase* MemoryManager::getEntryFromAvailableList() noexcept {
 
   auto* entry = available;
   available = available->next();
+  if (available != nullptr) {
+#if defined(__clang__) || defined(__GNUC__)
+    __builtin_prefetch(available, 0, 3);
+#elif defined(_M_ARM64)
+    __prefetch(available);
+#elif defined(_M_X64)
+    _mm_prefetch(reinterpret_cast<char*>(available), _MM_HINT_T0);
+#endif
+  }
   stats.trackReusedEntries();
   return entry;
 }

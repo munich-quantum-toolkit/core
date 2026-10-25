@@ -621,10 +621,11 @@ void applyVirtualOperation(const qc::Operation& op,
 }
 
 VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd) {
-  const auto previous = in;
-  in.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
-  dd.incRef(in);
-  dd.decRef(previous);
+  auto next = in;
+  next.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
+  dd.incRef(next);
+  dd.decRef(in);
+  in = next;
   return in;
 }
 

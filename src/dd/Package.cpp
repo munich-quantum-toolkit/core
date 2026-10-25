@@ -76,9 +76,9 @@ void Package::resize(const std::size_t nq) {
                                 " were requested. Please recompile the "
                                 "package with a wider Qubit type!");
   }
+  vUniqueTable.resize(nq);
+  mUniqueTable.resize(nq);
   nqubits = nq;
-  vUniqueTable.resize(nqubits);
-  mUniqueTable.resize(nqubits);
 }
 
 void Package::reset() {
@@ -672,7 +672,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
     if (threshold < p0) {
       cur = cur.p->e.at(0);
     } else {
-      result[cur.p->v] = '1';
+      result[numberOfQubits - 1U - cur.p->v] = '1';
       cur = cur.p->e.at(1);
     }
   }
@@ -681,7 +681,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
     vEdge e = vEdge::one();
     std::array<vEdge, 2> edges{};
     for (std::size_t p = 0U; p < numberOfQubits; ++p) {
-      if (result[p] == '0') {
+      if (result[numberOfQubits - 1U - p] == '0') {
         edges[0] = e;
         edges[1] = vEdge::zero();
       } else {
@@ -695,7 +695,6 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
     rootEdge = e;
   }
 
-  std::ranges::reverse(result);
   return result;
 }
 fp Package::assignProbabilities(const vEdge& edge,

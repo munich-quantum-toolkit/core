@@ -6,6 +6,27 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### DD error handling
+
+Pass extraction widths that cover the DD and size `addToVector` destinations for
+the full vector. Dense dimensions and sparse basis indices must fit in `size_t`.
+Invalid requests now throw `std::out_of_range` in C++; Python
+`MatrixDD.get_matrix` raises `ValueError` when `num_qubits` is too small.
+
+`dd::MemoryManager::reset(bool)`, `dd::Package::incRef`, and the indexed
+`dd::UniqueTable::getStats` overload are no longer `noexcept`. Remove `noexcept`
+requirements from corresponding member-function pointer types and handle
+exceptions in wrappers that assumed these calls could not throw.
+
+### DD export
+
+Replace C++ calls to `dd::export2Dot` with `dd::exportToDot`.
+
+C++ `dd::exportToDot` and Python `to_svg` now report DOT file failures through
+exceptions. The native Graphviz fallback also throws when the executable cannot
+start or rendering fails; Python receives `RuntimeError`. Handle these failures
+at the call site. On Windows, put Graphviz's `dot.exe` on `PATH`.
+
 ## [3.11.0]
 
 ### Shared-library ABI version

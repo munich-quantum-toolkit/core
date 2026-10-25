@@ -132,6 +132,9 @@ class VectorDD:
             classic: Whether to use the classic DD visualization style.
             memory: Whether to include memory information. For debugging purposes only.
             format_as_polar: Whether to format the edge weights in polar coordinates.
+
+        Raises:
+            RuntimeError: If the DOT file cannot be written or the native Graphviz command fails.
         """
 
 class MatrixDD:
@@ -163,7 +166,7 @@ class MatrixDD:
         """Get the entry of the matrix by decisions.
 
         Args:
-            num_qubits: The number of qubits.
+            num_qubits: The number of qubits; must cover the matrix DD.
             decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
                 Must be at least `num_qubits` long.
 
@@ -177,13 +180,14 @@ class MatrixDD:
         """Get the matrix represented by the DD.
 
         Args:
-            num_qubits: The number of qubits.
+            num_qubits: The number of qubits; must cover the matrix DD and be at most 20.
             threshold: The threshold for not including entries in the matrix. Defaults to 0.0.
 
         Returns:
             The matrix.
 
         Raises:
+            ValueError: If num_qubits does not cover the DD or exceeds 20.
             MemoryError: If the memory allocation fails.
         """
 
@@ -260,6 +264,9 @@ class MatrixDD:
             classic: Whether to use the classic DD visualization style.
             memory: Whether to include memory information. For debugging purposes only.
             format_as_polar: Whether to format the edge weights in polar coordinates.
+
+        Raises:
+            RuntimeError: If the DOT file cannot be written or the native Graphviz command fails.
         """
 
 class DDPackage:

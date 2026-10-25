@@ -40,15 +40,21 @@ void UniqueTable::resize(const std::size_t nVars) {
   for (auto i = nVars; i < oldSize; ++i) {
     entryCount_ -= stats[i].numEntries;
   }
-  cfg.nVars = nVars;
   tables.resize(nVars);
-  /// TODO: release entries for removed levels when shrinking populated tables.
-  stats.resize(nVars);
-  for (auto i = oldSize; i < nVars; ++i) {
-    tables[i].resize(cfg.nBuckets);
-    stats[i].entrySize = sizeof(Bucket);
-    stats[i].numBuckets = cfg.nBuckets;
+  // TODO: release entries for removed levels when shrinking populated tables.
+  try {
+    stats.resize(nVars);
+    for (auto i = oldSize; i < nVars; ++i) {
+      tables[i].resize(cfg.nBuckets);
+      stats[i].entrySize = sizeof(Bucket);
+      stats[i].numBuckets = cfg.nBuckets;
+    }
+  } catch (...) {
+    tables.resize(oldSize);
+    stats.resize(oldSize);
+    throw;
   }
+  cfg.nVars = nVars;
 }
 
 bool UniqueTable::possiblyNeedsCollection() const {
@@ -112,7 +118,7 @@ void UniqueTable::clear() {
 };
 
 const UniqueTableStatistics&
-UniqueTable::getStats(const std::size_t idx) const noexcept {
+UniqueTable::getStats(const std::size_t idx) const {
   return stats.at(idx);
 }
 
