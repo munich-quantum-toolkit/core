@@ -138,19 +138,17 @@ unused reserved slots need not occupy resident memory.
 ### C++ resource limits and cancellation
 
 Pass an optional `dd::ResourceControl` to `dd::Package` to limit accounted
-storage, set a deadline, or request cancellation through `std::stop_token`:
+storage or request cancellation through `std::stop_token`:
 
 ```cpp
 #include "dd/Package.hpp"
 #include "dd/ResourceControl.hpp"
 
-#include <chrono>
 #include <stop_token>
 
 std::stop_source stop;
 dd::ResourceControl control({
     .stop = stop.get_token(),
-    .deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10),
     .maxBytes = 64 * 1024 * 1024,
 });
 try {
@@ -163,8 +161,10 @@ try {
 
 The control must outlive its packages and any containers using it. Separate
 packages may share one control across threads; a package itself is not safe for
-concurrent mutation. A shared control shares all three limits. Existing callers
-that omit it keep unrestricted allocation and do not poll a cancellation token.
+concurrent mutation. A shared control shares the byte budget and cancellation
+token. Existing callers that omit it keep unrestricted allocation and do not
+poll a cancellation token. DD operations do not read the clock or create timer
+threads.
 
 `allocatedBytes()` reports currently reserved bytes, and `peakBytes()` records
 the high-water mark of successful allocation reservations. These are not
@@ -175,14 +175,59 @@ replacement. Allocator overhead, stack storage, dense exports, sampling,
 serialization, and statistics scratch are excluded. This is not a process-memory
 or RSS bound.
 
-Cancellation and deadlines are cooperative. Allocation and recursive arithmetic
-check for stopping; an allocation or garbage-collection pass can delay a check.
-Dense export, sampling, serialization, and statistics do not provide
-cancellation checkpoints. After `ResourceLimitExceeded`, destroy the affected
-package rather than reusing it: interrupted arithmetic can leave temporary roots
-or compute entries incomplete. Destruction releases its accounted storage even
-when the control remains cancelled. The control does not change DD numerical
-tolerances.
+Cancellation is cooperative. Allocation and recursive arithmetic check for
+stopping; an allocation or garbage-collection pass can delay a check. Dense
+export, sampling, serialization, and statistics do not provide cancellation
+checkpoints. After `ResourceLimitExceeded`, destroy the affected package rather
+than reusing it: interrupted arithmetic can leave temporary roots or compute
+entries incomplete. Destruction releases its accounted storage even when the
+control remains cancelled. The control does not change DD numerical tolerances.
+
+#### Optional caller-owned timeout
+
+A caller that needs a timeout can request cancellation from a timer thread. Use
+one timer per computation, including when multiple packages share the control.
+Create it only when a timeout is requested:
+
+```cpp
+#include "dd/Package.hpp"
+#include "dd/ResourceControl.hpp"
+
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <stop_token>
+#include <thread>
+
+std::stop_source stop;
+dd::ResourceControl control({.stop = stop.get_token()});
+const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+std::jthread timer([&](const std::stop_token& done) {
+  std::mutex mutex;
+  std::condition_variable_any wake;
+  std::unique_lock lock(mutex);
+  wake.wait_until(lock, done, deadline, [] { return false; });
+  if (!done.stop_requested()) {
+    stop.request_stop();
+  }
+});
+try {
+  dd::Package package(20, {}, &control);
+  // Perform DD operations here.
+} catch (const dd::ResourceLimitExceeded& error) {
+  // A timeout reports ResourceLimit::Cancelled, just like user cancellation.
+}
+// The timer destructor requests its own stop and joins without waiting for
+// the deadline. The computation's stop source outlives the timer.
+```
+
+The timer has its own shutdown token so normal completion does not cancel the
+computation. Its stop-aware wait also handles shutdown before the timer starts.
+Account for the extra thread in the caller's worker budget. Thread startup and
+shutdown add overhead only when using a timer. Scheduling and cooperative
+checkpoints can delay cancellation beyond the deadline; there is no hard
+termination bound. Callers that distinguish timeout from user cancellation must
+track the cause themselves and define which takes precedence when they race.
 
 ## How do Quantum Decision Diagrams Work?
 

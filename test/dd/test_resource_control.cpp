@@ -22,10 +22,12 @@
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <future>
+#include <mutex>
 #include <stop_token>
 #include <thread>
 
@@ -51,15 +53,43 @@ TEST(DDResourceControl, ChecksBeforeInitialAllocations) {
   EXPECT_EQ(cancelled.allocatedBytes(), 0);
   EXPECT_EQ(cancelled.peakBytes(), 0);
 
-  ResourceControl expired({.deadline = std::chrono::steady_clock::now()});
-  expectLimit([&] { const Package package(2, {}, &expired); },
-              ResourceLimit::Deadline);
-  EXPECT_EQ(expired.allocatedBytes(), 0);
-
   ResourceControl tiny({.maxBytes = 1});
   expectLimit([&] { const Package package(2, {}, &tiny); },
               ResourceLimit::Memory);
   EXPECT_EQ(tiny.allocatedBytes(), 0);
+}
+
+TEST(DDResourceControl, CallerOwnedTimer) {
+  for (const bool expired : {false, true}) {
+    SCOPED_TRACE(expired);
+    // NOLINTNEXTLINE(misc-const-correctness): mutable in C++20.
+    std::stop_source stop;
+    ResourceControl control({.stop = stop.get_token()});
+    const auto deadline =
+        std::chrono::steady_clock::now() +
+        (expired ? std::chrono::hours(0) : std::chrono::hours(1));
+    std::jthread timer([&](const std::stop_token& done) {
+      std::mutex mutex;
+      std::condition_variable_any wake;
+      std::unique_lock lock(mutex);
+      wake.wait_until(lock, done, deadline, [] { return false; });
+      if (!done.stop_requested()) {
+        stop.request_stop();
+      }
+    });
+    if (!expired) {
+      timer.request_stop();
+    }
+    timer.join();
+    EXPECT_EQ(stop.stop_requested(), expired);
+    if (expired) {
+      expectLimit([&] { const Package package(2, {}, &control); },
+                  ResourceLimit::Cancelled);
+    } else {
+      EXPECT_NO_THROW((Package(2, {}, &control)));
+    }
+    EXPECT_EQ(control.allocatedBytes(), 0);
+  }
 }
 
 TEST(DDResourceControl, AccountsConstructionAndLazyComputeStorage) {

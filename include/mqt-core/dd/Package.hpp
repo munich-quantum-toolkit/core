@@ -116,7 +116,7 @@ public:
   /// Get the number of qubits
   [[nodiscard]] auto qubits() const { return nqubits; }
 
-  /// Cooperatively check cancellation and the deadline.
+  /// Cooperatively check cancellation.
   void checkResources() const {
     if (resources_ != nullptr) {
       resources_->checkpoint();

@@ -14,7 +14,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -26,7 +25,7 @@
 namespace dd {
 
 /// Why a controlled DD computation stopped without a result.
-enum class ResourceLimit : uint8_t { Cancelled, Deadline, Memory };
+enum class ResourceLimit : uint8_t { Cancelled, Memory };
 
 /// Stop unwinding a resource-limited DD computation.
 ///
@@ -51,14 +50,12 @@ class ResourceControl final {
 public:
   struct Options {
     std::stop_token stop;
-    std::chrono::steady_clock::time_point deadline =
-        std::chrono::steady_clock::time_point::max();
     size_t maxBytes = std::numeric_limits<size_t>::max();
   };
 
   explicit ResourceControl(Options options);
 
-  /// Throw when cancellation or the deadline has been reached.
+  /// Throw when cancellation has been requested.
   void checkpoint() const;
   [[nodiscard]] size_t allocatedBytes() const noexcept {
     return allocated_.load(std::memory_order_relaxed);

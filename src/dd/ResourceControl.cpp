@@ -11,7 +11,6 @@
 #include "dd/ResourceControl.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <new>
 #include <stdexcept>
@@ -23,8 +22,6 @@ const char* resourceLimitMessage(const ResourceLimit reason) {
   switch (reason) {
   case ResourceLimit::Cancelled:
     return "DD computation cancelled.";
-  case ResourceLimit::Deadline:
-    return "DD computation deadline exceeded.";
   case ResourceLimit::Memory:
     return "DD allocation budget exceeded.";
   }
@@ -41,10 +38,6 @@ ResourceControl::ResourceControl(Options options)
 void ResourceControl::checkpoint() const {
   if (options_.stop.stop_requested()) {
     throw ResourceLimitExceeded(ResourceLimit::Cancelled);
-  }
-  if (options_.deadline != std::chrono::steady_clock::time_point::max() &&
-      std::chrono::steady_clock::now() >= options_.deadline) {
-    throw ResourceLimitExceeded(ResourceLimit::Deadline);
   }
 }
 
