@@ -27,8 +27,6 @@
 #include <cmath>
 #include <cstddef>
 #include <functional>
-#include <iomanip>
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -305,7 +303,6 @@ TEST(DDComplexTest, NumberPrintingFormatted) {
 TEST_F(CNTest, ComplexTableAllocation) {
   auto mem = MemoryManager::create<RealNumber>();
   const auto allocs = mem.getStats().numAllocated;
-  std::cout << allocs << "\n";
   std::vector<RealNumber*> nums{allocs};
   // get all the numbers that are pre-allocated
   for (auto i = 0U; i < allocs; ++i) {
@@ -354,8 +351,6 @@ TEST_F(CNTest, DoubleHitInFindOrInsert) {
 }
 
 TEST_F(CNTest, DoubleHitAcrossBuckets) {
-  std::cout << std::setprecision(std::numeric_limits<fp>::max_digits10);
-
   // insert a number at a lower bucket border
   const fp num1 = 8191.5 / (static_cast<fp>(ut.getTable().size()) - 1);
   const auto* tnum1 = ut.lookup(num1);

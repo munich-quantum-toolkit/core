@@ -24,7 +24,7 @@ as `main.cpp`:
 #include <qdmi/client.h>
 
 #include <cstddef>
-#include <iostream>
+#include "llvm/Support/raw_ostream.h"
 #include <stdexcept>
 #include <string>
 
@@ -63,7 +63,7 @@ int main() {
   if (std::string(result) != "1") {
     return 1;
   }
-  std::cout << "DDSIM result: " << result << '\n';
+  llvm::outs() << "DDSIM result: " << result << '\n';
 }
 ```
 
@@ -79,7 +79,9 @@ elseif(UNIX)
 endif()
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Runtime)
 add_executable(qdmi-example main.cpp)
-target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver)
+target_compile_features(qdmi-example PRIVATE cxx_std_20)
+target_include_directories(qdmi-example SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver LLVMSupport)
 mqt_copy_qdmi_runtime(qdmi-example MQT::CoreQDMI_DDSIM_Device)
 
 enable_testing()
@@ -89,7 +91,8 @@ add_test(NAME benchmark COMMAND MQT::mqt-core-bench list)
 set_tests_properties(qdmi-runtime compiler benchmark PROPERTIES TIMEOUT 60)
 ```
 
-With the wheel installed in the active environment, run:
+With the wheel installed in the active environment and an LLVM SDK matching the
+major and minor version used to build MQT Core, run:
 
 ```console
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core-cli --cmake_dir)"
@@ -98,7 +101,6 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 The application prints `DDSIM result: 1`. CTest also runs both imported tools.
-No LLVM/MLIR installation is required.
 
 CMake also provides `MQT::mqt-cc` and `MQT::mqt-core-bench` imported executable
 targets. Use them in custom commands, or run `mqt-cc` and `mqt-core-bench` from

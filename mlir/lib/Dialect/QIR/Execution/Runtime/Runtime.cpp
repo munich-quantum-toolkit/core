@@ -35,7 +35,6 @@
 #include <optional>
 #include <random>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -171,7 +170,8 @@ auto Runtime::resolveAddress(const Qubit* qubit) -> dd::Qubit {
 
   const auto it = qRegister.find(qubit);
   if (it == qRegister.end()) {
-    std::ostringstream ss;
+    std::string ssStorage;
+    llvm::raw_string_ostream ss(ssStorage);
     ss << __FILE__ << ":" << __LINE__
        << ": Qubit not allocated (not found): " << qubit;
     throw std::out_of_range(ss.str());
@@ -448,7 +448,8 @@ auto Runtime::deref(Result* result) -> ResultStruct& {
   auto it = rRegister.find(result);
   if (it == rRegister.end()) {
     if (resultMode == ResourceMode::DYNAMIC) {
-      std::stringstream ss;
+      std::string ssStorage;
+      llvm::raw_string_ostream ss(ssStorage);
       ss << __FILE__ << ":" << __LINE__
          << ": Result not allocated (not found): " << result;
       throw std::out_of_range(ss.str());

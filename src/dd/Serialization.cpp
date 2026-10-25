@@ -99,12 +99,12 @@ Edge Package::deserialize(llvm::StringRef data, const bool readBinary) {
     data = data.drop_front(sizeof(T));
     return true;
   };
-  const auto readLine = [&data](std::string& line) {
+  const auto readLine = [&data](llvm::StringRef& line) {
     if (data.empty()) {
       return false;
     }
     const auto parts = data.split('\n');
-    line = parts.first.str();
+    line = parts.first;
     data = parts.second;
     return true;
   };
@@ -136,43 +136,46 @@ Edge Package::deserialize(llvm::StringRef data, const bool readBinary) {
     std::array<ComplexValue, N> edgeWeights{};
     std::array<std::int64_t, N> edgeIndices{};
     edgeIndices.fill(-2);
-    std::string version;
+    llvm::StringRef version;
     if (!readLine(version)) {
       throw std::runtime_error("Missing serialized DD version.");
     }
     size_t versionEnd = 0;
-    if (std::cmp_not_equal(std::stoi(version, &versionEnd),
+    if (std::cmp_not_equal(std::stoi(version.str(), &versionEnd),
                            SERIALIZATION_VERSION) ||
         versionEnd != version.size()) {
       throw std::runtime_error(
           "Wrong Version of serialization file version. version of file: " +
-          version +
+          version.str() +
           "; current version: " + std::to_string(SERIALIZATION_VERSION));
     }
 
-    const std::string complexRealRegex =
+    static constexpr auto COMPLEX_REAL_REGEX =
         R"(([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![ \d\.]*(?:[eE][+-])?\d*[iI]))?)";
-    const std::string complexImagRegex =
+    static constexpr auto COMPLEX_IMAG_REGEX =
         R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
-    const std::string edgeRegex =
-        " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-    static const std::regex COMPLEX_WEIGHT_REGEX(complexRealRegex +
-                                                 complexImagRegex);
+    static const std::regex COMPLEX_WEIGHT_REGEX(
+        std::string(COMPLEX_REAL_REGEX) + COMPLEX_IMAG_REGEX);
 
-    std::string lineConstruct = "(\\d+) (\\d+)";
-    for (std::size_t i = 0U; i < N; ++i) {
-      lineConstruct += "(?:" + edgeRegex + ")";
-    }
-    lineConstruct += " *(?:#.*)?";
-    static const std::regex LINE_REGEX(lineConstruct);
-    std::smatch m;
+    static const std::regex LINE_REGEX([] {
+      const std::string edgeRegex = " \\(((-?\\d+) (" +
+                                    std::string(COMPLEX_REAL_REGEX) +
+                                    COMPLEX_IMAG_REGEX + "))?\\)";
+      std::string pattern = "(\\d+) (\\d+)";
+      for (size_t i = 0; i < N; ++i) {
+        pattern += "(?:" + edgeRegex + ")";
+      }
+      return pattern + " *(?:#.*)?";
+    }());
+    std::cmatch m;
 
-    std::string line;
+    llvm::StringRef line;
     if (!readLine(line) || line.empty()) {
       throw std::runtime_error("Missing serialized DD root weight.");
     }
-    if (!std::regex_match(line, m, COMPLEX_WEIGHT_REGEX)) {
-      throw std::runtime_error("Regex did not match second line: " + line);
+    if (!std::regex_match(line.begin(), line.end(), m, COMPLEX_WEIGHT_REGEX)) {
+      throw std::runtime_error("Regex did not match second line: " +
+                               line.str());
     }
     rootweight.fromString(m.str(1), m.str(2));
 
@@ -181,8 +184,8 @@ Edge Package::deserialize(llvm::StringRef data, const bool readBinary) {
         continue;
       }
 
-      if (!std::regex_match(line, m, LINE_REGEX)) {
-        throw std::runtime_error("Regex did not match line: " + line);
+      if (!std::regex_match(line.begin(), line.end(), m, LINE_REGEX)) {
+        throw std::runtime_error("Regex did not match line: " + line.str());
       }
 
       // match 1: node_idx
@@ -202,11 +205,11 @@ Edge Package::deserialize(llvm::StringRef data, const bool readBinary) {
       v = static_cast<Qubit>(qubit);
 
       for (auto edgeIdx = 3U, i = 0U; i < N; i++, edgeIdx += 5) {
-        if (m.str(edgeIdx).empty()) {
+        if (m.length(edgeIdx) == 0) {
           continue;
         }
 
-        if (m.str(edgeIdx + 2).empty()) {
+        if (m.length(edgeIdx + 2) == 0) {
           throw std::runtime_error("Missing serialized DD edge weight.");
         }
         edgeIndices[i] = std::stoll(m.str(edgeIdx + 1));

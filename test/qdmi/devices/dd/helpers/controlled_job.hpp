@@ -18,13 +18,14 @@
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <chrono>
 #include <cstddef>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -143,7 +144,11 @@ public:
 
   void release() {
     if (!released_) {
-      std::ofstream(directory_ / "release").put('1');
+      llvm::cantFail(llvm::writeToOutput((directory_ / "release").string(),
+                                         [](llvm::raw_ostream& os) {
+                                           os << '1';
+                                           return llvm::Error::success();
+                                         }));
       for (size_t i = 0; i < count_; ++i) {
         awaitFile("finished" + std::to_string(i));
       }

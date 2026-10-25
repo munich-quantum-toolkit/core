@@ -101,7 +101,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <initializer_list>
 #include <iosfwd>
 #include <iterator>
@@ -1993,8 +1992,16 @@ h q;
   const auto temporaryDirectory = std::filesystem::path(testing::TempDir());
   const auto mlirPath = temporaryDirectory / "typed_program_input.mlir";
   const auto qasmPath = temporaryDirectory / "typed_program_input.qasm";
-  std::ofstream(mlirPath) << mlir;
-  std::ofstream(qasmPath) << qasm;
+  llvm::cantFail(
+      llvm::writeToOutput(mlirPath.string(), [&](llvm::raw_ostream& os) {
+        os << mlir;
+        return llvm::Error::success();
+      }));
+  llvm::cantFail(
+      llvm::writeToOutput(qasmPath.string(), [&](llvm::raw_ostream& os) {
+        os << qasm;
+        return llvm::Error::success();
+      }));
 
   auto qcFromMLIR = QCProgram::fromMLIRString(mlir);
   auto qcFromMLIRFile = QCProgram::fromMLIRFile(mlirPath);
@@ -2052,7 +2059,11 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
                                                     "mlir", filename));
     const llvm::FileRemover cleanup(filename);
     const auto path = std::filesystem::path(filename.str().str());
-    std::ofstream(path) << qco->str();
+    llvm::cantFail(
+        llvm::writeToOutput(path.string(), [&](llvm::raw_ostream& os) {
+          os << qco->str();
+          return llvm::Error::success();
+        }));
     auto qcoFromString = QCOProgram::fromMLIRString(qco->str());
     auto qcoFromFile = QCOProgram::fromMLIRFile(path);
     ASSERT_TRUE(mlir::succeeded(qcoFromString));
@@ -2063,7 +2074,11 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
     auto restoredQC = std::move(*qcoFromString).intoQC();
     ASSERT_TRUE(mlir::succeeded(restoredQC));
     EXPECT_EQ(restoredQC->numGates(), 0U);
-    std::ofstream(path) << restoredQC->str();
+    llvm::cantFail(
+        llvm::writeToOutput(path.string(), [&](llvm::raw_ostream& os) {
+          os << restoredQC->str();
+          return llvm::Error::success();
+        }));
     auto qcFromString = QCProgram::fromMLIRString(restoredQC->str());
     auto qcFromFile = QCProgram::fromMLIRFile(path);
     ASSERT_TRUE(mlir::succeeded(qcFromString));
@@ -2231,7 +2246,10 @@ TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
 
   const auto path = std::filesystem::path(testing::TempDir()) /
                     "nonlinear_block_argument.qco.mlir";
-  std::ofstream(path) << reusedBlockArgument;
+  llvm::cantFail(llvm::writeToOutput(path.string(), [&](llvm::raw_ostream& os) {
+    os << reusedBlockArgument;
+    return llvm::Error::success();
+  }));
   EXPECT_TRUE(mlir::failed(QCOProgram::fromMLIRFile(path)));
 }
 
@@ -2292,10 +2310,9 @@ bit[2] c = measure q;
   const auto path =
       std::filesystem::path(testing::TempDir()) / "typed_program_output.qasm";
   ASSERT_TRUE(succeeded(direct->write(path)));
-  std::ifstream input(path);
-  const std::string written((std::istreambuf_iterator<char>(input)),
-                            std::istreambuf_iterator<char>());
-  EXPECT_EQ(written, direct->source());
+  auto input = llvm::MemoryBuffer::getFile(path.string());
+  ASSERT_TRUE(input);
+  EXPECT_EQ((*input)->getBuffer(), direct->source());
   EXPECT_TRUE(mlir::succeeded(QCProgram::fromOpenQASMFile(path)));
 
   auto imported =
@@ -2885,7 +2902,11 @@ h q;
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   const auto qcoIR = qco->str();
-  std::ofstream(qcoPath) << qcoIR;
+  llvm::cantFail(
+      llvm::writeToOutput(qcoPath.string(), [&](llvm::raw_ostream& os) {
+        os << qcoIR;
+        return llvm::Error::success();
+      }));
   auto qcoFromString = QCOProgram::fromMLIRString(qcoIR);
   auto qcoFromFile = QCOProgram::fromMLIRFile(qcoPath);
   ASSERT_TRUE(mlir::succeeded(qcoFromString));

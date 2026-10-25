@@ -13,10 +13,12 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "qdmi/common/Diagnostics.hpp"
+
 #include "qdmi/constants.h"
 
-#include <iostream>
-#include <sstream>
+#include "llvm/Support/raw_ostream.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -26,10 +28,11 @@ auto throwIfError(const int result, const std::string& msg) -> void {
   case QDMI_SUCCESS:
     break;
   case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << '\n';
+    qdmi::diagnostics::warn("{}", msg);
     break;
   default:
-    std::ostringstream ss;
+    std::string ssStorage;
+    llvm::raw_string_ostream ss(ssStorage);
     ss << msg << ": " << toString(res) << ".";
     switch (res) {
     case QDMI_ERROR_OUTOFMEM:

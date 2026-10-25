@@ -20,6 +20,7 @@
 #include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include "Worker.hpp"
 #include "WorkerProtocol.hpp"
@@ -41,7 +42,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <iostream>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -790,8 +790,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             } catch (const std::exception& error) {
               result.reset();
               worker->terminate();
-              std::cerr << "Could not release DDSIM worker: " << error.what()
-                        << '\n';
+              qdmi::diagnostics::error("Could not release DDSIM worker: {}",
+                                       error.what());
             }
           }
           device.decreaseRunningJobs();
@@ -871,13 +871,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         } catch (const std::exception& error) {
           result.reset();
           reusable = false;
-          std::cerr << "DDSIM worker failed: " << error.what() << '\n';
+          qdmi::diagnostics::error("DDSIM worker failed: {}", error.what());
         }
       });
     } catch (const std::exception& error) {
       execution->programs[index].status = QDMI_JOB_STATUS_FAILED;
       execution->finish();
-      std::cerr << "Could not schedule DDSIM program: " << error.what() << '\n';
+      qdmi::diagnostics::error("Could not schedule DDSIM program: {}",
+                               error.what());
     }
   }
   return QDMI_SUCCESS;
