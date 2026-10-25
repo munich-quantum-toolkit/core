@@ -16,6 +16,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cassert>
 #include <cmath>
 #include <numbers>
 #include <string_view>
@@ -41,11 +42,9 @@ const MultiplexerOptions& Multiplexer::options() const noexcept {
 
 const Output& Multiplexer::output() const noexcept { return output_; }
 
-llvm::Expected<double>
-Multiplexer::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double Multiplexer::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
 
   // Compute target-zero amplitudes from 1-x to avoid cancellation.
   const auto target = outcome.back();

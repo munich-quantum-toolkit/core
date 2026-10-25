@@ -24,8 +24,6 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(${TARGET_NAME} PUBLIC LLVMSupport)
   target_include_directories(${TARGET_NAME} SYSTEM PUBLIC $<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>)
 
-  mqt_llvm_target_disable_rtti(${TARGET_NAME})
-
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
   # Place the library in the common output directories.

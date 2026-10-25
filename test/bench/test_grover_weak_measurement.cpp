@@ -9,8 +9,8 @@
  */
 
 #include "bench/Evaluation.hpp"
-#include "bench/JSON.hpp"
 #include "bench/GroverWeakMeasurement.hpp"
+#include "bench/JSON.hpp"
 
 #include "JSONTestUtils.hpp"
 
@@ -33,8 +33,8 @@ TEST(GroverWeakMeasurement, ResolvesTheDefaultMeasurementStrength) {
                    std::exp2(-3. / 2.));
   EXPECT_EQ(benchmark.qubits(), 3);
   EXPECT_EQ(benchmark.output(), (Output{"result", 3}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("101")), 1.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("001")), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("101"), 1.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("001"), 0.);
 }
 
 TEST(GroverWeakMeasurement, AcceptsStrengthsInTheProvenRegime) {

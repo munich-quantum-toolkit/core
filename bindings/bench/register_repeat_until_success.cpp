@@ -51,7 +51,7 @@ failure. After success, return the parity of a
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
       .def("probability",
-           benchmarkMethod(&bench::RepeatUntilSuccess::probability),
+           benchmarkOutcome(&bench::RepeatUntilSuccess::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::RepeatUntilSuccess::evaluate),
            "counts"_a, "Compare sampled counts with the ideal distribution.");

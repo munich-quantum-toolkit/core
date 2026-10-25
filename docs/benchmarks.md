@@ -217,14 +217,10 @@ The output format changes the file name, but not the semantic case ID.
 
 A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
-manifests. This target links statically so LLVM errors and their handlers use
-the same runtime. Checked factories (`create`), probability, evaluation,
-factoring, and JSON boundaries return `llvm::Expected<T>`. Callers must check
-results and consume or propagate errors with `takeError()`. Getters and
-Teleportation construction remain infallible. Python keeps its constructors,
-`ValueError` for invalid input, and `OverflowError` for shot-count overflow.
-Shor's native executor returns `llvm::Expected<Counts>`; Python executor errors
-retain their original exception.
+manifests. Use `create` to construct validated instances. Fallible operations
+return `llvm::Expected<T>`. Native `probability` and `cutSize` queries require
+binary outcomes of `output().width` bits. Python queries and count evaluation
+validate their inputs.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -281,10 +277,8 @@ list, a generic option map, or a public base class.
 Instance specifications reject unknown fields and invalid values. The case ID
 does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
-Typed integer parameters retain 64-bit precision. Redundant output metadata uses
-LLVM JSON value equality. JSON APIs require the C numeric locale
-(`LC_NUMERIC=C`), finite numbers, and UTF-8 text. Normalize backend results to
-the manifest's big-endian `result` order before evaluation.
+JSON APIs use the C numeric locale (`LC_NUMERIC=C`). Normalize backend results
+to the manifest's big-endian `result` order before evaluation.
 
 ## Benchmark families
 

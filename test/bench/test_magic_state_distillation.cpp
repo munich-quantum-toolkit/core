@@ -43,13 +43,11 @@ TEST(MagicStateDistillation, ValidatesLevelsAndTwoBitReference) {
   }
   const auto benchmark = llvm::cantFail(MagicStateDistillation::create());
   EXPECT_EQ(benchmark.output(), (Output{"result", 2}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00")), 1.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00"), 1.);
   for (const auto* outcome : {"01", "10", "11"}) {
-    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(outcome)), 0.);
+    EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 0.);
   }
   for (const auto* outcome : {"", "0", "000", "0x"}) {
-    test::expectError(benchmark.probability(outcome),
-                      std::errc::invalid_argument);
     test::expectError(benchmark.evaluate({{outcome, 1}}),
                       std::errc::invalid_argument);
   }

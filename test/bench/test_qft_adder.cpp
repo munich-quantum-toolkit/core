@@ -43,7 +43,7 @@ TEST(QFTAdder, PreservesConfiguredOperandsAndOverflow) {
       EXPECT_EQ(benchmark.options().accumulator, "110");
       EXPECT_EQ(benchmark.output().width, expected.size());
       EXPECT_EQ(benchmark.expectedResult(), expected);
-      EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(expected)), 1.);
+      EXPECT_DOUBLE_EQ(benchmark.probability(expected), 1.);
       EXPECT_EQ(llvm::cantFail(benchmark.evaluate({{expected, 16}}))
                     .successProbability,
                 1.);
@@ -72,18 +72,18 @@ TEST(QFTAdder, KeepsLeadingZerosAndRejectsUnsupportedInputs) {
        }) {
     test::expectError(QFTAdder::create(options), std::errc::invalid_argument);
   }
-  test::expectError(zero.probability("000"), std::errc::invalid_argument);
-  test::expectError(zero.probability("000x"), std::errc::invalid_argument);
+  test::expectError(zero.evaluate({{"000", 1}}), std::errc::invalid_argument);
+  test::expectError(zero.evaluate({{"000x", 1}}), std::errc::invalid_argument);
 }
 
 TEST(QFTAdder, ScoresTheCorrelatedSuperposition) {
   const auto benchmark =
       llvm::cantFail(QFTAdder::create({.addend = "1+0", .accumulator = "001"}));
   EXPECT_FALSE(benchmark.expectedResult());
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("100101")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("110111")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("000001")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("100100")), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("100101"), 0.5);
+  EXPECT_DOUBLE_EQ(benchmark.probability("110111"), 0.5);
+  EXPECT_DOUBLE_EQ(benchmark.probability("000001"), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("100100"), 0.);
   const auto exact =
       llvm::cantFail(benchmark.evaluate({{"100101", 8}, {"110111", 8}}));
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
@@ -99,9 +99,9 @@ TEST(QFTAdder, BoundsTheSumWidthAndKeepsReferenceWeightsRepresentable) {
   const auto accumulator = std::string(width - 1, '0') + "1";
   const auto maximum = llvm::cantFail(QFTAdder::create(
       {.addend = std::string(width, '+'), .accumulator = accumulator}));
-  EXPECT_GT(llvm::cantFail(maximum.probability(std::string(width, '1') +
-                                               std::string(width, '0'))),
-            0.);
+  EXPECT_GT(
+      maximum.probability(std::string(width, '1') + std::string(width, '0')),
+      0.);
   test::expectError(QFTAdder::create({
                         .addend = std::string(width, '1'),
                         .accumulator = accumulator,

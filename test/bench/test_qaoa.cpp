@@ -48,17 +48,18 @@ TEST(QAOA, ValidatesTheConfiguredInstance) {
 
 TEST(QAOA, CountsEveryCycleEdge) {
   const auto triangle = llvm::cantFail(QAOA::create({.qubits = 3}));
-  EXPECT_EQ(llvm::cantFail(triangle.cutSize("000")), 0);
-  EXPECT_EQ(llvm::cantFail(triangle.cutSize("001")), 2);
-  EXPECT_EQ(llvm::cantFail(triangle.cutSize("010")), 2);
+  EXPECT_EQ(triangle.cutSize("000"), 0);
+  EXPECT_EQ(triangle.cutSize("001"), 2);
+  EXPECT_EQ(triangle.cutSize("010"), 2);
   const auto square = llvm::cantFail(QAOA::create({.qubits = 4}));
-  EXPECT_EQ(llvm::cantFail(square.cutSize("0000")), 0);
-  EXPECT_EQ(llvm::cantFail(square.cutSize("0001")), 2);
-  EXPECT_EQ(llvm::cantFail(square.cutSize("0011")), 2);
-  EXPECT_EQ(llvm::cantFail(square.cutSize("0101")), 4);
-  EXPECT_EQ(llvm::cantFail(square.cutSize("1010")), 4);
-  test::expectError(square.cutSize("010"), std::errc::invalid_argument);
-  test::expectError(square.cutSize("010x"), std::errc::invalid_argument);
+  EXPECT_EQ(square.cutSize("0000"), 0);
+  EXPECT_EQ(square.cutSize("0001"), 2);
+  EXPECT_EQ(square.cutSize("0011"), 2);
+  EXPECT_EQ(square.cutSize("0101"), 4);
+  EXPECT_EQ(square.cutSize("1010"), 4);
+  test::expectError(square.evaluate({{"010", 1}}), std::errc::invalid_argument);
+  test::expectError(square.evaluate({{"010x", 1}}),
+                    std::errc::invalid_argument);
 }
 
 TEST(QAOA, ScoresCutsBeyondMachineWordWidths) {
@@ -68,7 +69,7 @@ TEST(QAOA, ScoresCutsBeyondMachineWordWidths) {
   for (size_t index = 1; index < qubits; index += 2) {
     outcome[index] = '1';
   }
-  EXPECT_EQ(llvm::cantFail(benchmark.cutSize(outcome)), 512);
+  EXPECT_EQ(benchmark.cutSize(outcome), 512);
   const auto evaluation = llvm::cantFail(benchmark.evaluate({{outcome, 1}}));
   EXPECT_DOUBLE_EQ(evaluation.meanCut, 512.);
   EXPECT_DOUBLE_EQ(evaluation.approximationRatio, 1.);

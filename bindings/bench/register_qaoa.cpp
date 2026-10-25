@@ -68,7 +68,7 @@ not agreement with an ideal output distribution.)pb");
       .def_prop_ro("output", &bench::QAOA::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("cut_size", benchmarkMethod(&bench::QAOA::cutSize), "outcome"_a,
+      .def("cut_size", benchmarkOutcome(&bench::QAOA::cutSize), "outcome"_a,
            "Count cycle edges whose measured endpoint bits differ.")
       .def("evaluate", benchmarkMethod(&bench::QAOA::evaluate), "counts"_a,
            "Compute the mean cut and its ratio to the maximum cut size.");

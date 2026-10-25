@@ -51,11 +51,13 @@ TEST(RepeatUntilSuccess, ValidatesDataWidth) {
 TEST(RepeatUntilSuccess, HasThePhaseSensitiveReference) {
   const auto benchmark = llvm::cantFail(RepeatUntilSuccess::create());
   constexpr auto bias = std::numbers::sqrt2 / 3.;
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("0")), 0.5 + bias);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("1")), 0.5 - bias);
-  test::expectError(benchmark.probability(""), std::errc::invalid_argument);
-  test::expectError(benchmark.probability("00"), std::errc::invalid_argument);
-  test::expectError(benchmark.probability("x"), std::errc::invalid_argument);
+  EXPECT_DOUBLE_EQ(benchmark.probability("0"), 0.5 + bias);
+  EXPECT_DOUBLE_EQ(benchmark.probability("1"), 0.5 - bias);
+  test::expectError(benchmark.evaluate({{"", 1}}), std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"00", 1}}),
+                    std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"x", 1}}),
+                    std::errc::invalid_argument);
 }
 
 TEST(RepeatUntilSuccess, EvaluatesTheReferenceWithoutASuccessOutcome) {

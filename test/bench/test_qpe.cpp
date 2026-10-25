@@ -71,9 +71,9 @@ TEST(QPE, RejectsAnUnknownMethod) {
 TEST(QPE, GivesAnExactDistribution) {
   const auto qpe = llvm::cantFail(QPE::create(
       {.precision = 3, .phase = llvm::cantFail(Phase::create(3, 8))}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(qpe.probability("011")), 1.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(qpe.probability("010")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(qpe.probability("111")), 0.);
+  EXPECT_DOUBLE_EQ(qpe.probability("011"), 1.);
+  EXPECT_DOUBLE_EQ(qpe.probability("010"), 0.);
+  EXPECT_DOUBLE_EQ(qpe.probability("111"), 0.);
 
   const auto evaluation = llvm::cantFail(qpe.evaluate({{"011", 100}}));
   EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.);
@@ -86,10 +86,10 @@ TEST(QPE, GivesTheInexactDistribution) {
       {.precision = 2, .phase = llvm::cantFail(Phase::create(1, 8))}));
   const auto high = (2. + std::numbers::sqrt2) / 8.;
   const auto low = (2. - std::numbers::sqrt2) / 8.;
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("00")), high, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("01")), high, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("10")), low, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("11")), low, 1e-15);
+  EXPECT_NEAR(qpe.probability("00"), high, 1e-15);
+  EXPECT_NEAR(qpe.probability("01"), high, 1e-15);
+  EXPECT_NEAR(qpe.probability("10"), low, 1e-15);
+  EXPECT_NEAR(qpe.probability("11"), low, 1e-15);
 }
 
 TEST(QPE, WrapsTheDistributionAtOneTurn) {
@@ -97,19 +97,17 @@ TEST(QPE, WrapsTheDistributionAtOneTurn) {
       {.precision = 2, .phase = llvm::cantFail(Phase::create(7, 8))}));
   const auto high = (2. + std::numbers::sqrt2) / 8.;
   const auto low = (2. - std::numbers::sqrt2) / 8.;
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("00")), high, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("11")), high, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("01")), low, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("10")), low, 1e-15);
+  EXPECT_NEAR(qpe.probability("00"), high, 1e-15);
+  EXPECT_NEAR(qpe.probability("11"), high, 1e-15);
+  EXPECT_NEAR(qpe.probability("01"), low, 1e-15);
+  EXPECT_NEAR(qpe.probability("10"), low, 1e-15);
 }
 
 TEST(QPE, UsesTheNegativeHalfTurnRepresentative) {
   const auto qpe = llvm::cantFail(QPE::create(
       {.precision = 1, .phase = llvm::cantFail(Phase::create(7, 8))}));
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("0")),
-              (2. + std::numbers::sqrt2) / 4., 1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability("1")),
-              (2. - std::numbers::sqrt2) / 4., 1e-15);
+  EXPECT_NEAR(qpe.probability("0"), (2. + std::numbers::sqrt2) / 4., 1e-15);
+  EXPECT_NEAR(qpe.probability("1"), (2. - std::numbers::sqrt2) / 4., 1e-15);
 }
 
 TEST(QPE, SupportsArbitraryWidthOutcomes) {
@@ -128,10 +126,8 @@ TEST(QPE, SupportsArbitraryWidthOutcomes) {
   upper.back() = '1';
 
   const auto pi = std::numbers::pi;
-  EXPECT_NEAR(llvm::cantFail(qpe.probability(lower)), 27. / (16. * pi * pi),
-              1e-15);
-  EXPECT_NEAR(llvm::cantFail(qpe.probability(upper)), 27. / (4. * pi * pi),
-              1e-15);
+  EXPECT_NEAR(qpe.probability(lower), 27. / (16. * pi * pi), 1e-15);
+  EXPECT_NEAR(qpe.probability(upper), 27. / (4. * pi * pi), 1e-15);
 }
 
 TEST(QPE, RoundTripsJSON) {

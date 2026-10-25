@@ -39,7 +39,8 @@ inline llvm::Error validateOutcome(const std::string_view outcome,
   return llvm::Error::success();
 }
 
-[[nodiscard]] inline llvm::Expected<size_t> countShots(const Counts& counts) {
+[[nodiscard]] inline llvm::Expected<size_t> validateCounts(const Counts& counts,
+                                                           const size_t width) {
   if (counts.empty()) {
     return llvm::createStringError(std::errc::invalid_argument,
                                    "counts must not be empty");
@@ -47,6 +48,9 @@ inline llvm::Error validateOutcome(const std::string_view outcome,
 
   size_t totalShots = 0;
   for (const auto& [outcome, count] : counts) {
+    if (auto error = validateOutcome(outcome, width)) {
+      return error;
+    }
     if (count > std::numeric_limits<size_t>::max() - totalShots) {
       return llvm::createStringError(std::errc::value_too_large,
                                      "total shot count exceeds size_t");
@@ -63,9 +67,10 @@ inline llvm::Error validateOutcome(const std::string_view outcome,
 
 template <class Probability>
 [[nodiscard]] llvm::Expected<Evaluation>
-evaluate(const Counts& counts, const Probability& probability,
+evaluate(const Counts& counts, const size_t width,
+         const Probability& probability,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
-  auto totalShots = countShots(counts);
+  auto totalShots = validateCounts(counts, width);
   if (!totalShots) {
     return totalShots.takeError();
   }
@@ -80,11 +85,7 @@ evaluate(const Counts& counts, const Probability& probability,
     if (successOutcome && outcome == *successOutcome) {
       successShots = count;
     }
-    auto value = probability(outcome, count);
-    if (!value) {
-      return value.takeError();
-    }
-    const auto ideal = static_cast<long double>(*value);
+    const auto ideal = static_cast<long double>(probability(outcome, count));
     const auto observed =
         static_cast<long double>(count) / static_cast<long double>(*totalShots);
     observedDistance += std::abs(observed - ideal);
@@ -116,7 +117,7 @@ template <class Benchmark>
 evaluate(const Benchmark& benchmark, const Counts& counts,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   return evaluate(
-      counts,
+      counts, benchmark.output().width,
       [&benchmark](const std::string_view outcome, size_t) {
         return benchmark.probability(outcome);
       },

@@ -43,7 +43,7 @@ void registerMultiplexer(const nb::module_& m) {
       .def_prop_ro("output", &bench::Multiplexer::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::Multiplexer::probability),
+      .def("probability", benchmarkOutcome(&bench::Multiplexer::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::Multiplexer::evaluate),
            "counts"_a, "Compare sampled counts with the ideal distribution.");

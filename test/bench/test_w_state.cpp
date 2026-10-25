@@ -41,7 +41,7 @@ TEST(WState, AssignsUniformProbabilityToSingleExcitations) {
       }
       const auto expected =
           std::popcount(index) == 1 ? 1. / static_cast<double>(qubits) : 0.;
-      EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(bits)), expected);
+      EXPECT_DOUBLE_EQ(benchmark.probability(bits), expected);
       if (expected != 0.) {
         uniform.emplace(bits, 10);
       }
@@ -62,7 +62,8 @@ TEST(WState, RejectsInvalidParametersAndOutcomes) {
       WState::create({.qubits = std::numeric_limits<size_t>::max()}),
       std::errc::invalid_argument);
   const auto benchmark = llvm::cantFail(WState::create({.qubits = 2}));
-  test::expectError(benchmark.probability("1"), std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"1", 1}}),
+                    std::errc::invalid_argument);
   test::expectError(benchmark.evaluate({{"0x", 1}}),
                     std::errc::invalid_argument);
 }

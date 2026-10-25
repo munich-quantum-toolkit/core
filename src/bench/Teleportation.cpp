@@ -16,6 +16,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cassert>
 #include <string_view>
 
 namespace mqt::bench {
@@ -24,11 +25,9 @@ Teleportation::Teleportation() : output_{.name = "result", .width = 1} {}
 
 const Output& Teleportation::output() const noexcept { return output_; }
 
-llvm::Expected<double>
-Teleportation::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double Teleportation::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   return outcome == "0" ? 1. : 0.;
 }
 

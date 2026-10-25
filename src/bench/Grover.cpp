@@ -17,6 +17,7 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -93,11 +94,9 @@ size_t Grover::qubits() const noexcept { return output_.width; }
 
 const Output& Grover::output() const noexcept { return output_; }
 
-llvm::Expected<double>
-Grover::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double Grover::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   return outcome == options_.markedBitstring ? markedProbability_
                                              : otherProbability_;
 }

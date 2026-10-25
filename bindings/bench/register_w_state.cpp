@@ -41,7 +41,7 @@ void registerWState(const nb::module_& m) {
       .def_prop_ro("output", &bench::WState::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::WState::probability),
+      .def("probability", benchmarkOutcome(&bench::WState::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::WState::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");

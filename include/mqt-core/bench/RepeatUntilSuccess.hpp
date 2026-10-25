@@ -41,8 +41,9 @@ public:
 
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
-  [[nodiscard]] llvm::Expected<double>
-  probability(std::string_view outcome) const;
+  ///
+  /// Requires a binary outcome of output().width bits.
+  [[nodiscard]] double probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
   [[nodiscard]] llvm::Expected<Evaluation> evaluate(const Counts& counts) const;
 

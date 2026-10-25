@@ -53,7 +53,7 @@ void registerGHZ(const nb::module_& m) {
       .def_prop_ro("output", &bench::GHZ::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::GHZ::probability),
+      .def("probability", benchmarkOutcome(&bench::GHZ::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::GHZ::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");

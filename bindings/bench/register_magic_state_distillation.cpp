@@ -59,7 +59,7 @@ input noise, physical error correction, or retries.)pb");
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
       .def("probability",
-           benchmarkMethod(&bench::MagicStateDistillation::probability),
+           benchmarkOutcome(&bench::MagicStateDistillation::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate",
            benchmarkMethod(&bench::MagicStateDistillation::evaluate),

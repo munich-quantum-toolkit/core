@@ -49,8 +49,8 @@ void registerBV(const nb::module_& m) {
       .def_prop_ro("output", &bench::BV::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::BV::probability), "outcome"_a,
-           "Return the ideal probability of an outcome.")
+      .def("probability", benchmarkOutcome(&bench::BV::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::BV::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(bv, &bench::bvFromInstanceSpecificationJSON,

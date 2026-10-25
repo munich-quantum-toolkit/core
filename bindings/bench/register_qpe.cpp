@@ -107,7 +107,7 @@ void registerQPE(const nb::module_& m) {
       .def_prop_ro("output", &bench::QPE::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::QPE::probability),
+      .def("probability", benchmarkOutcome(&bench::QPE::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::QPE::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");

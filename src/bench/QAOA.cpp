@@ -17,6 +17,7 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -48,10 +49,9 @@ const QAOAOptions& QAOA::options() const noexcept { return options_; }
 
 const Output& QAOA::output() const noexcept { return output_; }
 
-llvm::Expected<size_t> QAOA::cutSize(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+size_t QAOA::cutSize(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   auto cut = size_t{outcome.front() != outcome.back()};
   for (size_t index = 1; index < outcome.size(); ++index) {
     if (outcome[index - 1] != outcome[index]) {
@@ -62,7 +62,7 @@ llvm::Expected<size_t> QAOA::cutSize(const std::string_view outcome) const {
 }
 
 llvm::Expected<QAOAEvaluation> QAOA::evaluate(const Counts& counts) const {
-  auto shots = detail::countShots(counts);
+  auto shots = detail::validateCounts(counts, output_.width);
   if (!shots) {
     return shots.takeError();
   }
@@ -70,12 +70,8 @@ llvm::Expected<QAOAEvaluation> QAOA::evaluate(const Counts& counts) const {
   // NOLINTBEGIN(google-runtime-float)
   long double weightedCut = 0.L;
   for (const auto& [outcome, count] : counts) {
-    auto cut = cutSize(outcome);
-    if (!cut) {
-      return cut.takeError();
-    }
-    weightedCut +=
-        static_cast<long double>(*cut) * static_cast<long double>(count);
+    weightedCut += static_cast<long double>(cutSize(outcome)) *
+                   static_cast<long double>(count);
   }
   const auto optimum = options_.qubits - (options_.qubits % 2);
   const auto mean = std::min(weightedCut / static_cast<long double>(*shots),

@@ -150,16 +150,13 @@ const ShorOptions& Shor::options() const noexcept { return options_; }
 const Output& Shor::output() const noexcept { return output_; }
 
 llvm::Expected<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
-  auto total = detail::countShots(counts);
+  auto total = detail::validateCounts(counts, output_.width);
   if (!total) {
     return total.takeError();
   }
   size_t successes = 0;
   ShorEvaluation result;
   for (const auto& [outcome, count] : counts) {
-    if (auto error = detail::validateOutcome(outcome, output_.width)) {
-      return error;
-    }
     if (count == 0) {
       continue;
     }
@@ -220,15 +217,13 @@ factor(uint64_t number,
           .attempts = attempt + 1,
       };
     }
-    auto benchmark = Shor::create({.number = number, .base = base});
-    if (!benchmark) {
-      return benchmark.takeError();
-    }
-    auto counts = run(*benchmark);
+    const auto benchmark =
+        llvm::cantFail(Shor::create({.number = number, .base = base}));
+    auto counts = run(benchmark);
     if (!counts) {
       return counts.takeError();
     }
-    auto evaluation = benchmark->evaluate(*counts);
+    auto evaluation = benchmark.evaluate(*counts);
     if (!evaluation) {
       return evaluation.takeError();
     }

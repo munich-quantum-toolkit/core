@@ -17,6 +17,7 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <optional>
@@ -99,11 +100,9 @@ const std::optional<std::string>& QFTAdder::expectedResult() const noexcept {
   return expectedResult_;
 }
 
-llvm::Expected<double>
-QFTAdder::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double QFTAdder::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   if (expectedResult_) {
     return outcome == *expectedResult_ ? 1. : 0.;
   }

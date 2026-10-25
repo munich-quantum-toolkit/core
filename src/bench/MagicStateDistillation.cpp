@@ -16,6 +16,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -49,11 +50,10 @@ const Output& MagicStateDistillation::output() const noexcept {
   return output_;
 }
 
-llvm::Expected<double>
+double
 MagicStateDistillation::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   return outcome == "00" ? 1. : 0.;
 }
 

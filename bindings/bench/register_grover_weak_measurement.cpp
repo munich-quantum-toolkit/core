@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "bench/JSON.hpp"
 #include "bench/GroverWeakMeasurement.hpp"
+#include "bench/JSON.hpp"
 
 #include "register_benchmark.hpp"
 
@@ -66,7 +66,7 @@ paper's robustness bound.)pb");
       .def_prop_ro("qubits", &bench::GroverWeakMeasurement::qubits,
                    "The number of search qubits.")
       .def("probability",
-           benchmarkMethod(&bench::GroverWeakMeasurement::probability),
+           benchmarkOutcome(&bench::GroverWeakMeasurement::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::GroverWeakMeasurement::evaluate),
            "counts"_a, "Compare sampled counts with the ideal distribution.");

@@ -28,10 +28,12 @@ using test::expectInvalidJSON;
 TEST(Teleportation, ChecksTheTeleportedState) {
   const Teleportation benchmark;
   EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("0")), 1.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("1")), 0.);
-  test::expectError(benchmark.probability("00"), std::errc::invalid_argument);
-  test::expectError(benchmark.probability("x"), std::errc::invalid_argument);
+  EXPECT_DOUBLE_EQ(benchmark.probability("0"), 1.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("1"), 0.);
+  test::expectError(benchmark.evaluate({{"00", 1}}),
+                    std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"x", 1}}),
+                    std::errc::invalid_argument);
 
   const auto exact = llvm::cantFail(benchmark.evaluate({{"0", 8}}));
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);

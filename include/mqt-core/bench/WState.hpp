@@ -33,8 +33,9 @@ public:
   [[nodiscard]] static llvm::Expected<WState> create(WStateOptions options);
   [[nodiscard]] const WStateOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
-  [[nodiscard]] llvm::Expected<double>
-  probability(std::string_view outcome) const;
+  ///
+  /// Requires a binary outcome of output().width bits.
+  [[nodiscard]] double probability(std::string_view outcome) const;
   [[nodiscard]] llvm::Expected<Evaluation> evaluate(const Counts& counts) const;
 
 private:

@@ -16,6 +16,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cassert>
 #include <numbers>
 #include <string_view>
 #include <system_error>
@@ -42,11 +43,9 @@ const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
 
 const Output& RepeatUntilSuccess::output() const noexcept { return output_; }
 
-llvm::Expected<double>
-RepeatUntilSuccess::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double RepeatUntilSuccess::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   constexpr auto bias = std::numbers::sqrt2 / 3.;
   return outcome == "0" ? 0.5 + bias : 0.5 - bias;
 }

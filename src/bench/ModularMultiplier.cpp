@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <bitset>
+#include <cassert>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
@@ -143,11 +144,9 @@ ModularMultiplier::expectedResult() const noexcept {
   return expectedResult_;
 }
 
-llvm::Expected<double>
-ModularMultiplier::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double ModularMultiplier::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   const auto width = options_.multiplier.size();
   const auto control = outcome.front();
   const auto multiplicand = outcome.substr(1U, width);
@@ -178,18 +177,16 @@ llvm::Expected<Evaluation>
 ModularMultiplier::evaluate(const Counts& counts) const {
   size_t totalShots = 0;
   size_t successShots = 0;
-  auto result = detail::evaluate(
-      counts, [&](const std::string_view outcome, const size_t count) {
-        auto ideal = probability(outcome);
-        if (!ideal) {
-          return ideal;
-        }
-        totalShots += count;
-        if (*ideal > 0.) {
-          successShots += count;
-        }
-        return ideal;
-      });
+  auto result =
+      detail::evaluate(counts, output_.width,
+                       [&](const std::string_view outcome, const size_t count) {
+                         const auto ideal = probability(outcome);
+                         totalShots += count;
+                         if (ideal > 0.) {
+                           successShots += count;
+                         }
+                         return ideal;
+                       });
   if (!result) {
     return result.takeError();
   }

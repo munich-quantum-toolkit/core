@@ -17,6 +17,7 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <string_view>
 #include <system_error>
@@ -49,10 +50,9 @@ const QFTOptions& QFT::options() const noexcept { return options_; }
 
 const Output& QFT::output() const noexcept { return output_; }
 
-llvm::Expected<double> QFT::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double QFT::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   if (!std::ranges::all_of(outcome.substr(options_.periodExponent),
                            [](const char bit) { return bit == '0'; })) {
     return 0.;

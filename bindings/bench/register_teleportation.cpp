@@ -36,7 +36,7 @@ measurements stay internal.)pb");
       .def_prop_ro("output", &bench::Teleportation::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::Teleportation::probability),
+      .def("probability", benchmarkOutcome(&bench::Teleportation::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::Teleportation::evaluate),
            "counts"_a, "Compare sampled counts with the ideal distribution.");

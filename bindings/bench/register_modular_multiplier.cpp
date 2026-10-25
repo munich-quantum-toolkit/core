@@ -63,8 +63,8 @@ where :math:`c` is the control, :math:`a` is the classical multiplier,
       .def_prop_ro("expected_result", &bench::ModularMultiplier::expectedResult,
                    "The unique outcome, or ``None`` for superposed inputs.")
       .def("probability",
-           benchmarkMethod(&bench::ModularMultiplier::probability), "outcome"_a,
-           "Return the ideal probability of an outcome.")
+           benchmarkOutcome(&bench::ModularMultiplier::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::ModularMultiplier::evaluate),
            "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(modularMultiplier,

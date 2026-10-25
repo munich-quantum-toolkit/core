@@ -17,6 +17,7 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -149,10 +150,9 @@ const QPEOptions& QPE::options() const noexcept { return options_; }
 
 const Output& QPE::output() const noexcept { return output_; }
 
-llvm::Expected<double> QPE::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double QPE::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   const auto difference = subtractModulo(lowerOutcome_, outcome);
   const auto integerBits = bitLength(difference.magnitude);
   if (integerBits > 600) {

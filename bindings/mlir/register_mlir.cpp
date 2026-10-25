@@ -103,11 +103,14 @@ static void translateRuntimeError(const std::exception_ptr& error,
   try {
     std::rethrow_exception(error);
   } catch (const std::range_error& exception) {
-    PyErr_SetString(PyExc_ValueError, exception.what());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
+    nb::chain_error(nb::handle(PyExc_ValueError), "%s", exception.what());
   } catch (const std::overflow_error& exception) {
-    PyErr_SetString(PyExc_OverflowError, exception.what());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
+    nb::chain_error(nb::handle(PyExc_OverflowError), "%s", exception.what());
   } catch (const std::runtime_error& exception) {
-    PyErr_SetString(PyExc_RuntimeError, exception.what());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
+    nb::chain_error(nb::handle(PyExc_RuntimeError), "%s", exception.what());
   }
 }
 #endif

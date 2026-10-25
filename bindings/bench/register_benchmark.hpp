@@ -19,7 +19,7 @@
 #include "llvm/Support/Error.h"
 
 #include <memory>
-#include <pyerrors.h>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -28,15 +28,21 @@ namespace mqt {
 
 template <class T> T unwrapBenchmark(llvm::Expected<T> result) {
   if (!result) {
-    llvm::handleAllErrors(result.takeError(),
-                          [](const llvm::ErrorInfoBase& error) {
-                            PyErr_SetString(error.convertToErrorCode() ==
-                                                    std::errc::value_too_large
-                                                ? PyExc_OverflowError
-                                                : PyExc_ValueError,
-                                            error.message().c_str());
-                          });
-    throw nanobind::python_error();
+    std::string message;
+    bool overflow = false;
+    llvm::handleAllErrors(
+        result.takeError(), [&](const llvm::ErrorInfoBase& error) {
+          message = error.message();
+          overflow = error.convertToErrorCode() == std::errc::value_too_large;
+        });
+    if (overflow) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind API.
+      nanobind::chain_error(
+          nanobind::module_::import_("builtins").attr("OverflowError"), "%s",
+          message.c_str());
+      throw nanobind::python_error();
+    }
+    throw nanobind::value_error(message.c_str());
   }
   return std::move(*result);
 }
@@ -52,6 +58,20 @@ template <class Benchmark, class T, class... Args>
 auto benchmarkMethod(llvm::Expected<T> (Benchmark::*method)(Args...) const) {
   return [method](const Benchmark& self, Args... args) {
     return unwrapBenchmark((self.*method)(args...));
+  };
+}
+
+template <class Benchmark, class T>
+auto benchmarkOutcome(T (Benchmark::*method)(std::string_view) const) {
+  return [method](const Benchmark& self, const std::string_view outcome) {
+    if (outcome.size() != self.output().width) {
+      throw nanobind::value_error(
+          "outcome width does not match the benchmark output");
+    }
+    if (outcome.find_first_not_of("01") != std::string_view::npos) {
+      throw nanobind::value_error("outcome must contain only '0' and '1'");
+    }
+    return (self.*method)(outcome);
   };
 }
 

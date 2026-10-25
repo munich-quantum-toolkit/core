@@ -50,7 +50,7 @@ void registerGrover(const nb::module_& m) {
                    "The logical output register.")
       .def_prop_ro("qubits", &bench::Grover::qubits,
                    "The number of search qubits.")
-      .def("probability", benchmarkMethod(&bench::Grover::probability),
+      .def("probability", benchmarkOutcome(&bench::Grover::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::Grover::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");

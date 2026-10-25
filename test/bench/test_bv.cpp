@@ -50,8 +50,8 @@ TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {
   for (const auto method : {BVMethod::Static, BVMethod::Dynamic}) {
     const auto benchmark = llvm::cantFail(
         BV::create({.hiddenBitstring = "101", .method = method}));
-    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("101")), 1.);
-    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("011")), 0.);
+    EXPECT_DOUBLE_EQ(benchmark.probability("101"), 1.);
+    EXPECT_DOUBLE_EQ(benchmark.probability("011"), 0.);
 
     const auto evaluation =
         llvm::cantFail(benchmark.evaluate({{"101", 80}, {"011", 20}}));

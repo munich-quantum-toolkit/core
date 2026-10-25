@@ -16,6 +16,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cassert>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -49,10 +50,9 @@ const BVOptions& BV::options() const noexcept { return options_; }
 
 const Output& BV::output() const noexcept { return output_; }
 
-llvm::Expected<double> BV::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double BV::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   return outcome == options_.hiddenBitstring ? 1. : 0.;
 }
 

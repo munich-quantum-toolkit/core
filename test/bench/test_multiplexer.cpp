@@ -49,23 +49,25 @@ TEST(Multiplexer, GivesTheUniformControlDistribution) {
   const auto high = (2. + std::numbers::sqrt2) / 16.;
   const auto low = (2. - std::numbers::sqrt2) / 16.;
 
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("000")), 0.25, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("001")), 0., 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("010")), high, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("011")), low, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("100")), 0.125, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("101")), 0.125, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("110")), low, 1e-15);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability("111")), high, 1e-15);
+  EXPECT_NEAR(benchmark.probability("000"), 0.25, 1e-15);
+  EXPECT_NEAR(benchmark.probability("001"), 0., 1e-15);
+  EXPECT_NEAR(benchmark.probability("010"), high, 1e-15);
+  EXPECT_NEAR(benchmark.probability("011"), low, 1e-15);
+  EXPECT_NEAR(benchmark.probability("100"), 0.125, 1e-15);
+  EXPECT_NEAR(benchmark.probability("101"), 0.125, 1e-15);
+  EXPECT_NEAR(benchmark.probability("110"), low, 1e-15);
+  EXPECT_NEAR(benchmark.probability("111"), high, 1e-15);
 
   double total = 0.;
   for (const auto* outcome :
        {"000", "001", "010", "011", "100", "101", "110", "111"}) {
-    total += llvm::cantFail(benchmark.probability(outcome));
+    total += benchmark.probability(outcome);
   }
   EXPECT_NEAR(total, 1., 1e-15);
-  test::expectError(benchmark.probability("00"), std::errc::invalid_argument);
-  test::expectError(benchmark.probability("00x"), std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"00", 1}}),
+                    std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"00x", 1}}),
+                    std::errc::invalid_argument);
 }
 
 TEST(Multiplexer, EvaluatesTheReferenceWithoutASuccessOutcome) {
@@ -79,9 +81,9 @@ TEST(Multiplexer, EvaluatesTheReferenceWithoutASuccessOutcome) {
 TEST(Multiplexer, KeepsTheLargestUniformControlWeightRepresentable) {
   const auto benchmark = llvm::cantFail(
       Multiplexer::create({.qubits = MultiplexerOptions::MAX_QUBITS}));
-  EXPECT_GT(llvm::cantFail(benchmark.probability(
-                std::string(MultiplexerOptions::MAX_QUBITS, '0'))),
-            0.);
+  EXPECT_GT(
+      benchmark.probability(std::string(MultiplexerOptions::MAX_QUBITS, '0')),
+      0.);
 }
 
 TEST(Multiplexer, PreservesSmallProbabilitiesNearBothEndpoints) {
@@ -92,10 +94,8 @@ TEST(Multiplexer, PreservesSmallProbabilitiesNearBothEndpoints) {
   const auto expected = std::ldexp(amplitude * amplitude, -controls);
   const auto nearZero = std::string(controls - 1, '0') + "11";
   const auto nearOne = std::string(controls, '1') + "0";
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability(nearZero)) / expected, 1.,
-              1e-14);
-  EXPECT_NEAR(llvm::cantFail(benchmark.probability(nearOne)) / expected, 1.,
-              1e-14);
+  EXPECT_NEAR(benchmark.probability(nearZero) / expected, 1., 1e-14);
+  EXPECT_NEAR(benchmark.probability(nearOne) / expected, 1., 1e-14);
 }
 
 TEST(Multiplexer, RoundTripsJSON) {

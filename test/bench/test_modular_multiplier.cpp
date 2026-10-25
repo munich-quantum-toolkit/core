@@ -45,9 +45,9 @@ TEST(ModularMultiplier, HasAnExactBasisReference) {
   const auto benchmark = llvm::cantFail(ModularMultiplier::create(
       {.multiplier = "011", .modulus = "101", .multiplicand = "111"}));
   EXPECT_EQ(benchmark.expectedResult(), "11110001");
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("11110001")), 1.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("10000000")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00000000")), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("11110001"), 1.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("10000000"), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00000000"), 0.);
   EXPECT_EQ(
       llvm::cantFail(benchmark.evaluate({{"11110001", 3}, {"00000000", 1}}))
           .successProbability,
@@ -78,10 +78,10 @@ TEST(ModularMultiplier, ConstrainsPartialSuperpositions) {
   const auto benchmark = llvm::cantFail(ModularMultiplier::create(
       {.multiplier = "011", .modulus = "101", .multiplicand = "1+0"}));
   EXPECT_FALSE(benchmark.expectedResult());
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("11000010")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("11100011")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("10000000")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("01000000")), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("11000010"), 0.5);
+  EXPECT_DOUBLE_EQ(benchmark.probability("11100011"), 0.5);
+  EXPECT_DOUBLE_EQ(benchmark.probability("10000000"), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("01000000"), 0.);
 }
 
 TEST(ModularMultiplier, ValidatesTheConfiguredInstance) {
@@ -186,17 +186,17 @@ TEST(ModularMultiplier, GivesUniformWeightToTheExactControlledProducts) {
         std::string{"0"} + std::string{multiplicands[index]} + "0000";
     const auto active = std::string{"1"} + std::string{multiplicands[index]} +
                         "0" + std::string{products[index]};
-    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(inactive)), 1. / 16.);
-    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(active)), 1. / 16.);
+    EXPECT_DOUBLE_EQ(benchmark.probability(inactive), 1. / 16.);
+    EXPECT_DOUBLE_EQ(benchmark.probability(active), 1. / 16.);
     exact.emplace(inactive, 1U);
     exact.emplace(active, 1U);
   }
 
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("10010000")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("01110001")), 0.);
-  test::expectError(benchmark.probability("1001001"),
+  EXPECT_DOUBLE_EQ(benchmark.probability("10010000"), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("01110001"), 0.);
+  test::expectError(benchmark.evaluate({{"1001001", 1}}),
                     std::errc::invalid_argument);
-  test::expectError(benchmark.probability("100100x1"),
+  test::expectError(benchmark.evaluate({{"100100x1", 1}}),
                     std::errc::invalid_argument);
 
   const auto evaluation = llvm::cantFail(benchmark.evaluate(exact));
@@ -249,8 +249,7 @@ TEST(ModularMultiplier, SupportsNonCoprimeInputsAndMultiplicandsAtLeastN) {
       .multiplicand = "+++",
       .control = '+',
   }));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(nonCoprime.probability("10110010")),
-                   1. / 16.);
+  EXPECT_DOUBLE_EQ(nonCoprime.probability("10110010"), 1. / 16.);
 
   const auto benchmark = llvm::cantFail(ModularMultiplier::create({
       .multiplier = "011",
@@ -258,7 +257,7 @@ TEST(ModularMultiplier, SupportsNonCoprimeInputsAndMultiplicandsAtLeastN) {
       .multiplicand = "+++",
       .control = '+',
   }));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("11110001")), 1. / 16.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("11110001"), 1. / 16.);
 }
 
 TEST(ModularMultiplier, KeepsTheLargestReferenceWeightRepresentable) {
@@ -280,7 +279,7 @@ TEST(ModularMultiplier, KeepsTheLargestReferenceWeightRepresentable) {
       .multiplicand = multiplicand,
   }));
   EXPECT_EQ(basis.expectedResult(), outcome);
-  EXPECT_GT(llvm::cantFail(benchmark.probability(outcome)), 0.);
+  EXPECT_GT(benchmark.probability(outcome), 0.);
   EXPECT_EQ(
       llvm::cantFail(benchmark.evaluate({{outcome, 1}})).successProbability,
       1.);

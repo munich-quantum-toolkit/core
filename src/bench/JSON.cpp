@@ -15,6 +15,7 @@
 #include "bench/FanOut.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
@@ -26,7 +27,6 @@
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
-#include "bench/GroverWeakMeasurement.hpp"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"

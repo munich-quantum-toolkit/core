@@ -50,18 +50,18 @@ TEST(QFT, ValidatesTheConfiguredInstance) {
 TEST(QFT, GivesTwoPeaksForPeriodTwo) {
   const auto benchmark =
       llvm::cantFail(QFT::create({.qubits = 3, .periodExponent = 1}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("000")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("100")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("010")), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("000"), 0.5);
+  EXPECT_DOUBLE_EQ(benchmark.probability("100"), 0.5);
+  EXPECT_DOUBLE_EQ(benchmark.probability("010"), 0.);
 }
 
 TEST(QFT, GivesFourPeaksForPeriodFour) {
   const auto benchmark = llvm::cantFail(QFT::create(
       {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}));
   for (const auto* outcome : {"0000", "0100", "1000", "1100"}) {
-    EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability(outcome)), 0.25);
+    EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 0.25);
   }
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("0001")), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("0001"), 0.);
 
   const auto evaluation = llvm::cantFail(benchmark.evaluate(
       {{"0000", 25}, {"0100", 25}, {"1000", 25}, {"1100", 25}}));

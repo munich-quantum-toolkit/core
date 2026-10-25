@@ -61,17 +61,17 @@ TEST(GHZ, RejectsUnknownEnumValues) {
 TEST(GHZ, GivesTheZBasisDistribution) {
   const auto ghz =
       llvm::cantFail(GHZ::create({.qubits = 3, .topology = GHZTopology::Star}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(ghz.probability("000")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(ghz.probability("111")), 0.5);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(ghz.probability("010")), 0.);
+  EXPECT_DOUBLE_EQ(ghz.probability("000"), 0.5);
+  EXPECT_DOUBLE_EQ(ghz.probability("111"), 0.5);
+  EXPECT_DOUBLE_EQ(ghz.probability("010"), 0.);
 }
 
 TEST(GHZ, GivesTheXBasisDistribution) {
   const auto ghz =
       llvm::cantFail(GHZ::create({.qubits = 3, .basis = GHZBasis::X}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(ghz.probability("000")), 0.25);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(ghz.probability("011")), 0.25);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(ghz.probability("111")), 0.);
+  EXPECT_DOUBLE_EQ(ghz.probability("000"), 0.25);
+  EXPECT_DOUBLE_EQ(ghz.probability("011"), 0.25);
+  EXPECT_DOUBLE_EQ(ghz.probability("111"), 0.);
 }
 
 TEST(GHZ, EvaluatesCountsAgainstTheWholeIdealDistribution) {
@@ -101,8 +101,8 @@ TEST(GHZ, PreservesRepresentableFidelityForSubnormalProbabilities) {
 
 TEST(GHZ, ValidatesOutcomesAndShotCounts) {
   const auto ghz = llvm::cantFail(GHZ::create({.qubits = 2}));
-  test::expectError(ghz.probability("0"), std::errc::invalid_argument);
-  test::expectError(ghz.probability("0x"), std::errc::invalid_argument);
+  test::expectError(ghz.evaluate({{"0", 1}}), std::errc::invalid_argument);
+  test::expectError(ghz.evaluate({{"0x", 1}}), std::errc::invalid_argument);
   test::expectError(ghz.evaluate({}), std::errc::invalid_argument);
   test::expectError(ghz.evaluate({{"00", 0}}), std::errc::invalid_argument);
   test::expectError(ghz.evaluate({{"00", 1}, {"0", 0}}),

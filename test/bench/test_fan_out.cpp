@@ -45,18 +45,19 @@ TEST(FanOut, ValidatesTheConfiguredInstance) {
 
 TEST(FanOut, GivesTheHammingWeightRotationDistribution) {
   const auto benchmark = llvm::cantFail(FanOut::create({.controls = 4}));
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00000")), 1. / 16.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00001")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00010")), 1. / 32.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00011")), 1. / 32.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00110")), 0.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("00111")), 1. / 16.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("01110")), 1. / 32.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("01111")), 1. / 32.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("11110")), 1. / 16.);
-  EXPECT_DOUBLE_EQ(llvm::cantFail(benchmark.probability("11111")), 0.);
-  test::expectError(benchmark.probability("0000"), std::errc::invalid_argument);
-  test::expectError(benchmark.probability("0000x"),
+  EXPECT_DOUBLE_EQ(benchmark.probability("00000"), 1. / 16.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00001"), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00010"), 1. / 32.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00011"), 1. / 32.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00110"), 0.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("00111"), 1. / 16.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("01110"), 1. / 32.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("01111"), 1. / 32.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("11110"), 1. / 16.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("11111"), 0.);
+  test::expectError(benchmark.evaluate({{"0000", 1}}),
+                    std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"0000x", 1}}),
                     std::errc::invalid_argument);
 }
 
@@ -79,13 +80,13 @@ TEST(FanOut, KeepsTheSmallestNonzeroProbabilityRepresentable) {
   const auto benchmark =
       llvm::cantFail(FanOut::create({.controls = FanOutOptions::MAX_CONTROLS}));
   auto outcome = std::string(benchmark.output().width, '0');
-  EXPECT_EQ(llvm::cantFail(benchmark.probability(outcome)),
+  EXPECT_EQ(benchmark.probability(outcome),
             2. * std::numeric_limits<double>::denorm_min());
   outcome.front() = '1';
-  EXPECT_EQ(llvm::cantFail(benchmark.probability(outcome)),
+  EXPECT_EQ(benchmark.probability(outcome),
             std::numeric_limits<double>::denorm_min());
   outcome.back() = '1';
-  EXPECT_EQ(llvm::cantFail(benchmark.probability(outcome)),
+  EXPECT_EQ(benchmark.probability(outcome),
             std::numeric_limits<double>::denorm_min());
 }
 

@@ -51,7 +51,9 @@ public:
   [[nodiscard]] const QAOAOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the cut size of a big-endian logical outcome on the cycle.
-  [[nodiscard]] llvm::Expected<size_t> cutSize(std::string_view outcome) const;
+  ///
+  /// Requires a binary outcome of output().width bits.
+  [[nodiscard]] size_t cutSize(std::string_view outcome) const;
   /// Score sampled cuts without computing an ideal output distribution.
   [[nodiscard]] llvm::Expected<QAOAEvaluation>
   evaluate(const Counts& counts) const;

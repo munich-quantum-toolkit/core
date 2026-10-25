@@ -16,6 +16,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <string_view>
@@ -53,10 +54,9 @@ const GHZOptions& GHZ::options() const noexcept { return options_; }
 
 const Output& GHZ::output() const noexcept { return output_; }
 
-llvm::Expected<double> GHZ::probability(const std::string_view outcome) const {
-  if (auto error = detail::validateOutcome(outcome, output_.width)) {
-    return error;
-  }
+double GHZ::probability(const std::string_view outcome) const {
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
 
   if (options_.basis == GHZBasis::Z) {
     const auto allZero = outcome.find('1') == std::string_view::npos;

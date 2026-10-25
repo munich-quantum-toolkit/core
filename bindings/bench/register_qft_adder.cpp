@@ -75,7 +75,7 @@ Draper's register addition and its constant-input Fourier specialization.)pb");
       .def_prop_ro(
           "expected_result", &bench::QFTAdder::expectedResult,
           "The unique logical outcome, or ``None`` for a superposed addend.")
-      .def("probability", benchmarkMethod(&bench::QFTAdder::probability),
+      .def("probability", benchmarkOutcome(&bench::QFTAdder::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::QFTAdder::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");

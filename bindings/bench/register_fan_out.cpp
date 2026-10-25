@@ -53,7 +53,7 @@ with conditional probability :math:`\cos^2(\pi w/4)`.)pb");
       .def_prop_ro("output", &bench::FanOut::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", benchmarkMethod(&bench::FanOut::probability),
+      .def("probability", benchmarkOutcome(&bench::FanOut::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
       .def("evaluate", benchmarkMethod(&bench::FanOut::evaluate), "counts"_a,
            "Compare sampled counts with the ideal distribution.");
