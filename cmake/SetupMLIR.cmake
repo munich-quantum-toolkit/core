@@ -9,13 +9,9 @@
 # set the include directory for the build tree
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
-set(MQT_MLIR_MIN_VERSION
-    "23.1"
-    CACHE STRING "Required MLIR release series")
+set(MQT_MLIR_MIN_VERSION "23.1" CACHE STRING "Required MLIR release series")
 option(MQT_CORE_AUTO_INSTALL_MLIR "Download LLVM/MLIR when no compatible SDK is found" ON)
-set(MQT_CORE_MLIR_VERSION
-    "23.1.2"
-    CACHE STRING "LLVM/MLIR version to download")
+set(MQT_CORE_MLIR_VERSION "23.1.2" CACHE STRING "LLVM/MLIR version to download")
 get_property(_mqt_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 string(TOUPPER "${CMAKE_BUILD_TYPE}" _mqt_build_type)
 set(_mqt_mlir_assertions_default OFF)
@@ -32,9 +28,7 @@ if(NOT DEFINED MLIR_DIR AND EXISTS "${PROJECT_SOURCE_DIR}/.env")
     if(MQT_CORE_DOTENV_LINE MATCHES
        "^[ \t]*(export[ \t]+)?MLIR_DIR[ \t]*=[ \t]*['\"]?([^'\"]+)['\"]?[ \t]*$")
       file(TO_CMAKE_PATH "${CMAKE_MATCH_2}" MQT_CORE_DOTENV_MLIR_DIR)
-      set(MLIR_DIR
-          "${MQT_CORE_DOTENV_MLIR_DIR}"
-          CACHE PATH "Path to MLIRConfig.cmake" FORCE)
+      set(MLIR_DIR "${MQT_CORE_DOTENV_MLIR_DIR}" CACHE PATH "Path to MLIRConfig.cmake" FORCE)
       message(STATUS "Using MLIR_DIR from ${PROJECT_SOURCE_DIR}/.env: ${MLIR_DIR}")
       break()
     endif()
@@ -43,8 +37,8 @@ endif()
 
 # Imported targets cannot be replaced by another SDK during configuration.
 if(TARGET LLVMSupport OR TARGET MLIRSupport)
-  if(NOT LLVM_PACKAGE_VERSION OR NOT "${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}" VERSION_EQUAL
-                                 MQT_MLIR_MIN_VERSION)
+  if(NOT LLVM_PACKAGE_VERSION
+     OR NOT "${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}" VERSION_EQUAL MQT_MLIR_MIN_VERSION)
     message(FATAL_ERROR "The embedding project must provide a compatible LLVM/MLIR SDK.")
   endif()
   find_package(MLIR ${LLVM_PACKAGE_VERSION} EXACT CONFIG REQUIRED)
@@ -76,28 +70,41 @@ if(NOT MLIR_FOUND)
     endif()
     include(FetchContent)
     # Keep the installer and its version manifest at the same revision.
-    FetchContent_Declare(
+    fetchcontent_declare(
       setup_mlir
-      URL https://github.com/munich-quantum-software/setup-mlir/archive/8d3eae73d0f0196fd30c787d91ebd2018cb6c709.tar.gz
+      URL
+        https://github.com/munich-quantum-software/setup-mlir/archive/8d3eae73d0f0196fd30c787d91ebd2018cb6c709.tar.gz
       URL_HASH SHA256=cc4d195d0ab5404bf218d7f225d8fea2510106c002773badef6b1d98a44aedb6)
-    FetchContent_MakeAvailable(setup_mlir)
+    fetchcontent_makeavailable(setup_mlir)
     if(WIN32)
       set(_mqt_mlir_command
-          pwsh -NoProfile -ExecutionPolicy Bypass -File
-          "${setup_mlir_SOURCE_DIR}/installation/setup-mlir.ps1" -llvm_version
-          "${MQT_CORE_MLIR_VERSION}" -install_prefix "${_mqt_mlir_prefix}")
+          pwsh
+          -NoProfile
+          -ExecutionPolicy
+          Bypass
+          -File
+          "${setup_mlir_SOURCE_DIR}/installation/setup-mlir.ps1"
+          -llvm_version
+          "${MQT_CORE_MLIR_VERSION}"
+          -install_prefix
+          "${_mqt_mlir_prefix}")
       if(NOT MQT_CORE_MLIR_ASSERTIONS)
         list(APPEND _mqt_mlir_command -no_assertions)
       endif()
     else()
       set(_mqt_mlir_command
-          bash "${setup_mlir_SOURCE_DIR}/installation/setup-mlir.sh" -v "${MQT_CORE_MLIR_VERSION}"
-          -p "${_mqt_mlir_prefix}" -a "${_mqt_mlir_assertions}")
+          bash
+          "${setup_mlir_SOURCE_DIR}/installation/setup-mlir.sh"
+          -v
+          "${MQT_CORE_MLIR_VERSION}"
+          -p
+          "${_mqt_mlir_prefix}"
+          -a
+          "${_mqt_mlir_assertions}")
     endif()
     message(
       STATUS
-        "Installing LLVM/MLIR ${MQT_CORE_MLIR_VERSION} (assertions ${_mqt_mlir_assertions}) in ${_mqt_mlir_prefix}"
-    )
+        "Installing LLVM/MLIR ${MQT_CORE_MLIR_VERSION} (assertions ${_mqt_mlir_assertions}) in ${_mqt_mlir_prefix}")
     execute_process(COMMAND ${_mqt_mlir_command} COMMAND_ERROR_IS_FATAL ANY)
     file(WRITE "${_mqt_mlir_prefix}/.complete" "")
   endif()
@@ -126,8 +133,9 @@ function(mqt_llvm_target_disable_rtti target_name)
     message(FATAL_ERROR "Cannot configure RTTI for missing target ${target_name}.")
   endif()
   if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(${target_name}
-                           PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_RTTI_DISABLE}>)
+    target_compile_options(
+      ${target_name}
+      PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_RTTI_DISABLE}>)
   endif()
 endfunction()
 
@@ -137,6 +145,5 @@ include_directories(${MQT_MLIR_BUILD_INCLUDE_DIR})
 separate_arguments(MQT_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 add_definitions(${MQT_LLVM_DEFINITIONS})
 
-# set the binary directory for the build tree such that, e.g., docs can be generated in the build
-# tree
+# Generate MLIR artifacts, including documentation, in the build tree.
 set(MLIR_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})

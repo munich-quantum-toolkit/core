@@ -1309,7 +1309,8 @@ private:
   }
 
   [[nodiscard]] FailureOr<uint64_t>
-  bitVectorCastWidth(std::optional<SyntaxExpressionId> size, SMLoc location) {
+  bitVectorCastWidth(std::optional<SyntaxExpressionId> size, SMLoc location,
+                     const uint64_t maxWidth = 64) {
     if (!size) {
       return 64;
     }
@@ -1325,9 +1326,10 @@ private:
                   "bit-register cast width must be an integer expression");
     }
     const auto width = asSigned(constant);
-    if (!width || *width < 1 || *width > 64) {
+    if (!width || *width < 1 || std::cmp_greater(*width, maxWidth)) {
       return fail(location,
-                  "bit-register cast supports widths from 1 through 64");
+                  "bit-register cast supports widths from 1 through " +
+                      std::to_string(maxWidth));
     }
     return static_cast<uint64_t>(*width);
   }
@@ -2721,7 +2723,8 @@ private:
   }
 
   [[nodiscard]] FailureOr<ExpressionId>
-  analyzeExpression(const SyntaxExpressionId syntaxId) {
+  analyzeExpression(const SyntaxExpressionId syntaxId,
+                    const bool allowWideBitVectorCast = false) {
     const auto& expression = syntax.expressions[syntaxId];
     if (expression.kind == Expr::Kind::Range) {
       return fail(expression.location,
@@ -2779,12 +2782,18 @@ private:
     }
     if (expression.kind == Expr::Kind::IntCast ||
         expression.kind == Expr::Kind::UintCast) {
+      const auto bitVectorOperand = isBitVectorExpression(*expression.rhs);
+      // Wide bit-register views must be narrowed by the enclosing integer cast.
+      const auto maxWidth = allowWideBitVectorCast && bitVectorOperand
+                                ? IntegerType::kMaxWidth
+                                : 64;
       MQT_OQ3_TRY_ASSIGN(
-          width, bitVectorCastWidth(expression.lhs, expression.location));
+          width,
+          bitVectorCastWidth(expression.lhs, expression.location, maxWidth));
       const auto target = expression.kind == Expr::Kind::IntCast
                               ? ScalarType::Int
                               : ScalarType::Uint;
-      if (isBitVectorExpression(*expression.rhs)) {
+      if (bitVectorOperand) {
         MQT_OQ3_TRY_ASSIGN(bitVector,
                            analyzeBitVectorExpression(*expression.rhs));
         if (program.bitVectorExpressions[bitVector].width != width) {
@@ -2799,7 +2808,7 @@ private:
             .integerWidth = static_cast<unsigned>(width),
         });
       }
-      MQT_OQ3_TRY_ASSIGN(operand, analyzeExpression(*expression.rhs));
+      MQT_OQ3_TRY_ASSIGN(operand, analyzeExpression(*expression.rhs, true));
       if (isRuntimeAngle(operand)) {
         return fail(expression.location,
                     "cast runtime angles to float before integer conversion");
@@ -4000,44 +4009,45 @@ private:
     return size;
   }
 
-  [[nodiscard]] std::optional<BitInitialization>
-  arraySelectionMask(ArrayId array, ArrayRef<ArraySelection> selection) const {
+  /// Return false for a dynamic selection or a rejected contiguous run.
+  template <typename Visitor>
+  [[nodiscard]] bool visitArraySelectionRuns(ArrayId array,
+                                             ArrayRef<ArraySelection> selection,
+                                             const Visitor& visit) const {
     SmallVector<int64_t> offsets;
     for (const auto& index : selection) {
       if (index.runtime) {
-        return std::nullopt;
+        return false;
       }
       const auto& offset = program.expressions[index.offset];
       if (offset.kind != ExpressionKind::Constant) {
-        return std::nullopt;
+        return false;
       }
       offsets.push_back(std::get<int64_t>(offset.constant));
     }
     const auto& shape = program.arrays[array].shape;
-    BitInitialization mask(initializedBits[arrayStateSlots_[array]]->size());
-    if (mask.empty()) {
-      return mask;
-    }
-    const auto visit = [&](auto&& self, size_t dimension,
-                           int64_t offset) -> void {
-      if (dimension == selection.size()) {
-        mask.set(static_cast<unsigned>(offset));
-        return;
-      }
+    const auto traverse = [&](auto&& self, size_t dimension,
+                              int64_t offset) -> bool {
       const auto& index = selection[dimension];
       const auto first = offset * shape[dimension] + offsets[dimension];
       const auto size = (index.isScalar() ? 1 : index.size);
       if (dimension + 1 == selection.size() && index.stride == 1) {
-        mask.set(static_cast<unsigned>(first),
-                 static_cast<unsigned>(first + size));
-        return;
+        return visit(static_cast<unsigned>(first),
+                     static_cast<unsigned>(first + size));
       }
       for (int64_t i = 0; i < size; ++i) {
-        self(self, dimension + 1, first + i * index.stride);
+        const auto selected = first + i * index.stride;
+        const auto accepted = dimension + 1 == selection.size()
+                                  ? visit(static_cast<unsigned>(selected),
+                                          static_cast<unsigned>(selected + 1))
+                                  : self(self, dimension + 1, selected);
+        if (!accepted) {
+          return false;
+        }
       }
+      return true;
     };
-    visit(visit, 0, 0);
-    return mask;
+    return traverse(traverse, 0, 0);
   }
 
   [[nodiscard]] LogicalResult
@@ -4084,11 +4094,12 @@ private:
       }
       const auto& initialized =
           *initializedBits[arrayStateSlots_[source.array]];
-      if (!initialized.all()) {
-        const auto mask = arraySelectionMask(source.array, source.indices);
-        if (!mask || mask->test(initialized)) {
-          return fail(location, "array copy source has uninitialized elements");
-        }
+      if (!initialized.all() &&
+          !visitArraySelectionRuns(
+              source.array, source.indices, [&](unsigned first, unsigned last) {
+                return initialized.find_first_unset_in(first, last) == -1;
+              })) {
+        return fail(location, "array copy source has uninitialized elements");
       }
       sources.push_back(std::move(source));
     }
@@ -4097,9 +4108,19 @@ private:
       return mismatch();
     }
     if (!initializedBits[arrayStateSlots_[target]]->all()) {
-      if (const auto mask = arraySelectionMask(target, targetIndices)) {
-        mutableBitInitialization(arrayStateSlots_[target]) |= *mask;
-      }
+      BitInitialization* initialized = nullptr;
+      std::ignore = visitArraySelectionRuns(
+          target, targetIndices, [&](unsigned first, unsigned last) {
+            if (initialized == nullptr) {
+              initialized = &mutableBitInitialization(arrayStateSlots_[target]);
+            }
+            if (last == first + 1) {
+              initialized->set(first);
+            } else {
+              initialized->set(first, last);
+            }
+            return true;
+          });
     }
     MQT_OQ3_TRY_ASSIGN(
         statement,
@@ -4919,11 +4940,12 @@ private:
       }
       const auto& initialized =
           *initializedBits[arrayStateSlots_[source.array]];
-      if (!initialized.all()) {
-        const auto mask = arraySelectionMask(source.array, source.indices);
-        if (!mask || mask->test(initialized)) {
-          return fail(location, "for-loop iterable has uninitialized elements");
-        }
+      if (!initialized.all() &&
+          !visitArraySelectionRuns(
+              source.array, source.indices, [&](unsigned first, unsigned last) {
+                return initialized.find_first_unset_in(first, last) == -1;
+              })) {
+        return fail(location, "for-loop iterable has uninitialized elements");
       }
       result.iterable = std::move(source);
     } else {

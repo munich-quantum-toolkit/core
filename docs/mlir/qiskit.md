@@ -23,7 +23,7 @@ with open("input.qpy", "rb") as stream:
     (circuit,) = qpy.load(stream)
 
 program = QCProgram.from_qiskit(circuit)
-circuit = program.to_qiskit(copy=True)
+circuit = program.to_qiskit()
 
 with open("output.qpy", "wb") as stream:
     qpy.dump(circuit, stream, version=17)
@@ -274,7 +274,7 @@ clear it.
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)
-restored = program.copy().to_qco().to_qc().to_qiskit()
+restored = program.to_qco().to_qc().to_qiskit()
 ```
 
 Target compilation and compilation to a Qiskit circuit require inputs without an

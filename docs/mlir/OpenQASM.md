@@ -158,7 +158,10 @@ grouping. QIR Base and Adaptive lowering require inputs to be bound first.
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
 register when the constant width is 1 through 64. Bit zero is the least
 significant bit. Signed casts use two's-complement representation, with bit
-`N - 1` as the sign bit.
+`N - 1` as the sign bit. For wider registers, immediately narrow the value to at
+most 64 bits, for example `uint[64](uint[150](bits))`. Narrowing retains the low
+bits; the outer cast determines their signedness. Wide scalar variables and
+arithmetic are unsupported.
 
 `float(value)` and `float[64](value)` accept numeric and Boolean values.
 Bit-string literals contain binary digits, optionally separated by underscores,
@@ -300,26 +303,26 @@ lowers to `qc.alloc`, while `qubit[1]` remains a one-element qubit register.
 
 ## Export OpenQASM
 
-The exporter prints validated QC and SCF operations. The translation is
-failure-atomic: it prepares the complete source before writing to the requested
-stream.
+The exporter prints validated QC and SCF operations. It writes to the requested
+stream only after preparing the complete source.
 
-Use the translation API for a `ModuleOp`:
+Use the translation API with an owned MLIR module:
 
 ```cpp
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
 
-auto source = mlir::qc::translateQCToOpenQASM3(moduleOp);
+auto source = mlir::qc::translateQCToOpenQASM3(std::move(moduleOp));
 if (mlir::failed(source)) {
   // An MLIR diagnostic describes the unsupported operation.
 }
 ```
 
-The compiler API returns an owned textual program:
+The compiler API consumes its input and returns an owned textual program. Copy
+the input explicitly when it is needed by another compilation:
 
 ```cpp
 auto qc = mlir::QCProgram::fromOpenQASMFile("input.qasm");
-auto direct = qc->toOpenQASM3(); // Export without QCO optimization.
+auto direct = qc->copy().intoOpenQASM3(); // Keep qc for the optimized path.
 direct->write("direct.qasm");
 auto reimported = mlir::runDefaultPipeline(
     mlir::CompilerInput{*direct}, mlir::ProgramFormat::QCImport);
@@ -352,8 +355,10 @@ mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
 The compiler-pipeline path performs target compilation when requested, runs the
 QCO optimization pipeline, converts back to QC, and then exports. Calling
 {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` or
-{code}`mlir::QCProgram::toOpenQASM3` applies the QC cleanup pipeline but
-bypasses that QCO optimization round trip.
+{code}`mlir::QCProgram::intoOpenQASM3` applies the QC cleanup pipeline but
+bypasses that QCO optimization round trip. Both consume the input, including on
+failure. In Python, set `copy=True` to preserve it. The low-level translation
+API also consumes its module; only the output stream is unchanged on failure.
 
 ### Export and round-trip support
 
@@ -377,19 +382,21 @@ require loop support. See the
 [QIR conversion contracts](Conversions.md#qir-conversions).
 
 OpenQASM export supports fixed-size stack arrays, strided and overlapping
-copies, and concatenation without changing the input IR. Arrays support one to
-seven dimensions and up to 100,000 elements in total, including temporary arrays
-whose copies cannot be folded into one assignment. Export preserves loaded
-values across writes, retains integer bit patterns, and emits angles as
-floating-point radians. Reimport also requires the combined register-and-array
-limit described above.
+copies, and concatenation. Arrays support one to seven dimensions and up to
+100,000 elements in total, including temporary arrays whose copies cannot be
+folded into one assignment. Export preserves loaded values across writes,
+retains integer bit patterns, and emits angles as floating-point radians. Dense
+constant initialization becomes an array declaration initializer; it must write
+a whole entry-block allocation before any other use. Reimport also requires the
+combined register-and-array limit described above.
 
 jeff export flattens fixed-size stack arrays in row-major order and carries
 updates through control flow. Import uses reference storage with copies for live
 old values; array-valued interfaces stay tensor-based. Lengths must fit signed
-i32. Unresolved safety assertions are unsupported. Arrays cannot have live old
-values or be passed more than once into mutating control flow. Loop-carried
-stack arrays must keep their incoming storage.
+i32. Unresolved safety assertions are unsupported. Across mutating control flow,
+live old array values and repeated operands require numeric literals or zero
+arrays, which initialize independent storage. Loop-carried stack arrays must
+keep their incoming storage.
 
 Qiskit and Base QIR export require array storage to be eliminated. Compiler
 cleanup promotes eligible arrays to scalar values and folds constants. With
@@ -412,14 +419,14 @@ not limit output register widths.
 
 Export retains private gate-shaped helper functions. Other defined helpers,
 including functions with integer or register arguments or classical results, are
-inlined on a copy of the module using MLIR's inliner. Their supported structured
-control flow remains structured. Recursive calls, non-gate helpers marked
-`no_inline`, and constructs outside the export subset still produce diagnostics.
-Retained gates forward their `f64` parameters directly to gates or other
-retained helpers. Helpers that compute with these parameters, including `pow`
-exponents, are inlined because OpenQASM gate parameters are angles. Constant
-expressions and calculations using loop indices remain supported in retained
-gates. The exporter does not emit OpenQASM `def` subroutines.
+inlined using MLIR's inliner. Their control flow remains structured. Recursive
+calls, non-gate helpers marked `no_inline`, and constructs outside the export
+subset still produce diagnostics. Retained gates forward their `f64` parameters
+directly to gates or other retained helpers. Helpers that compute with these
+parameters, including `pow` exponents, are inlined because OpenQASM gate
+parameters are angles. Constant expressions and calculations using loop indices
+remain supported in retained gates. The exporter does not emit OpenQASM `def`
+subroutines.
 
 Signed and unsigned index casts preserve sign extension, zero extension, and
 truncation, including truncation to one bit. Indices use 64 bits. Addition,
@@ -475,8 +482,7 @@ prove termination.
 
 Resources must be allocated outside loops and conditionals. Unsupported scalar
 types, operations, captures, or runtime gate parameters produce a
-target-specific diagnostic. Export preserves the source module and buffers
-output until it succeeds.
+target-specific diagnostic without writing partial output.
 
 The exporter writes an OpenQASM 3.1 version declaration and includes
 `stdgates.inc`. Controlled gates use compact standard-library names such as

@@ -18,23 +18,27 @@ from mqt.core.qdmi import CustomProperty, ProgramFormat, open_device
 qirrunner = pytest.importorskip("qirrunner")
 
 
-def _compile_and_run(qasm: str, *, shots: int = 1, target: CompilerTarget | None = None) -> tuple[QIRProgram, str]:
-    """Compile OpenQASM to QIR Base Profile bitcode and execute it.
+def _compile(qasm: str, *, target: CompilerTarget | None = None) -> QIRProgram:
+    """Compile OpenQASM to QIR Base Profile.
 
     Returns:
-        The generated QIR program and the collected output records.
+        The owned QIR program.
     """
-    qir = (
-        compile_program(qasm, output=OutputFormat.QIR_BASE)
-        if target is None
-        else compile_program(qasm, target=target, output=OutputFormat.QIR_BASE)
-    )
+    qir = compile_program(qasm, target=target, output=OutputFormat.QIR_BASE)
     assert isinstance(qir, QIRProgram)
     assert qir.profile is QIRProfile.BASE
+    return qir
 
+
+def _run(bitcode: bytes, *, shots: int = 1) -> str:
+    """Execute bitcode with QIR-Runner.
+
+    Returns:
+        The collected output records.
+    """
     output = qirrunner.OutputHandler()
-    qirrunner.run_bytes(qir.to_bitcode(), shots=shots, rng_seed=7, output_fn=output.handle)
-    return qir, output.get_output()
+    qirrunner.run_bytes(bitcode, shots=shots, rng_seed=7, output_fn=output.handle)
+    return output.get_output()
 
 
 def _recorded_bitstrings(output: str, *, width: int) -> list[str]:
@@ -53,7 +57,7 @@ def _recorded_bitstrings(output: str, *, width: int) -> list[str]:
 
 def test_qirrunner_executes_compiled_bell_program() -> None:
     """Execute a compiler-generated Base Profile program through QIR-Runner."""
-    qir, output = _compile_and_run(
+    qir = _compile(
         """OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -61,10 +65,11 @@ h q[0];
 ctrl @ x q[0], q[1];
 bit[2] c = measure q;
 """,
-        shots=32,
     )
 
-    assert "@__quantum__qis__cx__body" in qir.llvm_ir
+    llvm_ir = qir.to_llvm_ir(copy=True)
+    output = _run(qir.to_bitcode(), shots=32)
+    assert "@__quantum__qis__cx__body" in llvm_ir
     assert "METADATA\tqir_profiles\tbase_profile" in output
     assert set(_recorded_bitstrings(output, width=2)) == {"00", "11"}
 
@@ -80,7 +85,7 @@ bit[2] c = measure q;
 def test_qirrunner_executes_native_two_control_qis(inactive_control: int | None, expected: str) -> None:
     """Execute the dedicated two-control X instruction through QIR-Runner."""
     initialization = "\n".join(f"x q[{control}];" for control in range(2) if control != inactive_control)
-    qir, output = _compile_and_run(
+    qir = _compile(
         f"""OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
@@ -90,7 +95,9 @@ bit[3] c = measure q;
 """
     )
 
-    assert "@__quantum__qis__ccx__body" in qir.llvm_ir
+    llvm_ir = qir.to_llvm_ir(copy=True)
+    output = _run(qir.to_bitcode())
+    assert "@__quantum__qis__ccx__body" in llvm_ir
     assert _recorded_bitstrings(output, width=3) == [expected]
 
 
@@ -116,7 +123,7 @@ def test_qirrunner_executes_decomposed_multi_control_qis(inactive_control: int |
         ]),
     )
     initialization = "\n".join(f"x q[{control}];" for control in range(3) if control != inactive_control)
-    _, output = _compile_and_run(
+    qir = _compile(
         f"""OPENQASM 3.0;
 include "stdgates.inc";
 qubit[4] q;
@@ -127,6 +134,7 @@ bit[4] c = measure q;
         target=target,
     )
 
+    output = _run(qir.to_bitcode())
     assert "METADATA\tqir_profiles\tbase_profile" in output
     assert _recorded_bitstrings(output, width=4) == [expected]
 
@@ -134,12 +142,13 @@ bit[4] c = measure q;
 @pytest.mark.parametrize("flipped", [0, 1])
 def test_ddsim_and_qirrunner_record_equivalent_outputs(flipped: int) -> None:
     """Both runtimes preserve labels, record order, and deterministic outcomes."""
-    qir, reference = _compile_and_run(
+    qir = _compile(
         f'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; x q[{flipped}]; bit[2] result = measure q;',
-        shots=3,
     )
+    bitcode = qir.to_bitcode()
+    reference = _run(bitcode, shots=3)
     device = open_device("mqt.ddsim.default")
-    job = device.submit_job(qir.to_bitcode(), ProgramFormat.QIR_BASE_MODULE, 3, custom2=True)
+    job = device.submit_job(bitcode, ProgramFormat.QIR_BASE_MODULE, 3, custom2=True)
     assert job.wait()
     output = job.get_custom_result(CustomProperty.CUSTOM1, str)
     assert isinstance(output, str)

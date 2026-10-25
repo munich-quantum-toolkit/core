@@ -18,19 +18,20 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
   endif()
   # Add the test executable
   package_add_test(${TARGET_NAME} MQT::CoreQDMIScDevice test_configuration.cpp test_device.cpp)
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
   target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/test)
   # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_sc_device_defs)
   # Link further libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceConfig
-                                               nlohmann_json::nlohmann_json)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceConfig LLVMSupport)
   # Set the executable path and version information
   target_compile_definitions(
     ${TARGET_NAME}
-    PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}"
-            SC_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json"
-            IQM_GARNET_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json"
-            IQM_EMERALD_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json")
+    PRIVATE
+      MQT_CORE_VERSION="${MQT_CORE_VERSION}"
+      SC_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json"
+      IQM_GARNET_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json"
+      IQM_EMERALD_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json")
 
   # On Windows, copy the provider and its runtime assets beside the test executable.
   if(WIN32)

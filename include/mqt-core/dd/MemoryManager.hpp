@@ -85,14 +85,9 @@ public:
 
   /// Reset the manager.
   ///
-  /// Drops all but the first chunk. If `resizeToTotal` is set to true,
-  /// the first chunk is resized to the total number of entries. This increases
-  /// memory locality and reduces the number of allocations when the manager is
-  /// used again. However, it might also require a huge contiguous block of
-  /// memory to be allocated.
-  /// @param resizeToTotal If set to true, the first chunk is resized to the
-  /// total number of entries.
-  void reset(bool resizeToTotal = false) noexcept;
+  /// Drops all but the first chunk and clears the free list. Previously
+  /// returned entries must not be used after reset.
+  void reset();
 
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }

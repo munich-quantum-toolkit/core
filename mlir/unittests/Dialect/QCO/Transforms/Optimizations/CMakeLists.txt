@@ -22,20 +22,21 @@ add_executable(
 
 target_link_libraries(
   ${target_name}
-  PRIVATE GTest::gtest_main
-          MLIRControlFlowDialect
-          MLIRQCODDFunctionality
-          MLIRQCOToQC
-          MLIRQCOProgramBuilder
-          MLIRQCOPrograms
-          MLIRQCOTransforms
-          MLIRQCOUtils
-          MLIRParser
-          MLIRIR
-          MLIRPass
-          MLIRSupport
-          LLVMSupport
-          MLIRSupportMQT)
+  PRIVATE
+    GTest::gtest_main
+    MLIRControlFlowDialect
+    MLIRQCODDFunctionality
+    MLIRQCOToQC
+    MLIRQCOProgramBuilder
+    MLIRQCOPrograms
+    MLIRQCOTransforms
+    MLIRQCOUtils
+    MLIRParser
+    MLIRIR
+    MLIRPass
+    MLIRSupport
+    LLVMSupport
+    MLIRSupportMQT)
 
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 

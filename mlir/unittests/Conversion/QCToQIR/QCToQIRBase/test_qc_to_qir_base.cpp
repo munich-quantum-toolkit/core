@@ -585,8 +585,8 @@ TEST_F(QCToQIRBaseNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
   }
   bits.push_back(builder.measure(builder.allocQubit()));
   SmallVector<Value> outputs{
-      registers[2], registers[1], bits[3], bits[0],
-      registers[0], bits[1],      bits[3], registers[1],
+      registers[0], registers[1], bits[3], bits[0],
+      registers[2], bits[1],      bits[3], registers[1],
   };
 
   auto module = builder.finalize(outputs);
@@ -605,6 +605,7 @@ TEST_F(QCToQIRBaseNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
   SmallVector<Value> recorded;
   SmallVector<size_t> containerPositions;
   DenseSet<StringRef> labels;
+  SmallVector<StringRef> containerLabels;
   module->walk([&](LLVM::CallOp call) {
     if (call.getCallee() == qir::QIR_RECORD_OUTPUT) {
       recorded.push_back(call.getOperand(0));
@@ -619,14 +620,21 @@ TEST_F(QCToQIRBaseNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
     ASSERT_TRUE(global);
     auto label = global->getAttrOfType<StringAttr>("value");
     ASSERT_TRUE(label);
+    if (call.getCallee() != qir::QIR_RECORD_OUTPUT) {
+      containerLabels.push_back(label.getValue().split('\0').first);
+    }
     EXPECT_TRUE(labels.insert(label.getValue()).second)
         << label.getValue().str();
   });
-  EXPECT_EQ(recorded, (SmallVector<Value>{measurements[2], measurements[1],
+  EXPECT_EQ(recorded, (SmallVector<Value>{measurements[0], measurements[1],
                                           measurements[3], measurements[0],
-                                          measurements[0], measurements[1],
+                                          measurements[2], measurements[1],
                                           measurements[3], measurements[1]}));
   EXPECT_EQ(containerPositions, (SmallVector<size_t>{0, 1, 4, 7}));
+  ASSERT_EQ(containerLabels.size(), 4U);
+  EXPECT_EQ(containerLabels[0], "c");
+  EXPECT_EQ(containerLabels[1], "c_0");
+  EXPECT_EQ(containerLabels[2], "named_result");
   EXPECT_TRUE(
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
   auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");

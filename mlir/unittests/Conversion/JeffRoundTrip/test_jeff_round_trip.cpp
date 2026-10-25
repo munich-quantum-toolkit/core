@@ -1253,17 +1253,20 @@ TEST(JeffRoundTripRegressionTest, RejectsEffectsInIntegerSelection) {
   EXPECT_TRUE(failed(convertJeffToQCO(*program)));
 }
 
-TEST(JeffRoundTripRegressionTest, RejectsLiveOldArraysInMutatingControlFlow) {
+TEST(JeffRoundTripRegressionTest,
+     RejectsLiveComputedArraysInMutatingControlFlow) {
   MLIRContext context;
   context.loadDialect<cbit::CBitDialect, arith::ArithDialect, func::FuncDialect,
                       qco::QCODialect, mlir::jeff::JeffDialect>();
   constexpr llvm::StringLiteral source = R"mlir(
     module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
-      func.func @main(%select: i1) -> (tensor<1xi1>, tensor<1xi1>) {
+      func.func @main(%select: i1, %initial: i1) -> (tensor<1xi1>, tensor<1xi1>) {
         %length = jeff.int_const32(1) : i32
         %index = jeff.int_const32(0) : i32
         %bit = jeff.int_const1(true) : i1
-        %old = jeff.int_array_zero(%length) : tensor<1xi1>
+        %zero = jeff.int_array_zero(%length) : tensor<1xi1>
+        %old = jeff.int_array_set_index(%index) %zero %initial
+            : i32, tensor<1xi1>, i1 -> tensor<1xi1>
         %result = jeff.switch (%select, %old, %index, %bit)
             : (i1, tensor<1xi1>, i32, i1) -> (tensor<1xi1>)
         case 0 args(%array, %idx, %value) {

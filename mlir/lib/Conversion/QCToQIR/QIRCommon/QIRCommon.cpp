@@ -148,11 +148,11 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
                                     LLVMTypeConverter& typeConverter) {
   auto* ctx = moduleOp.getContext();
-  // Constant tensors and element reads require no allocation or alias
-  // analysis.
+  // Read-only tensors and explicit destinations need no alias analysis.
   bufferization::BufferizationOptions options;
   options.allowUnknownOps = true;
-  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp>();
+  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp,
+                                  bufferization::MaterializeInDestinationOp>();
   bufferization::BufferizationState state;
   if (failed(bufferization::bufferizeOp(moduleOp, options, state))) {
     return failure();
@@ -607,14 +607,13 @@ Value getResultPtr(LoweringState& state, Operation* op,
 
 /// Summarize the interference before each store in one block traversal.
 ///
-/// Only disjoint constant-index stores to the same register can be crossed.
+/// Only stores to distinct constant-index locations in direct allocations can
+/// be crossed.
 static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
   DenseSet<Operation*> candidates;
   DenseMap<Operation*, size_t> measurements;
   DenseMap<std::pair<Value, int64_t>, size_t> lastStoreAtIndex;
-  Value lastRegister;
   size_t lastStore = 0;
-  size_t lastOtherRegisterStore = 0;
   size_t lastBarrier = 0;
   size_t position = 0;
   for (auto& operation : *block) {
@@ -624,23 +623,18 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
     }
     if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
       const auto index = getConstantIntValue(store.getIndex());
+      const bool knownLocation =
+          index && store.getReg().getDefiningOp<cbit::AllocOp>();
       auto conflict = std::max(lastBarrier, lastStore);
-      if (index) {
-        conflict = std::max({
-            lastBarrier,
-            lastRegister == store.getReg() ? lastOtherRegisterStore : lastStore,
-            lastStoreAtIndex.lookup({store.getReg(), *index}),
-        });
+      if (knownLocation) {
+        conflict = std::max(lastBarrier,
+                            lastStoreAtIndex.lookup({store.getReg(), *index}));
       }
       auto measure = store.getValue().getDefiningOp<MeasureOp>();
       if (measure && measurements.lookup(measure.getOperation()) > conflict) {
         candidates.insert(store.getOperation());
       }
-      if (index) {
-        if (lastRegister != store.getReg()) {
-          lastOtherRegisterStore = lastStore;
-          lastRegister = store.getReg();
-        }
+      if (knownLocation) {
         lastStore = position;
         lastStoreAtIndex[{store.getReg(), *index}] = position;
       } else {

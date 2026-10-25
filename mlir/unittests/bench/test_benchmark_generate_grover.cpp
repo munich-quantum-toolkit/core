@@ -14,11 +14,13 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 namespace mqt::bench {
 
 TEST(GenerateProgramTest, SamplesGroverAgainstReference) {
-  test::expectSamplingMatchesReference(
-      Grover{{.markedBitstring = "01", .iterations = 1}});
+  test::expectSamplingMatchesReference(llvm::cantFail(
+      Grover::create({.markedBitstring = "01", .iterations = 1})));
 }
 
 } // namespace mqt::bench

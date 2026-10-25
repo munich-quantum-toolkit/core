@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from collections import UserDict
+
 import numpy as np
 import numpy.typing as npt
 import pytest
@@ -115,7 +117,7 @@ def test_array_binding_preserves_scalar_input(array_program: QCProgram, *, as_ar
     program = array_program.to_qco() if qco else array_program
     original = program.copy()
     angles = [np.pi / 2, np.pi]
-    program.bind_parameters({"angles": np.asarray(angles) if as_array else angles})
+    program.bind_parameters(UserDict({"angles": np.asarray(angles) if as_array else angles}))
     assert program.parameters == ["offset"]
     program.bind_parameters({"offset": np.pi / 2})
     assert program.parameters == []

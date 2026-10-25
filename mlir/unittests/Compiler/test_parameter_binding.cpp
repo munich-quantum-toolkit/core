@@ -42,7 +42,7 @@ rz(alpha + beta) q;
   EXPECT_TRUE(mlir::succeeded(mlir::verify(qc->module())));
   EXPECT_EQ(mlir::mqt::getEntryPoint(qc->module()).getNumResults(), 0);
 
-  auto exported = qc->toOpenQASM3();
+  auto exported = std::move(*qc).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(exported));
   const auto beta = exported->source().find("input float[64] beta;");
   const auto alpha = exported->source().find("input float[64] alpha;");
@@ -56,7 +56,7 @@ rz(alpha + beta) q;
 
   ASSERT_TRUE(mlir::succeeded(restored->bindParameters({{"beta", 0}})));
   EXPECT_EQ(restored->parameters(), (std::vector<std::string>{"alpha"}));
-  exported = restored->toOpenQASM3();
+  exported = restored->copy().intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(exported));
   EXPECT_EQ(exported->source().find("input float[64] beta;"),
             std::string::npos);
@@ -126,12 +126,12 @@ TEST(ParameterBinding, MixedArrayBindingPreservesRemainingInputs) {
             -0.125);
   qc = std::move(*qco).intoQC();
   ASSERT_TRUE(mlir::succeeded(qc));
-  EXPECT_TRUE(mlir::succeeded(qc->toOpenQASM3()));
   for (const auto profile :
        {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
     auto bound = qc->copy();
     EXPECT_TRUE(mlir::succeeded(std::move(bound).intoQIR(profile)));
   }
+  EXPECT_TRUE(mlir::succeeded(std::move(*qc).intoOpenQASM3()));
 }
 
 TEST(ParameterBinding, OnlyNamedScalarsAndStaticRankOneF64InputsAreBindable) {

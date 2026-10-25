@@ -27,6 +27,7 @@
 
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -1397,15 +1398,26 @@ TEST_F(QCODDFunctionalityTest, AdaptiveWorkersAndTopLevelBranches) {
                           nullptr, {}, workers);
     const auto b = sampleShots(mainFunc(*mod), 512, 19, second,
                                DDArgumentBindings{}, nullptr, {}, workers);
+    const auto countsOnly =
+        sample(mainFunc(*mod), 512, 19, DDArgumentBindings{}, nullptr, nullptr,
+               {}, workers);
     ASSERT_TRUE(succeeded(a));
     ASSERT_TRUE(succeeded(b));
-    EXPECT_EQ(first, second);
+    ASSERT_TRUE(succeeded(countsOnly));
+    EXPECT_EQ(countsOnly->at("0") + countsOnly->at("1"), 512U);
+    EXPECT_NEAR(static_cast<double>(countsOnly->at("1")), 128., 60.);
+    std::map<std::string, size_t> firstCounts;
+    for (const auto& shot : first) {
+      ++firstCounts[shot];
+    }
+    EXPECT_EQ(*a, firstCounts);
     std::map<std::string, size_t> counts;
     for (const auto& shot : second) {
       ++counts[shot];
     }
     EXPECT_EQ(*a, counts);
     EXPECT_EQ(first.size(), 512U);
+    EXPECT_EQ(second.size(), 512U);
     EXPECT_NEAR(static_cast<double>(a->at("1")), 128., 50.);
   }
 }
@@ -1455,7 +1467,41 @@ TEST_F(QCODDFunctionalityTest, BranchesCopyClassicalRegisterStorage) {
   EXPECT_NEAR(static_cast<double>(hist->at("1")), 512., 90.);
 }
 
+TEST_F(QCODDFunctionalityTest, MeasurementsInsideConditionalRegions) {
+  for (const bool useSwitch : {false, true}) {
+    auto mod = buildModule([useSwitch](QCOProgramBuilder& b) {
+      auto reg = b.allocClassicalBitRegister(2, {}, cbit::Initialization::Zero);
+      auto [q0, bit] = b.measure(b.h(b.staticQubit(0)), reg, 0);
+      auto q1 = b.staticQubit(1);
+      const auto measure = [&](Value arg) {
+        return b.measure(b.h(arg), reg, 1).first;
+      };
+      const auto identity = [](Value arg) { return arg; };
+      if (useSwitch) {
+        auto index = arith::IndexCastUIOp::create(b, b.getIndexType(), bit);
+        q1 = b.qcoIndexSwitch(index, q1, {1},
+                              SmallVector<function_ref<Value(Value)>>{measure},
+                              identity);
+      } else {
+        q1 = b.qcoIf(bit, q1, measure, identity);
+      }
+      b.sink(q0);
+      b.sink(q1);
+      return reg;
+    });
+    ASSERT_TRUE(mod);
+    const auto counts = sample(mainFunc(*mod), 32768, 17);
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(counts->size(), 3);
+    EXPECT_EQ(counts->at("00") + counts->at("01") + counts->at("11"), 32768);
+    EXPECT_NEAR(static_cast<double>(counts->at("00")), 16384., 550.);
+    EXPECT_NEAR(static_cast<double>(counts->at("01")), 8192., 475.);
+    EXPECT_NEAR(static_cast<double>(counts->at("11")), 8192., 475.);
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, BranchesIsolateMemRefWritesAndPreserveAliases) {
+  context->loadDialect<bufferization::BufferizationDialect>();
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @alias(%memory: memref<32xi1, strided<[2], offset: ?>>)
@@ -1477,6 +1523,10 @@ TEST_F(QCODDFunctionalityTest, BranchesIsolateMemRefWritesAndPreserveAliases) {
         %true = arith.constant true
         %one = arith.constant 1 : index
         %memory = memref.alloca() : memref<32x2xi1>
+        %zeros = arith.constant dense<false> : tensor<32x2xi1>
+        %ones = arith.constant dense<true> : tensor<32x2xi1>
+        bufferization.materialize_in_destination %ones in writable %memory
+          : (tensor<32x2xi1>, memref<32x2xi1>) -> ()
         %row = memref.subview %memory[0, %one][32, 1][1, 1]
           : memref<32x2xi1> to memref<32xi1, strided<[2], offset: ?>>
         %source = memref.alloca() : memref<32xi1>
@@ -1490,15 +1540,20 @@ TEST_F(QCODDFunctionalityTest, BranchesIsolateMemRefWritesAndPreserveAliases) {
         qco.sink %measured : !qco.qubit
         %expected = arith.xori %bit, %true : i1
         scf.if %expected {
+          bufferization.materialize_in_destination %zeros in writable %memory
+            : (tensor<32x2xi1>, memref<32x2xi1>) -> ()
           func.call @set(%alias, %true) : (memref<32xi1, strided<[2], offset: ?>>, i1) -> ()
         } else {
           memref.copy %source, %alias : memref<32xi1> to memref<32xi1, strided<[2], offset: ?>>
         }
         %actual = memref.load %memory[%zero, %one] : memref<32x2xi1>
         %same = arith.cmpi eq, %actual, %expected : i1
+        %initialized = memref.load %memory[%zero, %zero] : memref<32x2xi1>
+        %isolated = arith.cmpi eq, %initialized, %bit : i1
         %original = memref.load %source[%zero] : memref<32xi1>
         %unchanged = arith.cmpi eq, %original, %false : i1
-        %matches = arith.andi %same, %unchanged : i1
+        %preserved = arith.andi %same, %unchanged : i1
+        %matches = arith.andi %preserved, %isolated : i1
         %q1 = qco.static 1 : !qco.qubit
         %out = qco.if %matches args(%q = %q1) -> (!qco.qubit) {
           %x = qco.x %q : !qco.qubit
@@ -1516,7 +1571,8 @@ TEST_F(QCODDFunctionalityTest, BranchesIsolateMemRefWritesAndPreserveAliases) {
   const auto hist = sample(mainFunc(*mod), 1024, 23);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 2U);
-  EXPECT_EQ(hist->at("10") + hist->at("11"), 1024U);
+  EXPECT_EQ(hist->count("10") + hist->count("11"), 2U);
+  EXPECT_EQ(hist->begin()->second + hist->rbegin()->second, 1024U);
 }
 
 TEST_F(QCODDFunctionalityTest, BranchesThroughCountedMeasurementsAndResets) {
@@ -1551,10 +1607,20 @@ TEST_F(QCODDFunctionalityTest, BranchesThroughCountedMeasurementsAndResets) {
                           &first, nullptr, {}, workers);
     const auto b = sample(mainFunc(*mod), 2048, 41, DDArgumentBindings{},
                           &second, nullptr, {}, workers);
+    const auto countsOnly =
+        sample(mainFunc(*mod), 2048, 41, DDArgumentBindings{}, nullptr, nullptr,
+               {}, workers);
     ASSERT_TRUE(succeeded(a));
     ASSERT_TRUE(succeeded(b));
+    ASSERT_TRUE(succeeded(countsOnly));
     EXPECT_EQ(first, second);
     EXPECT_EQ(*a, *b);
+    EXPECT_EQ(*a, *countsOnly);
+    std::map<std::string, size_t> fromShots;
+    for (const auto& shot : first) {
+      ++fromShots[shot];
+    }
+    EXPECT_EQ(*a, fromShots);
     EXPECT_EQ(a->size(), 8U);
     for (const auto& [outcome, count] : *a) {
       EXPECT_EQ(outcome.size(), 3U);
@@ -1563,28 +1629,56 @@ TEST_F(QCODDFunctionalityTest, BranchesThroughCountedMeasurementsAndResets) {
   }
 }
 
-TEST_F(QCODDFunctionalityTest, BranchesThroughNestedCountedLoops) {
+TEST_F(QCODDFunctionalityTest,
+       BranchesThroughNestedLoopsShareBudgetAndAliases) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
+      func.func private @tick() {
+        %true = arith.constant true
+        %false = arith.constant false
+        %done = scf.while (%flag = %true) : (i1) -> i1 {
+          scf.condition(%flag) %flag : i1
+        } do {
+        ^bb0(%flag: i1):
+          scf.yield %false : i1
+        }
+        return
+      }
       func.func @main() -> !cbit.reg<4> {
         %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<4>
         %q = qco.static 0 : !qco.qubit
         %zero = arith.constant 0 : index
         %one = arith.constant 1 : index
         %two = arith.constant 2 : index
+        %angle = arith.constant 1.0471975511965976 : f64
+        func.call @tick() : () -> ()
         %out = scf.for %i = %zero to %two step %one
             iter_args(%outerq = %q) -> !qco.qubit {
-          %inner = scf.for %j = %zero to %two step %one
-              iter_args(%innerq = %outerq) -> !qco.qubit {
-            %offset = arith.muli %i, %two : index
-            %index = arith.addi %offset, %j : index
-            %h = qco.h %innerq : !qco.qubit
-            %measured, %bit = qco.measure %h : !qco.qubit
-            cbit.store %bit, %reg[%index] : !cbit.reg<4>
-            %reset = qco.reset %measured : !qco.qubit
-            scf.yield %reset : !qco.qubit
+          %inner:3 = scf.while (%j = %zero, %innerq = %outerq, %alias = %reg)
+              : (index, !qco.qubit, !cbit.reg<4>) -> (index, !qco.qubit, !cbit.reg<4>) {
+            %condition = arith.cmpi slt, %j, %two : index
+            scf.condition(%condition) %j, %innerq, %alias
+              : index, !qco.qubit, !cbit.reg<4>
+          } do {
+          ^bb0(%j: index, %innerq: !qco.qubit, %alias: !cbit.reg<4>):
+            %measured = scf.for %k = %zero to %one step %one
+                iter_args(%current = %innerq) -> !qco.qubit {
+              %offset = arith.muli %i, %two : index
+              %index = arith.addi %offset, %j : index
+              %h = qco.ry(%angle) %current : !qco.qubit
+              %measured, %bit = qco.measure %h : !qco.qubit
+              cbit.store %bit, %alias[%index] : !cbit.reg<4>
+              %reset = qco.reset %measured : !qco.qubit
+              scf.yield %reset : !qco.qubit
+            }
+            %next = arith.addi %j, %one : index
+            scf.yield %next, %measured, %alias : index, !qco.qubit, !cbit.reg<4>
           }
-          scf.yield %inner : !qco.qubit
+          scf.yield %inner#1 : !qco.qubit
+        }
+        %first = cbit.load %reg[%zero] : !cbit.reg<4>
+        scf.if %first {
+          func.call @tick() : () -> ()
         }
         qco.sink %out : !qco.qubit
         return %reg : !cbit.reg<4>
@@ -1594,13 +1688,106 @@ TEST_F(QCODDFunctionalityTest, BranchesThroughNestedCountedLoops) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  const auto counts = sample(mainFunc(*mod), 1024, 43, DDArgumentBindings{},
-                             nullptr, nullptr, {}, 4);
+  const auto counts = sample(mainFunc(*mod), 8192, 43, DDArgumentBindings{},
+                             nullptr, nullptr, {.maxWhileIterations = 6}, 4);
   ASSERT_TRUE(succeeded(counts));
   EXPECT_EQ(counts->size(), 16U);
   for (const auto& [outcome, count] : *counts) {
     EXPECT_EQ(outcome.size(), 4U);
-    EXPECT_GT(count, 0U);
+    double expected = 8192.;
+    for (const char bit : outcome) {
+      expected *= bit == '1' ? 0.25 : 0.75;
+    }
+    EXPECT_NEAR(static_cast<double>(count), expected, 6 * std::sqrt(expected));
+  }
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("configured while-iteration limit") !=
+                 std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), 8192, 43, DDArgumentBindings{},
+                            nullptr, nullptr, {.maxWhileIterations = 5}, 4)));
+  EXPECT_TRUE(diagnosed);
+}
+
+TEST_F(QCODDFunctionalityTest, WhileConditionProducesZeroTripResults) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> i1 {
+        %q = qco.static 0 : !qco.qubit
+        %false = arith.constant false
+        %out:2 = scf.while (%current = %q)
+            : (!qco.qubit) -> (!qco.qubit, i1) {
+          %h = qco.h %current : !qco.qubit
+          %measured, %bit = qco.measure %h : !qco.qubit
+          %corrected = qco.if %bit args(%arm = %measured) -> (!qco.qubit) {
+            %x = qco.x %arm : !qco.qubit
+            qco.yield %x : !qco.qubit
+          } else args(%arm = %measured) {
+            qco.yield %arm : !qco.qubit
+          }
+          scf.condition(%false) %corrected, %bit : !qco.qubit, i1
+        } do {
+        ^bb0(%current: !qco.qubit, %bit: i1):
+          scf.yield %current : !qco.qubit
+        }
+        qco.sink %out#0 : !qco.qubit
+        return %out#1 : i1
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  const auto counts = sample(mainFunc(*mod), 1024, 17, DDArgumentBindings{},
+                             nullptr, nullptr, {.maxWhileIterations = 0});
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(counts->at("0") + counts->at("1"), 1024U);
+  EXPECT_NEAR(static_cast<double>(counts->at("1")), 512., 90.);
+}
+
+TEST_F(QCODDFunctionalityTest, WhileMeasurementControlsRepeatUntilSuccess) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%angle: f64) -> i1 {
+        %q = qco.static 0 : !qco.qubit
+        %false = arith.constant false
+        %true = arith.constant true
+        %out:2 = scf.while (%current = %q, %parity = %false)
+            : (!qco.qubit, i1) -> (!qco.qubit, i1) {
+          %h = qco.ry(%angle) %current : !qco.qubit
+          %measured, %bit = qco.measure %h : !qco.qubit
+          %retry = arith.xori %bit, %true : i1
+          scf.condition(%retry) %measured, %parity : !qco.qubit, i1
+        } do {
+        ^bb0(%current: !qco.qubit, %parity: i1):
+          %reset = qco.reset %current : !qco.qubit
+          %next = arith.xori %parity, %true : i1
+          scf.yield %reset, %next : !qco.qubit, i1
+        }
+        qco.sink %out#0 : !qco.qubit
+        return %out#1 : i1
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto func = mainFunc(*mod);
+  constexpr size_t shots = 32768;
+  for (const double successProbability : {0.5, 1. / 1024.}) {
+    SCOPED_TRACE(successProbability);
+    DDArgumentBindings bindings;
+    bindings[func.getArgument(0)] =
+        FloatAttr::get(Float64Type::get(context.get()),
+                       2 * std::asin(std::sqrt(successProbability)));
+    const auto counts = sample(func, shots, 17, bindings);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(counts->at("0") + counts->at("1"), shots);
+    // Odd failure counts have probability p(1-p) + p(1-p)^3 + ... .
+    const double oddProbability =
+        (1 - successProbability) / (2 - successProbability);
+    EXPECT_NEAR(static_cast<double>(counts->at("1")), shots * oddProbability,
+                600.);
   }
 }
 
@@ -2960,8 +3147,7 @@ TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedTensorConstants) {
-  for (const auto* type :
-       {"tensor<2xf32>", "tensor<1x2xf64>", "vector<2xf64>"}) {
+  for (const auto* type : {"tensor<2xf32>", "vector<2xf64>"}) {
     const auto code = std::string("module { func.func @main() { "
                                   "%table = arith.constant dense<0.0> : ") +
                       type + " return } }";
@@ -3093,11 +3279,15 @@ TEST_F(QCODDFunctionalityTest,
       ++counts[shot];
     }
     EXPECT_EQ(counts, *histogram);
-    std::vector<std::string> ordered;
+    std::vector<std::string> samples;
     ASSERT_TRUE(succeeded(sampleShots(
-        mainFunc(*mod), 128, 9, ordered, DDArgumentBindings{}, nullptr, {},
+        mainFunc(*mod), 128, 9, samples, DDArgumentBindings{}, nullptr, {},
         workers, [](size_t desired) { return desired; })));
-    EXPECT_EQ(ordered, shots);
+    std::map<std::string, size_t> sampleCounts;
+    for (const auto& shot : samples) {
+      ++sampleCounts[shot];
+    }
+    EXPECT_EQ(sampleCounts, *histogram);
   }
   std::vector<std::string> serial;
   std::vector<std::string> capped;
@@ -3106,7 +3296,15 @@ TEST_F(QCODDFunctionalityTest,
   ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, capped,
                                     DDArgumentBindings{}, nullptr, {}, 4,
                                     [](size_t) { return size_t{1}; })));
-  EXPECT_EQ(capped, serial);
+  std::map<std::string, size_t> serialCounts;
+  std::map<std::string, size_t> cappedCounts;
+  for (const auto& shot : serial) {
+    ++serialCounts[shot];
+  }
+  for (const auto& shot : capped) {
+    ++cappedCounts[shot];
+  }
+  EXPECT_EQ(cappedCounts, serialCounts);
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {

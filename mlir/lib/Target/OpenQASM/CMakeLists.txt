@@ -22,13 +22,14 @@ add_mlir_library(
 mqt_mlir_target_use_project_options(MLIROpenQASMFrontend)
 
 set(OPENQASM_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/Frontend.h
-                            ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/GateCatalog.h)
+    ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/GateCatalog.h)
 file(GLOB_RECURSE OPENQASM_DETAIL_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/Detail/*.h)
 
 target_sources(
-  MLIROpenQASMFrontend PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                              ${OPENQASM_HEADERS_SOURCE})
+  MLIROpenQASMFrontend
+  PUBLIC
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${OPENQASM_HEADERS_SOURCE})
 
 target_sources(MLIROpenQASMFrontend PRIVATE ${OPENQASM_DETAIL_HEADERS_SOURCE})
 
@@ -53,6 +54,7 @@ add_mlir_library(
   MLIROpenQASMFrontend
   MLIRControlFlowDialect
   MLIRMathDialect
+  MLIRBufferizationDialect
   MLIRMemRefDialect
   MLIRMemRefTransforms
   MLIRMQTDialect
@@ -69,10 +71,8 @@ mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)
 
 target_sources(
   MLIRQCOpenQASMTranslation
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/TranslateOpenQASMToQC.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h)
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/TranslateOpenQASMToQC.h
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h)

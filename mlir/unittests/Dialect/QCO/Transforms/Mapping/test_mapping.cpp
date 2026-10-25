@@ -626,7 +626,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
 
   for (const bool placement : {false, true}) {
     SCOPED_TRACE(placement);
-    auto moduleOp = input->clone();
+    OwningOpRef<ModuleOp> moduleOp = input->clone();
     std::string diagnostics;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
       diagnostics += diagnostic.str();
@@ -636,7 +636,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
     PassManager pm(context.get());
     pm.addPass(placement ? createPlacementPass()
                          : createMappingPass(MappingPassOptions{.ntrials = 1}));
-    EXPECT_TRUE(failed(pm.run(moduleOp))) << diagnostics;
+    EXPECT_TRUE(failed(pm.run(*moduleOp))) << diagnostics;
     EXPECT_NE(diagnostics.find("expected a valid mqt.target_env"),
               std::string::npos)
         << diagnostics;

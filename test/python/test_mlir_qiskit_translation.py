@@ -159,6 +159,25 @@ def test_standard_gates_round_trip(gate: Gate) -> None:
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
+def test_symbolic_standard_gates_round_trip() -> None:
+    """Preserve each parameterized gate's identity when exporting symbols."""
+    circuit = QuantumCircuit(4)
+    for index, gate in enumerate(STANDARD_GATES):
+        if gate.params:
+            symbolic = gate.to_mutable()
+            symbolic.params = [Parameter(f"p{index}_{position}") for position in range(len(gate.params))]
+            circuit.append(symbolic, range(gate.num_qubits))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert restored.parameters == circuit.parameters
+    values = {parameter: (index + 1) / 100 for index, parameter in enumerate(circuit.parameters)}
+    np.testing.assert_allclose(
+        Operator(restored.assign_parameters(values)).data,
+        Operator(circuit.assign_parameters(values)).data,
+        atol=1e-12,
+    )
+
+
 def test_dense_unitary_round_trip_preserves_qarg_mapping_and_source_data() -> None:
     """Preserve a dense unitary and its qubit mapping without changing source data."""
     local = QuantumCircuit(2)
@@ -175,9 +194,9 @@ def test_dense_unitary_round_trip_preserves_qarg_mapping_and_source_data() -> No
     source_operator = Operator(circuit)
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "qc.unitary" in program.ir
+    restored = program.to_qiskit()
+
     assert np.allclose(Operator(restored).data, source_operator.data)
     assert np.allclose(Operator(circuit).data, source_operator.data)
     assert list(circuit.data) == source_data
@@ -219,9 +238,9 @@ def test_dense_unitary_round_trip(num_qubits: int) -> None:
     circuit.append(library.UnitaryGate(matrix), range(num_qubits))
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "qc.unitary" in program.ir
+    restored = program.to_qiskit()
+
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
     assert restored.count_ops() == {"unitary": 1}
 
@@ -244,9 +263,9 @@ def test_quantum_volume_unitaries_remain_dense() -> None:
     assert circuit.count_ops().get("unitary") == 6
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert program.ir.count("qc.unitary") == 6
+    restored = program.to_qiskit()
+
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
     assert restored.count_ops().get("unitary") == 6
 
@@ -266,9 +285,9 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
     program = QCProgram.from_qiskit(circuit).to_qco()
 
     program.compile_for_target(_test_target_environment(target))
-    restored = program.to_qiskit(target=target, copy=True)
-
     assert "qco.unitary" not in program.ir
+    restored = program.to_qiskit(target=target)
+
     assert restored.size() > 0
     assert set(restored.count_ops()) <= {"u", "cx"}
 
@@ -404,10 +423,10 @@ def test_controlled_dense_unitary_round_trip_preserves_qarg_order() -> None:
     circuit.append(operation, [3, 0, 2])
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "qc.ctrl" in program.ir
     assert "qc.unitary" in program.ir
+    restored = program.to_qiskit()
+
     controlled = restored.data[0]
     assert [restored.find_bit(qubit).index for qubit in controlled.qubits] == [3, 0, 2]
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
@@ -424,10 +443,10 @@ def test_inverse_controlled_dense_unitary_round_trip() -> None:
     circuit.append(operation, circuit.qubits)
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "qc.ctrl" in program.ir
     assert "qc.inv" in program.ir
+    restored = program.to_qiskit()
+
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
@@ -495,10 +514,10 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
     circuit.measure(range(2), range(2))
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert 'mqt.register_name = "input"' in program.ir
     assert 'cbit.alloc(#cbit.init<zero>) {mqt.register_name = "output"}' in program.ir
+    restored = program.to_qiskit()
+
     assert restored.global_phase == pytest.approx(0.125)
     assert [(reg.name, len(reg)) for reg in restored.qregs] == [("input", 2)]
     assert [(reg.name, len(reg)) for reg in restored.cregs] == [("output", 2)]
@@ -705,10 +724,10 @@ if (c >= 1) { x q[2]; }
 """
     )
 
-    restored = program.to_qiskit(copy=True)
+    assert "arith.cmpi uge" in program.ir
+    restored = program.to_qiskit()
     condition = restored.data[2].operation.condition
 
-    assert "arith.cmpi uge" in program.ir
     assert isinstance(condition, expr.Expr)
     assert expr.structurally_equivalent(condition, expr.greater_equal(restored.cregs[0], 1))
 
@@ -828,9 +847,9 @@ def test_wide_cbit_register_comparison_ignores_decimal_digit_limit() -> None:
             circuit.x(0)
 
         program = QCProgram.from_qiskit(circuit)
-        restored = program.to_qiskit(copy=True)
-
         assert "arith.cmpi eq" in program.ir
+        restored = program.to_qiskit()
+
         assert expr.structurally_equivalent(
             restored.data[0].operation.condition,
             expr.equal(restored.cregs[0], expected),
@@ -886,8 +905,8 @@ if (int[3](c) < -1) { x q[3]; }
 """
     )
 
-    restored = program.to_qiskit(copy=True)
     assert "arith.cmpi slt" in program.ir
+    restored = program.to_qiskit()
     reimported_program = QCProgram.from_qiskit(restored)
     assert reimported_program.is_valid
     assert reimported_program.to_qiskit() is not None
@@ -991,12 +1010,12 @@ def test_qiskit_store_round_trip_preserves_register_semantics() -> None:
     )
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert program.ir.count("cbit.store") == 2
     assert "cbit.write" in program.ir
     assert "cbit.read" in program.ir
     assert "arith.index_castui" in program.ir
+    restored = program.to_qiskit()
+
     assert [instruction.operation.name for instruction in restored.data] == ["store"] * 3
     expected = (
         (
@@ -1067,7 +1086,7 @@ def test_qiskit_store_preserves_width_one_uint_contexts() -> None:
     assert indexed_store.lvalue.index.type == types.Uint(1)
 
 
-@pytest.mark.parametrize(("width", "mutate_index"), [(1, True), (2, True), (150, True), (150, False)])
+@pytest.mark.parametrize(("width", "mutate_index"), [(1, True), (2, True), (150, True), (65, False), (150, False)])
 def test_qiskit_indexed_access_preserves_snapshots(width: int, *, mutate_index: bool) -> None:
     """Retain the index and loaded bit across writes to their source registers."""
     initial = 1 << (width - 1) if width > 64 else 0
@@ -1096,11 +1115,17 @@ def test_qiskit_indexed_access_preserves_snapshots(width: int, *, mutate_index: 
 }}
 """)
     expected = {f"01{((initial | mutate_index) << 4) | 14:0{width + 4}b}": 1}
-    restored = program.to_qiskit(copy=True)
     assert sample(program, shots=1, seed=1) == expected
+    restored = program.to_qiskit()
     assert sample(restored, shots=1, seed=1) == expected
     if not mutate_index:
-        assert f"uint[64](uint[{width}](index))" in qiskit.qasm3.dumps(restored)
+        qasm = qiskit.qasm3.dumps(restored)
+        assert f"uint[64](uint[{width}](index))" in qasm
+        # Select circuit outputs without exposing Qiskit's snapshot temporaries.
+        for register in restored.cregs:
+            declaration = f"bit[{register.size}] {register.name};"
+            qasm = qasm.replace(declaration, f"output {declaration}")
+        assert sample(QCProgram.from_openqasm_str(qasm), shots=1, seed=1) == expected
 
 
 def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
@@ -1129,7 +1154,8 @@ if (c[0] && (c[1] || !c[0])) x q[2];
 """
     )
 
-    restored = program.to_qiskit(copy=True)
+    assert program.ir.count("scf.if") >= 2
+    restored = program.to_qiskit()
     condition = restored.data[2].operation.condition
     expected = expr.logic_and(
         restored.clbits[0],
@@ -1142,7 +1168,6 @@ if (c[0] && (c[1] || !c[0])) x q[2];
         ),
     )
 
-    assert program.ir.count("scf.if") >= 2
     assert isinstance(condition, expr.Expr)
     assert expr.structurally_equivalent(condition, expected)
 
@@ -1159,10 +1184,10 @@ c[0] = measure q[1];
 """
     )
 
-    restored = program.to_qiskit(copy=True)
-
     assert "ub.poison" not in program.ir
     assert 'cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}' in program.ir
+    restored = program.to_qiskit()
+
     assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
     assert [(register.name, len(register)) for register in restored.cregs] == [("c", 1)]
     assert [item.operation.name for item in restored.data] == ["h", "measure"]
@@ -1252,9 +1277,9 @@ def test_qiskit_round_trip_groups_anonymous_clbits() -> None:
     circuit.measure(0, 0)
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>" in program.ir
+    restored = program.to_qiskit()
+
     assert restored.num_clbits == 1
     assert [(register.name, len(register)) for register in restored.cregs] == [("_mqt_c0", 1)]
     assert restored.count_ops() == {"measure": 1}
@@ -1404,13 +1429,13 @@ def test_nested_numeric_custom_definitions_are_preserved() -> None:
     circuit.assign_parameters({theta: 0.25}, inplace=True)
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert program.ir.count("mqt.unitary") == 2
     assert "qc.call @inner" in program.ir
     assert "qc.call @outer" in program.ir
     assert "qc.rx" in program.ir
     assert "2.500000e-01" in program.ir
+    restored = program.to_qiskit()
+
     assert circuit.parameters == set()
     assert restored.data[0].operation.name == "outer"
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
@@ -1431,10 +1456,10 @@ def test_custom_gate_definitions_are_interned_by_name_and_body() -> None:
     conflicting_definition.x(0)
     circuit.append(conflicting_definition.to_gate(), [0])
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert program.ir.count("mqt.unitary") == 2
     assert 'mqt.source_name = "shared"' in program.ir
+    restored = program.to_qiskit()
+
     assert [item.operation.name for item in restored.data] == ["shared", "shared", "shared"]
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
@@ -1534,10 +1559,10 @@ def test_custom_gate_with_standard_name_is_not_mistranslated() -> None:
     circuit.append(custom, [0])
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "func.func private @x" in program.ir
     assert "qc.h" in program.ir
+    restored = program.to_qiskit()
+
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
@@ -1594,10 +1619,10 @@ def test_generic_instruction_with_clbits_remains_flattened() -> None:
     circuit.append(instruction, [0], [0])
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "mqt.unitary" not in program.ir
     assert "qc.measure" in program.ir
+    restored = program.to_qiskit()
+
     assert restored.data[0].operation.name == "measure"
 
 
@@ -1648,9 +1673,9 @@ def test_modified_custom_definitions_round_trip(
     circuit.append(operation, circuit.qubits)
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert "qc.call @custom" in program.ir
+    restored = program.to_qiskit()
+
     assert isinstance(restored.data[0].operation, AnnotatedOperation)
     assert restored.data[0].operation.modifiers == [modifier]
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
@@ -1939,10 +1964,10 @@ def test_distinct_custom_gate_specializations_round_trip() -> None:
         circuit.append(definition.to_gate(parameter_map={theta: actual}), [0])
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
-
     assert program.ir.count("mqt.unitary") == 4
     assert 'mqt.source_name = "custom"' in program.ir
+    restored = program.to_qiskit()
+
     assert [item.operation.name for item in restored.data] == ["custom"] * 4
     values = {x: 0.3, y: -0.2}
     assert np.allclose(
@@ -1974,10 +1999,10 @@ def test_parameterized_helper_specializes_across_qiskit_round_trip() -> None:
 
     qiskit_circuit = program.to_qiskit()
     restored_program = QCProgram.from_qiskit(qiskit_circuit)
-    restored_circuit = restored_program.to_qiskit(copy=True)
-
     assert restored_program.ir.count("mqt.unitary") == 2
     assert 'mqt.source_name = "custom"' in restored_program.ir
+    restored_circuit = restored_program.to_qiskit()
+
     assert [item.operation.name for item in restored_circuit.data] == ["custom", "custom"]
     assert np.allclose(Operator(restored_circuit).data, Operator(qiskit_circuit).data)
 
@@ -2652,8 +2677,9 @@ def test_general_boolean_select_round_trip() -> None:
         returns_classical=True,
     )
 
-    restored = program.to_qiskit(copy=True)
-    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
+    expected = sample(program, shots=1, seed=1)
+    restored = program.to_qiskit()
+    assert sample(restored, shots=1, seed=1) == expected
 
 
 def test_export_control_flow_depth_is_bounded() -> None:
@@ -3148,9 +3174,9 @@ def test_delayed_measurement_store_preserves_snapshot(*, consume_before_store: b
     if via_qco:
         program = program.to_qco()
 
-    restored = program.to_qiskit(copy=True)
-    assert restored.num_clbits == 1
     assert sample(program, shots=1, seed=1) == {"0": 1}
+    restored = program.to_qiskit()
+    assert restored.num_clbits == 1
     assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
@@ -3367,10 +3393,10 @@ def test_public_expression_condition_mutation_is_observed() -> None:
     operation.condition = expr.logic_or(circuit.clbits[0], circuit.clbits[1])
 
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit(copy=True)
+    assert "scf.if" in program.ir
+    restored = program.to_qiskit()
     condition = restored.data[0].operation.condition
 
-    assert "scf.if" in program.ir
     assert isinstance(condition, expr.Expr)
     assert expr.structurally_equivalent(condition, expr.logic_or(*restored.clbits))
 
@@ -3686,7 +3712,7 @@ def test_original_parameter_binds_after_compiler_round_trip(identity: int, pipel
         Operator(restored.assign_parameters({theta: 0.3})).data,
         Operator(circuit.assign_parameters({theta: 0.3})).data,
     )
-    assert program.copy().to_qiskit().parameters == {theta}
+    assert program.to_qiskit().parameters == {theta}
 
 
 def test_original_parameter_identity_is_shared_in_control_flow() -> None:
@@ -3819,7 +3845,7 @@ def test_parameter_vector_element_is_valid_loop_parameter() -> None:
     assert program.ir.count("mqt.parameter_group") == 1
     restored_circuits = (
         program.to_qiskit(copy=True),
-        program.to_qco(copy=True).to_qiskit(),
+        program.to_qco().to_qiskit(),
     )
     for restored in restored_circuits:
         restored_loop = restored.data[0].operation
@@ -4383,7 +4409,7 @@ def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_mlir_binding_import_does_not_import_qiskit() -> None:
-    """Keep importing the MLIR extension independent of optional Qiskit."""
+    """Keep Qiskit optional and allow it to be imported after MLIR."""
     script = """
 import importlib.abc
 import sys
@@ -4394,9 +4420,19 @@ class RejectQiskit(importlib.abc.MetaPathFinder):
             raise AssertionError("MLIR binding attempted to import Qiskit")
         return None
 
-sys.meta_path.insert(0, RejectQiskit())
+blocker = RejectQiskit()
+sys.meta_path.insert(0, blocker)
 import mqt.core.mlir
 assert "qiskit" not in sys.modules
+
+sys.meta_path.remove(blocker)
+from qiskit import QuantumCircuit
+from mqt.core.mlir import OutputFormat, compile_program, sample
+circuit = QuantumCircuit(1)
+circuit.x(0)
+assert sample(circuit, shots=1) == {"1": 1}
+programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
+assert sample(programs[0], shots=1) == {"1": 1}
 """
     subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 
@@ -4585,7 +4621,7 @@ def test_transpiler_added_ancillas_and_routing_round_trip() -> None:
     assert circuit.layout is not None
     assert circuit.layout.final_layout is not None
     assert circuit.num_qubits > 3
-    program = QCProgram.from_qiskit(circuit).copy().to_qco().to_qc()
+    program = QCProgram.from_qiskit(circuit).to_qco().to_qc()
     restored = QCProgram.from_mlir_str(program.ir).to_qiskit()
     assert restored.layout is not None
     assert restored.layout.initial_index_layout() == circuit.layout.initial_index_layout()

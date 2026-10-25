@@ -12,9 +12,7 @@ function(_mqt_qdmi_json_escape result value)
   string(REPLACE "\n" "\\n" escaped "${escaped}")
   string(REPLACE "\r" "\\r" escaped "${escaped}")
   string(REPLACE "\t" "\\t" escaped "${escaped}")
-  set(${result}
-      "${escaped}"
-      PARENT_SCOPE)
+  set(${result} "${escaped}" PARENT_SCOPE)
 endfunction()
 
 # Configure and register a relocatable built-in QDMI device. The generated fragment is emitted
@@ -30,10 +28,13 @@ function(mqt_configure_qdmi_device target)
   endif()
 
   set_target_properties(
-    ${target} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-                         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
-  target_compile_definitions(${target} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                               ${ARG_PREFIX}_QDMI_device_EXPORTS)
+    ${target}
+    PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
+  target_compile_definitions(
+    ${target}
+    PRIVATE QDMI_VERSION="${QDMI_VERSION}" ${ARG_PREFIX}_QDMI_device_EXPORTS)
   _mqt_qdmi_json_escape(device_id "${ARG_ID}")
   _mqt_qdmi_json_escape(device_prefix "${ARG_PREFIX}")
 
@@ -44,8 +45,7 @@ function(mqt_configure_qdmi_device target)
   endforeach()
 
   set(device_entries
-      "      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }"
-  )
+      "      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }")
   set(configuration_ids "${ARG_ID}")
   foreach(configuration IN LISTS ARG_CONFIGURATIONS)
     string(REPLACE "|" ";" configuration_parts "${configuration}")
@@ -53,16 +53,14 @@ function(mqt_configure_qdmi_device target)
     if(NOT configuration_length EQUAL 2)
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration}' must use the form '<device-id>|<runtime-file-name>'"
-      )
+          "QDMI configuration '${configuration}' must use the form '<device-id>|<runtime-file-name>'")
     endif()
     list(GET configuration_parts 0 configuration_id)
     list(GET configuration_parts 1 configuration_file)
     if(configuration_id STREQUAL "" OR configuration_file STREQUAL "")
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration}' must use a non-empty device ID and runtime file name"
-      )
+          "QDMI configuration '${configuration}' must use a non-empty device ID and runtime file name")
     endif()
     list(FIND configuration_ids "${configuration_id}" configuration_id_index)
     if(NOT configuration_id_index EQUAL -1)
@@ -73,16 +71,12 @@ function(mqt_configure_qdmi_device target)
     if(runtime_file_index EQUAL -1)
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration_id}' refers to unknown runtime file '${configuration_file}'"
-      )
+          "QDMI configuration '${configuration_id}' refers to unknown runtime file '${configuration_file}'")
     endif()
     _mqt_qdmi_json_escape(configuration_id "${configuration_id}")
     _mqt_qdmi_json_escape(configuration_file "${configuration_file}")
-    string(
-      APPEND
-      device_entries
-      ",\n      {\n        \"id\": \"${configuration_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true,\n        \"session\": {\n          \"device-config\": {\n            \"file\": \"${configuration_file}\"\n          }\n        }\n      }"
-    )
+    string(APPEND device_entries
+           ",\n      {\n        \"id\": \"${configuration_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true,\n        \"session\": {\n          \"device-config\": {\n            \"file\": \"${configuration_file}\"\n          }\n        }\n      }")
   endforeach()
 
   set(fragment "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${target}.qdmi.json")
@@ -90,29 +84,35 @@ function(mqt_configure_qdmi_device target)
     GENERATE
     OUTPUT "${fragment}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n"
-  )
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n")
 
   # Assets can change without relinking the device.
   add_custom_target(
     ${target}-qdmi-assets
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${fragment}" ${ARG_RUNTIME_FILES}
-            "$<TARGET_FILE_DIR:${target}>"
-    COMMAND_EXPAND_LISTS VERBATIM)
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different "${fragment}" ${ARG_RUNTIME_FILES}
+      "$<TARGET_FILE_DIR:${target}>"
+    COMMAND_EXPAND_LISTS
+    VERBATIM)
   add_dependencies(${target} ${target}-qdmi-assets)
   set_target_properties(
     ${target}
-    PROPERTIES QDMI_DEVICE_ID "${ARG_ID}"
-               QDMI_DEVICE_PREFIX "${ARG_PREFIX}"
-               QDMI_MANIFEST_NAME "${target}.qdmi.json"
-               QDMI_RUNTIME_FILES "${runtime_file_names}")
+    PROPERTIES
+      QDMI_DEVICE_ID
+      "${ARG_ID}"
+      QDMI_DEVICE_PREFIX
+      "${ARG_PREFIX}"
+      QDMI_MANIFEST_NAME
+      "${target}.qdmi.json"
+      QDMI_RUNTIME_FILES
+      "${runtime_file_names}")
   set_property(GLOBAL APPEND PROPERTY MQT_QDMI_DEVICE_TARGETS ${target})
   set_property(
     TARGET ${target}
     APPEND
-    PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_MANIFEST_NAME
-             QDMI_RUNTIME_FILES)
+    PROPERTY
+      EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_MANIFEST_NAME QDMI_RUNTIME_FILES)
   if(WIN32)
     # Shared-library targets are runtime artifacts on Windows and are installed under bin. Keep the
     # fragment beside the DLL so its relative path resolves.
@@ -131,9 +131,7 @@ endfunction()
 # Return every QDMI device registered through mqt_configure_qdmi_device.
 function(mqt_get_qdmi_device_targets result)
   get_property(devices GLOBAL PROPERTY MQT_QDMI_DEVICE_TARGETS)
-  set(${result}
-      ${devices}
-      PARENT_SCOPE)
+  set(${result} ${devices} PARENT_SCOPE)
 endfunction()
 
 # Copy the shared QDMI libraries, device manifests, and assets beside an application or library.
@@ -188,8 +186,7 @@ function(mqt_copy_qdmi_runtime target)
         if(NOT device_id OR NOT device_prefix)
           message(
             FATAL_ERROR
-              "QDMI device target '${library}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX"
-          )
+              "QDMI device target '${library}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX")
         endif()
         _mqt_qdmi_json_escape(device_id "${device_id}")
         _mqt_qdmi_json_escape(device_prefix "${device_prefix}")
@@ -200,8 +197,7 @@ function(mqt_copy_qdmi_runtime target)
           GENERATE
           OUTPUT "${manifest}"
           CONTENT
-            "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${library}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n"
-        )
+            "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${library}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n")
       else()
         set(manifest "$<TARGET_FILE_DIR:${library}>/${manifest_name}")
       endif()
@@ -216,9 +212,11 @@ function(mqt_copy_qdmi_runtime target)
     add_custom_target(
       ${staging_target}
       COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<REMOVE_DUPLICATES:${files}>"
-              "$<TARGET_FILE_DIR:${target}>"
-      COMMAND_EXPAND_LISTS VERBATIM)
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different "$<REMOVE_DUPLICATES:${files}>"
+        "$<TARGET_FILE_DIR:${target}>"
+      COMMAND_EXPAND_LISTS
+      VERBATIM)
     if(NOT imported)
       add_dependencies(${staging_target} ${library_target})
     endif()

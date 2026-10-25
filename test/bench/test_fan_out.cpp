@@ -14,36 +14,37 @@
 
 #include "JSONTestUtils.hpp"
 
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+
 #include <limits>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace mqt::bench {
 
 using test::expectInvalidJSON;
 
 TEST(FanOut, StoresTheControlCountAndOutput) {
-  const FanOut benchmark{{.controls = 7}};
+  const auto benchmark = llvm::cantFail(FanOut::create({.controls = 7}));
   EXPECT_EQ(benchmark.options().controls, 7);
   EXPECT_EQ(benchmark.output(), (Output{"result", 8}));
 }
 
 TEST(FanOut, ValidatesTheConfiguredInstance) {
-  EXPECT_THROW(static_cast<void>(FanOut{{.controls = 0}}),
-               std::invalid_argument);
-  EXPECT_NO_THROW(static_cast<void>(FanOut{{.controls = 1}}));
-  EXPECT_NO_THROW(
-      static_cast<void>(FanOut{{.controls = FanOutOptions::MAX_CONTROLS}}));
-  EXPECT_THROW(
-      static_cast<void>(FanOut{{.controls = FanOutOptions::MAX_CONTROLS + 1}}),
-      std::invalid_argument);
+  test::expectError(FanOut::create({.controls = 0}),
+                    std::errc::invalid_argument);
+  static_cast<void>(llvm::cantFail(FanOut::create({.controls = 1})));
+  static_cast<void>(llvm::cantFail(
+      FanOut::create({.controls = FanOutOptions::MAX_CONTROLS})));
+  test::expectError(
+      FanOut::create({.controls = FanOutOptions::MAX_CONTROLS + 1}),
+      std::errc::invalid_argument);
 }
 
 TEST(FanOut, GivesTheHammingWeightRotationDistribution) {
-  const FanOut benchmark{{.controls = 4}};
+  const auto benchmark = llvm::cantFail(FanOut::create({.controls = 4}));
   EXPECT_DOUBLE_EQ(benchmark.probability("00000"), 1. / 16.);
   EXPECT_DOUBLE_EQ(benchmark.probability("00001"), 0.);
   EXPECT_DOUBLE_EQ(benchmark.probability("00010"), 1. / 32.);
@@ -54,29 +55,30 @@ TEST(FanOut, GivesTheHammingWeightRotationDistribution) {
   EXPECT_DOUBLE_EQ(benchmark.probability("01111"), 1. / 32.);
   EXPECT_DOUBLE_EQ(benchmark.probability("11110"), 1. / 16.);
   EXPECT_DOUBLE_EQ(benchmark.probability("11111"), 0.);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("0000")),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("0000x")),
-               std::invalid_argument);
+  test::expectError(benchmark.evaluate({{"0000", 1}}),
+                    std::errc::invalid_argument);
+  test::expectError(benchmark.evaluate({{"0000x", 1}}),
+                    std::errc::invalid_argument);
 }
 
 TEST(FanOut, EvaluatesTheReferenceWithoutASuccessOutcome) {
-  const FanOut benchmark{{.controls = 2}};
-  const auto evaluation = benchmark.evaluate({
+  const auto benchmark = llvm::cantFail(FanOut::create({.controls = 2}));
+  const auto evaluation = llvm::cantFail(benchmark.evaluate({
       {"000", 2},
       {"010", 1},
       {"011", 1},
       {"100", 1},
       {"101", 1},
       {"111", 2},
-  });
+  }));
   EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 1.);
   EXPECT_FALSE(evaluation.successProbability);
 }
 
 TEST(FanOut, KeepsTheSmallestNonzeroProbabilityRepresentable) {
-  const FanOut benchmark{{.controls = FanOutOptions::MAX_CONTROLS}};
+  const auto benchmark =
+      llvm::cantFail(FanOut::create({.controls = FanOutOptions::MAX_CONTROLS}));
   auto outcome = std::string(benchmark.output().width, '0');
   EXPECT_EQ(benchmark.probability(outcome),
             2. * std::numeric_limits<double>::denorm_min());
@@ -89,23 +91,26 @@ TEST(FanOut, KeepsTheSmallestNonzeroProbabilityRepresentable) {
 }
 
 TEST(FanOut, RoundTripsJSON) {
-  const auto parsed = fanOutFromInstanceSpecificationJSON(
-      R"({"schema_version":1,"benchmark":"fan-out","parameters":{"controls":7}})");
+  const auto parsed = llvm::cantFail(fanOutFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"fan-out","parameters":{"controls":7}})"));
   EXPECT_EQ(parsed.options().controls, 7);
   EXPECT_EQ(
       toInstanceSpecificationJSON(parsed),
       R"({"benchmark":"fan-out","parameters":{"controls":7},"schema_version":1})");
 
   const auto manifest = toManifestJSON(parsed);
-  EXPECT_EQ(toManifestJSON(fanOutFromManifestJSON(manifest)), manifest);
-  EXPECT_EQ(benchmarkIdFromManifestJSON(manifest), "fan-out");
+  EXPECT_EQ(toManifestJSON(llvm::cantFail(fanOutFromManifestJSON(manifest))),
+            manifest);
+  EXPECT_EQ(llvm::cantFail(benchmarkIdFromManifestJSON(manifest)), "fan-out");
   EXPECT_NE(manifest.find(R"("model":"fan_out")"), std::string::npos);
-  EXPECT_EQ(caseId(parsed), caseId(FanOut{{.controls = 7}}));
-  EXPECT_NE(caseId(parsed), caseId(FanOut{{.controls = 6}}));
+  EXPECT_EQ(caseId(parsed),
+            caseId(llvm::cantFail(FanOut::create({.controls = 7}))));
+  EXPECT_NE(caseId(parsed),
+            caseId(llvm::cantFail(FanOut::create({.controls = 6}))));
 }
 
 TEST(FanOut, DescribesJSONSchema) {
-  const auto schema = describeBenchmarkJSON("fan-out");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("fan-out"));
   EXPECT_NE(schema.find(R"("maximum":1073)"), std::string::npos);
   EXPECT_NE(schema.find(R"("minimum":1)"), std::string::npos);
   EXPECT_NE(schema.find(R"("required":["controls"])"), std::string::npos);
@@ -114,34 +119,33 @@ TEST(FanOut, DescribesJSONSchema) {
 TEST(FanOut, RejectsInvalidJSONParameters) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(fanOutFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"fan-out","parameters":{"controls":0}})"));
+        return fanOutFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"fan-out","parameters":{"controls":0}})");
       },
       "between 1 and 1073");
   expectInvalidJSON(
       [] {
-        static_cast<void>(fanOutFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"fan-out","parameters":{"controls":7,"angle":1}})"));
+        return fanOutFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"fan-out","parameters":{"controls":7,"angle":1}})");
       },
-      "unknown key 'angle'");
+      "angle");
 }
 
 TEST(FanOut, ReportsTheParameterLocationOnce) {
-  EXPECT_THAT(
+  expectInvalidJSON(
       [] {
-        static_cast<void>(fanOutFromInstanceSpecificationJSON(
+        return fanOutFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"fan-out","parameters":{}})",
-            "case.json"));
+            "case.json");
       },
-      testing::ThrowsMessage<std::invalid_argument>(
-          testing::StartsWith("case.json:$/parameters/controls ")));
+      "case.json:$/parameters.controls");
 }
 
 TEST(FanOut, EvaluatesCountsFromJSON) {
-  const auto evaluation =
-      evaluateJSON(toManifestJSON(FanOut{{.controls = 1}}),
-                   R"({"schema_version":1,"counts":{"00":2,"10":1,"11":1}})");
-  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1.0)"),
+  const auto evaluation = llvm::cantFail(evaluateJSON(
+      toManifestJSON(llvm::cantFail(FanOut::create({.controls = 1}))),
+      R"({"schema_version":1,"counts":{"00":2,"10":1,"11":1}})"));
+  EXPECT_NE(evaluation.find(R"("squared_hellinger_fidelity":1)"),
             std::string::npos);
   EXPECT_NE(evaluation.find(R"("success_probability":null)"),
             std::string::npos);

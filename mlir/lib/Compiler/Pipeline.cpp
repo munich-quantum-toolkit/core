@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
+#include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
 #include "mqt/Target/QIR/Capabilities.h"
 #include "mqt/Target/QIR/Export.h"
@@ -40,6 +41,8 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
@@ -85,13 +88,13 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
-FailureOr<OpenQASMProgram> QCProgram::toOpenQASM3() const {
-  auto cleaned = copy();
-  if (failed(runWithPassManager(cleaned.mod(), populateQCExportPipeline,
+FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
+  auto storage = std::move(*this).releaseStorage();
+  if (failed(runWithPassManager(*storage.mod, populateQCExportPipeline,
                                 "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
-  auto source = qc::translateQCToOpenQASM3(cleaned.mod());
+  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
   if (failed(source)) {
     return failure();
   }
@@ -99,14 +102,16 @@ FailureOr<OpenQASMProgram> QCProgram::toOpenQASM3() const {
 }
 
 FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
+  auto storage = std::move(*this).releaseStorage();
+  auto moduleOp = *storage.mod;
   const auto payload = llvm::cantFail(PayloadSpecification::forProgramFormat(
       profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
                                       : ProgramFormat::QIRBase));
   if (failed(runWithPassManager(
-          mod(),
+          moduleOp,
           [&](OpPassManager& pm) {
             populateQIRPreparationPipeline(
-                pm, payload.materialize(*mod().getContext()));
+                pm, payload.materialize(*moduleOp.getContext()));
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
             } else {
@@ -117,10 +122,10 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
           "failed to convert QC to QIR"))) {
     return failure();
   }
-  if (mod()->hasAttr(mqt::TargetEnvAttr::name)) {
-    const TargetEnvironmentAnalysis environment(mod());
+  if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+    const TargetEnvironmentAnalysis environment(moduleOp);
     if (!environment) {
-      mod().emitError(environment.error());
+      moduleOp.emitError(environment.error());
       return failure();
     }
     const auto& targetPayload =
@@ -129,12 +134,12 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
     if (format.id == payload.format().id &&
         format.version == payload.format().version &&
         format.profile == payload.format().profile &&
-        failed(
-            qir::validateCapabilities(mod(), targetPayload.capabilities()))) {
+        failed(qir::validateCapabilities(moduleOp,
+                                         targetPayload.capabilities()))) {
       return failure();
     }
   }
-  return QIRProgram(std::move(*this).releaseStorage(), profile);
+  return QIRProgram(std::move(storage), profile);
 }
 
 //===----------------------------------------------------------------------===//
@@ -244,19 +249,23 @@ QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
 }
 
 FailureOr<QCProgram> QCOProgram::intoQC() && {
-  if (failed(qco::verifyLinearity(mod())) ||
+  auto storage = std::move(*this).releaseStorage();
+  auto moduleOp = *storage.mod;
+  if (failed(qco::verifyLinearity(moduleOp)) ||
       failed(runWithPassManager(
-          mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
+          moduleOp, [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
           "failed to convert QCO to QC", {}, true))) {
     return failure();
   }
-  return QCProgram(std::move(*this).releaseStorage());
+  return QCProgram(std::move(storage));
 }
 
 FailureOr<JeffProgram> QCOProgram::intoJeff() && {
-  if (failed(qco::verifyLinearity(mod())) ||
+  auto storage = std::move(*this).releaseStorage();
+  auto moduleOp = *storage.mod;
+  if (failed(qco::verifyLinearity(moduleOp)) ||
       failed(runWithPassManager(
-          mod(),
+          moduleOp,
           [](OpPassManager& pm) {
             pm.addPass(mqt::createUnrollModifiers());
             pm.addPass(createQCOToJeff());
@@ -264,7 +273,7 @@ FailureOr<JeffProgram> QCOProgram::intoJeff() && {
           "failed to convert QCO to jeff"))) {
     return failure();
   }
-  return JeffProgram(std::move(*this).releaseStorage());
+  return JeffProgram(std::move(storage));
 }
 
 //===----------------------------------------------------------------------===//
@@ -342,15 +351,17 @@ LogicalResult JeffProgram::write(const std::filesystem::path& path) const {
 }
 
 FailureOr<QCOProgram> JeffProgram::intoQCO() && {
+  auto storage = std::move(*this).releaseStorage();
+  auto moduleOp = *storage.mod;
   if (failed(runWithPassManager(
-          mod(), [](OpPassManager& pm) { pm.addPass(createJeffToQCO()); },
+          moduleOp, [](OpPassManager& pm) { pm.addPass(createJeffToQCO()); },
           "failed to convert jeff to QCO"))) {
     return failure();
   }
-  if (failed(qco::verifyLinearity(mod()))) {
+  if (failed(qco::verifyLinearity(moduleOp))) {
     return failure();
   }
-  return QCOProgram(std::move(*this).releaseStorage());
+  return QCOProgram(std::move(storage));
 }
 
 //===----------------------------------------------------------------------===//
@@ -373,29 +384,35 @@ LogicalResult QIRProgram::cleanup() {
 
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
-FailureOr<std::string> QIRProgram::llvmIR() const {
+FailureOr<std::string> QIRProgram::intoLLVMIR() && {
+  auto storage = std::move(*this).releaseStorage();
   std::string result;
   llvm::raw_string_ostream stream(result);
-  if (failed(qir::translateQIRToLLVMIR(mod(), stream))) {
+  if (failed(qir::translateQIRToLLVMIR(std::move(storage.mod), stream))) {
     return failure();
   }
   return result;
 }
 
-FailureOr<std::vector<std::byte>> QIRProgram::toBitcode() const {
-  SmallVector<char> storage;
-  llvm::raw_svector_ostream stream(storage);
-  if (failed(qir::translateQIRToBitcode(mod(), stream))) {
+FailureOr<std::vector<std::byte>> QIRProgram::intoBitcode() && {
+  SmallVector<char> buffer;
+  llvm::raw_svector_ostream stream(buffer);
+  if (failed(std::move(*this).intoBitcode(stream))) {
     return failure();
   }
-  std::vector<std::byte> result(storage.size());
-  std::memcpy(result.data(), storage.data(), storage.size());
+  std::vector<std::byte> result(buffer.size());
+  std::memcpy(result.data(), buffer.data(), buffer.size());
   return result;
 }
 
-LogicalResult
-QIRProgram::writeBitcode(const std::filesystem::path& path) const {
-  return qir::writeQIRBitcode(mod(), path.string());
+LogicalResult QIRProgram::intoBitcode(llvm::raw_ostream& output) && {
+  auto storage = std::move(*this).releaseStorage();
+  return qir::translateQIRToBitcode(std::move(storage.mod), output);
+}
+
+LogicalResult QIRProgram::writeBitcode(const std::filesystem::path& path) && {
+  auto storage = std::move(*this).releaseStorage();
+  return qir::writeQIRBitcode(std::move(storage.mod), path.string());
 }
 
 //===----------------------------------------------------------------------===//
@@ -403,10 +420,18 @@ QIRProgram::writeBitcode(const std::filesystem::path& path) const {
 //===----------------------------------------------------------------------===//
 
 [[nodiscard]] static FailureOr<CompilerProgram>
-runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
+runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
                        const TargetEnvironment* environment,
                        std::string_view qcoPipeline,
                        const CompilationOptions& options) {
+  if (output == ProgramFormat::IQMJSON &&
+      (environment == nullptr ||
+       environment->target().nativeOperationsKind() ==
+           CompilerTarget::NativeOperations::Kind::Unrestricted)) {
+    llvm::errs() << "IQM JSON requires a physical target with explicit native "
+                    "IQM operations.\n";
+    return failure();
+  }
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
     llvm::errs() << "a custom QCO pass pipeline cannot be used with an output "
@@ -515,15 +540,15 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
     // Export cleanup can change resources and invalidate routing metadata.
     return CompilerProgram(std::move(*qc));
   }
-  if (failed(qc->cleanup())) {
-    return failure();
-  }
   if (output == ProgramFormat::OpenQASM3) {
-    auto source = qc::translateQCToOpenQASM3(qc->module());
+    auto source = std::move(*qc).intoOpenQASM3();
     if (failed(source)) {
       return failure();
     }
-    return CompilerProgram(OpenQASMProgram(std::move(*source)));
+    return CompilerProgram(std::move(*source));
+  }
+  if (failed(qc->cleanup())) {
+    return failure();
   }
 
   const auto profile = output == ProgramFormat::QIRAdaptive
@@ -533,11 +558,24 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
   if (failed(qir)) {
     return failure();
   }
+  if (output == ProgramFormat::IQMJSON) {
+    llvm::LLVMContext context;
+    auto llvmModule = qir::translateQIRToLLVM(qir->module(), context);
+    if (!llvmModule) {
+      return failure();
+    }
+    auto source = qir::exportIQMJSON(*llvmModule, environment->target());
+    if (!source) {
+      qir->module().emitError() << llvm::toString(source.takeError());
+      return failure();
+    }
+    return CompilerProgram(IQMJSONProgram(std::move(*source)));
+  }
   return CompilerProgram(std::move(*qir));
 }
 
 FailureOr<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
+runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    std::string_view qcoPipeline,
                    const CompilationOptions& options) {
   return runDefaultPipelineImpl(std::move(program), output, nullptr,
@@ -545,7 +583,7 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
 }
 
 FailureOr<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
+runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options) {
   if (output == ProgramFormat::QCImport || output == ProgramFormat::QCO) {
@@ -558,8 +596,7 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
 }
 
 FailureOr<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program,
-                   const TargetEnvironment& environment,
+runDefaultPipeline(CompilerInput program, const TargetEnvironment& environment,
                    const CompilationOptions& options) {
   auto output = environment.payloadSpecification().compilerOutput();
   if (!output) {

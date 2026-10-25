@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/JSON.hpp"
-#include "bench/WeakMeasurementGrover.hpp"
 
 #include "register_benchmark.hpp"
 
@@ -28,20 +28,20 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerWeakMeasurementGrover(const nb::module_& m) {
-  nb::class_<bench::WeakMeasurementGroverOptions>(
+void registerGroverWeakMeasurement(const nb::module_& m) {
+  nb::class_<bench::GroverWeakMeasurementOptions>(
       m, "Options", "Parameters for a weak-measurement Grover benchmark.")
       .def(nb::init<std::string, std::optional<double>>(), nb::kw_only(),
            "marked_bitstring"_a, "measurement_strength"_a = nb::none())
       .def_ro("marked_bitstring",
-              &bench::WeakMeasurementGroverOptions::markedBitstring,
+              &bench::GroverWeakMeasurementOptions::markedBitstring,
               "The big-endian marked outcome with 2 through 2044 bits.")
       .def_ro(
           "measurement_strength",
-          &bench::WeakMeasurementGroverOptions::measurementStrength,
+          &bench::GroverWeakMeasurementOptions::measurementStrength,
           R"pb(The finite strength :math:`0<\kappa\leq 2^{-n/2}`, or ``None`` for the upper bound.)pb");
 
-  auto grover = nb::class_<bench::WeakMeasurementGrover>(
+  auto grover = nb::class_<bench::GroverWeakMeasurement>(
       m, "Grover",
       R"pb(A validated weak-measurement Grover benchmark.
 
@@ -54,22 +54,25 @@ loop; :math:`1` exits with the marked state.
 By default, the measurement strength is :math:`\kappa=2^{-n/2}` for :math:`n`
 search qubits. The accepted range :math:`0<\kappa\leq 2^{-n/2}` follows the
 paper's robustness bound.)pb");
-  grover.def(nb::init<bench::WeakMeasurementGroverOptions>(), "options"_a)
-      .def_prop_ro("options", &bench::WeakMeasurementGrover::options,
+  grover
+      .def("__init__", benchmarkInit(&bench::GroverWeakMeasurement::create),
+           "options"_a)
+      .def_prop_ro("options", &bench::GroverWeakMeasurement::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
-      .def_prop_ro("output", &bench::WeakMeasurementGrover::output,
+      .def_prop_ro("output", &bench::GroverWeakMeasurement::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def_prop_ro("qubits", &bench::WeakMeasurementGrover::qubits,
+      .def_prop_ro("qubits", &bench::GroverWeakMeasurement::qubits,
                    "The number of search qubits.")
-      .def("probability", &bench::WeakMeasurementGrover::probability,
+      .def("probability",
+           benchmarkOutcome(&bench::GroverWeakMeasurement::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::WeakMeasurementGrover::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.");
+      .def("evaluate", benchmarkMethod(&bench::GroverWeakMeasurement::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
   registerBenchmarkIO(
-      grover, &bench::weakMeasurementGroverFromInstanceSpecificationJSON,
-      &bench::weakMeasurementGroverFromManifestJSON);
+      grover, &bench::groverWeakMeasurementFromInstanceSpecificationJSON,
+      &bench::groverWeakMeasurementFromManifestJSON);
 }
 
 } // namespace mqt

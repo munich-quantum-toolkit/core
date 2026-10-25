@@ -11,15 +11,16 @@ add_executable(${target_name} test_qc_to_qir_base.cpp)
 
 target_link_libraries(
   ${target_name}
-  PRIVATE MLIRParser
-          MLIRSupportMQT
-          GTest::gtest_main
-          MLIRQCProgramBuilder
-          MLIRQIRProgramBuilder
-          MLIRQCPrograms
-          MLIRQIRPrograms
-          MLIRQCToQIRBase
-          MLIRMQTTransforms)
+  PRIVATE
+    MLIRParser
+    MLIRSupportMQT
+    GTest::gtest_main
+    MLIRQCProgramBuilder
+    MLIRQIRProgramBuilder
+    MLIRQCPrograms
+    MLIRQIRPrograms
+    MLIRQCToQIRBase
+    MLIRMQTTransforms)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

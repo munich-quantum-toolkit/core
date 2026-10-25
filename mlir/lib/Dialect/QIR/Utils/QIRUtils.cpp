@@ -357,12 +357,19 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     llvm::reportFatalInternalError("Main function not found");
   }
   SymbolTable symbols(main->getParentOfType<ModuleOp>());
+  llvm::StringSet<> outputLabels;
+  for (const auto& output : outputs) {
+    outputLabels.insert(output.label);
+  }
   llvm::StringSet<> labels;
   size_t suffix = 0;
-  const auto createLabel = [&](StringRef base) {
+  const auto createLabel = [&](StringRef base, bool topLevel = false) {
     auto label = base.str();
-    while (!labels.insert(label).second) {
+    // Generated child labels must not consume original register names.
+    while ((!topLevel && outputLabels.contains(label)) ||
+           !labels.insert(label).second) {
       label = base.str() + "_" + std::to_string(++suffix);
+      topLevel = false;
     }
     return createResultLabel(builder, anchor, label, "qir.result_label",
                              symbols, main)
@@ -388,7 +395,7 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
   LLVM::LLVMFuncOp adaptiveArrayDec;
   LLVM::LLVMFuncOp booleanDec;
   for (const auto& output : outputs) {
-    auto label = createLabel(output.label);
+    auto label = createLabel(output.label, true);
     if (const auto* result = std::get_if<Value>(&output.value)) {
       if (result->getType().isInteger(1)) {
         record(booleanDec, QIR_BOOL_RECORD_OUTPUT, {*result, label});

@@ -114,8 +114,8 @@ partially constructed output circuit after a failure. Exact
   adversarial input.
 
 - Reject `ParameterVectorElement` input in this PR and implement exact vector
-  provenance as a stacked follow-up. Rationale: scalar symbols complete issue
-  #2067, while vector identity, allocation bounds, sparse indices, and
+  provenance as a stacked follow-up. Rationale: scalar symbols complete
+  issue #2067, while vector identity, allocation bounds, sparse indices, and
   vector-level binding form an independently reviewable contract.
 
 - Require every named `f64` input to occur in the normalized parameter trees

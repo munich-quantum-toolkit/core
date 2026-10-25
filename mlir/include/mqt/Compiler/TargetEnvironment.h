@@ -99,6 +99,7 @@ public:
   ///
   /// Numeric versions accept one to three components; omitted components are
   /// zero, and the stored version always uses major.minor.patch.
+  /// An empty version identifies an unversioned format.
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(PayloadFormat format, std::vector<ProgramCapability> capabilities = {},
          bool optionalCapabilitiesKnown = false);

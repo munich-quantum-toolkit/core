@@ -219,7 +219,7 @@ class MockQDMIDevice:
             """Cancel job (no-op for mock)."""
 
         def get_shots(self, program_index: int = 0) -> list[str]:
-            """Raise unless the test device implements ordered shots.
+            """Raise unless the test device implements individual shots.
 
             Raises:
                 NotImplementedError: This device only supports counts.

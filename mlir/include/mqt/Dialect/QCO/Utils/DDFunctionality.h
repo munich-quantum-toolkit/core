@@ -127,9 +127,11 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// order: the last result comes first, and each register is MSB-first. Other
 /// classical output types are rejected. Without classical results, the function
 /// samples all DD wires. Terminal measurements use
-/// one simulation for all shots. Adaptive programs share shot prefixes when
-/// their measurements and resets are in the top-level stream or counted loops.
-/// Other adaptive programs run once per shot across independent workers.
+/// one simulation for all shots. Counts-only sampling groups outcomes directly
+/// in the DD. Adaptive programs share shot prefixes through for/while loops,
+/// conditionals and index switches. Measurements in called functions use
+/// independent shots. Seeded draws are reproducible for a fixed sampling
+/// strategy; requesting individual outcomes may select another strategy.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
@@ -138,13 +140,13 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// @param shots Number of samples.
 /// @param seed RNG seed. Zero selects nondeterministic seeding.
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
-/// @param shotResults Optional output, cleared then filled in sampling order.
-/// On failure, it may contain an incomplete sequence.
+/// @param shotResults Optional individual outcomes in unspecified order,
+/// cleared then filled during sampling. On failure, it may contain an
+/// incomplete sequence.
 /// @param retainedState Optional output, cleared before sampling and populated
 /// only after successful terminal sampling. It owns the uncollapsed state.
 /// @param workers Maximum workers for adaptive sampling. Zero selects up to
 /// eight workers from the shot count and host budget; one uses one worker.
-/// Independent shots with one worker retain the serial seed sequence.
 /// Terminal sampling uses one simulation for all shots.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
@@ -154,7 +156,19 @@ sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        DDSamplingState* retainedState = nullptr,
        const DDExecutionOptions& options = {}, size_t workers = 0);
 
-/// Sample ordered outcomes without constructing a histogram.
+/// Samples outcome counts with an external worker grant.
+///
+/// The caller holds one external worker slot. The callback runs at most once
+/// and returns a total grant from one through the request; the caller releases
+/// that grant after sampling.
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, size_t shots, uint64_t seed,
+       const DDArgumentBindings& argumentBindings,
+       std::vector<std::string>* shotResults, DDSamplingState* retainedState,
+       const DDExecutionOptions& options, size_t workers,
+       function_ref<size_t(size_t)> requestWorkers);
+
+/// Sample individual outcomes without constructing a histogram.
 ///
 /// Uses the same program, seed, output, and worker contracts as `sample`.
 /// With `requestWorkers`, the caller must already hold one external worker

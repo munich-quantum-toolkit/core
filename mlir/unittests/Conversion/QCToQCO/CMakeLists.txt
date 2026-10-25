@@ -11,17 +11,18 @@ add_executable(${target_name} test_qc_to_qco.cpp)
 
 target_link_libraries(
   ${target_name}
-  PRIVATE MLIRParser
-          MLIRControlFlowDialect
-          MLIRSupportMQT
-          GTest::gtest_main
-          MLIRQCProgramBuilder
-          MLIRQCOProgramBuilder
-          MLIRQCPrograms
-          MLIRQCOPrograms
-          MLIRQCToQCO
-          MLIRQCOToQC
-          MLIRQCODDFunctionality)
+  PRIVATE
+    MLIRParser
+    MLIRControlFlowDialect
+    MLIRSupportMQT
+    GTest::gtest_main
+    MLIRQCProgramBuilder
+    MLIRQCOProgramBuilder
+    MLIRQCPrograms
+    MLIRQCOPrograms
+    MLIRQCToQCO
+    MLIRQCOToQC
+    MLIRQCODDFunctionality)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

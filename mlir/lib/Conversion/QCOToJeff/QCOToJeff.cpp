@@ -29,6 +29,7 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
@@ -181,8 +182,8 @@ public:
     root->walk([&](Operation* operation) {
       if (isa<cbit::LoadOp, cbit::ReadOp, memref::LoadOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(0);
-      } else if (isa<cbit::StoreOp, cbit::WriteOp, memref::StoreOp>(
-                     operation)) {
+      } else if (isa<cbit::StoreOp, cbit::WriteOp, memref::StoreOp,
+                     bufferization::MaterializeInDestinationOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(1);
       }
     });
@@ -562,6 +563,28 @@ static void getAboveValues(Region& region, SetVector<Value>& values) {
 }
 
 namespace {
+
+/// Replace whole-array initialization with the corresponding immutable value.
+struct ConvertArrayInitialization final
+    : StatefulOpConversionPattern<bufferization::MaterializeInDestinationOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(bufferization::MaterializeInDestinationOp op,
+                  OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState().cbitState;
+    auto reg = state.resolveRegisterUse(op, op.getDest());
+    auto type = dyn_cast_or_null<RankedTensorType>(
+        getTypeConverter()->convertType(reg.getType()));
+    if (!type || adaptor.getSource().getType() != type) {
+      return rewriter.notifyMatchFailure(op, "unsupported array initializer");
+    }
+    state.setCurrentValue(reg, adaptor.getSource(), op);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 
 /// Convert classical storage to an array; uninitialized contents may be zero.
 template <typename AllocOp>
@@ -2139,6 +2162,23 @@ protected:
       return;
     }
 
+    if (moduleOp
+            .walk([](bufferization::MaterializeInDestinationOp op) {
+              auto constant = op.getSource().getDefiningOp<arith::ConstantOp>();
+              auto allocation = op.getDest().getDefiningOp<memref::AllocaOp>();
+              if (!constant || !isa<DenseElementsAttr>(constant.getValue()) ||
+                  !allocation || !arraySize(allocation.getType())) {
+                op.emitError("jeff array initialization requires a constant "
+                             "tensor and contiguous local storage");
+                return WalkResult::interrupt();
+              }
+              return WalkResult::advance();
+            })
+            .wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
+
     bool hasArrays = false;
     moduleOp.walk([&](memref::AllocaOp) { hasArrays = true; });
     if (hasArrays) {
@@ -2227,6 +2267,24 @@ protected:
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCOToJeffTypeConverter typeConverter(context);
+    TypeConverter initializationTypeConverter(typeConverter);
+    initializationTypeConverter.addConversion(
+        [&](Value value) -> std::optional<Type> {
+          auto type = dyn_cast<RankedTensorType>(value.getType());
+          if (!type) {
+            return std::nullopt;
+          }
+          // Flatten and widen only whole-array initializers, not tensor
+          // expressions.
+          if (value.use_empty() ||
+              !llvm::all_of(value.getUsers(), [](Operation* user) {
+                return isa<bufferization::MaterializeInDestinationOp>(user);
+              })) {
+            return type;
+          }
+          return typeConverter.convertType(
+              MemRefType::get(type.getShape(), type.getElementType()));
+        });
 
     LoweringState state;
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
@@ -2255,6 +2313,7 @@ protected:
     target.addIllegalDialect<cbit::CBitDialect, QCODialect,
                              qtensor::QTensorDialect, arith::ArithDialect,
                              math::MathDialect, tensor::TensorDialect,
+                             bufferization::BufferizationDialect,
                              scf::SCFDialect, memref::MemRefDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
     target.addIllegalOp<LLVM::FshlOp, LLVM::FshrOp>();
@@ -2270,10 +2329,13 @@ protected:
     populateCallOpTypeConversionPattern(patterns, typeConverter);
 
     // Register operation conversion patterns
-    jeff::populateNativeToJeffConversionPatterns(patterns);
+    jeff::populateNativeToJeffConversionPatterns(patterns,
+                                                 &initializationTypeConverter);
     patterns.add<ConvertIntegerExpression, ConvertNegFOp>(typeConverter,
                                                           context);
     patterns.add<ConvertFloatGreaterComparison>(typeConverter, context);
+    patterns.add<ConvertArrayInitialization>(initializationTypeConverter,
+                                             context, &state);
     patterns.add<ConvertClassicalAllocToJeff<cbit::AllocOp>,
                  ConvertClassicalAllocToJeff<memref::AllocaOp>,
                  ConvertClassicalStoreToJeff<cbit::StoreOp>,
@@ -2368,6 +2430,9 @@ protected:
     }
 
     patchCregYields(moduleOp, state);
+
+    IRRewriter rewriter(context);
+    static_cast<void>(runRegionDCE(rewriter, moduleOp->getRegions()));
 
     if (cleanUp(moduleOp, state).failed()) {
       signalPassFailure();

@@ -78,6 +78,8 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
             {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
             {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
         });
+  case ProgramFormat::IQMJSON:
+    return create({.id = "iqm-json", .encoding = encoding});
   case ProgramFormat::QIRBase:
     return PayloadSpecification::create({
         .id = "qir",
@@ -114,20 +116,22 @@ llvm::Expected<PayloadSpecification>
 PayloadSpecification::create(PayloadFormat format,
                              std::vector<ProgramCapability> capabilities,
                              const bool optionalCapabilitiesKnown) {
-  if (format.id.empty() || format.version.empty()) {
-    return invalidPayload("Payload format requires an ID and version");
+  if (format.id.empty()) {
+    return invalidPayload("Payload format requires an ID");
   }
   if (containsNull(format.id) || containsNull(format.version) ||
       containsNull(format.profile)) {
     return invalidPayload(
         "Payload format fields must not contain null characters");
   }
-  auto version = normalizePayloadVersion(format.version);
-  if (!version) {
-    return invalidPayload(
-        "Payload format version must use major[.minor[.patch]]");
+  if (!format.version.empty()) {
+    auto version = normalizePayloadVersion(format.version);
+    if (!version) {
+      return invalidPayload(
+          "Payload format version must use major[.minor[.patch]]");
+    }
+    format.version = std::move(*version);
   }
-  format.version = std::move(*version);
   switch (format.encoding) {
   case PayloadEncoding::Text:
   case PayloadEncoding::Binary:
@@ -230,6 +234,10 @@ const PayloadFormat& PayloadSpecification::format() const noexcept {
 }
 
 llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
+  if (format_.id == "iqm-json" && format_.version.empty() &&
+      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
+    return ProgramFormat::IQMJSON;
+  }
   if (format_.id == "openqasm" && format_.version == "3.1.0" &&
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;

@@ -240,9 +240,9 @@ print(f"Result owns a module: {converted_temporary.is_valid}")
 IR-verification method or a check of algorithmic correctness. Python module
 ownership and QCO's linear quantum values are different concepts.
 
-High-level `compile_program` preserves typed inputs by default; `inplace=True`
-allows it to consume them. Recreate inputs or use copies when comparing results
-interactively.
+High-level `compile_program` also consumes typed MLIR inputs, including when
+compilation fails. Set `copy=True` to keep a program for another conversion or
+comparison. Source strings, paths and Qiskit circuits remain reusable.
 
 ## Experiment: which Hadamards cancel?
 
@@ -261,7 +261,7 @@ for hadamards in range(5):
         rtol=0,
         atol=1e-12,
     )
-    gates = simplified.to_qc(copy=True).num_gates()
+    gates = simplified.num_gates()
     assert gates == 1 + hadamards % 2
     print(f"{hadamards} Hadamards → {gates} total gates")
 ```

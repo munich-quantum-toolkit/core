@@ -14,15 +14,16 @@ if(BUILD_MQT_CORE_TESTS OR MQT_CORE_INSTALL)
 endif()
 target_link_libraries(
   mqt-cc
-  PRIVATE MQTCompilerQDMIAdapter
-          MQTCompilerPipeline
-          MLIRParser
-          MLIRSupport
-          MLIRQCOpenQASMTranslation
-          MLIRJeffTranslation
-          MLIRJeffToQCO
-          MLIRBytecodeWriter
-          MLIRQIRTranslation)
+  PRIVATE
+    MQTCompilerQDMIAdapter
+    MQTCompilerPipeline
+    MLIRParser
+    MLIRSupport
+    MLIRQCOpenQASMTranslation
+    MLIRJeffTranslation
+    MLIRJeffToQCO
+    MLIRBytecodeWriter
+    MLIRQIRTranslation)
 
 mqt_mlir_target_use_project_options(mqt-cc)
 

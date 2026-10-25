@@ -98,14 +98,18 @@ vCachedEdge buildStateFromVector(const VectorEntry& entry, const size_t level,
                                  const size_t start, Package& dd) {
   if (level == 0) {
     return dd.makeDDNode<vNode, CachedEdge>(
-        0, {vCachedEdge::terminal(entry(start)),
-            vCachedEdge::terminal(entry(start + 1))});
+        0, {
+               vCachedEdge::terminal(entry(start)),
+               vCachedEdge::terminal(entry(start + 1)),
+           });
   }
   const auto half = start + (size_t{1} << level);
   return dd.makeDDNode<vNode, CachedEdge>(
       static_cast<Qubit>(level),
-      {buildStateFromVector(entry, level - 1, start, dd),
-       buildStateFromVector(entry, level - 1, half, dd)});
+      {
+          buildStateFromVector(entry, level - 1, start, dd),
+          buildStateFromVector(entry, level - 1, half, dd),
+      });
 }
 } // namespace detail
 

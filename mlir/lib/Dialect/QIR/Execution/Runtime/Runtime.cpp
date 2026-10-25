@@ -21,18 +21,18 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <iostream>
 #include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
-#include <ostream>
 #include <random>
 #include <span>
 #include <sstream>
@@ -74,6 +74,12 @@ auto Runtime::reset() -> void {
   rRegister.clear();
   std::ranges::fill(resultValues_, ResultStruct{});
   measurements.clear();
+  if (deferredOutputs_ != nullptr) {
+    deferredOutputs_->clear();
+  }
+  if (samplingBranches_ != nullptr) {
+    samplingBranches_->position = 0;
+  }
   measuredQubits_.clear();
   invalidStateExtraction_ = false;
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
@@ -232,18 +238,56 @@ auto Runtime::measure(Qubit* qubit, Result* result) -> void {
   auto& value = deref(result);
   if (extractState_) {
     measuredQubits_.insert(target);
+    value.deferredWire = qubitPermutation[target];
   } else if (!deferMeasurements_) {
-    value.r = qState.dd->measureOneCollapsing(
-                  qState.edge, qubitPermutation[target], mt) == '1';
+    value.r = measureQubit(qubitPermutation[target]);
   }
 }
 
-auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
-                                 size_t shots,
-                                 std::vector<std::string>& results) -> void {
+bool Runtime::measureQubit(dd::Qubit target) {
+  if (samplingBranches_ == nullptr ||
+      (samplingBranches_->count == 1 &&
+       samplingBranches_->position == samplingBranches_->path.size())) {
+    return qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1';
+  }
+  auto& branches = *samplingBranches_;
+  const auto [pzero, pone] =
+      dd::Package::determineMeasurementProbabilities(qState.edge, target);
+  const auto sum = pzero + pone;
+  if (std::abs(sum - 1) > 0.001) {
+    throw std::runtime_error("Numerical instability during measurement");
+  }
+  bool one = false;
+  if (branches.position < branches.path.size()) {
+    one = branches.path[branches.position];
+  } else {
+    const auto zeros =
+        std::binomial_distribution<size_t>(branches.count, pzero / sum)(mt);
+    const auto ones = branches.count - zeros;
+    one = zeros == 0;
+    if (zeros != 0 && ones != 0) {
+      auto sibling = branches.path;
+      sibling.push_back(true);
+      branches.pending.emplace_back(std::move(sibling), ones);
+      branches.count = zeros;
+    }
+    branches.path.push_back(one);
+  }
+  ++branches.position;
+  qState.dd->performCollapsingMeasurement(qState.edge, target,
+                                          one ? pone : pzero, !one);
+  return one;
+}
+
+auto Runtime::sampleMeasurements(
+    std::span<const uintptr_t> qubits, size_t shots,
+    llvm::function_ref<void(std::string&&)> emitOwned,
+    llvm::function_ref<void(std::string_view)> emitBorrowed) -> void {
   measurements.clear();
   if (qubits.empty()) {
-    results.resize(shots);
+    for (size_t i = 0; i < shots; ++i) {
+      emitBorrowed({});
+    }
     return;
   }
   bool ascending = qubits.size() == qState.numQubits;
@@ -254,10 +298,10 @@ auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
     for (size_t i = 0; i < shots; ++i) {
       auto basis = qState.dd->measureAll(qState.edge, false, mt);
       std::ranges::reverse(basis);
-      results.push_back(std::move(basis));
-    }
-    if (shots != 0) {
-      measurements = results.back();
+      if (i + 1 == shots) {
+        measurements = basis;
+      }
+      emitOwned(std::move(basis));
     }
     return;
   }
@@ -268,7 +312,7 @@ auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
     for (const auto qubit : qubits) {
       measurements.push_back(basis[basis.size() - 1 - qubitPermutation[qubit]]);
     }
-    results.push_back(measurements);
+    emitBorrowed(measurements);
   }
 }
 
@@ -283,7 +327,33 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
   });
   const auto matrix = mlir::qco::XOp::getUnitaryMatrix();
   for (const auto target : targets) {
-    if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
+    if (samplingBranches_ != nullptr && samplingBranches_->count > 1 &&
+        samplingBranches_->position == samplingBranches_->path.size()) {
+      const auto [pzero, pone] =
+          dd::Package::determineMeasurementProbabilities(qState.edge, target);
+      if (pzero > 0 && pone > 0) {
+        auto zero = qState.edge;
+        auto one = qState.edge;
+        qState.dd->incRef(zero);
+        qState.dd->incRef(one);
+        qState.dd->performCollapsingMeasurement(zero, target, pzero, true);
+        qState.dd->performCollapsingMeasurement(one, target, pone, false);
+        one = qState.dd->applyOperation(
+            mlir::qco::makeGateDD(*qState.dd, matrix, std::array{target}), one);
+        // Reset outcomes with equal normalized states can keep one population.
+        const bool equal = zero.p == one.p;
+        qState.dd->decRef(one);
+        if (equal) {
+          qState.dd->decRef(qState.edge);
+          qState.edge = zero;
+          samplingBranches_->path.push_back(false);
+          ++samplingBranches_->position;
+          continue;
+        }
+        qState.dd->decRef(zero);
+      }
+    }
+    if (measureQubit(target)) {
       const std::array targetArray{target};
       qState.edge = qState.dd->applyOperation(
           mlir::qco::makeGateDD(*qState.dd, matrix, targetArray), qState.edge);
@@ -316,6 +386,9 @@ auto Runtime::qAlloc() -> Qubit* {
                       ? static_cast<dd::Qubit>(currentMaxQubitId++)
                       : freeQubits_.back();
   if (!freeQubits_.empty()) {
+    if (deferredOutputs_ != nullptr) {
+      invalidStateExtraction_ = true;
+    }
     freeQubits_.pop_back();
   }
   qRegister.emplace(qubit, id);
@@ -336,6 +409,11 @@ auto Runtime::qFree(Qubit* qubit) -> void {
     if (id < qState.numQubits) {
       reset(std::array{qubit});
     }
+    freeQubits_.push_back(id);
+  } else if (deferredOutputs_ != nullptr) {
+    // A sampling trial must stay within the original allocation bound.
+    // Reusing a released wire invalidates deferral and triggers ordinary
+    // sampling.
     freeQubits_.push_back(id);
   }
   qRegister.erase(it);
@@ -381,7 +459,16 @@ auto Runtime::deref(Result* result) -> ResultStruct& {
   return it->second;
 }
 
-auto Runtime::appendMeasurementBit(bool result) -> void {
+auto Runtime::appendMeasurementBit(const bool result,
+                                   const std::optional<dd::Qubit> deferredWire)
+    -> void {
+  if (deferredOutputs_ != nullptr) {
+    if (deferredWire) {
+      deferredOutputs_->emplace_back(*deferredWire);
+    } else {
+      deferredOutputs_->emplace_back(result);
+    }
+  }
   if (!extractState_) {
     measurements.push_back(result ? '1' : '0');
   }
@@ -418,9 +505,9 @@ auto Runtime::takeState() -> QState {
   return ret;
 }
 
-auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
+auto Runtime::setOstream(llvm::raw_ostream& other) -> void { os = &other; }
 
-auto Runtime::resetOstream() -> void { os = &std::cout; }
+auto Runtime::resetOstream() -> void { os = &llvm::outs(); }
 
 auto Runtime::disableOutput() -> void { os = nullptr; }
 
@@ -437,6 +524,10 @@ void Runtime::outputType(const char* type, std::string_view value,
 }
 
 auto Runtime::outputResult(bool value, const char* label) const -> void {
+  if (outputResultPositions_ != nullptr) {
+    outputResultPositions_->push_back(
+        os->tell() + std::string_view("OUTPUT\tRESULT\t").size());
+  }
   outputType("RESULT", value ? "1" : "0", label);
 }
 
@@ -524,8 +615,8 @@ auto Runtime::setMetadata(
   metadata = std::move(entryPointMetadata);
 }
 
-auto operator<<(std::ostream& os, const Runtime::OutputSchema schema)
-    -> std::ostream& {
+auto operator<<(llvm::raw_ostream& os, const Runtime::OutputSchema schema)
+    -> llvm::raw_ostream& {
   return os << (schema == Runtime::OutputSchema::Labeled ? LABELED_SCHEMA
                                                          : ORDERED_SCHEMA);
 }

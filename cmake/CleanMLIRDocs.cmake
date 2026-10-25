@@ -19,7 +19,7 @@ foreach(MD_FILE ${MD_FILES})
 
   # TableGen links local definitions to llvm-project, where those files do not exist.
   string(REGEX REPLACE "\n\\[source\\]\\(https://github.com/llvm/llvm-project/blob/main.*\.td\\)\n"
-                       "" CONTENT "${CONTENT}")
+         "" CONTENT "${CONTENT}")
 
   file(WRITE ${MD_FILE} "${CONTENT}")
 endforeach()

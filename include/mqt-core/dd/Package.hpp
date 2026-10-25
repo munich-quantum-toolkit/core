@@ -40,6 +40,7 @@
 #include <iosfwd>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <random>
 #include <ranges>
 #include <span>
@@ -50,9 +51,13 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace dd {
+
+/// A qubit to sample, or a fixed classical bit in the output.
+using SamplingOutput = std::variant<Qubit, bool>;
 
 /// The DD package class
 ///
@@ -89,15 +94,16 @@ public:
 
   Package& operator=(const Package& package) = delete;
 
-  /// Resize the package to a new number of qubits
+  /// Increase the package capacity to the requested number of qubits.
   ///
-  /// This method will resize all the unique tables appropriately so
-  /// that they can handle the new number of qubits.
+  /// Existing decision diagrams remain valid. Shrinking is not supported.
   ///
-  /// @param nq The new number of qubits
+  /// @param nq The requested number of qubits.
+  /// @throws std::invalid_argument If nq is less than the current capacity or
+  /// exceeds @ref MAX_POSSIBLE_QUBITS.
   void resize(std::size_t nq);
 
-  /// Reset package state
+  /// Reset package state and invalidate all DDs created by this package.
   void reset();
 
   /// Get the number of qubits
@@ -136,13 +142,6 @@ public:
       return cMemoryManager;
     }
   }
-
-  /// Reset all memory managers
-  /// @arg resizeToTotal If set to true, each manager allocates one chunk of
-  /// memory as large as all chunks combined before the reset.
-  ///
-  /// @see MemoryManager::reset
-  void resetMemoryManagers(bool resizeToTotal = false);
 
   /// The unique table used for vector nodes
   UniqueTable vUniqueTable{
@@ -184,17 +183,11 @@ public:
     }
   }
 
-  /// Clear all unique tables
-  ///
-  /// @see UniqueTable::clear
-  /// @see RealNumberUniqueTable::clear
-  void clearUniqueTables();
-
   /// Add the DD to a tracking hashset and update its reference count.
   ///
   /// @tparam Node The node type of the edge.
   /// @param e The edge to increase the reference count of.
-  template <class Node> void incRef(const Edge<Node>& e) noexcept {
+  template <class Node> void incRef(const Edge<Node>& e) {
     if (Edge<Node>::trackingRequired(e)) {
       roots.addToRoots(e);
     }
@@ -229,7 +222,7 @@ private:
                                        std::hash<Edge<Node>>, RootEqual<Node>>;
 
     /// Add to respective root set.
-    template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
+    template <class Node> void addToRoots(const Edge<Node>& e) {
       ++getRoots<Node>()[e];
     }
 
@@ -548,6 +541,7 @@ public:
   /// @tparam EdgeType The type of the edge.
   /// @param var The variable associated with the node.
   /// @param edges The edges of the node.
+  /// @pre var < qubits().
   /// @return An edge pointing to the normalized DD node.
   template <class Node, template <class> class EdgeType>
   EdgeType<Node>
@@ -666,6 +660,20 @@ public:
   /// probabilities do not sum to 1.
   std::string measureAll(vEdge& rootEdge, bool collapse, std::mt19937_64& mt,
                          fp epsilon = 0.001);
+
+  /// Sample a histogram without changing the state.
+  ///
+  /// Bits follow @p outputs from left to right. Qubits may be repeated; an
+  /// empty projection produces the empty bitstring. Zero shots return an empty
+  /// histogram. Shot populations share DD traversal until small groups are
+  /// cheaper to sample individually. Seeded draws are reproducible within this
+  /// strategy, not interchangeable with @ref measureAll.
+  ///
+  /// @throws std::invalid_argument If an output qubit is outside the state.
+  /// @throws std::runtime_error If numerical instabilities are detected.
+  [[nodiscard]] static std::map<std::string, size_t>
+  sampleCounts(const vEdge& state, std::span<const SamplingOutput> outputs,
+               size_t shots, std::mt19937_64& mt, fp epsilon = 0.001);
 
 private:
   /// Assigns probabilities to nodes in a decision diagram.
@@ -1335,9 +1343,10 @@ public:
   /// be a garbage qubit.
   /// @param checkCloseToOne If false, the function only checks if the matrix is
   /// close to a diagonal matrix.
-  [[nodiscard]] bool isCloseToIdentity(const mEdge& m, fp tol = 1e-10,
-                                       const std::vector<bool>& garbage = {},
-                                       bool checkCloseToOne = true) const;
+  [[nodiscard]] static bool
+  isCloseToIdentity(const mEdge& m, fp tol = 1e-10,
+                    const std::vector<bool>& garbage = {},
+                    bool checkCloseToOne = true);
 
 private:
   /// Computes the normalized (partial) trace using a compute table to

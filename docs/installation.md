@@ -225,7 +225,7 @@ flexibility in how the library is integrated into the project.
 include(FetchContent)
 set(FETCH_PACKAGES "")
 
-# cmake-format: off
+# cmakefmt: off
 set(MQT_CORE_MINIMUM_VERSION "<minimum_version>"
     CACHE STRING "MQT Core minimum version")
 set(MQT_CORE_VERSION "<version>"
@@ -234,7 +234,7 @@ set(MQT_CORE_REV "<revision>"
     CACHE STRING "MQT Core identifier (tag, branch or commit hash)")
 set(MQT_CORE_REPO_OWNER "munich-quantum-toolkit"
     CACHE STRING "MQT Core repository owner (change when using a fork)")
-# cmake-format: on
+# cmakefmt: on
 FetchContent_Declare(
   mqt-core
   GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
@@ -299,7 +299,7 @@ Set up a reproducible development environment for MQT Core. This is the
 recommended starting point for both bug fixes and new features. For detailed
 guidelines and workflows, see {doc}`contributing`.
 
-1. Get the code: <!-- rumdl-disable-line MD013 -->
+1. Get the code:
 
    ::::{tab-set}
 
@@ -345,14 +345,13 @@ guidelines and workflows, see {doc}`contributing`.
 
    Now you can make your changes locally.
 
-4. Install the project and its development dependencies: <!-- rumdl-disable-line MD013 -->
+4. Install the project and its development dependencies:
 
    We highly recommend using modern, fast tooling for the development workflow.
-   We recommend using [{code}`uv`][uv].
-   If you don't have {code}`uv`,
-   follow the installation instructions in the recommendation above
-   (see {ref}`tip above <uv-recommendation>`).
-   See the [uv documentation][uv] for more information.
+   We recommend using [{code}`uv`][uv]. If you don't have {code}`uv`, follow the
+   installation instructions in the recommendation above (see
+   {ref}`tip above <uv-recommendation>`). See the [uv documentation][uv] for
+   more information.
 
    ::::{tab-set}
    :sync-group: installer
@@ -360,7 +359,8 @@ guidelines and workflows, see {doc}`contributing`.
    :::{tab-item} {code}`uv` _(recommended)_
    :sync: uv
 
-   Install the project (including development dependencies) with [{code}`uv`][uv]:
+   Install the project (including development dependencies) with
+   [{code}`uv`][uv]:
 
    ```console
    uv sync
@@ -386,17 +386,18 @@ guidelines and workflows, see {doc}`contributing`.
 
    ::::
 
-5. Install pre-commit hooks to ensure code quality: <!-- rumdl-disable-line MD013 -->
+5. Install pre-commit hooks to ensure code quality:
 
-   The project uses pre-commit hooks for running linters and formatting tools on each commit.
-   These checks can be run manually via [{code}`nox`][nox], by running:
+   The project uses pre-commit hooks for running linters and formatting tools on
+   each commit. These checks can be run manually via [{code}`nox`][nox], by
+   running:
 
    ```console
    nox -s lint
    ```
 
-   They can also be run automatically on every commit via [{code}`prek`][prek] (recommended). To set
-   this up, install {code}`prek`, e.g., via:
+   They can also be run automatically on every commit via [{code}`prek`][prek]
+   (recommended). To set this up, install {code}`prek`, e.g., via:
 
    ::::{tab-set}
 

@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from math import pi
-from typing import assert_type, cast
+from typing import TYPE_CHECKING, assert_type, cast
 
 import numpy as np
 import pytest
@@ -66,6 +66,9 @@ from mqt.core.mlir import (
     submit_program,
 )
 from mqt.core.qdmi import ProgramFormat, open_device
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 if not supports_qiskit_translation():
     pytest.skip("Qiskit version has no compiler translation adapter", allow_module_level=True)
@@ -167,21 +170,22 @@ def test_compile_program_explicit_output(target_kind: str, output: OutputFormat,
         job.wait()
         assert job.get_counts() == {"01": 4}
     else:
+        assert isinstance(compiled, (QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram))
         assert sample(compiled, shots=4, seed=1) == {"01": 4}
 
 
-@pytest.mark.parametrize(("inplace", "control_flow"), [(False, False), (True, True)])
-def test_compile_program_qiskit_typed_input(*, inplace: bool, control_flow: bool) -> None:
+@pytest.mark.parametrize(("copy", "control_flow"), [(True, False), (False, True)])
+def test_compile_program_qiskit_typed_input(*, copy: bool, control_flow: bool) -> None:
     """Compile loops with ordered outputs while copying or consuming the input."""
     source = QCProgram.from_openqasm_str(
         'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[3] c = 0; '
         "for int i in [0:2] { x q[0]; } c[1] = measure q[0]; c[0] = measure q[1];"
     )
     backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"], control_flow=control_flow, seed=1)
-    compiled = compile_program(source, target=backend, inplace=inplace)
+    compiled = compile_program(source, target=backend, copy=copy)
 
     assert_type(compiled, QuantumCircuit)
-    assert source.is_valid is not inplace
+    assert source.is_valid is copy
     assert ("for_loop" in compiled.count_ops()) is control_flow
     assert compiled.num_clbits == 3
     assert sample(compiled, shots=4, seed=1) == {"010": 4}
@@ -242,13 +246,14 @@ def test_compile_program_qiskit_control_flow(unsupported: str | None, output: Ou
     source = QCProgram.from_qiskit(circuit)
 
     if unsupported or output == OutputFormat.QIR_BASE:
-        inplace = output == OutputFormat.QIR_BASE
+        copy = output != OutputFormat.QIR_BASE
         diagnostic = "forward-branching" if unsupported == "if_else" else "scf.while"
         with pytest.raises(RuntimeError, match=diagnostic):
-            compile_program(source, target=target, output=output, inplace=inplace)
-        assert source.is_valid is not inplace
+            compile_program(source, target=target, output=output, copy=copy)
+        assert source.is_valid is copy
         return
     compiled = compile_program(source, target=target, output=output)
+    assert not source.is_valid
     assert isinstance(compiled, (QuantumCircuit, OpenQASMProgram))
     assert sample(compiled, shots=4, seed=1) == {"1": 4}
 
@@ -1136,3 +1141,44 @@ def test_device_executes_controlled_qir_with_exact_phase() -> None:
     job.wait()
 
     assert job.get_dense_statevector() == pytest.approx(expected)
+
+
+def test_compile_program_sequence_qiskit_target_snapshot() -> None:
+    """Resolve a target once and retain batch members across Python callbacks."""
+
+    class Circuit(QuantumCircuit):
+        pass
+
+    circuits = [QuantumCircuit(1, 1), Circuit(1, 1)]
+    circuits[1].x(0)
+    for circuit in circuits:
+        circuit.measure(0, 0)
+    originals = [circuit.copy() for circuit in circuits]
+    pending = list(circuits)
+
+    class Backend(GenericBackendV2):
+        target_reads = 0
+
+        @property
+        def target(self) -> Target:
+            self.target_reads += 1
+            pending.clear()
+            return super().target
+
+    backend = Backend(2, basis_gates=["u", "cx"], seed=1)
+    backend.target_reads = 0
+    assert_type(compile_program(circuits[0], target=backend), QuantumCircuit)
+    scalar_reads = backend.target_reads
+    backend.target_reads = 0
+    pending.extend(circuits)
+    inputs: Sequence[QuantumCircuit] = pending
+    compiled = compile_program(inputs, target=backend)
+    assert_type(compiled, list[QuantumCircuit])
+    assert backend.target_reads == scalar_reads > 0
+    assert pending == []
+    assert circuits == originals
+    assert [sample(circuit, shots=1) for circuit in compiled] == [{"0": 1}, {"1": 1}]
+    programs: Sequence[QCProgram] = [QCProgram.from_qiskit(circuit) for circuit in circuits]
+    assert_type(compile_program(programs[0], target=backend.target, copy=True), QuantumCircuit)
+    assert_type(compile_program(programs, target=backend.target, copy=True), list[QuantumCircuit])
+    assert_type(compile_program(programs, target=CompilerTarget.from_qiskit(backend)), list[QCProgram])

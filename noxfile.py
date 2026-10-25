@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -104,29 +105,31 @@ def cpp_lint(session: nox.Session) -> None:
         external=True,
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        output = Path(temp_dir) / "github-output"
-        session.run(
-            "cpp-linter",
-            "--style=",
-            "--tidy-checks=",
-            f"--version={llvm_bin}",
-            "--ignore=build|!build/mlir/**|**/include|include|vendor/**",
-            "--thread-comments=false",
-            "--step-summary=false",
-            "--database=build/cpp-lint",
-            "--extra-arg=-std=c++20",
-            "--extra-arg=-Wunused-template",
-            f"--files-changed-only={'false' if all_files else 'true'}",
-            "--lines-changed-only=false",
-            *(() if all_files else (f"--diff-base={diff_base}",)),
-            "--jobs=0",
-            "--verbosity=info",
-            env={"GITHUB_OUTPUT": str(output)},
-        )
-        results = dict(line.split("=", 1) for line in output.read_text().splitlines())
-        if int(results["checks-failed"]) != 0:
-            session.error(f"cpp-linter reported {results['checks-failed']} finding(s)")
+    output = session.run(
+        "cpp-linter",
+        "--style=",
+        "--tidy-checks=",
+        f"--version={llvm_bin}",
+        "--ignore=build|!build/mlir/**|**/include|include|vendor/**",
+        "--thread-comments=false",
+        "--step-summary=false",
+        "--database=build/cpp-lint",
+        "--extra-arg=-std=c++20",
+        "--extra-arg=-Wunused-template",
+        f"--files-changed-only={'false' if all_files else 'true'}",
+        "--lines-changed-only=false",
+        *(() if all_files else (f"--diff-base={diff_base}",)),
+        "--jobs=0",
+        "--verbosity=info",
+        silent=True,
+    )
+    session.log(output or "")
+    # cpp-linter's local backend logs its result but exits zero even on findings.
+    result = re.search(r"^INFO:CPP Linter:(\d+) checks-failed\r?$", output or "", re.MULTILINE)
+    if result is None:
+        session.error("cpp-linter did not report a check result")
+    if int(result[1]) != 0:
+        session.error(f"cpp-linter reported {result[1]} finding(s)")
 
 
 def _run_tests(
