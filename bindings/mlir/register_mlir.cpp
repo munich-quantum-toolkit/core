@@ -39,6 +39,7 @@
 #include "mqt/bench/Generate.h"
 #include "qdmi/QDMI.hpp"
 
+#include "Bindings.hpp"
 #include "Target/Qiskit/Qiskit.h"
 
 #include "capnp/common.h"
@@ -1031,7 +1032,7 @@ generateBenchmark(const Benchmark& benchmark) {
   return std::move(*generated);
 }
 
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+void registerMLIR(nb::module_& m) {
 #ifdef __APPLE__
   nb::register_exception_translator(&translateRuntimeError);
 #endif
@@ -1039,7 +1040,6 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
 
   nb::module_::import_("typing");
-  nb::module_::import_("mqt.core.qdmi");
   const auto inputTypes = std::make_shared<PythonInputTypes>();
   [[maybe_unused]] const auto initialQiskitType = inputTypes->quantumCircuit();
 
@@ -2291,8 +2291,6 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.
 Args:
     path: Destination file.
     copy: Preserve the source program by exporting a copy.)pb");
-
-  nb::module_::import_("mqt.core.dd");
 
   qcoProgram.def(
       "build_functionality", &buildQCOFunctionality, "dd_package"_a,

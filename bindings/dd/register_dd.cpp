@@ -10,6 +10,8 @@
 
 #include "dd/DDDefinitions.hpp"
 
+#include "Bindings.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)
@@ -54,8 +56,7 @@ Args:
 }
 } // namespace
 
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+void registerDD(const nb::module_& m) {
   m.doc() = "MQT Core decision diagram module.";
 
   // Controls for raw matrix DD construction.

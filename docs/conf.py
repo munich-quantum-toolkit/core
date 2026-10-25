@@ -148,11 +148,15 @@ copybutton_line_continuation_character = "\\"
 modindex_common_prefix = ["mqt.core."]
 
 autoapi_dirs = ["../python/mqt"]
+# Native API declarations live in stubs; Python files only expose their modules.
+autoapi_file_patterns = ["*.pyi", "*.py"]
 autoapi_python_use_implicit_namespaces = True
 autoapi_root = "api"
 autoapi_add_toctree_entry = False
 autoapi_ignore = [
     "*/**/_version.py",
+    "*/mqt/core/bench.py",
+    "*/mqt/core/qdmi.py",
 ]
 autoapi_options = [
     "members",

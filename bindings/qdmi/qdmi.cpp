@@ -12,6 +12,8 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "Bindings.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
@@ -216,7 +218,7 @@ template <typename Query>
 
 } // namespace
 
-NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
+void registerQDMI(nb::module_& qdmiModule) {
   qdmiModule.doc() = "QDMI sessions, devices, and jobs.";
   auto builtinDriver = qdmiModule.def_submodule(
       "builtin_driver", "Configure the MQT Core QDMI driver.");
@@ -944,9 +946,6 @@ The first call fixes the MQT Core QDMI driver configuration.)pb");
       "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
       "custom5"_a = std::nullopt,
       "Open an independent device session with the MQT Core QDMI driver.");
-
-  nb::module_::import_("mqt.core._qdmi_discovery")
-      .attr("discover_qdmi_manifests")(builtinDriver.attr("add_manifest"));
 }
 
 } // namespace mqt
