@@ -154,20 +154,15 @@ filters when useful, such as
 `build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`. Python
 3.14 test sessions are `tests-3.14` and `minimums-3.14`.
 
-Before pushing native code, dependency, or CMake changes, build and test the
-affected targets in both assertion-enabled Debug and optimized Release. Include
-affected shared libraries, Python bindings, and consumers; a focused test
-executable alone does not check their link requirements. Inspect the CI matrix
-and actual compiler and SDK flags, especially RTTI, exceptions, and assertions.
-Before removing a build setting, check its history and rerun the configuration
-that required it.
+Choose build configurations that exercise the change, including affected
+libraries and bindings. Before removing a build setting, check its history and
+reproduce the configuration that required it.
 
 C++ lint checks every line of each changed C++ file against `origin/main` by
 default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
-Stage intended new files before repository lint, or pass them explicitly: an
-all-files hook run can omit untracked files. Rerun hooks after their fixes. Keep
-pass and option documentation aligned with actual scope, defaults, supported
-shapes, limitations, and failure modes.
+Stage new files before all-files lint, or pass them explicitly. Rerun hooks
+after their fixes. Keep pass and option documentation aligned with actual scope,
+defaults, supported shapes, limitations, and failure modes.
 
 Inspect the final diff and status. Check changed comments and docstrings against
 the documentation policy. Exclude generated, secret, and unrelated files. Tie
@@ -175,10 +170,6 @@ validation to the final code: rerun affected checks following edits and
 distinguish passes from skipped, blocked, or pending checks. Report checks run
 and their outcomes; stop after required gates pass unless a concrete remaining
 risk justifies more validation.
-
-For CI fixes, read every failed job's log on the current PR revision, reproduce
-the cause locally when possible, and check the affected hosted jobs after
-pushing. Report a fix as locally validated while those jobs remain pending.
 
 ## Plans and audits
 
@@ -214,8 +205,7 @@ workload, baseline, environment, measurements, and limits.
   `🤖 *AI text below* 🤖`. Titles are exempt.
 - Do not use agents on issues labeled `good first issue` or generate spam,
   repetitive reviews, or unreviewed contributions.
-- Pushing or opening a PR does not request CI monitoring. Unless asked to
-  monitor, report the available status at handoff and stop.
+- Do not monitor CI unless explicitly requested.
 - Reviews focus on correctness, contracts, maintainability, tests,
   documentation, licensing, and validation rather than optional process
   metadata.
