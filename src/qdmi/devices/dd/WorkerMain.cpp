@@ -217,8 +217,6 @@ struct Execution {
       std::vector<std::string> parts(workers);
       std::vector<std::string> records(workers);
       std::vector<std::map<std::string, size_t>> counts(workers);
-      std::vector<std::future<int64_t>> tasks;
-      tasks.reserve(workers);
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
         llvm::raw_string_ostream localOutput(records[i]);
@@ -277,6 +275,8 @@ struct Execution {
         }
         return *code;
       };
+      std::vector<std::future<int64_t>> tasks;
+      tasks.reserve(workers);
       for (size_t i = 0; i < workers; ++i) {
         tasks.push_back(
             std::async(std::launch::async, [&, i] { return run(i); }));
