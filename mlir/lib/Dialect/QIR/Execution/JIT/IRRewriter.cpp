@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -23,8 +24,12 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Transforms/Utils/Local.h"
 
@@ -227,17 +232,21 @@ static std::optional<uintptr_t> staticResourceId(const llvm::Value* value) {
   return static_cast<uintptr_t>(id->getZExtValue());
 }
 
-static bool isStaticGate(const llvm::CallInst& call, llvm::StringRef name) {
-  const auto known = llvm::StringSwitch<bool>(name)
+static bool isQISGateName(llvm::StringRef name) {
+  return llvm::StringSwitch<bool>(name)
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   .Case("__quantum__qis__" #NAME "__" #SUFFIX, true)                           \
       .Case("__quantum__qis__c" #NAME "__" #SUFFIX, true)                      \
       .Case("__quantum__qis__cc" #NAME "__" #SUFFIX, true)
 #include "mqt/Conversion/GateTable.def"
-                         .Case("__quantum__qis__gphase__body", true)
-                         .Case("__quantum__qis__cnot__body", true)
-                         .Default(false);
-  return known && std::ranges::all_of(call.args(), [](const llvm::Value* arg) {
+      .Case("__quantum__qis__gphase__body", true)
+      .Case("__quantum__qis__cnot__body", true)
+      .Default(false);
+}
+
+static bool isStaticGate(const llvm::CallInst& call, llvm::StringRef name) {
+  return isQISGateName(name) &&
+         std::ranges::all_of(call.args(), [](const llvm::Value* arg) {
            if (const auto* fp = llvm::dyn_cast<llvm::ConstantFP>(arg)) {
              return fp->getValueAPF().isFinite();
            }
@@ -333,6 +342,132 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
     block = branch->getSuccessor();
   }
   return std::nullopt;
+}
+
+static bool isReplayMemory(const llvm::Value* pointer, bool writable = false) {
+  const auto* object = llvm::getUnderlyingObject(pointer);
+  if (llvm::isa<llvm::AllocaInst>(object)) {
+    return true;
+  }
+  const auto* global = llvm::dyn_cast<llvm::GlobalVariable>(object);
+  return !writable && global != nullptr && global->isConstant() &&
+         !global->isDeclaration();
+}
+
+static bool isReplayCall(const llvm::CallInst& call) {
+  const auto* callee = call.getCalledFunction();
+  if (callee == nullptr || !callee->isDeclaration()) {
+    return false;
+  }
+  if (const auto* memory = llvm::dyn_cast<llvm::MemIntrinsic>(&call)) {
+    if (memory->isVolatile() || !isReplayMemory(memory->getDest(), true)) {
+      return false;
+    }
+    const auto* transfer = llvm::dyn_cast<llvm::MemTransferInst>(memory);
+    return transfer == nullptr || isReplayMemory(transfer->getSource());
+  }
+  if (callee->isIntrinsic()) {
+    const auto id = callee->getIntrinsicID();
+    if (id == llvm::Intrinsic::lifetime_start ||
+        id == llvm::Intrinsic::lifetime_end) {
+      return true;
+    }
+    return !llvm::Intrinsic::isTargetIntrinsic(id) &&
+           !call.getType()->isPtrOrPtrVectorTy() &&
+           std::ranges::none_of(call.args(),
+                                [](const llvm::Value* arg) {
+                                  return arg->getType()->isPtrOrPtrVectorTy();
+                                }) &&
+           call.doesNotAccessMemory() &&
+           llvm::isSafeToSpeculativelyExecute(&call);
+  }
+  const auto name = callee->getName();
+  if (isQISGateName(name)) {
+    return true;
+  }
+  if (name == "__quantum__rt__initialize") {
+    return &call == &call.getFunction()->getEntryBlock().front();
+  }
+  const auto localOrNull = [](const llvm::Value* pointer) {
+    return llvm::isa<llvm::ConstantPointerNull>(pointer) ||
+           isReplayMemory(pointer, true);
+  };
+  if (name == "__quantum__rt__qubit_allocate" ||
+      name == "__quantum__rt__result_allocate") {
+    return localOrNull(call.getArgOperand(0));
+  }
+  if (name == "__quantum__rt__qubit_array_allocate" ||
+      name == "__quantum__rt__result_array_allocate") {
+    return isReplayMemory(call.getArgOperand(1), true) &&
+           localOrNull(call.getArgOperand(2));
+  }
+  if (name == "__quantum__rt__qubit_array_release" ||
+      name == "__quantum__rt__result_array_release" ||
+      name == "__quantum__rt__result_array_record_output") {
+    return isReplayMemory(call.getArgOperand(1));
+  }
+  return llvm::StringSwitch<bool>(name)
+      .Cases(
+          {
+              "__quantum__qis__mz__body",
+              "__quantum__qis__reset__body",
+              "__quantum__rt__qubit_release",
+              "__quantum__rt__result_release",
+              "__quantum__rt__read_result",
+              "__quantum__rt__result_record_output",
+              "__quantum__rt__bool_record_output",
+              "__quantum__rt__int_record_output",
+              "__quantum__rt__double_record_output",
+              "__quantum__rt__tuple_record_output",
+              "__quantum__rt__array_record_output",
+          },
+          true)
+      .Default(false);
+}
+
+bool canSampleBranches(const llvm::Function& entryPoint) {
+  const auto& module = *entryPoint.getParent();
+  if (entryPoint.isDeclaration() || !entryPoint.arg_empty() ||
+      module.getNamedGlobal("llvm.global_ctors") != nullptr ||
+      module.getNamedGlobal("llvm.global_dtors") != nullptr ||
+      !module.aliases().empty() || !module.ifuncs().empty() ||
+      !std::ranges::all_of(module.globals(), [](const auto& global) {
+        return global.isConstant() && !global.isDeclaration();
+      })) {
+    return false;
+  }
+  for (const auto& block : entryPoint) {
+    for (const auto& instruction : block) {
+      if (const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction)) {
+        if (!isReplayCall(*call)) {
+          return false;
+        }
+      } else if (const auto* load =
+                     llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+        if (!load->isSimple() || !isReplayMemory(load->getPointerOperand())) {
+          return false;
+        }
+      } else if (const auto* store =
+                     llvm::dyn_cast<llvm::StoreInst>(&instruction)) {
+        if (!store->isSimple() ||
+            !isReplayMemory(store->getPointerOperand(), true)) {
+          return false;
+        }
+      } else if (llvm::isa<llvm::CallBase, llvm::PtrToIntInst,
+                           llvm::IntToPtrInst, llvm::FreezeInst>(instruction) ||
+                 (llvm::isa<llvm::CmpInst>(instruction) &&
+                  instruction.getOperand(0)->getType()->isPtrOrPtrVectorTy()) ||
+                 (instruction.isTerminator() &&
+                  !llvm::isa<llvm::BranchInst, llvm::SwitchInst,
+                             llvm::ReturnInst>(instruction)) ||
+                 (!llvm::isa<llvm::AllocaInst, llvm::ReturnInst>(instruction) &&
+                  (instruction.mayReadOrWriteMemory() ||
+                   instruction.mayHaveSideEffects()))) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 } // namespace qir
