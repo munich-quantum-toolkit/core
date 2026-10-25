@@ -19,8 +19,8 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <complex>
@@ -1196,11 +1196,11 @@ Session::Session(const SessionConfig& config) {
       return;
     }
     if (status != QDMI_SUCCESS) {
-      std::string messageStorage;
-      llvm::raw_string_ostream message(messageStorage);
-      message << "Setting session parameter " << qdmi::toString(param) << ": "
-              << qdmi::toString(status) << " (status = " << status << ")";
-      qdmi::throwIfError(status, message.str());
+      qdmi::throwIfError(
+          status,
+          llvm::formatv("Setting session parameter {0}: {1} (status = {2})",
+                        qdmi::toString(param), qdmi::toString(status), status)
+              .str());
     }
   };
 

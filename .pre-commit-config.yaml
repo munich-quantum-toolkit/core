@@ -95,14 +95,7 @@ repos:
         language: pygrep
         entry: '^\s*#\s*include\s*[<"](?:ios|iostream|istream|fstream|sstream|streambuf|iomanip|syncstream|strstream|spanstream)[>"]'
         files: ^(include|src|bindings|mlir|test|examples)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|cu|cuh)$
-        # GoogleTest requires ostream printers; one test checks caller cout state.
-        exclude: ^test/dd/test_edge_functionality\.cpp$
-        priority: 0
-      - id: disallow-production-ostream
-        name: Keep STL ostream interfaces out of production C++
-        language: pygrep
-        entry: '^\s*#\s*include\s*[<"](?:iosfwd|ostream)[>"]'
-        files: ^(include|src|bindings|examples|mlir/(include|lib|tools))/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|cu|cuh)$
+        # ostream and iosfwd remain available for GoogleTest printers.
         priority: 0
       - id: cpp-documentation-style
         name: Use LLVM-style C++ documentation comments

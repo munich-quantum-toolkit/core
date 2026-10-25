@@ -84,6 +84,12 @@ TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
   __quantum__rt__qubit_release(qubit);
   __quantum__rt__result_release(result);
 
+  EXPECT_THAT([&] { Runtime::getInstance().reset(std::array{qubit}); },
+              testing::ThrowsMessage<std::out_of_range>(
+                  testing::HasSubstr("Qubit not allocated")));
+  EXPECT_THAT([&] { return Runtime::getInstance().deref(result); },
+              testing::ThrowsMessage<std::out_of_range>(
+                  testing::HasSubstr("Result not allocated")));
   EXPECT_DEATH(__quantum__qis__x__body(qubit), "Qubit not allocated");
   EXPECT_DEATH(__quantum__rt__read_result(result), "Result not allocated");
   EXPECT_DEATH(__quantum__rt__qubit_release(qubit),

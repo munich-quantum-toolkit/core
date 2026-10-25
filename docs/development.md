@@ -31,9 +31,9 @@ differences between these guides; neither upstream document is imported in full.
   dependency.
 - Use LLVM `raw_ostream` for output, `MemoryBuffer` for file input, and
   `StringRef` for borrowed text. Reuse synchronized diagnostics for concurrent
-  logging. STL stream headers are forbidden except for GoogleTest printers and
-  tests of interoperability with caller-owned STL stream state. Keep owned
-  strings where needed; use `SmallString` for suitable temporary buffers.
+  logging. STL stream headers are forbidden except `ostream`/`iosfwd` for
+  GoogleTest printers. Keep owned strings where needed; use `SmallString` for
+  suitable temporary buffers.
 - Keep variables local, initialize them when declared, and give each name one
   clear meaning.
 - Use `auto` when the initializer makes the type clear or when spelling the type

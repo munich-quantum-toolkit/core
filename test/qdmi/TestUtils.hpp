@@ -95,7 +95,8 @@ public:
     std::filesystem::create_directories(path.parent_path());
     // Truncate in place to preserve permissions of executable test fixtures.
     std::error_code error;
-    llvm::raw_fd_ostream output(path.string(), error);
+    const auto utf8 = path.u8string();
+    llvm::raw_fd_ostream output(std::string(utf8.begin(), utf8.end()), error);
     llvm::cantFail(llvm::errorCodeToError(error));
     output << contents;
     output.close();

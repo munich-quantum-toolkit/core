@@ -52,6 +52,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
@@ -137,11 +138,11 @@ static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
-    std::string actual;
-    llvm::raw_string_ostream stream(actual);
-    type->print(stream);
-    throw std::runtime_error("QIR entry point '" + entryPoint.getName().str() +
-                             "' must have type i64 (), but has type " + actual);
+    throw std::runtime_error(
+        llvm::formatv(
+            "QIR entry point '{0}' must have type i64 (), but has type {1}",
+            entryPoint.getName(), *type)
+            .str());
   }
   return entryPoint;
 }
@@ -390,13 +391,11 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
                       "QIR runtime declaration '" + function.getName() + "'");
     const auto& symbol = it->second;
     if (!matches(*function.getFunctionType(), symbol)) {
-      std::string messageStorage;
-      llvm::raw_string_ostream message(messageStorage);
-      message << "QIR declaration '" << function.getName()
-              << "' has unsupported type ";
-      function.getFunctionType()->print(message);
-      message << "; expected " << describe(symbol);
-      throw std::runtime_error(message.str());
+      throw std::runtime_error(
+          llvm::formatv(
+              "QIR declaration '{0}' has unsupported type {1}; expected {2}",
+              function.getName(), *function.getFunctionType(), describe(symbol))
+              .str());
     }
     selected.emplace_back(function.getName().str(), symbol.address);
   }

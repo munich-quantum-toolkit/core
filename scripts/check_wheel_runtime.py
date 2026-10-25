@@ -26,12 +26,17 @@ def main() -> None:
     source = (Path(__file__).resolve().parents[1] / "docs/cpp_api.md").read_text(encoding="utf-8")
     prefix = subprocess.check_output([sys.executable, "-m", "mqt.core", "--cmake_dir"], text=True).strip()
     # Reuse SDKs downloaded by the source build that executes these docs.
-    sdks = Path(__file__).resolve().parents[1].glob("build/python/*/_deps/llvm-*")
+    project = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1]
+    sdks = project.glob("build/python/*/_deps/llvm-*")
     cmake_prefix_path = ";".join([prefix, *(str(sdk) for sdk in sdks)])
     with TemporaryDirectory() as directory:
         root = Path(directory)
         for language, filename in (("cpp", "main.cpp"), ("cmake", "CMakeLists.txt")):
             code = source.split(f"```{language}\n", 1)[1].split("\n```", 1)[0]
+            if language == "cmake":
+                code += "\nadd_test(NAME compiler COMMAND MQT::mqt-cc --version)\n"
+                code += "add_test(NAME benchmark COMMAND MQT::mqt-core-bench list)\n"
+                code += "set_tests_properties(qdmi-runtime compiler benchmark PROPERTIES TIMEOUT 60)\n"
             (root / filename).write_text(code, encoding="utf-8")
         subprocess.run(
             [
