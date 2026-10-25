@@ -15,6 +15,13 @@
 
 #include "qdmi/client.h"
 
+#include "llvm/ADT/Twine.h"
+#ifdef _WIN32
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ConvertUTF.h"
+#endif
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cstddef>
@@ -24,6 +31,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <variant>
 
 namespace qdmi {
@@ -33,28 +42,58 @@ namespace qdmi {
 /// submission call returns.
 using CustomJobParameter =
     std::variant<std::string, bool, int, double, std::span<const std::byte>>;
+/// Preserve a provider status in an owned LLVM error.
+[[nodiscard]] llvm::Error makeError(int status, const llvm::Twine& message);
+
+/// Throws the established C++ exception for a failed QDMI operation.
+void throwIfError(int result, const std::string& message);
+
 namespace detail {
-/// Encode a native filesystem path as UTF-8.
+/// Encode a native path for LLVM's UTF-8 Windows filesystem APIs.
 [[nodiscard]] inline auto pathToString(const std::filesystem::path& path)
-    -> std::string {
-  const auto utf8 = path.u8string();
-  std::string value(utf8.size(), '\0');
-  if (!utf8.empty()) {
-    std::memcpy(value.data(), utf8.data(), utf8.size());
+    -> llvm::Expected<std::string> {
+#ifdef _WIN32
+  std::string utf8(path.native().size() * 3, '\0');
+  const auto* source =
+      reinterpret_cast<const llvm::UTF16*>(path.native().data());
+  const auto* sourceEnd = source + path.native().size();
+  auto* output = reinterpret_cast<llvm::UTF8*>(utf8.data());
+  auto* const outputEnd = output + utf8.size();
+  if (llvm::ConvertUTF16toUTF8(&source, sourceEnd, &output, outputEnd,
+                               llvm::strictConversion) != llvm::conversionOK) {
+    return makeError(QDMI_ERROR_INVALIDARGUMENT,
+                     "Invalid native filesystem path");
   }
-  return value;
+  utf8.resize(
+      static_cast<size_t>(reinterpret_cast<char*>(output) - utf8.data()));
+  return utf8;
+#else
+  return path.native();
+#endif
 }
 
-/// Decode a UTF-8 filesystem path into the native representation.
+/// Decode a path from LLVM's UTF-8 Windows filesystem representation.
 [[nodiscard]] inline auto pathFromString(const std::string_view value)
-    -> std::filesystem::path {
-  std::u8string utf8(value.size(), u8'\0');
-  if (!value.empty()) {
-    std::memcpy(utf8.data(), value.data(), value.size());
+    -> llvm::Expected<std::filesystem::path> {
+#ifdef _WIN32
+  llvm::SmallVector<wchar_t, 256> native;
+  if (const auto error =
+          llvm::sys::windows::UTF8ToUTF16(llvm::StringRef(value), native)) {
+    return makeError(QDMI_ERROR_INVALIDARGUMENT,
+                     "Invalid UTF-8 filesystem path: " + error.message());
   }
-  return {utf8};
+  return std::filesystem::path(std::wstring(native.begin(), native.end()));
+#else
+  return std::filesystem::path(value);
+#endif
 }
 } // namespace detail
+
+/// Return an error for failures and log provider warnings.
+[[nodiscard]] llvm::Error checkError(int result, const llvm::Twine& message);
+
+/// Log an owned error and return its original QDMI status at a C boundary.
+int toStatus(llvm::Error error);
 
 template <class Concrete> class Singleton {
 protected:
@@ -187,16 +226,6 @@ constexpr auto toString(const QDMI_STATUS result) -> const char* {
   }
   llvm_unreachable("Invalid QDMI enum value");
 }
-
-/// Throws an exception if the result indicates an error.
-///
-/// @param result The result of a QDMI operation
-/// @param msg The error message to include in the exception
-/// @throws std::bad_alloc if the result is QDMI_ERROR_OUTOFMEM
-/// @throws std::out_of_range if the result is QDMI_ERROR_OUTOFRANGE
-/// @throws std::invalid_argument if the result is QDMI_ERROR_INVALIDARGUMENT
-/// @throws std::runtime_error for all other error results
-auto throwIfError(int result, const std::string& msg) -> void;
 
 /// Returns the string representation of the given session parameter @p param.
 constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {

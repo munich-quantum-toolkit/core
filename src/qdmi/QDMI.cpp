@@ -18,6 +18,7 @@
 #include "qdmi/client.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
@@ -163,27 +164,27 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 }
 
 [[nodiscard]] auto packagedDriverPath() -> std::filesystem::path {
-  const auto directory = detail::moduleDirectory(
+  auto directory = detail::moduleDirectory(
       reinterpret_cast<const void*>(&packagedDriverPath));
-  if (directory.empty()) {
-    throw std::runtime_error("Cannot locate the MQT Core QDMI library");
+  if (!directory) {
+    throw std::runtime_error(llvm::toString(directory.takeError()));
   }
   auto filename = std::filesystem::path{MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME};
   for (const auto& candidate : {
-           directory / filename,
-           directory / "lib" / filename,
-           directory / "lib64" / filename,
-           directory / "bin" / filename,
-           directory.parent_path() / "lib" / filename,
-           directory.parent_path() / "lib64" / filename,
-           directory.parent_path() / "bin" / filename,
+           *directory / filename,
+           *directory / "lib" / filename,
+           *directory / "lib64" / filename,
+           *directory / "bin" / filename,
+           directory->parent_path() / "lib" / filename,
+           directory->parent_path() / "lib64" / filename,
+           directory->parent_path() / "bin" / filename,
        }) {
     if (std::filesystem::exists(candidate)) {
       return candidate;
     }
   }
 #ifdef _WIN32
-  return directory / filename;
+  return *directory / filename;
 #else
   return filename;
 #endif
@@ -196,7 +197,11 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   }
   if (const auto environment =
           llvm::sys::Process::GetEnv("MQT_CORE_QDMI_DRIVER")) {
-    return normalizePath(detail::pathFromString(*environment));
+    auto path = detail::pathFromString(*environment);
+    if (!path) {
+      throw std::invalid_argument(llvm::toString(path.takeError()));
+    }
+    return normalizePath(*path);
   }
   const auto packaged = packagedDriverPath();
   return packaged.has_parent_path() ? normalizePath(packaged) : packaged;
@@ -241,8 +246,11 @@ template <class Function>
   }
   auto* const library = openLibrary(path);
   if (library == nullptr) {
-    throw std::runtime_error("Cannot load QDMI driver '" +
-                             detail::pathToString(path) + "'");
+    auto filename = detail::pathToString(path);
+    if (!filename) {
+      throw std::invalid_argument(llvm::toString(filename.takeError()));
+    }
+    throw std::runtime_error("Cannot load QDMI driver '" + *filename + "'");
   }
 
   const std::shared_ptr<void> owner{
@@ -331,8 +339,11 @@ void builtin_driver::addManifest(const std::filesystem::path& path) {
     throw std::runtime_error(
         "The MQT Core QDMI driver does not support device manifests");
   }
-  const auto filename = detail::pathToString(normalizePath(path));
-  throwIfError(api->extension.addManifest(filename.c_str()),
+  auto filename = detail::pathToString(normalizePath(path));
+  if (!filename) {
+    throw std::invalid_argument(llvm::toString(filename.takeError()));
+  }
+  throwIfError(api->extension.addManifest(filename->c_str()),
                "Registering QDMI device manifest");
 }
 
@@ -1191,7 +1202,7 @@ Session::Session(const SessionConfig& config) {
     const auto status = static_cast<QDMI_STATUS>(api().session_set_parameter(
         session_->handle.get(), param, value->size() + 1U, value->c_str()));
     if (status == QDMI_ERROR_NOTSUPPORTED) {
-      qdmi::diagnostics::info("Session parameter {} not supported (skipped)",
+      qdmi::diagnostics::info("Session parameter {0} not supported (skipped)",
                               qdmi::toString(param));
       return;
     }
@@ -1206,8 +1217,11 @@ Session::Session(const SessionConfig& config) {
 
   setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
   if (config.authFile) {
-    const std::optional authFile = detail::pathToString(*config.authFile);
-    setParameter(authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+    auto authFile = detail::pathToString(*config.authFile);
+    if (!authFile) {
+      throw std::invalid_argument(llvm::toString(authFile.takeError()));
+    }
+    setParameter(*authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
   }
   setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
   setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);

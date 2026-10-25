@@ -188,7 +188,7 @@ struct Execution {
         rc = jitSession.sampleCounts(numShots_, outcomes, &stateAvailable);
       }
       if (rc != 0) {
-        qdmi::diagnostics::error("QIR program returned exit code {}", rc);
+        qdmi::diagnostics::error("QIR program returned exit code {0}", rc);
         return false;
       }
       if (terminalOutput) {
@@ -258,7 +258,7 @@ struct Execution {
         }
       }
       if (firstError != 0) {
-        qdmi::diagnostics::error("QIR program returned exit code {}",
+        qdmi::diagnostics::error("QIR program returned exit code {0}",
                                  firstError);
         return false;
       }
@@ -309,7 +309,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
     response.succeeded =
         qasm ? execution.qasmProgram() : execution.qirProgram();
   } catch (const std::exception& error) {
-    qdmi::diagnostics::error("DDSIM program failed: {}", error.what());
+    qdmi::diagnostics::error("DDSIM program failed: {0}", error.what());
   }
   if (response.succeeded) {
     response.shotCount = execution.shotCount_;

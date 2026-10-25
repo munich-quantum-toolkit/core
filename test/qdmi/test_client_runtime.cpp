@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/QDMI.hpp"
+#include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
 
 #include "TestUtils.hpp"
@@ -17,9 +18,12 @@
 
 #include "qdmi/constants.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -27,6 +31,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #ifndef _WIN32
@@ -53,9 +58,111 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
     const auto* anchor =
         dlsym(library.get(), "QDMI_driver_get_client_abi_version");
     ASSERT_NE(anchor, nullptr) << dlerror();
-    EXPECT_EQ(detail::moduleDirectory(anchor),
-              std::filesystem::canonical(directory.path()));
+    auto located = detail::moduleDirectory(anchor);
+    ASSERT_TRUE(!!located) << llvm::toString(located.takeError());
+    EXPECT_EQ(*located, std::filesystem::canonical(directory.path()));
   }
+}
+#endif
+
+TEST(ClientRuntimeTest, PreservesQDMIErrorStatus) {
+  EXPECT_EQ(toStatus(checkError(QDMI_SUCCESS, "success")), QDMI_SUCCESS);
+  EXPECT_EQ(toStatus(checkError(QDMI_WARN_GENERAL, "warning")), QDMI_SUCCESS);
+  for (const auto status :
+       {QDMI_ERROR_INVALIDARGUMENT, QDMI_ERROR_OUTOFMEM, QDMI_ERROR_NOTFOUND}) {
+    EXPECT_EQ(toStatus(checkError(status, "provider failure")), status);
+  }
+}
+
+TEST(ClientRuntimeTest, RejectsMissingModuleAnchors) {
+  EXPECT_EQ(toStatus(detail::moduleDirectory(nullptr).takeError()),
+            QDMI_ERROR_INVALIDARGUMENT);
+  int anchor = 0;
+  EXPECT_EQ(toStatus(detail::moduleDirectory(&anchor).takeError()),
+            QDMI_ERROR_FATAL);
+}
+
+TEST(ClientRuntimeTest, ConvertsPathsWithoutLosingCodePoints) {
+  const std::string text = "\xef\xbb\xbf"
+                           "devices/\xc3\xa4-\xf0\x9f\x8e\xaf.json";
+  auto path = detail::pathFromString(text);
+  ASSERT_TRUE(!!path) << llvm::toString(path.takeError());
+  auto encoded = detail::pathToString(*path);
+  ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
+  EXPECT_EQ(*encoded, text);
+  auto empty = detail::pathFromString("");
+  ASSERT_TRUE(!!empty) << llvm::toString(empty.takeError());
+  EXPECT_TRUE(empty->empty());
+}
+
+TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
+  const mqt::test::TemporaryDirectory directory;
+  auto filename = detail::pathFromString("\xc3\xa4-\xf0\x9f\x8e\xaf.json");
+  ASSERT_TRUE(!!filename) << llvm::toString(filename.takeError());
+  const auto path = directory.path() / *filename;
+  auto encoded = detail::pathToString(path);
+  ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
+  std::error_code error;
+  {
+    llvm::raw_fd_ostream output(*encoded, error);
+    ASSERT_FALSE(error) << error.message();
+    output << "{}";
+  }
+  std::optional<std::string> inlineJson;
+  std::optional<std::filesystem::path> file;
+  EXPECT_EQ(detail::setDeviceConfigurationParameter(
+                QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, encoded->size() + 1,
+                encoded->c_str(), inlineJson, file),
+            QDMI_SUCCESS);
+  EXPECT_EQ(file, path);
+  auto explicitConfig = detail::loadDeviceConfiguration(
+      inlineJson, file, "MQT_CORE_TEST_INLINE_CONFIG",
+      "MQT_CORE_TEST_FILE_CONFIG", "unused", nullptr);
+  ASSERT_TRUE(!!explicitConfig) << llvm::toString(explicitConfig.takeError());
+  EXPECT_EQ(explicitConfig->json, "{}");
+  const ScopedEnvironmentVariable noInline{"MQT_CORE_TEST_INLINE_CONFIG",
+                                           std::nullopt};
+  const ScopedEnvironmentVariable environment{"MQT_CORE_TEST_FILE_CONFIG",
+                                              std::nullopt};
+#ifdef _WIN32
+  ASSERT_EQ(_wputenv_s(L"MQT_CORE_TEST_FILE_CONFIG", path.c_str()), 0);
+#else
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  ASSERT_EQ(setenv("MQT_CORE_TEST_FILE_CONFIG", encoded->c_str(), 1), 0);
+#endif
+  auto environmentConfig = detail::loadDeviceConfiguration(
+      std::nullopt, std::nullopt, "MQT_CORE_TEST_INLINE_CONFIG",
+      "MQT_CORE_TEST_FILE_CONFIG", "unused", nullptr);
+  ASSERT_TRUE(!!environmentConfig)
+      << llvm::toString(environmentConfig.takeError());
+  EXPECT_EQ(environmentConfig->json, "{}");
+}
+
+#ifdef _WIN32
+TEST(ClientRuntimeTest, RejectsMalformedPathsWithoutReplacingConfiguration) {
+  EXPECT_EQ(toStatus(detail::pathFromString("\xff").takeError()),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(toStatus(detail::pathToString(std::filesystem::path(
+                                              std::wstring(1, wchar_t{0xd800})))
+                         .takeError()),
+            QDMI_ERROR_INVALIDARGUMENT);
+  std::optional<std::string> inlineJson;
+  std::optional<std::filesystem::path> file = "previous.json";
+  const std::string malformed = "\xff";
+  EXPECT_EQ(detail::setDeviceConfigurationParameter(
+                QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, malformed.size() + 1,
+                malformed.c_str(), inlineJson, file),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(file, std::filesystem::path("previous.json"));
+}
+#else
+TEST(ClientRuntimeTest, PreservesNativePathBytes) {
+  const std::string bytes = "\xff";
+  auto path = detail::pathFromString(bytes);
+  ASSERT_TRUE(!!path) << llvm::toString(path.takeError());
+  auto encoded = detail::pathToString(*path);
+  ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
+  EXPECT_EQ(*encoded, bytes);
 }
 #endif
 

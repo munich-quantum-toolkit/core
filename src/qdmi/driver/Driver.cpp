@@ -20,6 +20,8 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
+#include "llvm/Support/Error.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -57,17 +59,22 @@ namespace {
 /// Loads the device library with the given name, searching in the driver
 /// directory if no path is specified.
 [[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
-  const auto requested = detail::pathFromString(libName);
-  // Bare filenames are resolved relative to the Driver. Configured paths are
-  // already absolute or relative to their declaring file.
-  const auto path = requested.has_parent_path()
-                        ? requested
-                        : detail::moduleDirectory(reinterpret_cast<const void*>(
-                              &loadDeviceLibrary)) /
-                              requested;
+  auto requested = detail::pathFromString(libName);
+  if (!requested) {
+    throw std::invalid_argument(llvm::toString(requested.takeError()));
+  }
+  auto path = *requested;
+  if (!path.has_parent_path()) {
+    auto directory = detail::moduleDirectory(
+        reinterpret_cast<const void*>(&loadDeviceLibrary));
+    if (!directory) {
+      throw std::runtime_error(llvm::toString(directory.takeError()));
+    }
+    path = *directory / path;
+  }
   // Search beside the device DLL for its dependencies. This is required for
   // device implementations such as DDSIM in an installed Python wheel.
-  return LoadLibraryExW(path.wstring().c_str(), nullptr,
+  return LoadLibraryExW(path.c_str(), nullptr,
                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
                             LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 }
@@ -277,7 +284,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
           deviceSession_, param, value->size() + 1, value->data());
       if (status == QDMI_ERROR_NOTSUPPORTED && !strict) {
         diagnostics::info(
-            "Device session parameter {} not supported by device (skipped)",
+            "Device session parameter {0} not supported by device (skipped)",
             toString(param));
         return;
       }
@@ -288,8 +295,11 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
     setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
     setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
     if (config.authFile) {
-      setParameter(detail::pathToString(*config.authFile),
-                   QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
+      auto filename = detail::pathToString(*config.authFile);
+      if (!filename) {
+        throw std::invalid_argument(llvm::toString(filename.takeError()));
+      }
+      setParameter(*filename, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
     }
     setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
     setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
@@ -306,8 +316,12 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
             if constexpr (std::is_same_v<Source, InlineDeviceConfiguration>) {
               setParameter(source.json, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
             } else {
-              setParameter(detail::pathToString(source.path),
-                           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+              auto filename = detail::pathToString(source.path);
+              if (!filename) {
+                throw std::invalid_argument(
+                    llvm::toString(filename.takeError()));
+              }
+              setParameter(*filename, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
             }
           },
           *config.deviceConfiguration);
@@ -790,10 +804,13 @@ auto Driver::open(const std::string_view id) -> QDMI_Device {
 
   std::unique_ptr<QDMI_Device_impl_d> candidate;
   try {
+    auto filename = detail::pathToString(definition.library);
+    if (!filename) {
+      throw std::invalid_argument(llvm::toString(filename.takeError()));
+    }
     candidate = std::make_unique<QDMI_Device_impl_d>(
-        loadDeviceAPI(detail::pathToString(definition.library),
-                      definition.prefix),
-        definition.session, definition.id);
+        loadDeviceAPI(*filename, definition.prefix), definition.session,
+        definition.id);
   } catch (...) {
     {
       const std::scoped_lock lock(stateMutex_);
@@ -853,8 +870,11 @@ auto Driver::openFresh(const std::string_view id,
   const auto config =
       detail::mergeSessionConfig(std::move(definition.session), overrides);
   validateSessionConfig(config);
-  auto api = loadDeviceAPI(detail::pathToString(definition.library),
-                           definition.prefix);
+  auto filename = detail::pathToString(definition.library);
+  if (!filename) {
+    throw std::invalid_argument(llvm::toString(filename.takeError()));
+  }
+  auto api = loadDeviceAPI(*filename, definition.prefix);
   return std::make_shared<QDMI_Device_impl_d>(std::move(api), config,
                                               definition.id, nullptr, strict);
 }
@@ -878,7 +898,11 @@ void Driver::materializeClientCatalog() {
           if (const auto definition =
                   std::ranges::find(definitions_, id, &DeviceDefinition::id);
               definition != definitions_.end()) {
-            library = detail::pathToString(definition->library);
+            auto filename = detail::pathToString(definition->library);
+            if (!filename) {
+              throw std::invalid_argument(llvm::toString(filename.takeError()));
+            }
+            library = std::move(*filename);
           }
         } catch (...) {
           library.clear();
@@ -886,7 +910,7 @@ void Driver::materializeClientCatalog() {
         const std::string_view libraryText =
             library.empty() ? "<unknown>" : std::string_view(library);
         qdmi::diagnostics::warn(
-            "Skipping configured QDMI device '{}' from '{}': {}", id,
+            "Skipping configured QDMI device '{0}' from '{1}': {2}", id,
             libraryText, ex.what());
       }
     }
@@ -959,8 +983,11 @@ MQT_CORE_QDMI_driver_add_manifest_v1(const char* const manifestPath) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   try {
-    return qdmi::detail::stageDeviceManifest(
-        qdmi::detail::pathFromString(manifestPath));
+    auto path = qdmi::detail::pathFromString(manifestPath);
+    if (!path) {
+      return qdmi::toStatus(path.takeError());
+    }
+    return qdmi::detail::stageDeviceManifest(*path);
   } catch (const std::bad_alloc&) {
     return QDMI_ERROR_OUTOFMEM;
   } catch (...) {

@@ -69,18 +69,17 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
   }
   std::optional<qdmi::detail::LoadedDeviceConfiguration> loaded;
   try {
-    int loadStatus = QDMI_SUCCESS;
-    loaded = qdmi::detail::loadDeviceConfiguration(
+    auto configurationSource = qdmi::detail::loadDeviceConfiguration(
         inlineConfiguration, fileConfiguration, "MQT_CORE_QDMI_SC_CONFIG_JSON",
         "MQT_CORE_QDMI_SC_CONFIG_FILE", "mqt-core-qdmi-sc-device.json",
-        reinterpret_cast<const void*>(&MQT_SC_QDMI_device_initialize),
-        loadStatus);
-    if (!loaded) {
-      return loadStatus;
+        reinterpret_cast<const void*>(&MQT_SC_QDMI_device_initialize));
+    if (!configurationSource) {
+      return qdmi::toStatus(configurationSource.takeError());
     }
+    loaded = std::move(*configurationSource);
     auto parsed = sc::readJSON(loaded->json, loaded->source);
     if (!parsed) {
-      qdmi::diagnostics::error("Invalid SC device configuration from {}: {}",
+      qdmi::diagnostics::error("Invalid SC device configuration from {0}: {1}",
                                loaded->source,
                                llvm::toString(parsed.takeError()));
       return QDMI_ERROR_INVALIDARGUMENT;
@@ -191,20 +190,20 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
     qdmi::diagnostics::error(
-        "Out of memory while initializing SC device from {}", source);
+        "Out of memory while initializing SC device from {0}", source);
     return QDMI_ERROR_OUTOFMEM;
   } catch (const std::invalid_argument& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::diagnostics::error("Invalid SC device configuration from {}: {}",
+    qdmi::diagnostics::error("Invalid SC device configuration from {0}: {1}",
                              source, error.what());
     return QDMI_ERROR_INVALIDARGUMENT;
   } catch (const std::exception& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::diagnostics::error("Failed to initialize SC device from {}: {}",
+    qdmi::diagnostics::error("Failed to initialize SC device from {0}: {1}",
                              source, error.what());
     return QDMI_ERROR_FATAL;
   }
