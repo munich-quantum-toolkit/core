@@ -21,9 +21,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
-#include <ios>
-#include <istream>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
@@ -313,19 +310,5 @@ llvm::Expected<Device> readJSON(const std::string& path) {
                                    path.c_str());
   }
   return readJSON((*buffer)->getBuffer(), path);
-}
-llvm::Expected<Device> readJSON(std::istream& stream, std::string_view source) {
-  try {
-    const std::string json{std::istreambuf_iterator<char>(stream),
-                           std::istreambuf_iterator<char>()};
-    if (stream.bad()) {
-      return llvm::createStringError(llvm::StringRef(source) +
-                                     ": failed to read JSON stream");
-    }
-    return readJSON(json, source);
-  } catch (const std::ios_base::failure& error) {
-    return llvm::createStringError(llvm::StringRef(source) + ": " +
-                                   error.what());
-  }
 }
 } // namespace sc

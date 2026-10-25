@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "qdmi/TestUtils.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
 
 #include "gmock/gmock-matchers.h"
@@ -21,12 +22,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
-#include <ios>
-#include <istream>
 #include <limits>
-#include <streambuf>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -363,19 +363,16 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
             (std::vector<uint64_t>{2, 0, 1}));
 }
 
-TEST(ScConfigurationTest, ReportsStreamReadFailures) {
-  class FailingBuffer final : public std::streambuf {
-  protected:
-    int_type underflow() override {
-      throw std::ios_base::failure("injected read failure");
-    }
-  } buffer;
-  std::istream stream(&buffer);
-  auto parsed = readJSON(stream, "failing-stream");
+TEST(ScConfigurationTest, ReportsFileReadFailures) {
+  const mqt::test::TemporaryDirectory directory;
+  const auto path = (directory.path() / "missing.json").string();
+  auto parsed = readJSON(path);
   ASSERT_FALSE(static_cast<bool>(parsed));
-  const auto message = llvm::toString(parsed.takeError());
-  EXPECT_THAT(message, testing::HasSubstr("failing-stream"));
-  EXPECT_THAT(message, testing::HasSubstr("injected read failure"));
+  auto error = parsed.takeError();
+  llvm::visitErrors(error, [](const llvm::ErrorInfoBase& info) {
+    EXPECT_EQ(info.convertToErrorCode(), std::errc::no_such_file_or_directory);
+  });
+  EXPECT_THAT(llvm::toString(std::move(error)), testing::HasSubstr(path));
 }
 
 } // namespace sc
