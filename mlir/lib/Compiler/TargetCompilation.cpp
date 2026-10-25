@@ -20,7 +20,6 @@
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
-#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -29,7 +28,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/WalkResult.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -243,14 +241,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
-  // Unrolling exposes static tensor slots and unreachable callees.
-  pm.addPass(mqt::createSimplifyClassicalControl());
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
-          GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(createCSEPass());
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(createSymbolDCEPass());
+  // Unrolling exposes static register indices and tensor slots.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createElideTerminalSwapsPass());

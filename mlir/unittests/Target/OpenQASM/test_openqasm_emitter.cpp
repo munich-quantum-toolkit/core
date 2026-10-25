@@ -112,6 +112,23 @@ barrier q[first:step:0], r[1:2];
   EXPECT_EQ(barriers, 1);
 }
 
+TEST(OpenQASMTargetTest, ArrayIterationDoesNotCopyOrUnrollTheArray) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 3] a = {1, 2, 3}; "
+      "int sum = 0; for int x in a[:-1:] { sum += x; }",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0, loops = 0, loads = 0;
+  moduleOp->walk([&](memref::AllocaOp) { ++arrays; });
+  moduleOp->walk([&](scf::ForOp) { ++loops; });
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  EXPECT_EQ(arrays, 1);
+  EXPECT_EQ(loops, 1);
+  EXPECT_EQ(loads, 1);
+}
+
 TEST(OpenQASMTargetTest, RangeCopiesReuseScratchOutsideLoops) {
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(
@@ -1985,7 +2002,36 @@ TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
     return operations;
   };
 
-  EXPECT_EQ(operationCount(2), operationCount(100'000));
+  EXPECT_EQ(operationCount(2),
+            operationCount(std::numeric_limits<int64_t>::max()));
+}
+
+TEST(OpenQASMTargetTest, ImportsLargeQuantumAndClassicalRegisters) {
+  constexpr llvm::StringLiteral source =
+      "OPENQASM 3.1; include \"stdgates.inc\"; "
+      "qubit[2000001] q; bit[2000000] c; x q[2000000]; "
+      "c[1999999] = measure q[2000000]; "
+      "output bit result; result = c[1999999];";
+  MLIRContext context;
+  auto moduleOp =
+      qc::translateOpenQASMToQC(source, &context, {.maxOperations = 32});
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t quantumRegisters = 0;
+  moduleOp->walk([&](memref::AllocOp alloc) {
+    if (isa<qc::QubitType>(alloc.getType().getElementType())) {
+      ++quantumRegisters;
+      EXPECT_EQ(alloc.getType().getDimSize(0), 2'000'001);
+    }
+  });
+  EXPECT_EQ(quantumRegisters, 1);
+  size_t classicalRegisters = 0;
+  moduleOp->walk([&](cbit::AllocOp alloc) {
+    if (alloc.getType().getWidth() == 2'000'000) {
+      ++classicalRegisters;
+    }
+  });
+  EXPECT_EQ(classicalRegisters, 1);
 }
 
 TEST(OpenQASMTargetTest, LargeStaticBarrierAvoidsAliasChecks) {

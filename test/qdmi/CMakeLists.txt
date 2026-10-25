@@ -23,21 +23,22 @@ if(TARGET MQT::CoreQDMI)
 
   package_add_test_with_working_dir(mqt-core-qdmi-client-runtime-test MQT::CoreQDMI
                                     "${CMAKE_CURRENT_BINARY_DIR}" test_client_runtime.cpp)
-  target_link_libraries(mqt-core-qdmi-client-runtime-test PRIVATE nlohmann_json::nlohmann_json)
+  target_link_libraries(mqt-core-qdmi-client-runtime-test PRIVATE LLVMSupport)
   target_compile_definitions(
     mqt-core-qdmi-client-runtime-test
-    PRIVATE "MQT_CORE_QDMI_TEST_DRIVER=\"$<TARGET_FILE:qdmi::example_driver>\""
-            "MQT_CORE_QDMI_INCOMPLETE_DRIVER=\"$<TARGET_FILE:mqt-core-qdmi-incomplete-client>\""
-            "MQT_CORE_QDMI_INCOMPATIBLE_DRIVER=\"$<TARGET_FILE:mqt-core-qdmi-incompatible-client>\""
-            "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE:mqt-core-qdmi-session-device>\""
-            "MQT_CORE_QDMI_EXAMPLE_CONFIG=\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/qdmi.conf\"")
+    PRIVATE
+      "MQT_CORE_QDMI_TEST_DRIVER=\"$<TARGET_FILE:qdmi::example_driver>\""
+      "MQT_CORE_QDMI_INCOMPLETE_DRIVER=\"$<TARGET_FILE:mqt-core-qdmi-incomplete-client>\""
+      "MQT_CORE_QDMI_INCOMPATIBLE_DRIVER=\"$<TARGET_FILE:mqt-core-qdmi-incompatible-client>\""
+      "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE:mqt-core-qdmi-session-device>\""
+      "MQT_CORE_QDMI_EXAMPLE_CONFIG=\"${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/qdmi.conf\"")
   file(
     GENERATE
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/qdmi.conf"
     CONTENT "$<TARGET_FILE:mqt-core-qdmi-session-device> TEST_SESSION test.example\n")
-  add_dependencies(
-    mqt-core-qdmi-client-runtime-test qdmi_example_driver mqt-core-qdmi-incomplete-client
-    mqt-core-qdmi-incompatible-client mqt-core-qdmi-session-device)
+  add_dependencies(mqt-core-qdmi-client-runtime-test qdmi_example_driver
+                   mqt-core-qdmi-incomplete-client mqt-core-qdmi-incompatible-client
+                   mqt-core-qdmi-session-device)
   mqt_copy_qdmi_runtime(mqt-core-qdmi-client-runtime-test)
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMI test_client.cpp)
@@ -46,15 +47,16 @@ if(TARGET MQT::CoreQDMI)
     GENERATE
     OUTPUT "${client_test_config}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"test.unsupported-program-formats\", \"library\": \"$<TARGET_FILE_NAME:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\"}\n    ]\n  }\n}\n"
-  )
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"test.unsupported-program-formats\", \"library\": \"$<TARGET_FILE_NAME:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\"}\n    ]\n  }\n}\n")
   add_custom_command(
     TARGET ${TARGET_NAME}
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mqt-core-qdmi-session-device>"
-            "$<TARGET_FILE_DIR:${TARGET_NAME}>")
-  target_compile_definitions(${TARGET_NAME}
-                             PRIVATE "MQT_CORE_QDMI_CLIENT_TEST_CONFIG=\"${client_test_config}\"")
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mqt-core-qdmi-session-device>"
+      "$<TARGET_FILE_DIR:${TARGET_NAME}>")
+  target_compile_definitions(
+    ${TARGET_NAME}
+    PRIVATE "MQT_CORE_QDMI_CLIENT_TEST_CONFIG=\"${client_test_config}\"")
   if(TARGET MQT::CoreQDMI_DDSIM_Device)
     target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_HAS_DDSIM_DEVICE)
   endif()

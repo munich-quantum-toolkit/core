@@ -23,6 +23,14 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
     - Only specific `PPROp`s are currently supported
     - The entry function must have a single block ending in `func.return`
     - Mutable classical-register arguments in helper functions are not supported
+    - Live old or duplicate array operands across mutating control-flow regions require numeric literals or zero arrays
+
+    Static classical arrays use internal reference storage. Non-Boolean arrays
+    become stack memrefs in programs without non-Boolean array arguments or
+    results. Programs with these interfaces retain tensor value semantics;
+    positive-width Boolean arrays use CBit registers.
+    Updates reuse storage unless an earlier array value remains live.
+    Loop-carried stack arrays must keep their incoming storage.
 
     Function definitions, results, and calls are preserved. Only the designated
     entry point remains public; helper functions become private. Calls remain generic
@@ -33,6 +41,8 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
                            "mlir::func::FuncDialect", "mlir::cbit::CBitDialect",
                            "mlir::math::MathDialect", "mlir::mqt::MQTDialect",
                            "mlir::scf::SCFDialect",
+                           "mlir::memref::MemRefDialect",
+                           "mlir::bufferization::BufferizationDialect",
                            "mlir::tensor::TensorDialect",
                            "mlir::qco::QCODialect",
                            "mlir::qtensor::QTensorDialect",

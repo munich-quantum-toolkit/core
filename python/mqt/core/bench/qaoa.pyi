@@ -29,6 +29,10 @@ class Evaluation:
     """The sampled cut quality on a cycle graph."""
 
     @property
+    def shots(self) -> int:
+        """The number of evaluated shots."""
+
+    @property
     def mean_cut(self) -> float:
         """The shot-weighted mean number of cut edges."""
 

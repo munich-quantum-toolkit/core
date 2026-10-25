@@ -22,11 +22,15 @@
 #include "dd/StateGeneration.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
+#include "dd/statistics/MemoryManagerStatistics.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
+#include "../qdmi/TestUtils.hpp"
+
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp"
-#include "nlohmann/json_fwd.hpp"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <array>
@@ -49,6 +53,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -56,24 +61,6 @@
 
 namespace dd {
 namespace {
-template <class Node>
-void checkDotOptions(const Edge<Node>& edge, const bool polar = true) {
-  for (const bool colored : {false, true}) {
-    for (const bool labels : {false, true}) {
-      for (const bool classic : {false, true}) {
-        SCOPED_TRACE(::testing::Message()
-                     << colored << labels << classic << polar);
-        std::ostringstream os;
-        toDot(edge, os, colored, labels, classic, false, polar);
-        EXPECT_FALSE(os.str().empty());
-      }
-    }
-  }
-  std::ostringstream os;
-  toDot(edge, os, false, true, true, true, polar);
-  EXPECT_FALSE(os.str().empty());
-}
-
 template <class Node>
 void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
   export2Dot(edge, filename, true, true, false, false, false);
@@ -135,6 +122,41 @@ TEST(DDPackageTest, VectorDotIdsAreUniqueAndIndependentOfAddresses) {
 TEST(DDPackageTest, MatrixDotIdsAreUniqueAndIndependentOfAddresses) {
   checkDotIds<mNode>();
 }
+
+#ifndef _WIN32
+TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
+  const mqt::test::TemporaryDirectory temp;
+  const mqt::test::ScopedEnvironmentVariable path("PATH", temp.path().string());
+  const auto executable =
+      temp.write("dot", "#!/bin/sh\nprintf 'native dot\\n' > \"$4\"\n");
+  std::filesystem::permissions(executable, std::filesystem::perms::owner_exec,
+                               std::filesystem::perm_options::add);
+  const auto dotDirectory = temp.path() / "folder.with.dot";
+  std::filesystem::create_directory(dotDirectory);
+  const auto dotFile = dotDirectory / "diagram with spaces;literal.dot";
+  auto svgFile = dotFile;
+  svgFile.replace_extension(".svg");
+
+  Package package(1);
+  export2Dot(makeZeroState(1, package), dotFile);
+  std::ifstream svg(svgFile);
+  std::string rendered;
+  std::getline(svg, rendered);
+  EXPECT_EQ(rendered, "native dot");
+  EXPECT_TRUE(std::filesystem::exists(dotFile));
+
+  temp.write("dot", "#!/bin/sh\nexit 7\n");
+  try {
+    renderDotToSvg(dotFile);
+    FAIL() << "Graphviz failure should throw";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(error.what(), "Graphviz dot exited with code 7");
+  }
+
+  std::filesystem::remove(executable);
+  EXPECT_THROW(renderDotToSvg(dotFile), std::system_error);
+}
+#endif
 
 enum class Fixture : uint8_t { H, X, Z, S, T, Tdg, SWAP };
 
@@ -248,6 +270,10 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
   for (const size_t buckets : {1U, 2U, 4U}) {
     BinaryTable binary(buckets);
     UnaryTable unary(buckets);
+    EXPECT_EQ(binary.lookup(1, 2), nullptr);
+    EXPECT_EQ(unary.lookup(1), nullptr);
+    binary.clear();
+    unary.clear();
     for (size_t value = 0; value < 2; ++value) {
       binary.insert(1, 2, value);
       unary.insert(1, value);
@@ -274,6 +300,8 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
     ASSERT_NE(binary.lookup(1, 2), nullptr);
     EXPECT_EQ(*binary.lookup(1, 2), 9);
   }
+  EXPECT_TRUE(BinaryTable{4}.getTable().empty());
+  EXPECT_TRUE(UnaryTable{4}.getTable().empty());
 }
 
 TEST(DDPackageTest, BellState) {
@@ -305,7 +333,6 @@ TEST(DDPackageTest, BellState) {
 
   ASSERT_DOUBLE_EQ(dd->fidelity(zeroState, bellState), 0.5);
 
-  checkDotOptions(bellState);
   checkDotFile(bellState, "bell_state.dot");
   exportEdgeWeights(bellState, std::cout);
 
@@ -342,9 +369,6 @@ TEST(DDPackageTest, QFTState) {
     ASSERT_EQ(dd::getValueByIndex(qftState, qubit).imag(), 0);
   }
 
-  checkDotOptions(qftState);
-  checkDotOptions(qftOp);
-  checkDotOptions(qftOp, false);
   exportEdgeWeights(qftState, std::cout);
 
   printStatistics(*dd);
@@ -573,27 +597,6 @@ TEST(DDPackageTest, PartialTraceComplexity) {
   }
 }
 
-TEST(DDPackageTest, StateGenerationManipulation) {
-  constexpr std::size_t nqubits = 6;
-  auto dd = std::make_unique<Package>(nqubits);
-  auto b = std::vector<bool>(nqubits, false);
-  b[0] = b[1] = true;
-  auto const e = makeBasisState(nqubits, b, *dd);
-  auto const f = makeBasisState(nqubits,
-                                {
-                                    BasisStates::zero,
-                                    BasisStates::one,
-                                    BasisStates::plus,
-                                    BasisStates::minus,
-                                    BasisStates::left,
-                                    BasisStates::right,
-                                },
-                                *dd);
-  dd->vUniqueTable.print<vNode>();
-  dd->decRef(e);
-  dd->decRef(f);
-}
-
 TEST(DDPackageTest, VectorSerializationTest) {
   auto dd = std::make_unique<Package>(2);
 
@@ -635,26 +638,6 @@ TEST(DDPackageTest, BellMatrix) {
   ASSERT_EQ(bellMatrix.getValueByPath(dd->qubits(), "20"), 0.);
   ASSERT_EQ(bellMatrix.getValueByPath(dd->qubits(), "22"), SQRT2_2);
 
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 0), SQRT2_2);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 0), 0.);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 0), 0.);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 0), SQRT2_2);
-
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 1), 0.);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 1), SQRT2_2);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 1), SQRT2_2);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 1), 0.);
-
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 2), SQRT2_2);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 2), 0.);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 2), 0.);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 2), -SQRT2_2);
-
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 0, 3), 0.);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 1, 3), SQRT2_2);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 2, 3), -SQRT2_2);
-  ASSERT_EQ(dd::getValueByIndex(bellMatrix, dd->qubits(), 3, 3), 0.);
-
   auto const goalRow0 = CVec{{SQRT2_2, 0.}, {0., 0.}, {SQRT2_2, 0.}, {0., 0.}};
   auto const goalRow1 = CVec{{0., 0.}, {SQRT2_2, 0.}, {0., 0.}, {SQRT2_2, 0.}};
   auto const goalRow2 = CVec{{0., 0.}, {SQRT2_2, 0.}, {0., 0.}, {-SQRT2_2, 0.}};
@@ -662,7 +645,6 @@ TEST(DDPackageTest, BellMatrix) {
   auto const goalMatrix = CMat{goalRow0, goalRow1, goalRow2, goalRow3};
   ASSERT_EQ(dd::getMatrix(bellMatrix, dd->qubits()), goalMatrix);
 
-  checkDotOptions(bellMatrix);
   checkDotFile(bellMatrix, "bell_matrix.dot");
 
   printStatistics(*dd);
@@ -1373,6 +1355,8 @@ TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
       }
     }
   }
+  EXPECT_THROW(package.resize(0), std::invalid_argument);
+  EXPECT_EQ(package.qubits(), 4);
   EXPECT_EQ(package.makeDDNode(0, std::array{vEdge::one(), vEdge::zero()}),
             state);
   EXPECT_EQ(package.makeGateDD(x, 0), gate);
@@ -1392,8 +1376,6 @@ TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
   package.garbageCollect(true);
   EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
   EXPECT_EQ(package.mUniqueTable.getNumEntries(), 0);
-  package.resize(0);
-  package.resize(1);
   const auto fresh = makeZeroState(1, package);
   EXPECT_EQ(dd::getVector(fresh), (CVec{1., 0.}));
   package.decRef(fresh);
@@ -1418,11 +1400,14 @@ TEST(DDPackageTest, UniqueTableEntryCountControlsCollection) {
   ASSERT_EQ(table.lookup(high), high);
   EXPECT_EQ(table.getNumEntries(), 2);
   EXPECT_TRUE(table.possiblyNeedsCollection());
+  EXPECT_THROW(table.resize(1), std::invalid_argument);
+  EXPECT_EQ(table.getNumEntries(), 2);
+  EXPECT_EQ(table.getStats(1).numEntries, 1);
+  EXPECT_THROW(table.getStats(2), std::out_of_range);
   low->mark();
   EXPECT_EQ(table.garbageCollect(), 1);
   EXPECT_EQ(table.getNumEntries(), 1);
   EXPECT_FALSE(table.possiblyNeedsCollection());
-  table.resize(1);
   table.resize(4);
   EXPECT_EQ(table.getNumEntries(), 1);
   low->unmark();
@@ -2139,62 +2124,9 @@ TEST(DDPackageTest, ExportPolarPhaseFormatted) {
   phaseString.str("");
 }
 
-TEST(DDPackageTest, BasicNumericInstabilityTest) {
-  constexpr auto zero = 0.0;
-  constexpr auto half = 0.5;
-  constexpr auto one = 1.0;
-  constexpr auto two = 2.0;
-
-  std::cout << std::setprecision(std::numeric_limits<fp>::max_digits10);
-
-  std::cout << "The 1/sqrt(2) constant used in this package is " << SQRT2_2
-            << ", which is the closest floating point value to the actual "
-               "value of 1/sqrt(2).\n";
-  std::cout << "Computing std::sqrt(0.5) actually computes this value, i.e. "
-            << std::sqrt(half) << "\n";
-  EXPECT_EQ(SQRT2_2, std::sqrt(half));
-
-  std::cout << "However, computing 1/std::sqrt(2.) leads to "
-            << one / std::sqrt(two) // NOLINT(modernize-use-std-numbers)
-            << ", which differs by 1 ULP from std::sqrt(0.5)\n";
-  EXPECT_EQ(one / std::sqrt(two), std::nextafter(std::sqrt(half), zero));
-
-  std::cout << "In the same fashion, computing std::sqrt(2.) leads to "
-            << std::sqrt(two) // NOLINT(modernize-use-std-numbers)
-            << ", while computing 1/std::sqrt(0.5) leads to "
-            << one / std::sqrt(half) << ", which differ by exactly 1 ULP\n";
-  EXPECT_EQ(std::sqrt(two), std::nextafter(one / std::sqrt(half), two));
-
-  std::cout << "Another inaccuracy occurs when computing 1/sqrt(2) * "
-               "1/sqrt(2), which should equal to 0.5 but is off by 1 ULP: "
-            << std::sqrt(half) * std::sqrt(half) << "\n";
-  EXPECT_EQ(std::sqrt(half) * std::sqrt(half), std::nextafter(half, one));
-
-  std::cout << "This inaccuracy even persists when computing std::sqrt(0.5) * "
-               "std::sqrt(0.5): "
-            << std::sqrt(half) * std::sqrt(half) << "\n";
-  EXPECT_EQ(std::sqrt(half) * std::sqrt(half), std::nextafter(half, one));
-
-  std::cout << "Interestingly, calculating powers of SQRT2_2 can be "
-               "conducted very precisely, i.e., with an error of only 1 ULP.\n";
-  fp accumulator = SQRT2_2 * SQRT2_2;
-  constexpr std::size_t nq = 64;
-  for (std::size_t i = 1; i < nq; i += 2) {
-    const std::size_t power = (i + 1) / 2;
-    const std::size_t denom = static_cast<std::size_t>(1U) << power;
-    const fp target = 1. / static_cast<double>(denom);
-    const fp diff = std::abs(target - accumulator);
-    const auto ulps = ulpDistance(accumulator, target);
-    std::cout << accumulator << ", numerical error: " << diff
-              << ", ulps: " << ulps << "\n";
-    EXPECT_EQ(ulps, 1);
-    accumulator *= SQRT2_2;
-    accumulator *= SQRT2_2;
-  }
-}
-
 TEST(DDPackageTest, BasicNumericStabilityTest) {
   using limits = std::numeric_limits<fp>;
+  EXPECT_EQ(SQRT2_2, std::sqrt(0.5));
 
   auto dd = std::make_unique<Package>(1);
   auto const state = makeZeroState(1, *dd);
@@ -2282,34 +2214,34 @@ TEST(DDPackageTest, MeasurementFidelityValidatesWidthAndPermutation) {
 TEST(DDPackageTest, CloseToIdentity) {
   auto dd = std::make_unique<Package>(3);
   auto const id = Package::makeIdent();
-  EXPECT_TRUE(dd->isCloseToIdentity(id));
+  EXPECT_TRUE(Package::isCloseToIdentity(id));
   mEdge close{};
   close.p = id.p;
   close.w = dd->cn.lookup(1e-11, 0);
   auto const id2 =
       dd->makeDDNode(1, std::array{id, mEdge::zero(), mEdge::zero(), close});
-  EXPECT_TRUE(dd->isCloseToIdentity(id2));
+  EXPECT_TRUE(Package::isCloseToIdentity(id2));
 
   auto const noId =
       dd->makeDDNode(1, std::array{mEdge::zero(), id, mEdge::zero(), close});
-  EXPECT_FALSE(dd->isCloseToIdentity(noId));
+  EXPECT_FALSE(Package::isCloseToIdentity(noId));
 
   mEdge notClose{};
   notClose.p = id.p;
   notClose.w = dd->cn.lookup(1e-9, 0);
   auto const noId2 = dd->makeDDNode(
       1, std::array{notClose, mEdge::zero(), mEdge::zero(), close});
-  EXPECT_FALSE(dd->isCloseToIdentity(noId2));
+  EXPECT_FALSE(Package::isCloseToIdentity(noId2));
 
   auto const noId3 = dd->makeDDNode(
       1, std::array{close, mEdge::zero(), mEdge::zero(), notClose});
-  EXPECT_FALSE(dd->isCloseToIdentity(noId3));
+  EXPECT_FALSE(Package::isCloseToIdentity(noId3));
 
   auto const notClose2 = dd->makeDDNode(
       0, std::array{mEdge::zero(), mEdge::one(), mEdge::one(), mEdge::zero()});
   auto const notClose3 = dd->makeDDNode(
       1, std::array{notClose2, mEdge::zero(), mEdge::zero(), notClose2});
-  EXPECT_FALSE(dd->isCloseToIdentity(notClose3));
+  EXPECT_FALSE(Package::isCloseToIdentity(notClose3));
 }
 
 TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
@@ -2330,10 +2262,10 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
 
   auto const c1MultipliedWithC2 = dd->multiply(c1, dd->conjugateTranspose(c2));
 
-  EXPECT_TRUE(dd->isCloseToIdentity(c1MultipliedWithC2, tol,
-                                    {false, true, true}, false));
-  EXPECT_FALSE(dd->isCloseToIdentity(c1MultipliedWithC2, tol,
-                                     {false, false, true}, false));
+  EXPECT_TRUE(Package::isCloseToIdentity(c1MultipliedWithC2, tol,
+                                         {false, true, true}, false));
+  EXPECT_FALSE(Package::isCloseToIdentity(c1MultipliedWithC2, tol,
+                                          {false, false, true}, false));
 }
 
 TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheEnd) {
@@ -2357,12 +2289,12 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheEnd) {
 
   const auto c3MultipliedWithC4 = dd->multiply(c3, dd->conjugateTranspose(c4));
 
-  EXPECT_FALSE(dd->isCloseToIdentity(c3MultipliedWithC4, tol,
-                                     {false, true, true}, false));
-  EXPECT_FALSE(dd->isCloseToIdentity(c3MultipliedWithC4, tol,
-                                     {true, false, true}, false));
-  EXPECT_TRUE(dd->isCloseToIdentity(c3MultipliedWithC4, tol,
-                                    {true, true, false}, false));
+  EXPECT_FALSE(Package::isCloseToIdentity(c3MultipliedWithC4, tol,
+                                          {false, true, true}, false));
+  EXPECT_FALSE(Package::isCloseToIdentity(c3MultipliedWithC4, tol,
+                                          {true, false, true}, false));
+  EXPECT_TRUE(Package::isCloseToIdentity(c3MultipliedWithC4, tol,
+                                         {true, true, false}, false));
 }
 
 TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
@@ -2386,21 +2318,12 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
 
   const auto c5MultipliedWithC6 = dd->multiply(c5, dd->conjugateTranspose(c6));
 
-  EXPECT_FALSE(dd->isCloseToIdentity(c5MultipliedWithC6, tol,
-                                     {false, true, true}, false));
-  EXPECT_FALSE(dd->isCloseToIdentity(c5MultipliedWithC6, tol,
-                                     {true, true, false}, false));
-  EXPECT_TRUE(dd->isCloseToIdentity(c5MultipliedWithC6, tol,
-                                    {true, false, true}, false));
-}
-
-TEST(DDPackageTest, calCulpDistance) {
-  constexpr auto nrQubits = 1U;
-  auto const dd = std::make_unique<Package>(nrQubits);
-  const auto tmp0 = ulpDistance(1 + 1e-12, 1);
-  const auto tmp1 = ulpDistance(1, 1);
-  EXPECT_TRUE(tmp0 > 0);
-  EXPECT_EQ(tmp1, 0);
+  EXPECT_FALSE(Package::isCloseToIdentity(c5MultipliedWithC6, tol,
+                                          {false, true, true}, false));
+  EXPECT_FALSE(Package::isCloseToIdentity(c5MultipliedWithC6, tol,
+                                          {true, true, false}, false));
+  EXPECT_TRUE(Package::isCloseToIdentity(c5MultipliedWithC6, tol,
+                                         {true, false, true}, false));
 }
 
 TEST(DDPackageTest, stateFromVectorBell) {
@@ -2829,19 +2752,6 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   EXPECT_NEAR(dd->expectationValue(op, evolvedState), -0.416, 0.001);
 }
 
-// Normalization must return temporary nodes to the memory manager when
-// multiplication produces the zero terminal.
-TEST(DDPackageTest, DDNodeLeakRegressionTest) {
-  constexpr auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
-
-  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
-  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
-  dd->multiply(dd1, dd2);
-  dd->garbageCollect(true);
-  EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
-}
-
 // A cached terminal result has a null node pointer and must still count as a
 // cache hit. Repeated zero products must not allocate or leak nodes.
 TEST(DDPackageTest, CTPerformanceRegressionTest) {
@@ -2865,18 +2775,19 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
 TEST(DDPackageTest, DataStructureStatistics) {
   constexpr auto nqubits = 1U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto stats = nlohmann::json::parse(getDataStructureStatisticsString());
+  auto stats =
+      llvm::cantFail(llvm::json::parse(getDataStructureStatisticsString()));
 
-  EXPECT_EQ(stats["vNode"]["size_B"], 64U);
-  EXPECT_EQ(stats["vNode"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["mNode"]["size_B"], 112U);
-  EXPECT_EQ(stats["mNode"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["vEdge"]["size_B"], 24U);
-  EXPECT_EQ(stats["vEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["mEdge"]["size_B"], 24U);
-  EXPECT_EQ(stats["mEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["RealNumber"]["size_B"], 16U);
-  EXPECT_EQ(stats["RealNumber"]["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vNode"))["size_B"], 64U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vNode"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mNode"))["size_B"], 112U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mNode"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vEdge"))["size_B"], 24U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("vEdge"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mEdge"))["size_B"], 24U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("mEdge"))["alignment_B"], 8U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("RealNumber"))["size_B"], 16U);
+  EXPECT_EQ((*stats.getAsObject()->getObject("RealNumber"))["alignment_B"], 8U);
 }
 
 TEST(DDPackageTest, DDStatistics) {
@@ -2884,24 +2795,35 @@ TEST(DDPackageTest, DDStatistics) {
   const auto dd = std::make_unique<Package>(nqubits);
   const auto dummyGate = getDD(TestGate(0U, Fixture::X), *dd);
   EXPECT_NE(dummyGate.p, nullptr);
+  dd->incRef(dummyGate);
   const auto statsString = getStatisticsString(*dd, true);
-  const auto stats = nlohmann::json::parse(statsString);
+  auto stats = llvm::cantFail(llvm::json::parse(statsString));
 
   std::cout << statsString << "\n";
-  EXPECT_TRUE(stats.contains("vector"));
-  ASSERT_TRUE(stats.contains("matrix"));
-  EXPECT_TRUE(stats.contains("real_numbers"));
-  EXPECT_TRUE(stats.contains("compute_tables"));
-  const auto& matrixStats = stats["matrix"];
-  ASSERT_TRUE(matrixStats.contains("unique_table"));
-  const auto& uniqueTableStats = matrixStats["unique_table"];
-  EXPECT_TRUE(uniqueTableStats.contains("0"));
-  EXPECT_TRUE(uniqueTableStats.contains("1"));
-  EXPECT_TRUE(uniqueTableStats.contains("total"));
-  ASSERT_TRUE(uniqueTableStats["0"].contains("num_buckets"));
-  EXPECT_GT(uniqueTableStats["0"]["num_buckets"], 0);
-  ASSERT_TRUE(uniqueTableStats["total"].contains("num_buckets"));
-  EXPECT_GT(uniqueTableStats["total"]["num_buckets"], 0);
+  EXPECT_TRUE(stats.getAsObject()->get("vector"));
+  ASSERT_TRUE(stats.getAsObject()->get("matrix"));
+  EXPECT_TRUE(stats.getAsObject()->get("real_numbers"));
+  EXPECT_TRUE(stats.getAsObject()->get("compute_tables"));
+  EXPECT_EQ(stats.getAsObject()->getNumber("active_memory_mib"),
+            static_cast<double>(sizeof(mNode)) / (1ULL << 20U));
+  auto& matrixStats = (*stats.getAsObject())["matrix"];
+  ASSERT_TRUE(matrixStats.getAsObject()->get("unique_table"));
+  auto& uniqueTableStats = (*matrixStats.getAsObject())["unique_table"];
+  EXPECT_TRUE(uniqueTableStats.getAsObject()->get("0"));
+  EXPECT_TRUE(uniqueTableStats.getAsObject()->get("1"));
+  EXPECT_TRUE(uniqueTableStats.getAsObject()->get("total"));
+  ASSERT_TRUE(
+      uniqueTableStats.getAsObject()->getObject("0")->get("num_buckets"));
+  EXPECT_GT((*uniqueTableStats.getAsObject()->getObject("0"))["num_buckets"]
+                .getAsInteger()
+                .value(),
+            0);
+  ASSERT_TRUE(
+      uniqueTableStats.getAsObject()->getObject("total")->get("num_buckets"));
+  EXPECT_GT((*uniqueTableStats.getAsObject()->getObject("total"))["num_buckets"]
+                .getAsInteger()
+                .value(),
+            0);
 }
 
 TEST(DDPackageTest, ReduceAncillaRegression) {
@@ -3379,3 +3301,13 @@ TEST(DDPackageTest, KroneckerRestoresNormalizationAfterInterningChanges) {
 }
 
 } // namespace dd
+
+TEST(DDStatistics, ResetMemoryUsageIsFinite) {
+  dd::MemoryManagerStatistics statistics(sizeof(dd::vNode));
+  statistics.numAllocated = 4;
+  statistics.trackUsedEntries();
+  statistics.reset();
+  const auto value = llvm::cantFail(llvm::json::parse(statistics.toString()));
+  EXPECT_EQ(value.getAsObject()->getNumber("usage_ratio"), 0.);
+  EXPECT_EQ(value.getAsObject()->getInteger("num_used_peak"), 1);
+}

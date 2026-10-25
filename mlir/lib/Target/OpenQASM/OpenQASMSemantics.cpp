@@ -17,6 +17,7 @@
 
 #include "mlir/Analysis/Presburger/IntegerRelation.h"
 #include "mlir/Analysis/Presburger/PresburgerSpace.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -60,8 +61,8 @@ static SourceLocation sourcePosition(const llvm::SourceMgr& sources,
 
 namespace {
 
-constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
-constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
+// Classical arrays lower to stack storage; registers do not share this budget.
+constexpr uint64_t ARRAY_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
 constexpr size_t TYPED_STATEMENT_LIMIT = 100'000'000;
 constexpr size_t AFFINE_DISTINCTNESS_COMPARISON_LIMIT = 1'024;
@@ -108,6 +109,7 @@ struct Symbol {
   uint32_t id = 0;
   std::optional<Constant> constant;
   unsigned integerWidth = 0;
+  unsigned angleWidth = 0;
 };
 
 } // namespace
@@ -517,7 +519,7 @@ private:
   llvm::DenseMap<SyntaxExpressionId, ExpressionId> sizeOfExpressions_;
   StringRef activeGate_;
   std::set<uint64_t> hardwareQubits;
-  uint64_t totalRegisterElements = 0;
+  uint64_t totalArrayElements = 0;
   std::optional<SyntaxIncludeContextId> currentIncludeContext;
   mutable std::optional<Diagnostic> failureDiagnostic;
 
@@ -1088,6 +1090,15 @@ private:
     return id;
   }
 
+  [[nodiscard]] LogicalResult checkRegisterExpansion(uint64_t count,
+                                                     SMLoc location) {
+    if (count > TYPED_STATEMENT_LIMIT) {
+      return fail(location, "register operand expansion exceeds the limit of " +
+                                Twine(TYPED_STATEMENT_LIMIT));
+    }
+    return success();
+  }
+
   [[nodiscard]] BitVectorExpressionId
   addBitVectorExpression(BitVectorExpression expression) {
     const auto id =
@@ -1298,7 +1309,8 @@ private:
   }
 
   [[nodiscard]] FailureOr<uint64_t>
-  bitVectorCastWidth(std::optional<SyntaxExpressionId> size, SMLoc location) {
+  bitVectorCastWidth(std::optional<SyntaxExpressionId> size, SMLoc location,
+                     const uint64_t maxWidth = 64) {
     if (!size) {
       return 64;
     }
@@ -1314,9 +1326,10 @@ private:
                   "bit-register cast width must be an integer expression");
     }
     const auto width = asSigned(constant);
-    if (!width || *width < 1 || *width > 64) {
+    if (!width || *width < 1 || std::cmp_greater(*width, maxWidth)) {
       return fail(location,
-                  "bit-register cast supports widths from 1 through 64");
+                  "bit-register cast supports widths from 1 through " +
+                      std::to_string(maxWidth));
     }
     return static_cast<uint64_t>(*width);
   }
@@ -2452,16 +2465,22 @@ private:
           digits.push_back(digit);
         }
       }
-      if (digits.size() > REGISTER_WIDTH_LIMIT ||
+      if (digits.size() > IntegerType::kMaxWidth ||
           (expectedWidth && *expectedWidth != digits.size())) {
         return fail(expression.location,
                     "bit-string width must match the supported register width");
       }
+      // Setting bits directly avoids a full-width shift for each digit.
+      llvm::APInt value(static_cast<unsigned>(digits.size()), 0);
+      for (const auto [index, digit] : llvm::enumerate(digits)) {
+        if (digit == '1') {
+          value.setBit(static_cast<unsigned>(digits.size() - index - 1));
+        }
+      }
       return addBitVectorExpression({
           .kind = BitVectorExpressionKind::Constant,
           .width = digits.size(),
-          .constant =
-              llvm::APInt(static_cast<unsigned>(digits.size()), digits, 2),
+          .constant = std::move(value),
       });
     }
     if (expression.kind == Expr::Kind::BitCast) {
@@ -2704,7 +2723,8 @@ private:
   }
 
   [[nodiscard]] FailureOr<ExpressionId>
-  analyzeExpression(const SyntaxExpressionId syntaxId) {
+  analyzeExpression(const SyntaxExpressionId syntaxId,
+                    const bool allowWideBitVectorCast = false) {
     const auto& expression = syntax.expressions[syntaxId];
     if (expression.kind == Expr::Kind::Range) {
       return fail(expression.location,
@@ -2762,12 +2782,18 @@ private:
     }
     if (expression.kind == Expr::Kind::IntCast ||
         expression.kind == Expr::Kind::UintCast) {
+      const auto bitVectorOperand = isBitVectorExpression(*expression.rhs);
+      // Wide bit-register views must be narrowed by the enclosing integer cast.
+      const auto maxWidth = allowWideBitVectorCast && bitVectorOperand
+                                ? IntegerType::kMaxWidth
+                                : 64;
       MQT_OQ3_TRY_ASSIGN(
-          width, bitVectorCastWidth(expression.lhs, expression.location));
+          width,
+          bitVectorCastWidth(expression.lhs, expression.location, maxWidth));
       const auto target = expression.kind == Expr::Kind::IntCast
                               ? ScalarType::Int
                               : ScalarType::Uint;
-      if (isBitVectorExpression(*expression.rhs)) {
+      if (bitVectorOperand) {
         MQT_OQ3_TRY_ASSIGN(bitVector,
                            analyzeBitVectorExpression(*expression.rhs));
         if (program.bitVectorExpressions[bitVector].width != width) {
@@ -2782,11 +2808,10 @@ private:
             .integerWidth = static_cast<unsigned>(width),
         });
       }
-      MQT_OQ3_TRY_ASSIGN(operand, analyzeExpression(*expression.rhs));
-      if (isAngleArrayElement(operand)) {
-        return fail(
-            expression.location,
-            "cast angle array entries to float before integer conversion");
+      MQT_OQ3_TRY_ASSIGN(operand, analyzeExpression(*expression.rhs, true));
+      if (isRuntimeAngle(operand)) {
+        return fail(expression.location,
+                    "cast runtime angles to float before integer conversion");
       }
       return addExpression({
           .kind = ExpressionKind::Cast,
@@ -3060,10 +3085,10 @@ private:
       return addExpression(
           {.kind = kind, .type = ScalarType::Float, .lhs = lhs});
     }
-    if (isAngleArrayElement(lhs) || (rhs && isAngleArrayElement(*rhs))) {
+    if (isRuntimeAngle(lhs) || (rhs && isRuntimeAngle(*rhs))) {
       return fail(expression.location,
                   "runtime fixed-width angle arithmetic is not supported; "
-                  "cast array entries to float first");
+                  "cast runtime angles to float first");
     }
     if (!rhs) {
       return addExpression({.kind = kind, .type = lhsType, .lhs = lhs});
@@ -3169,7 +3194,8 @@ private:
   [[nodiscard]] FailureOr<uint64_t>
   constantWidth(const std::optional<SyntaxExpressionId> size, SMLoc location,
                 StringRef description = "register width",
-                bool allowEmpty = false) {
+                bool allowEmpty = false,
+                uint64_t limit = std::numeric_limits<int64_t>::max()) {
     if (!size) {
       return 1;
     }
@@ -3193,9 +3219,9 @@ private:
                   description + (allowEmpty ? " must be non-negative"
                                             : " must be greater than zero"));
     }
-    if (value > REGISTER_WIDTH_LIMIT) {
-      return fail(location, description + " exceeds the limit of " +
-                                Twine(REGISTER_WIDTH_LIMIT));
+    if (value > limit) {
+      return fail(location,
+                  description + " exceeds the limit of " + Twine(limit));
     }
     return value;
   }
@@ -3368,7 +3394,11 @@ private:
         startForm->constant == 0) {
       return indices;
     }
-    indices.reserve(distance / stride + 1);
+    const auto count = distance / stride + 1;
+    if (failed(checkRegisterExpansion(count, location))) {
+      return failure();
+    }
+    indices.reserve(count);
     for (uint64_t offset = 0; offset <= distance;) {
       const auto signedOffset = positive ? static_cast<int64_t>(offset)
                                          : -static_cast<int64_t>(offset);
@@ -3704,20 +3734,25 @@ private:
   [[nodiscard]] FailureOr<ExpressionId>
   analyzeArrayValue(ArrayId array, SyntaxExpressionId value) {
     const auto& declaration = program.arrays[array];
+    return analyzeElementValue(declaration.type, declaration.elementWidth,
+                               value);
+  }
+
+  [[nodiscard]] FailureOr<ExpressionId>
+  analyzeElementValue(ScalarType type, unsigned width,
+                      SyntaxExpressionId value) {
     const auto location = syntax.expressions[value].location;
-    if (declaration.type == ScalarType::Angle) {
+    if (type == ScalarType::Angle) {
       MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(value));
       if (!isConstant) {
-        return fail(location,
-                    "angle array entries require compile-time values");
+        return fail(location, "angle values require compile-time values");
       }
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(value));
-      MQT_OQ3_TRY_ASSIGN(
-          converted,
-          convertToFixedAngle(constant, declaration.elementWidth, location));
+      MQT_OQ3_TRY_ASSIGN(converted,
+                         convertToFixedAngle(constant, width, location));
       return addConstant(converted);
     }
-    if (declaration.type == ScalarType::Bool) {
+    if (type == ScalarType::Bool) {
       MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(value));
       return addExpression({
           .kind = ExpressionKind::Condition,
@@ -3726,13 +3761,13 @@ private:
       });
     }
     MQT_OQ3_TRY_ASSIGN(expression, analyzeExpression(value));
-    return castExpression(expression, declaration.type, location,
-                          declaration.elementWidth);
+    return castExpression(expression, type, location, width);
   }
 
-  [[nodiscard]] bool isAngleArrayElement(ExpressionId value) const {
+  [[nodiscard]] bool isRuntimeAngle(ExpressionId value) const {
     const auto& expression = program.expressions[value];
-    return expression.kind == ExpressionKind::ArrayLoad &&
+    return (expression.kind == ExpressionKind::ArrayLoad ||
+            expression.kind == ExpressionKind::Variable) &&
            expression.type == ScalarType::Angle;
   }
 
@@ -3974,44 +4009,45 @@ private:
     return size;
   }
 
-  [[nodiscard]] std::optional<BitInitialization>
-  arraySelectionMask(ArrayId array, ArrayRef<ArraySelection> selection) const {
+  /// Return false for a dynamic selection or a rejected contiguous run.
+  template <typename Visitor>
+  [[nodiscard]] bool visitArraySelectionRuns(ArrayId array,
+                                             ArrayRef<ArraySelection> selection,
+                                             const Visitor& visit) const {
     SmallVector<int64_t> offsets;
     for (const auto& index : selection) {
       if (index.runtime) {
-        return std::nullopt;
+        return false;
       }
       const auto& offset = program.expressions[index.offset];
       if (offset.kind != ExpressionKind::Constant) {
-        return std::nullopt;
+        return false;
       }
       offsets.push_back(std::get<int64_t>(offset.constant));
     }
     const auto& shape = program.arrays[array].shape;
-    BitInitialization mask(initializedBits[arrayStateSlots_[array]]->size());
-    if (mask.empty()) {
-      return mask;
-    }
-    const auto visit = [&](auto&& self, size_t dimension,
-                           int64_t offset) -> void {
-      if (dimension == selection.size()) {
-        mask.set(static_cast<unsigned>(offset));
-        return;
-      }
+    const auto traverse = [&](auto&& self, size_t dimension,
+                              int64_t offset) -> bool {
       const auto& index = selection[dimension];
       const auto first = offset * shape[dimension] + offsets[dimension];
       const auto size = (index.isScalar() ? 1 : index.size);
       if (dimension + 1 == selection.size() && index.stride == 1) {
-        mask.set(static_cast<unsigned>(first),
-                 static_cast<unsigned>(first + size));
-        return;
+        return visit(static_cast<unsigned>(first),
+                     static_cast<unsigned>(first + size));
       }
       for (int64_t i = 0; i < size; ++i) {
-        self(self, dimension + 1, first + i * index.stride);
+        const auto selected = first + i * index.stride;
+        const auto accepted = dimension + 1 == selection.size()
+                                  ? visit(static_cast<unsigned>(selected),
+                                          static_cast<unsigned>(selected + 1))
+                                  : self(self, dimension + 1, selected);
+        if (!accepted) {
+          return false;
+        }
       }
+      return true;
     };
-    visit(visit, 0, 0);
-    return mask;
+    return traverse(traverse, 0, 0);
   }
 
   [[nodiscard]] LogicalResult
@@ -4053,16 +4089,17 @@ private:
         }
       }
       extent = extent < 0 || shape.front() < 0 ? -1 : extent + shape.front();
-      if (std::cmp_greater(extent, REGISTER_WIDTH_LIMIT)) {
+      if (std::cmp_greater(extent, ARRAY_ELEMENT_LIMIT)) {
         return mismatch();
       }
       const auto& initialized =
           *initializedBits[arrayStateSlots_[source.array]];
-      if (!initialized.all()) {
-        const auto mask = arraySelectionMask(source.array, source.indices);
-        if (!mask || mask->test(initialized)) {
-          return fail(location, "array copy source has uninitialized elements");
-        }
+      if (!initialized.all() &&
+          !visitArraySelectionRuns(
+              source.array, source.indices, [&](unsigned first, unsigned last) {
+                return initialized.find_first_unset_in(first, last) == -1;
+              })) {
+        return fail(location, "array copy source has uninitialized elements");
       }
       sources.push_back(std::move(source));
     }
@@ -4071,9 +4108,19 @@ private:
       return mismatch();
     }
     if (!initializedBits[arrayStateSlots_[target]]->all()) {
-      if (const auto mask = arraySelectionMask(target, targetIndices)) {
-        mutableBitInitialization(arrayStateSlots_[target]) |= *mask;
-      }
+      BitInitialization* initialized = nullptr;
+      std::ignore = visitArraySelectionRuns(
+          target, targetIndices, [&](unsigned first, unsigned last) {
+            if (initialized == nullptr) {
+              initialized = &mutableBitInitialization(arrayStateSlots_[target]);
+            }
+            if (last == first + 1) {
+              initialized->set(first);
+            } else {
+              initialized->set(first, last);
+            }
+            return true;
+          });
     }
     MQT_OQ3_TRY_ASSIGN(
         statement,
@@ -4098,26 +4145,25 @@ private:
     }
     std::vector<int64_t> shape;
     for (const auto dimension : declaration.dimensions) {
-      MQT_OQ3_TRY_ASSIGN(extent,
-                         constantWidth(dimension, location, "array dimension",
-                                       /*allowEmpty=*/true));
+      MQT_OQ3_TRY_ASSIGN(
+          extent, constantWidth(dimension, location, "array dimension",
+                                /*allowEmpty=*/true, ARRAY_ELEMENT_LIMIT));
       shape.push_back(static_cast<int64_t>(extent));
     }
     uint64_t length = llvm::is_contained(shape, 0) ? 0 : 1;
     for (const auto dimension : shape) {
       const auto extent = static_cast<uint64_t>(dimension);
-      if (extent != 0 && length > REGISTER_WIDTH_LIMIT / extent) {
+      if (extent != 0 && length > ARRAY_ELEMENT_LIMIT / extent) {
         return fail(location, "array element count exceeds the limit of " +
-                                  Twine(REGISTER_WIDTH_LIMIT));
+                                  Twine(ARRAY_ELEMENT_LIMIT));
       }
       length *= extent;
     }
-    if (length > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
-      return fail(location,
-                  "total register and array elements exceed the limit of " +
-                      Twine(TOTAL_REGISTER_ELEMENT_LIMIT));
+    if (length > ARRAY_ELEMENT_LIMIT - totalArrayElements) {
+      return fail(location, "total array elements exceed the limit of " +
+                                Twine(ARRAY_ELEMENT_LIMIT));
     }
-    totalRegisterElements += length;
+    totalArrayElements += length;
     const auto type = scalarType(declaration.kind);
     unsigned width = 0;
     if (type == ScalarType::Angle) {
@@ -4322,6 +4368,11 @@ private:
         MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(assignment.value));
         typed.condition = condition;
         affineScalarValues[scalarStateSlots_[symbol->id]].reset();
+      } else if (symbol->type == ScalarType::Angle) {
+        MQT_OQ3_TRY_ASSIGN(value,
+                           analyzeElementValue(symbol->type, symbol->angleWidth,
+                                               assignment.value));
+        typed.value = value;
       } else {
         MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(assignment.value));
         MQT_OQ3_TRY_ASSIGN(
@@ -4407,14 +4458,16 @@ private:
     if (!isQubit && output && !global) {
       return fail(location, "outputs must be declared at global scope");
     }
-    MQT_OQ3_TRY_ASSIGN(width, constantWidth(size, location));
+    // Quantum register shapes use signed i64. Bit-register expressions and
+    // outputs must also fit in an MLIR integer type.
+    MQT_OQ3_TRY_ASSIGN(
+        width,
+        constantWidth(size, location,
+                      isQubit ? "qubit register width" : "bit register width",
+                      /*allowEmpty=*/false,
+                      isQubit ? std::numeric_limits<int64_t>::max()
+                              : IntegerType::kMaxWidth));
     const auto id = static_cast<RegisterId>(program.registers.size());
-    if (width > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
-      return fail(location,
-                  Twine("total register elements exceed the limit of ") +
-                      Twine(TOTAL_REGISTER_ELEMENT_LIMIT));
-    }
-    totalRegisterElements += width;
     program.registers.push_back({
         .kind = isQubit ? RegisterKind::Qubit : RegisterKind::Bit,
         .name = identifier.str(),
@@ -4613,6 +4666,10 @@ private:
         if (declaration.kind != RegisterKind::Qubit) {
           continue;
         }
+        if (failed(checkRegisterExpansion(qubits.size() + declaration.width,
+                                          location))) {
+          return failure();
+        }
         for (uint64_t index = 0; index < declaration.width; ++index) {
           qubits.push_back({
               .kind = QubitReferenceKind::Register,
@@ -4621,6 +4678,10 @@ private:
               .provenIndex = std::nullopt,
           });
         }
+      }
+      if (failed(checkRegisterExpansion(qubits.size() + hardwareQubits.size(),
+                                        location))) {
+        return failure();
       }
       for (const auto index : hardwareQubits) {
         qubits.push_back({
@@ -4632,6 +4693,10 @@ private:
     }
     for (const auto& operand : barrier.operands) {
       MQT_OQ3_TRY_ASSIGN(selection, resolveQubitOperand(operand));
+      if (failed(checkRegisterExpansion(qubits.size() + selection.size(),
+                                        location))) {
+        return failure();
+      }
       qubits.insert(qubits.end(), selection.begin(), selection.end());
     }
 
@@ -4824,54 +4889,116 @@ private:
 
   [[nodiscard]] FailureOr<StatementId> analyzeFor(SMLoc location,
                                                   const SyntaxFor& loop) {
-    MQT_OQ3_TRY_ASSIGN(start, analyzeExpression(loop.start));
-    MQT_OQ3_TRY_ASSIGN(step, analyzeExpression(loop.step));
-    MQT_OQ3_TRY_ASSIGN(stop, analyzeExpression(loop.stop));
-    ForStatement result{
-        .start = start,
-        .step = step,
-        .stop = stop,
-        .body = {},
-    };
-    for (auto* expression : {&result.start, &result.step, &result.stop}) {
-      if (!isInteger(program.expressions[*expression].type)) {
-        return fail(location, "for-loop ranges require integer expressions");
+    const auto type = scalarType(loop.type);
+    unsigned integerWidth = 0;
+    unsigned angleBits = 0;
+    if (isInteger(type) && loop.width) {
+      MQT_OQ3_TRY_ASSIGN(width, bitVectorCastWidth(loop.width, location));
+      integerWidth = static_cast<unsigned>(width);
+    } else if (type == ScalarType::Angle) {
+      MQT_OQ3_TRY_ASSIGN(width, angleWidth(loop.width, location));
+      angleBits = width;
+    } else if (type == ScalarType::Float && loop.width) {
+      MQT_OQ3_TRY_ASSIGN(width,
+                         constantWidth(loop.width, location, "float width"));
+      if (width != 64) {
+        return fail(location, "only float[64] is supported");
       }
-      MQT_OQ3_TRY_ASSIGN(promoted,
-                         promoteIntegerExpression(*expression, location));
-      *expression = promoted;
     }
-    const auto startForm = buildAffineForm(result.start);
-    const auto stepForm = buildAffineForm(result.step);
-    const auto stopForm = buildAffineForm(result.stop);
-    if (stepForm && isAffineConstant(*stepForm) && stepForm->constant == 0) {
-      return fail(location, "for-loop range step must not be zero");
-    }
-    const bool unsignedEndpoints =
-        program.expressions[result.start].type == ScalarType::Uint ||
-        program.expressions[result.stop].type == ScalarType::Uint;
-    const bool endpointValuesPreserved =
-        !unsignedEndpoints ||
-        (startForm && stopForm &&
-         provesLowerBound(*startForm, llvm::DynamicAPInt(0)) &&
-         provesLowerBound(*stopForm, llvm::DynamicAPInt(0)));
-    std::optional<llvm::DynamicAPInt> positiveStep;
-    if (stepForm && isAffineConstant(*stepForm) && stepForm->constant > 0) {
-      positiveStep = stepForm->constant;
-    }
-    result.provenPositiveRange =
-        startForm && stopForm && endpointValuesPreserved && positiveStep &&
-        *positiveStep <= signedMaximum() &&
-        provesUpperBound(*stopForm, signedMaximum() - *positiveStep);
-    if (result.provenPositiveRange) {
-      const auto expandedStart = expandAffineScalarValues(result.start);
-      const auto expandedStep = expandAffineScalarValues(result.step);
-      const auto expandedStop = expandAffineScalarValues(result.stop);
-      assert(expandedStart && expandedStep && expandedStop &&
-             "proven affine ranges must have expandable expressions");
-      result.start = *expandedStart;
-      result.step = *expandedStep;
-      result.stop = *expandedStop;
+    ForStatement result;
+    std::optional<AffineForm> startForm, stopForm;
+    std::optional<bool> nonempty;
+    if (loop.iterable) {
+      if (!activeGate_.empty()) {
+        return fail(location, "gate definitions cannot capture arrays");
+      }
+      MQT_OQ3_TRY_ASSIGN(
+          source,
+          analyzeArraySource(
+              syntax.expressions[*loop.iterable], location,
+              "for-loop iterable must be a one-dimensional array or slice"));
+      const auto rank = llvm::count_if(
+          source.indices, [](const auto& index) { return !index.isScalar(); });
+      if (rank != 1) {
+        return fail(
+            location,
+            "for-loop iterable must be a one-dimensional array or slice");
+      }
+      for (const auto& index : source.indices) {
+        if (!index.isScalar() && index.size >= 0) {
+          nonempty = index.size != 0;
+        }
+      }
+      const auto& declaration = program.arrays[source.array];
+      if (!canImplicitlyConvert(declaration.type, type) ||
+          (type == ScalarType::Angle &&
+           (declaration.type != ScalarType::Angle ||
+            declaration.elementWidth > angleBits))) {
+        return fail(
+            location,
+            "array elements cannot be converted to the loop variable type");
+      }
+      const auto& initialized =
+          *initializedBits[arrayStateSlots_[source.array]];
+      if (!initialized.all() &&
+          !visitArraySelectionRuns(
+              source.array, source.indices, [&](unsigned first, unsigned last) {
+                return initialized.find_first_unset_in(first, last) == -1;
+              })) {
+        return fail(location, "for-loop iterable has uninitialized elements");
+      }
+      result.iterable = std::move(source);
+    } else {
+      if (!isInteger(type) || loop.width) {
+        return fail(location,
+                    "for-loop ranges require an unsized int or uint variable");
+      }
+      MQT_OQ3_TRY_ASSIGN(start, analyzeExpression(loop.start));
+      MQT_OQ3_TRY_ASSIGN(step, analyzeExpression(loop.step));
+      MQT_OQ3_TRY_ASSIGN(stop, analyzeExpression(loop.stop));
+      result.start = start;
+      result.step = step;
+      result.stop = stop;
+      for (auto* expression : {&result.start, &result.step, &result.stop}) {
+        if (!isInteger(program.expressions[*expression].type)) {
+          return fail(location, "for-loop ranges require integer expressions");
+        }
+        MQT_OQ3_TRY_ASSIGN(promoted,
+                           promoteIntegerExpression(*expression, location));
+        *expression = promoted;
+      }
+      startForm = buildAffineForm(result.start);
+      const auto stepForm = buildAffineForm(result.step);
+      stopForm = buildAffineForm(result.stop);
+      if (stepForm && isAffineConstant(*stepForm) && stepForm->constant == 0) {
+        return fail(location, "for-loop range step must not be zero");
+      }
+      const bool unsignedEndpoints =
+          program.expressions[result.start].type == ScalarType::Uint ||
+          program.expressions[result.stop].type == ScalarType::Uint;
+      const bool endpointValuesPreserved =
+          !unsignedEndpoints ||
+          (startForm && stopForm &&
+           provesLowerBound(*startForm, llvm::DynamicAPInt(0)) &&
+           provesLowerBound(*stopForm, llvm::DynamicAPInt(0)));
+      std::optional<llvm::DynamicAPInt> positiveStep;
+      if (stepForm && isAffineConstant(*stepForm) && stepForm->constant > 0) {
+        positiveStep = stepForm->constant;
+      }
+      result.provenPositiveRange =
+          startForm && stopForm && endpointValuesPreserved && positiveStep &&
+          *positiveStep <= signedMaximum() &&
+          provesUpperBound(*stopForm, signedMaximum() - *positiveStep);
+      if (result.provenPositiveRange) {
+        const auto expandedStart = expandAffineScalarValues(result.start);
+        const auto expandedStep = expandAffineScalarValues(result.step);
+        const auto expandedStop = expandAffineScalarValues(result.stop);
+        assert(expandedStart && expandedStep && expandedStop &&
+               "proven affine ranges must have expandable expressions");
+        result.start = *expandedStart;
+        result.step = *expandedStep;
+        result.stop = *expandedStop;
+      }
     }
 
     const auto beforeBitsInitialized = initializedBits;
@@ -4880,9 +5007,9 @@ private:
     const auto beforeAffineScalarValues = affineScalarValues;
     enterScope();
     const auto scalar = static_cast<ScalarId>(program.scalars.size());
-    const auto type = loop.isUnsigned ? ScalarType::Uint : ScalarType::Int;
     program.scalars.push_back({
         .type = type,
+        .integerWidth = integerWidth,
         .name = loop.inductionVariable.str(),
         .location = {},
     });
@@ -4898,6 +5025,8 @@ private:
                            .type = type,
                            .id = scalar,
                            .constant = std::nullopt,
+                           .integerWidth = integerWidth,
+                           .angleWidth = angleBits,
                        }))) {
       leaveScope();
       return failure();
@@ -4947,22 +5076,25 @@ private:
                        beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     bool rangeMayExecute = true;
-    MQT_OQ3_TRY_ASSIGN(constantStart, isConstantExpression(loop.start));
-    MQT_OQ3_TRY_ASSIGN(constantStep, isConstantExpression(loop.step));
-    MQT_OQ3_TRY_ASSIGN(constantStop, isConstantExpression(loop.stop));
-    if (constantStart && constantStep && constantStop) {
-      MQT_OQ3_TRY_ASSIGN(startConstant, evaluateConstant(loop.start));
-      MQT_OQ3_TRY_ASSIGN(stepConstant, evaluateConstant(loop.step));
-      MQT_OQ3_TRY_ASSIGN(stopConstant, evaluateConstant(loop.stop));
-      promoteIntegerConstant(stepConstant);
-      const bool positiveStep = stepConstant.type == ScalarType::Uint ||
-                                std::get<int64_t>(stepConstant.value) > 0;
-      const auto endpointOrder =
-          compareNumericConstants(startConstant, stopConstant);
-      const bool nonempty =
-          positiveStep ? endpointOrder <= 0 : endpointOrder >= 0;
-      rangeMayExecute = nonempty;
-      if (nonempty) {
+    if (!loop.iterable) {
+      MQT_OQ3_TRY_ASSIGN(constantStart, isConstantExpression(loop.start));
+      MQT_OQ3_TRY_ASSIGN(constantStep, isConstantExpression(loop.step));
+      MQT_OQ3_TRY_ASSIGN(constantStop, isConstantExpression(loop.stop));
+      if (constantStart && constantStep && constantStop) {
+        MQT_OQ3_TRY_ASSIGN(startConstant, evaluateConstant(loop.start));
+        MQT_OQ3_TRY_ASSIGN(stepConstant, evaluateConstant(loop.step));
+        MQT_OQ3_TRY_ASSIGN(stopConstant, evaluateConstant(loop.stop));
+        promoteIntegerConstant(stepConstant);
+        const bool positiveStep = stepConstant.type == ScalarType::Uint ||
+                                  std::get<int64_t>(stepConstant.value) > 0;
+        const auto endpointOrder =
+            compareNumericConstants(startConstant, stopConstant);
+        nonempty = positiveStep ? endpointOrder <= 0 : endpointOrder >= 0;
+      }
+    }
+    if (nonempty) {
+      rangeMayExecute = *nonempty;
+      if (*nonempty) {
         for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
           initializedBits[reg] = afterBodyBitsInitialized[reg];
         }
@@ -5439,13 +5571,10 @@ private:
       typed.comparisonRhs = comparisonRhs;
       const auto lhsType = program.expressions[typed.comparisonLhs].type;
       const auto rhsType = program.expressions[typed.comparisonRhs].type;
-      if ((isAngleArrayElement(comparisonLhs) &&
-           rhsType != ScalarType::Angle) ||
-          (isAngleArrayElement(comparisonRhs) &&
-           lhsType != ScalarType::Angle)) {
-        return fail(
-            condition.location,
-            "cast angle array entries to float for mixed-type comparisons");
+      if ((isRuntimeAngle(comparisonLhs) && rhsType != ScalarType::Angle) ||
+          (isRuntimeAngle(comparisonRhs) && lhsType != ScalarType::Angle)) {
+        return fail(condition.location,
+                    "cast runtime angles to float for mixed-type comparisons");
       }
       const bool boolComparison =
           lhsType == ScalarType::Bool || rhsType == ScalarType::Bool;
@@ -5841,6 +5970,9 @@ private:
       return selection;
     }
     if (!operand.index) {
+      if (failed(checkRegisterExpansion(width, operand.location))) {
+        return failure();
+      }
       std::vector<QubitReference> selection;
       selection.reserve(width);
       for (uint64_t index = 0; index < width; ++index) {

@@ -22,10 +22,8 @@ mqt_mlir_target_use_project_options(MLIRQIRTranslation)
 
 target_sources(
   MLIRQIRTranslation
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/QIR/Export.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/QIR/Capabilities.h)
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/QIR/Export.h
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Target/QIR/Capabilities.h)

@@ -30,8 +30,9 @@ def CBit_RegisterType : TypeDef<CBitDialect, "Register", [OpAsmTypeInterface]> {
   let mnemonic = "reg";
   let summary = "A static classical-bit register";
   let description = [{
-    `!cbit.reg<N>` is a non-aliasing register of `N` classical bits. `N` must
-    be positive and is part of the type.
+    `!cbit.reg<N>` is a mutable register of `N` classical bits. `N` must
+    be positive and is part of the type. Allocations own distinct storage;
+    register arguments may alias.
   }];
   let parameters = (ins "int64_t":$width);
   let assemblyFormat = "`<` $width `>`";

@@ -357,18 +357,26 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     llvm::reportFatalInternalError("Main function not found");
   }
   SymbolTable symbols(main->getParentOfType<ModuleOp>());
+  llvm::StringSet<> outputLabels;
+  for (const auto& output : outputs) {
+    outputLabels.insert(output.label);
+  }
   llvm::StringSet<> labels;
   size_t suffix = 0;
-  const auto createLabel = [&](StringRef base) {
+  const auto createLabel = [&](StringRef base, bool topLevel = false) {
     auto label = base.str();
-    while (!labels.insert(label).second) {
+    // Generated child labels must not consume original register names.
+    while ((!topLevel && outputLabels.contains(label)) ||
+           !labels.insert(label).second) {
       label = base.str() + "_" + std::to_string(++suffix);
+      topLevel = false;
     }
     return createResultLabel(builder, anchor, label, "qir.result_label",
                              symbols, main)
         .getResult();
   };
 
+  Operation* firstRecord = nullptr;
   const auto record = [&](LLVM::LLVMFuncOp& declaration, StringRef name,
                           ValueRange operands) {
     if (!declaration) {
@@ -377,16 +385,23 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
       declaration =
           getOrCreateFunctionDeclaration(builder, anchor, name, signature);
     }
-    LLVM::CallOp::create(builder, loc, declaration, operands);
+    auto call = LLVM::CallOp::create(builder, loc, declaration, operands);
+    if (!firstRecord) {
+      firstRecord = call;
+    }
   };
   LLVM::LLVMFuncOp resultDec;
   LLVM::LLVMFuncOp baseArrayDec;
   LLVM::LLVMFuncOp adaptiveArrayDec;
   LLVM::LLVMFuncOp booleanDec;
   for (const auto& output : outputs) {
-    auto label = createLabel(output.label);
+    auto label = createLabel(output.label, true);
     if (const auto* result = std::get_if<Value>(&output.value)) {
-      record(resultDec, QIR_RECORD_OUTPUT, {*result, label});
+      if (result->getType().isInteger(1)) {
+        record(booleanDec, QIR_BOOL_RECORD_OUTPUT, {*result, label});
+      } else {
+        record(resultDec, QIR_RECORD_OUTPUT, {*result, label});
+      }
       continue;
     }
     const auto& reg = *std::get<const ClassicalRegister*>(output.value);
@@ -399,18 +414,23 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
       continue;
     }
 
-    // Base Profile: emit `__quantum__rt__array_record_output` followed by
-    // `__quantum__rt__result_record_output` for each bit
+    // Record the array header, then each Result or Boolean element.
     record(baseArrayDec, QIR_ARRAY_RECORD_OUTPUT, {size, label});
     if (reg.booleanStorage) {
       for (int64_t index = 0; index < std::get<int64_t>(reg.size); ++index) {
-        auto position = LLVM::ConstantOp::create(
-            builder, loc, builder.getI64IntegerAttr(index));
-        auto address =
-            LLVM::GEPOp::create(builder, loc, ptrType, builder.getI1Type(),
-                                reg.array, ValueRange{position});
-        auto bit =
-            LLVM::LoadOp::create(builder, loc, builder.getI1Type(), address);
+        Value bit;
+        {
+          // QIR requires output recording to follow all computation.
+          OpBuilder::InsertionGuard guard(builder);
+          builder.setInsertionPoint(firstRecord);
+          auto position = LLVM::ConstantOp::create(
+              builder, loc, builder.getI64IntegerAttr(index));
+          auto address =
+              LLVM::GEPOp::create(builder, loc, ptrType, builder.getI1Type(),
+                                  reg.array, ValueRange{position});
+          bit =
+              LLVM::LoadOp::create(builder, loc, builder.getI1Type(), address);
+        }
         auto bitLabel = createLabel(output.label + "_" + std::to_string(index));
         record(booleanDec, QIR_BOOL_RECORD_OUTPUT, {bit, bitLabel});
       }

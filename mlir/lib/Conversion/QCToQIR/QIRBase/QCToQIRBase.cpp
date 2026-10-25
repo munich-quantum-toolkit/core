@@ -139,7 +139,8 @@ static bool isBaseConstant(Value value) {
 
 /// Base has no classical memory or runtime computation, even for gate angles.
 static LogicalResult verifyBaseInstructions(LLVM::LLVMFuncOp function) {
-  const auto result = function.getBody().walk([](Operation* op) {
+  DenseSet<Value> initializedResults;
+  const auto result = function.getBody().walk([&](Operation* op) {
     const auto constantOperands =
         llvm::all_of(op->getOperands(), isBaseConstant);
     if (isa<LLVM::ConstantOp, LLVM::ZeroOp, LLVM::AddressOfOp>(op) ||
@@ -152,6 +153,15 @@ static LogicalResult verifyBaseInstructions(LLVM::LLVMFuncOp function) {
                                                 call.getNumResults() == 0 &&
                                                 constantOperands) {
       const auto name = *call.getCallee();
+      if (name == QIR_MEASURE) {
+        initializedResults.insert(call.getOperand(1));
+      } else if (name == QIR_RECORD_OUTPUT &&
+                 !initializedResults.contains(call.getOperand(0))) {
+        call.emitError("QIR Base Profile requires every output bit to be "
+                       "measured; use Adaptive Profile for initialized "
+                       "classical outputs");
+        return WalkResult::interrupt();
+      }
       if (name.starts_with("__quantum__qis__") || name == QIR_INITIALIZE ||
           name == "__quantum__rt__tuple_record_output" ||
           name == QIR_ARRAY_RECORD_OUTPUT || name == QIR_RECORD_OUTPUT) {

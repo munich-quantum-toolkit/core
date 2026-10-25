@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/QAOA.hpp"
 
+#include "register_benchmark.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -37,6 +39,8 @@ void registerQAOA(const nb::module_& m) {
 
   nb::class_<bench::QAOAEvaluation>(m, "Evaluation",
                                     "The sampled cut quality on a cycle graph.")
+      .def_ro("shots", &bench::QAOAEvaluation::shots,
+              "The number of evaluated shots.")
       .def_ro("mean_cut", &bench::QAOAEvaluation::meanCut,
               "The shot-weighted mean number of cut edges.")
       .def_ro("approximation_ratio", &bench::QAOAEvaluation::approximationRatio,
@@ -59,47 +63,19 @@ Copy the program first to reuse it for other angles.
 
 The benchmark does not run an optimizer. Evaluation measures cut quality,
 not agreement with an ideal output distribution.)pb");
-  qaoa.def(nb::init<bench::QAOAOptions>(), "options"_a)
+  qaoa.def("__init__", benchmarkInit(&bench::QAOA::create), "options"_a)
       .def_prop_ro("options", &bench::QAOA::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::QAOA::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("cut_size", &bench::QAOA::cutSize, "outcome"_a,
+      .def("cut_size", benchmarkOutcome(&bench::QAOA::cutSize), "outcome"_a,
            "Count cycle edges whose measured endpoint bits differ.")
-      .def("evaluate", &bench::QAOA::evaluate, "counts"_a,
-           "Compute the mean cut and its ratio to the maximum cut size.")
-      .def(
-          "generate",
-          [](const bench::QAOA& value) {
-            return nb::module_::import_("mqt.core.mlir")
-                .attr("_generate_benchmark")(
-                    bench::toInstanceSpecificationJSON(value));
-          },
-          nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
-          "Generate the benchmark as a QC program.")
-      .def_prop_ro(
-          "instance_specification_json",
-          [](const bench::QAOA& value) {
-            return bench::toInstanceSpecificationJSON(value);
-          },
-          "The canonical instance specification JSON.")
-      .def_prop_ro(
-          "manifest_json",
-          [](const bench::QAOA& value) { return bench::toManifestJSON(value); },
-          "The canonical manifest JSON.")
-      .def_prop_ro(
-          "case_id",
-          [](const bench::QAOA& value) { return bench::caseId(value); },
-          "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::qaoaFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::qaoaFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def("evaluate", benchmarkMethod(&bench::QAOA::evaluate), "counts"_a,
+           "Compute the mean cut and its ratio to the maximum cut size.");
+  registerBenchmarkIO(qaoa, &bench::qaoaFromInstanceSpecificationJSON,
+                      &bench::qaoaFromManifestJSON);
 }
 
 } // namespace mqt

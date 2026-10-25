@@ -8,19 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/JSON.hpp"
 
 #include "JSONTestUtils.hpp"
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
+
+#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace mqt::bench {
 
@@ -28,66 +34,79 @@ using test::expectInvalidJSON;
 
 // GHZ is a representative fixture for the shared JSON contracts below.
 
-TEST(BenchmarkJSON, RejectsDuplicateKeys) {
-  expectInvalidJSON(
-      [] {
-        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","benchmark":"qpe","parameters":{"qubits":2}})",
-            "duplicate.json"));
-      },
-      "duplicate key 'benchmark'");
-  expectInvalidJSON(
-      [] {
-        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})"));
-      },
-      "duplicate key 'qubits'");
-  expectInvalidJSON(
-      [] {
-        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4,"numerator":2}}})"));
-      },
-      "duplicate key 'numerator'");
+TEST(BenchmarkJSON, ReportsParameterErrorsAtTheirSource) {
+  for (
+      const auto& [json, pointer] : {
+          std::pair{
+              R"({"schema_version":1,"benchmark":"multiplexer","parameters":{}})",
+              "$/parameters/qubits"},
+          std::pair{
+              R"({"schema_version":1,"benchmark":"w-state","parameters":{}})",
+              "$/parameters/qubits"},
+          std::pair{
+              R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{}})",
+              "$/parameters/multiplier"},
+      }) {
+    SCOPED_TRACE(json);
+    auto result = parseInstanceSpecificationJSON(json, "case.json");
+    ASSERT_FALSE(static_cast<bool>(result));
+    const auto message = llvm::toString(result.takeError());
+    EXPECT_THAT(message, testing::HasSubstr("case.json"));
+    EXPECT_THAT(message, testing::HasSubstr(std::string_view(pointer).substr(
+                             std::string_view("$/parameters/").size())));
+  }
 }
 
 TEST(BenchmarkJSON, RejectsInvalidInstanceEnvelopes) {
   expectInvalidJSON(
       [] {
-        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2},"extra":true})"));
+        return benchmarkIdFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2},"extra":true})");
       },
-      "unknown key 'extra'");
+      "extra");
   expectInvalidJSON(
       [] {
-        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"new","parameters":{}})"));
+        return benchmarkIdFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"new","parameters":{}})");
       },
       "unsupported benchmark 'new'");
   expectInvalidJSON(
       [] {
-        static_cast<void>(ghzFromInstanceSpecificationJSON(
-            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4}}})"));
+        return ghzFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4}}})");
       },
       "must be 'ghz'");
 }
 
+TEST(BenchmarkJSON, RejectsInvalidSizeParameters) {
+  for (const auto* value : {"null", "-1", "1.5", "18446744073709551616"}) {
+    SCOPED_TRACE(value);
+    expectInvalidJSON(
+        [&] {
+          return groverFromInstanceSpecificationJSON(
+              std::string(
+                  R"({"schema_version":1,"benchmark":"grover","parameters":{"marked_bitstring":"01","iterations":)") +
+              value + "}}");
+        },
+        "iterations");
+  }
+}
+
 TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
-  const GHZ ghz{{.qubits = 3}};
+  const auto ghz = llvm::cantFail(GHZ::create({.qubits = 3}));
   const auto manifest = toManifestJSON(ghz);
   EXPECT_NE(manifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
   const auto reject = [](const std::string& invalid,
                          const std::string_view diagnostic) {
     expectInvalidJSON(
-        [&] {
-          static_cast<void>(ghzFromManifestJSON(invalid, "manifest.json"));
-        },
+        [&] { return ghzFromManifestJSON(invalid, "manifest.json"); },
         diagnostic);
     expectInvalidJSON(
         [&] {
-          static_cast<void>(evaluateJSON(
-              invalid, R"({"schema_version":1,"counts":{"000":1}})",
-              "manifest.json", "counts.json"));
+          return evaluateJSON(invalid,
+                              R"({"schema_version":1,"counts":{"000":1}})",
+                              "manifest.json", "counts.json");
         },
         diagnostic);
   };
@@ -106,13 +125,6 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   changedOutput.replace(width, std::string("\"width\":3").size(),
                         "\"width\":2");
   reject(changedOutput, "does not match");
-
-  auto changedNumericKind = manifest;
-  const auto integerWidth = changedNumericKind.find(R"("width":3)");
-  ASSERT_NE(integerWidth, std::string::npos);
-  changedNumericKind.replace(integerWidth, std::string(R"("width":3)").size(),
-                             R"("width":3.0)");
-  reject(changedNumericKind, "does not match");
 
   auto changedId = manifest;
   const auto digest = changedId.find("sha256-");
@@ -134,91 +146,136 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifests) {
   reject(invalidParameters, "manifest.json:$/parameters GHZ qubits");
   expectInvalidJSON(
       [&] {
-        static_cast<void>(evaluateJSON(invalidParameters, "{}", "manifest.json",
-                                       "counts.json"));
+        return evaluateJSON(invalidParameters, "{}", "manifest.json",
+                            "counts.json");
       },
-      "counts.json:$/schema_version");
+      "counts.json.schema_version");
+}
+
+TEST(BenchmarkJSON, ComparesReferenceVersionByValue) {
+  const auto ghz = llvm::cantFail(GHZ::create({.qubits = 3}));
+  auto manifest = llvm::cantFail(llvm::json::parse(toManifestJSON(ghz)));
+  auto& version = (*manifest.getAsObject()->getObject("reference"))["version"];
+  auto equivalent = toManifestJSON(ghz);
+  const auto position = equivalent.find(R"("version":1)");
+  ASSERT_NE(position, std::string::npos);
+  equivalent.replace(position, std::string(R"("version":1)").size(),
+                     R"("version":1.0)");
+  auto parsed = ghzFromManifestJSON(equivalent);
+  ASSERT_TRUE(static_cast<bool>(parsed)) << llvm::toString(parsed.takeError());
+  EXPECT_EQ(parsed->output(), ghz.output());
+  constexpr std::string_view counts =
+      R"({"schema_version":1,"counts":{"000":1}})";
+  EXPECT_EQ(llvm::cantFail(evaluateJSON(equivalent, counts)),
+            llvm::cantFail(evaluateJSON(toManifestJSON(ghz), counts)));
+
+  for (const auto invalid : {1.5, 0x1p63}) {
+    version = invalid;
+    const auto changed = llvm::formatv("{0}", manifest).str();
+    expectInvalidJSON([&] { return ghzFromManifestJSON(changed); },
+                      "does not match");
+    expectInvalidJSON([&] { return evaluateJSON(changed, counts); },
+                      "does not match");
+  }
+}
+
+TEST(BenchmarkJSON, AcceptsEquivalentOutputWidths) {
+  const auto benchmark = llvm::cantFail(GHZ::create({.qubits = 3}));
+  constexpr std::string_view field = R"("width":3)";
+  for (const auto* spelling : {"3", "3.0", "3e0"}) {
+    SCOPED_TRACE(spelling);
+    auto manifest = toManifestJSON(benchmark);
+    const auto position = manifest.find(field);
+    ASSERT_NE(position, std::string::npos);
+    manifest.replace(position, field.size(),
+                     std::string(R"("width":)") + spelling);
+    auto parsed = ghzFromManifestJSON(manifest);
+    ASSERT_TRUE(static_cast<bool>(parsed))
+        << llvm::toString(parsed.takeError());
+    EXPECT_EQ(toManifestJSON(*parsed), toManifestJSON(benchmark));
+    constexpr std::string_view counts =
+        R"({"schema_version":1,"counts":{"000":1}})";
+    EXPECT_EQ(llvm::cantFail(evaluateJSON(manifest, counts)),
+              llvm::cantFail(evaluateJSON(toManifestJSON(benchmark), counts)));
+  }
 }
 
 TEST(BenchmarkJSON, EvaluatesAResolvedManifest) {
-  const GHZ ghz{{.qubits = 2}};
-  const Counts counts{{"00", 5}, {"11", 3}};
-  EXPECT_EQ(evaluateJSON(toManifestJSON(ghz),
-                         R"({"schema_version":1,"counts":{"00":5,"11":3}})"),
-            evaluationToJSON(caseId(ghz), 8, ghz.evaluate(counts)));
+  const auto ghz = llvm::cantFail(GHZ::create({.qubits = 2}));
+  const auto result = llvm::cantFail(llvm::json::parse(llvm::cantFail(
+      evaluateJSON(toManifestJSON(ghz),
+                   R"({"schema_version":1,"counts":{"00":5,"11":3}})"))));
+  const auto& object = *result.getAsObject();
+  EXPECT_EQ(object.getString("case_id"), caseId(ghz));
+  EXPECT_EQ(object.getInteger("shots"), 8);
+  const auto& metrics = *object.getObject("metrics");
+  EXPECT_DOUBLE_EQ(*metrics.getNumber("total_variation_distance"), 0.125);
+  EXPECT_NEAR(*metrics.getNumber("squared_hellinger_fidelity"),
+              0.5 + (std::sqrt(15.) / 8.), 1e-15);
+  EXPECT_EQ(*metrics.get("success_probability"), llvm::json::Value(nullptr));
 }
 
 TEST(BenchmarkJSON, ListsBenchmarksAndRejectsUnknownSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
       R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"fan-out"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"grover-weak-measurement"},{"definition_version":1,"id":"magic-state-distillation"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qaoa"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"shor"},{"definition_version":1,"id":"teleportation"},{"definition_version":1,"id":"w-state"}],"schema_version":1})");
-  EXPECT_THROW(static_cast<void>(describeBenchmarkJSON("unknown")),
-               std::invalid_argument);
+  test::expectInvalidJSON([&] { return describeBenchmarkJSON("unknown"); }, "");
 }
 
 TEST(BenchmarkJSON, DescribesSchemaEnvelope) {
-  const auto schema = describeBenchmarkJSON("ghz");
+  const auto schema = llvm::cantFail(describeBenchmarkJSON("ghz"));
   EXPECT_NE(schema.find("https://json-schema.org/draft/2020-12/schema"),
             std::string::npos);
   EXPECT_NE(schema.find("\"additionalProperties\":false"), std::string::npos);
 }
 
 TEST(BenchmarkJSON, ParsesCounts) {
-  const auto counts =
-      countsFromJSON(R"({"counts":{"11":50,"00":50},"schema_version":1})");
+  const auto counts = llvm::cantFail(
+      countsFromJSON(R"({"counts":{"11":50,"00":50},"schema_version":1})"));
   EXPECT_EQ(counts.at("00"), 50);
   EXPECT_EQ(counts.at("11"), 50);
 
   expectInvalidJSON(
       [] {
-        static_cast<void>(
-            countsFromJSON(R"({"schema_version":1,"counts":{"0":1,"0":2}})"));
-      },
-      "duplicate key '0'");
-  expectInvalidJSON(
-      [] {
-        static_cast<void>(
-            countsFromJSON(R"({"schema_version":1,"counts":{"0x":1}})"));
+        return countsFromJSON(R"({"schema_version":1,"counts":{"0x":1}})");
       },
       "bitstrings");
   expectInvalidJSON(
       [] {
-        static_cast<void>(
-            countsFromJSON(R"({"schema_version":1,"counts":{"00":0}})"));
+        return countsFromJSON(R"({"schema_version":1,"counts":{"00":0}})");
       },
-      "must be positive");
-}
-
-TEST(BenchmarkJSON, SerializesEvaluations) {
-  const auto serialized =
-      evaluationToJSON("sha256-" + std::string(64, '0'), 100,
-                       Evaluation{
-                           .totalVariationDistance = 0.,
-                           .squaredHellingerFidelity = 1.,
-                           .successProbability = std::nullopt,
-                       });
-  EXPECT_NE(serialized.find("\"squared_hellinger_fidelity\":1.0"),
-            std::string::npos);
-  EXPECT_NE(serialized.find("\"success_probability\":null"), std::string::npos);
-  EXPECT_NE(serialized.find("\"total_variation_distance\":0.0"),
-            std::string::npos);
-}
-
-TEST(BenchmarkJSON, RejectsInvalidEvaluations) {
-  const auto validCaseId = "sha256-" + std::string(64, '0');
-  EXPECT_THROW(static_cast<void>(evaluationToJSON(
-                   "not-a-case", 1,
-                   Evaluation{.totalVariationDistance = 0.,
-                              .squaredHellingerFidelity = 1.,
-                              .successProbability = std::nullopt})),
-               std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(evaluationToJSON(
-                   validCaseId, 1,
-                   Evaluation{.totalVariationDistance =
-                                  std::numeric_limits<double>::quiet_NaN(),
-                              .squaredHellingerFidelity = 1.,
-                              .successProbability = std::nullopt})),
-               std::invalid_argument);
+      "must be a positive integer");
 }
 
 } // namespace mqt::bench
+
+TEST(BenchmarkJSON, PreservesConditionalAndIntegerSchemaConstraints) {
+  auto adder = llvm::cantFail(llvm::json::parse(
+      llvm::cantFail(mqt::bench::describeBenchmarkJSON("qft-adder"))));
+  const auto* constraints = adder.getAsObject()
+                                ->getObject("properties")
+                                ->getObject("parameters")
+                                ->getArray("allOf");
+  ASSERT_NE(constraints, nullptr);
+  ASSERT_EQ(constraints->size(), 2U);
+  const auto* method = (*constraints)[0]
+                           .getAsObject()
+                           ->getObject("if")
+                           ->getObject("properties")
+                           ->getObject("method");
+  ASSERT_NE(method, nullptr);
+  EXPECT_EQ(method->getString("const"), "constant");
+  auto qpe = llvm::cantFail(llvm::json::parse(
+      llvm::cantFail(mqt::bench::describeBenchmarkJSON("qpe"))));
+  const auto* denominator = qpe.getAsObject()
+                                ->getObject("properties")
+                                ->getObject("parameters")
+                                ->getObject("properties")
+                                ->getObject("phase")
+                                ->getObject("properties")
+                                ->getObject("denominator");
+  ASSERT_NE(denominator, nullptr);
+  const auto* maximum = denominator->get("maximum");
+  ASSERT_NE(maximum, nullptr);
+  EXPECT_EQ(maximum->getAsUINT64(), std::numeric_limits<uint64_t>::max());
+}

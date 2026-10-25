@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/QFT.hpp"
 
+#include "register_benchmark.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -42,47 +44,19 @@ void registerQFT(const nb::module_& m) {
       .def_ro("method", &bench::QFTOptions::method, "The circuit method.");
 
   auto qft = nb::class_<bench::QFT>(m, "QFT", "A validated QFT benchmark.");
-  qft.def(nb::init<bench::QFTOptions>(), "options"_a)
+  qft.def("__init__", benchmarkInit(&bench::QFT::create), "options"_a)
       .def_prop_ro("options", &bench::QFT::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::QFT::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::QFT::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::QFT::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
-      .def(
-          "generate",
-          [](const bench::QFT& value) {
-            return nb::module_::import_("mqt.core.mlir")
-                .attr("_generate_benchmark")(
-                    bench::toInstanceSpecificationJSON(value));
-          },
-          nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
-          "Generate the benchmark as a QC program.")
-      .def_prop_ro(
-          "instance_specification_json",
-          [](const bench::QFT& value) {
-            return bench::toInstanceSpecificationJSON(value);
-          },
-          "The canonical instance specification JSON.")
-      .def_prop_ro(
-          "manifest_json",
-          [](const bench::QFT& value) { return bench::toManifestJSON(value); },
-          "The canonical manifest JSON.")
-      .def_prop_ro(
-          "case_id",
-          [](const bench::QFT& value) { return bench::caseId(value); },
-          "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::qftFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::qftFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def("probability", benchmarkOutcome(&bench::QFT::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::QFT::evaluate), "counts"_a,
+           "Compare sampled counts with the ideal distribution.");
+  registerBenchmarkIO(qft, &bench::qftFromInstanceSpecificationJSON,
+                      &bench::qftFromManifestJSON);
 }
 
 } // namespace mqt

@@ -15,12 +15,8 @@ function(run_compiler expected_result)
   if(NOT "${result}" STREQUAL "${expected_result}")
     message(FATAL_ERROR "mqt-cc ${ARGN}: expected ${expected_result}, got ${result}:\n${error}")
   endif()
-  set(output
-      "${output}"
-      PARENT_SCOPE)
-  set(error
-      "${error}"
-      PARENT_SCOPE)
+  set(output "${output}" PARENT_SCOPE)
+  set(error "${error}" PARENT_SCOPE)
 endfunction()
 
 function(reject_compiler expected_diagnostic)
@@ -86,9 +82,9 @@ foreach(mode IN ITEMS --run-pipeline --emit=qco-optimized)
                   "--pass-pipeline=func.func(cse)")
   reject_compiler("must be anchored on builtin.module" "${reduced}" "${mode}"
                   "--pass-pipeline=builtin.module(cse")
-  reject_compiler(
-    "without disabling multi-threading" "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
-    --mlir-print-ir-module-scope --mlir-disable-threading=false)
+  reject_compiler("without disabling multi-threading" "${reduced}" "${mode}"
+                  "--pass-pipeline=builtin.module()" --mlir-print-ir-module-scope
+                  --mlir-disable-threading=false)
   run_compiler(0 "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
                --mlir-print-ir-module-scope --mlir-disable-threading)
 endforeach()
@@ -166,12 +162,35 @@ run_compiler(
   --mlir-print-stacktrace-on-diagnostic
   --mlir-disable-threading
   "--mlir-pass-pipeline-crash-reproducer=${reproducer}")
-if(NOT EXISTS "${reproducer}"
-   OR NOT error MATCHES "After QCToQCO Failed"
-   OR NOT error MATCHES "does not support unstructured control flow"
-   OR NOT error MATCHES "note: diagnostic emitted with trace:"
-   OR NOT error MATCHES "note: see current operation"
-   OR NOT error MATCHES "cf[.]br .next")
+if(
+  NOT
+  EXISTS
+  "${reproducer}"
+  OR
+  NOT
+  error
+  MATCHES
+  "After QCToQCO Failed"
+  OR
+  NOT
+  error
+  MATCHES
+  "does not support unstructured control flow"
+  OR
+  NOT
+  error
+  MATCHES
+  "note: diagnostic emitted with trace:"
+  OR
+  NOT
+  error
+  MATCHES
+  "note: see current operation"
+  OR
+  NOT
+  error
+  MATCHES
+  "cf[.]br .next")
   message(
     FATAL_ERROR "Failure diagnostics, source excerpts, notes, or reproducer missing: ${error}")
 endif()
@@ -191,8 +210,8 @@ endif()
 
 # Reloading the saved pipeline must reproduce the same conversion failure.
 run_compiler(1 "${reproducer}" --run-reproducer --mlir-print-ir-before-all)
-if(NOT error MATCHES "Before QCToQCO" OR NOT error MATCHES
-                                         "does not support unstructured control flow")
+if(NOT error MATCHES "Before QCToQCO"
+   OR NOT error MATCHES "does not support unstructured control flow")
   message(FATAL_ERROR "Saved pipeline was not replayed: ${error}")
 endif()
 run_compiler(1 "${unsupported}" --run-pipeline "--pass-pipeline=builtin.module(qc-to-qco)")
@@ -201,17 +220,14 @@ run_compiler(1 "${unsupported}" --run-pipeline "--pass-pipeline=builtin.module(q
 foreach(profile IN ITEMS qir-base qir-adaptive)
   set(qir_reproducer "${OUTPUT_DIR}/${profile}-failure.mlir")
   file(REMOVE "${qir_reproducer}")
-  reject_compiler(
-    "no main function with mqt.entry_point found" "${reduced}" "--emit=${profile}"
-    --mlir-disable-threading "--mlir-pass-pipeline-crash-reproducer=${qir_reproducer}")
-  reject_compiler("no main function with mqt.entry_point found" "${qir_reproducer}"
-                  --run-reproducer)
+  reject_compiler("no main function with mqt.entry_point found" "${reduced}" "--emit=${profile}"
+                  --mlir-disable-threading "--mlir-pass-pipeline-crash-reproducer=${qir_reproducer}")
+  reject_compiler("no main function with mqt.entry_point found" "${qir_reproducer}" --run-reproducer)
 endforeach()
 
 # Register the named shrink and QIR cleanup passes for isolated pipelines too.
-run_compiler(
-  0 "${reduced}" --run-pipeline
-  "--pass-pipeline=builtin.module(qtensor-shrink-to-fit,qc-shrink-qubit-registers,qir-cleanup)")
+run_compiler(0 "${reduced}" --run-pipeline
+             "--pass-pipeline=builtin.module(qtensor-shrink-to-fit,qc-shrink-qubit-registers,qir-cleanup)")
 reject_compiler("QIR metadata attachment requires exactly one entry point" "${reduced}"
                 --run-pipeline "--pass-pipeline=builtin.module(set-qir-attributes-and-metadata)")
 
@@ -246,7 +262,7 @@ endif()
 file(READ "${unverified}" reproducer_source)
 set(invalid_reproducer "${OUTPUT_DIR}/invalid-reproducer.mlir")
 string(REPLACE "builtin.module(cse)" "builtin.module(not-a-pass)" invalid_source
-               "${reproducer_source}")
+       "${reproducer_source}")
 file(WRITE "${invalid_reproducer}" "${invalid_source}")
 reject_compiler("does not refer to a registered pass" "${invalid_reproducer}" --run-reproducer)
 foreach(pipeline IN ITEMS "builtin.module()" "func.func(cse)")
@@ -289,8 +305,6 @@ run_compiler(0 "${reusable}" --emit=qir-adaptive "--pass-pipeline=builtin.module
              --mlir-print-ir-before-all --mlir-disable-threading)
 string(FIND "${error}" "Before Inliner" inliner)
 string(FIND "${error}" "Before HadamardLifting" custom_pass)
-if(inliner LESS 0
-   OR NOT inliner LESS custom_pass
-   OR NOT output MATCHES "define i64 @main")
+if(inliner LESS 0 OR NOT inliner LESS custom_pass OR NOT output MATCHES "define i64 @main")
   message(FATAL_ERROR "Custom pipeline discarded required inlining: ${error}")
 endif()

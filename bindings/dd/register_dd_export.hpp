@@ -17,6 +17,8 @@
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)
 
+#include <cstring>
+#include <filesystem>
 #include <ios>
 #include <sstream>
 #include <string>
@@ -100,9 +102,8 @@ Returns:
          const bool colored = true, const bool edgeLabels = false,
          const bool classic = false, const bool memory = false,
          const bool formatAsPolar = true) {
-        // replace the filename extension with .dot
         const auto dotFilename =
-            filename.substr(0, filename.find_last_of('.')) + ".dot";
+            std::filesystem::u8path(filename).replace_extension(".dot");
         nb::object pygraphviz;
         try {
           pygraphviz = nb::module_::import_("pygraphviz");
@@ -120,10 +121,17 @@ Returns:
         dd::export2Dot(e, dotFilename, colored, edgeLabels, classic, memory,
                        !usePyGraphviz, formatAsPolar);
         if (usePyGraphviz) {
-          const auto svgFilename =
-              dotFilename.substr(0, dotFilename.find_last_of('.')) + ".svg";
-          pygraphviz.attr("AGraph")("filename"_a = dotFilename)
-              .attr("draw")(svgFilename, "format"_a = "svg", "prog"_a = "dot");
+          auto svgFilename = dotFilename;
+          svgFilename.replace_extension(".svg");
+          const auto utf8Path = [](const std::filesystem::path& path) {
+            const auto bytes = path.u8string();
+            std::string value(bytes.size(), '\0');
+            std::memcpy(value.data(), bytes.data(), bytes.size());
+            return value;
+          };
+          pygraphviz.attr("AGraph")("filename"_a = utf8Path(dotFilename))
+              .attr("draw")(utf8Path(svgFilename), "format"_a = "svg",
+                            "prog"_a = "dot");
         }
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,

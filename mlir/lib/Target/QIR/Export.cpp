@@ -91,19 +91,8 @@ static LogicalResult materializeNativeQISNames(ModuleOp moduleOp) {
   return success();
 }
 
-[[nodiscard]] static std::unique_ptr<llvm::Module>
-translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
-  OwningOpRef<ModuleOp> nativeModule;
-  auto environment =
-      mod->getAttrOfType<mqt::TargetEnvAttr>(mqt::TargetEnvAttr::name);
-  if (environment && environment.getCompilationTarget().getNativeOperations() ==
-                         mqt::NativeOperationsKind::Explicit) {
-    nativeModule = cast<ModuleOp>(mod->clone());
-    if (failed(materializeNativeQISNames(*nativeModule))) {
-      return nullptr;
-    }
-    mod = *nativeModule;
-  }
+std::unique_ptr<llvm::Module> translateQIRToLLVM(ModuleOp mod,
+                                                 llvm::LLVMContext& context) {
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
@@ -117,10 +106,23 @@ translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
   return llvmModule;
 }
 
-LogicalResult translateQIRToLLVMIR(ModuleOp moduleOp,
+[[nodiscard]] static std::unique_ptr<llvm::Module>
+translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
+  auto environment =
+      mod->getAttrOfType<mqt::TargetEnvAttr>(mqt::TargetEnvAttr::name);
+  if (environment && environment.getCompilationTarget().getNativeOperations() ==
+                         mqt::NativeOperationsKind::Explicit) {
+    if (failed(materializeNativeQISNames(mod))) {
+      return nullptr;
+    }
+  }
+  return translateQIRToLLVM(mod, context);
+}
+
+LogicalResult translateQIRToLLVMIR(OwningOpRef<ModuleOp> moduleOp,
                                    llvm::raw_ostream& output) {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(moduleOp, context);
+  auto llvmModule = translateToLLVM(*moduleOp, context);
   if (!llvmModule) {
     return failure();
   }
@@ -128,10 +130,10 @@ LogicalResult translateQIRToLLVMIR(ModuleOp moduleOp,
   return success();
 }
 
-LogicalResult translateQIRToBitcode(ModuleOp moduleOp,
+LogicalResult translateQIRToBitcode(OwningOpRef<ModuleOp> moduleOp,
                                     llvm::raw_ostream& output) {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(moduleOp, context);
+  auto llvmModule = translateToLLVM(*moduleOp, context);
   if (!llvmModule) {
     return failure();
   }
@@ -139,9 +141,10 @@ LogicalResult translateQIRToBitcode(ModuleOp moduleOp,
   return success();
 }
 
-LogicalResult writeQIRBitcode(ModuleOp moduleOp, StringRef filename) {
+LogicalResult writeQIRBitcode(OwningOpRef<ModuleOp> moduleOp,
+                              StringRef filename) {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(moduleOp, context);
+  auto llvmModule = translateToLLVM(*moduleOp, context);
   if (!llvmModule) {
     return failure();
   }
@@ -149,15 +152,16 @@ LogicalResult writeQIRBitcode(ModuleOp moduleOp, StringRef filename) {
   std::error_code error;
   llvm::raw_fd_ostream stream(filename, error, llvm::sys::fs::OF_None);
   if (error) {
-    moduleOp.emitError() << "failed to open bitcode output file '" << filename
-                         << "': " << error.message();
+    moduleOp->emitError() << "failed to open bitcode output file '" << filename
+                          << "': " << error.message();
     return failure();
   }
   llvm::WriteBitcodeToFile(*llvmModule, stream);
   stream.flush();
   if (stream.has_error()) {
     stream.clear_error();
-    moduleOp.emitError() << "failed to write bitcode file '" << filename << "'";
+    moduleOp->emitError() << "failed to write bitcode file '" << filename
+                          << "'";
     return failure();
   }
   return success();

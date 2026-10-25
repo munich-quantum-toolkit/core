@@ -589,16 +589,20 @@ def test_custom_parameter_bytes_preserve_seed(ddsim_device: Device, submission: 
     """Packed native values reach direct and compiler submission unchanged."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q;'
     seed = struct.pack("@i", 1234567)
-    expected = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=1234567)
     if submission == "text":
+        expected = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=1234567)
         actual = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=seed)
     elif submission == "binary":
         compiled = compile_program(source, output=OutputFormat.QIR_BASE)
-        actual = ddsim_device.submit_job(compiled.to_bitcode(), ProgramFormat.QIR_BASE_MODULE, 64, custom1=seed)
+        payload = compiled.to_bitcode()
+        expected = ddsim_device.submit_job(payload, ProgramFormat.QIR_BASE_MODULE, 64, custom1=1234567)
+        actual = ddsim_device.submit_job(payload, ProgramFormat.QIR_BASE_MODULE, 64, custom1=seed)
     elif submission == "compiled":
         compiled = compile_program(source, target=ddsim_device)
+        expected = submit_program(compiled, target=ddsim_device, num_shots=64, custom1=1234567)
         actual = submit_program(compiled, target=ddsim_device, num_shots=64, custom1=seed)
     else:
+        expected = submit_program(source, target=ddsim_device, num_shots=64, custom1=1234567)
         actual = submit_program(source, target=ddsim_device, num_shots=64, custom1=seed)
     expected.wait()
     actual.wait()
@@ -702,7 +706,7 @@ def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
 
 
 def test_job_shots_match_counts(submitted_job: Job) -> None:
-    """Keep the same ordered samples on repeated reads and in the histogram."""
+    """Keep the same sample sequence on repeated reads and in the histogram."""
     submitted_job.wait()
     shots = submitted_job.get_shots()
     assert len(shots) == submitted_job.num_shots

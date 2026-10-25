@@ -222,8 +222,8 @@ struct StaticResult {
 
 /// One output occurrence, independent of resource ownership.
 ///
-/// Register descriptors must outlive emission. Scalar values are Result
-/// pointers.
+/// Register descriptors must outlive emission. Scalars are Result pointers
+/// or Boolean values.
 struct OutputRecord {
   std::string label;
   std::variant<const ClassicalRegister*, Value> value;

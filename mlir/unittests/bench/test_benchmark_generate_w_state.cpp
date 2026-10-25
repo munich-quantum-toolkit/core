@@ -25,6 +25,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
@@ -37,7 +38,7 @@ namespace mqt::bench {
 
 TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
   for (const size_t qubits : {1U, 3U, 16U}) {
-    const WState benchmark{{.qubits = qubits}};
+    const auto benchmark = llvm::cantFail(WState::create({.qubits = qubits}));
     auto qc = generate(benchmark);
     ASSERT_TRUE(mlir::succeeded(qc));
     if (qubits > 1) {
@@ -69,7 +70,7 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
 
 TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   constexpr size_t qubits = 1024;
-  const WState benchmark{{.qubits = qubits}};
+  const auto benchmark = llvm::cantFail(WState::create({.qubits = qubits}));
   auto qc = generate(benchmark);
   ASSERT_TRUE(mlir::succeeded(qc));
   EXPECT_LT(test::countOperations(qc->module()), 100U);

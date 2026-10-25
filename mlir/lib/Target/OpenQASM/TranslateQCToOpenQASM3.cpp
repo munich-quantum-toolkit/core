@@ -32,32 +32,45 @@
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
 #include "mlir/Analysis/DataFlow/IntegerRangeAnalysis.h"
 #include "mlir/Analysis/DataFlowFramework.h"
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/IR/ValueBoundsOpInterfaceImpl.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/ComposeSubView.h"
+#include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/AffineMap.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/InferIntRangeInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Interfaces/ValueBoundsOpInterface.h"
+#include "mlir/Interfaces/ViewLikeInterface.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/APInt.h"
@@ -67,6 +80,7 @@
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -92,6 +106,7 @@ namespace {
 enum class ResourceKind : uint8_t {
   Qubit,
   Bit,
+  Array,
 };
 
 struct Resource {
@@ -107,6 +122,11 @@ struct ProgramOutput {
   Value value;
   std::string name;
   std::string kind;
+};
+
+struct ArrayAssignment {
+  Value target;
+  SmallVector<memref::CopyOp> copies;
 };
 
 struct GateCall {
@@ -186,8 +206,8 @@ public:
     raw_indented_ostream bodyOutput(bodyStream);
     output = &bodyOutput;
 
-    emitDeclarations();
-    if (failed(emitBlock(function.getBody().front()))) {
+    if (failed(emitDeclarations()) ||
+        failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
     if (outputs.empty()) {
@@ -212,7 +232,6 @@ public:
 private:
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
-  OwningOpRef<ModuleOp> preparedModule_;
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
@@ -240,10 +259,207 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
   bool supportsDispatch = true;
+  int64_t numArrayElements_ = 0;
+  DenseMap<Operation*, ArrayAssignment> arrayAssignments_;
+  DenseSet<Operation*> elidedArrayOps_;
+  DenseMap<Value, DenseElementsAttr> arrayInitializers_;
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
   static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
+
+  /// OpenQASM assignments already snapshot their RHS, including concatenations.
+  /// Recover adjacent copy sequences without changing the IR's non-overlap
+  /// contract. Keep temporary storage when a sequence cannot be proven
+  /// complete.
+  void collectArrayAssignments() {
+    const auto slice = [](Value value) {
+      if (auto view = value.getDefiningOp<memref::SubViewOp>()) {
+        return HyperrectangularSlice(view);
+      }
+      Builder builder(value.getContext());
+      auto type = cast<MemRefType>(value.getType());
+      SmallVector<OpFoldResult> offsets(type.getRank(),
+                                        builder.getIndexAttr(0));
+      SmallVector<OpFoldResult> sizes;
+      for (const auto extent : type.getShape()) {
+        sizes.push_back(builder.getIndexAttr(extent));
+      }
+      return HyperrectangularSlice(offsets, sizes);
+    };
+    const auto root = [](Value value) {
+      while (auto view = value.getDefiningOp<memref::SubViewOp>()) {
+        value = view.getSource();
+      }
+      return value;
+    };
+    const auto collectCopies =
+        [&](Value target,
+            Operation* last) -> FailureOr<SmallVector<memref::CopyOp>> {
+      SmallVector<memref::CopyOp> copies;
+      auto type = cast<MemRefType>(target.getType());
+      if (type.getRank() == 0) {
+        return failure();
+      }
+      auto storage = root(target);
+      auto selection = slice(target);
+      auto readView = target.getDefiningOp<memref::SubViewOp>();
+      // shortcut: recover packed scratch; extend if another producer needs it.
+      if (readView &&
+          (!readView.hasZeroOffset() || !readView.hasUnitStride())) {
+        return failure();
+      }
+      const auto dropped = readView ? readView.getDroppedDims()
+                                    : llvm::SmallBitVector(type.getRank());
+      const auto dimension = dropped.find_first_unset();
+      auto remaining = selection.getMixedSizes()[dimension];
+      using Variable = ValueBoundsConstraintSet::Variable;
+      auto* context = function.getContext();
+      auto delta = AffineMap::get(3, 0,
+                                  getAffineDimExpr(0, context) +
+                                      getAffineDimExpr(1, context) -
+                                      getAffineDimExpr(2, context));
+      const auto endsAt = [&](OpFoldResult offset, OpFoldResult size,
+                              OpFoldResult limit) {
+        // Keep the accumulated offset opaque instead of re-solving its prefix.
+        auto difference = ValueBoundsConstraintSet::computeConstantBound(
+            presburger::BoundType::EQ,
+            Variable(delta,
+                     {Variable(offset), Variable(size), Variable(limit)}),
+            [&](Value value, std::optional<int64_t>,
+                ValueBoundsConstraintSet&) {
+              return value == dyn_cast<Value>(offset);
+            });
+        return succeeded(difference) && *difference == 0;
+      };
+      bool complete = false;
+      for (auto* previous = last; previous != nullptr && !complete;
+           previous = previous->getPrevNode()) {
+        if (isMemoryEffectFree(previous)) {
+          continue;
+        }
+        auto write = dyn_cast<memref::CopyOp>(previous);
+        if (!write || root(write.getTarget()) != storage ||
+            root(write.getSource()) == storage ||
+            elidedArrayOps_.contains(write) ||
+            arrayAssignments_.contains(write) ||
+            elidedArrayOps_.contains(root(write.getSource()).getDefiningOp())) {
+          break;
+        }
+        if (copies.empty() && write.getTarget() == target) {
+          complete = true;
+        } else {
+          auto part = slice(write.getTarget());
+          auto writeView = write.getTarget().getDefiningOp<memref::SubViewOp>();
+          const auto partDropped = writeView
+                                       ? writeView.getDroppedDims()
+                                       : llvm::SmallBitVector(type.getRank());
+          if (partDropped != dropped ||
+              (writeView && !writeView.hasUnitStride()) ||
+              llvm::any_of(
+                  llvm::seq<size_t>(0, selection.getMixedSizes().size()),
+                  [&](size_t index) {
+                    return std::cmp_not_equal(index, dimension) &&
+                           (!isEqualConstantIntOrValue(
+                                part.getMixedSizes()[index],
+                                selection.getMixedSizes()[index]) ||
+                            !isConstantIntValue(part.getMixedOffsets()[index],
+                                                0));
+                  }) ||
+              !endsAt(part.getMixedOffsets()[dimension],
+                      part.getMixedSizes()[dimension], remaining)) {
+            break;
+          }
+          remaining = part.getMixedOffsets()[dimension];
+          complete = isConstantIntValue(remaining, 0);
+        }
+        copies.push_back(write);
+      }
+      if (!complete || copies.empty()) {
+        return failure();
+      }
+      std::ranges::reverse(copies);
+      return copies;
+    };
+    DenseSet<Value> neededSources;
+    for (auto alloc : function.getBody().front().getOps<memref::AllocaOp>()) {
+      if (neededSources.contains(alloc)) {
+        continue;
+      }
+      SmallVector<Value> views{alloc};
+      size_t numWrites = 0;
+      SmallVector<std::pair<memref::CopyOp, SmallVector<memref::CopyOp>>> reads;
+      bool supported = true;
+      for (size_t index = 0; index < views.size() && supported; ++index) {
+        for (auto* user : views[index].getUsers()) {
+          if (auto view = dyn_cast<memref::SubViewOp>(user)) {
+            views.push_back(view);
+          } else if (auto copy = dyn_cast<memref::CopyOp>(user)) {
+            if (root(copy.getSource()) == alloc &&
+                root(copy.getTarget()) == alloc) {
+              supported = false;
+              break;
+            }
+            if (copy.getSource() == views[index]) {
+              reads.emplace_back(copy, SmallVector<memref::CopyOp>{});
+            } else {
+              ++numWrites;
+            }
+          } else {
+            supported = false;
+            break;
+          }
+        }
+      }
+      if (!supported || reads.empty()) {
+        continue;
+      }
+      size_t plannedWrites = 0;
+      for (auto& [read, copies] : reads) {
+        auto inputs = collectCopies(read.getSource(), read->getPrevNode());
+        if (failed(inputs)) {
+          supported = false;
+          break;
+        }
+        copies = std::move(*inputs);
+        plannedWrites += copies.size();
+      }
+      // Reads delimit disjoint write runs; every write must belong to one.
+      if (!supported || plannedWrites != numWrites) {
+        continue;
+      }
+      elidedArrayOps_.insert(alloc);
+      for (auto& [read, copies] : reads) {
+        for (auto copy : copies) {
+          neededSources.insert(root(copy.getSource()));
+          elidedArrayOps_.insert(copy);
+        }
+        arrayAssignments_.try_emplace(read, ArrayAssignment{
+                                                .target = read.getTarget(),
+                                                .copies = std::move(copies),
+                                            });
+      }
+    }
+    // A concatenation initializer must remain one assignment on reimport.
+    function.walk([&](memref::CopyOp copy) {
+      if (!copy.getTarget().getDefiningOp<memref::SubViewOp>() ||
+          elidedArrayOps_.contains(copy) || arrayAssignments_.contains(copy)) {
+        return;
+      }
+      auto target = root(copy.getTarget());
+      if (!target.getDefiningOp<memref::AllocaOp>()) {
+        return;
+      }
+      auto copies = collectCopies(target, copy);
+      if (failed(copies) || copies->size() < 2) {
+        return;
+      }
+      elidedArrayOps_.insert(copies->begin(), copies->end() - 1);
+      arrayAssignments_.try_emplace(
+          copy,
+          ArrayAssignment{.target = target, .copies = std::move(*copies)});
+    });
+  }
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -343,30 +559,51 @@ private:
         }
       }
     }
-    if (!needsInlining) {
+    const bool needsArrayNormalization =
+        moduleOp
+            .walk([](Operation* op) {
+              return isa<ViewLikeOpInterface, memref::DimOp, memref::RankOp>(op)
+                         ? WalkResult::interrupt()
+                         : WalkResult::advance();
+            })
+            .wasInterrupted();
+    if (!needsInlining && !needsArrayNormalization) {
       return success();
     }
-    preparedModule_ = moduleOp.clone();
-    for (auto gate : gateFunctions_) {
-      preparedModule_->lookupSymbol<func::FuncOp>(gate.getName())
-          .setNoInline(true);
+    auto* context = moduleOp.getContext();
+    if (needsInlining) {
+      for (auto gate : gateFunctions_) {
+        gate.setNoInline(true);
+      }
+      DialectRegistry registry;
+      func::registerInlinerExtension(registry);
+      LLVM::registerInlinerInterface(registry);
+      context->appendDialectRegistry(registry);
+      PassManager manager(context);
+      // Keep gate definitions and structured loops while expanding other
+      // helpers.
+      manager.addPass(createInlinerPass({}, [](OpPassManager&) {}));
+      if (failed(manager.run(moduleOp))) {
+        return failure();
+      }
     }
-    DialectRegistry registry;
-    func::registerInlinerExtension(registry);
-    LLVM::registerInlinerInterface(registry);
-    moduleOp.getContext()->appendDialectRegistry(registry);
-    PassManager manager(moduleOp.getContext());
-    // Keep gate definitions and structured loops while expanding other helpers.
-    manager.addPass(createInlinerPass({}, [](OpPassManager&) {}));
-    if (failed(manager.run(*preparedModule_))) {
-      return failure();
+    if (needsArrayNormalization) {
+      DialectRegistry registry;
+      arith::registerValueBoundsOpInterfaceExternalModels(registry);
+      context->appendDialectRegistry(registry);
+      context->getOrLoadDialect<affine::AffineDialect>();
+      RewritePatternSet patterns(context);
+      memref::populateComposeSubViewPatterns(patterns, context);
+      memref::populateFoldMemRefAliasOpPatterns(patterns);
+      if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+        return failure();
+      }
+      PassManager manager(context);
+      manager.addPass(createLowerAffinePass());
+      if (failed(manager.run(moduleOp))) {
+        return failure();
+      }
     }
-    function = preparedModule_->lookupSymbol<func::FuncOp>(function.getName());
-    for (auto& gate : gateFunctions_) {
-      gate = preparedModule_->lookupSymbol<func::FuncOp>(gate.getName());
-    }
-    llvm::erase_if(gateFunctions_, [](func::FuncOp gate) { return !gate; });
-    moduleOp = *preparedModule_;
     return success();
   }
 
@@ -524,6 +761,7 @@ private:
       }
     }
 
+    collectArrayAssignments();
     for (Operation& operation : function.getBody().front().getOperations()) {
       if (auto alloc = dyn_cast<qc::AllocOp>(&operation)) {
         const auto location = dyn_cast<NameLoc>(alloc.getLoc());
@@ -547,6 +785,39 @@ private:
         if (failed(collectClassicalResource(alloc))) {
           return failure();
         }
+        resourceOrder.push_back(alloc.getResult());
+        continue;
+      }
+      if (auto alloc = dyn_cast<memref::AllocaOp>(&operation)) {
+        if (elidedArrayOps_.contains(alloc)) {
+          continue;
+        }
+        auto type = alloc.getType();
+        if (!type.hasStaticShape() || type.getRank() < 1 ||
+            type.getRank() > 7 || !type.getLayout().isIdentity() ||
+            type.getMemorySpace() ||
+            scalarKind(type.getElementType()).empty()) {
+          return fail(alloc,
+                      "array storage requires a static shape with one to seven "
+                      "dimensions and bool, integer, or f64 elements");
+        }
+        int64_t elements = llvm::is_contained(type.getShape(), 0) ? 0 : 1;
+        for (auto extent : type.getShape()) {
+          if (extent > 100000 || (extent != 0 && elements > 100000 / extent)) {
+            return fail(alloc,
+                        "array storage exceeds the 100000-element limit");
+          }
+          elements *= extent;
+        }
+        numArrayElements_ += elements;
+        if (numArrayElements_ > 100000) {
+          return fail(alloc, "array storage exceeds the 100000-element limit");
+        }
+        resources.try_emplace(alloc.getResult(),
+                              Resource{
+                                  .kind = ResourceKind::Array,
+                                  .name = uniqueName("a", nextScalar),
+                              });
         resourceOrder.push_back(alloc.getResult());
         continue;
       }
@@ -575,6 +846,33 @@ private:
       };
       resources.try_emplace(alloc.getResult(), resource);
       resourceOrder.push_back(alloc.getResult());
+    }
+
+    DominanceInfo dominance(function);
+    if (function
+            .walk([&](bufferization::MaterializeInDestinationOp init) {
+              auto constant =
+                  init.getSource().getDefiningOp<arith::ConstantOp>();
+              auto data = constant
+                              ? dyn_cast<DenseElementsAttr>(constant.getValue())
+                              : DenseElementsAttr{};
+              if (!data || !resources.contains(init.getDest()) ||
+                  resources.at(init.getDest()).kind != ResourceKind::Array ||
+                  init->getBlock() != &function.getBody().front() ||
+                  llvm::any_of(init.getDest().getUsers(), [&](Operation* user) {
+                    return user != init &&
+                           !dominance.properlyDominates(init, user);
+                  })) {
+                fail(init,
+                     "constant array initialization must precede every use "
+                     "of an entry-block allocation");
+                return WalkResult::interrupt();
+              }
+              arrayInitializers_.try_emplace(init.getDest(), data);
+              return WalkResult::advance();
+            })
+            .wasInterrupted()) {
+      return failure();
     }
 
     const auto localBits = function.walk([&](cbit::AllocOp alloc) {
@@ -615,10 +913,9 @@ private:
     return success();
   }
 
-  [[nodiscard]] static std::string inferScalarKind(Value value) {
-    const auto type = value.getType();
+  [[nodiscard]] static std::string scalarKind(Type type) {
     if (type.isInteger(1)) {
-      return value.getDefiningOp<qc::MeasureOp>() ? "bit" : "bool";
+      return "bool";
     }
     if (type.isInteger(64) || type.isIndex()) {
       return "int";
@@ -633,7 +930,42 @@ private:
     return {};
   }
 
-  void emitDeclarations() {
+  [[nodiscard]] static std::string inferScalarKind(Value value) {
+    return value.getDefiningOp<qc::MeasureOp>() ? "bit"
+                                                : scalarKind(value.getType());
+  }
+
+  [[nodiscard]] LogicalResult emitArrayInitializer(DenseElementsAttr data,
+                                                   Location location) {
+    auto values = data.getValues<Attribute>();
+    auto current = values.begin();
+    auto shape = data.getType().getShape();
+    const auto emitDimension = [&](auto&& self,
+                                   size_t dimension) -> LogicalResult {
+      *output << '{';
+      for (int64_t i = 0; i < shape[dimension]; ++i) {
+        if (i != 0) {
+          *output << ", ";
+        }
+        if (dimension + 1 < shape.size()) {
+          if (failed(self(self, dimension + 1))) {
+            return failure();
+          }
+        } else {
+          auto value = emitConstant(*current++, location);
+          if (failed(value)) {
+            return failure();
+          }
+          *output << scalarKind(data.getElementType()) << '(' << *value << ')';
+        }
+      }
+      *output << '}';
+      return success();
+    };
+    return emitDimension(emitDimension, 0);
+  }
+
+  [[nodiscard]] LogicalResult emitDeclarations() {
     for (auto argument : function.getArguments()) {
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
     }
@@ -642,6 +974,23 @@ private:
     }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
+      if (resource.kind == ResourceKind::Array) {
+        auto type = cast<MemRefType>(value.getType());
+        *output << "array[" << scalarKind(type.getElementType());
+        for (auto extent : type.getShape()) {
+          *output << ", " << extent;
+        }
+        *output << "] " << resource.name;
+        if (auto init = arrayInitializers_.find(value);
+            init != arrayInitializers_.end()) {
+          *output << " = ";
+          if (failed(emitArrayInitializer(init->second, value.getLoc()))) {
+            return failure();
+          }
+        }
+        *output << ";\n";
+        continue;
+      }
       if (resource.kind != ResourceKind::Qubit) {
         continue;
       }
@@ -670,6 +1019,7 @@ private:
       }
     }
     *output << '\n';
+    return success();
   }
 
   [[nodiscard]] LogicalResult emitGateDefinition(func::FuncOp gate) {
@@ -732,6 +1082,7 @@ private:
     if (operation.getName().getDialectNamespace() ==
             cbit::CBitDialect::getDialectNamespace() ||
         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
+            memref::CopyOp, bufferization::MaterializeInDestinationOp,
             tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
             qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
             scf::IndexSwitchOp, ub::PoisonOp, arith::SelectOp>(&operation)) {
@@ -787,7 +1138,7 @@ private:
       *output << ";\n";
       return success();
     }
-    if (isa<qc::AllocOp, memref::AllocOp>(&operation) &&
+    if (isa<qc::AllocOp, memref::AllocOp, memref::AllocaOp>(&operation) &&
         operation.getBlock() != &function.getBody().front()) {
       return fail(&operation, "resource allocation inside control flow is not "
                               "supported; allocate resources before the loop");
@@ -795,9 +1146,11 @@ private:
     if (auto extract = dyn_cast<tensor::ExtractOp>(&operation)) {
       return emitTableLookup(extract);
     }
-    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
-            memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
-            qc::DeallocOp, qc::StaticOp>(&operation)) {
+    if (isa<arith::ConstantOp, bufferization::MaterializeInDestinationOp,
+            cbit::LoadOp, cbit::ReadOp, cbit::AllocOp, memref::LoadOp,
+            memref::AllocaOp, memref::SubViewOp, memref::ReinterpretCastOp,
+            memref::AllocOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
+            qc::StaticOp>(&operation)) {
       return success();
     }
     if (isInlineExpressionOperation(operation)) {
@@ -813,6 +1166,45 @@ private:
     }
     if (auto store = dyn_cast<cbit::StoreOp>(&operation)) {
       return emitStore(store);
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(&operation)) {
+      auto target = emitArrayElement(store.getMemRef(), store.getIndices());
+      auto value = emitExpression(store.getValue());
+      if (failed(target) || failed(value)) {
+        return failure();
+      }
+      *output << *target << " = " << scalarKind(store.getValue().getType())
+              << '(' << *value << ");\n";
+      return success();
+    }
+    if (auto copy = dyn_cast<memref::CopyOp>(&operation)) {
+      if (elidedArrayOps_.contains(copy)) {
+        return success();
+      }
+      auto type = cast<MemRefType>(copy.getSource().getType());
+      if (llvm::is_contained(type.getShape(), int64_t{0})) {
+        return success();
+      }
+      const auto planned = arrayAssignments_.find(copy);
+      auto target = emitArraySelection(planned == arrayAssignments_.end()
+                                           ? copy.getTarget()
+                                           : planned->second.target);
+      if (failed(target)) {
+        return failure();
+      }
+      SmallVector<std::string> sources;
+      auto inputs = planned == arrayAssignments_.end()
+                        ? ArrayRef<memref::CopyOp>(copy)
+                        : ArrayRef<memref::CopyOp>(planned->second.copies);
+      for (auto input : inputs) {
+        auto source = emitArraySelection(input.getSource());
+        if (failed(source)) {
+          return failure();
+        }
+        sources.push_back(std::move(*source));
+      }
+      *output << *target << " = " << llvm::join(sources, " ++ ") << ";\n";
+      return success();
     }
     if (auto write = dyn_cast<cbit::WriteOp>(&operation)) {
       const auto resource = resources.find(write.getReg());
@@ -969,7 +1361,9 @@ private:
 
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
     const auto name = operation.getName().getStringRef();
-    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
+    return (isa<memref::LoadOp>(&operation) &&
+            !isa<qc::QubitType>(operation.getResult(0).getType())) ||
+           isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
                cbit::ReadOp, arith::SelectOp, arith::ExtSIOp, arith::ExtUIOp,
                arith::TruncIOp, arith::ShRSIOp>(&operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
@@ -1073,6 +1467,77 @@ private:
 
   enum class ExpressionContext : uint8_t { Scalar, BitVector };
 
+  [[nodiscard]] FailureOr<std::string> emitArrayElement(Value array,
+                                                        ValueRange indices) {
+    const auto resource = resources.find(array);
+    if (resource == resources.end() ||
+        resource->second.kind != ResourceKind::Array) {
+      return failExpression(array,
+                            "array access refers to unsupported storage");
+    }
+    auto type = cast<MemRefType>(array.getType());
+    SmallVector<std::string> subscripts;
+    for (auto [dimension, index] : llvm::enumerate(indices)) {
+      if (auto constant = getConstantInteger(index);
+          constant &&
+          (*constant < 0 || *constant >= type.getDimSize(dimension))) {
+        return failExpression(index, "constant array index is out of bounds");
+      }
+      auto text = emitExpression(index);
+      if (failed(text)) {
+        return failure();
+      }
+      subscripts.push_back(std::move(*text));
+    }
+    return resource->second.name + "[" + llvm::join(subscripts, ", ") + "]";
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitArraySelection(Value array) {
+    if (const auto resource = resources.find(array);
+        resource != resources.end() &&
+        resource->second.kind == ResourceKind::Array) {
+      return resource->second.name;
+    }
+    auto view = array.getDefiningOp<memref::SubViewOp>();
+    if (!view) {
+      return failExpression(array, "unsupported array view");
+    }
+    const auto resource = resources.find(view.getSource());
+    if (resource == resources.end() ||
+        resource->second.kind != ResourceKind::Array) {
+      return failExpression(
+          array, "array view must refer to an entry-block allocation");
+    }
+    const auto text = [&](OpFoldResult value) -> FailureOr<std::string> {
+      if (auto constant = getConstantIntValue(value)) {
+        return std::to_string(*constant);
+      }
+      return emitExpression(cast<Value>(value));
+    };
+    auto dropped = view.getDroppedDims();
+    SmallVector<std::string> subscripts;
+    for (const auto [dimension, offset, size, stride] :
+         llvm::enumerate(view.getMixedOffsets(), view.getMixedSizes(),
+                         view.getMixedStrides())) {
+      auto first = text(offset);
+      if (failed(first)) {
+        return failure();
+      }
+      if (dropped.test(dimension)) {
+        subscripts.push_back(std::move(*first));
+        continue;
+      }
+      auto count = text(size);
+      auto step = text(stride);
+      if (failed(count) || failed(step)) {
+        return failure();
+      }
+      subscripts.push_back(*first + ":" + *step + ":(" + *first + " + " +
+                           *step + " * (" + *count + " - 1))");
+    }
+    return resource->second.name + "[" + llvm::join(subscripts, ", ") + "]";
+  }
+
   [[nodiscard]] FailureOr<std::string>
   emitExpression(Value value,
                  const ExpressionContext context = ExpressionContext::Scalar) {
@@ -1094,6 +1559,13 @@ private:
     const auto type = value.getType();
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
+    }
+    if (auto load = value.getDefiningOp<memref::LoadOp>()) {
+      if (load.getOperation() != expressionConsumer) {
+        return failExpression(
+            value, "array load requires a snapshot at its definition");
+      }
+      return emitArrayElement(load.getMemRef(), load.getIndices());
     }
     if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
       if (load.getOperation() != expressionConsumer) {
@@ -1656,6 +2128,20 @@ private:
   }
 
   [[nodiscard]] LogicalResult materialize(Value value) {
+    if (auto select = value.getDefiningOp<arith::SelectOp>();
+        select && value.getType().isF64()) {
+      auto condition = emitExpression(select.getCondition());
+      auto lhs = emitExpression(select.getTrueValue());
+      auto rhs = emitExpression(select.getFalseValue());
+      if (failed(condition) || failed(lhs) || failed(rhs) ||
+          failed(declareLocals(ValueRange{value}))) {
+        return failure();
+      }
+      const auto& name = valueNames.at(value);
+      *output << "if (" << *condition << ") { " << name << " = " << *lhs
+              << "; } else { " << name << " = " << *rhs << "; }\n";
+      return success();
+    }
     const auto integer = dyn_cast<IntegerType>(value.getType());
     const bool wide = integer && integer.getWidth() > 64;
     if (wide) {
@@ -2506,18 +2992,18 @@ private:
 
 } // namespace
 
-LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
+LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                                      llvm::raw_ostream& output) {
-  if (failed(verify(moduleOp))) {
+  if (failed(verify(*moduleOp))) {
     return failure();
   }
-  return OpenQASMEmitter(moduleOp).emit(output);
+  return OpenQASMEmitter(*moduleOp).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(translateQCToOpenQASM3(moduleOp, stream))) {
+  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
     return failure();
   }
   return source;

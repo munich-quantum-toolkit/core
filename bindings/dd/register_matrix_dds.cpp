@@ -34,8 +34,11 @@ using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold) {
+  if (!m.isTerminal() && numQubits <= static_cast<size_t>(m.p->v)) {
+    throw nb::value_error("num_qubits does not cover the matrix DD");
+  }
   if (numQubits > 20U) {
-    throw nb::value_error("num_qubits exceeds practical limit of 20");
+    throw nb::value_error("num_qubits exceeds the 20-qubit dense matrix limit");
   }
 
   if (numQubits == 0U) {
@@ -99,7 +102,7 @@ Returns:
           "decisions"_a, R"pb(Get the entry of the matrix by decisions.
 
 Args:
-    num_qubits: The number of qubits.
+    num_qubits: The number of qubits; must cover the matrix DD.
     decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
         Must be at least `num_qubits` long.
 
@@ -110,7 +113,7 @@ Returns:
           R"pb(Get the matrix represented by the DD.
 
 Args:
-    num_qubits: The number of qubits.
+    num_qubits: The number of qubits; must cover the matrix DD and be at most 20.
     threshold: The threshold for not including entries in the matrix. Defaults to 0.0.
 
 Returns:

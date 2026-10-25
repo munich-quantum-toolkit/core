@@ -29,6 +29,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
@@ -95,8 +96,8 @@ TEST(GenerateProgramTest, QAOAMatchesCostAndMixerEvolution) {
          }) {
       SCOPED_TRACE(qubits);
       SCOPED_TRACE(angles.gammas.size());
-      auto program = test::generateQCO(
-          QAOA{{.qubits = qubits, .depth = angles.gammas.size()}});
+      auto program = test::generateQCO(llvm::cantFail(
+          QAOA::create({.qubits = qubits, .depth = angles.gammas.size()})));
       ASSERT_TRUE(mlir::succeeded(program));
       ASSERT_TRUE(mlir::succeeded(program->bindParameters({
           {"gammas", angles.gammas},
@@ -132,7 +133,7 @@ TEST(GenerateProgramTest, QAOAMatchesCostAndMixerEvolution) {
 
 TEST(GenerateProgramTest, SamplesQAOACutQuality) {
   for (const size_t qubits : {3U, 4U, 5U}) {
-    const QAOA benchmark{{.qubits = qubits}};
+    const auto benchmark = llvm::cantFail(QAOA::create({.qubits = qubits}));
     auto program = test::generateQCO(benchmark);
     ASSERT_TRUE(mlir::succeeded(program));
     ASSERT_TRUE(mlir::succeeded(program->bindParameters({
@@ -144,7 +145,7 @@ TEST(GenerateProgramTest, SamplesQAOACutQuality) {
     ASSERT_TRUE(mlir::succeeded(counts));
     // The triangle has a different light cone than the longer cycles.
     const auto cutFraction = qubits == 3 ? 5. / 8. : 3. / 4.;
-    const auto evaluation = benchmark.evaluate(*counts);
+    const auto evaluation = llvm::cantFail(benchmark.evaluate(*counts));
     EXPECT_NEAR(evaluation.meanCut / static_cast<double>(qubits), cutFraction,
                 0.03);
     EXPECT_NEAR(evaluation.approximationRatio,
@@ -154,7 +155,8 @@ TEST(GenerateProgramTest, SamplesQAOACutQuality) {
 }
 
 TEST(GenerateProgramTest, PreservesQAOAInputsThroughJeff) {
-  auto program = test::generateQCO(QAOA{{.qubits = 3, .depth = 2}});
+  auto program = test::generateQCO(
+      llvm::cantFail(QAOA::create({.qubits = 3, .depth = 2})));
   ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_EQ(program->parameters(),
             (std::vector<std::string>{"gammas", "betas"}));
@@ -181,7 +183,7 @@ TEST(GenerateProgramTest, SerializesWideQAOAWithCompactLoops) {
         .qubits = 1'024,
         .depth = layers,
     };
-    auto program = generate(QAOA{options});
+    auto program = generate(llvm::cantFail(QAOA::create(options)));
     ASSERT_TRUE(mlir::succeeded(program));
     EXPECT_EQ(program->parameters().size(), 2);
     // Generation must not expand a gate list per vertex or layer.

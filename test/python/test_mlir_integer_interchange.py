@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import JeffProgram, QCProgram, sample
+from mqt.core.mlir import JeffProgram, QCOProgram, QCProgram, sample
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -57,7 +57,7 @@ def _observe(program: QCProgram | QuantumCircuit | OpenQASMProgram | JeffProgram
 
 def _check_paths(program: QCProgram, width: int, expected: int) -> None:
     assert _observe(program, width) == expected
-    restored_qasm = program.to_openqasm3()
+    restored_qasm = program.to_openqasm3(copy=True)
     assert _observe(restored_qasm, width) == expected
     jeff = program.to_qco(copy=True).to_jeff()
     restored_jeff = JeffProgram.from_bytes(jeff.to_bytes())
@@ -143,6 +143,28 @@ def test_integer_width_casts(source_width: int, target_width: int, *, signed: bo
     _check_paths(program, target_width, expected)
 
 
+@pytest.mark.parametrize("signed", [False, True])
+def test_openqasm_wide_cast_narrowing_snapshot(*, signed: bool) -> None:
+    """Truncate a wide register and retain its signed or unsigned snapshot."""
+    cast_type = "int" if signed else "uint"
+    initial = (1 << 149) | 129
+    program = QCProgram.from_openqasm_str(f"""
+OPENQASM 3.0;
+qubit q;
+bit[150] source = "{initial:0150b}";
+{cast_type}[8] snapshot = {cast_type}[8]({cast_type}[150](source));
+source = "{"0" * 150}";
+output bit[2] result;
+result[0] = snapshot == {(-127 if signed else 129)};
+result[1] = snapshot < 0;
+""")
+    expected = 3 if signed else 1
+    assert _observe(program, 2) == expected
+    assert _observe(program.to_openqasm3(copy=True), 2) == expected
+    program.cleanup()
+    assert _observe(program, 2) == expected
+
+
 @pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
 @pytest.mark.parametrize("runtime", [False, True])
 @pytest.mark.parametrize("direction", ["<<", ">>"])
@@ -169,40 +191,105 @@ result = source {direction} {amount};
         _check_paths(program, width, expected)
 
 
-@pytest.mark.parametrize("width", [65, 301])
-def test_wide_comparison_snapshot_through_jeff(width: int) -> None:
-    """Shared comparisons read the old register, even across a later store."""
+@pytest.mark.parametrize("width", [65, 150, 301])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_wide_comparison_snapshot(width: int, *, enabled: bool) -> None:
+    """Compare retained snapshots across storage mutation and format boundaries."""
+    high = 1 << (width - 1)
+    low_bits = high - 1
+    value = low_bits | (high if enabled else 0)
+    boundary = (1 << width) - 1
+    signed_value = value - (1 << width) if enabled else value
+    signed_boundary = boundary - (1 << width)
+    predicates = ["eq", "ne", "ult", "ule", "ugt", "uge"]
+    if width <= 256:
+        # Local promotion also makes wide signed comparisons exportable to OpenQASM.
+        predicates += ["slt", "sle", "sgt", "sge"]
+    result_width = len(predicates)
+    comparisons = []
+    expected = 0
+    for index, predicate in enumerate(predicates):
+        left, right = (signed_value, signed_boundary) if predicate.startswith("s") else (value, boundary)
+        lhs, rhs = ("%snapshot", "%boundary") if index % 2 == 0 else ("%boundary", "%snapshot")
+        if index % 2:
+            left, right = right, left
+        result = {
+            "eq": left == right,
+            "ne": left != right,
+            "lt": left < right,
+            "le": left <= right,
+            "gt": left > right,
+            "ge": left >= right,
+        }[predicate.removeprefix("u").removeprefix("s")]
+        expected |= int(result) << index
+        comparisons.append(f"""
+    %result{index} = arith.cmpi {predicate}, {lhs}, {rhs} : i{width}
+    %index{index} = arith.constant {index} : index
+    cbit.store %result{index}, %output[%index{index}] : !cbit.reg<{result_width}>
+""")
+    initialize = "\n".join(
+        f"%position{index} = arith.constant {index} : index\n"
+        f"cbit.store %true, %source[%position{index}] : !cbit.reg<{width}>"
+        for index in range(width - 1)
+    )
     program = QCProgram.from_mlir_str(f"""
 module {{
-  func.func @main() -> !cbit.reg<1> attributes {{mqt.entry_point}} {{
+  func.func @main() -> !cbit.reg<{result_width}> attributes {{mqt.entry_point}} {{
     %q = qc.alloc : !qc.qubit
-    qc.h %q : !qc.qubit
+    {"qc.x %q : !qc.qubit" if enabled else ""}
+    %bit = qc.measure %q : !qc.qubit -> i1
     %source = cbit.alloc(#cbit.init<zero>) : !cbit.reg<{width}>
-    %position = arith.constant {width - 1} : index
     %true = arith.constant true
     %false = arith.constant false
-    cbit.store %true, %source[%position] : !cbit.reg<{width}>
+    %low = arith.constant 0 : index
+    {initialize}
+    %position = arith.constant {width - 1} : index
+    cbit.store %bit, %source[%position] : !cbit.reg<{width}>
     %snapshot = cbit.read %source : !cbit.reg<{width}> -> i{width}
     cbit.store %false, %source[%position] : !cbit.reg<{width}>
-    %high = arith.constant {1 << (width - 1)} : i{width}
-    %zero = arith.constant 0 : i{width}
-    %equal = arith.cmpi eq, %snapshot, %high : i{width}
-    %positive = arith.cmpi ult, %zero, %snapshot : i{width}
-    %result = arith.andi %equal, %positive : i1
-    %output = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
-    cbit.write %result, %output : i1, !cbit.reg<1>
+    cbit.store %false, %source[%low] : !cbit.reg<{width}>
+    %boundary = arith.constant {boundary} : i{width}
+    %output = cbit.alloc(#cbit.init<zero>) : !cbit.reg<{result_width}>
+    {"".join(comparisons)}
     qc.dealloc %q : !qc.qubit
-    return %output : !cbit.reg<1>
+    return %output : !cbit.reg<{result_width}>
   }}
 }}
 """)
-    for cleanup in [False, True]:
-        if cleanup:
-            program.cleanup()
-        assert _observe(program, 1) == 1
-        jeff = program.to_qco(copy=True).to_jeff()
-        restored = JeffProgram.from_bytes(jeff.to_bytes())
-        assert _observe(restored, 1) == 1
+    _check_paths(program, result_width, expected)
+    program.cleanup()
+    if width <= 256:
+        assert f"!cbit.reg<{width}>" not in str(program)
+    _check_paths(program, result_width, expected)
+
+
+@pytest.mark.parametrize("static_index", [False, True])
+def test_wide_comparison_index_eligibility(*, static_index: bool) -> None:
+    """Normalize static indices and retain packed reads for runtime indices."""
+    program = QCOProgram.from_mlir_str(f"""module {{
+      func.func @main() -> i1 attributes {{mqt.entry_point}} {{
+        %q = qco.static 0 : !qco.qubit
+        %flipped = qco.x %q : !qco.qubit
+        %measured, %bit = qco.measure %flipped : !qco.qubit
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %true = arith.constant true
+        %index = scf.if {"%true" if static_index else "%bit"} -> index {{
+          scf.yield %one : index
+        }} else {{ scf.yield %zero : index }}
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<150>
+        cbit.store %bit, %reg[%index] : !cbit.reg<150>
+        %snapshot = cbit.read %reg : !cbit.reg<150> -> i150
+        %two = arith.constant 2 : i150
+        %result = arith.cmpi eq, %snapshot, %two : i150
+        qco.sink %measured : !qco.qubit
+        return %result : i1
+      }}
+    }}""")
+    program.run_pass_pipeline("promote-classical-memory")
+    assert ("cbit.read" in str(program)) != static_index
+    assert "cbit.load" not in str(program)
+    assert sample(program, shots=1, seed=1) == {"1": 1}
 
 
 @pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
@@ -295,3 +382,28 @@ def test_jeff_rejects_wider_general_integer_expressions() -> None:
     )
     with pytest.raises(RuntimeError, match="Compiler action failed"):
         program.to_qco().to_jeff()
+
+
+@pytest.mark.parametrize("initial", [0, 1 << 149])
+def test_wide_qiskit_signed_values(initial: int) -> None:
+    """Preserve sign bits through widening, arithmetic shifts, and comparison."""
+    if not supports_qiskit_translation():
+        pytest.skip("Qiskit translation is unavailable")
+    program = _program(
+        150,
+        """
+      %extended = arith.extsi %value : i150 to i151
+      %one = arith.constant 1 : i151
+      %half = arith.shrsi %extended, %one : i151
+      %zero = arith.constant 0 : i151
+      %result = arith.cmpi slt, %half, %zero : i151
+    """,
+        1,
+        initial,
+    )
+    signed = initial - (1 << 150) if initial else 0
+    expected = int((signed >> 1) < 0)
+    assert _observe(program, 1) == expected
+    assert _observe(program.to_qiskit(copy=True), 1) == expected
+    program.cleanup()
+    assert _observe(program.to_qiskit(), 1) == expected

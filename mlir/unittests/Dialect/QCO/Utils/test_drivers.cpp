@@ -241,8 +241,18 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   auto mod = getProgram();
   auto wires = getWires(*mod);
   SmallVector<DenseSet<std::pair<size_t, size_t>>> layers;
+  size_t iteration = 0;
+  Operation* held = nullptr;
   const auto callback = [&](const Frontier& frontier,
                             SmallVectorImpl<Operation*>& released) {
+    if (iteration++ == 0) {
+      held = *frontier.keys().begin();
+      llvm::append_range(released, llvm::drop_begin(frontier.keys()));
+      return WalkResult::advance();
+    }
+    if (iteration == 2) {
+      EXPECT_TRUE(frontier.contains(held));
+    }
     for (const auto& [op, indices] : frontier) {
       if (indices.size() == 1) {
         released.emplace_back(op);
@@ -279,6 +289,7 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   for_each(wires, [&](WireIterator& it) { --it; });
 
   layers.clear();
+  iteration = 0;
 
   walkProgramGraph<WireDirection::Backward>(wires, callback);
 
@@ -287,57 +298,4 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   ASSERT_TRUE(layers[1].contains(std::make_pair(1, 2)));
   ASSERT_TRUE(layers[2].contains(std::make_pair(0, 1)));
   ASSERT_TRUE(layers[2].contains(std::make_pair(2, 3)));
-}
-
-TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  SmallVector<WireIterator> wires;
-  SmallVector<Value> qubits(3);
-  SmallVector<Value> bits(3);
-
-  for (size_t i = 0; i < 3; ++i) {
-    qubits[i] = builder.allocQubit();
-    wires.emplace_back(qubits[i]);
-  }
-
-  qubits[0] = builder.h(qubits[0]);
-  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
-
-  for (size_t i = 0; i < 3; ++i) {
-    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
-  }
-
-  [[maybe_unused]] auto mod = builder.finalize(bits);
-
-  size_t iteration = 0;
-  DenseSet<Operation*> prev;
-  DenseSet<Operation*> curr;
-  walkProgramGraph<WireDirection::Forward>(
-      wires,
-      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
-        if (iteration++ == 0) {
-          EXPECT_GE(frontier.size(), 2U);
-          if (frontier.size() < 2) {
-            return WalkResult::interrupt();
-          }
-
-          released.emplace_back(*frontier.keys().begin());
-          for (Operation* op : llvm::drop_begin(frontier.keys())) {
-            prev.insert(op);
-          }
-          return WalkResult::advance();
-        }
-
-        for (Operation* op : frontier.keys()) {
-          curr.insert(op);
-        }
-
-        return WalkResult::interrupt();
-      });
-
-  EXPECT_GE(curr.size(), prev.size());
-  EXPECT_TRUE(
-      llvm::all_of(prev, [&](Operation* op) { return curr.contains(op); }));
 }

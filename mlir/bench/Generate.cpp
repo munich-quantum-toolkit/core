@@ -61,16 +61,20 @@ generate(const std::string_view instanceSpecificationJSON,
          const std::string_view source) {
   auto parsed =
       parseInstanceSpecificationJSON(instanceSpecificationJSON, source);
+  if (!parsed) {
+    llvm::errs() << llvm::toString(parsed.takeError()) << '\n';
+    return failure();
+  }
   auto program =
       std::visit([](const auto& benchmark) { return generate(benchmark); },
-                 parsed.instance);
+                 parsed->instance);
   if (failed(program)) {
     return failure();
   }
   return GeneratedBenchmark{
-      .benchmarkId = std::move(parsed.benchmarkId),
-      .caseId = std::move(parsed.caseId),
-      .manifestJSON = std::move(parsed.manifestJSON),
+      .benchmarkId = std::move(parsed->benchmarkId),
+      .caseId = std::move(parsed->caseId),
+      .manifestJSON = std::move(parsed->manifestJSON),
       .program = std::move(*program),
   };
 }

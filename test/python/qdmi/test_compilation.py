@@ -25,10 +25,12 @@ from mqt.core.mlir import (
     OpenQASMProgram,
     OutputFormat,
     QCProgram,
+    QIRProfile,
     compile_program,
+    sample,
     submit_program,
 )
-from mqt.core.qdmi import CustomProperty, Job, ProgramFormat, is_binary_program_format, open_device
+from mqt.core.qdmi import CustomProperty, Job, ProgramFormat, open_device
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -84,6 +86,142 @@ def test_computed_classical_outputs(program_format: ProgramFormat) -> None:
         assert isinstance(output, str)
         for index, value in enumerate(("false", "false", "true", "false")):
             assert output.count(f"OUTPUT\tBOOL\t{value}\tcomputed_{index}\n") == 4
+
+
+@pytest.mark.parametrize(
+    ("element_type", "low", "high", "sentinel", "comparison"),
+    [("i1", "0", "1", "1", "arith.cmpi eq"), ("f64", "0.25", "0.75", "0.5", "arith.cmpf oeq")],
+)
+def test_classical_array_copy_snapshot(element_type: str, low: str, high: str, sentinel: str, comparison: str) -> None:
+    """Copies preserve subview offsets and values across later source writes."""
+    program = QCProgram.from_mlir_str(f"""module {{
+      func.func @main() -> i1 attributes {{mqt.entry_point}} {{
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %two = arith.constant 2 : index
+        %low = arith.constant {low} : {element_type}
+        %high = arith.constant {high} : {element_type}
+        %sentinel = arith.constant {sentinel} : {element_type}
+        %source = memref.alloca() : memref<3x{element_type}>
+        %target = memref.alloca() : memref<3x{element_type}>
+        memref.store %sentinel, %source[%zero] : memref<3x{element_type}>
+        memref.store %low, %source[%one] : memref<3x{element_type}>
+        memref.store %high, %source[%two] : memref<3x{element_type}>
+        memref.store %sentinel, %target[%zero] : memref<3x{element_type}>
+        %q = qc.alloc : !qc.qubit
+        qc.x %q : !qc.qubit
+        %bit = qc.measure %q : !qc.qubit -> i1
+        %index = arith.index_castui %bit : i1 to index
+        %from = memref.subview %source[%index][2][1]
+          : memref<3x{element_type}> to memref<2x{element_type}, strided<[1], offset: ?>>
+        %to = memref.subview %target[1][2][1]
+          : memref<3x{element_type}> to memref<2x{element_type}, strided<[1], offset: 1>>
+        memref.copy %from, %to
+          : memref<2x{element_type}, strided<[1], offset: ?>>
+          to memref<2x{element_type}, strided<[1], offset: 1>>
+        memref.store %low, %source[%two] : memref<3x{element_type}>
+        %prefix = memref.load %target[%zero] : memref<3x{element_type}>
+        %first = memref.load %target[%one] : memref<3x{element_type}>
+        %second = memref.load %target[%two] : memref<3x{element_type}>
+        %prefix_ok = {comparison}, %prefix, %sentinel : {element_type}
+        %first_ok = {comparison}, %first, %low : {element_type}
+        %second_ok = {comparison}, %second, %high : {element_type}
+        %copied_ok = arith.andi %first_ok, %second_ok : i1
+        %ok = arith.andi %prefix_ok, %copied_ok : i1
+        qc.dealloc %q : !qc.qubit
+        return %ok : i1
+      }}
+    }}""")
+    assert sample(program, shots=1, seed=1) == {"1": 1}
+    qir = program.to_qir(QIRProfile.ADAPTIVE)
+    job = open_device("mqt.ddsim.default").submit_job(qir.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
+    assert job.wait()
+    assert job.get_counts() == {"1": 1}
+
+
+def test_boolean_scalar_outputs() -> None:
+    """DD and QIR preserve Boolean snapshots and repeated mixed outputs."""
+    program = QCProgram.from_mlir_str("""module {
+      func.func @main() -> (i1, !cbit.reg<1>, i1, i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %true = arith.constant true
+        %q = qc.alloc : !qc.qubit
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %first = qc.measure %q : !qc.qubit -> i1
+        cbit.store %first, %reg[%zero] : !cbit.reg<1>
+        %snapshot = arith.xori %first, %true : i1
+        qc.x %q : !qc.qubit
+        %later = qc.measure %q : !qc.qubit -> i1
+        cbit.store %later, %reg[%zero] : !cbit.reg<1>
+        qc.dealloc %q : !qc.qubit
+        return %snapshot, %reg, %first, %snapshot, %reg : i1, !cbit.reg<1>, i1, i1, !cbit.reg<1>
+      }
+    }""")
+    assert sample(program, shots=1, seed=1) == {"11011": 1}
+    qir = program.to_qir(QIRProfile.ADAPTIVE)
+    job = open_device("mqt.ddsim.default").submit_job(qir.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
+    assert job.wait()
+    assert job.get_counts() == {"11011": 1}
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+@pytest.mark.parametrize("scalar_output", [False, True])
+def test_adaptive_measurement_snapshots(*, overwrite: bool, scalar_output: bool) -> None:
+    """Preserve a measurement value across runtime-indexed stores and repeated outputs."""
+    intervening = (
+        """
+      qc.x %q : !qc.qubit
+      %later = qc.measure %q : !qc.qubit -> i1
+      cbit.store %later, %out[%zero] : !cbit.reg<2>
+      %position = arith.index_castui %later : i1 to index
+    """
+        if overwrite
+        else ""
+    )
+    result_type = "(!cbit.reg<2>, i1)" if scalar_output else "!cbit.reg<2>"
+    outputs = "%out, %first : !cbit.reg<2>, i1" if scalar_output else "%out : !cbit.reg<2>"
+    source = f"""module {{
+      func.func @main() -> {result_type} attributes {{mqt.entry_point}} {{
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %q = qc.alloc : !qc.qubit
+        %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        qc.x %q : !qc.qubit
+        %first = qc.measure %q : !qc.qubit -> i1
+        {intervening}
+        cbit.store %first, %out[{"%position" if overwrite else "%zero"}] : !cbit.reg<2>
+        cbit.store %first, %out[%one] : !cbit.reg<2>
+        qc.dealloc %q : !qc.qubit
+        return {outputs}
+      }}
+    }}"""
+    program = QCProgram.from_mlir_str(source).to_qir(QIRProfile.ADAPTIVE)
+    job = open_device("mqt.ddsim.default").submit_job(
+        program.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1
+    )
+    assert job.wait()
+    assert job.get_counts() == {"111" if scalar_output else "11": 1}
+
+
+@pytest.mark.parametrize("width", [50, 100, 150])
+@pytest.mark.parametrize("program_format", [ProgramFormat.QIR_BASE_MODULE, ProgramFormat.QIR_ADAPTIVE_MODULE])
+def test_entry_point_local_bits(width: int, program_format: ProgramFormat) -> None:
+    """Promote local bits and preserve the measured output's width and order."""
+    bits = [int(index % 3 == 1) for index in range(width)]
+    assignments = "\n".join(f"local[{index}] = {bit};" for index, bit in enumerate(bits))
+    controls = "\n".join(f"if (local[{index}]) {{ x q[{index}]; }}" for index in range(width))
+    source = f"""OPENQASM 3.0;
+      include "stdgates.inc";
+      qubit[{width}] q;
+      bit[{width}] local;
+      output bit[{width}] result;
+      {assignments}
+      {controls}
+      result = measure q;
+    """
+    job = submit_program(source, target="mqt.ddsim.default", program_format=program_format, num_shots=1)
+    assert job.wait()
+    assert job.get_counts() == {"".join(map(str, reversed(bits))): 1}
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
@@ -269,7 +407,7 @@ def test_rejects_invalid_submission_options() -> None:
     with pytest.raises(ValueError, match="cannot emit"):
         submit_program(source, target=device, program_format=ProgramFormat.QASM2)
     assert source.is_valid
-    compiled = compile_program(source, target=device)
+    compiled = compile_program(source, target=device, copy=True)
     assert source.is_valid
     with pytest.raises(ValueError, match="conflicts"):
         submit_program(compiled, target=device, program_format=ProgramFormat.QASM3)
@@ -440,34 +578,36 @@ c = measure q;
         ProgramFormat.QIR_ADAPTIVE_MODULE,
     ],
 )
-def test_qir_output_stream_matches_shots(program_format: ProgramFormat) -> None:
-    """Capture framed records without changing QDMI result order or other jobs."""
+@pytest.mark.parametrize("capture", [False, True])
+def test_binary_qir_results(program_format: ProgramFormat, *, capture: bool) -> None:
+    """Binary QIR sampling exposes counts, shots, and eligible retained states."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; bit[2] c = measure q;'
-    device = open_device("mqt.ddsim.default")
-    job = submit_program(source, target=device, program_format=program_format, num_shots=8, custom1=7, custom2=True)
-    payload = job.get_program(bytes) if is_binary_program_format(program_format) else job.get_program()
-    ordinary = device.submit_job(payload, program_format, num_shots=8, custom1=7)
+    job = submit_program(
+        source, target="mqt.ddsim.default", program_format=program_format, num_shots=8, custom1=7, custom2=capture
+    )
     assert job.wait()
-    assert ordinary.wait()
+    shots = job.get_shots()
+    assert len(shots) == 8
+    assert job.get_counts() == {bits: shots.count(bits) for bits in set(shots)}
     output = job.get_custom_result(CustomProperty.CUSTOM1, str)
-    assert isinstance(output, str)
-    assert output.startswith("HEADER\tschema_id\tlabeled\nHEADER\tschema_version\t2.1\n")
-    records = output.split("START\n")[1:]
-    assert len(records) == 8
-    for record, shot in zip(records, job.get_shots(), strict=True):
-        assert record.endswith("END\t0\n")
-        bits = [
-            line.split("\t")[2]
-            for line in record.splitlines()
-            if line.startswith(("OUTPUT\tRESULT\t", "OUTPUT\tRESULT_ARRAY\t"))
-        ]
-        assert "".join(bits)[::-1] == shot
-    assert sum(job.get_counts().values()) == 8
-    assert job.get_custom_result(CustomProperty.CUSTOM1, str) == output
-    assert job.get_custom_result(CustomProperty.CUSTOM1, bytes) == output.encode() + b"\0"
-    assert ordinary.get_custom_result(CustomProperty.CUSTOM1, str) is None
-    with pytest.raises(RuntimeError, match="Not supported"):
-        job.get_dense_statevector()
+    if capture:
+        assert isinstance(output, str)
+        recorded_shots = []
+        for frame in output.split("START\n")[1:]:
+            bits = [
+                line.split("\t")[2]
+                for line in frame.splitlines()
+                if line.startswith(("OUTPUT\tRESULT\t", "OUTPUT\tRESULT_ARRAY\t"))
+            ]
+            recorded_shots.append("".join(bits)[::-1])
+        assert recorded_shots == shots
+    else:
+        assert output is None
+    if not capture or program_format in {ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_BASE_MODULE}:
+        assert job.get_dense_statevector() == pytest.approx([2**-0.5, 2**-0.5, 0, 0])
+    else:
+        with pytest.raises(RuntimeError, match="Not supported"):
+            job.get_dense_statevector()
 
 
 @pytest.mark.parametrize(("program_format", "shots"), [(ProgramFormat.QASM3, 1), (ProgramFormat.QIR_BASE_MODULE, 0)])

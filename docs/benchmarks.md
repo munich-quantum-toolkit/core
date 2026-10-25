@@ -217,16 +217,22 @@ The output format changes the file name, but not the semantic case ID.
 
 A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
-manifests.
+manifests. Use `create` to construct validated instances. Fallible operations
+return `llvm::Expected<T>`. Native `probability` and `cutSize` queries require
+binary outcomes of `output().width` bits. Python queries and count evaluation
+validate their inputs. Evaluation results include the total `shots` used.
 
 ```cpp
 #include "bench/Grover.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <cassert>
 
 int main() {
-  const mqt::bench::Grover benchmark{{.markedBitstring = "101"}};
-  const auto evaluation = benchmark.evaluate({{"101", 1000}});
+  const auto benchmark =
+      llvm::cantFail(mqt::bench::Grover::create({.markedBitstring = "101"}));
+  const auto evaluation = llvm::cantFail(benchmark.evaluate({{"101", 1000}}));
   assert(evaluation.successProbability == 1.0);
 }
 ```
@@ -253,13 +259,14 @@ Adding a family requires five extension points:
    evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
    family-specific parameter JSON, reference JSON, parser, and schema body to
    `src/bench/JSON.cpp`.
-3. Declare and implement the structured emitter under `mlir/bench/`, add its
-   source to the program library, and declare the typed `generate(...)`
-   overload. The catalog supplies the generation wrapper and JSON dispatch row.
+3. Implement the structured emitter under `mlir/bench/` and add its source to
+   the program library. The catalog supplies the emitter declaration, typed
+   `generate(...)` overload, generation wrapper, and JSON dispatch row.
 4. Add the explicit Python types in a family registration source under
-   `bindings/bench/`, register its direct submodule in `register_bench.cpp`, and
-   add the source to `bindings/bench/CMakeLists.txt`.
-5. Test the reference, strict instance specification JSON, emitter structure,
+   `bindings/bench/`, use `registerBenchmarkIO` for generation and JSON methods,
+   register its direct submodule in `register_bench.cpp`, and add the source to
+   `bindings/bench/CMakeLists.txt`.
+5. Test the reference, instance specification validation, emitter structure,
    `jeff` conversion, and Python generation.
 
 `BenchmarkFamilies.inc` is the sole family catalog. Do not add a private family
@@ -270,8 +277,8 @@ list, a generic option map, or a public base class.
 Instance specifications reject unknown fields and invalid values. The case ID
 does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
-Before evaluation, normalize backend results to the manifest's big-endian
-`result` order.
+JSON APIs use the C numeric locale (`LC_NUMERIC=C`). Normalize backend results
+to the manifest's big-endian `result` order before evaluation.
 
 ## Benchmark families
 
@@ -627,10 +634,10 @@ number of retry attempts.
 
 ```{code-cell} ipython3
 evaluation = rus.evaluate(counts)
-assert sum(counts.values()) == 4096
+assert evaluation.shots == 4096
 assert evaluation.total_variation_distance < 0.02
 for bit in ("0", "1"):
-    observed = counts.get(bit, 0) / sum(counts.values())
+    observed = counts.get(bit, 0) / evaluation.shots
     print(f"P({bit}): observed {observed:.3f}, ideal {rus.probability(bit):.3f}")
 print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
 ```

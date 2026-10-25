@@ -150,11 +150,9 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
                     {.id = "qir", .version = "2.1.0.1", .profile = "base"}),
                 "Invalid payload specification: Payload format version must "
                 "use major[.minor[.patch]]");
-  expectInvalid(
-      mlir::PayloadSpecification::create(
-          {.id = "", .version = "2.1.0", .profile = {}}),
-      "Invalid payload specification: Payload format requires an ID and "
-      "version");
+  expectInvalid(mlir::PayloadSpecification::create(
+                    {.id = "", .version = "2.1.0", .profile = {}}),
+                "Invalid payload specification: Payload format requires an ID");
   expectInvalid(
       mlir::PayloadSpecification::create(
           {.id = std::string("qir\0", 4), .version = "2.1.0", .profile = {}}),
@@ -295,7 +293,10 @@ TEST(PayloadSpecificationTest, RestrictsCapabilitiesWithoutChangingFormat) {
 }
 
 TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
   for (const auto& [input, expected] : std::array{
+           std::pair{"", ""},
            std::pair{"2", "2.0.0"},
            std::pair{"2.1", "2.1.0"},
            std::pair{"2.1.3", "2.1.3"},
@@ -304,8 +305,15 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
     const auto payload = valid(mlir::PayloadSpecification::create(
         {.id = "qir", .version = input, .profile = "base"}));
     EXPECT_EQ(payload.format().version, expected);
+    EXPECT_EQ(
+        valid(mlir::PayloadSpecification::create(payload.materialize(context)))
+            .format(),
+        payload.format());
   }
 
+  EXPECT_EQ(valid(valid(mlir::PayloadSpecification::create({.id = "iqm-json"}))
+                      .compilerOutput()),
+            mlir::ProgramFormat::IQMJSON);
   const auto qir = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2.1", .profile = "base"}));
   EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);

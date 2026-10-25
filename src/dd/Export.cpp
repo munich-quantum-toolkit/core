@@ -18,20 +18,96 @@
 #include "dd/RealNumber.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <stack>
+#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#ifdef __APPLE__
+#include <crt_externs.h>
+#endif
+#include <spawn.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 namespace dd {
+
+void renderDotToSvg(const std::filesystem::path& dotFilename) {
+  const auto input = std::filesystem::absolute(dotFilename);
+  auto output = input;
+  output.replace_extension(".svg");
+
+#ifdef _WIN32
+  const auto inputName = input.wstring();
+  const auto outputName = output.wstring();
+  const std::array<const wchar_t*, 6> args = {L"dot.exe",         L"-Tsvg",
+                                              inputName.c_str(),  L"-o",
+                                              outputName.c_str(), nullptr};
+  const auto exitCode = _wspawnvp(_P_WAIT, L"dot.exe", args.data());
+  if (exitCode == -1) {
+    throw std::system_error(errno, std::generic_category(),
+                            "Cannot start Graphviz dot");
+  }
+#else
+  std::string command = "dot";
+  std::string format = "-Tsvg";
+  std::string inputName = input.string();
+  std::string outputFlag = "-o";
+  std::string outputName = output.string();
+  const std::array<char*, 6> args = {
+      command.data(),    format.data(),     inputName.data(),
+      outputFlag.data(), outputName.data(), nullptr,
+  };
+#ifdef __APPLE__
+  const auto* const environment = *_NSGetEnviron();
+#else
+  const auto* const environment = environ;
+#endif
+  pid_t pid{};
+  const auto spawnError =
+      posix_spawnp(&pid, "dot", nullptr, nullptr, args.data(), environment);
+  if (spawnError != 0) {
+    throw std::system_error(spawnError, std::generic_category(),
+                            "Cannot start Graphviz dot");
+  }
+
+  int status{};
+  while (waitpid(pid, &status, 0) == -1) {
+    if (errno != EINTR) {
+      throw std::system_error(errno, std::generic_category(),
+                              "Cannot wait for Graphviz dot");
+    }
+  }
+  // sys/wait.h supplies these macros through a libc internal header.
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  if (!WIFEXITED(status)) {
+    throw std::runtime_error("Graphviz dot terminated abnormally");
+  }
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const auto exitCode = WEXITSTATUS(status);
+#endif
+  if (exitCode != 0) {
+    throw std::runtime_error("Graphviz dot exited with code " +
+                             std::to_string(exitCode));
+  }
+}
 
 std::string colorFromPhase(const Complex& a) {
   auto phase = ComplexNumbers::arg(a) / (2 * PI);

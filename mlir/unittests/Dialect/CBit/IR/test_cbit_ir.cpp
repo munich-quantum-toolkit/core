@@ -306,10 +306,12 @@ TEST_F(CBitIRTest, RemovesWriteOnlyRegistersAndPreservesEffectfulProducers) {
 TEST_F(CBitIRTest, ForwardsStoresAndZeroInitialization) {
   auto moduleOp = parse(R"mlir(
     module {
+      func.func private @work()
       func.func @main(%value: i1, %other: i1) -> (i65, i1, i1, i1) {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<65>
+        func.call @work() : () -> ()
         %zero = cbit.read %reg : !cbit.reg<65> -> i65
         %bit = cbit.load %reg[%c0] : !cbit.reg<65>
         cbit.store %value, %reg[%c0] : !cbit.reg<65>
@@ -325,7 +327,7 @@ TEST_F(CBitIRTest, ForwardsStoresAndZeroInitialization) {
   canonicalizer.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
 
-  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+  auto funcOp = moduleOp->lookupSymbol<func::FuncOp>("main");
   auto returned = cast<func::ReturnOp>(funcOp.front().getTerminator());
   EXPECT_TRUE(matchPattern(returned.getOperand(0), m_Zero()));
   EXPECT_TRUE(matchPattern(returned.getOperand(1), m_Zero()));
@@ -449,4 +451,90 @@ TEST_F(CBitIRTest, PreservesReadsAcrossPotentialWrites) {
     }
   }
 }
+
+TEST_F(CBitIRTest, PromotesIndependentBitsAndRetainedSnapshots) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @test(%a: i1, %b: i1) -> (i1, i1, i1, i1) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %single = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+        %initial = cbit.load %reg[%c1] : !cbit.reg<2>
+        cbit.store %a, %reg[%c0] : !cbit.reg<2>
+        %snapshot = cbit.load %reg[%c0] : !cbit.reg<2>
+        cbit.store %b, %reg[%c1] : !cbit.reg<2>
+        %independent = cbit.load %reg[%c0] : !cbit.reg<2>
+        cbit.store %b, %reg[%c0] : !cbit.reg<2>
+        cbit.write %snapshot, %single : i1, !cbit.reg<1>
+        %whole = cbit.read %single : !cbit.reg<1> -> i1
+        return %initial, %snapshot, %independent, %whole : i1, i1, i1, i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  PassManager manager(context.get());
+  manager.addPass(createSROA());
+  manager.addPass(createMem2Reg());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  moduleOp->walk(
+      [](cbit::AllocOp) { ADD_FAILURE() << "local storage remains"; });
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  auto returned =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_TRUE(matchPattern(returned.getOperand(0), m_Zero()));
+  for (Value value : returned.getOperands().drop_front()) {
+    EXPECT_EQ(value, function.getArgument(0));
+  }
+}
+
+TEST_F(CBitIRTest, PreservesStorageForUnsupportedUses) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func private @mutate(!cbit.reg<2>)
+      func.func @dynamic(%index: index, %bit: i1) -> i1 {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        cbit.store %bit, %reg[%index] : !cbit.reg<2>
+        %result = cbit.load %reg[%index] : !cbit.reg<2>
+        return %result : i1
+      }
+      func.func @output() -> !cbit.reg<2> {
+        %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "out"} : !cbit.reg<2>
+        return %reg : !cbit.reg<2>
+      }
+      func.func @call() -> i2 {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        func.call @mutate(%reg) : (!cbit.reg<2>) -> ()
+        %result = cbit.read %reg : !cbit.reg<2> -> i2
+        return %result : i2
+      }
+      func.func @wide() -> i1 {
+        %last = arith.constant 256 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<257>
+        %result = cbit.load %reg[%last] : !cbit.reg<257>
+        return %result : i1
+      }
+
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  PassManager manager(context.get());
+  manager.addPass(createSROA());
+  manager.addPass(createMem2Reg());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  for (auto function : moduleOp->getOps<func::FuncOp>()) {
+    if (!function.isExternal()) {
+      EXPECT_TRUE(llvm::hasSingleElement(function.getOps<cbit::AllocOp>()));
+    }
+  }
+  auto dynamic = moduleOp->lookupSymbol<func::FuncOp>("dynamic");
+  EXPECT_TRUE(llvm::hasSingleElement(dynamic.getOps<cbit::StoreOp>()));
+  EXPECT_TRUE(llvm::hasSingleElement(dynamic.getOps<cbit::LoadOp>()));
+  auto call = moduleOp->lookupSymbol<func::FuncOp>("call");
+  EXPECT_TRUE(llvm::hasSingleElement(call.getOps<func::CallOp>()));
+  EXPECT_TRUE(llvm::hasSingleElement(call.getOps<cbit::ReadOp>()));
+  auto wide = moduleOp->lookupSymbol<func::FuncOp>("wide");
+  EXPECT_TRUE(llvm::hasSingleElement(wide.getOps<cbit::LoadOp>()));
+}
+
 } // namespace

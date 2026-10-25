@@ -67,6 +67,11 @@ public:
   /// table is then used for in the lookup method.
   UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
 
+  /// Grow the table without invalidating existing entries.
+  ///
+  /// @param nVars The requested number of levels.
+  /// @throws std::invalid_argument If nVars is less than the current number of
+  /// levels.
   void resize(std::size_t nVars);
 
   /// The hash function for the hash table.
@@ -146,9 +151,11 @@ public:
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
-  /// Get a reference to individual statistics
-  [[nodiscard]] const UniqueTableStatistics&
-  getStats(std::size_t idx) const noexcept;
+  /// Get a reference to the statistics for a level.
+  ///
+  /// @param idx The level index.
+  /// @throws std::out_of_range If idx does not name an allocated level.
+  [[nodiscard]] const UniqueTableStatistics& getStats(std::size_t idx) const;
 
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;

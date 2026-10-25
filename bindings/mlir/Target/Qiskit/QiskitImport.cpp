@@ -562,6 +562,10 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
       throw std::runtime_error(
           "Qiskit unsigned classical values require a nonzero width");
     }
+    if (width > mlir::IntegerType::kMaxWidth) {
+      throw std::runtime_error(
+          "Qiskit integer width exceeds MLIR's type limit");
+    }
     return builder.getIntegerType(width);
   case ClassicalType::Float:
     return builder.getF64Type();
@@ -576,7 +580,7 @@ integerConstant(mlir::ImplicitLocOpBuilder& builder, const uint32_t width,
     throw std::runtime_error(
         "Qiskit Uint literal does not fit its declared width");
   }
-  const auto type = builder.getIntegerType(width);
+  const auto type = expressionType(builder, ClassicalType::Uint, width);
   const auto attribute = builder.getIntegerAttr(type, value.zextOrTrunc(width));
   return mlir::arith::ConstantOp::create(builder, attribute).getResult();
 }
@@ -658,13 +662,10 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
              const llvm::ArrayRef<ClassicalBitRef> classicalBits,
              const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg) {
   const auto width = static_cast<uint32_t>(reg.bits.size());
-  const auto type = builder.getIntegerType(width);
+  const auto type = llvm::cast<mlir::IntegerType>(
+      expressionType(builder, ClassicalType::Uint, width));
   if (auto storage = registerStorage(classicalBits, rootClbitMap, reg)) {
     return mlir::cbit::ReadOp::create(builder, type, storage).getResult();
-  }
-  if (reg.bits.empty() || reg.bits.size() > 64U) {
-    throw std::runtime_error("Qiskit wide register comparisons require one "
-                             "complete classical register");
   }
   llvm::SmallVector<mlir::Value> terms;
   terms.reserve(reg.bits.size());
@@ -695,37 +696,6 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
     terms.resize(reducedSize);
   }
   return terms.front();
-}
-
-[[nodiscard]] static bool
-isWideRegisterComparison(const Expression& expression) {
-  if (expression.kind != ExpressionKind::Binary || !expression.left ||
-      !expression.right) {
-    return false;
-  }
-  const auto* reg = expression.left.get();
-  const auto* expected = expression.right.get();
-  if (reg->kind == ExpressionKind::Value) {
-    std::swap(reg, expected);
-  }
-  if (reg->kind != ExpressionKind::ClassicalRegister ||
-      reg->type != ClassicalType::Uint || reg->width <= 64U ||
-      reg->width != reg->reg.bits.size() ||
-      expected->kind != ExpressionKind::Value ||
-      expected->type != ClassicalType::Uint || expected->width != reg->width) {
-    return false;
-  }
-  switch (expression.binaryOperation) {
-  case BinaryOperation::Equal:
-  case BinaryOperation::NotEqual:
-  case BinaryOperation::Less:
-  case BinaryOperation::LessEqual:
-  case BinaryOperation::Greater:
-  case BinaryOperation::GreaterEqual:
-    return true;
-  default:
-    return false;
-  }
 }
 
 namespace {
@@ -1130,14 +1100,11 @@ struct ImportedVariables {
           "Qiskit index expressions require a Uint target");
     }
     const auto indexType = llvm::dyn_cast<mlir::IntegerType>(index.getType());
-    if (!indexType || indexType.getWidth() > targetType.getWidth()) {
-      throw std::runtime_error(
-          "Qiskit circuit import does not support an index wider than its "
-          "integer operand");
+    if (!indexType) {
+      throw std::runtime_error("Qiskit index expressions require a Uint index");
     }
-    index = castInteger(builder, index, targetType);
-    auto shifted =
-        mlir::arith::ShRUIOp::create(builder, target, index).getResult();
+    auto shifted = mlir::mqt::buildZeroFillingShift(
+        builder, builder.getLoc(), target, index, /*left=*/false);
     const auto integerResult = llvm::dyn_cast<mlir::IntegerType>(resultType);
     if (!integerResult) {
       throw std::runtime_error(
@@ -2272,27 +2239,19 @@ static void validateCircuit(const CircuitReader& circuit,
                             bool gateDefinition);
 
 static void validateExpression(const Expression& expression,
-                               const uint32_t rootClbits,
-                               bool allowWideLeaf = false) {
-  if (expression.type == ClassicalType::Uint && expression.width > 64U &&
-      !allowWideLeaf) {
-    throw std::runtime_error(
-        "Qiskit unsigned expressions wider than 64 bits require a direct "
-        "register comparison");
-  }
+                               const uint32_t rootClbits) {
   if ((expression.type == ClassicalType::Bool && expression.width != 1U) ||
       (expression.type == ClassicalType::Uint && expression.width == 0U) ||
       (expression.type == ClassicalType::Float && expression.width != 64U)) {
     throw std::runtime_error(
         "Qiskit classical expression has an invalid type width");
   }
-  const bool wideComparison = isWideRegisterComparison(expression);
   const auto requireOperand = [&](const std::unique_ptr<Expression>& operand) {
     if (!operand) {
       throw std::runtime_error(
           "Qiskit classical expression has a missing operand");
     }
-    validateExpression(*operand, rootClbits, wideComparison);
+    validateExpression(*operand, rootClbits);
   };
   const auto sameType = [](const Expression& first, const Expression& second) {
     return first.type == second.type && first.width == second.width;
@@ -2435,9 +2394,8 @@ static void validateTarget(const ClassicalTarget& target,
     }
     return;
   case ClassicalTargetKind::ClassicalRegister:
-    if (target.reg.bits.empty() || target.reg.bits.size() > 64U) {
-      throw std::runtime_error(
-          "Qiskit control-flow registers must contain between 1 and 64 bits");
+    if (target.reg.bits.empty()) {
+      throw std::runtime_error("Qiskit classical registers must not be empty");
     }
     for (const auto bit : target.reg.bits) {
       if (bit >= rootClbits) {
@@ -2556,6 +2514,12 @@ static void validateControlFlow(
     }
     const auto target = controlFlow.switchTarget();
     validateTarget(target, rootClbits);
+    if ((target.kind == ClassicalTargetKind::ClassicalRegister &&
+         target.reg.bits.size() > 64U) ||
+        (target.kind == ClassicalTargetKind::Expression &&
+         target.expression->width > 64U)) {
+      throw std::runtime_error("Qiskit switch targets support at most 64 bits");
+    }
     if (target.kind == ClassicalTargetKind::Expression &&
         target.expression->type == ClassicalType::Float) {
       throw std::runtime_error("Qiskit switch targets must be Boolean or Uint");
@@ -2648,10 +2612,6 @@ void validateCircuit(const CircuitReader& circuit,
         "Qiskit Gate definitions must not contain classical variables");
   }
   for (const auto& variable : variables) {
-    if (variable.type == ClassicalType::Uint && variable.width > 64U) {
-      throw std::runtime_error("Qiskit local variables support unsigned "
-                               "integers of at most 64 bits");
-    }
     if (variable.input) {
       throw std::runtime_error(
           "Qiskit external runtime input variables are not supported; use an "

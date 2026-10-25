@@ -118,5 +118,5 @@ def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
     inline = builtin_driver.open_device("mqt.sc.default", device_config=json.dumps(configuration))
     assert inline.name() == device.name()
     assert inline.qubits_num() == device.qubits_num()
-    with pytest.raises(ValueError, match="parse error"):
+    with pytest.raises(ValueError, match="Expected object key"):
         builtin_driver.open_device("mqt.sc.default", device_config="{")

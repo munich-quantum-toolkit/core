@@ -18,23 +18,6 @@
 #include <string_view>
 
 namespace mqt::bench {
-class BV;
-class FanOut;
-class GHZ;
-class Grover;
-class MagicStateDistillation;
-class ModularMultiplier;
-class Multiplexer;
-class QAOA;
-class QFT;
-class QFTAdder;
-class QPE;
-class RepeatUntilSuccess;
-class Shor;
-class Teleportation;
-class WeakMeasurementGrover;
-class WState;
-
 /// A generated program and the normalized semantic instance that produced it.
 struct GeneratedBenchmark {
   std::string benchmarkId;
@@ -43,63 +26,15 @@ struct GeneratedBenchmark {
   mlir::QCProgram program;
 };
 
-/// Generate a configured Bernstein--Vazirani benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(const BV& benchmark);
-
-/// Generate a configured quantum fan-out benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const FanOut& benchmark);
-
-/// Generate the QC program for a configured GHZ benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(const GHZ& benchmark);
-
-/// Generate the QC program for a configured Grover benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const Grover& benchmark);
-
-/// Generate the QC program for a configured magic-state distillation benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const MagicStateDistillation& benchmark);
-
-/// Generate a configured modular multiplier benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const ModularMultiplier& benchmark);
-
-/// Generate the QC program for a configured quantum multiplexer benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const Multiplexer& benchmark);
-
-/// Generate a configured QAOA benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(const QAOA& benchmark);
-
-/// Generate a configured quantum Fourier-transform benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(const QFT& benchmark);
-
-/// Generate a configured QFT adder benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const QFTAdder& benchmark);
-
-/// Generate the QC program for a configured QPE benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(const QPE& benchmark);
-
-/// Generate the repeat-until-success benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const RepeatUntilSuccess& benchmark);
-
-/// Generate structured semiclassical Shor order finding.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(const Shor& benchmark);
-
-/// Generate the quantum teleportation benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const Teleportation& benchmark);
-
-/// Generate a configured weak-measurement Grover benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const WeakMeasurementGrover& benchmark);
-
-/// Generate the QC program for a configured W-state benchmark.
-[[nodiscard]] llvm::FailureOr<mlir::QCProgram>
-generate(const WState& benchmark);
+// Class names in forward declarations cannot be parenthesized.
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  class TYPE;                                                                  \
+  /** Generate the QC program for a configured benchmark. */                   \
+  [[nodiscard]] llvm::FailureOr<mlir::QCProgram> generate(                     \
+      const TYPE& benchmark);
+// NOLINTEND(bugprone-macro-parentheses)
+#include "bench/BenchmarkFamilies.inc"
 
 /// Parse a benchmark instance specification and generate the benchmark.
 [[nodiscard]] llvm::FailureOr<GeneratedBenchmark>
