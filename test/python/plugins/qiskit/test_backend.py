@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, get_type_hints
 
 import numpy as np
 import pytest
-from qiskit import QuantumCircuit
-from qiskit.circuit import ClassicalRegister, Clbit, Parameter
+from qiskit import QuantumCircuit, transpile
+from qiskit.circuit import ClassicalRegister, Clbit, Parameter, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
@@ -436,3 +436,59 @@ def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seco
     assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
     assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
     assert target["measure"][0,] is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"), [("for", "101 0"), ("while", "101 0"), ("break", "100 0"), ("continue", "110 1")]
+)
+@pytest.mark.parametrize("compile_first", [False, True])
+def test_backend_loops_and_nested_jumps(
+    ddsim_backend: QDMIBackend, kind: str, expected: str, *, compile_first: bool
+) -> None:
+    """Loop jumps preserve nearest-loop semantics and asymmetric registers."""
+    q = QuantumRegister(4, "q")
+    flag, readout = ClassicalRegister(1, "flag"), ClassicalRegister(3, "readout")
+    circuit = QuantumCircuit(q, flag, readout)
+    circuit.x(3)
+    if kind == "for":
+        with circuit.for_loop(range(3)):
+            circuit.x(2)
+    elif kind == "while":
+        circuit.x(0)
+        circuit.measure(0, flag[0])
+        with circuit.while_loop((flag[0], True)):
+            circuit.x(2)
+            circuit.reset(0)
+            circuit.measure(0, flag[0])
+    elif kind == "break":
+        with circuit.for_loop(range(2)), circuit.for_loop(range(3)):
+            circuit.x(2)
+            circuit.break_loop()
+            circuit.x(1)
+    else:
+        circuit.x(0)
+        circuit.measure(0, flag[0])
+        with circuit.for_loop(range(3)):
+            with circuit.for_loop(range(2)):
+                circuit.x(2)
+                with circuit.if_test((flag[0], True)):
+                    circuit.continue_loop()
+                circuit.x(1)
+            circuit.x(1)
+    circuit.measure([2, 1, 3], readout)
+    if compile_first:
+        circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    result = ddsim_backend.run(circuit, shots=16, memory=True).result()
+    assert result.get_counts() == {expected: 16}
+    assert result.get_memory() == [expected] * 16
+
+
+def test_backend_for_loop_binds_external_parameters(ddsim_backend: QDMIBackend) -> None:
+    """Bind circuit parameters while retaining the loop's local induction value."""
+    theta, index = Parameter("theta"), Parameter("index")
+    circuit = QuantumCircuit(2, 2)
+    with circuit.for_loop(range(1, 4, 2), index):
+        circuit.rx(theta * index, 1)
+    circuit.measure([0, 1], [0, 1])
+    result = ddsim_backend.run(circuit, parameter_values=[{theta: np.pi / 4}], shots=16).result()
+    assert result.get_counts() == {"10": 16}

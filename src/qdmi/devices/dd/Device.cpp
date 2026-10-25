@@ -198,6 +198,30 @@ constexpr std::array OPERATIONS{
         .numParams = 0,
         .isVariadic = true,
     },
+    OperationInfo{
+        .name = "for_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "while_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "break_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "continue_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
 };
 
 template <std::size_t N>

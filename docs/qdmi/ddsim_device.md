@@ -73,6 +73,12 @@ representation, lowers it to QCO, and executes it with the QCO DD utilities.
 This is the same compiler-backed simulation path exposed by
 {py:class}`~mqt.core.mlir.QCOProgram`.
 
+The Qiskit target advertises `if_else`, `for_loop`, `while_loop`, `break_loop`
+and `continue_loop`. Loop bodies use the same gate validation as the enclosing
+circuit. Loop jumps act on the nearest enclosing loop; measurement feedback and
+reset are supported when sampling. Loop bounds and classical expressions must be
+accepted by the OpenQASM frontend. A while loop must terminate.
+
 OpenQASM 3 output bits are undefined until written, so direct QDMI jobs with a
 partially initialized output register fail during import. The Qiskit backend
 preserves Qiskit's zero-initialized classical-bit semantics by writing every

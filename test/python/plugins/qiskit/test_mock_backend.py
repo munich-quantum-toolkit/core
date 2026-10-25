@@ -717,8 +717,9 @@ def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytes
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
+@pytest.mark.parametrize("nested", [False, True])
 def test_builtin_preflight_maps_control_flow_operands(
-    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat, *, nested: bool
 ) -> None:
     """Validate block-local operands against their enclosing native qubits."""
     device = MockQDMIDevice(num_qubits=3, operations=["cx", "measure"])
@@ -728,6 +729,10 @@ def test_builtin_preflight_maps_control_flow_operands(
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
     body = QuantumCircuit(2)
     body.cx(0, 1)
+    if nested:
+        outer = QuantumCircuit(2)
+        outer.for_loop(range(2), None, body, [0, 1], [])
+        body = outer
     circuit = QuantumCircuit(3, 1)
     circuit.if_else((circuit.clbits[0], True), body, QuantumCircuit(2), [2, 0], [])
     with pytest.raises(UnsupportedOperationError, match="Unsupported control flow"):
@@ -735,6 +740,8 @@ def test_builtin_preflight_maps_control_flow_operands(
     assert not submissions
 
     backend.target.add_instruction(IfElseOp, name="if_else")
+    if nested:
+        backend.target.add_instruction(ForLoopOp, name="for_loop")
     backend.run(circuit, shots=2)
     assert len(submissions) == 1
 
