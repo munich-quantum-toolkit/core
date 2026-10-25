@@ -41,7 +41,6 @@
 #include <optional>
 #include <random>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -321,9 +320,8 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
       const auto root = execution.stateVecDD_;
       response.qubits =
           root.isTerminal() ? 0 : static_cast<uint32_t>(root.p->v) + 1;
-      std::ostringstream bytes(std::ios::binary);
+      llvm::raw_string_ostream bytes(response.state.emplace());
       dd::serialize(root, bytes, true);
-      response.state = std::move(bytes).str();
     }
   }
   return response;

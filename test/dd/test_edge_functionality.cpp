@@ -17,6 +17,8 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -271,11 +273,13 @@ TEST(VectorFunctionality, GetSparseVectorTolerance) {
 
 TEST(VectorFunctionality, PrintVectorTerminal) {
   const auto oldPrecision = std::cout.precision(12);
+  llvm::outs().flush();
   testing::internal::CaptureStdout();
   dd::printVector(vEdge::zero());
   const auto zeroStr = testing::internal::GetCapturedStdout();
   EXPECT_EQ(zeroStr, "0: (0,0)\n");
   EXPECT_EQ(std::cout.precision(), 12);
+  llvm::outs().flush();
   testing::internal::CaptureStdout();
   dd::printVector(vEdge::one());
   const auto oneStr = testing::internal::GetCapturedStdout();
@@ -293,6 +297,7 @@ TEST(VectorFunctionality, PrintVector) {
       std::sqrt(0.4),
   };
   const auto stateDD = makeStateFromVector(state, *dd);
+  llvm::outs().flush();
   testing::internal::CaptureStdout();
   dd::printVector(stateDD);
   const auto stateStr = testing::internal::GetCapturedStdout();
@@ -479,11 +484,13 @@ TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
 
 TEST(MatrixFunctionality, PrintMatrixTerminal) {
   const auto oldPrecision = std::cout.precision(12);
+  llvm::outs().flush();
   testing::internal::CaptureStdout();
   dd::printMatrix(mEdge::zero(), 0);
   const auto zeroStr = testing::internal::GetCapturedStdout();
   EXPECT_EQ(zeroStr, "(0,0)\n");
   EXPECT_EQ(std::cout.precision(), 12);
+  llvm::outs().flush();
   testing::internal::CaptureStdout();
   dd::printMatrix(mEdge::one(), 0);
   const auto oneStr = testing::internal::GetCapturedStdout();
@@ -503,6 +510,7 @@ TEST(MatrixFunctionality, PrintMatrix) {
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
+  llvm::outs().flush();
   testing::internal::CaptureStdout();
   dd::printMatrix(matDD, dd->qubits());
   const auto matStr = testing::internal::GetCapturedStdout();

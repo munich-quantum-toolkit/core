@@ -25,6 +25,8 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -35,7 +37,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
-#include <iostream>
 #include <limits>
 #include <map>
 #include <memory_resource>
@@ -69,9 +70,9 @@ void checkMeasurementNormalization(const vEdge& state, const fp epsilon) {
     throw std::runtime_error("Numerical instability in measurement state");
   }
   if (std::abs(probability - 1) > epsilon) {
-    std::cerr << "WARNING in MAll: numerical instability occurred during "
-                 "simulation: |alpha|^2 + |beta|^2 = "
-              << probability << ", but should be 1!\n";
+    llvm::errs() << "WARNING in MAll: numerical instability occurred during "
+                    "simulation: |alpha|^2 + |beta|^2 = "
+                 << probability << ", but should be 1!\n";
   }
 }
 

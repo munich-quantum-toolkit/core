@@ -13,16 +13,18 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <functional>
-#include <iomanip>
-#include <istream>
-#include <ostream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -46,28 +48,25 @@ bool ComplexValue::approximatelyZero() const noexcept {
   return RealNumber::approximatelyZero(r) && RealNumber::approximatelyZero(i);
 }
 
-void ComplexValue::writeBinary(std::ostream& os) const {
+void ComplexValue::writeBinary(llvm::raw_ostream& os) const {
   RealNumber::writeBinary(r, os);
   RealNumber::writeBinary(i, os);
 }
 
-void ComplexValue::readBinary(std::istream& is) {
-  RealNumber::readBinary(r, is);
-  RealNumber::readBinary(i, is);
-}
-
 void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
   const auto parse = [](const std::string& text) {
-    try {
-      return std::stod(text);
-    } catch (const std::out_of_range&) {
-      // stod may report underflow for a representable subnormal value.
-      const auto value = std::strtod(text.c_str(), nullptr);
-      if (std::fpclassify(value) == FP_SUBNORMAL) {
-        return value;
-      }
-      throw;
+    llvm::APFloat value(0.);
+    auto status =
+        value.convertFromString(text, llvm::APFloat::rmNearestTiesToEven);
+    if (!status) {
+      throw std::invalid_argument(llvm::toString(status.takeError()));
     }
+    if ((*status & llvm::APFloat::opOverflow) != 0 ||
+        ((*status & llvm::APFloat::opUnderflow) != 0 && value.isZero())) {
+      throw std::out_of_range(
+          "Serialized number is outside the floating-point range.");
+    }
+    return value.convertToDouble();
   };
   r = realStr.empty() ? 0. : parse(realStr);
 
@@ -116,7 +115,8 @@ ComplexValue::getLowestFraction(const fp x,
   return lowerBound;
 }
 
-void ComplexValue::printFormatted(std::ostream& os, fp num, bool imaginary) {
+void ComplexValue::printFormatted(llvm::raw_ostream& os, fp num, bool imaginary,
+                                  int precision) {
   if (std::signbit(num)) {
     os << "-";
     num = -num;
@@ -190,58 +190,63 @@ void ComplexValue::printFormatted(std::ostream& os, fp num, bool imaginary) {
   }
 
   if (imaginary) { // default
-    os << num << "i";
+    os << toString(num, 0., false, precision) << "i";
   } else {
-    os << num;
+    os << toString(num, 0., false, precision);
   }
 }
 
 std::string ComplexValue::toString(const fp& real, const fp& imag,
                                    bool formatted, int precision) {
-  std::ostringstream ss{};
+  std::string result;
+  llvm::raw_string_ostream ss(result);
+  const auto number = [precision](fp value) {
+    llvm::SmallString<32> text;
+    llvm::APFloat(value).toString(
+        text,
+        precision < 0 ? 6U : static_cast<unsigned>(std::max(1, precision)));
+    return text;
+  };
   const auto zero = [formatted](fp value) {
     return formatted ? RealNumber::approximatelyZero(value) : value == 0.;
   };
 
-  if (precision >= 0) {
-    ss << std::setprecision(precision);
-  }
   if (zero(real) && zero(imag)) {
     return "0";
   }
 
   if (!zero(real)) {
     if (formatted) {
-      printFormatted(ss, real);
+      printFormatted(ss, real, false, precision);
     } else {
-      ss << real;
+      ss << number(real);
     }
   }
   if (!zero(imag)) {
     if (formatted) {
       if (RealNumber::approximatelyEquals(real, imag)) {
         ss << "(1+i)";
-        return ss.str();
+        return result;
       }
       if (RealNumber::approximatelyEquals(real, -imag)) {
         ss << "(1-i)";
-        return ss.str();
+        return result;
       }
-      printFormatted(ss, imag, true);
+      printFormatted(ss, imag, true, precision);
     } else {
       if (zero(real)) {
-        ss << imag;
+        ss << number(imag);
       } else {
         if (imag > 0.) {
           ss << "+";
         }
-        ss << imag;
+        ss << number(imag);
       }
       ss << "i";
     }
   }
 
-  return ss.str();
+  return result;
 }
 
 ComplexValue& ComplexValue::operator+=(const ComplexValue& rhs) noexcept {
@@ -315,7 +320,7 @@ ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
   return {gr / d, gi / d};
 }
 
-std::ostream& operator<<(std::ostream& os, const ComplexValue& c) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const ComplexValue& c) {
   return os << ComplexValue::toString(c.r, c.i);
 }
 } // namespace dd

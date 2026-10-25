@@ -18,10 +18,12 @@
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "llvm/Support/Format.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <limits>
 #include <ranges>
 #include <stdexcept>
@@ -178,22 +180,30 @@ public:
                   "Node must be derived from NodeBase");
     auto q = cfg.nVars - 1U;
     for (const auto& table : std::ranges::reverse_view(tables)) {
-      std::cout << "\tq" << q << ":" << "\n";
+      llvm::outs() << "\tq" << q << ":" << "\n";
       for (std::size_t key = 0; key < table.size(); ++key) {
         const auto* p = static_cast<Node*>(table[key]);
         if (p != nullptr) {
-          std::cout << "\tkey=" << key << ": ";
+          llvm::outs() << "\tkey=" << key << ": ";
         }
 
         while (p != nullptr) {
-          std::cout << "\t\t" << std::hex
-                    << reinterpret_cast<std::uintptr_t>(p);
+          llvm::outs() << "\t\t"
+                       << llvm::format_hex_no_prefix(
+                              reinterpret_cast<std::uintptr_t>(p), 0);
           for (const auto& e : p->e) {
-            std::cout << " p" << reinterpret_cast<std::uintptr_t>(e.p) << "(r"
-                      << reinterpret_cast<std::uintptr_t>(e.w.r) << " i"
-                      << reinterpret_cast<std::uintptr_t>(e.w.i) << ")";
+            llvm::outs() << " p"
+                         << llvm::format_hex_no_prefix(
+                                reinterpret_cast<std::uintptr_t>(e.p), 0)
+                         << "(r"
+                         << llvm::format_hex_no_prefix(
+                                reinterpret_cast<std::uintptr_t>(e.w.r), 0)
+                         << " i"
+                         << llvm::format_hex_no_prefix(
+                                reinterpret_cast<std::uintptr_t>(e.w.i), 0)
+                         << ")";
           }
-          std::cout << std::dec << "\n";
+          llvm::outs() << "\n";
           p = p->next();
         }
       }

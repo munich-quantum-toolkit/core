@@ -17,9 +17,9 @@
 #include "dd/LinkedListBase.hpp"
 #include "dd/mqt_core_dd_export.h"
 
-#include <istream>
+#include "llvm/Support/raw_ostream.h"
+
 #include <limits>
-#include <ostream>
 
 namespace dd {
 /// A struct for representing real numbers as part of the DD package.
@@ -109,19 +109,13 @@ struct RealNumber final : LLBase {
   ///
   /// @param e The number to write.
   /// @param os The stream to write to.
-  static void writeBinary(const RealNumber* e, std::ostream& os);
+  static void writeBinary(const RealNumber* e, llvm::raw_ostream& os);
 
   /// Write a binary representation of a floating point number to a
   ///
   /// @param num The number to write.
   /// @param os The stream to write to.
-  static void writeBinary(fp num, std::ostream& os);
-
-  /// Read a binary representation of a number from a stream.
-  ///
-  /// @param num The number to read into.
-  /// @param is The stream to read from.
-  static void readBinary(fp& num, std::istream& is);
+  static void writeBinary(fp num, llvm::raw_ostream& os);
 
   /// Get an aligned pointer to the number.
   ///

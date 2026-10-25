@@ -29,6 +29,8 @@
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include "llvm/ADT/StringRef.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -1553,14 +1555,14 @@ public:
   /// architectures/platforms
   ///
 
-  /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a stream.
+  /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from borrowed bytes.
   template <class Node, class Edge = Edge<Node>,
             std::size_t N = std::tuple_size_v<decltype(Node::e)>>
-  Edge deserialize(std::istream& is, bool readBinary = false);
+  Edge deserialize(llvm::StringRef data, bool readBinary = false);
 
   /// Deserialize a vector (`vNode`) or matrix (`mNode`) DD from a file.
   template <class Node, class Edge = Edge<Node>>
-  Edge deserialize(const std::string& inputFilename, bool readBinary);
+  Edge deserializeFile(llvm::StringRef inputFilename, bool readBinary);
 
 private:
   template <class Node, std::size_t N = std::tuple_size_v<decltype(Node::e)>>

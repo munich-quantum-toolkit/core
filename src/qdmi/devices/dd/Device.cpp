@@ -53,7 +53,6 @@
 #include <ranges>
 #include <semaphore>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -856,15 +855,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             if (response.state) {
               result->dd_ = std::make_unique<dd::Package>(
                   response.qubits, RESULT_PACKAGE_CONFIG);
-              std::istringstream bytes(std::move(*response.state),
-                                       std::ios::binary);
               result->stateVecDD_ =
-                  result->dd_->deserialize<dd::vNode>(bytes, true);
+                  result->dd_->deserialize<dd::vNode>(*response.state, true);
               const auto root = result->stateVecDD_;
               const auto qubits =
                   root.isTerminal() ? 0U : static_cast<uint32_t>(root.p->v) + 1;
-              if (qubits != response.qubits ||
-                  bytes.peek() != std::char_traits<char>::eof()) {
+              if (qubits != response.qubits) {
                 result.reset();
                 reusable = false;
               } else {

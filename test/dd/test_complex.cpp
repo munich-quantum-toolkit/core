@@ -19,15 +19,19 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <array>
+#include <clocale>
 #include <cmath>
 #include <cstddef>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
@@ -73,28 +77,28 @@ TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_EQ(RealNumber::val(cn.lookup(-1., -1.).r), -1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(-1., -1.).i), -1.);
   auto c = cn.lookup(0., -1.);
-  std::cout << c << "\n";
+  llvm::outs() << c << "\n";
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), 0.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -1.);
   c = cn.lookup(0., 1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), 0.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), 1.);
   c = cn.lookup(0., -0.5);
-  std::cout << c << "\n";
+  llvm::outs() << c << "\n";
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), 0.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -0.5);
   c = cn.lookup(-1., -1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), -1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -1.);
-  std::cout << c << "\n";
+  llvm::outs() << c << "\n";
 
   auto const e = cn.lookup(1., -1.);
-  std::cout << e << "\n";
-  std::cout << ComplexValue{1., 1.} << "\n";
-  std::cout << ComplexValue{1., -1.} << "\n";
-  std::cout << ComplexValue{1., -0.5} << "\n";
+  llvm::outs() << e << "\n";
+  llvm::outs() << ComplexValue{1., 1.} << "\n";
+  llvm::outs() << ComplexValue{1., -1.} << "\n";
+  llvm::outs() << ComplexValue{1., -0.5} << "\n";
   ut.print();
-  std::cout << ut.getStats();
+  llvm::outs() << ut.getStats();
 }
 
 TEST_F(CNTest, NearZeroLookup) {
@@ -288,10 +292,11 @@ TEST(DDComplexTest, NumberPrintingFormatted) {
 
   for (const auto& [value, real, imaginary] : cases) {
     SCOPED_TRACE(value);
-    std::stringstream ss;
+    std::string ssStorage;
+    llvm::raw_string_ostream ss(ssStorage);
     ComplexValue::printFormatted(ss, value, false);
     EXPECT_STREQ(ss.str().c_str(), real);
-    ss.str("");
+    ssStorage.clear();
     ComplexValue::printFormatted(ss, value, true);
     EXPECT_STREQ(ss.str().c_str(), imaginary);
   }
@@ -498,4 +503,39 @@ TEST(DDComplexTest, ParsesImaginaryUnits) {
   value.fromString("0.5", "");
   EXPECT_EQ(value.r, 0.5);
   EXPECT_EQ(value.i, 0.);
+}
+
+TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
+  for (const auto value : {
+           std::numeric_limits<fp>::denorm_min(),
+           std::numeric_limits<fp>::min(),
+           std::numeric_limits<fp>::max(),
+           -1e-310,
+       }) {
+    SCOPED_TRACE(value);
+    ComplexValue parsed;
+    parsed.fromString(
+        ComplexValue::toString(value, 0., false,
+                               std::numeric_limits<fp>::max_digits10),
+        "");
+    EXPECT_EQ(parsed.r, value);
+    EXPECT_EQ(parsed.i, 0.);
+  }
+  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., false, 0), "0.1");
+  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., true, 3), "0.123");
+}
+
+TEST(DDComplexTest, SerializedNumbersIgnoreNumericLocale) {
+  const auto originalLocale = std::string(std::setlocale(LC_NUMERIC, nullptr));
+  const llvm::scope_exit restoreLocale(
+      [&] { std::setlocale(LC_NUMERIC, originalLocale.c_str()); });
+  if (std::setlocale(LC_NUMERIC, "de_DE.UTF-8") == nullptr &&
+      std::setlocale(LC_NUMERIC, "de_DE.utf8") == nullptr) {
+    GTEST_SKIP() << "A comma-decimal numeric locale is unavailable";
+  }
+  EXPECT_EQ(ComplexValue::toString(0.125, -0.375, false), "0.125-0.375i");
+  ComplexValue parsed;
+  parsed.fromString("0.125", "-0.375i");
+  EXPECT_EQ(parsed.r, 0.125);
+  EXPECT_EQ(parsed.i, -0.375);
 }
