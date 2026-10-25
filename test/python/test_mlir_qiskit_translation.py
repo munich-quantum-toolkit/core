@@ -4416,8 +4416,9 @@ def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
-def test_mlir_binding_import_does_not_import_qiskit() -> None:
-    """Keep Qiskit optional and allow it to be imported after MLIR."""
+@pytest.mark.parametrize("first_module", ["dd", "bench", "qdmi", "mlir"])
+def test_native_binding_import_does_not_import_qiskit(first_module: str) -> None:
+    """Keep optional integrations lazy regardless of the first native module."""
     script = """
 import importlib.abc
 import sys
@@ -4446,7 +4447,7 @@ assert sample(circuit, shots=1) == {"1": 1}
 programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
 assert sample(programs[0], shots=1) == {"1": 1}
 """
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+    subprocess.run([sys.executable, "-c", script, first_module], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 
 
 @pytest.mark.parametrize("kind", ["quantum_register", "classical_register", "gate", "loop_parameter"])
