@@ -24,16 +24,15 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <exception>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -48,15 +47,13 @@ siteTupleLess(const std::span<const MQT_SC_QDMI_Site> first,
                                               &MQT_SC_QDMI_Site_impl_d::id);
 }
 
-[[nodiscard]] std::vector<MQT_SC_QDMI_Site>
+[[nodiscard]] MQT_SC_QDMI_Operation_impl_d::SiteTuple
 materializeTuple(const std::vector<uint64_t>& indices,
                  const std::vector<MQT_SC_QDMI_Site>& sites) {
-  std::vector<MQT_SC_QDMI_Site> tuple;
+  MQT_SC_QDMI_Operation_impl_d::SiteTuple tuple;
   tuple.reserve(indices.size());
   for (const auto index : indices) {
-    if (index >= sites.size()) {
-      throw std::invalid_argument("operation site index is out of range");
-    }
+    assert(index < sites.size());
     tuple.emplace_back(sites[index]);
   }
   return tuple;
@@ -67,146 +64,104 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
   if (status != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  std::optional<qdmi::detail::LoadedDeviceConfiguration> loaded;
-  try {
-    auto configurationSource = qdmi::detail::loadDeviceConfiguration(
-        inlineConfiguration, fileConfiguration, "MQT_CORE_QDMI_SC_CONFIG_JSON",
-        "MQT_CORE_QDMI_SC_CONFIG_FILE", "mqt-core-qdmi-sc-device.json",
-        reinterpret_cast<const void*>(&MQT_SC_QDMI_device_initialize));
-    if (!configurationSource) {
-      return qdmi::toStatus(configurationSource.takeError());
-    }
-    loaded = std::move(*configurationSource);
-    auto parsed = sc::readJSON(loaded->json, loaded->source);
-    if (!parsed) {
-      qdmi::diagnostics::error("Invalid SC device configuration from {0}: {1}",
-                               loaded->source,
-                               llvm::toString(parsed.takeError()));
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    const auto& configuration = *parsed;
-
-    std::vector<std::unique_ptr<MQT_SC_QDMI_Site_impl_d>> newSiteStorage;
-    std::vector<MQT_SC_QDMI_Site> newSites;
-    newSiteStorage.reserve(configuration.numQubits);
-    newSites.reserve(configuration.numQubits);
-    for (uint64_t id = 0; id < configuration.numQubits; ++id) {
-      auto site = std::make_unique<MQT_SC_QDMI_Site_impl_d>();
-      site->owner = this;
-      site->id = id;
-      site->t1 = configuration.qubitProperties.defaults.t1;
-      site->t2 = configuration.qubitProperties.defaults.t2;
-      newSites.emplace_back(site.get());
-      newSiteStorage.emplace_back(std::move(site));
-    }
-    for (const auto& override : configuration.qubitProperties.overrides) {
-      auto& site = newSiteStorage.at(override.qubit);
-      if (override.name) {
-        site->name = override.name;
-      }
-      if (override.t1) {
-        site->t1 = override.t1;
-      }
-      if (override.t2) {
-        site->t2 = override.t2;
-      }
-    }
-
-    std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>> newCouplingMap;
-    newCouplingMap.reserve(configuration.couplings.size());
-    for (const auto& [first, second] : configuration.couplings) {
-      newCouplingMap.emplace_back(newSites.at(first), newSites.at(second));
-    }
-
-    std::vector<std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>>
-        newOperationStorage;
-    std::vector<MQT_SC_QDMI_Operation> newOperations;
-    newOperationStorage.reserve(configuration.operations.size());
-    newOperations.reserve(configuration.operations.size());
-    for (const auto& operationConfiguration : configuration.operations) {
-      auto operation = std::make_unique<MQT_SC_QDMI_Operation_impl_d>();
-      operation->owner = this;
-      operation->name = operationConfiguration.name;
-      operation->numParameters = operationConfiguration.numParameters;
-      operation->numQubits = operationConfiguration.numQubits;
-      operation->defaults = {
-          .duration = operationConfiguration.duration,
-          .fidelity = operationConfiguration.fidelity,
-      };
-      if (operationConfiguration.sites) {
-        for (const auto& tuple : *operationConfiguration.sites) {
-          operation->supportedSites.emplace_back(
-              materializeTuple(tuple, newSites));
-        }
-      } else if (operation->numQubits == 1) {
-        for (auto* const site : newSites) {
-          operation->supportedSites.push_back({site});
-        }
-      } else if (operation->numQubits == 2) {
-        for (const auto& [first, second] : newCouplingMap) {
-          operation->supportedSites.push_back({first, second});
-        }
-      }
-      for (const auto& tuple : operation->supportedSites) {
-        operation->flattenedSites.insert(operation->flattenedSites.end(),
-                                         tuple.begin(), tuple.end());
-      }
-      // Keep the public flattened site list in its configured order.
-      std::ranges::sort(operation->supportedSites, siteTupleLess);
-      for (const auto& override : operationConfiguration.siteOverrides) {
-        auto tuple = materializeTuple(override.sites, newSites);
-        if (!std::ranges::binary_search(operation->supportedSites, tuple,
-                                        siteTupleLess)) {
-          throw std::invalid_argument(
-              "operation site override is not a supported tuple");
-        }
-        operation->overrides.emplace_back(
-            std::move(tuple), MQT_SC_QDMI_Operation_impl_d::Calibration{
-                                  .duration = override.duration,
-                                  .fidelity = override.fidelity,
-                              });
-      }
-      std::ranges::sort(
-          operation->overrides, siteTupleLess,
-          &std::pair<std::vector<MQT_SC_QDMI_Site>,
-                     MQT_SC_QDMI_Operation_impl_d::Calibration>::first);
-      newOperations.emplace_back(operation.get());
-      newOperationStorage.emplace_back(std::move(operation));
-    }
-
-    name = configuration.name;
-    durationUnit = configuration.durationUnit.unit;
-    durationScaleFactor = configuration.durationUnit.scaleFactor;
-    qubitsNum = static_cast<size_t>(configuration.numQubits);
-    siteStorage = std::move(newSiteStorage);
-    sites = std::move(newSites);
-    couplingMap = std::move(newCouplingMap);
-    operationStorage = std::move(newOperationStorage);
-    operations = std::move(newOperations);
-    status = Status::INITIALIZED;
-    return QDMI_SUCCESS;
-  } catch (const std::bad_alloc&) {
-    const std::string_view source =
-        loaded ? std::string_view(loaded->source)
-               : std::string_view("selected configuration");
-    qdmi::diagnostics::error(
-        "Out of memory while initializing SC device from {0}", source);
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::invalid_argument& error) {
-    const std::string_view source =
-        loaded ? std::string_view(loaded->source)
-               : std::string_view("selected configuration");
-    qdmi::diagnostics::error("Invalid SC device configuration from {0}: {1}",
-                             source, error.what());
-    return QDMI_ERROR_INVALIDARGUMENT;
-  } catch (const std::exception& error) {
-    const std::string_view source =
-        loaded ? std::string_view(loaded->source)
-               : std::string_view("selected configuration");
-    qdmi::diagnostics::error("Failed to initialize SC device from {0}: {1}",
-                             source, error.what());
-    return QDMI_ERROR_FATAL;
+  auto loaded = qdmi::detail::loadDeviceConfiguration(
+      inlineConfiguration, fileConfiguration, "MQT_CORE_QDMI_SC_CONFIG_JSON",
+      "MQT_CORE_QDMI_SC_CONFIG_FILE", "mqt-core-qdmi-sc-device.json",
+      reinterpret_cast<const void*>(&MQT_SC_QDMI_device_initialize));
+  if (!loaded) {
+    return qdmi::toStatus(loaded.takeError());
   }
+  auto parsed = sc::readJSON(loaded->json, loaded->source);
+  if (!parsed) {
+    qdmi::diagnostics::error("Invalid SC device configuration from {0}: {1}",
+                             loaded->source,
+                             llvm::toString(parsed.takeError()));
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  const auto& configuration = *parsed;
+
+  // Resize once before publishing pointers to the session-owned objects.
+  siteStorage.resize(configuration.numQubits);
+  sites.reserve(configuration.numQubits);
+  for (uint64_t id = 0; id < configuration.numQubits; ++id) {
+    auto* site = &siteStorage[id];
+    site->owner = this;
+    site->id = id;
+    site->t1 = configuration.qubitProperties.defaults.t1;
+    site->t2 = configuration.qubitProperties.defaults.t2;
+    sites.emplace_back(site);
+  }
+  for (const auto& override : configuration.qubitProperties.overrides) {
+    auto* site = &siteStorage[override.qubit];
+    if (override.name) {
+      site->name = override.name;
+    }
+    if (override.t1) {
+      site->t1 = override.t1;
+    }
+    if (override.t2) {
+      site->t2 = override.t2;
+    }
+  }
+
+  couplingMap.reserve(configuration.couplings.size());
+  for (const auto& [first, second] : configuration.couplings) {
+    couplingMap.emplace_back(sites[first], sites[second]);
+  }
+
+  operationStorage.resize(configuration.operations.size());
+  operations.reserve(configuration.operations.size());
+  for (size_t i = 0; i < configuration.operations.size(); ++i) {
+    const auto& operationConfiguration = configuration.operations[i];
+    auto* operation = &operationStorage[i];
+    operation->owner = this;
+    operation->name = operationConfiguration.name;
+    operation->numParameters = operationConfiguration.numParameters;
+    operation->numQubits = operationConfiguration.numQubits;
+    operation->defaults = {
+        .duration = operationConfiguration.duration,
+        .fidelity = operationConfiguration.fidelity,
+    };
+    if (operationConfiguration.sites) {
+      for (const auto& tuple : *operationConfiguration.sites) {
+        operation->supportedSites.emplace_back(materializeTuple(tuple, sites));
+      }
+    } else if (operation->numQubits == 1) {
+      for (auto* const site : sites) {
+        operation->supportedSites.push_back({site});
+      }
+    } else if (operation->numQubits == 2) {
+      for (const auto& [first, second] : couplingMap) {
+        operation->supportedSites.push_back({first, second});
+      }
+    }
+    for (const auto& tuple : operation->supportedSites) {
+      operation->flattenedSites.insert(operation->flattenedSites.end(),
+                                       tuple.begin(), tuple.end());
+    }
+    // Keep the public flattened site list in its configured order.
+    std::ranges::sort(operation->supportedSites, siteTupleLess);
+    for (const auto& override : operationConfiguration.siteOverrides) {
+      auto tuple = materializeTuple(override.sites, sites);
+      operation->overrides.emplace_back(
+          std::move(tuple), MQT_SC_QDMI_Operation_impl_d::Calibration{
+                                .duration = override.duration,
+                                .fidelity = override.fidelity,
+                            });
+    }
+    std::ranges::sort(
+        operation->overrides, siteTupleLess,
+        &std::pair<MQT_SC_QDMI_Operation_impl_d::SiteTuple,
+                   MQT_SC_QDMI_Operation_impl_d::Calibration>::first);
+    operations.emplace_back(operation);
+  }
+
+  name = configuration.name;
+  durationUnit = configuration.durationUnit.unit;
+  durationScaleFactor = configuration.durationUnit.scaleFactor;
+  qubitsNum = static_cast<size_t>(configuration.numQubits);
+  status = Status::INITIALIZED;
+  return QDMI_SUCCESS;
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
@@ -220,11 +175,8 @@ int MQT_SC_QDMI_Device_Session_impl_d::setParameter(
     return QDMI_ERROR_BADSTATE;
   }
 
-  return sc::detail::guardDeviceCall(
-      "setting an SC device session parameter", [&] {
-        return qdmi::detail::setDeviceConfigurationParameter(
-            parameter, size, value, inlineConfiguration, fileConfiguration);
-      });
+  return qdmi::detail::setDeviceConfigurationParameter(
+      parameter, size, value, inlineConfiguration, fileConfiguration);
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
@@ -233,22 +185,29 @@ int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
 
+  *job = nullptr;
   if (status != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
 
-  return sc::detail::guardDeviceCall("creating an SC device job", [&] {
-    auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
-    const std::scoped_lock lock(jobsMutex);
-    *job = jobs.emplace(value.get(), std::move(value)).first->first;
-    return QDMI_SUCCESS;
-  });
+  auto value = std::unique_ptr<MQT_SC_QDMI_Device_Job_impl_d>(
+      new (std::nothrow) MQT_SC_QDMI_Device_Job_impl_d(this));
+  if (!value) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  const std::scoped_lock lock(jobsMutex);
+  *job = value.release();
+  jobs.push_back(*job);
+  return QDMI_SUCCESS;
 }
 
 void MQT_SC_QDMI_Device_Session_impl_d::freeDeviceJob(
     MQT_SC_QDMI_Device_Job job) {
-  const std::scoped_lock lock(jobsMutex);
-  jobs.erase(job);
+  std::unique_ptr<MQT_SC_QDMI_Device_Job_impl_d> ownedJob;
+  {
+    const std::scoped_lock lock(jobsMutex);
+    ownedJob.reset(jobs.remove(job));
+  }
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
@@ -398,7 +357,8 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
     if (!tuple.empty()) {
       if (const auto found = std::ranges::lower_bound(
               overrides, tuple, siteTupleLess,
-              &std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>::first);
+              &std::pair<MQT_SC_QDMI_Operation_impl_d::SiteTuple,
+                         Calibration>::first);
           found != overrides.end() && std::ranges::equal(found->first, tuple)) {
         return {
             .duration = found->second.duration ? found->second.duration

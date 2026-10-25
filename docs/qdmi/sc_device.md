@@ -8,6 +8,11 @@ The MQT Core superconducting (SC) provider builds a session-owned runtime model
 from JSON. Separate sessions using the same provider library and prefix can
 expose different names, capacities, topology, operations, and calibration.
 
+The provider builds without C++ exceptions or RTTI. Session and job handle
+allocation failures return `QDMI_ERROR_OUTOFMEM`; memory exhaustion while
+building the runtime model is not recoverable. Sessions own their sites,
+operations, and outstanding jobs until freed.
+
 Decimal numbers in JSON configuration require the C numeric locale
 (`LC_NUMERIC=C`).
 

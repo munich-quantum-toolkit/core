@@ -23,9 +23,7 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
   # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_sc_device_defs)
   # Link further libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PRIVATE MQT::CoreQDMIScDeviceConfig MQT::CoreQDMICommon LLVMSupport)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceConfig LLVMSupport)
   # Set the executable path and version information
   target_compile_definitions(
     ${TARGET_NAME}
@@ -34,6 +32,12 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
       SC_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json"
       IQM_GARNET_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json"
       IQM_EMERALD_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json")
+
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Interpose allocation across the provider shared-library boundary.
+    package_add_test(${MQT_CORE_TARGET_NAME}-qdmi-sc-allocation-test MQT::CoreQDMIScDevice
+                     test_allocation.cpp)
+  endif()
 
   # On Windows, copy the provider and its runtime assets beside the test executable.
   if(WIN32)
