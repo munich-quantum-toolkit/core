@@ -249,9 +249,9 @@ publish(mqt::bench::GeneratedBenchmark generated, const std::string_view format,
   } else {
     auto compiled = mlir::runDefaultPipeline(std::move(generated.program),
                                              mlir::ProgramFormat::Jeff);
-    if (mlir::failed(compiled)) {
-      llvm::errs() << generated.benchmarkId
-                   << ": failed to build the jeff program\n";
+    if (!compiled) {
+      llvm::errs() << generated.benchmarkId << ": "
+                   << llvm::toString(compiled.takeError()) << "\n";
       return 1;
     }
     const auto bytes = std::get<mlir::JeffProgram>(*compiled).toBytes();

@@ -164,7 +164,8 @@ TEST(GenerateProgramTest, PreservesQAOAInputsThroughJeff) {
   auto jeff = std::move(*program).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
   auto restored = mlir::JeffProgram::fromBytes(jeff->toBytes());
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto entry = mlir::mqt::getEntryPoint(qco->module());

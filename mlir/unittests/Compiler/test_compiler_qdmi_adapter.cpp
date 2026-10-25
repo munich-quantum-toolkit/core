@@ -613,7 +613,7 @@ TEST(CompilerQDMIAdapterTest,
   const auto restricted = llvm::cantFail(mlir::PayloadSpecification::create(
       payload.format(), {{.id = "forward-branching"}}));
   auto input = mlir::QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(mlir::succeeded(input));
+  ASSERT_TRUE(static_cast<bool>(input)) << llvm::toString(input.takeError());
   std::string diagnostics;
   const auto context = input->context();
   const mlir::ScopedDiagnosticHandler handler(
@@ -624,14 +624,18 @@ TEST(CompilerQDMIAdapterTest,
       });
   const mlir::TargetEnvironment restrictedEnvironment(
       compiled.environment().target(), restricted);
-  EXPECT_TRUE(mlir::failed(mlir::runDefaultPipeline(
-      input->copy(), mlir::ProgramFormat::QIRAdaptive, restrictedEnvironment)));
+  diagnostics = llvm::toString(
+      (mlir::runDefaultPipeline(input->copy(), mlir::ProgramFormat::QIRAdaptive,
+                                restrictedEnvironment))
+          .takeError());
+  EXPECT_FALSE(diagnostics.empty());
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
   diagnostics.clear();
-  EXPECT_TRUE(llvm::errorToBool(
+  diagnostics = llvm::toString(
       mlir::CompiledProgram::compile(input->copy(), restrictedEnvironment)
-          .takeError()));
+          .takeError());
+  EXPECT_FALSE(diagnostics.empty());
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
 
@@ -645,8 +649,10 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
   diagnostics.clear();
-  EXPECT_TRUE(mlir::failed(
-      mlir::runDefaultPipeline(qc->copy(), mlir::ProgramFormat::QIRAdaptive)));
+  diagnostics = llvm::toString(
+      (mlir::runDefaultPipeline(qc->copy(), mlir::ProgramFormat::QIRAdaptive))
+          .takeError());
+  EXPECT_FALSE(diagnostics.empty());
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
 
@@ -692,7 +698,7 @@ TEST(CompilerQDMIAdapterTest, DynamicQIRIndexingDoesNotRequireLoops) {
       return
     }
   })mlir");
-  ASSERT_TRUE(mlir::succeeded(input));
+  ASSERT_TRUE(static_cast<bool>(input)) << llvm::toString(input.takeError());
   const auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -948,7 +954,8 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         "%phi = arith.constant -0.42 : f64 "
         "%lambda = arith.constant 0.19 : f64 " +
         gate + " return } }");
-    ASSERT_TRUE(mlir::succeeded(program));
+    ASSERT_TRUE(static_cast<bool>(program))
+        << llvm::toString(program.takeError());
     const auto target = llvm::cantFail(CompilerTarget::create(
         2, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations({
@@ -976,7 +983,8 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         "%phi = arith.constant -0.42 : f64 "
         "%lambda = arith.constant 0.19 : f64 "
         "qc.u2(%phi, %lambda) %q : !qc.qubit return } }");
-    ASSERT_TRUE(mlir::succeeded(program));
+    ASSERT_TRUE(static_cast<bool>(program))
+        << llvm::toString(program.takeError());
     const auto target = llvm::cantFail(CompilerTarget::create(
         1, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations({
@@ -1016,7 +1024,7 @@ TEST(CompilerQDMIAdapterTest, RejectsScalarProgramOutputs) {
     SCOPED_TRACE(width);
     const auto source = "OPENQASM 3; int[" + std::to_string(width) + "] k = 1;";
     auto qc = mlir::QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(mlir::succeeded(qc));
+    ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
     auto rejected = mlir::compileProgram(qco->copy(), device);
@@ -1042,7 +1050,8 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
       return
     }
   })mlir");
-  ASSERT_TRUE(mlir::succeeded(program));
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({

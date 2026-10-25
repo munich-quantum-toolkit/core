@@ -125,37 +125,14 @@ toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
 }
 
 template <class T>
-[[nodiscard]] static T takeResult(mlir::FailureOr<T>&& result) {
-  if (mlir::failed(result)) {
-    throw std::runtime_error(
-        "Compiler action failed; see diagnostics for details.");
-  }
-  return *std::move(result);
-}
-
-template <class T> [[nodiscard]] static T takeResult(llvm::Expected<T> result) {
-  if (!result) {
-    const auto message = llvm::toString(result.takeError());
-    throw nb::value_error(message.c_str());
-  }
-  return std::move(*result);
-}
-
-template <class T>
 static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
-  std::construct_at(&self, takeResult(std::move(result)));
-}
-
-static void requireSuccess(const mlir::LogicalResult result) {
-  if (mlir::failed(result)) {
-    throw std::runtime_error(
-        "Compiler action failed; see diagnostics for details.");
-  }
+  std::construct_at(&self, ::mqt::bindings::unwrap(std::move(result)));
 }
 
 static void requireValid(const mlir::Program& program) {
   if (!program.isValid()) {
-    throw std::runtime_error(
+    throw nb::builtin_exception(
+        nb::exception_type::runtime_error,
         "This compiler program has already been consumed.");
   }
 }
@@ -176,16 +153,46 @@ toPythonList(llvm::ArrayRef<T> values) {
   return result.commit();
 }
 
-namespace {
-template <auto Function> struct FallibleFunctionAdapter;
-
-template <class T, class... Args, mlir::FailureOr<T> (*Function)(Args...)>
-struct FallibleFunctionAdapter<Function> {
-  static T call(Args... args) {
-    return takeResult(Function(std::forward<Args>(args)...));
+/// Run @p fn under a diagnostic handler and raise the chosen Python exception,
+/// appending any emitted MLIR diagnostics to @p message.
+template <nb::exception_type Exception = nb::exception_type::value_error,
+          typename Fn>
+static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
+                            Fn&& fn) {
+  std::string diagnostics;
+  const mlir::ScopedDiagnosticHandler handler(
+      context, [&](mlir::Diagnostic& diag) {
+        if (!diagnostics.empty()) {
+          diagnostics.push_back('\n');
+        }
+        llvm::raw_string_ostream os(diagnostics);
+        if (!llvm::isa<mlir::UnknownLoc>(diag.getLocation())) {
+          os << diag.getLocation() << ": ";
+        }
+        os << diag;
+        for (auto& note : diag.getNotes()) {
+          os << "\nnote: ";
+          if (!llvm::isa<mlir::UnknownLoc>(note.getLocation())) {
+            os << note.getLocation() << ": ";
+          }
+          os << note;
+        }
+        return mlir::success();
+      });
+  auto result = std::forward<Fn>(fn)();
+  if (mlir::failed(result)) {
+    std::string full = message;
+    if (!diagnostics.empty()) {
+      full.append(": ").append(diagnostics);
+    }
+    throw nb::builtin_exception(Exception, full.c_str());
   }
-};
+  if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
+    return std::move(*result);
+  }
+}
 
+namespace {
 template <auto Method> struct FallibleMemberAdapter;
 
 template <class Class, class... Args,
@@ -195,7 +202,9 @@ struct FallibleMemberAdapter<Method> {
     if constexpr (std::is_base_of_v<mlir::Program, Class>) {
       requireValid(self);
     }
-    requireSuccess((self.*Method)(std::forward<Args>(args)...));
+    withDiagnostics<nb::exception_type::runtime_error>(
+        self.context().get(), "Compiler action failed",
+        [&] { return (self.*Method)(std::forward<Args>(args)...); });
   }
 };
 
@@ -206,7 +215,9 @@ struct FallibleMemberAdapter<Method> {
     if constexpr (std::is_base_of_v<mlir::Program, Class>) {
       requireValid(self);
     }
-    requireSuccess((self.*Method)(std::forward<Args>(args)...));
+    withDiagnostics<nb::exception_type::runtime_error>(
+        self.context().get(), "Compiler action failed",
+        [&] { return (self.*Method)(std::forward<Args>(args)...); });
   }
 };
 } // namespace
@@ -226,38 +237,6 @@ entryFunc(const mlir::QCOProgram& program) {
     return std::mt19937_64(std::random_device{}());
   }
   return std::mt19937_64(seed);
-}
-
-/// Run @p fn under a diagnostic handler and raise the chosen Python exception,
-/// appending any emitted MLIR diagnostics to @p message.
-template <nb::exception_type Exception = nb::exception_type::value_error,
-          typename Fn>
-static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
-                            Fn&& fn) {
-  std::string diagnostics;
-  const mlir::ScopedDiagnosticHandler handler(
-      context, [&](mlir::Diagnostic& diag) {
-        if (!diagnostics.empty()) {
-          diagnostics.push_back('\n');
-        }
-        llvm::raw_string_ostream os(diagnostics);
-        if (!llvm::isa<mlir::UnknownLoc>(diag.getLocation())) {
-          os << diag.getLocation() << ": ";
-        }
-        os << diag;
-        return mlir::success();
-      });
-  auto result = std::forward<Fn>(fn)();
-  if (mlir::failed(result)) {
-    std::string full = message;
-    if (!diagnostics.empty()) {
-      full.append(": ").append(diagnostics);
-    }
-    throw nb::builtin_exception(Exception, full.c_str());
-  }
-  if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
-    return *std::move(result);
-  }
 }
 
 template <class T>
@@ -526,45 +505,57 @@ struct PythonInputAdapter<Function> {
 [[nodiscard]] static ImportedProgram
 programFromPath(const std::filesystem::path& path) {
   if (path.empty()) {
-    throw std::runtime_error("Input path must not be empty.");
+    throw nb::builtin_exception(nb::exception_type::runtime_error,
+                                "Input path must not be empty.");
   }
 
   std::error_code error;
   const auto exists = std::filesystem::exists(path, error);
   if (error) {
-    throw std::runtime_error("Failed to inspect path '" + path.string() +
-                             "': " + error.message());
+    throw nb::builtin_exception(nb::exception_type::runtime_error,
+                                std::string("Failed to inspect path '" +
+                                            path.string() +
+                                            "': " + error.message())
+                                    .c_str());
   }
   if (!exists) {
-    throw std::runtime_error("Input file '" + path.string() +
-                             "' does not exist.");
+    throw nb::builtin_exception(
+        nb::exception_type::runtime_error,
+        std::string("Input file '" + path.string() + "' does not exist.")
+            .c_str());
   }
   if (!std::filesystem::is_regular_file(path, error) || error) {
-    throw std::runtime_error("Input path '" + path.string() +
-                             "' is not a file.");
+    throw nb::builtin_exception(
+        nb::exception_type::runtime_error,
+        std::string("Input path '" + path.string() + "' is not a file.")
+            .c_str());
   }
 
   const auto extension = path.extension().string();
   if (extension == ".jeff") {
     return {
-        .program = takeResult(mlir::JeffProgram::fromFile(path)),
+        .program = ::mqt::bindings::unwrap(mlir::JeffProgram::fromFile(path)),
         .format = OutputFormat::Jeff,
     };
   }
   if (extension == ".mlir") {
     return {
-        .program = takeResult(mlir::QCProgram::fromMLIRFile(path)),
+        .program = ::mqt::bindings::unwrap(mlir::QCProgram::fromMLIRFile(path)),
         .format = OutputFormat::QC,
     };
   }
   if (extension == ".qasm") {
     return {
-        .program = takeResult(mlir::QCProgram::fromOpenQASMFile(path)),
+        .program =
+            ::mqt::bindings::unwrap(mlir::QCProgram::fromOpenQASMFile(path)),
         .format = OutputFormat::OpenQASM3,
     };
   }
-  throw std::runtime_error("Input file '" + path.string() +
-                           "' has unsupported extension '" + extension + "'.");
+  throw nb::builtin_exception(nb::exception_type::runtime_error,
+                              std::string("Input file '" + path.string() +
+                                          "' has unsupported extension '" +
+                                          extension + "'.")
+                                  .c_str());
 }
 
 /// Construct a frontend program from a string containing source or path.
@@ -573,12 +564,14 @@ programFromString(const std::string_view input) {
   if (isSourceString(input)) {
     if (input.find("OPENQASM") != std::string_view::npos) {
       return {
-          .program = takeResult(mlir::QCProgram::fromOpenQASMString(input)),
+          .program = ::mqt::bindings::unwrap(
+              mlir::QCProgram::fromOpenQASMString(input)),
           .format = OutputFormat::OpenQASM3,
       };
     }
     return {
-        .program = takeResult(mlir::QCProgram::fromMLIRString(input)),
+        .program =
+            ::mqt::bindings::unwrap(mlir::QCProgram::fromMLIRString(input)),
         .format = OutputFormat::QC,
     };
   }
@@ -627,8 +620,8 @@ programFromString(const std::string_view input) {
     const auto& value = nb::cast<const mlir::OpenQASMProgram&>(program);
     const nb::gil_scoped_release release;
     return {
-        .program =
-            takeResult(mlir::QCProgram::fromOpenQASMString(value.source())),
+        .program = ::mqt::bindings::unwrap(
+            mlir::QCProgram::fromOpenQASMString(value.source())),
         .format = OutputFormat::OpenQASM3,
     };
   }
@@ -640,9 +633,12 @@ programFromString(const std::string_view input) {
         .format = OutputFormat::Qiskit,
     };
   }
-  throw std::runtime_error(
-      "Program type " + nb::cast<std::string>(program.type().attr("__name__")) +
-      " is not supported.");
+  throw nb::builtin_exception(
+      nb::exception_type::runtime_error,
+      std::string("Program type " +
+                  nb::cast<std::string>(program.type().attr("__name__")) +
+                  " is not supported.")
+          .c_str());
 }
 
 /// Resolve an open device or registered ID.
@@ -666,13 +662,13 @@ payloadForOutput(OutputFormat output) {
   case OutputFormat::IQMJSON:
   case OutputFormat::QIRBase:
   case OutputFormat::QIRAdaptive:
-    return takeResult(mlir::PayloadSpecification::forProgramFormat(
+    return ::mqt::bindings::unwrap(mlir::PayloadSpecification::forProgramFormat(
         static_cast<mlir::ProgramFormat>(output)));
   case OutputFormat::Qiskit:
     return bindings::qiskit::payloadSpecification();
   default:
     // Intermediate representations have no execution transport constraints.
-    return takeResult(mlir::PayloadSpecification::create(
+    return ::mqt::bindings::unwrap(mlir::PayloadSpecification::create(
         {.id = "mqt", .version = "1.0", .profile = ""},
         {
             {.id = mlir::ProgramCapability::FORWARD_BRANCHING.str()},
@@ -693,7 +689,7 @@ payloadForOutput(OutputFormat output) {
   if (targetEnvironment && !output) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
-      return takeResult(mlir::CompiledProgram::compile(
+      return ::mqt::bindings::unwrap(mlir::CompiledProgram::compile(
           std::move(input.program), *targetEnvironment, options));
     }();
     return nb::cast(std::move(compiled));
@@ -719,8 +715,10 @@ payloadForOutput(OutputFormat output) {
                             mlir::Program,
                             std::remove_cvref_t<decltype(value)>>) {
             if (value.module()->hasAttr("mqt.layout")) {
-              throw std::runtime_error(
-                  "Qiskit output requires input without layout metadata; use "
+              throw nb::builtin_exception(
+                  nb::exception_type::runtime_error,
+                  "Qiskit output requires input without layout "
+                  "metadata; use "
                   "to_qiskit() for a layout-preserving conversion");
             }
           }
@@ -730,29 +728,19 @@ payloadForOutput(OutputFormat output) {
   const auto nativeOutput = selected == OutputFormat::Qiskit
                                 ? mlir::ProgramFormat::QC
                                 : static_cast<mlir::ProgramFormat>(selected);
-  const auto context = std::visit(
-      [](const auto& value) -> std::shared_ptr<mlir::MLIRContext> {
-        if constexpr (std::is_base_of_v<mlir::Program,
-                                        std::remove_cvref_t<decltype(value)>>) {
-          return value.context();
-        } else {
-          return nullptr;
-        }
-      },
-      input.program);
-  assert(context && "Python compiler inputs must be imported to MLIR");
   auto compiled = [&] {
     const nb::gil_scoped_release release;
-    return withDiagnostics<nb::exception_type::runtime_error>(
-        context.get(), "Compilation failed", [&] {
-          return environment
-                     ? mlir::runDefaultPipeline(std::move(input.program),
-                                                nativeOutput, *environment,
-                                                options)
-                     : mlir::runDefaultPipeline(std::move(input.program),
-                                                nativeOutput, qcoPipeline,
-                                                options);
-        });
+    auto result =
+        environment
+            ? mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
+                                       *environment, options)
+            : mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
+                                       qcoPipeline, options);
+    if (!result) {
+      throw nb::builtin_exception(nb::exception_type::runtime_error,
+                                  llvm::toString(result.takeError()).c_str());
+    }
+    return std::move(*result);
   }();
   if (selected == OutputFormat::Qiskit) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
@@ -817,7 +805,8 @@ payloadForOutput(OutputFormat output) {
   if (deviceTarget) {
     const auto device = resolveDevice(target);
     const nb::gil_scoped_release release;
-    environment = takeResult(mlir::targetEnvironmentFromDevice(device));
+    environment =
+        ::mqt::bindings::unwrap(mlir::targetEnvironmentFromDevice(device));
   } else if (!target.is_none() && !compilerTarget) {
     environment.emplace(
         bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
@@ -838,6 +827,15 @@ payloadForOutput(OutputFormat output) {
 }
 
 /// Compile or submit through the shared C++ QDMI adapter.
+// The compiler submission API reports rejected requests as ValueError.
+[[nodiscard]] static qdmi::Job
+takeSubmissionResult(llvm::Expected<qdmi::Job> result) {
+  if (!result) {
+    throw nb::value_error(llvm::toString(result.takeError()).c_str());
+  }
+  return std::move(*result);
+}
+
 [[nodiscard]] static qdmi::Job
 submitProgram(PythonInputTypes& types, const nb::handle program,
               const nb::handle target, int64_t numShots,
@@ -868,13 +866,13 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
           "program_format conflicts with the compiled payload");
     }
     const nb::gil_scoped_release release;
-    return takeResult(mlir::submitProgram(device, compiled, numShots, params[0],
-                                          params[1], params[2], params[3],
-                                          params[4]));
+    return takeSubmissionResult(
+        mlir::submitProgram(device, compiled, numShots, params[0], params[1],
+                            params[2], params[3], params[4]));
   }
   auto input = programFromInput(types, program, true).program;
   const nb::gil_scoped_release release;
-  return takeResult(
+  return takeSubmissionResult(
       mlir::submitProgram(device, std::move(input), numShots, programFormat,
                           params[0], params[1], params[2], params[3], params[4],
                           options.value_or(mlir::CompilationOptions{})));
@@ -891,7 +889,7 @@ template <class Function>
   auto compiled = [&] {
     auto input = programFromInput(types, program, true).program;
     const nb::gil_scoped_release release;
-    return takeResult(
+    return ::mqt::bindings::unwrap(
         mlir::runDefaultPipeline(std::move(input), mlir::ProgramFormat::QCO));
   }();
   return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
@@ -1008,7 +1006,8 @@ template <class Benchmark>
 generateBenchmark(const Benchmark& benchmark) {
   auto generated = bench::generate(benchmark);
   if (mlir::failed(generated)) {
-    throw std::runtime_error("failed to generate benchmark");
+    throw nb::builtin_exception(nb::exception_type::runtime_error,
+                                "failed to generate benchmark");
   }
   return std::move(*generated);
 }
@@ -1559,7 +1558,7 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
               const nb::gil_scoped_release release;
               return mlir::compilerTargetFromDevice(device);
             }();
-            return takeResult(std::move(target));
+            return ::mqt::bindings::unwrap(std::move(target));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_static("from_qiskit", &bindings::qiskit::importTarget, "source"_a,
@@ -1612,7 +1611,7 @@ Raises:
                   std::move(custom5));
               return mlir::compilerTargetFromDevice(device);
             }();
-            return takeResult(std::move(target));
+            return ::mqt::bindings::unwrap(std::move(target));
           },
           "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -1819,24 +1818,22 @@ excludes nested modules.)pb")
 QC programs use reference semantics and represent frontend quantum programs
 before conversion to QCO.)pb");
   qcProgram
-      .def_static(
-          "from_mlir_str",
-          &FallibleFunctionAdapter<&mlir::QCProgram::fromMLIRString>::call,
-          "source"_a, "Parse a QC MLIR source string.")
-      .def_static(
-          "from_mlir_file",
-          &FallibleFunctionAdapter<&mlir::QCProgram::fromMLIRFile>::call,
-          "path"_a, "Parse QC MLIR from a file.")
+      .def_static("from_mlir_str",
+                  ::mqt::bindings::bindResult(&mlir::QCProgram::fromMLIRString),
+                  "source"_a, "Parse a QC MLIR source string.")
+      .def_static("from_mlir_file",
+                  ::mqt::bindings::bindResult(&mlir::QCProgram::fromMLIRFile),
+                  "path"_a, "Parse QC MLIR from a file.")
       .def_static(
           "from_openqasm_str",
-          &FallibleFunctionAdapter<&mlir::QCProgram::fromOpenQASMString>::call,
+          ::mqt::bindings::bindResult(&mlir::QCProgram::fromOpenQASMString),
           "source"_a,
           R"pb(Translate supported OpenQASM to QC MLIR.
 
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
           "from_openqasm_file",
-          &FallibleFunctionAdapter<&mlir::QCProgram::fromOpenQASMFile>::call,
+          ::mqt::bindings::bindResult(&mlir::QCProgram::fromOpenQASMFile),
           "path"_a,
           R"pb(Translate a supported OpenQASM file to QC MLIR.
 
@@ -1900,7 +1897,10 @@ Args:
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
-            return takeResult(std::move(source).intoQCO());
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoQCO(); });
           },
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to QCO.
@@ -1911,7 +1911,10 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
           [](mlir::QCProgram& value, const mlir::QIRProfile profile,
              const bool copy) {
             auto source = copiedOrConsumed(value, copy);
-            return takeResult(std::move(source).intoQIR(profile));
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoQIR(profile); });
           },
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
@@ -1930,12 +1933,11 @@ operations.)pb");
   qcoProgram
       .def_static(
           "from_mlir_str",
-          &FallibleFunctionAdapter<&mlir::QCOProgram::fromMLIRString>::call,
+          ::mqt::bindings::bindResult(&mlir::QCOProgram::fromMLIRString),
           "source"_a, "Parse a QCO MLIR source string.")
-      .def_static(
-          "from_mlir_file",
-          &FallibleFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
-          "path"_a, "Parse QCO MLIR from a file.")
+      .def_static("from_mlir_file",
+                  ::mqt::bindings::bindResult(&mlir::QCOProgram::fromMLIRFile),
+                  "path"_a, "Parse QCO MLIR from a file.")
       .def("copy", &copyProgram<mlir::QCOProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &FallibleMemberAdapter<&mlir::QCOProgram::cleanup>::call,
@@ -1949,7 +1951,9 @@ operations.)pb");
           [](mlir::QCOProgram& program, const std::string& pipeline,
              mlir::CompilationOptions options) {
             requireValid(program);
-            requireSuccess(program.runPassPipeline(pipeline, options));
+            withDiagnostics<nb::exception_type::runtime_error>(
+                program.context().get(), "Compiler action failed",
+                [&] { return program.runPassPipeline(pipeline, options); });
           },
           "pipeline"_a, nb::kw_only(), "options"_a = mlir::CompilationOptions{},
           "Run a textual MLIR pass pipeline in place.")
@@ -2027,7 +2031,10 @@ Failures raise RuntimeError with the emitted MLIR diagnostics.)pb")
           [](mlir::QCOProgram& program, const mlir::CompilerTarget* target,
              const bool copy) {
             auto source = copiedOrConsumed(program, copy);
-            auto qc = takeResult(std::move(source).intoQC());
+            const auto context = source.context();
+            auto qc = withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoQC(); });
             return bindings::qiskit::exportCircuit(std::move(qc), target);
           },
           nb::kw_only(), "target"_a = nb::none(), "copy"_a = false,
@@ -2049,7 +2056,10 @@ Args:
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
-            return takeResult(std::move(source).intoQC());
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoQC(); });
           },
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to QC.
@@ -2059,7 +2069,10 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
           "to_jeff",
           [](mlir::QCOProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
-            return takeResult(std::move(source).intoJeff());
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoJeff(); });
           },
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to ``jeff`` MLIR.
@@ -2104,7 +2117,7 @@ further compilation.)pb");
               }
               views.emplace_back(data, size);
             }
-            mlir::FailureOr<mlir::JeffProgram> program;
+            std::optional<llvm::Expected<mlir::JeffProgram>> program;
             auto exception = kj::runCatchingExceptions([&] {
               capnp::SegmentArrayMessageReader reader(
                   kj::arrayPtr(views.data(), views.size()));
@@ -2112,9 +2125,10 @@ further compilation.)pb");
                   reader.getRoot<::jeff::Module>());
             });
             KJ_IF_MAYBE (error, exception) {
-              throw std::runtime_error(error->getDescription().cStr());
+              throw nb::builtin_exception(nb::exception_type::runtime_error,
+                                          error->getDescription().cStr());
             }
-            return takeResult(std::move(program));
+            return ::mqt::bindings::unwrap(std::move(*program));
           },
           "segments"_a.noconvert(),
           R"pb(Deserialize a ``jeff`` program from Cap'n Proto segments.
@@ -2129,11 +2143,11 @@ returned program does not retain the buffers.)pb")
             const auto view =
                 std::span(reinterpret_cast<const std::byte*>(bytes.c_str()),
                           bytes.size());
-            return takeResult(mlir::JeffProgram::fromBytes(view));
+            return ::mqt::bindings::unwrap(mlir::JeffProgram::fromBytes(view));
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
       .def_static("from_file",
-                  &FallibleFunctionAdapter<&mlir::JeffProgram::fromFile>::call,
+                  ::mqt::bindings::bindResult(&mlir::JeffProgram::fromFile),
                   "path"_a, "Read a ``jeff`` program from a file.")
       .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")
@@ -2179,7 +2193,10 @@ segment data is copied or flattened.)pb")
           "to_qco",
           [](mlir::JeffProgram& value, const bool copy) {
             auto source = copiedOrConsumed(value, copy);
-            return takeResult(std::move(source).intoQCO());
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoQCO(); });
           },
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to QCO.
@@ -2190,8 +2207,17 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
       m, "IQMJSONProgram", "An immutable output-only IQM circuit object.")
       .def_prop_ro("source", &mlir::IQMJSONProgram::source,
                    "The emitted IQM JSON source.")
-      .def("write", &FallibleMemberAdapter<&mlir::IQMJSONProgram::write>::call,
-           "path"_a, "Write the IQM JSON source to a file.")
+      .def(
+          "write",
+          [](const mlir::IQMJSONProgram& program,
+             const std::filesystem::path& path) {
+            if (auto error = program.write(path)) {
+              throw nb::builtin_exception(
+                  nb::exception_type::runtime_error,
+                  llvm::toString(std::move(error)).c_str());
+            }
+          },
+          "path"_a, "Write the IQM JSON source to a file.")
       .def("__str__", &mlir::IQMJSONProgram::str,
            "Return the emitted IQM JSON source.");
 
@@ -2200,8 +2226,17 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
       "An immutable compiler program containing OpenQASM 3 source.")
       .def_prop_ro("source", &mlir::OpenQASMProgram::source,
                    "The emitted OpenQASM 3 source.")
-      .def("write", &FallibleMemberAdapter<&mlir::OpenQASMProgram::write>::call,
-           "path"_a, "Write the emitted source to a file.")
+      .def(
+          "write",
+          [](const mlir::OpenQASMProgram& program,
+             const std::filesystem::path& path) {
+            if (auto error = program.write(path)) {
+              throw nb::builtin_exception(
+                  nb::exception_type::runtime_error,
+                  llvm::toString(std::move(error)).c_str());
+            }
+          },
+          "path"_a, "Write the emitted source to a file.")
       .def("__str__", &mlir::OpenQASMProgram::str,
            "Return the emitted OpenQASM 3 source.");
 

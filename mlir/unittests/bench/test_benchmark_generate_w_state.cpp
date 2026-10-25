@@ -82,7 +82,8 @@ TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   auto jeff = std::move(*qco).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
   auto restored = mlir::JeffProgram::fromBytes(jeff->toBytes());
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto packageOwner = llvm::cantFail(dd::Package::create(0));

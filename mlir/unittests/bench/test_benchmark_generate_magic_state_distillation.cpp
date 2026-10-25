@@ -47,7 +47,8 @@ static void expectDistillationCounts(QCProgram program,
                                      size_t shots = 4) {
   auto compiled =
       runDefaultPipeline(CompilerInput{std::move(program)}, ProgramFormat::QCO);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   auto& qcoProgram = std::get<QCOProgram>(*compiled);
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(qcoProgram.module()), shots, 17);
@@ -104,7 +105,8 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
     });
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::QCO);
-    ASSERT_TRUE(mlir::succeeded(compiled));
+    ASSERT_TRUE(static_cast<bool>(compiled))
+        << llvm::toString(compiled.takeError());
     auto& qcoProgram = std::get<QCOProgram>(*compiled);
     EXPECT_LT(test::countOperations(qcoProgram.module()), 500U * levels);
 
@@ -113,7 +115,8 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
     const auto bytes = jeff->toBytes();
     ASSERT_FALSE(bytes.empty());
     auto restored = JeffProgram::fromBytes(bytes);
-    ASSERT_TRUE(mlir::succeeded(restored));
+    ASSERT_TRUE(static_cast<bool>(restored))
+        << llvm::toString(restored.takeError());
     EXPECT_EQ(restored->toBytes(), bytes);
   }
 }

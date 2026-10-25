@@ -153,13 +153,13 @@ static void expectQIRSampling(const Benchmark& benchmark, QIRProgram qirProgram,
   const auto bitcode = std::move(qirProgram).intoBitcode();
   ASSERT_TRUE(mlir::succeeded(bitcode));
   ASSERT_FALSE(bitcode->empty());
-  qir::JitSession session(
+  auto session = llvm::cantFail(qir::JitSession::create(
       llvm::StringRef(reinterpret_cast<const char*>(bitcode->data()),
                       bitcode->size()),
-      "benchmark-bitcode", qir::Execution::Sampling, 17);
-  session.runtime().disableOutput();
+      "benchmark-bitcode", qir::Execution::Sampling, 17));
+  session->runtime().disableOutput();
   std::vector<std::string> outcomes;
-  ASSERT_EQ(session.sample(shots, outcomes), 0);
+  ASSERT_EQ(llvm::cantFail(session->sample(shots, outcomes)), 0);
   ASSERT_EQ(outcomes.size(), shots);
   Counts qirCounts;
   for (const auto& outcome : outcomes) {
@@ -175,12 +175,14 @@ static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
   ASSERT_TRUE(mlir::succeeded(qc));
   auto compiled =
       runDefaultPipeline(CompilerInput{qc->copy()}, ProgramFormat::Jeff);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   auto& jeff = std::get<JeffProgram>(*compiled);
   const auto bytes = jeff.toBytes();
   ASSERT_FALSE(bytes.empty());
   auto restored = JeffProgram::fromBytes(bytes);
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto counts = qco::sample(mlir::mqt::getEntryPoint(qco->module()), shots, 17);
@@ -189,7 +191,8 @@ static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
 
   compiled = runDefaultPipeline(CompilerInput{std::move(*qc)},
                                 ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   expectQIRSampling(benchmark, std::get<QIRProgram>(std::move(*compiled)),
                     shots);
 }
@@ -238,14 +241,16 @@ static void expectOpenQASMRoundTrip(const Benchmark& benchmark, size_t shots) {
     if (optimize) {
       auto compiled = runDefaultPipeline(CompilerInput{qc->copy()},
                                          ProgramFormat::OpenQASM3);
-      ASSERT_TRUE(mlir::succeeded(compiled));
+      ASSERT_TRUE(static_cast<bool>(compiled))
+          << llvm::toString(compiled.takeError());
       qasm = std::get<OpenQASMProgram>(std::move(*compiled));
     } else {
       qasm = qc->copy().intoOpenQASM3();
     }
     ASSERT_TRUE(mlir::succeeded(qasm));
     auto restored = QCProgram::fromOpenQASMString(qasm->source());
-    ASSERT_TRUE(mlir::succeeded(restored));
+    ASSERT_TRUE(static_cast<bool>(restored))
+        << llvm::toString(restored.takeError());
     if (hasLoop) {
       EXPECT_GT(test::countOps<scf::ForOp>(restored->module()), 0);
     }
@@ -295,7 +300,8 @@ static void expectStaticTargetExecution(const Benchmark& benchmark) {
   ASSERT_TRUE(static_cast<bool>(basePayload));
   const TargetEnvironment baseTarget(*target, std::move(*basePayload));
   auto compiled = runDefaultPipeline(CompilerInput{qc->copy()}, baseTarget);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   auto& qirProgram = std::get<QIRProgram>(*compiled);
   EXPECT_EQ(qirProgram.profile(), QIRProfile::Base);
   expectQIRSampling(benchmark, std::move(qirProgram), 2048);
@@ -305,10 +311,12 @@ static void expectStaticTargetExecution(const Benchmark& benchmark) {
   ASSERT_TRUE(static_cast<bool>(qasmPayload));
   const TargetEnvironment qasmTarget(*target, std::move(*qasmPayload));
   compiled = runDefaultPipeline(CompilerInput{std::move(*qc)}, qasmTarget);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   auto restored = QCProgram::fromOpenQASMString(
       std::get<OpenQASMProgram>(*compiled).source());
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto sampled = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 2048, 17);
@@ -340,7 +348,8 @@ TEST(GenerateProgramTest, RoundTripsWStateThroughOpenQASM) {
   auto qasm = std::move(*qc).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(qasm));
   auto restored = QCProgram::fromOpenQASMString(qasm->source());
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto counts = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 2048, 17);

@@ -14,6 +14,8 @@
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/QDMI.hpp"
 
+#include "Diagnostics.h"
+
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -765,14 +767,8 @@ CompiledProgram::compile(CompilerInput program,
     return format.takeError();
   }
   auto result = runDefaultPipeline(std::move(program), environment, options);
-  if (failed(result)) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Compilation failed for selected payload " +
-            environment.payloadSpecification().format().id + " " +
-            environment.payloadSpecification().format().profile +
-            "; see compiler diagnostics for the unsupported construct or "
-            "capability");
+  if (!result) {
+    return result.takeError();
   }
   if (auto* qasm = std::get_if<OpenQASMProgram>(&*result)) {
     return CompiledProgram(environment, std::move(*qasm).intoSource(), *format);
@@ -790,6 +786,8 @@ CompiledProgram::compile(CompilerInput program,
         "Compiled QDMI QIR requires an i64 () entry point; keep classical "
         "temporaries local or select OpenQASM 3");
   }
+  const auto context = qir.context();
+  const CompilerDiagnostics diagnostics(context.get());
   if (qdmi::isBinaryProgramFormat(*format)) {
     std::string bytes;
     llvm::raw_string_ostream stream(bytes);
@@ -799,9 +797,8 @@ CompiledProgram::compile(CompilerInput program,
   } else if (auto text = std::move(qir).intoLLVMIR(); succeeded(text)) {
     return CompiledProgram(environment, std::move(*text), *format);
   }
-  return llvm::createStringError(
-      std::make_error_code(std::errc::invalid_argument),
-      "Failed to serialize compiled QIR payload");
+  return diagnostics.takeError(
+      std::make_error_code(std::errc::invalid_argument));
 }
 
 llvm::Expected<CompiledProgram>

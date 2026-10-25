@@ -50,7 +50,7 @@ from mqt.core.mlir import (
     simulate,
     submit_program,
 )
-from mqt.core.qdmi import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not supports_qiskit_translation(),
@@ -88,6 +88,49 @@ h q[0];
 cx q[0], q[1];
 bit[2] c = measure q;
 """
+
+
+@pytest.mark.parametrize("program_type", [QCProgram, QCOProgram])
+def test_mlir_parser_details_reach_python(
+    program_type: type[QCProgram | QCOProgram], capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Capture parser details before a program and its context exist."""
+    with pytest.raises(RuntimeError, match="custom op 'not'") as error:
+        program_type.from_mlir_str("not an MLIR module")
+    assert ":1:1" in str(error.value)
+    assert not capfd.readouterr().err
+
+
+def test_mlir_verifier_notes_reach_python(capfd: pytest.CaptureFixture[str]) -> None:
+    """Keep the operation note attached to a verifier error."""
+    with pytest.raises(RuntimeError, match="operand #0") as error:
+        QCProgram.from_mlir_str("""module {
+          func.func @main() {
+            %a = arith.constant 0.0 : f64
+            %b = arith.addi %a, %a : f64
+            return
+          }
+        }""")
+    assert "note:" in str(error.value)
+    assert "see current operation" in str(error.value)
+    assert not capfd.readouterr().err
+
+
+def test_openqasm_write_failure_keeps_python_category(tmp_path: Path) -> None:
+    """Report output failures through the established RuntimeError category."""
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_openqasm3()
+    with pytest.raises(RuntimeError, match="failed to open OpenQASM output file"):
+        program.write(tmp_path / "missing" / "output.qasm")
+
+
+@pytest.mark.skipif(not Path("/dev/full").exists(), reason="requires /dev/full")
+@pytest.mark.parametrize("format_id", ["qasm", "qir"])
+def test_program_write_failure_is_recoverable(format_id: str) -> None:
+    """Return failed writes without leaving a fatal LLVM stream error."""
+    qc = QCProgram.from_openqasm_str(QASM_STRING)
+    write = qc.to_openqasm3().write if format_id == "qasm" else qc.to_qir(QIRProfile.BASE).write_bitcode
+    with pytest.raises(RuntimeError, match="failed to write"):
+        write(Path("/dev/full"))
 
 
 def _test_payload_specification() -> PayloadSpecification:
@@ -680,9 +723,55 @@ def test_compilation_entry_points_forward_mapping_options(output_kind: str, capf
         )
     else:
         compile_call = partial(compile_program, QASM_STRING, target=target, options=options)
-    with pytest.raises((RuntimeError, ValueError)) as exc_info:
+    error_type = RuntimeError if output_kind in {"typed", "default"} else ValueError
+    with pytest.raises(error_type, match="mapping trials must be greater than zero"):
         compile_call()
-    assert "mapping trials must be greater than zero" in str(exc_info.value) + capfd.readouterr().err
+    assert not capfd.readouterr().err
+
+
+@pytest.mark.parametrize("typed_input", [False, True])
+def test_payload_compilation_preserves_error_category_and_details(
+    capfd: pytest.CaptureFixture[str], *, typed_input: bool
+) -> None:
+    """Reject unsupported payload input with its compiler diagnostic intact."""
+    source = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+bit result = measure q;
+while (result) {
+  x q;
+  result = measure q;
+}
+"""
+    program = QCProgram.from_openqasm_str(source) if typed_input else source
+    with pytest.raises(ValueError, match=r"scf\.while") as error:
+        submit_program(program, target="mqt.ddsim.default", program_format=ProgramFormat.QIR_BASE_MODULE)
+    assert "see current operation" in str(error.value)
+    assert "<input>" in str(error.value)
+    assert not capfd.readouterr().err
+
+
+@pytest.mark.parametrize("shots", [1, 512])
+def test_qco_sampling_preserves_worker_diagnostics(shots: int, capfd: pytest.CaptureFixture[str]) -> None:
+    """Sampling failures retain their category and detail across workers."""
+    program = QCOProgram.from_mlir_str("""module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.static 0 : !qco.qubit
+        %r = func.call @helper(%q) : (!qco.qubit) -> !qco.qubit
+        qco.sink %r : !qco.qubit
+        return
+      }
+      func.func private @helper(%q: !qco.qubit) -> !qco.qubit {
+        %r = qco.reset %q : !qco.qubit
+        %zero = arith.constant 0 : i8
+        %invalid = arith.divui %zero, %zero : i8
+        return %r : !qco.qubit
+      }
+    }""")
+    with pytest.raises(ValueError, match="division by zero"):
+        program.sample(shots=shots, seed=1)
+    assert not capfd.readouterr().err
 
 
 @requires_qiskit_translation
@@ -1633,10 +1722,11 @@ if (c) { x q; }
         program.compile_for_target(TargetEnvironment(target, payload))
 
     # A copy shares the context, whose diagnostic handler must be restored.
-    capfd.readouterr()
-    with pytest.raises(RuntimeError):
+    assert not capfd.readouterr().err
+    with pytest.raises(RuntimeError, match="does not refer to a registered pass") as error:
         valid.run_pass_pipeline("not-a-pass")
-    assert "failed to parse pass pipeline" in capfd.readouterr().err
+    assert "Target compilation failed" not in str(error.value)
+    assert not capfd.readouterr().err
     valid.compile_for_target(_test_target_environment(target))
     valid.to_qc()
     with pytest.raises(RuntimeError, match="already been consumed"):
@@ -1937,7 +2027,7 @@ def test_compiler_target_from_device_id_preserves_open_errors() -> None:
         CompilerTarget.from_device_id("unknown.device")
 
 
-def test_qco_program_runs_textual_pipeline() -> None:
+def test_qco_program_runs_textual_pipeline(capfd: pytest.CaptureFixture[str]) -> None:
     """Run registered QCO passes through MLIR textual pipeline syntax."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
@@ -1945,8 +2035,12 @@ def test_qco_program_runs_textual_pipeline() -> None:
     qco.run_pass_pipeline("mqt-qco-default")
     qco.lift_hadamards()
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    before = qco.ir
+    with pytest.raises(RuntimeError, match="does not refer to a registered pass") as error:
         qco.run_pass_pipeline("not-a-pass")
+    assert "not-a-pass" in str(error.value)
+    assert qco.ir == before
+    assert not capfd.readouterr().err
 
 
 def test_qco_program_runs_pauli_twirling_pass() -> None:
@@ -2055,7 +2149,7 @@ def test_qco_program_decomposes_multi_controlled(gate: str) -> None:
     assert qco.ir != before
     assert "controls_out:2" not in qco.ir
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="requires min-qubits >= 3"):
         qco.decompose_multi_controlled(min_qubits=2)
 
 
@@ -2185,7 +2279,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
                 compile_program(program, target="mqt.ddsim.default", copy=True)
             else:
                 # Parsing fails before the compilation release scope can be reached.
-                with pytest.raises(RuntimeError, match="Compiler action failed"):
+                with pytest.raises(RuntimeError, match="No OpenQASM definition found for gate 'unknown_gate'"):
                     compile_program(path if mode == "path" else invalid_source, output=OutputFormat.QCO)
             if progress.is_set():
                 break

@@ -20,6 +20,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <concepts>
@@ -197,7 +198,7 @@ public:
   [[nodiscard]] const std::string& str() const noexcept;
 
   /// Write the OpenQASM source to a file.
-  [[nodiscard]] LogicalResult write(const std::filesystem::path& path) const;
+  [[nodiscard]] llvm::Error write(const std::filesystem::path& path) const;
 
 private:
   std::string source_;
@@ -218,7 +219,7 @@ public:
   [[nodiscard]] const std::string& str() const noexcept { return source_; }
 
   /// Write the IQM JSON source to a file.
-  [[nodiscard]] LogicalResult write(const std::filesystem::path& path) const;
+  [[nodiscard]] llvm::Error write(const std::filesystem::path& path) const;
 
 private:
   std::string source_;
@@ -230,23 +231,23 @@ public:
   explicit QCProgram(Storage storage) : Program(std::move(storage)) {}
 
   /// Parse QC MLIR assembly.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromMLIRString(std::string_view source);
 
   /// Parse QC MLIR assembly from a file.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
   /// Translate supported OpenQASM source to QC.
   ///
   /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromOpenQASMString(std::string_view source);
 
   /// Translate a supported OpenQASM file to QC.
   ///
   /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromOpenQASMFile(const std::filesystem::path& path);
 
   /// Take ownership of an MLIR module that contains a QC program.
@@ -355,11 +356,11 @@ public:
 class QCOProgram final : public Program {
 public:
   /// Parse QCO MLIR assembly.
-  [[nodiscard]] static FailureOr<QCOProgram>
+  [[nodiscard]] static llvm::Expected<QCOProgram>
   fromMLIRString(std::string_view source);
 
   /// Parse QCO MLIR assembly from a file.
-  [[nodiscard]] static FailureOr<QCOProgram>
+  [[nodiscard]] static llvm::Expected<QCOProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
   /// Take ownership of an MLIR module that contains a QCO program.
@@ -499,16 +500,16 @@ public:
   /// Deserialize an existing jeff message.
   ///
   /// Keep the reader's backing storage alive and unchanged until this function
-  /// returns. Return failure and emit a diagnostic if deserialization fails.
-  [[nodiscard]] static FailureOr<JeffProgram>
+  /// returns. Return an owned error if deserialization fails.
+  [[nodiscard]] static llvm::Expected<JeffProgram>
   fromMessage(::jeff::Module::Reader module);
 
   /// Deserialize a `jeff` binary buffer.
-  [[nodiscard]] static FailureOr<JeffProgram>
+  [[nodiscard]] static llvm::Expected<JeffProgram>
   fromBytes(std::span<const std::byte> bytes);
 
   /// Deserialize a `jeff` binary file.
-  [[nodiscard]] static FailureOr<JeffProgram>
+  [[nodiscard]] static llvm::Expected<JeffProgram>
   fromFile(const std::filesystem::path& path);
 
   /// Create an independent `jeff` program copy.
@@ -588,7 +589,7 @@ using CompilerProgram =
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
-[[nodiscard]] FailureOr<CompilerProgram>
+[[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    std::string_view qcoPipeline = "mqt-qco-default",
                    const CompilationOptions& options = {});
@@ -597,7 +598,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
 ///
 /// QCImport and raw QCO stop before target compilation and are not accepted.
 /// The environment must include the requested output's lowering constraints.
-[[nodiscard]] FailureOr<CompilerProgram>
+[[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
@@ -606,7 +607,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
-[[nodiscard]] FailureOr<CompilerProgram>
+[[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
 

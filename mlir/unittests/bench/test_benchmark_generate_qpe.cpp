@@ -100,11 +100,13 @@ TEST(GenerateProgramTest, BoundsQPEPayloadAtMaximumPrecision) {
     EXPECT_LT(program->str().size(), 4096U);
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::Jeff);
-    ASSERT_TRUE(mlir::succeeded(compiled));
+    ASSERT_TRUE(static_cast<bool>(compiled))
+        << llvm::toString(compiled.takeError());
     const auto bytes = std::get<JeffProgram>(*compiled).toBytes();
     EXPECT_LT(bytes.size(), 16'384U);
     auto restored = JeffProgram::fromBytes(bytes);
-    ASSERT_TRUE(mlir::succeeded(restored));
+    ASSERT_TRUE(static_cast<bool>(restored))
+        << llvm::toString(restored.takeError());
     EXPECT_EQ(restored->toBytes(), bytes);
   }
 }

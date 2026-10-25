@@ -105,7 +105,8 @@ static mlir::FailureOr<QCOProgram> inPlaceMultiplier(uint64_t number,
   }
   auto compiled = runDefaultPipeline(CompilerInput{std::move(*qcProgram)},
                                      ProgramFormat::QCO);
-  if (mlir::failed(compiled)) {
+  if (!compiled) {
+    ADD_FAILURE() << llvm::toString(compiled.takeError());
     return mlir::failure();
   }
   return std::get<QCOProgram>(std::move(*compiled));
@@ -172,7 +173,7 @@ TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   EXPECT_LT(program->str().size(), 32'768U);
   auto qir = runDefaultPipeline(CompilerInput{std::move(*program)},
                                 ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(mlir::succeeded(qir));
+  ASSERT_TRUE(static_cast<bool>(qir)) << llvm::toString(qir.takeError());
 }
 
 } // namespace mqt::bench
