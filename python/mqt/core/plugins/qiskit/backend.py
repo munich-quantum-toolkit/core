@@ -40,7 +40,7 @@ from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3, qpy
-from qiskit.circuit import ControlFlowOp, QuantumCircuit
+from qiskit.circuit import ControlFlowOp, IfElseOp, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -106,6 +106,7 @@ def _build_gate_mappings_for_backend(
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
+        "if_else": IfElseOp,
     })
     canonical_gates.update(extra_gates)
 
@@ -158,6 +159,7 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
         "measure",
         "reset",
         "barrier",
+        "if_else",
         "p",
         "x",
         "y",
@@ -523,9 +525,8 @@ class QDMIBackend(BackendV2):
         """
         op_name = op.name().lower()
 
-        # Skip control flow operations that don't belong in the Target
-        # (barrier is handled separately by Qiskit, if_else is a circuit construct)
-        if op_name in {"barrier", "if_else"}:
+        # Barriers are scheduling directives, not executable device operations.
+        if op_name == "barrier":
             return
 
         if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
