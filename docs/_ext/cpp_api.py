@@ -263,6 +263,10 @@ def build_doxygen(app: Sphinx) -> None:
     if doxygen is None:
         msg = "Doxygen is required to build the native C++ API documentation"
         raise ExtensionError(msg)
+    # Doxygen leaves pages for removed symbols behind on incremental builds.
+    html_dir = _path_from_config(app, app.config.cpp_api_tagfile[0]).parent / "html"
+    if html_dir.exists():
+        shutil.rmtree(html_dir)
     try:
         write_doxygen_header(doxygen, Path(app.srcdir))
         with urlopen(urljoin(app.config.qdmi_api_tagfile[1], "qdmi.tag"), timeout=30) as response:  # ruff:ignore[suspicious-url-open-usage]
@@ -300,7 +304,10 @@ def publish_doxygen_html(app: Sphinx, exception: Exception | None) -> None:
     if exception is not None or app.builder.format != "html":
         return
     source = _path_from_config(app, app.config.cpp_api_tagfile[0]).parent / "html"
-    shutil.copytree(source, Path(app.outdir) / "cpp", dirs_exist_ok=True)
+    destination = Path(app.outdir) / "cpp"
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(source, destination)
 
 
 def setup(app: Sphinx) -> ExtensionMetadata:
