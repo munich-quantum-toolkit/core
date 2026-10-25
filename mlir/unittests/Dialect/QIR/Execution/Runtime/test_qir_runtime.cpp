@@ -30,8 +30,8 @@
 #include <cstring>
 #include <filesystem>
 #include <limits>
-#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -85,12 +85,10 @@ TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
   __quantum__rt__qubit_release(qubit);
   __quantum__rt__result_release(result);
 
-  EXPECT_THAT([&] { Runtime::getInstance().reset(std::array{qubit}); },
-              testing::ThrowsMessage<std::out_of_range>(
-                  testing::HasSubstr("Qubit not allocated")));
-  EXPECT_THAT([&] { return Runtime::getInstance().deref(result); },
-              testing::ThrowsMessage<std::out_of_range>(
-                  testing::HasSubstr("Result not allocated")));
+  EXPECT_THAT(llvm::toString(Runtime::getInstance().reset(std::array{qubit})),
+              testing::HasSubstr("Qubit not allocated"));
+  EXPECT_THAT(llvm::toString(Runtime::getInstance().deref(result).takeError()),
+              testing::HasSubstr("Result not allocated"));
   EXPECT_DEATH(__quantum__qis__x__body(qubit), "Qubit not allocated");
   EXPECT_DEATH(__quantum__rt__read_result(result), "Result not allocated");
   EXPECT_DEATH(__quantum__rt__qubit_release(qubit),
@@ -180,18 +178,19 @@ TEST_F(QIRRuntimeTest, RejectsStaticQubitBeyondDDRange) {
   constexpr std::array<dd::fp, 0> params{};
   std::array<Qubit*, 0> controls{};
   std::array<Qubit*, 1> targets{qubit};
-  EXPECT_THROW(Runtime::getInstance().apply(
-                   mlir::qco::getStandardGateMatrix<mlir::qco::XOp>(params),
-                   controls, targets),
-               std::out_of_range);
+  EXPECT_FALSE(llvm::toString(
+                   Runtime::getInstance().apply(
+                       mlir::qco::getStandardGateMatrix<mlir::qco::XOp>(params),
+                       controls, targets))
+                   .empty());
 }
 
 TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
   Runtime runtime{0};
   for (size_t i = 0; i < dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
-    static_cast<void>(runtime.qAlloc());
+    static_cast<void>(llvm::cantFail(runtime.qAlloc()));
   }
-  EXPECT_THROW(runtime.qAlloc(), std::out_of_range);
+  EXPECT_FALSE(llvm::toString(runtime.qAlloc().takeError()).empty());
 }
 
 } // namespace
@@ -227,6 +226,23 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
              << "OUTPUT\tARRAY\t3" << (ordered ? "" : "\tarray_label") << "\n"
              << "END\t0\n";
     EXPECT_EQ(sink.str(), expected.str());
+  }
+}
+
+TEST_F(QIRRuntimeTest, FloatOutputPreservesShortestRepresentations) {
+  auto& runtime = Runtime::getInstance();
+  const std::array cases{
+      std::pair{1.0000001, "1.0000001"},
+      std::pair{-0., "-0"},
+      std::pair{std::numeric_limits<double>::denorm_min(), "5e-324"},
+      std::pair{std::numeric_limits<double>::max(), "1.7976931348623157e+308"},
+      std::pair{std::numeric_limits<double>::infinity(), "inf"},
+      std::pair{std::numeric_limits<double>::quiet_NaN(), "nan"},
+  };
+  for (const auto& [value, text] : cases) {
+    sink.str().clear();
+    runtime.outputFloat(value, "value");
+    EXPECT_EQ(sink.str(), std::string("OUTPUT\tDOUBLE\t") + text + "\tvalue\n");
   }
 }
 
@@ -302,7 +318,7 @@ TEST_F(QIRRuntimeTest, GlobalPhase) {
   __quantum__qis__i__body(q0);
   __quantum__qis__gphase__body(dd::PI_2);
 
-  const auto state = Runtime::getInstance().takeState();
+  const auto state = llvm::cantFail(Runtime::getInstance().takeState());
   const auto vector = llvm::cantFail(dd::getVector(state.edge));
   ASSERT_EQ(vector.size(), 2);
   EXPECT_NEAR(vector[0].real(), 0., 1e-12);
@@ -852,7 +868,7 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q0);
 
-  auto state = Runtime::getInstance().takeState();
+  auto state = llvm::cantFail(Runtime::getInstance().takeState());
   EXPECT_NE(state.dd, nullptr);
   EXPECT_FALSE(state.edge.isTerminal());
   EXPECT_EQ(state.numQubits, 1);
@@ -954,7 +970,7 @@ TEST_F(QIRRuntimeTest, PreservesPhaseBeforeFirstQubitAndFollowingGates) {
   __quantum__qis__x__body(nullptr);
   __quantum__qis__gphase__body(0.4);
   __quantum__qis__x__body(nullptr);
-  auto state = Runtime::getInstance().takeState();
+  auto state = llvm::cantFail(Runtime::getInstance().takeState());
   state.dd->garbageCollect(true);
   const auto values = llvm::cantFail(dd::getVector(state.edge));
   ASSERT_EQ(values.size(), 2);
@@ -972,7 +988,7 @@ TEST_F(QIRRuntimeTest, ExtractsLogicalOrderAfterSwapCycle) {
   __quantum__qis__x__body(q0);
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__swap__body(q1, q2);
-  auto state = Runtime::getInstance().takeState();
+  auto state = llvm::cantFail(Runtime::getInstance().takeState());
   const auto values = llvm::cantFail(dd::getVector(state.edge));
   ASSERT_EQ(values.size(), 8);
   for (size_t i = 0; i < values.size(); ++i) {
@@ -995,7 +1011,7 @@ TEST_F(QIRRuntimeTest, ReusesReleasedWiresWithoutReusingHandles) {
     __quantum__rt__qubit_release(qubit);
   }
   EXPECT_DEATH(__quantum__qis__x__body(first), "Qubit not allocated");
-  auto state = Runtime::getInstance().takeState();
+  auto state = llvm::cantFail(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 1);
   state.dd->decRef(state.edge);
 }
@@ -1013,7 +1029,7 @@ TEST_F(QIRRuntimeTest, ReleasedSwappedWireIsResetBeforeReuse) {
   __quantum__qis__x__body(a);
   __quantum__qis__mz__body(c, nullptr);
   EXPECT_FALSE(__quantum__rt__read_result(nullptr));
-  auto state = Runtime::getInstance().takeState();
+  auto state = llvm::cantFail(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 2);
   state.dd->decRef(state.edge);
 }
@@ -1023,7 +1039,7 @@ TEST_F(QIRRuntimeTest, ReleasingUnusedQubitsDoesNotEnlargeState) {
   for (size_t i = 0; i <= dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
     __quantum__rt__qubit_release(__quantum__rt__qubit_allocate(nullptr));
   }
-  auto state = Runtime::getInstance().takeState();
+  auto state = llvm::cantFail(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 0);
 }
 
@@ -1061,11 +1077,12 @@ TEST(QIRRuntimeGrowth, PreservesStateAndPhaseAcrossGrowthAndTransfer) {
     for (size_t job = 0; job < 2; ++job) {
       runtime.applyGlobalPhase(dd::PI);
       for (size_t q = 0; q < width; ++q) {
-        auto* qubit = dynamic ? runtime.qAlloc() : reinterpret_cast<Qubit*>(q);
+        auto* qubit = dynamic ? llvm::cantFail(runtime.qAlloc())
+                              : reinterpret_cast<Qubit*>(q);
         const std::array targets{qubit};
-        runtime.apply(x, {}, targets);
+        llvm::cantFail(runtime.apply(x, {}, targets));
       }
-      auto state = runtime.takeState();
+      auto state = llvm::cantFail(runtime.takeState());
       EXPECT_EQ(state.numQubits, width);
       EXPECT_GE(state.dd->qubits(), width);
       EXPECT_LT(state.dd->qubits(), 2 * width);

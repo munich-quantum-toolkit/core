@@ -31,9 +31,9 @@
 #include <optional>
 #include <random>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -153,28 +153,29 @@ private:
   OutputSchema outputSchema = OutputSchema::Labeled;
   std::vector<std::pair<std::string, std::string>> metadata;
 
-  auto enlargeState(size_t maxQubit) -> void;
-  bool measureQubit(dd::Qubit target);
-  void configureStaticResources(std::optional<size_t> qubits,
-                                std::optional<size_t> results);
+  auto enlargeState(size_t maxQubit) -> llvm::Error;
+  llvm::Expected<bool> measureQubit(dd::Qubit target);
+  llvm::Error configureStaticResources(std::optional<size_t> qubits,
+                                       std::optional<size_t> results);
   auto
   sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
                      llvm::function_ref<void(std::string&&)> emitOwned,
                      llvm::function_ref<void(std::string_view)> emitBorrowed)
-      -> void;
-  static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
+      -> llvm::Error;
+  static auto staticQubitId(const Qubit* qubit) -> llvm::Expected<dd::Qubit> {
     const auto id = reinterpret_cast<uintptr_t>(qubit);
     if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {
-      throw std::out_of_range(
+      return llvm::createStringError(
+          std::errc::result_out_of_range,
           "Static QIR qubit ID exceeds the supported qubit range");
     }
     return static_cast<dd::Qubit>(id);
   }
   static auto bind(Runtime* runtime) noexcept -> Runtime*;
-  auto resolveAddress(const Qubit* qubit) -> dd::Qubit;
+  auto resolveAddress(const Qubit* qubit) -> llvm::Expected<dd::Qubit>;
   auto translateAddresses(std::span<Qubit* const> qubits,
                           std::span<Qubit* const> additionalQubits = {})
-      -> llvm::SmallVector<dd::Qubit>;
+      -> llvm::Expected<llvm::SmallVector<dd::Qubit>>;
 
   // Helper function to output a type (bool, int...) to @c os, honoring the
   // active @c outputSchema.
@@ -204,16 +205,16 @@ public:
   /// Apply a row-major matrix with a runtime-sized control set.
   auto apply(std::span<const std::complex<dd::fp>> matrix,
              std::span<Qubit* const> controls, std::span<Qubit* const> targets)
-      -> void;
+      -> llvm::Error;
   template <typename Matrix>
     requires requires(const Matrix& matrix) { matrix.entries(); }
   auto apply(const Matrix& matrix, std::span<Qubit* const> controls,
-             std::span<Qubit* const> targets) -> void {
-    apply(matrix.entries(), controls, targets);
+             std::span<Qubit* const> targets) -> llvm::Error {
+    return apply(matrix.entries(), controls, targets);
   }
   auto applyGlobalPhase(dd::fp phase) -> void;
-  auto measure(Qubit* qubit, Result* result) -> void;
-  template <typename... Args> auto measure(Args... args) -> void {
+  auto measure(Qubit* qubit, Result* result) -> llvm::Error;
+  template <typename... Args> auto measure(Args... args) -> llvm::Error {
     const auto qubits = packOfType<Qubit*>(args...);
     const auto results = packOfType<Result*>(args...);
     static_assert(
@@ -225,16 +226,19 @@ public:
         "Number of qubits and results must match the number of arguments. "
         "First, all qubits followed then by all results.");
     for (size_t i = 0; i < qubits.size(); ++i) {
-      measure(qubits[i], results[i]);
+      if (auto error = measure(qubits[i], results[i])) {
+        return error;
+      }
     }
+    return llvm::Error::success();
   }
-  auto reset(std::span<Qubit* const> qubits) -> void;
-  auto swap(Qubit* qubit1, Qubit* qubit2) -> void;
-  auto qAlloc() -> Qubit*;
-  auto qFree(Qubit* qubit) -> void;
-  auto rAlloc() -> Result*;
-  auto deref(Result* result) -> ResultStruct&;
-  auto rFree(Result* result) -> void;
+  auto reset(std::span<Qubit* const> qubits) -> llvm::Error;
+  auto swap(Qubit* qubit1, Qubit* qubit2) -> llvm::Error;
+  auto qAlloc() -> llvm::Expected<Qubit*>;
+  auto qFree(Qubit* qubit) -> llvm::Error;
+  auto rAlloc() -> llvm::Expected<Result*>;
+  auto deref(Result* result) -> llvm::Expected<ResultStruct*>;
+  auto rFree(Result* result) -> llvm::Error;
 
   /// Append a measurement bit to the measurement string.
   auto appendMeasurementBit(bool result, std::optional<dd::Qubit> deferredWire =
@@ -250,7 +254,7 @@ public:
   /// reported an available uncollapsed state.
   ///
   /// @returns the moved @c QState from the runtime.
-  auto takeState() -> QState;
+  auto takeState() -> llvm::Expected<QState>;
 
   /// Borrow a stream that outlives execution and session teardown.
   auto setOstream(llvm::raw_ostream& other) -> void;

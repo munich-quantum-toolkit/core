@@ -17,7 +17,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  mqt_llvm_target_disable_rtti(${TARGET_NAME})
+  llvm_update_compile_flags(${TARGET_NAME})
 
   # Get the LLVM native target libraries
   llvm_map_components_to_libnames(

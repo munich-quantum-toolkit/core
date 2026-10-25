@@ -1686,10 +1686,10 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
     ASSERT_TRUE(mlir::succeeded(qir));
     const auto llvmIR = std::move(*qir).intoLLVMIR();
     ASSERT_TRUE(mlir::succeeded(llvmIR));
-    ::qir::JitSession session(*llvmIR, "classical-arrays",
-                              ::qir::Execution::Sampling, 42);
+    auto session = llvm::cantFail(::qir::JitSession::create(
+        *llvmIR, "classical-arrays", ::qir::Execution::Sampling, 42));
     std::vector<std::string> samples;
-    ASSERT_EQ(session.sample(4, samples), 0);
+    ASSERT_EQ(llvm::cantFail(session->sample(4, samples)), 0);
     EXPECT_EQ(samples, (std::vector<std::string>(4, "1")));
   }
 }
@@ -1756,10 +1756,10 @@ TEST_F(CompilerPipelineTest, ConstantArrayInitializationPreservesValues) {
     ASSERT_TRUE(succeeded(qir));
     auto llvmIR = std::move(*qir).intoLLVMIR();
     ASSERT_TRUE(succeeded(llvmIR));
-    ::qir::JitSession session(*llvmIR, "constant-arrays",
-                              ::qir::Execution::Sampling, 42);
+    auto session = llvm::cantFail(::qir::JitSession::create(
+        *llvmIR, "constant-arrays", ::qir::Execution::Sampling, 42));
     std::vector<std::string> qirSamples;
-    ASSERT_EQ(session.sample(16, qirSamples), 0);
+    ASSERT_EQ(llvm::cantFail(session->sample(16, qirSamples)), 0);
     EXPECT_EQ(qirSamples, std::vector<std::string>(16, "1"));
   }
 }

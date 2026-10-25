@@ -21,25 +21,24 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <format>
 #include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
 #include <random>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -88,24 +87,27 @@ auto Runtime::reset() -> void {
   currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
   qState.reset();
   if (qState.dd && staticQubits_ && *staticQubits_ != 0) {
-    enlargeState(*staticQubits_ - 1);
+    llvm::cantFail(enlargeState(*staticQubits_ - 1));
   }
 }
 
-void Runtime::configureStaticResources(std::optional<size_t> qubits,
-                                       std::optional<size_t> results) {
+llvm::Error Runtime::configureStaticResources(std::optional<size_t> qubits,
+                                              std::optional<size_t> results) {
   if (qubits && *qubits > dd::Package::MAX_POSSIBLE_QUBITS) {
-    throw std::out_of_range(
+    return llvm::createStringError(
+        std::errc::result_out_of_range,
         "Static QIR qubit capacity exceeds the supported range");
   }
   if (results && *results > resultValues_.max_size()) {
-    throw std::out_of_range(
+    return llvm::createStringError(
+        std::errc::result_out_of_range,
         "Static QIR result capacity exceeds the supported range");
   }
   staticQubits_ = qubits;
   staticResults_ = results;
   resultValues_.resize(results.value_or(0));
   reset();
+  return llvm::Error::success();
 }
 
 auto Runtime::seed(const uint64_t randomSeed) -> void { mt.seed(randomSeed); }
@@ -117,16 +119,18 @@ Runtime::Runtime(const uint64_t randomSeed)
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
       currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), mt(randomSeed) {}
 
-auto Runtime::enlargeState(size_t maxQubit) -> void {
+auto Runtime::enlargeState(size_t maxQubit) -> llvm::Error {
   if (maxQubit >= dd::Package::MAX_POSSIBLE_QUBITS ||
       (staticQubits_ && maxQubit >= *staticQubits_)) {
-    throw std::out_of_range("QIR qubit ID exceeds the supported qubit range");
+    return llvm::createStringError(
+        std::errc::result_out_of_range,
+        "QIR qubit ID exceeds the supported qubit range");
   }
   if (staticQubits_) {
     maxQubit = std::max(maxQubit, *staticQubits_ - 1);
   }
   if (maxQubit < qState.numQubits) {
-    return;
+    return llvm::Error::success();
   }
   const auto numQubits = maxQubit + 1;
   const auto capacity = qState.dd ? qState.dd->qubits() : 0;
@@ -136,9 +140,15 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
         dd::Package::MAX_POSSIBLE_QUBITS,
         std::max({numQubits, dd::Package::DEFAULT_QUBITS, 2 * capacity})));
     if (!qState.dd) {
-      qState.dd = llvm::cantFail(dd::Package::create(newCapacity));
+      auto package = dd::Package::create(newCapacity);
+      if (!package) {
+        return package.takeError();
+      }
+      qState.dd = std::move(*package);
     } else {
-      llvm::cantFail(qState.dd->resize(newCapacity));
+      if (auto error = qState.dd->resize(newCapacity)) {
+        return error;
+      }
     }
   }
   qubitPermutation.resize(numQubits);
@@ -155,41 +165,52 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
   qState.dd->decRef(qState.edge);
   qState.edge = edge;
   qState.numQubits = numQubits;
+  return llvm::Error::success();
 }
 
-auto Runtime::resolveAddress(const Qubit* qubit) -> dd::Qubit {
+auto Runtime::resolveAddress(const Qubit* qubit) -> llvm::Expected<dd::Qubit> {
   if (qubitMode == ResourceMode::UNKNOWN) {
     qubitMode = ResourceMode::STATIC;
   }
   if (qubitMode == ResourceMode::STATIC) {
-    const auto id = staticQubitId(qubit);
-    if (staticQubits_ && id >= *staticQubits_) {
-      throw std::out_of_range(
+    auto id = staticQubitId(qubit);
+    if (!id) {
+      return id.takeError();
+    }
+    if (staticQubits_ && *id >= *staticQubits_) {
+      return llvm::createStringError(
+          std::errc::result_out_of_range,
           "Static QIR qubit ID exceeds its declared capacity");
     }
-    return id;
+    return *id;
   }
 
   const auto it = qRegister.find(qubit);
   if (it == qRegister.end()) {
-    throw std::out_of_range(
-        llvm::formatv("{0}:{1}: Qubit not allocated (not found): {2}", __FILE__,
-                      __LINE__, qubit)
-            .str());
+    return llvm::createStringError(std::errc::invalid_argument,
+                                   "Qubit not allocated (not found)");
   }
   return it->second;
 }
 
 auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
                                  const std::span<Qubit* const> additionalQubits)
-    -> llvm::SmallVector<dd::Qubit> {
+    -> llvm::Expected<llvm::SmallVector<dd::Qubit>> {
   llvm::SmallVector<dd::Qubit> qubitIds;
   qubitIds.reserve(qubits.size() + additionalQubits.size());
   for (const auto* qubit : qubits) {
-    qubitIds.push_back(resolveAddress(qubit));
+    auto id = resolveAddress(qubit);
+    if (!id) {
+      return id.takeError();
+    }
+    qubitIds.push_back(*id);
   }
   for (const auto* qubit : additionalQubits) {
-    qubitIds.push_back(resolveAddress(qubit));
+    auto id = resolveAddress(qubit);
+    if (!id) {
+      return id.takeError();
+    }
+    qubitIds.push_back(*id);
   }
   if (extractState_ && std::ranges::any_of(qubitIds, [&](const auto id) {
         return measuredQubits_.contains(id);
@@ -198,35 +219,41 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
     invalidStateExtraction_ = true;
   }
   if (!qubitIds.empty()) {
-    enlargeState(*std::ranges::max_element(qubitIds));
+    if (auto error = enlargeState(*std::ranges::max_element(qubitIds))) {
+      return error;
+    }
   }
   return qubitIds;
 }
 
 auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
                     std::span<Qubit* const> controls,
-                    std::span<Qubit* const> targets) -> void {
+                    std::span<Qubit* const> targets) -> llvm::Error {
   auto addresses = translateAddresses(controls, targets);
+  if (!addresses) {
+    return addresses.takeError();
+  }
   if (invalidStateExtraction_) {
-    return;
+    return llvm::Error::success();
   }
   if (!qState.dd) {
     qState.dd = llvm::cantFail(dd::Package::create(0));
   }
-  std::ranges::transform(addresses, addresses.begin(), [&](const auto address) {
-    return qubitPermutation[address];
-  });
+  std::ranges::transform(
+      *addresses, addresses->begin(),
+      [&](const auto address) { return qubitPermutation[address]; });
 
-  const llvm::ArrayRef mappedAddresses(addresses);
+  const llvm::ArrayRef mappedAddresses(*addresses);
   const auto mappedTargets = mappedAddresses.drop_front(controls.size());
   const dd::Controls mappedControls(mappedAddresses.begin(),
                                     mappedTargets.begin());
   auto gate =
       mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls);
   if (!gate) {
-    throw std::runtime_error(llvm::toString(gate.takeError()));
+    return gate.takeError();
   }
   qState.edge = qState.dd->applyOperation(*gate, qState.edge);
+  return llvm::Error::success();
 }
 
 auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
@@ -236,34 +263,48 @@ auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
   qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
 }
 
-auto Runtime::measure(Qubit* qubit, Result* result) -> void {
-  const auto target = resolveAddress(qubit);
-  enlargeState(target);
-  auto& value = deref(result);
-  if (extractState_) {
-    measuredQubits_.insert(target);
-    value.deferredWire = qubitPermutation[target];
-  } else if (!deferMeasurements_) {
-    value.r = measureQubit(qubitPermutation[target]);
+auto Runtime::measure(Qubit* qubit, Result* result) -> llvm::Error {
+  auto target = resolveAddress(qubit);
+  if (!target) {
+    return target.takeError();
   }
+  if (auto error = enlargeState(*target)) {
+    return error;
+  }
+  auto value = deref(result);
+  if (!value) {
+    return value.takeError();
+  }
+  if (extractState_) {
+    measuredQubits_.insert(*target);
+    (*value)->deferredWire = qubitPermutation[*target];
+  } else if (!deferMeasurements_) {
+    auto measured = measureQubit(qubitPermutation[*target]);
+    if (!measured) {
+      return measured.takeError();
+    }
+    (*value)->r = *measured;
+  }
+  return llvm::Error::success();
 }
 
-bool Runtime::measureQubit(dd::Qubit target) {
+llvm::Expected<bool> Runtime::measureQubit(dd::Qubit target) {
   if (samplingBranches_ == nullptr ||
       (samplingBranches_->count == 1 &&
        samplingBranches_->position == samplingBranches_->path.size())) {
-    auto outcome = qState.dd->measureOneCollapsing(qState.edge, target, mt);
-    if (!outcome) {
-      throw std::runtime_error(llvm::toString(outcome.takeError()));
+    auto measured = qState.dd->measureOneCollapsing(qState.edge, target, mt);
+    if (!measured) {
+      return measured.takeError();
     }
-    return *outcome == '1';
+    return *measured == '1';
   }
   auto& branches = *samplingBranches_;
   const auto [pzero, pone] =
       dd::Package::determineMeasurementProbabilities(qState.edge, target);
   const auto sum = pzero + pone;
   if (std::abs(sum - 1) > 0.001) {
-    throw std::runtime_error("Numerical instability during measurement");
+    return llvm::createStringError(std::errc::invalid_argument,
+                                   "Numerical instability during measurement");
   }
   bool one = false;
   if (branches.position < branches.path.size()) {
@@ -290,13 +331,13 @@ bool Runtime::measureQubit(dd::Qubit target) {
 auto Runtime::sampleMeasurements(
     std::span<const uintptr_t> qubits, size_t shots,
     llvm::function_ref<void(std::string&&)> emitOwned,
-    llvm::function_ref<void(std::string_view)> emitBorrowed) -> void {
+    llvm::function_ref<void(std::string_view)> emitBorrowed) -> llvm::Error {
   measurements.clear();
   if (qubits.empty()) {
     for (size_t i = 0; i < shots; ++i) {
       emitBorrowed({});
     }
-    return;
+    return llvm::Error::success();
   }
   bool ascending = qubits.size() == qState.numQubits;
   for (size_t i = 0; ascending && i < qubits.size(); ++i) {
@@ -304,45 +345,48 @@ auto Runtime::sampleMeasurements(
   }
   if (ascending) {
     for (size_t i = 0; i < shots; ++i) {
-      auto measured = qState.dd->measureAll(qState.edge, false, mt);
-      if (!measured) {
-        throw std::runtime_error(llvm::toString(measured.takeError()));
+      auto basis = qState.dd->measureAll(qState.edge, false, mt);
+      if (!basis) {
+        return basis.takeError();
       }
-      auto basis = std::move(*measured);
-      std::ranges::reverse(basis);
+      std::ranges::reverse(*basis);
       if (i + 1 == shots) {
-        measurements = basis;
+        measurements = *basis;
       }
-      emitOwned(std::move(basis));
+      emitOwned(std::move(*basis));
     }
-    return;
+    return llvm::Error::success();
   }
   measurements.reserve(qubits.size());
   for (size_t i = 0; i < shots; ++i) {
-    auto measured = qState.dd->measureAll(qState.edge, false, mt);
-    if (!measured) {
-      throw std::runtime_error(llvm::toString(measured.takeError()));
+    auto basis = qState.dd->measureAll(qState.edge, false, mt);
+    if (!basis) {
+      return basis.takeError();
     }
-    auto basis = std::move(*measured);
     measurements.clear();
     for (const auto qubit : qubits) {
-      measurements.push_back(basis[basis.size() - 1 - qubitPermutation[qubit]]);
+      measurements.push_back(
+          (*basis)[basis->size() - 1 - qubitPermutation[qubit]]);
     }
     emitBorrowed(measurements);
   }
+  return llvm::Error::success();
 }
 
-auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
+auto Runtime::reset(std::span<Qubit* const> qubits) -> llvm::Error {
   if (extractState_) {
     invalidStateExtraction_ = true;
-    return;
+    return llvm::Error::success();
   }
   auto targets = translateAddresses(qubits);
-  std::ranges::transform(targets, targets.begin(), [&](const auto target) {
+  if (!targets) {
+    return targets.takeError();
+  }
+  std::ranges::transform(*targets, targets->begin(), [&](const auto target) {
     return qubitPermutation[target];
   });
   const auto matrix = mlir::qco::XOp::getUnitaryMatrix();
-  for (const auto target : targets) {
+  for (const auto target : *targets) {
     if (samplingBranches_ != nullptr && samplingBranches_->count > 1 &&
         samplingBranches_->position == samplingBranches_->path.size()) {
       const auto [pzero, pone] =
@@ -371,7 +415,11 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
         qState.dd->decRef(zero);
       }
     }
-    if (measureQubit(target)) {
+    auto measured = measureQubit(target);
+    if (!measured) {
+      return measured.takeError();
+    }
+    if (*measured) {
       const std::array targetArray{target};
       qState.edge =
           qState.dd->applyOperation(llvm::cantFail(mlir::qco::makeGateDD(
@@ -379,27 +427,34 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
                                     qState.edge);
     }
   }
+  return llvm::Error::success();
 }
 
-// NOLINTNEXTLINE(bugprone-exception-escape)
-auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> void {
-  const auto targets = translateAddresses(std::array{qubit1, qubit2});
-  if (invalidStateExtraction_) {
-    return;
+auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> llvm::Error {
+  auto targets = translateAddresses(std::array{qubit1, qubit2});
+  if (!targets) {
+    return targets.takeError();
   }
-  std::swap(qubitPermutation[targets[0]], qubitPermutation[targets[1]]);
+  if (invalidStateExtraction_) {
+    return llvm::Error::success();
+  }
+  std::swap(qubitPermutation[(*targets)[0]], qubitPermutation[(*targets)[1]]);
+  return llvm::Error::success();
 }
 
-auto Runtime::qAlloc() -> Qubit* {
+auto Runtime::qAlloc() -> llvm::Expected<Qubit*> {
   if (qubitMode == ResourceMode::STATIC) {
-    throw std::logic_error(
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "Cannot dynamically allocate qubits after using static qubit IDs");
   }
   qubitMode = ResourceMode::DYNAMIC;
   if ((freeQubits_.empty() &&
        currentMaxQubitId >= dd::Package::MAX_POSSIBLE_QUBITS) ||
       currentMaxQubitAddress == std::numeric_limits<uintptr_t>::max()) {
-    throw std::out_of_range("QIR runtime exceeds the supported qubit range");
+    return llvm::createStringError(
+        std::errc::result_out_of_range,
+        "QIR runtime exceeds the supported qubit range");
   }
   auto* qubit = reinterpret_cast<Qubit*>(currentMaxQubitAddress++);
   const auto id = freeQubits_.empty()
@@ -413,21 +468,26 @@ auto Runtime::qAlloc() -> Qubit* {
   }
   qRegister.emplace(qubit, id);
   if (extractState_) {
-    enlargeState(id);
+    if (auto error = enlargeState(id)) {
+      return error;
+    }
   }
   return qubit;
 }
 
-auto Runtime::qFree(Qubit* qubit) -> void {
+auto Runtime::qFree(Qubit* qubit) -> llvm::Error {
   const auto it = qRegister.find(qubit);
   if (qubitMode != ResourceMode::DYNAMIC || it == qRegister.end()) {
-    throw std::out_of_range("QIR qubit was not dynamically allocated");
+    return llvm::createStringError(std::errc::result_out_of_range,
+                                   "QIR qubit was not dynamically allocated");
   }
   const auto id = it->second;
   // Extraction retains released wires as part of the exported state.
   if (!extractState_) {
     if (id < qState.numQubits) {
-      reset(std::array{qubit});
+      if (auto error = reset(std::array{qubit})) {
+        return error;
+      }
     }
     freeQubits_.push_back(id);
   } else if (deferredOutputs_ != nullptr) {
@@ -437,12 +497,19 @@ auto Runtime::qFree(Qubit* qubit) -> void {
     freeQubits_.push_back(id);
   }
   qRegister.erase(it);
+  return llvm::Error::success();
 }
 
-auto Runtime::rAlloc() -> Result* {
+auto Runtime::rAlloc() -> llvm::Expected<Result*> {
   if (resultMode == ResourceMode::STATIC) {
-    throw std::logic_error(
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "Cannot dynamically allocate results after using static result IDs");
+  }
+  if (currentMaxResultAddress == std::numeric_limits<uintptr_t>::max()) {
+    return llvm::createStringError(
+        std::errc::result_out_of_range,
+        "QIR runtime exceeds the supported result range");
   }
   resultMode = ResourceMode::DYNAMIC;
   auto* result = reinterpret_cast<Result*>(currentMaxResultAddress++);
@@ -450,33 +517,34 @@ auto Runtime::rAlloc() -> Result* {
   return result;
 }
 
-auto Runtime::rFree(Result* result) -> void {
+auto Runtime::rFree(Result* result) -> llvm::Error {
   if (resultMode != ResourceMode::DYNAMIC || rRegister.erase(result) == 0) {
-    throw std::out_of_range("QIR result was not dynamically allocated");
+    return llvm::createStringError(std::errc::result_out_of_range,
+                                   "QIR result was not dynamically allocated");
   }
+  return llvm::Error::success();
 }
 
-auto Runtime::deref(Result* result) -> ResultStruct& {
+auto Runtime::deref(Result* result) -> llvm::Expected<ResultStruct*> {
   if (staticResults_) {
     const auto id = reinterpret_cast<uintptr_t>(result);
     if (id >= *staticResults_) {
-      throw std::out_of_range(
+      return llvm::createStringError(
+          std::errc::result_out_of_range,
           "Static QIR result ID exceeds its declared capacity");
     }
-    return resultValues_[id];
+    return &resultValues_[id];
   }
   auto it = rRegister.find(result);
   if (it == rRegister.end()) {
     if (resultMode == ResourceMode::DYNAMIC) {
-      throw std::out_of_range(
-          llvm::formatv("{0}:{1}: Result not allocated (not found): {2}",
-                        __FILE__, __LINE__, result)
-              .str());
+      return llvm::createStringError(std::errc::invalid_argument,
+                                     "Result not allocated (not found)");
     }
     resultMode = ResourceMode::STATIC;
     it = rRegister.emplace(result, ResultStruct{.r = false}).first;
   }
-  return it->second;
+  return &it->second;
 }
 
 auto Runtime::appendMeasurementBit(const bool result,
@@ -498,13 +566,14 @@ auto Runtime::getMeasurements() const -> const std::string& {
   return measurements;
 }
 
-auto Runtime::takeState() -> QState {
+auto Runtime::takeState() -> llvm::Expected<QState> {
   if (invalidStateExtraction_) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "QIR state extraction cannot reset or operate on a measured qubit");
   }
   if (staticQubits_ && *staticQubits_ != 0) {
-    enlargeState(*staticQubits_ - 1);
+    llvm::cantFail(enlargeState(*staticQubits_ - 1));
   }
   const auto matrix = mlir::qco::SWAPOp::getUnitaryMatrix();
   for (size_t q = 0; q < qubitPermutation.size(); ++q) {
@@ -572,7 +641,12 @@ auto Runtime::outputFloat(double value, const char* label) const -> void {
   if (!hasOutput()) {
     return;
   }
-  outputType("DOUBLE", std::format("{}", value), label);
+  // A shortest double fits in 24 characters, including sign and exponent.
+  std::array<char, 32> text{};
+  const auto result =
+      std::to_chars(text.data(), text.data() + text.size(), value);
+  assert(result.ec == std::errc{});
+  outputType("DOUBLE", std::string_view(text.data(), result.ptr), label);
 }
 
 auto Runtime::outputTuple(int64_t elementCount, const char* label) const

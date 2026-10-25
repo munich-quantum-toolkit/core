@@ -76,12 +76,12 @@ public:
   /// @param randomSeed Optional deterministic runtime seed.
   /// @param output Borrowed stream for constructor, entry-point, and destructor
   /// records. It must outlive the session; null disables output.
-  /// @throws std::runtime_error if the IR cannot be parsed or the JIT fails
-  /// to initialize.
-  JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
-             Execution execution = Execution::Sampling,
-             std::optional<uint64_t> randomSeed = std::nullopt,
-             llvm::raw_ostream* output = &llvm::outs());
+  /// Returns an owned error if parsing, validation, or initialization fails.
+  [[nodiscard]] static llvm::Expected<std::unique_ptr<JitSession>>
+  create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+         Execution execution = Execution::Sampling,
+         std::optional<uint64_t> randomSeed = std::nullopt,
+         llvm::raw_ostream* output = &llvm::outs());
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
@@ -89,7 +89,7 @@ public:
   /// Execute the selected QIR entry point.
   ///
   /// @return The 64-bit QIR exit code.
-  int64_t run();
+  llvm::Expected<int64_t> run();
 
   /// Execute a batch, preserving recorded-result order and returning the first
   /// nonzero exit code.
@@ -102,8 +102,10 @@ public:
   /// caller may then use runtime().takeState() before executing the session
   /// again. Results contain recorded Result and Boolean values; numeric records
   /// appear only in the textual output.
-  int64_t sample(size_t shots, std::vector<std::string>& results,
-                 bool* stateAvailable = nullptr, bool emitHeader = true);
+  llvm::Expected<int64_t> sample(size_t shots,
+                                 std::vector<std::string>& results,
+                                 bool* stateAvailable = nullptr,
+                                 bool emitHeader = true);
 
   /// Execute a batch and emit each shot before the next is generated.
   ///
@@ -111,9 +113,10 @@ public:
   /// enabled, terminalOutput receives the template instead of writing per-shot
   /// records. Other output goes to the stream; terminalOutput is reset when no
   /// template is produced.
-  int64_t sample(size_t shots, llvm::function_ref<void(std::string_view)> emit,
-                 bool* stateAvailable = nullptr, bool emitHeader = true,
-                 std::optional<SampledOutput>* terminalOutput = nullptr);
+  llvm::Expected<int64_t>
+  sample(size_t shots, llvm::function_ref<void(std::string_view)> emit,
+         bool* stateAvailable = nullptr, bool emitHeader = true,
+         std::optional<SampledOutput>* terminalOutput = nullptr);
 
   /// Sample a histogram without textual recording or retained shot strings.
   ///
@@ -124,8 +127,9 @@ public:
   /// measurements and replay their prefixes for sibling paths. Other programs
   /// execute per shot. Counts use QIR recording order; seeded results are
   /// repeatable within this sampling strategy, not across strategies.
-  int64_t sampleCounts(size_t shots, std::map<std::string, size_t>& counts,
-                       bool* stateAvailable = nullptr);
+  llvm::Expected<int64_t> sampleCounts(size_t shots,
+                                       std::map<std::string, size_t>& counts,
+                                       bool* stateAvailable = nullptr);
 
   /// Whether histogram sampling can group measurement paths.
   [[nodiscard]] bool canSampleBranches() const { return sampleBranches_; }
@@ -142,25 +146,26 @@ public:
   /// Create a seeded runtime for one worker.
   ///
   /// Keep this session alive until all workers finish; each runtime and its
-  /// output stream belong to one worker. Throws std::logic_error when the
-  /// module is not eligible.
-  [[nodiscard]] std::unique_ptr<Runtime> makeWorkerRuntime(uint64_t seed) const;
+  /// output stream belong to one worker. Returns an error when the module is
+  /// not eligible.
+  [[nodiscard]] llvm::Expected<std::unique_ptr<Runtime>>
+  makeWorkerRuntime(uint64_t seed) const;
 
   /// Sample with a worker runtime without changing this session's runtime.
   ///
   /// Concurrent calls require separate runtimes from makeWorkerRuntime().
-  /// Throws std::logic_error when a separate runtime is not eligible.
-  int64_t sampleWithRuntime(Runtime& runtime, size_t shots,
-                            std::vector<std::string>& results,
-                            bool emitHeader = true,
-                            bool* stateAvailable = nullptr);
+  /// Returns an error when a separate runtime is not eligible.
+  llvm::Expected<int64_t> sampleWithRuntime(Runtime& runtime, size_t shots,
+                                            std::vector<std::string>& results,
+                                            bool emitHeader = true,
+                                            bool* stateAvailable = nullptr);
 
   /// Emit each shot with a separate worker runtime.
   /// The view is valid only during the callback.
-  int64_t sampleWithRuntime(Runtime& runtime, size_t shots,
-                            llvm::function_ref<void(std::string_view)> emit,
-                            bool emitHeader = true,
-                            bool* stateAvailable = nullptr);
+  llvm::Expected<int64_t>
+  sampleWithRuntime(Runtime& runtime, size_t shots,
+                    llvm::function_ref<void(std::string_view)> emit,
+                    bool emitHeader = true, bool* stateAvailable = nullptr);
 
   /// Whether sampling can use one retained terminal state.
   [[nodiscard]] bool canSampleTerminal() const;
@@ -168,6 +173,8 @@ public:
   [[nodiscard]] auto runtime() -> Runtime&;
 
 private:
+  JitSession(Execution execution, std::optional<uint64_t> randomSeed,
+             llvm::raw_ostream* output);
   std::unique_ptr<Runtime> runtime_;
   std::unique_ptr<llvm::orc::LLJIT> jit_;
   EntryPointFn* entryPointFn_ = nullptr;
@@ -179,8 +186,8 @@ private:
   size_t quantumCallSites_ = 0;
   Execution execution_;
 
-  int64_t runWithRuntime(Runtime& runtime);
-  int64_t
+  llvm::Expected<int64_t> runWithRuntime(Runtime& runtime);
+  llvm::Expected<int64_t>
   sampleWithRuntimeImpl(Runtime& runtime, size_t shots,
                         llvm::function_ref<void(std::string&&)> emitOwned,
                         llvm::function_ref<void(std::string_view)> emitBorrowed,
@@ -208,9 +215,9 @@ private:
   /// - Registers QIR runtime symbols
   /// - Resolves the selected QIR entry point.
   ///
-  /// @throws std::runtime_error if loading failed or the JIT cannot start.
-  void initialize(llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-                  Execution execution);
+  /// Returns an owned error if validation or JIT initialization fails.
+  llvm::Error initialize(llvm::orc::ThreadSafeModule llvmModule,
+                         Execution execution);
 
   /// Tears down the @c LLJIT.
   void deinitialize() const;
