@@ -24,6 +24,7 @@ namespace dd {
 /// @param phase The phase to apply
 /// @param dd The DD package to use
 /// @return The output DD
+/// @throws std::bad_alloc If allocation fails. The input remains unchanged.
 VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
 
 } // namespace dd
