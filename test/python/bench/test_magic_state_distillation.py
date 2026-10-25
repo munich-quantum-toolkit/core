@@ -15,7 +15,7 @@ import json
 import pytest
 
 from mqt.core.bench import magic_state_distillation
-from mqt.core.mlir import compile_program, sample, submit_program
+from mqt.core.mlir import sample, submit_program
 from mqt.core.qdmi import ProgramFormat, open_device
 
 from .utils import assert_generates
@@ -67,9 +67,8 @@ def test_distillation_ddsim(program_format: ProgramFormat | None) -> None:
     """Compile and execute the same circuit through both DDSIM payload paths."""
     benchmark = magic_state_distillation.MagicStateDistillation()
     device = open_device("mqt.ddsim.default")
-    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
+    job = submit_program(benchmark.generate(), target=device, program_format=program_format, num_shots=16, custom1=17)
     if program_format is None:
-        assert compiled.program_format in {ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QIR_ADAPTIVE_STRING}
-    job = submit_program(compiled, target=device, num_shots=16, custom1=17)
+        assert job.program_format in {ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QIR_ADAPTIVE_STRING}
     job.wait()
     assert job.get_counts() == {"00": 16}

@@ -26,8 +26,12 @@ the interfaces and options for applying those concepts.
 
 The Python examples below accept source strings, {code}`.qasm`, {code}`.mlir`,
 and {code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit`
-objects, and typed compiler programs. The requested output format determines
-where compilation stops and which program type is returned.
+objects, and typed compiler programs. Select an output format to choose where
+compilation stops and which program type is returned, or use the
+[default selection rules](#select-an-output-format). Compilation and conversions
+consume typed MLIR programs, including on failure. Set `copy=True` to preserve
+an input for another use. Source strings, paths, Qiskit circuits and OpenQASM
+text programs remain reusable.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -55,15 +59,14 @@ cx q[0], q[1];
 result = measure q;
 """
 
-compiled = compile_program(bell_qasm)
+compiled = compile_program(bell_qasm, output=OutputFormat.QC)
 print(compiled.ir)
 ```
 
-By default, `compile_program()` runs the standard optimization pipeline and
-returns a {py:class}`~mqt.core.mlir.QCProgram`. Its
-{py:attr}`~mqt.core.mlir.Program.ir` property exposes the textual MLIR
-representation for inspection and debugging. Programs do not need to be written
-in MLIR to use the compiler.
+`OutputFormat.QC` runs the standard optimization pipeline and returns a
+{py:class}`~mqt.core.mlir.QCProgram`. Its {py:attr}`~mqt.core.mlir.Program.ir`
+property exposes the textual MLIR representation for inspection and debugging.
+Programs do not need to be written in MLIR to use the compiler.
 
 For versionless OpenQASM text, use
 `compile_program(QCProgram.from_openqasm_str(source))`. Automatic source-string
@@ -88,7 +91,7 @@ print("Gates by operation:", info.gate_counts)
 print("Entry-point control flow:", info.control_flow_counts)
 print("All MLIR operations:", info.operation_counts)
 
-qco = compiled.to_qco(copy=True)
+qco = compiled.to_qco()
 print("QCO two-qubit gates:", qco.inspect().num_two_qubit_gates)
 ```
 
@@ -143,8 +146,9 @@ For gate dependencies, MLIR provides `getForwardSlice` and `getBackwardSlice` in
 
 ## Bind program parameters
 
-QC and QCO programs expose named f64 entry-point inputs through `parameters`.
-Use `bind_parameters` to bind all or some inputs in place:
+QC and QCO programs expose named f64 scalar and fixed-length, one-dimensional
+array inputs through `parameters`. Use `bind_parameters` to bind all or some
+inputs in place:
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
@@ -163,23 +167,53 @@ assert parameterized.parameters == ["theta"]
 OpenQASM 3 `input float` and `input float[64]` declarations use the same named
 input API. Both frontends can retain symbolic `f64` parameters through QC and
 QCO transformations. Partial binding preserves unbound inputs and their source
-identities. Unknown names, non-finite values, and references to the entry point
-fail without changing the program. Binding does not fold expressions; call
-`cleanup()` when needed.
+identities. For an array input, pass a sequence or NumPy array, for example
+`program.bind_parameters({"angles": [0.1, 0.2]})`. Each array must have the
+expected length and contain only finite values.
+
+Input validation leaves the program unchanged on failure. Binding folds
+expressions using the supplied values and preserves remaining inputs, including
+unused ones. Folding failures may leave the program modified; bind a copy to
+preserve the original. Bind array inputs before OpenQASM export; QIR requires
+all parameters to be bound.
 
 ## Select an output format
 
-Select an output format to stop the pipeline at a particular representation:
+With no target or an explicit `CompilerTarget`, omitting `output` preserves the
+input's program family:
+
+| Input                                             | Default result         |
+| ------------------------------------------------- | ---------------------- |
+| Qiskit `QuantumCircuit`                           | `QuantumCircuit`       |
+| `QCProgram`, QC MLIR text, or `.mlir` file        | `QCProgram`            |
+| `QCOProgram`                                      | Optimized `QCOProgram` |
+| `JeffProgram` or `.jeff` file                     | `JeffProgram`          |
+| `OpenQASMProgram`, OpenQASM text, or `.qasm` file | `OpenQASMProgram`      |
+
+A Qiskit `BackendV2` or `Target` defaults to a `QuantumCircuit`. A QDMI device
+or registered device ID defaults to a `CompiledProgram` containing a supported
+execution payload.
+
+An explicit `output` selects the representation independently of the input
+family and target:
 
 | Purpose                                  | Output format                                          | Result type       |
 | ---------------------------------------- | ------------------------------------------------------ | ----------------- |
 | Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
 | Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`      |
 | Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
-| Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`       |
+| Obtain the optimized circuit             | `OutputFormat.QC`                                      | `QCProgram`       |
+| Obtain a Qiskit circuit                  | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
 | Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Emit IQM JSON for a target               | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
 | Convert to the jeff dialect              | `OutputFormat.JEFF`                                    | `JeffProgram`     |
 | Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
+
+The raw `QC_IMPORT` and `QCO` checkpoints stop before target compilation and
+cannot be combined with `target`. A QDMI target with no explicit `output`
+returns a `CompiledProgram` in an automatically selected native format. To
+select an exact execution format, use `submit_program(..., program_format=...)`.
+See {doc}`target_compilation` for payload selection and submission.
 
 After rotation merging, the default pipeline groups controlled gates with the
 same ordered controls and targets. Canonicalization cancels named inverses and
@@ -223,7 +257,8 @@ assert reparsed.is_valid
 ```
 
 Use {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` to clean up and export the
-current QC program without QCO optimization. The resulting
+current QC program without QCO optimization. It consumes the program even on
+failure; set `copy=True` to preserve it. The resulting
 {py:class}`~mqt.core.mlir.OpenQASMProgram` can be passed directly to
 {py:func}`~mqt.core.mlir.compile_program`:
 
@@ -239,39 +274,38 @@ diagnostic. See {doc}`OpenQASM` for the complete support table.
 
 ## Use Qiskit circuits directly
 
-Install the optional Qiskit integration with {code}`mqt-core[qiskit]`. The extra
-also supports SDK uses with older Qiskit releases; direct compiler translation
-requires a registered version, currently Qiskit 2.5.x. These circuits can be
-translated between {py:class}`~qiskit.circuit.QuantumCircuit` and
-{py:class}`~mqt.core.mlir.QCProgram`:
+Install {code}`mqt-core[qiskit]` with a supported version listed in
+{doc}`qiskit`. Compiling a {py:class}`~qiskit.circuit.QuantumCircuit` for a
+Qiskit backend returns a circuit by default:
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
+from qiskit.providers.fake_provider import GenericBackendV2
 
 qiskit_bell = QuantumCircuit(2, 2)
 qiskit_bell.h(0)
 qiskit_bell.cx(0, 1)
 qiskit_bell.measure(range(2), range(2))
 
-direct = QCProgram.from_qiskit(qiskit_bell)
-restored = direct.to_qiskit(copy=True)
-compiled_qiskit = compile_program(qiskit_bell)
-
-assert direct.is_valid  # copy=True preserves the QC program.
-assert restored.count_ops() == qiskit_bell.count_ops()
-assert compiled_qiskit.is_valid
+backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"])
+compiled_qiskit = compile_program(qiskit_bell, target=backend)
+assert isinstance(compiled_qiskit, QuantumCircuit)
+assert compiled_qiskit.num_qubits == backend.num_qubits
+assert compiled_qiskit.layout is not None
 ```
 
-QCO programs also provide {py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit`, which
-converts through QC. Both exporters consume their source by default, including
-when conversion or export fails. Pass `copy=True` to preserve the source. Both
-accept `target=target` to map static target site IDs to dense physical-qubit
-indices in target site order.
+Omit `target` for target-independent optimization. Use
+{py:meth}`~mqt.core.mlir.QCProgram.from_qiskit` to work with the typed compiler
+programs directly. {py:meth}`~mqt.core.mlir.QCProgram.to_qiskit` and
+{py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit` export the current program and
+consume it by default, including when export fails. Pass `copy=True` to preserve
+it, and `target=target` to map compiler site IDs to physical qubits:
 
 ```{code-cell} ipython3
-qco = direct.to_qco(copy=True)
-restored = qco.to_qiskit()
-assert not qco.is_valid
+direct = QCProgram.from_qiskit(qiskit_bell)
+restored = direct.to_qiskit(copy=True)
+assert direct.is_valid
+assert restored.count_ops() == qiskit_bell.count_ops()
 ```
 
 See {doc}`qiskit` for supported circuit features and translation limitations.
@@ -419,17 +453,22 @@ assert restored.is_valid
 
 To generate QIR, select a target profile. {py:class}`~mqt.core.mlir.QIRProgram`
 provides the QIR MLIR through {py:attr}`~mqt.core.mlir.Program.ir` and the
-translated LLVM IR through {py:attr}`~mqt.core.mlir.QIRProgram.llvm_ir`.
+translated LLVM IR through {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir`. Base
+conversion unrolls counted loops whose bounds and steps fold to constants and
+folds their classical expressions, with a limit of one billion cloned loop-body
+operations. Use Adaptive QIR for runtime-dependent loops or to retain structured
+iteration.
 
 ```{code-cell} ipython3
 qir = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)
 assert qir.profile is QIRProfile.BASE
-print(qir.llvm_ir)
+print(qir.to_llvm_ir())
 ```
 
 Use {py:meth}`~mqt.core.mlir.QIRProgram.to_bitcode` to obtain LLVM bitcode as
 {code}`bytes`, or {py:meth}`~mqt.core.mlir.QIRProgram.write_bitcode` to write a
-{code}`.bc` file directly. The
+{code}`.bc` file directly. These exports consume the program; set `copy=True`
+when another export or inspection must follow. The
 [QIR guide](../qir/index.md#execute-llvm-text-or-bitcode) compiles both
 profiles, inspects capability flags, and executes the generated bytes with DDSIM
 through QDMI.

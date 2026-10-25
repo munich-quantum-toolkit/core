@@ -1921,14 +1921,19 @@ private:
   /// Leave wires at non-executable gates, composites, terminal measurements, or
   /// sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
-  std::optional<CompositeUnitary> advance(RoutingState& state,
-                                          const Boundary<Direction>& boundary,
-                                          const Environment& env) {
+  std::optional<CompositeUnitary>
+  advance(RoutingState& state, const Boundary<Direction>& boundary,
+          const Environment& env, bool classicalAliases) {
     auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
     // Advancement only moves iterators. Discard classifications before routing
     // inserts SWAPs or replaces composites.
     DenseMap<Operation*, bool> measurementRouting;
+    const auto needsRouting = [&](MeasureOp measurement) {
+      // Aliases can hide feedback from the register's SSA use chain.
+      return classicalAliases ||
+             measurementNeedsRouting(measurement, measurementRouting);
+    };
 
     // The wire traversal does not follow classical dependencies. Defer a
     // composite until earlier routing work is complete, but let independent
@@ -1952,8 +1957,7 @@ private:
         }
         if constexpr (Direction == WireDirection::Forward) {
           if (auto measurement = dyn_cast<MeasureOp>(op);
-              measurement &&
-              !measurementNeedsRouting(measurement, measurementRouting)) {
+              measurement && !needsRouting(measurement)) {
             return false;
           }
           return op->isBeforeInBlock(candidate);
@@ -1989,7 +1993,7 @@ private:
                   if (Direction == WireDirection::Backward) {
                     return true;
                   }
-                  return measurementNeedsRouting(m, measurementRouting);
+                  return needsRouting(m);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto) { return Direction == WireDirection::Forward; })
@@ -2265,9 +2269,12 @@ private:
 
     Statistics stats;
     Boundary<Direction> boundary(block);
+    const bool classicalAliases = Direction == WireDirection::Forward &&
+                                  hasPotentialClassicalAliases(block);
 
     while (true) {
-      auto composite = advance<Direction>(state, boundary, env);
+      auto composite =
+          advance<Direction>(state, boundary, env, classicalAliases);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.advance();

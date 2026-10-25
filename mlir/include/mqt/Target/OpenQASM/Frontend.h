@@ -107,6 +107,7 @@ enum class ExpressionKind : uint8_t {
   GateParameter,
   Variable,
   ArrayLoad,
+  ArraySize,
   Cast,
   BitVectorCast,
   Condition,
@@ -144,6 +145,8 @@ struct ScalarExpression {
   uint32_t parameter = 0;
   ScalarId variable = 0;
   ArrayId array = 0;
+  uint32_t arraySizeQuery = 0;
+  std::vector<ExpressionId> indices{};
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
@@ -197,7 +200,7 @@ struct ScalarDeclaration {
 struct ArrayDeclaration {
   ScalarType type = ScalarType::Int;
   unsigned elementWidth = 0;
-  uint64_t length = 0;
+  std::vector<int64_t> shape;
   std::string name;
   SourceLocation location;
 };
@@ -323,8 +326,42 @@ struct ArrayDeclarationStatement {
 
 struct ArrayAssignmentStatement {
   ArrayId array = 0;
-  ExpressionId index = 0;
+  std::vector<ExpressionId> indices;
   ExpressionId value = 0;
+};
+
+/// Inclusive bounds of a runtime-sized range in one array dimension.
+struct ArrayRange {
+  std::optional<ExpressionId> start;
+  std::optional<ExpressionId> stop;
+  ExpressionId step = 0;
+};
+
+struct ArraySizeQuery {
+  ArrayRange range;
+  int64_t extent = 0;
+};
+
+/// A scalar index (size -2), fixed range, or runtime range (size -1).
+struct ArraySelection {
+  ExpressionId offset = 0;
+  int64_t size = -2;
+  int64_t stride = 1;
+  std::optional<ArrayRange> runtime;
+
+  [[nodiscard]] bool isScalar() const { return size == -2; }
+};
+
+struct ArrayCopySource {
+  ArrayId array = 0;
+  std::vector<ArraySelection> indices;
+};
+
+struct ArrayCopyStatement {
+  /// Multiple sources concatenate along the first retained dimension.
+  std::vector<ArrayCopySource> sources;
+  ArrayId target = 0;
+  std::vector<ArraySelection> targetIndices;
 };
 
 struct BitVectorAssignmentStatement {
@@ -355,6 +392,7 @@ struct IfStatement {
 
 struct ForStatement {
   ScalarId inductionVariable = 0;
+  std::optional<ArrayCopySource> iterable;
   ExpressionId start = 0;
   ExpressionId step = 0;
   ExpressionId stop = 0;
@@ -383,12 +421,14 @@ struct SwitchStatement {
   std::vector<StatementId> defaultStatements;
 };
 
-using StatementData = std::variant<
-    DeclarationStatement, ScalarDeclarationStatement, ArrayDeclarationStatement,
-    ArrayAssignmentStatement, ScalarAssignmentStatement, BitAssignmentStatement,
-    BitVectorAssignmentStatement, GateApplication, MeasurementStatement,
-    ResetStatement, BarrierStatement, IfStatement, ForStatement, WhileStatement,
-    SwitchStatement, BreakStatement, ContinueStatement>;
+using StatementData =
+    std::variant<DeclarationStatement, ScalarDeclarationStatement,
+                 ArrayDeclarationStatement, ArrayAssignmentStatement,
+                 ArrayCopyStatement, ScalarAssignmentStatement,
+                 BitAssignmentStatement, BitVectorAssignmentStatement,
+                 GateApplication, MeasurementStatement, ResetStatement,
+                 BarrierStatement, IfStatement, ForStatement, WhileStatement,
+                 SwitchStatement, BreakStatement, ContinueStatement>;
 
 struct Statement {
   StatementData data;
@@ -415,6 +455,7 @@ struct TypedProgram {
   std::vector<ScalarDeclaration> scalars;
   std::vector<ScalarId> inputs;
   std::vector<ArrayDeclaration> arrays;
+  std::vector<ArraySizeQuery> arraySizeQueries;
   std::vector<RegisterDeclaration> registers;
   std::vector<GateDefinition> gates;
   std::vector<Statement> statements;

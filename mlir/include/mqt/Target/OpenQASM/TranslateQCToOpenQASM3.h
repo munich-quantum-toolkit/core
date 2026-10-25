@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
 #include <string>
@@ -23,17 +24,21 @@ class ModuleOp;
 
 namespace qc {
 
-/// Translate a QC module to portable OpenQASM.
+/// Consume a QC module and translate it to portable OpenQASM.
 ///
-/// Non-gate helpers are inlined on a copy; gate definitions and supported
-/// structured control flow are preserved. Translation is buffered.
-/// The output stream is unchanged when the
-/// module contains an unsupported construct or cannot be translated.
-LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
+/// Non-gate helpers are inlined and array views normalized in the supplied
+/// module. Gate definitions and supported structured control flow are
+/// preserved. The module is consumed even on failure. Translation is buffered:
+/// the output stream is unchanged if the module cannot be translated.
+LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                                      llvm::raw_ostream& output);
 
-/// Translate a QC module to an owned OpenQASM source string.
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp);
+/// Consume a QC module and translate it to an owned OpenQASM source string.
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
+
+// OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
+LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp) = delete;
 
 } // namespace qc
 } // namespace mlir

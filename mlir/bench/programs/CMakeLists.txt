@@ -7,26 +7,28 @@
 # Licensed under the MIT License
 
 add_library(
-  MQTBenchmarkPrograms STATIC
-  BV.cpp
-  FanOut.cpp
-  GHZ.cpp
-  Grover.cpp
-  GroverUtils.cpp
-  MagicStateDistillation.cpp
-  ModularArithmetic.cpp
-  ModularMultiplier.cpp
-  Multiplexer.cpp
-  QFT.cpp
-  QFTAdder.cpp
-  QFTUtils.cpp
-  QPE.cpp
-  RepeatUntilSuccess.cpp
-  Shor.cpp
-  Teleportation.cpp
-  WeakMeasurementGrover.cpp
-  WState.cpp)
+  MQTBenchmarkPrograms
+  STATIC
+    BV.cpp
+    FanOut.cpp
+    GHZ.cpp
+    Grover.cpp
+    GroverUtils.cpp
+    GroverWeakMeasurement.cpp
+    MagicStateDistillation.cpp
+    ModularArithmetic.cpp
+    ModularMultiplier.cpp
+    Multiplexer.cpp
+    QAOA.cpp
+    QFT.cpp
+    QFTAdder.cpp
+    QFTUtils.cpp
+    QPE.cpp
+    RepeatUntilSuccess.cpp
+    Shor.cpp
+    Teleportation.cpp
+    WState.cpp)
 target_link_libraries(
-  MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder MLIRArithDialect MLIRMathDialect
-                              MLIRTensorDialect)
+  MQTBenchmarkPrograms
+  PUBLIC MQT::CoreBench MLIRQCProgramBuilder MLIRArithDialect MLIRMathDialect MLIRTensorDialect)
 mqt_mlir_target_use_project_options(MQTBenchmarkPrograms)

@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-FROM ghcr.io/astral-sh/uv:0.13.0 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
 
 FROM ubuntu:26.04 AS python
 

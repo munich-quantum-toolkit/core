@@ -11,15 +11,26 @@
 
 include "mlir/Pass/PassBase.td"
 
+def PromoteClassicalMemory
+    : Pass<"promote-classical-memory", "mlir::ModuleOp"> {
+  let summary = "Promote local classical memory to SSA values";
+  let description = [{
+    Folds access indices, splits local allocations with SROA, and promotes
+    supported loads and stores with Mem2Reg. Local CBit registers support up to
+    256 bits with static accesses. Packed reads support up to 64 bits; wider
+    reads are expanded at their snapshot point when all reads of the register
+    feed constant comparisons. Escaping registers retain storage.
+
+    Modules without promotable or destructurable allocations are left unchanged.
+    Run again after static loop expansion to expose constant-index accesses.
+  }];
+}
+
 def SimplifyClassicalControl
     : Pass<"simplify-classical-control", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::arith::ArithDialect"];
-  let summary = "Forward classical bits and propagate known branch conditions";
+  let summary = "Propagate known QCO branch conditions";
   let description = [{
-    Visits each block once to forward classical-bit loads from known stores,
-    previous loads, or zero initialization. Ambiguous writes invalidate memory
-    facts; memory facts do not cross region or block boundaries.
-
     Within each QCO if branch, replaces uses of its condition with the known
     boolean value. A following canonicalizer folds the exposed expressions and
     static branches. Run after inlining and again after static loop unrolling.

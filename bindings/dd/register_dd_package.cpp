@@ -56,19 +56,20 @@ Notes:
 
 Args:
     num_qubits: The maximum number of qubits that the DDPackage can handle.
-        Defaults to 32; use `resize` to change the capacity.)pb");
+        Defaults to 32; use `resize` to grow the capacity.)pb");
 
   // Constructor
   dd.def(nb::init<size_t>(), "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
 
   // Resizing the package
   dd.def("resize", &dd::Package::resize, "num_qubits"_a,
-         R"pb(Resize the DDPackage to accommodate a different number of qubits.
+         R"pb(Grow the DDPackage to accommodate more qubits.
 
 Args:
-    num_qubits: The new number of qubits.
-        Must be greater than zero.
-        It is undefined behavior to resize the DDPackage to a smaller number of qubits and then perform operations on decision diagrams that are associated with qubits that are no longer present.)pb");
+    num_qubits: The requested capacity, at least the current capacity.
+
+Raises:
+    ValueError: If num_qubits is less than the current capacity or exceeds the supported limit.)pb");
 
   // Getting the number of qubits the package is configured for
   dd.def_prop_ro("max_qubits", &dd::Package::qubits,

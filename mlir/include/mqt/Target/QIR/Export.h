@@ -10,9 +10,14 @@
 
 #pragma once
 
+#include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
+#include <memory>
+
 namespace llvm {
+class LLVMContext;
+class Module;
 class raw_ostream;
 } // namespace llvm
 
@@ -21,20 +26,38 @@ class ModuleOp;
 
 namespace qir {
 
-/// Export lowered QIR to verified LLVM IR with normalized QIR module flags.
+/// Translate lowered QIR to verified LLVM IR with normalized module flags.
 ///
-/// Leaves the stream unchanged when translation or verification fails.
-LogicalResult translateQIRToLLVMIR(ModuleOp moduleOp,
+/// Preserves QIS callee names for converters that consume canonical QIR.
+/// Text and bitcode export instead materialize the target's native QIS names.
+[[nodiscard]] std::unique_ptr<llvm::Module>
+translateQIRToLLVM(ModuleOp moduleOp, llvm::LLVMContext& context);
+
+/// Consume lowered QIR and export verified LLVM IR with normalized module
+/// flags.
+///
+/// The module is consumed even on failure. The stream is unchanged when
+/// translation or verification fails.
+LogicalResult translateQIRToLLVMIR(OwningOpRef<ModuleOp> moduleOp,
                                    llvm::raw_ostream& output);
 
-/// Export lowered QIR to LLVM bitcode with normalized QIR module flags.
+/// Consume lowered QIR and export LLVM bitcode with normalized module flags.
 ///
-/// Leaves the stream unchanged when translation or verification fails.
-LogicalResult translateQIRToBitcode(ModuleOp moduleOp,
+/// The module is consumed even on failure. The stream is unchanged when
+/// translation or verification fails.
+LogicalResult translateQIRToBitcode(OwningOpRef<ModuleOp> moduleOp,
                                     llvm::raw_ostream& output);
 
-/// Write verified QIR bitcode, reporting translation and file errors.
-LogicalResult writeQIRBitcode(ModuleOp moduleOp, StringRef filename);
+/// Consume lowered QIR and write verified bitcode, reporting file errors.
+///
+/// The module is consumed even on failure.
+LogicalResult writeQIRBitcode(OwningOpRef<ModuleOp> moduleOp,
+                              StringRef filename);
+
+// OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
+LogicalResult translateQIRToLLVMIR(ModuleOp, llvm::raw_ostream&) = delete;
+LogicalResult translateQIRToBitcode(ModuleOp, llvm::raw_ostream&) = delete;
+LogicalResult writeQIRBitcode(ModuleOp, StringRef) = delete;
 
 } // namespace qir
 } // namespace mlir

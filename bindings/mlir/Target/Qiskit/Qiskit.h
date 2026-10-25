@@ -12,6 +12,7 @@
 
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 
 #include "nanobind/nanobind.h"
 
@@ -38,9 +39,18 @@ importTarget(nb::handle target, nb::handle operationNames,
 [[nodiscard]] mlir::CompilerTarget::NativeOperations
 importNativeOperations(nb::handle target, nb::handle operationNames);
 
+/// Describe Qiskit output capabilities, restricted to a target when supplied.
+[[nodiscard]] mlir::PayloadSpecification
+payloadSpecification(nb::handle target = nb::none());
+
 /// Consume a QC program to build a Qiskit circuit for an optional target.
 [[nodiscard]] nb::object
 exportCircuit(mlir::QCProgram program,
               const mlir::CompilerTarget* target = nullptr);
+
+/// Export a compiled circuit, including layout and payload control-flow limits.
+[[nodiscard]] nb::object
+exportCircuit(mlir::QCProgram program,
+              const mlir::TargetEnvironment& environment);
 
 } // namespace mqt::bindings::qiskit

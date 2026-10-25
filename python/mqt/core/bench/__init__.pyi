@@ -16,6 +16,7 @@ from mqt.core.bench import grover_weak_measurement as grover_weak_measurement
 from mqt.core.bench import magic_state_distillation as magic_state_distillation
 from mqt.core.bench import modular_multiplier as modular_multiplier
 from mqt.core.bench import multiplexer as multiplexer
+from mqt.core.bench import qaoa as qaoa
 from mqt.core.bench import qft as qft
 from mqt.core.bench import qft_adder as qft_adder
 from mqt.core.bench import qpe as qpe
@@ -37,6 +38,10 @@ class Output:
 
 class Evaluation:
     """The result of comparing counts with a reference."""
+
+    @property
+    def shots(self) -> int:
+        """The number of evaluated shots."""
 
     @property
     def total_variation_distance(self) -> float:

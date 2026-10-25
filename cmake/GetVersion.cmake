@@ -20,24 +20,22 @@
 
 function(version_from_skbuild)
   if(NOT PROJECT_IS_TOP_LEVEL)
-    message(VERBOSE
-            "Not the top-level project. Cannot determine project version from scikit-build-core.")
+    message(
+      VERBOSE "Not the top-level project. Cannot determine project version from scikit-build-core.")
     return()
   endif()
 
   if(NOT DEFINED SKBUILD_PROJECT_VERSION)
     message(
       VERBOSE
-      "SKBUILD_PROJECT_VERSION not found. Cannot determine project version from scikit-build-core.")
+        "SKBUILD_PROJECT_VERSION not found. Cannot determine project version from scikit-build-core.")
     return()
   endif()
-  set(MQT_CORE_VERSION_STRING
-      "${SKBUILD_PROJECT_VERSION}"
-      CACHE INTERNAL "MQT_CORE_VERSION_STRING")
+  set(MQT_CORE_VERSION_STRING "${SKBUILD_PROJECT_VERSION}" CACHE INTERNAL "MQT_CORE_VERSION_STRING")
 
   # Regex for package version: Major.Minor.Patch(.dev<commits>+g<sha1>.d<dirty>)
   string(REGEX MATCH "([0-9]+)\\.([0-9]+)\\.([0-9]+)(\\.dev([0-9]+)\\+g([0-9a-f]+)(\\.d[0-9]+)?)?"
-               MQT_CORE_VERSION_STRING "${MQT_CORE_VERSION_STRING}")
+         MQT_CORE_VERSION_STRING "${MQT_CORE_VERSION_STRING}")
   set(MQT_CORE_VERSION_MAJOR "${CMAKE_MATCH_1}")
   set(MQT_CORE_VERSION_MINOR "${CMAKE_MATCH_2}")
   set(MQT_CORE_VERSION_PATCH "${CMAKE_MATCH_3}")
@@ -47,13 +45,11 @@ function(version_from_skbuild)
      OR "${MQT_CORE_VERSION_PATCH}" STREQUAL "")
     message(
       VERBOSE
-      "SKBUILD_PROJECT_VERSION invalid. Cannot determine project version from scikit-build-core.")
+        "SKBUILD_PROJECT_VERSION invalid. Cannot determine project version from scikit-build-core.")
     return()
   endif()
 
-  set(MQT_CORE_VERSION_FOUND
-      TRUE
-      CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
+  set(MQT_CORE_VERSION_FOUND TRUE CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
   set(MQT_CORE_VERSION
       "${MQT_CORE_VERSION_MAJOR}.${MQT_CORE_VERSION_MINOR}.${MQT_CORE_VERSION_PATCH}"
       CACHE INTERNAL "MQT_CORE_VERSION")
@@ -79,8 +75,7 @@ function(version_from_git)
   execute_process(
     COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-    OUTPUT_VARIABLE MQT_CORE_VERSION_SHA1
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    OUTPUT_VARIABLE MQT_CORE_VERSION_SHA1 OUTPUT_STRIP_TRAILING_WHITESPACE)
 
   if(NOT "${MQT_CORE_VERSION_SHA1}" STREQUAL "")
     message(VERBOSE "Git commit hash: ${MQT_CORE_VERSION_SHA1}")
@@ -93,8 +88,7 @@ function(version_from_git)
   execute_process(
     COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-    OUTPUT_VARIABLE MQT_CORE_VERSION_TAG
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    OUTPUT_VARIABLE MQT_CORE_VERSION_TAG OUTPUT_STRIP_TRAILING_WHITESPACE)
 
   if(NOT "${MQT_CORE_VERSION_TAG}" STREQUAL "")
     message(VERBOSE "Git tag: ${MQT_CORE_VERSION_TAG}")
@@ -107,8 +101,7 @@ function(version_from_git)
   execute_process(
     COMMAND ${GIT_EXECUTABLE} rev-list ${MQT_CORE_VERSION_TAG}..HEAD --count
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-    OUTPUT_VARIABLE MQT_CORE_VERSION_COMMITS
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    OUTPUT_VARIABLE MQT_CORE_VERSION_COMMITS OUTPUT_STRIP_TRAILING_WHITESPACE)
 
   if(NOT "${MQT_CORE_VERSION_COMMITS}" STREQUAL "")
     message(VERBOSE "Git commits since tag: ${MQT_CORE_VERSION_COMMITS}")
@@ -119,7 +112,7 @@ function(version_from_git)
 
   # Parse the version number from the latest tag (v.MAJOR.MINOR.PATCH)
   string(REGEX MATCH "v([0-9]+)\\.([0-9]+)\\.([0-9]+)" MQT_CORE_VERSION_TAG
-               "${MQT_CORE_VERSION_TAG}")
+         "${MQT_CORE_VERSION_TAG}")
   set(MQT_CORE_VERSION_MAJOR "${CMAKE_MATCH_1}")
   set(MQT_CORE_VERSION_MINOR "${CMAKE_MATCH_2}")
   set(MQT_CORE_VERSION_PATCH "${CMAKE_MATCH_3}")
@@ -127,8 +120,8 @@ function(version_from_git)
   if(${MQT_CORE_VERSION_MAJOR} STREQUAL ""
      OR ${MQT_CORE_VERSION_MINOR} STREQUAL ""
      OR ${MQT_CORE_VERSION_PATCH} STREQUAL "")
-    message(VERBOSE
-            "Git version information incomplete. Cannot determine project version from Git.")
+    message(
+      VERBOSE "Git version information incomplete. Cannot determine project version from Git.")
     return()
   endif()
 
@@ -147,70 +140,57 @@ function(version_from_git)
         CACHE INTERNAL "MQT_CORE_VERSION_STRING")
   endif()
 
-  set(MQT_CORE_VERSION_FOUND
-      TRUE
-      CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
+  set(MQT_CORE_VERSION_FOUND TRUE CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
 endfunction()
 
 function(version_from_package)
   if(NOT TARGET Python::Interpreter)
-    message(VERBOSE
-            "Python interpreter not found. Cannot determine project version from Python package.")
+    message(
+      VERBOSE "Python interpreter not found. Cannot determine project version from Python package.")
     return()
   endif()
 
   execute_process(
     COMMAND ${Python_EXECUTABLE} -m mqt.core --version
-    OUTPUT_VARIABLE MQT_CORE_VERSION_STRING
-    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    OUTPUT_VARIABLE MQT_CORE_VERSION_STRING OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
 
   if("${MQT_CORE_VERSION_STRING}" STREQUAL "")
     message(
       VERBOSE
-      "Python package version not found. Cannot determine project version from Python package.")
+        "Python package version not found. Cannot determine project version from Python package.")
     return()
   endif()
-  set(MQT_CORE_VERSION_STRING
-      "${MQT_CORE_VERSION_STRING}"
-      CACHE INTERNAL "MQT_CORE_VERSION_STRING")
+  set(MQT_CORE_VERSION_STRING "${MQT_CORE_VERSION_STRING}" CACHE INTERNAL "MQT_CORE_VERSION_STRING")
 
   # Regex for package version: Major.Minor.Patch(.dev<commits>+g<sha1>.d<dirty>)
   string(REGEX MATCH "([0-9]+)\\.([0-9]+)\\.([0-9]+)(\\.dev([0-9]+)\\+g([0-9a-f]+)(\\.d[0-9]+)?)?"
-               MQT_CORE_VERSION_STRING "${MQT_CORE_VERSION_STRING}")
+         MQT_CORE_VERSION_STRING "${MQT_CORE_VERSION_STRING}")
   set(MQT_CORE_VERSION_MAJOR "${CMAKE_MATCH_1}")
   set(MQT_CORE_VERSION_MINOR "${CMAKE_MATCH_2}")
   set(MQT_CORE_VERSION_PATCH "${CMAKE_MATCH_3}")
 
-  if(NOT MQT_CORE_VERSION_MAJOR
-     OR NOT MQT_CORE_VERSION_MINOR
-     OR NOT MQT_CORE_VERSION_PATCH)
+  if(NOT MQT_CORE_VERSION_MAJOR OR NOT MQT_CORE_VERSION_MINOR OR NOT MQT_CORE_VERSION_PATCH)
     message(
       VERBOSE
-      "Python package version information incomplete. Cannot determine project version from Python package."
-    )
+        "Python package version information incomplete. Cannot determine project version from Python package.")
     return()
   endif()
 
   set(MQT_CORE_VERSION
       "${MQT_CORE_VERSION_MAJOR}.${MQT_CORE_VERSION_MINOR}.${MQT_CORE_VERSION_PATCH}"
       CACHE INTERNAL "MQT_CORE_VERSION")
-  set(MQT_CORE_VERSION_FOUND
-      TRUE
-      CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
+  set(MQT_CORE_VERSION_FOUND TRUE CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
 endfunction()
 
 function(get_mqt_core_version)
-  set(MQT_CORE_VERSION_FOUND
-      FALSE
-      CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
+  set(MQT_CORE_VERSION_FOUND FALSE CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
 
   if(PROJECT_IS_TOP_LEVEL)
     version_from_skbuild()
     if(MQT_CORE_VERSION_FOUND)
       message(
         STATUS
-          "Found project version ${MQT_CORE_VERSION} from scikit-build-core (full version: ${MQT_CORE_VERSION_STRING})"
-      )
+          "Found project version ${MQT_CORE_VERSION} from scikit-build-core (full version: ${MQT_CORE_VERSION_STRING})")
       return()
     endif()
   endif()
@@ -219,8 +199,7 @@ function(get_mqt_core_version)
   if(MQT_CORE_VERSION_FOUND)
     message(
       STATUS
-        "Found project version ${MQT_CORE_VERSION} from git (full version: ${MQT_CORE_VERSION_STRING})"
-    )
+        "Found project version ${MQT_CORE_VERSION} from git (full version: ${MQT_CORE_VERSION_STRING})")
     return()
   endif()
 
@@ -228,16 +207,11 @@ function(get_mqt_core_version)
   if(MQT_CORE_VERSION_FOUND)
     message(
       STATUS
-        "Found project version ${MQT_CORE_VERSION} from Python package (full version: ${MQT_CORE_VERSION_STRING})"
-    )
+        "Found project version ${MQT_CORE_VERSION} from Python package (full version: ${MQT_CORE_VERSION_STRING})")
     return()
   endif()
 
   message(WARNING "Could not determine project version. Setting to 0.0.0")
-  set(MQT_CORE_VERSION
-      "0.0.0"
-      CACHE INTERNAL "MQT_CORE_VERSION")
-  set(MQT_CORE_VERSION_STRING
-      "0.0.0"
-      CACHE INTERNAL "MQT_CORE_VERSION_STRING")
+  set(MQT_CORE_VERSION "0.0.0" CACHE INTERNAL "MQT_CORE_VERSION")
+  set(MQT_CORE_VERSION_STRING "0.0.0" CACHE INTERNAL "MQT_CORE_VERSION_STRING")
 endfunction()

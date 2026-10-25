@@ -11,25 +11,26 @@ add_executable(${target_name} test_qc_qco_round_trip.cpp)
 
 target_link_libraries(
   ${target_name}
-  PRIVATE GTest::gtest_main
-          MLIRArithDialect
-          MLIRCBitDialect
-          MLIRFuncDialect
-          MLIRMemRefDialect
-          MLIRMQTDialect
-          MLIRParser
-          MLIRPass
-          MLIRQCPrograms
-          MLIRQCProgramBuilder
-          MLIRQCDialect
-          MLIRQCOPrograms
-          MLIRQCOProgramBuilder
-          MLIRQCODialect
-          MLIRSCFDialect
-          MLIRSupportMQT
-          MLIRTransforms
-          MLIRQCToQCO
-          MLIRQCOToQC)
+  PRIVATE
+    GTest::gtest_main
+    MLIRArithDialect
+    MLIRCBitDialect
+    MLIRFuncDialect
+    MLIRMemRefDialect
+    MLIRMQTDialect
+    MLIRParser
+    MLIRPass
+    MLIRQCPrograms
+    MLIRQCProgramBuilder
+    MLIRQCDialect
+    MLIRQCOPrograms
+    MLIRQCOProgramBuilder
+    MLIRQCODialect
+    MLIRSCFDialect
+    MLIRSupportMQT
+    MLIRTransforms
+    MLIRQCToQCO
+    MLIRQCOToQC)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

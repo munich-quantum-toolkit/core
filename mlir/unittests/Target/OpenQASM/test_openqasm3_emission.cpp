@@ -144,7 +144,7 @@ TEST(OpenQASM3EmissionTest, PreservesIndexCastBitPatterns) {
   MLIRContext context(emissionDialects());
   auto original = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -183,7 +183,7 @@ TEST(OpenQASM3EmissionTest, PreservesOverflowingIndexArithmetic) {
     MLIRContext context(emissionDialects());
     auto original = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(original);
-    auto emitted = qc::translateQCToOpenQASM3(*original);
+    auto emitted = qc::translateQCToOpenQASM3(std::move(original));
     ASSERT_TRUE(succeeded(emitted));
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
@@ -205,7 +205,7 @@ result = measure q;
   MLIRContext context;
   auto original = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -250,9 +250,8 @@ TEST(OpenQASM3EmissionTest, InlinesClassicalHelpersAndPreservesGates) {
   MLIRContext context(emissionDialects());
   auto original = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(original->lookupSymbol<func::FuncOp>("helper"));
   EXPECT_NE(emitted->find("gate flip"), std::string::npos) << *emitted;
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -267,15 +266,14 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   auto moduleOp = qc::translateOpenQASMToQC(BELL, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto source = qc::translateQCToOpenQASM3(*moduleOp);
-  auto repeatedSource = qc::translateQCToOpenQASM3(*moduleOp);
+  auto source =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
 
   ASSERT_TRUE(succeeded(source));
-  ASSERT_TRUE(succeeded(repeatedSource));
-  EXPECT_EQ(*source, *repeatedSource);
   std::string streamedSource;
   llvm::raw_string_ostream stream(streamedSource);
-  EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+  EXPECT_TRUE(
+      succeeded(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
   stream.flush();
   EXPECT_EQ(streamedSource, *source);
   EXPECT_TRUE(source->starts_with("OPENQASM 3.1;\n"));
@@ -306,7 +304,8 @@ ctrl(2) @ z q[0], q[1], q[2];
   MLIRContext context;
   auto original = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(original->clone()));
   ASSERT_TRUE(succeeded(emitted));
   for (const auto* gate : {
            "cx q[0]",
@@ -358,7 +357,7 @@ result = scratch;
   MLIRContext context;
   auto original = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("bit[1] scratch;"), std::string::npos) << *emitted;
   EXPECT_NE(emitted->find("output bit[1] result;"), std::string::npos)
@@ -378,7 +377,8 @@ c[2:] = measure q[2:];
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_EQ(emitted->find(':'), std::string::npos);
   EXPECT_NE(emitted->find("c[0] = measure q[0];"), std::string::npos);
@@ -404,13 +404,189 @@ result = (c == "0111") && (reversed == "10");
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
   ASSERT_TRUE(openqasm::frontend::analyzeOpenQASM(
       *emitted, openqasm::frontend::GatePolicy::Strict));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored);
   expectOneSample(*moduleOp);
+  expectOneSample(*restored);
+}
+
+TEST(OpenQASM3EmissionTest, RoundTripsClassicalArrayStorageAndCopies) {
+  for (const auto* body : {
+           R"qasm(array[int, 1] a = {1};
+             for int i in [0:1] {
+               bit result = 0;
+               if (result) { x q; }
+               result = 1;
+             }
+             if (a[0] == 1) { x q; })qasm",
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             x q; bit choice = measure q; reset q;
+             int i = int(choice);
+             a = a[i:] ++ a[:i-1];
+             a[0:i+1:i+1] = a[1:1] ++ a[0:0];
+             if (a[0] == 3 && a[2] == 2 && a[i] == 3 &&
+                 a[-i] == 1 && sizeof(a[:i]) == 2) { x q; })qasm",
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             x q; bit choice = measure q; reset q;
+             int i = int(choice);
+             a[i:] = a[:2*i];
+             a = a[3:-i:0];
+             if (a[0] == 3 && a[1] == 2 && a[3] == 1) { x q; })qasm",
+           R"qasm(array[int, 2, 4] a = {{1, 2, 3, 4}, {5, 6, 7, 8}};
+             x q; bit choice = measure q; reset q;
+             int i = int(choice);
+             a[i] = a[i, i:] ++ a[i, :i-1];
+             if (a[1, 0] == 6 && a[1, 3] == 5 && a[0, 0] == 1) { x q; })qasm",
+           R"qasm(array[int, 4] a = {1, 2, 3, 4};
+             array[int, 3] saved = a[:-1:1];
+             a[1:] = a[:2];
+             int digits = 0;
+             for int x in saved { digits = 10 * digits + x; }
+             if (digits == 432 && a[3] == 3) { x q; })qasm",
+           R"qasm(array[int[8], 2, 3] a = {{1, -2, 3}, {-4, 5, -6}};
+             array[int[8], 3] b = a[1];
+             b = b[2:2] ++ b[:1];
+             int sum = 0;
+             for int x in b { sum += x; }
+             if (sum == -5) { x q; })qasm",
+           R"qasm(array[float, 2] a = {0.5, 1.5};
+             array[bool, 2] flags = {true, false};
+             float old = a[0];
+             a[0] = 9.0;
+             bool flag = flags[0];
+             flags[0] = false;
+             if (flag && !flags[0] && old == 0.5 && a[0] == 9.0) { x q; })qasm",
+           R"qasm(array[int, 2, 0] empty = {{}, {}};
+             array[int, 400, 400, 0] emptyTable;
+             array[int, 400, 400, 0] emptyCopy = emptyTable[:, :, :];
+             array[int, 0] row = empty[1];
+             for int v in row { x q; }
+             x q;)qasm",
+           R"qasm(array[int, 60000] a;
+             a[0] = 1; a[1] = 2;
+             a[1:2] = a[0:1];
+             if (a[1] == 1 && a[2] == 2) { x q; })qasm",
+           R"qasm(array[int, 60000] a;
+             a[0] = 1; a[1] = 2;
+             a[0:1] = a[1:1] ++ a[0:0];
+             if (a[0] == 2 && a[1] == 1) { x q; })qasm",
+           R"qasm(array[int, 20000, 3] a;
+             a[0, 0] = 1; a[0, 1] = 2; a[0, 2] = 3;
+             for int i in [0:1] { a[0] = a[0, 2:2] ++ a[0, 0:1]; }
+             if (a[0, 0] == 2 && a[0, 2] == 1) { x q; })qasm",
+       }) {
+    SCOPED_TRACE(body);
+    MLIRContext context;
+    auto moduleOp = qc::translateOpenQASMToQC(
+        std::string("OPENQASM 3.0; qubit q; output bit result; ") + body +
+            "result = measure q;",
+        &context);
+    ASSERT_TRUE(moduleOp);
+    auto source = qc::translateQCToOpenQASM3(std::move(moduleOp));
+    ASSERT_TRUE(succeeded(source));
+    auto restored = qc::translateOpenQASMToQC(*source, &context);
+    ASSERT_TRUE(restored) << *source;
+    ASSERT_TRUE(succeeded(verify(*restored)));
+    expectOneSample(*restored);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, ArrayExportPreservesInputParameters) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.1; input float theta; array[float, 2] angles = {theta, 0.0}; "
+      "qubit q; for float value in angles { U(value, 0, 0) q; } "
+      "output bit result; result = measure q;",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  auto source = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(source));
+  EXPECT_NE(source->find("input float[64] theta;"), std::string::npos);
+  EXPECT_NE(source->find("array["), std::string::npos);
+  auto restored = qc::translateOpenQASMToQC(*source, &context);
+  ASSERT_TRUE(restored) << *source;
+  EXPECT_TRUE(succeeded(verify(*restored)));
+  auto entry = restored->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(entry);
+  EXPECT_EQ(entry.getNumArguments(), 1U);
+}
+
+TEST(OpenQASM3EmissionTest, RejectsUnsupportedArrayStorage) {
+  MLIRContext context(emissionDialects());
+  for (const auto* type : {
+           "memref<2xf32>",
+           "memref<i64>",
+           "memref<1x1x1x1x1x1x1x1xi64>",
+           "memref<100001xi64>",
+           "memref<400x400xi64>",
+           "memref<60000xi64>",
+       }) {
+    SCOPED_TRACE(type);
+    auto program = parseSourceString<ModuleOp>(
+        std::string("module { func.func @main() -> (") + type + ", " + type +
+            ") attributes {mqt.entry_point} { %a = memref.alloca() : " + type +
+            " %b = memref.alloca() : " + type + " return %a, %b : " + type +
+            ", " + type + " } }",
+        &context);
+    ASSERT_TRUE(program);
+    std::string diagnostic;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& error) {
+      diagnostic += error.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(program))));
+    EXPECT_NE(diagnostic.find("array storage"), std::string::npos);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, KeepsSnapshotAcrossSourceWrites) {
+  MLIRContext context(emissionDialects());
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @read(%a: memref<1xi1>) -> i1 {
+      %zero = arith.constant 0 : index
+      %value = memref.load %a[%zero] : memref<1xi1>
+      return %value : i1
+    }
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %yes = arith.constant true
+      %no = arith.constant false
+      %a = memref.alloca() : memref<2xi1>
+      %saved = memref.alloca() : memref<2xi1>
+      %q = qc.alloc : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      memref.store %yes, %a[%zero] : memref<2xi1>
+      memref.store %no, %a[%one] : memref<2xi1>
+      memref.copy %a, %saved : memref<2xi1> to memref<2xi1>
+      memref.store %no, %a[%zero] : memref<2xi1>
+      memref.copy %saved, %a : memref<2xi1> to memref<2xi1>
+      %view = memref.subview %a[0] [1] [1] : memref<2xi1> to memref<1xi1>
+      %result = func.call @read(%view) : (memref<1xi1>) -> i1
+      %tail = memref.subview %a[1] [1] [1] : memref<2xi1> to memref<1xi1, strided<[1], offset: 1>>
+      memref.copy %tail, %view : memref<1xi1, strided<[1], offset: 1>> to memref<1xi1>
+      memref.copy %view, %tail : memref<1xi1> to memref<1xi1, strided<[1], offset: 1>>
+      %last = memref.load %a[%one] : memref<2xi1>
+      %cleared = arith.xori %last, %yes : i1
+      %correct = arith.andi %result, %cleared : i1
+      scf.if %correct { qc.x %q : !qc.qubit }
+      %measured = qc.measure %q : !qc.qubit -> i1
+      cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+      qc.dealloc %q : !qc.qubit
+      return %bits : !cbit.reg<1>
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(program));
+  ASSERT_TRUE(succeeded(emitted));
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
   expectOneSample(*restored);
 }
 
@@ -450,7 +626,8 @@ result = measure q;
     auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+    auto emitted =
+        qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
     ASSERT_TRUE(succeeded(emitted));
     ASSERT_TRUE(openqasm::frontend::analyzeOpenQASM(
         *emitted, openqasm::frontend::GatePolicy::Strict));
@@ -482,7 +659,7 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   const auto measurement = emitted->find("c[0] = measure _mqt_q0;");
@@ -517,20 +694,11 @@ TEST(OpenQASM3EmissionTest, PreservesGroupedMeasurementRegisterAndBitOrder) {
   MLIRContext context(emissionDialects());
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
-  const auto original = [&] {
-    std::string text;
-    llvm::raw_string_ostream stream(text);
-    moduleOp->print(stream);
-    return text;
-  }();
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("output bit[2] result;"), std::string::npos);
   EXPECT_EQ(emitted->find("_mqt_b"), std::string::npos) << *emitted;
-  std::string unchanged;
-  llvm::raw_string_ostream stream(unchanged);
-  moduleOp->print(stream);
-  EXPECT_EQ(original, unchanged);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   expectOneSample(*moduleOp, "10");
@@ -557,7 +725,8 @@ TEST(OpenQASM3EmissionTest, KeepsTemporariesForConflictingMeasurementStores) {
   MLIRContext context(emissionDialects());
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("_mqt_b"), std::string::npos) << *emitted;
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -592,7 +761,7 @@ TEST(OpenQASM3EmissionTest, PreservesStaleClassicalSnapshots) {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -612,7 +781,7 @@ result = measure q;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_EQ(emitted->find("angle"), std::string::npos);
@@ -647,7 +816,7 @@ real = 3.0;
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   ASSERT_EQ(function.getNumResults(), 6U);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("output bit[1] measured;"), std::string::npos);
@@ -671,7 +840,7 @@ r = measure q;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate r("), std::string::npos);
@@ -711,7 +880,7 @@ switch (selector) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("if ("), std::string::npos);
@@ -735,7 +904,7 @@ while (c == 1) {
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("while ("), std::string::npos) << *emitted;
@@ -820,7 +989,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
@@ -858,7 +1027,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -894,7 +1063,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
@@ -923,7 +1092,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
 }
 
 TEST(OpenQASM3EmissionTest, RoundTripsExtendedBooleanShiftDistance) {
@@ -947,7 +1116,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
@@ -969,7 +1138,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
@@ -989,7 +1158,7 @@ result = rotl(result, 2);
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
@@ -1008,7 +1177,7 @@ count = bit[64](uint[64](popcount(c)));
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("0x10000000000000001"), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -1043,7 +1212,7 @@ TEST(OpenQASM3EmissionTest, RejectsWideScalarIntegerExpressions) {
     })mlir";
     auto moduleOp = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(moduleOp);
-    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
   }
 }
 
@@ -1059,7 +1228,7 @@ TEST(OpenQASM3EmissionTest, EmitsIndexArithmetic) {
   MLIRContext context(registry);
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
@@ -1089,7 +1258,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("switch (1)"), std::string::npos);
@@ -1130,7 +1299,7 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("inv @ sx"), std::string::npos);
@@ -1181,7 +1350,7 @@ inv @ pair(theta) q;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate pair(p0) q0"), std::string::npos);
@@ -1236,7 +1405,8 @@ TEST(OpenQASM3EmissionTest, CapturesFinalParametersInCompositeGates) {
   MLIRContext context(registry);
   auto original = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(original->clone()));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -1287,7 +1457,8 @@ U(0.4, -0.2, 0.7) q;
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
   auto roundTrip = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTrip);
@@ -1344,7 +1515,7 @@ TEST(OpenQASM3EmissionTest, OrdersNestedGateFunctionsBeforeTheirCallers) {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   const auto inner = emitted->find("gate _mqt_gate0");
@@ -1379,7 +1550,8 @@ wrapper(0.25) q;
   MLIRContext context;
   auto original = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(original->clone()));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -1393,7 +1565,8 @@ wrapper(0.25) q;
     moduleOp.walk([&](scf::ForOp) { ++loops; });
     EXPECT_EQ(loops, 2);
   };
-  for (auto moduleOp : {*original, *restored}) {
+  for (auto* ownedModule : {&original, &restored}) {
+    auto moduleOp = **ownedModule;
     checkGateStructure(moduleOp);
     EXPECT_FALSE(
         mlir::mqt::getEntryPoint(moduleOp).getOps<qc::CallOp>().empty());
@@ -1422,7 +1595,7 @@ wrapper(0.25) q;
     ASSERT_TRUE(succeeded(back.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     checkGateStructure(moduleOp);
-    EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(moduleOp)));
+    EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(std::move(*ownedModule))));
   }
 }
 
@@ -1482,7 +1655,7 @@ wrapper(0.5) q;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   const auto repeated = emitted->find("gate repeated");
@@ -1524,9 +1697,10 @@ TEST(OpenQASM3EmissionTest, OrdersLongReverseDeclaredGateGraph) {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
-  auto repeated = qc::translateQCToOpenQASM3(*moduleOp);
+  auto repeated = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
   auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
@@ -1553,7 +1727,7 @@ TEST(OpenQASM3EmissionTest, DropsUnreachableGateFunctions) {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_EQ(emitted->find("gate unused"), std::string::npos) << *emitted;
@@ -1665,18 +1839,18 @@ TEST(OpenQASM3EmissionTest, InlinesNonGateBodies) {
     MLIRContext context(emissionDialects());
     auto original = parseSourceString<ModuleOp>(sources[index], &context);
     ASSERT_TRUE(original);
-    auto emitted = qc::translateQCToOpenQASM3(*original);
+    auto emitted =
+        qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(original->clone()));
     ASSERT_TRUE(succeeded(emitted));
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
     expectOneSample(*restored, expected[index]);
     for (auto function : original->getOps<func::FuncOp>()) {
       if (function.getName() != "main") {
-        EXPECT_FALSE(function.getNoInline());
         function.setNoInline(true);
       }
     }
-    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*original)));
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(original))));
   }
 }
 
@@ -1738,7 +1912,7 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidGateFunctions) {
     MLIRContext context(registry);
     auto moduleOp = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(moduleOp);
-    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
   }
 }
 
@@ -1774,7 +1948,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("sin("), std::string::npos);
@@ -1814,7 +1988,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("mod(5.5, 2.0)"), std::string::npos);
@@ -1855,7 +2029,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("int[64]("), std::string::npos) << *emitted;
@@ -1891,7 +2065,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("in [0:2:4]"), std::string::npos);
@@ -1902,7 +2076,7 @@ module {
 
 TEST(OpenQASM3EmissionTest, RoundTripsNestedDynamicBoundsAndCarriedScalars) {
   constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @main() -> (i64, i64) {
+    func.func @main() {
       %zero = arith.constant 0 : index
       %one = arith.constant 1 : index
       %two = arith.constant 2 : index
@@ -1932,7 +2106,7 @@ TEST(OpenQASM3EmissionTest, RoundTripsNestedDynamicBoundsAndCarriedScalars) {
         qc.x %qubit : !qc.qubit
       }
       qc.dealloc %qubit : !qc.qubit
-      return %result#0, %result#1 : i64, i64
+      return
     }
   })mlir";
   DialectRegistry registry = emissionDialects();
@@ -1941,14 +2115,15 @@ TEST(OpenQASM3EmissionTest, RoundTripsNestedDynamicBoundsAndCarriedScalars) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find(" << "), std::string::npos) << *emitted;
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   ASSERT_TRUE(succeeded(verify(*restored)));
-  EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(*restored)));
+  EXPECT_TRUE(succeeded(
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(restored->clone()))));
   expectOneSample(*restored);
 }
 
@@ -2007,7 +2182,7 @@ TEST(OpenQASM3EmissionTest, PreservesDynamicRangeBoundaries) {
     auto moduleOp = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(moduleOp);
 
-    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+    auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
     ASSERT_TRUE(succeeded(emitted));
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -2049,7 +2224,7 @@ TEST(OpenQASM3EmissionTest, SnapshotsDynamicBoundsBeforeClassicalWrites) {
   MLIRContext context(registry);
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -2103,12 +2278,13 @@ TEST(OpenQASM3EmissionTest,
       }
     });
 
-    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+    auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
     ASSERT_TRUE(succeeded(emitted));
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
-    EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(*restored)));
+    EXPECT_TRUE(succeeded(
+        qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(restored->clone()))));
     expectOneSample(*restored);
   }
 }
@@ -2139,7 +2315,7 @@ TEST(OpenQASM3EmissionTest, PreservesManyLoopCarriedParameters) {
   MLIRContext context(emissionDialects());
   auto original = parseSourceString<ModuleOp>(input, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored);
@@ -2157,7 +2333,7 @@ TEST(OpenQASM3EmissionTest, PreservesIndexedLogicalQubitLoops) {
   MLIRContext context;
   auto original = qc::translateOpenQASMToQC(input, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -2194,7 +2370,7 @@ TEST(OpenQASM3EmissionTest, RejectsPhysicalReferenceArrays) {
   ASSERT_TRUE(original);
   std::string output = "unchanged";
   llvm::raw_string_ostream stream(output);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*original, stream)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(original), stream)));
   EXPECT_EQ(output, "unchanged");
 }
 
@@ -2223,9 +2399,10 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   MLIRContext context(emissionDialects());
   auto original = parseSourceString<ModuleOp>(input, &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(original->clone()));
   ASSERT_TRUE(succeeded(emitted));
-  auto repeated = qc::translateQCToOpenQASM3(*original);
+  auto repeated = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
   EXPECT_NE(emitted->find("for int "), std::string::npos);
@@ -2271,7 +2448,7 @@ TEST(OpenQASM3EmissionTest, RoundTripsDenseBooleanInputLookups) {
   })mlir",
                                               &context);
   ASSERT_TRUE(moduleOp);
-  auto source = qc::translateQCToOpenQASM3(*moduleOp);
+  auto source = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(source));
   auto restored = qc::translateOpenQASMToQC(*source, &context);
   ASSERT_TRUE(restored);
@@ -2296,7 +2473,7 @@ TEST(OpenQASM3EmissionTest, EmitsLargeConstantTables) {
   });
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
-  auto output = qc::translateQCToOpenQASM3(*moduleOp);
+  auto output = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(output));
   EXPECT_LT(output->size(), values.size() * 64);
 }
@@ -2313,7 +2490,7 @@ TEST(OpenQASM3EmissionTest, EmitsPhysicalQubitOperations) {
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("h $7;"), std::string::npos);
@@ -2342,7 +2519,7 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("output bit[1] single;"), std::string::npos);
@@ -2361,7 +2538,7 @@ TEST(OpenQASM3EmissionTest, ReusesQubitRegisterNames) {
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("qubit[2] named_qubits;"), std::string::npos);
@@ -2386,12 +2563,13 @@ result = measure flag;
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted =
+      qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("qubit flag;"), std::string::npos);
   EXPECT_NE(emitted->find("output bit[1] result;"), std::string::npos);
   EXPECT_LT(emitted->find("for "), emitted->find("bit[1] _mqt_c"));
-  auto repeated = qc::translateQCToOpenQASM3(*moduleOp);
+  auto repeated = qc::translateQCToOpenQASM3(std::move(moduleOp));
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -2410,7 +2588,7 @@ TEST(OpenQASM3EmissionTest, DefinesECRWithOneEntanglingGate) {
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
 
-  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate ecr"), std::string::npos);
@@ -2451,7 +2629,7 @@ TEST(OpenQASM3EmissionTest, RoundTripsRuntimeIndicesAndIntegerPowers) {
     original->walk([](Operation* operation) {
       EXPECT_NE(operation->getName().getDialectNamespace(), "cf");
     });
-    auto emitted = qc::translateQCToOpenQASM3(*original);
+    auto emitted = qc::translateQCToOpenQASM3(std::move(original));
     ASSERT_TRUE(succeeded(emitted));
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
@@ -2473,7 +2651,7 @@ TEST(OpenQASM3EmissionTest, LeavesDestinationEmptyOnFailure) {
 
   std::string output;
   llvm::raw_string_ostream stream(output);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
   EXPECT_TRUE(output.empty());
 }
 
@@ -2504,7 +2682,7 @@ TEST(OpenQASM3EmissionTest, MaterializesDeepAndSharedScalarExpressions) {
     func::ReturnOp::create(builder, location, value);
     ASSERT_TRUE(succeeded(verify(moduleOp)));
 
-    auto emitted = qc::translateQCToOpenQASM3(moduleOp);
+    auto emitted = qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp));
     ASSERT_TRUE(succeeded(emitted));
     EXPECT_LT(emitted->size(), sizeLimit);
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -2518,7 +2696,6 @@ TEST(OpenQASM3EmissionTest, MaterializesDeepAndSharedScalarExpressions) {
     APInt result;
     ASSERT_TRUE(matchPattern(returned.getOperand(0), m_ConstantInt(&result)));
     EXPECT_EQ(result.getSExtValue(), expected);
-    moduleOp.erase();
   }
 }
 
@@ -2536,7 +2713,7 @@ TEST(OpenQASM3EmissionTest, RejectsExcessiveClassicalRegisterWidth) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
 }
 
 TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
@@ -2551,7 +2728,7 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
                         [&](Value target) { nonUnitaryBuilder.reset(target); });
   auto nonUnitaryModule = nonUnitaryBuilder.finalize();
   ASSERT_TRUE(nonUnitaryModule);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*nonUnitaryModule)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(nonUnitaryModule))));
 
   qc::QCProgramBuilder emptyBuilder(&context);
   emptyBuilder.initialize();
@@ -2559,7 +2736,7 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   emptyBuilder.inv(emptyQubit, [](Value) {});
   auto emptyModule = emptyBuilder.finalize();
   ASSERT_TRUE(emptyModule);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*emptyModule)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(emptyModule))));
 
   qc::QCProgramBuilder capturedQubitBuilder(&context);
   capturedQubitBuilder.initialize();
@@ -2570,7 +2747,8 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   });
   auto capturedQubitModule = capturedQubitBuilder.finalize();
   ASSERT_TRUE(capturedQubitModule);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*capturedQubitModule)));
+  EXPECT_TRUE(
+      failed(qc::translateQCToOpenQASM3(std::move(capturedQubitModule))));
 
   qc::QCProgramBuilder zeroTargetBuilder(&context);
   zeroTargetBuilder.initialize();
@@ -2579,7 +2757,7 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   });
   auto zeroTargetModule = zeroTargetBuilder.finalize();
   ASSERT_TRUE(zeroTargetModule);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*zeroTargetModule)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(zeroTargetModule))));
 }
 
 TEST(OpenQASM3EmissionTest, RejectsExplicitRuntimeAssertionsWithoutOutput) {
@@ -2602,10 +2780,9 @@ TEST(OpenQASM3EmissionTest, RejectsExplicitRuntimeAssertionsWithoutOutput) {
                  std::string::npos;
     return success();
   });
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
   EXPECT_TRUE(diagnosed);
   EXPECT_TRUE(output.empty());
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
@@ -2858,10 +3035,10 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
     SCOPED_TRACE(fixture.name.str());
     auto moduleOp = parseSourceString<ModuleOp>(fixture.source, &context);
     ASSERT_TRUE(moduleOp);
-    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
     std::string buffered = "existing output";
     llvm::raw_string_ostream stream(buffered);
-    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+    EXPECT_TRUE(
+        failed(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
     EXPECT_EQ(buffered, "existing output");
   }
 }
@@ -2939,7 +3116,7 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
     SCOPED_TRACE(fixture.name.str());
     auto moduleOp = parseSourceString<ModuleOp>(fixture.source, &context);
     ASSERT_TRUE(moduleOp);
-    auto source = qc::translateQCToOpenQASM3(*moduleOp);
+    auto source = qc::translateQCToOpenQASM3(std::move(moduleOp));
     ASSERT_TRUE(succeeded(source));
     EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
   }
@@ -2970,7 +3147,7 @@ while (true) {
   imported->walk([&](scf::IfOp) { ++conditionals; });
   EXPECT_EQ(loops, 1);
   EXPECT_EQ(conditionals, 0);
-  auto exported = qc::translateQCToOpenQASM3(*imported);
+  auto exported = qc::translateQCToOpenQASM3(std::move(imported));
   ASSERT_TRUE(succeeded(exported));
   auto roundTrip = qc::translateOpenQASMToQC(*exported, &context);
   ASSERT_TRUE(roundTrip);
@@ -3014,11 +3191,13 @@ TEST(OpenQASM3EmissionTest, PreservesZeroAndMixedOutputResults) {
     MLIRContext context;
     auto original = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(original);
-    auto emitted = qc::translateQCToOpenQASM3(*original);
+    auto originalType =
+        original->lookupSymbol<func::FuncOp>("main").getFunctionType();
+    auto emitted = qc::translateQCToOpenQASM3(std::move(original));
     ASSERT_TRUE(succeeded(emitted));
     auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
-    EXPECT_EQ(original->lookupSymbol<func::FuncOp>("main").getResultTypes(),
+    EXPECT_EQ(originalType.getResults(),
               restored->lookupSymbol<func::FuncOp>("main").getResultTypes());
   }
 }
@@ -3034,7 +3213,7 @@ TEST(OpenQASM3EmissionTest, RejectsRepeatedRegisterResults) {
   })mlir",
                                               &context);
   ASSERT_TRUE(moduleOp);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
 }
 
 TEST(OpenQASM3EmissionTest, UsesFrontendIdentifierRulesForOutputNames) {
@@ -3060,7 +3239,7 @@ TEST(OpenQASM3EmissionTest, UsesFrontendIdentifierRulesForOutputNames) {
     } })mlir";
     auto moduleOp = parseSourceString<ModuleOp>(input, &context);
     ASSERT_TRUE(moduleOp);
-    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+    auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
     ASSERT_TRUE(succeeded(emitted));
     const auto* expected =
         StringRef(name) == "valid_name" || StringRef(name) == "sin"
@@ -3080,7 +3259,7 @@ TEST(OpenQASM3EmissionTest, DoesNotIntroduceOutputsForUnusedMeasurements) {
   auto original =
       qc::translateOpenQASMToQC("OPENQASM 3.1; qubit q; measure q;", &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_EQ(emitted->find("\nbit "), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -3101,7 +3280,7 @@ TEST(OpenQASM3EmissionTest,
                                 "output bool b; b = f != 2.0;",
                                 &context);
   ASSERT_TRUE(original);
-  auto emitted = qc::translateQCToOpenQASM3(*original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(emitted));
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored);
@@ -3111,10 +3290,10 @@ TEST(OpenQASM3EmissionTest,
     ++comparisons;
   });
   EXPECT_EQ(comparisons, 1);
-  original->walk([&](arith::CmpFOp comparison) {
+  restored->walk([&](arith::CmpFOp comparison) {
     comparison.setPredicate(arith::CmpFPredicate::ONE);
   });
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*original)));
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(restored))));
 }
 
 TEST(OpenQASM3EmissionTest,
@@ -3161,7 +3340,8 @@ TEST(OpenQASM3EmissionTest,
       MLIRContext context(registry);
       auto original = qc::translateOpenQASMToQC(input, &context);
       ASSERT_TRUE(original);
-      auto emitted = qc::translateQCToOpenQASM3(*original);
+      auto emitted =
+          qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(original->clone()));
       ASSERT_TRUE(succeeded(emitted));
       auto restored = qc::translateOpenQASMToQC(
           *emitted, &context,

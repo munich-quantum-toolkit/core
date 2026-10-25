@@ -8,6 +8,22 @@
  * Licensed under the MIT License
  */
 
+#include "bench/BV.hpp"
+#include "bench/FanOut.hpp"
+#include "bench/GHZ.hpp"
+#include "bench/Grover.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
+#include "bench/MagicStateDistillation.hpp"
+#include "bench/ModularMultiplier.hpp"
+#include "bench/Multiplexer.hpp"
+#include "bench/QAOA.hpp"
+#include "bench/QFT.hpp"
+#include "bench/QFTAdder.hpp"
+#include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
+#include "bench/Shor.hpp"
+#include "bench/Teleportation.hpp"
+#include "bench/WState.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
@@ -45,11 +61,13 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <cassert>
 #include <cctype>
 #include <complex>
 #include <cstddef>
@@ -85,11 +103,14 @@ static void translateRuntimeError(const std::exception_ptr& error,
   try {
     std::rethrow_exception(error);
   } catch (const std::range_error& exception) {
-    PyErr_SetString(PyExc_ValueError, exception.what());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
+    nb::chain_error(nb::handle(PyExc_ValueError), "%s", exception.what());
   } catch (const std::overflow_error& exception) {
-    PyErr_SetString(PyExc_OverflowError, exception.what());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
+    nb::chain_error(nb::handle(PyExc_OverflowError), "%s", exception.what());
   } catch (const std::runtime_error& exception) {
-    PyErr_SetString(PyExc_RuntimeError, exception.what());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
+    nb::chain_error(nb::handle(PyExc_RuntimeError), "%s", exception.what());
   }
 }
 #endif
@@ -161,6 +182,16 @@ template <class ProgramType>
 [[nodiscard]] static ProgramType copyProgram(const ProgramType& program) {
   requireValid(program);
   return program.copy();
+}
+
+template <class T>
+[[nodiscard]] static nb::typed<nb::list, T>
+toPythonList(llvm::ArrayRef<T> values) {
+  nb::list_builder result(values.size());
+  for (const auto& value : values) {
+    result.put(value);
+  }
+  return result.commit();
 }
 
 namespace {
@@ -256,22 +287,55 @@ static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
             requireValid(program);
             return program.parameters();
           },
-          "Named f64 entry-point inputs in function argument order.")
+          "Named f64 scalar and fixed-length array inputs in function argument "
+          "order.")
       .def(
           "bind_parameters",
-          [](T& program, const std::map<std::string, double>& values) {
+          [](T& program, const nb::typed<nb::mapping, nb::str,
+                                         mlir::ParameterValue>& values) {
             requireValid(program);
+            nb::dict snapshot;
+            try {
+              snapshot.update(values);
+            } catch (const nb::python_error&) {
+              throw nb::type_error("values must be a mapping with string keys");
+            }
+            std::map<std::string, mlir::ParameterValue> bindings;
+            for (const auto [key, value] : snapshot) {
+              std::string name;
+              if (!nb::try_cast(key, name)) {
+                throw nb::type_error(
+                    "values must be a mapping with string keys");
+              }
+              // NumPy < 2.4 can coerce one-element rows to floats.
+              if (nb::cast<int>(nb::getattr(value, "ndim", nb::int_(0))) > 1) {
+                throw nb::value_error(
+                    "array parameter values must be one-dimensional");
+              }
+              mlir::ParameterValue parameter;
+              if (!nb::try_cast(value, parameter)) {
+                throw nb::type_error(
+                    "parameter values must be floats or one-dimensional "
+                    "sequences of floats");
+              }
+              bindings.emplace(std::move(name), std::move(parameter));
+            }
             withDiagnostics(program.module().getContext(),
                             "cannot bind parameters",
-                            [&] { return program.bindParameters(values); });
+                            [&] { return program.bindParameters(bindings); });
           },
           "values"_a,
-          R"pb(Bind named f64 parameters in place without folding expressions.
+          R"pb(Bind named scalar and array parameters in place.
 
-Partial binding preserves unbound parameters and their source identities.
-Unknown names, non-finite values, and references to the entry point raise
-ValueError without changing the program. Call ``copy()`` first to preserve
-the input, and ``cleanup()`` afterwards if constant folding is needed.)pb");
+Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
+Supply arrays as sequences or NumPy arrays with the expected length.
+Partial binding preserves unbound inputs and their source identities.
+Unknown names, mismatched scalar or array values, incorrect lengths,
+non-finite values, and references to the entry point raise ValueError
+without changing the program.
+
+Binding folds expressions using the bound values. Folding failures may
+leave the program modified. Call ``copy()`` first to preserve the input.)pb");
 }
 
 template <class T>
@@ -393,8 +457,91 @@ template <class ProgramType>
           std::isspace(static_cast<unsigned char>(source[6])) != 0);
 }
 
+namespace {
+/// Python output choices include objects constructed outside the native
+/// compiler.
+enum class OutputFormat : uint8_t {
+  QCImport = static_cast<uint8_t>(mlir::ProgramFormat::QCImport),
+  QCO = static_cast<uint8_t>(mlir::ProgramFormat::QCO),
+  QCOOptimized = static_cast<uint8_t>(mlir::ProgramFormat::QCOOptimized),
+  QC = static_cast<uint8_t>(mlir::ProgramFormat::QC),
+  OpenQASM3 = static_cast<uint8_t>(mlir::ProgramFormat::OpenQASM3),
+  Jeff = static_cast<uint8_t>(mlir::ProgramFormat::Jeff),
+  QIRBase = static_cast<uint8_t>(mlir::ProgramFormat::QIRBase),
+  QIRAdaptive = static_cast<uint8_t>(mlir::ProgramFormat::QIRAdaptive),
+  IQMJSON = static_cast<uint8_t>(mlir::ProgramFormat::IQMJSON),
+  Qiskit,
+};
+struct ImportedProgram {
+  mlir::CompilerInput program;
+  OutputFormat format;
+};
+
+struct PythonInputTypes {
+  nb::object sequence =
+      nb::module_::import_("collections.abc").attr("Sequence");
+  nb::object pathLike = nb::module_::import_("os").attr("PathLike");
+  nb::object string = nb::borrow<nb::object>(nb::str("").type());
+  nb::object list = nb::borrow<nb::object>(nb::list().type());
+  nb::object tuple = nb::borrow<nb::object>(nb::tuple().type());
+  nb::object qiskitCircuit;
+
+  [[nodiscard]] nb::handle quantumCircuit() {
+    // Absence is retryable because Qiskit can be imported after this module.
+    if (!qiskitCircuit) {
+      const auto modules =
+          nb::cast<nb::dict>(nb::module_::import_("sys").attr("modules"));
+      const auto circuit = modules.get("qiskit.circuit", nb::none());
+      if (!circuit.is_none()) {
+        auto type = nb::getattr(circuit, "QuantumCircuit", nb::none());
+        if (!type.is_none()) {
+          qiskitCircuit = std::move(type);
+        }
+      }
+    }
+    return qiskitCircuit;
+  }
+
+  [[nodiscard]] nb::handle inputType(nb::handle item) {
+    if (nb::isinstance<nb::str>(item)) {
+      return string;
+    }
+    if (nb::hasattr(item, "__fspath__") && nb::isinstance(item, pathLike)) {
+      return pathLike;
+    }
+    for (const auto type : {
+             nb::type<mlir::QCProgram>(),
+             nb::type<mlir::QCOProgram>(),
+             nb::type<mlir::JeffProgram>(),
+             nb::type<mlir::OpenQASMProgram>(),
+         }) {
+      if (nb::isinstance(item, type)) {
+        return type;
+      }
+    }
+    if (const auto type = quantumCircuit();
+        type && nb::isinstance(item, type)) {
+      return type;
+    }
+    return {};
+  }
+};
+
+template <auto Function> struct PythonInputAdapter;
+
+template <class Result, class... Args,
+          Result (*Function)(PythonInputTypes&, Args...)>
+struct PythonInputAdapter<Function> {
+  std::shared_ptr<PythonInputTypes> types;
+
+  Result operator()(Args... args) const {
+    return Function(*types, std::forward<Args>(args)...);
+  }
+};
+} // namespace
+
 /// Construct a frontend program from a file path.
-[[nodiscard]] static mlir::CompilerInput
+[[nodiscard]] static ImportedProgram
 programFromPath(const std::filesystem::path& path) {
   if (path.empty()) {
     throw std::runtime_error("Input path must not be empty.");
@@ -417,39 +564,54 @@ programFromPath(const std::filesystem::path& path) {
 
   const auto extension = path.extension().string();
   if (extension == ".jeff") {
-    return takeResult(mlir::JeffProgram::fromFile(path));
+    return {
+        .program = takeResult(mlir::JeffProgram::fromFile(path)),
+        .format = OutputFormat::Jeff,
+    };
   }
   if (extension == ".mlir") {
-    return takeResult(mlir::QCProgram::fromMLIRFile(path));
+    return {
+        .program = takeResult(mlir::QCProgram::fromMLIRFile(path)),
+        .format = OutputFormat::QC,
+    };
   }
   if (extension == ".qasm") {
-    return takeResult(mlir::QCProgram::fromOpenQASMFile(path));
+    return {
+        .program = takeResult(mlir::QCProgram::fromOpenQASMFile(path)),
+        .format = OutputFormat::OpenQASM3,
+    };
   }
   throw std::runtime_error("Input file '" + path.string() +
                            "' has unsupported extension '" + extension + "'.");
 }
 
 /// Construct a frontend program from a string containing source or path.
-[[nodiscard]] static mlir::CompilerInput
-programFromString(const std::string& input) {
+[[nodiscard]] static ImportedProgram
+programFromString(const std::string_view input) {
   if (isSourceString(input)) {
-    if (input.find("OPENQASM") != std::string::npos) {
-      return takeResult(mlir::QCProgram::fromOpenQASMString(input));
+    if (input.find("OPENQASM") != std::string_view::npos) {
+      return {
+          .program = takeResult(mlir::QCProgram::fromOpenQASMString(input)),
+          .format = OutputFormat::OpenQASM3,
+      };
     }
-    return takeResult(mlir::QCProgram::fromMLIRString(input));
+    return {
+        .program = takeResult(mlir::QCProgram::fromMLIRString(input)),
+        .format = OutputFormat::QC,
+    };
   }
   return programFromPath(std::filesystem::path(input));
 }
 
 /// Convert a Python object to a compiler program.
 ///
-/// Program objects are copied by default so the high-level entry point
-/// behaves like a conventional compiler function. Set @p inplace to transfer
-/// ownership from a program object instead.
-[[nodiscard]] static mlir::CompilerInput
-programFromInput(const nb::object& program, const bool inplace) {
+/// Consume typed MLIR programs unless @p copy requests an independent copy.
+/// Text, paths and external circuit objects remain borrowed.
+[[nodiscard]] static ImportedProgram programFromInput(PythonInputTypes& types,
+                                                      const nb::handle program,
+                                                      const bool copy) {
   if (nb::isinstance<nb::str>(program)) {
-    const auto input = nb::cast<std::string>(program);
+    const auto input = nb::cast<std::string_view>(program);
     const nb::gil_scoped_release release;
     return programFromString(input);
   }
@@ -460,48 +622,49 @@ programFromInput(const nb::object& program, const bool inplace) {
   }
   if (nb::isinstance<mlir::QCProgram>(program)) {
     auto& value = nb::cast<mlir::QCProgram&>(program);
-    return {copiedOrConsumed(value, !inplace)};
+    return {
+        .program = copiedOrConsumed(value, copy),
+        .format = OutputFormat::QC,
+    };
   }
   if (nb::isinstance<mlir::QCOProgram>(program)) {
     auto& value = nb::cast<mlir::QCOProgram&>(program);
-    return {copiedOrConsumed(value, !inplace)};
+    return {
+        .program = copiedOrConsumed(value, copy),
+        .format = OutputFormat::QCOOptimized,
+    };
   }
   if (nb::isinstance<mlir::JeffProgram>(program)) {
     auto& value = nb::cast<mlir::JeffProgram&>(program);
-    return {copiedOrConsumed(value, !inplace)};
+    return {
+        .program = copiedOrConsumed(value, copy),
+        .format = OutputFormat::Jeff,
+    };
   }
   if (nb::isinstance<mlir::OpenQASMProgram>(program)) {
-    return {nb::cast<const mlir::OpenQASMProgram&>(program)};
+    const auto& value = nb::cast<const mlir::OpenQASMProgram&>(program);
+    const nb::gil_scoped_release release;
+    return {
+        .program =
+            takeResult(mlir::QCProgram::fromOpenQASMString(value.source())),
+        .format = OutputFormat::OpenQASM3,
+    };
   }
 
-  const auto programType =
-      nb::cast<std::string>(program.type().attr("__name__"));
-  const auto sysModules =
-      nb::cast<nb::dict>(nb::module_::import_("sys").attr("modules"));
-  if (sysModules.contains("qiskit.circuit")) {
-    const auto qiskitCircuit =
-        nb::module_::import_("qiskit.circuit").attr("QuantumCircuit");
-    if (nb::isinstance(program, qiskitCircuit)) {
-      return bindings::qiskit::importCircuit(program);
-    }
+  if (const auto type = types.quantumCircuit();
+      type && nb::isinstance(program, type)) {
+    return {
+        .program = bindings::qiskit::importCircuit(program),
+        .format = OutputFormat::Qiskit,
+    };
   }
-  throw std::runtime_error("Program type " + programType +
-                           " is not supported.");
-}
-
-/// Run the coordinated default pipeline and return a typed program.
-[[nodiscard]] static mlir::CompilerProgram
-compileProgram(const nb::object& program, const mlir::ProgramFormat output,
-               const bool inplace, const std::string& qcoPipeline,
-               mlir::CompilationOptions options = {}) {
-  auto input = programFromInput(program, inplace);
-  const nb::gil_scoped_release release;
-  return takeResult(
-      mlir::runDefaultPipeline(std::move(input), output, qcoPipeline, options));
+  throw std::runtime_error(
+      "Program type " + nb::cast<std::string>(program.type().attr("__name__")) +
+      " is not supported.");
 }
 
 /// Resolve an open device or registered ID.
-[[nodiscard]] static qdmi::Device resolveDevice(const nb::object& target) {
+[[nodiscard]] static qdmi::Device resolveDevice(const nb::handle target) {
   if (nb::isinstance<qdmi::Device>(target)) {
     return nb::cast<qdmi::Device>(target);
   }
@@ -513,77 +676,189 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
   throw nb::type_error("target must be a QDMI Device or registered device ID");
 }
 
-[[nodiscard]] static QDMI_Program_Format
-qdmiFormat(mlir::ProgramFormat output) {
+/// Lowering constraints for the requested Python representation.
+[[nodiscard]] static mlir::PayloadSpecification
+payloadForOutput(OutputFormat output) {
   switch (output) {
-  case mlir::ProgramFormat::OpenQASM3:
-    return QDMI_PROGRAM_FORMAT_QASM3;
-  case mlir::ProgramFormat::QIRBase:
-    return QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  case mlir::ProgramFormat::QIRAdaptive:
-    return QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  case OutputFormat::OpenQASM3:
+  case OutputFormat::IQMJSON:
+  case OutputFormat::QIRBase:
+  case OutputFormat::QIRAdaptive:
+    return takeResult(mlir::PayloadSpecification::forProgramFormat(
+        static_cast<mlir::ProgramFormat>(output)));
+  case OutputFormat::Qiskit:
+    return bindings::qiskit::payloadSpecification();
   default:
-    throw nb::value_error("Explicit targets require an executable output: "
-                          "OPENQASM3, QIR_BASE, or QIR_ADAPTIVE");
+    // Intermediate representations have no execution transport constraints.
+    return takeResult(mlir::PayloadSpecification::create(
+        {.id = "mqt", .version = "1.0", .profile = ""},
+        {
+            {.id = mlir::ProgramCapability::FORWARD_BRANCHING.str()},
+            {.id = mlir::ProgramCapability::COUNTED_ITERATION.str()},
+            {.id = mlir::ProgramCapability::CONDITIONAL_LOOP.str()},
+            {.id = mlir::ProgramCapability::MULTIWAY_BRANCHING.str()},
+        }));
   }
 }
 
-/// Select the payload before consuming a typed input or running target passes.
-[[nodiscard]] static nb::object
-compileProgramForTarget(const nb::object& program, const nb::object& target,
-                        std::optional<QDMI_Program_Format> programFormat,
-                        std::optional<mlir::ProgramFormat> output, bool inplace,
-                        mlir::CompilationOptions options) {
-  if (output && programFormat) {
-    throw nb::value_error("Specify either output or program_format, not both");
-  }
-  if (nb::isinstance<mlir::CompilerTarget>(target)) {
-    if (!output && !programFormat) {
-      throw nb::value_error(
-          "An explicit CompilerTarget requires output or program_format");
-    }
-    auto payload = takeResult(mlir::payloadSpecificationForProgramFormat(
-        programFormat ? *programFormat : qdmiFormat(*output)));
-    const mlir::TargetEnvironment environment(
-        nb::cast<const mlir::CompilerTarget&>(target), std::move(payload));
-    auto input = programFromInput(program, inplace);
-    if (output) {
-      auto compiled = [&] {
-        const nb::gil_scoped_release release;
-        return takeResult(
-            mlir::runDefaultPipeline(std::move(input), environment, options));
-      }();
-      return nb::cast(std::move(compiled));
-    }
+/// Compile one program with an already resolved target and output default.
+[[nodiscard]] static nb::object compileSingleProgram(
+    PythonInputTypes& types, const nb::handle program, const nb::handle target,
+    const std::optional<mlir::TargetEnvironment>& targetEnvironment,
+    std::optional<OutputFormat> output, bool copy,
+    const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
+  auto input = programFromInput(types, program, copy);
+  if (targetEnvironment && !output) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
-      return takeResult(mlir::CompiledProgram::compile(std::move(input),
-                                                       environment, options));
+      return takeResult(mlir::CompiledProgram::compile(
+          std::move(input.program), *targetEnvironment, options));
     }();
     return nb::cast(std::move(compiled));
   }
-  if (output) {
-    throw nb::value_error("Device targets select their output automatically; "
-                          "use program_format to override it");
+
+  const auto selected = output.value_or(input.format);
+  std::optional<mlir::TargetEnvironment> environment;
+  if (!target.is_none()) {
+    auto payload = payloadForOutput(selected);
+    if (targetEnvironment) {
+      payload = payload.restrictCapabilities(
+          targetEnvironment->payloadSpecification());
+      environment.emplace(targetEnvironment->target(), std::move(payload));
+    } else {
+      environment.emplace(nb::cast<const mlir::CompilerTarget&>(target),
+                          std::move(payload));
+    }
   }
-  const auto device = resolveDevice(target);
-  auto environment = [&] {
-    const nb::gil_scoped_release release;
-    return takeResult(mlir::targetEnvironmentFromDevice(device, programFormat));
-  }();
-  auto input = programFromInput(program, inplace);
+  if (selected == OutputFormat::Qiskit) {
+    std::visit(
+        [](const auto& value) {
+          if constexpr (std::is_base_of_v<
+                            mlir::Program,
+                            std::remove_cvref_t<decltype(value)>>) {
+            if (value.module()->hasAttr("mqt.layout")) {
+              throw std::runtime_error(
+                  "Qiskit output requires input without layout metadata; use "
+                  "to_qiskit() for a layout-preserving conversion");
+            }
+          }
+        },
+        input.program);
+  }
+  const auto nativeOutput = selected == OutputFormat::Qiskit
+                                ? mlir::ProgramFormat::QC
+                                : static_cast<mlir::ProgramFormat>(selected);
+  const auto context = std::visit(
+      [](const auto& value) -> std::shared_ptr<mlir::MLIRContext> {
+        if constexpr (std::is_base_of_v<mlir::Program,
+                                        std::remove_cvref_t<decltype(value)>>) {
+          return value.context();
+        } else {
+          return nullptr;
+        }
+      },
+      input.program);
+  assert(context && "Python compiler inputs must be imported to MLIR");
   auto compiled = [&] {
     const nb::gil_scoped_release release;
-    return takeResult(
-        mlir::CompiledProgram::compile(std::move(input), environment, options));
+    return withDiagnostics<nb::exception_type::runtime_error>(
+        context.get(), "Compilation failed", [&] {
+          return environment
+                     ? mlir::runDefaultPipeline(std::move(input.program),
+                                                nativeOutput, *environment,
+                                                options)
+                     : mlir::runDefaultPipeline(std::move(input.program),
+                                                nativeOutput, qcoPipeline,
+                                                options);
+        });
   }();
+  if (selected == OutputFormat::Qiskit) {
+    auto qc = std::move(std::get<mlir::QCProgram>(compiled));
+    return environment
+               ? bindings::qiskit::exportCircuit(std::move(qc), *environment)
+               : bindings::qiskit::exportCircuit(std::move(qc));
+  }
   return nb::cast(std::move(compiled));
+}
+
+/// Compile a scalar input or a homogeneous sequence using one target snapshot.
+[[nodiscard]] static nb::object compilePythonProgram(
+    PythonInputTypes& types, const nb::handle program, const nb::handle target,
+    std::optional<OutputFormat> output, bool copy,
+    const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
+  if (!target.is_none() && qcoPipeline != "mqt-qco-default") {
+    throw nb::value_error(
+        "A custom QCO pipeline cannot be combined with a target");
+  }
+  if (!target.is_none() &&
+      (output == OutputFormat::QCImport || output == OutputFormat::QCO)) {
+    throw nb::value_error(
+        "QC_IMPORT and raw QCO output stop before target compilation");
+  }
+
+  std::optional<nb::tuple> programs;
+  const bool builtinSequence =
+      program.type().is(types.list) || program.type().is(types.tuple);
+  if (!nb::isinstance<nb::str>(program) &&
+      !nb::hasattr(program, "__fspath__") &&
+      !nb::isinstance<mlir::Program>(program) &&
+      !nb::isinstance<mlir::OpenQASMProgram>(program) &&
+      !nb::isinstance<nb::bytes>(program) &&
+      !nb::isinstance<nb::bytearray>(program) &&
+      !nb::isinstance<nb::memoryview>(program) &&
+      (builtinSequence || nb::isinstance(program, types.sequence))) {
+    if (builtinSequence || !types.inputType(program)) {
+      programs.emplace(program);
+      if (programs->empty()) {
+        return nb::list();
+      }
+      const nb::handle first = (*programs)[0];
+      const auto type = types.inputType(first);
+      for (size_t i = 0; i < programs->size(); ++i) {
+        const nb::handle item = (*programs)[i];
+        if (!type || (!item.type().is(first.type()) &&
+                      !types.inputType(item).is(type))) {
+          throw nb::type_error(("Program sequences must contain one supported "
+                                "input kind; invalid "
+                                "element at index " +
+                                std::to_string(i))
+                                   .c_str());
+        }
+      }
+    }
+  }
+
+  std::optional<mlir::TargetEnvironment> environment;
+  const bool compilerTarget = nb::isinstance<mlir::CompilerTarget>(target);
+  const bool deviceTarget =
+      nb::isinstance<qdmi::Device>(target) || nb::isinstance<nb::str>(target);
+  if (deviceTarget) {
+    const auto device = resolveDevice(target);
+    const nb::gil_scoped_release release;
+    environment = takeResult(mlir::targetEnvironmentFromDevice(device));
+  } else if (!target.is_none() && !compilerTarget) {
+    environment.emplace(
+        bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
+        bindings::qiskit::payloadSpecification(target));
+    output = output.value_or(OutputFormat::Qiskit);
+  }
+
+  if (!programs) {
+    return compileSingleProgram(types, program, target, environment, output,
+                                copy, qcoPipeline, options);
+  }
+  nb::list_builder results(programs->size());
+  for (const auto item : *programs) {
+    results.put(compileSingleProgram(types, item, target, environment, output,
+                                     copy, qcoPipeline, options));
+  }
+  return results.commit();
 }
 
 /// Compile or submit through the shared C++ QDMI adapter.
 [[nodiscard]] static qdmi::Job
-submitProgram(const nb::object& program, const nb::object& target,
-              int64_t numShots,
+submitProgram(PythonInputTypes& types, const nb::handle program,
+              const nb::handle target, int64_t numShots,
               std::optional<QDMI_Program_Format> programFormat,
               const std::optional<PythonCustomJobParameter>& custom1,
               const std::optional<PythonCustomJobParameter>& custom2,
@@ -615,7 +890,7 @@ submitProgram(const nb::object& program, const nb::object& target,
                                           params[1], params[2], params[3],
                                           params[4]));
   }
-  auto input = programFromInput(program, false);
+  auto input = programFromInput(types, program, true).program;
   const nb::gil_scoped_release release;
   return takeResult(
       mlir::submitProgram(device, std::move(input), numShots, programFormat,
@@ -624,14 +899,19 @@ submitProgram(const nb::object& program, const nb::object& target,
 }
 
 template <class Function>
-[[nodiscard]] static auto withQCOProgram(const nb::object& program,
+[[nodiscard]] static auto withQCOProgram(PythonInputTypes& types,
+                                         const nb::handle program,
                                          Function&& function) {
   if (nb::isinstance<mlir::QCOProgram>(program)) {
     return std::forward<Function>(function)(
         nb::cast<const mlir::QCOProgram&>(program));
   }
-  auto compiled = compileProgram(program, mlir::ProgramFormat::QCO, false,
-                                 "mqt-qco-default");
+  auto compiled = [&] {
+    auto input = programFromInput(types, program, true).program;
+    const nb::gil_scoped_release release;
+    return takeResult(
+        mlir::runDefaultPipeline(std::move(input), mlir::ProgramFormat::QCO));
+  }();
   return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
 }
 
@@ -713,16 +993,17 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
 }
 
 [[nodiscard]] static DenseMatrix
-buildDenseFunctionality(const nb::object& program) {
-  return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
+buildDenseFunctionality(PythonInputTypes& types, const nb::handle program) {
+  return withQCOProgram(types, program, [](const mlir::QCOProgram& qco) {
     dd::Package ddPackage(0);
     const auto matrix = buildQCOFunctionality(qco, ddPackage);
     return toDenseMatrix(matrix, ddPackage.qubits());
   });
 }
 
-[[nodiscard]] static DenseVector simulateDense(const nb::object& program) {
-  return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
+[[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,
+                                               const nb::handle program) {
+  return withQCOProgram(types, program, [](const mlir::QCOProgram& qco) {
     dd::Package ddPackage(0);
     auto func = entryFunc(qco);
     const auto state = withDiagnostics(
@@ -733,19 +1014,21 @@ buildDenseFunctionality(const nb::object& program) {
 }
 
 [[nodiscard]] static std::map<std::string, size_t>
-sample(const nb::object& program, size_t shots, uint64_t seed) {
-  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
+sample(PythonInputTypes& types, const nb::handle program, size_t shots,
+       uint64_t seed) {
+  return withQCOProgram(types, program, [&](const mlir::QCOProgram& qco) {
     return sampleQCO(qco, shots, seed);
   });
 }
 
+template <class Benchmark>
 [[nodiscard]] static mlir::QCProgram
-generateBenchmark(const std::string_view instanceSpecificationJSON) {
-  auto generated = bench::generate(instanceSpecificationJSON);
+generateBenchmark(const Benchmark& benchmark) {
+  auto generated = bench::generate(benchmark);
   if (mlir::failed(generated)) {
     throw std::runtime_error("failed to generate benchmark");
   }
-  return std::move(generated->program);
+  return std::move(*generated);
 }
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
@@ -757,32 +1040,35 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");
+  const auto inputTypes = std::make_shared<PythonInputTypes>();
+  [[maybe_unused]] const auto initialQiskitType = inputTypes->quantumCircuit();
 
-  m.def("_generate_benchmark", &generateBenchmark,
-        "instance_specification_json"_a,
-        "Generate the QC program described by an instance specification.");
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  m.def("_generate_benchmark", &generateBenchmark<bench::TYPE>, "benchmark"_a, \
+        "Generate the QC program for a benchmark instance.");
+#include "bench/BenchmarkFamilies.inc"
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
       .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")
       .value("ADAPTIVE", mlir::QIRProfile::Adaptive,
              "The QIR Adaptive Profile.");
-  nb::enum_<mlir::ProgramFormat>(m, "OutputFormat",
-                                 "Default compiler output formats.")
-      .value("QC_IMPORT", mlir::ProgramFormat::QCImport,
+  nb::enum_<OutputFormat>(m, "OutputFormat", "Default compiler output formats.")
+      .value("QC_IMPORT", OutputFormat::QCImport,
              "QC directly after frontend import.")
-      .value("QCO", mlir::ProgramFormat::QCO,
+      .value("QCO", OutputFormat::QCO,
              "QCO immediately after conversion, before optimization.")
-      .value("QCO_OPTIMIZED", mlir::ProgramFormat::QCOOptimized,
+      .value("QCO_OPTIMIZED", OutputFormat::QCOOptimized,
              "QCO after the configured optimization pipeline.")
-      .value("QC", mlir::ProgramFormat::QC,
-             "QC after the optimized QCO round trip.")
-      .value("OPENQASM3", mlir::ProgramFormat::OpenQASM3,
+      .value("QC", OutputFormat::QC, "QC after the optimized QCO round trip.")
+      .value("OPENQASM3", OutputFormat::OpenQASM3,
              "OpenQASM 3 after the optimized QCO round trip.")
-      .value("JEFF", mlir::ProgramFormat::Jeff, "Serializable ``jeff`` MLIR.")
-      .value("QIR_BASE", mlir::ProgramFormat::QIRBase,
-             "QIR for the Base Profile.")
-      .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
-             "QIR for the Adaptive Profile.");
+      .value("IQM_JSON", OutputFormat::IQMJSON,
+             "An IQM circuit for an explicit physical target.")
+      .value("JEFF", OutputFormat::Jeff, "Serializable ``jeff`` MLIR.")
+      .value("QIR_BASE", OutputFormat::QIRBase, "QIR for the Base Profile.")
+      .value("QIR_ADAPTIVE", OutputFormat::QIRAdaptive,
+             "QIR for the Adaptive Profile.")
+      .value("QISKIT", OutputFormat::Qiskit, "A Qiskit QuantumCircuit.");
 
   nb::enum_<mlir::PayloadEncoding>(m, "PayloadEncoding",
                                    "Payload representation encoding.")
@@ -855,9 +1141,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .def_prop_ro(
           "capabilities",
           [](const mlir::PayloadSpecification& environment) {
-            return std::vector<mlir::ProgramCapability>(
-                environment.capabilities().begin(),
-                environment.capabilities().end());
+            return toPythonList(environment.capabilities());
           },
           "The effective payload capabilities.")
       .def_prop_ro("optional_capabilities_known",
@@ -885,7 +1169,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_prop_ro(
           "unit",
           [](const mlir::CompilerTarget::DurationUnit& value) {
-            return value.unit().str();
+            return std::string_view(value.unit());
           },
           "The reported duration unit.")
       .def_prop_ro("scale_factor",
@@ -893,7 +1177,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                    "The multiplier applied to raw timing values.");
 
   auto targetSite = nb::class_<mlir::CompilerTarget::Site>(
-      compilerTarget, "Site", "A hardware site and its optional metadata.");
+      compilerTarget, "Site", nb::pooled(),
+      "A hardware site and its optional metadata.");
   targetSite
       .def(
           "__init__",
@@ -912,8 +1197,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           "name",
           [](const mlir::CompilerTarget::Site& site) {
             const auto name = site.name();
-            return name ? std::optional<std::string>(name->str())
-                        : std::nullopt;
+            return name ? std::optional<std::string_view>(*name) : std::nullopt;
           },
           "The reported site name, if available.")
       .def_prop_ro("t1", &mlir::CompilerTarget::Site::t1,
@@ -939,8 +1223,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_prop_ro(
           "sites",
           [](const mlir::CompilerTarget::SiteTuple& tuple) {
-            return std::vector<mlir::CompilerTarget::SiteId>(
-                tuple.sites().begin(), tuple.sites().end());
+            return toPythonList(tuple.sites());
           },
           "The ordered target site identifiers.")
       .def_prop_ro("duration", &mlir::CompilerTarget::SiteTuple::duration,
@@ -983,7 +1266,7 @@ Capability construction requires a positive minimum.)pb")
            "width"_a, "Whether this arity accepts a concrete width.");
 
   auto targetOperation = nb::class_<mlir::CompilerTarget::OperationCapability>(
-      compilerTarget, "OperationCapability",
+      compilerTarget, "OperationCapability", nb::pooled(),
       "A target operation capability, calibration, and ordered "
       "applicability.");
   targetOperation
@@ -1049,13 +1332,13 @@ Capability construction requires a positive minimum.)pb")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
-            return operation.name().str();
+            return std::string_view(operation.name());
           },
           "The exact reported operation name.")
       .def_prop_ro(
           "canonical_name",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
-            return operation.canonicalName().str();
+            return std::string_view(operation.canonicalName());
           },
           "The normalized compiler operation name.")
       .def_prop_ro("arity", &mlir::CompilerTarget::OperationCapability::arity,
@@ -1066,24 +1349,20 @@ Capability construction requires a positive minimum.)pb")
       .def_prop_ro(
           "site_tuples",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
-            return std::vector<mlir::CompilerTarget::SiteTuple>(
-                operation.siteTuples().begin(), operation.siteTuples().end());
+            return toPythonList(operation.siteTuples());
           },
           "Supported ordered placements with optional calibration; empty means "
           "general applicability.")
       .def_prop_ro(
           "parameter_bounds",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
-            return std::vector(operation.parameterBounds().begin(),
-                               operation.parameterBounds().end());
+            return toPythonList(operation.parameterBounds());
           },
           "Inclusive parameter intervals; None leaves a parameter unbounded.")
       .def_prop_ro(
           "fixed_parameters",
           [](const mlir::CompilerTarget::OperationCapability& operation) {
-            return std::vector<std::optional<double>>(
-                operation.fixedParameters().begin(),
-                operation.fixedParameters().end());
+            return toPythonList(operation.fixedParameters());
           },
           R"pb(Fixed values or None per parameter; empty means unrestricted.
 
@@ -1178,8 +1457,7 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
       .def_prop_ro(
           "couplings",
           [](const mlir::CompilerTarget::Connectivity& value) {
-            return std::vector<mlir::CompilerTarget::Coupling>(
-                value.couplings().begin(), value.couplings().end());
+            return toPythonList(value.couplings());
           },
           "The explicit couplings, if present.");
 
@@ -1222,8 +1500,7 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget::NativeOperations& value) {
-            return std::vector<mlir::CompilerTarget::OperationCapability>(
-                value.operations().begin(), value.operations().end());
+            return toPythonList(value.operations());
           },
           "The explicit operations, if present.");
 
@@ -1370,8 +1647,7 @@ Raises:
           "name",
           [](const mlir::CompilerTarget& target) {
             const auto name = target.name();
-            return name ? std::optional<std::string>(name->str())
-                        : std::nullopt;
+            return name ? std::optional<std::string_view>(*name) : std::nullopt;
           },
           "The target name, if available.")
       .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
@@ -1381,8 +1657,7 @@ Raises:
       .def_prop_ro(
           "sites",
           [](const mlir::CompilerTarget& target) {
-            return std::vector<mlir::CompilerTarget::Site>(
-                target.sites().begin(), target.sites().end());
+            return toPythonList(target.sites());
           },
           "Detailed sites in compiler-vertex order.")
       .def_prop_ro("connectivity_kind", &mlir::CompilerTarget::connectivityKind,
@@ -1390,8 +1665,7 @@ Raises:
       .def_prop_ro(
           "couplings",
           [](const mlir::CompilerTarget& target) {
-            return std::vector<mlir::CompilerTarget::Coupling>(
-                target.couplings().begin(), target.couplings().end());
+            return toPythonList(target.couplings());
           },
           "Canonical undirected couplings in target site IDs.")
       .def_prop_ro("native_operations_kind",
@@ -1400,15 +1674,13 @@ Raises:
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget& target) {
-            return std::vector<mlir::CompilerTarget::OperationCapability>(
-                target.operations().begin(), target.operations().end());
+            return toPythonList(target.operations());
           },
           "Operation capabilities in reported order.")
       .def_prop_ro(
           "supported_gates",
           [](const mlir::CompilerTarget& target) {
-            return std::vector<mlir::CompilerTarget::GateKind>(
-                target.supportedGates().begin(), target.supportedGates().end());
+            return toPythonList(target.supportedGates());
           },
           "Recognized native gates supported by the target.")
       .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
@@ -1570,7 +1842,7 @@ excludes nested modules.)pb")
               "See :meth:`Program.operation_counts`.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
-      m, "QCProgram", R"pb(A compiler program in the QC dialect.
+      m, "QCProgram", nb::pooled(), R"pb(A compiler program in the QC dialect.
 
 QC programs use reference semantics and represent frontend quantum programs
 before conversion to QCO.)pb");
@@ -1598,11 +1870,7 @@ Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
 
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
-          "from_qiskit",
-          [](const nb::object& circuit) {
-            return bindings::qiskit::importCircuit(circuit);
-          },
-          "circuit"_a,
+          "from_qiskit", &bindings::qiskit::importCircuit, "circuit"_a,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
                   "-> QCProgram"),
           R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
@@ -1620,15 +1888,20 @@ Args:
           "Normalize scoped global phases in place.")
       .def(
           "to_openqasm3",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
+          [](mlir::QCProgram& program, const bool copy) {
+            auto source = copiedOrConsumed(program, copy);
+            const auto context = source.context();
             return withDiagnostics<nb::exception_type::runtime_error>(
-                program.module().getContext(),
-                "cannot export QC program to OpenQASM 3",
-                [&] { return program.toOpenQASM3(); });
+                context.get(), "cannot export QC program to OpenQASM 3",
+                [&] { return std::move(source).intoOpenQASM3(); });
           },
-          "Clean up and emit this QC program as OpenQASM 3 without QCO "
-          "optimization.")
+          nb::kw_only(), "copy"_a = false,
+          R"pb(Clean up and emit this QC program as OpenQASM 3 without QCO optimization.
+
+The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
+
+Args:
+    copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_qiskit",
           [](mlir::QCProgram& program, const mlir::CompilerTarget* target,
@@ -1660,7 +1933,7 @@ Args:
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to QCO.
 
-Set ``copy=True`` to preserve it.)pb")
+The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
       .def(
           "to_qir",
           [](mlir::QCProgram& value, const mlir::QIRProfile profile,
@@ -1671,9 +1944,11 @@ Set ``copy=True`` to preserve it.)pb")
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
 
-Entry results must be direct measurements or CBit registers. Other scalar
-outputs are unsupported. The generated QIR returns a zero execution status.
-Set ``copy=True`` to preserve it.)pb");
+Entry results may be direct measurements or CBit registers. Adaptive Profile
+also supports computed Boolean (``i1``) results. Other scalar outputs are
+unsupported. The generated QIR returns a zero execution status.
+Base conversion unrolls static counted loops; Adaptive conversion retains them.
+The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
@@ -1814,7 +2089,7 @@ Args:
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to QC.
 
-Set ``copy=True`` to preserve it.)pb")
+The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
       .def(
           "to_jeff",
           [](mlir::QCOProgram& value, const bool copy) {
@@ -1824,7 +2099,7 @@ Set ``copy=True`` to preserve it.)pb")
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to ``jeff`` MLIR.
 
-Set ``copy=True`` to preserve it.)pb");
+The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 
   registerInspection(qcProgram);
   registerInspection(qcoProgram);
@@ -1944,7 +2219,16 @@ segment data is copied or flattened.)pb")
           nb::kw_only(), "copy"_a = false,
           R"pb(Convert this program to QCO.
 
-Set ``copy=True`` to preserve it.)pb");
+The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
+
+  nb::class_<mlir::IQMJSONProgram>(
+      m, "IQMJSONProgram", "An immutable output-only IQM circuit object.")
+      .def_prop_ro("source", &mlir::IQMJSONProgram::source,
+                   "The emitted IQM JSON source.")
+      .def("write", &FallibleMemberAdapter<&mlir::IQMJSONProgram::write>::call,
+           "path"_a, "Write the IQM JSON source to a file.")
+      .def("__str__", &mlir::IQMJSONProgram::str,
+           "Return the emitted IQM JSON source.");
 
   nb::class_<mlir::OpenQASMProgram>(
       m, "OpenQASMProgram",
@@ -1968,25 +2252,59 @@ LLVM bitcode.)pb");
            "Run the standard QIR cleanup pipeline in place.")
       .def_prop_ro("profile", &mlir::QIRProgram::profile,
                    "The QIR target profile used to produce this program.")
-      .def_prop_ro(
-          "llvm_ir",
-          [](const mlir::QIRProgram& value) {
-            requireValid(value);
-            return takeResult(value.llvmIR());
+      .def(
+          "to_llvm_ir",
+          [](mlir::QIRProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "cannot export QIR as LLVM IR",
+                [&] { return std::move(source).intoLLVMIR(); });
           },
-          "The program as textual LLVM IR.")
+          nb::kw_only(), "copy"_a = false,
+          R"pb(Consume this program and emit LLVM IR text.
+
+The source is consumed even on failure. Set ``copy=True`` to preserve it.
+
+Args:
+    copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_bitcode",
-          [](const mlir::QIRProgram& value) {
-            requireValid(value);
-            const auto bytes = takeResult(value.toBitcode());
-            return nb::bytes(reinterpret_cast<const char*>(bytes.data()),
-                             bytes.size());
+          [](mlir::QIRProgram& value, const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            const auto context = source.context();
+            std::string bytes;
+            llvm::raw_string_ostream stream(bytes);
+            withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "cannot export QIR as bitcode",
+                [&] { return std::move(source).intoBitcode(stream); });
+            return nb::bytes(bytes.data(), bytes.size());
           },
-          "Serialize this program as LLVM bitcode.")
-      .def("write_bitcode",
-           &FallibleMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
-           "path"_a, "Write this program as LLVM bitcode.");
+          nb::kw_only(), "copy"_a = false,
+          R"pb(Consume this program and emit LLVM bitcode.
+
+The source is consumed even on failure. Set ``copy=True`` to preserve it.
+
+Args:
+    copy: Preserve the source program by exporting a copy.)pb")
+      .def(
+          "write_bitcode",
+          [](mlir::QIRProgram& value, const std::filesystem::path& path,
+             const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            const auto context = source.context();
+            withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "cannot write QIR bitcode",
+                [&] { return std::move(source).writeBitcode(path); });
+          },
+          "path"_a, nb::kw_only(), "copy"_a = false,
+          R"pb(Consume this program and write LLVM bitcode to a file.
+
+The source is consumed even on failure. Set ``copy=True`` to preserve it.
+
+Args:
+    path: Destination file.
+    copy: Preserve the source program by exporting a copy.)pb");
 
   nb::module_::import_("mqt.core.dd");
 
@@ -2037,13 +2355,15 @@ Args:
 
 Returns:
     Histogram keys use conventional count-string order. The last returned
-    register comes first, and each register is MSB-first. If no CBit result
-    exists, final ``measureAll`` bitstrings are used instead.
+    CBit register or Boolean value comes first, and each register is MSB-first.
+    Other classical output types are rejected. Without classical results,
+    final ``measureAll`` bitstrings are used instead.
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");
 
-  m.def("build_functionality", &buildDenseFunctionality, "program"_a,
+  m.def("build_functionality",
+        PythonInputAdapter<&buildDenseFunctionality>{inputTypes}, "program"_a,
         nb::sig("def build_functionality(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
                 "JeffProgram | OpenQASMProgram) -> "
@@ -2061,7 +2381,7 @@ Raises:
     ValueError: When the program is unsupported or the matrix dimensions exceed
         addressable memory.)pb");
 
-  m.def("simulate", &simulateDense, "program"_a,
+  m.def("simulate", PythonInputAdapter<&simulateDense>{inputTypes}, "program"_a,
         nb::sig("def simulate(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
                 "JeffProgram | OpenQASMProgram) -> "
@@ -2069,10 +2389,11 @@ Raises:
                 "{'shape': (None,)}]"),
         R"pb(Simulate a closed compiler input from the all-zero state.
 
-The DD package is managed internally. Terminal measurements that only assemble
-returned classical registers do not collapse the state. Mid-circuit measurement
-feedback and resets are unsupported; use {py:meth}`QCOProgram.simulate` with an
-explicit DD package for those workflows or for a custom initial state.
+The DD package is managed internally. Terminal measurements returned directly
+or stored in returned classical registers do not collapse the state.
+Mid-circuit measurement feedback and resets are unsupported; use
+:py:meth:`QCOProgram.simulate` with an explicit DD package for those workflows
+or for a custom initial state.
 
 Args:
     program: Compiler input to lower directly to QCO.
@@ -2085,7 +2406,8 @@ Raises:
     ValueError: When the program is not closed, is unsupported for statevector
         simulation, or the statevector dimensions exceed addressable memory.)pb");
 
-  m.def("sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
+  m.def("sample", PythonInputAdapter<&sample>{inputTypes}, "program"_a,
+        "shots"_a = 1024U, "seed"_a = 0U,
         nb::sig("def sample(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
                 "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
@@ -2095,31 +2417,6 @@ Raises:
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
 contracts.)pb");
-
-  m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
-        "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
-        "qco_pipeline"_a = "mqt-qco-default",
-        "options"_a = mlir::CompilationOptions{},
-        R"pb(
-Run the coordinated default MQT compiler pipeline.
-
-Input source strings, files, Qiskit
-{py:class}`~qiskit.circuit.QuantumCircuit` objects, and typed compiler programs
-can be combined with any supported output format. Typed program inputs are
-copied by default; set ``inplace=True`` to consume them. Use the typed programs
-directly to construct a custom pipeline stage by stage.
-
-Args:
-    program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
-    output: The requested output stage of the compiler pipeline.
-    inplace: Whether a typed input program may be consumed.
-    qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
-        cannot be combined with target compilation.
-    options: Shared compilation controls.
-
-Returns:
-    A typed compiler program for the requested output format.
-)pb");
 
   nb::class_<mlir::CompiledProgram>(
       m, "CompiledProgram", "A compiled program ready for QDMI submission.")
@@ -2149,27 +2446,60 @@ Returns:
           },
           "The payload format and capabilities used for compilation.");
 
-  m.def("compile_program", &compileProgramForTarget, "program"_a, nb::kw_only(),
-        "target"_a, "program_format"_a = nb::none(), "output"_a = nb::none(),
-        "inplace"_a = false, "options"_a = mlir::CompilationOptions{},
-        R"pb(Compile for a device ID, open device, or explicit compiler target.
+  m.def(
+      "compile_program", PythonInputAdapter<&compilePythonProgram>{inputTypes},
+      "program"_a, nb::kw_only(), "target"_a = nb::none(),
+      "output"_a = nb::none(), "copy"_a = false,
+      "qco_pipeline"_a = "mqt-qco-default",
+      "options"_a = mlir::CompilationOptions{},
+      R"pb(Compile a program or a homogeneous sequence for an optional hardware target.
 
-Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
-(binary, text). Use ``program_format`` to select a format explicitly.
-Submit the returned :class:`CompiledProgram` with :func:`submit_program`.
+A sequence returns a list in input order, including for empty and singleton
+inputs. Elements must share one supported input kind; subclasses are accepted.
+Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
-An explicit :class:`CompilerTarget` requires ``output`` to return a typed
-program, or ``program_format`` to return a :class:`CompiledProgram`.
-Typed inputs are copied unless ``inplace=True``.)pb");
+An explicit ``output`` selects each result's representation. Without it, a
+Qiskit target selects QuantumCircuit and a QDMI device selects
+:class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
+retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
+QCO inputs return optimized QCO.
 
-  m.def("submit_program", &submitProgram, "program"_a, nb::kw_only(),
-        "target"_a, "num_shots"_a = 1024, "program_format"_a = nb::none(),
-        "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-        "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-        "custom5"_a = nb::none(), "options"_a = nb::none(),
+Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
+paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input
+kinds are checked before compilation. Compilation stops at the first failure
+and returns no results; processed inputs, including the failing input, may be
+consumed, while later inputs remain usable.
+
+Args:
+    program: Source text, a file path, a Qiskit circuit, a typed compiler program,
+        or a homogeneous sequence of these inputs.
+    target: A CompilerTarget, Qiskit BackendV2 or Target, QDMI Device, or device ID.
+    output: The returned representation. QC_IMPORT and raw QCO are checkpoints
+        before target compilation and cannot be combined with a target.
+    copy: Preserve typed inputs by compiling copies. Defaults to False.
+    qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
+        Custom pipelines require no target.
+    options: Shared compilation controls.
+
+Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
+(binary, text). Select an exact execution format with
+:func:`submit_program` and its ``program_format`` argument. An explicit output
+need not be a device's execution format. Jeff output does not retain hardware
+placement.)pb");
+
+  m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
+        "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
+        "program_format"_a = nb::none(), "custom1"_a = nb::none(),
+        "custom2"_a = nb::none(), "custom3"_a = nb::none(),
+        "custom4"_a = nb::none(), "custom5"_a = nb::none(),
+        "options"_a = nb::none(),
         R"pb(Compile source or submit a compiled program to a device.
 
-``target`` accepts a registered device ID or an open device.)pb");
+``target`` accepts a registered device ID or an open device. For source input,
+``program_format`` selects the exact QDMI execution format, including text or
+binary QIR; omitting it selects a supported native format. A compiled program
+retains its payload and must match the destination contract.)pb");
 }
 
 } // namespace mqt

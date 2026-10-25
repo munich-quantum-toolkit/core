@@ -283,13 +283,9 @@ fp kahan(const fp a, const fp b, const fp c, const fp d) {
 } // namespace
 
 ComplexValue operator*(const ComplexValue& c1, const ComplexValue& c2) {
-  // Implements the CMulKahan algorithm from https://hal.science/hal-01512760v2
-  // p1 = RN(c1.r * c2.r)
-  // R = RN(RN(p1 - c1.i * c2.i) + RN(c1.r * c2.r - p1))
-  const auto r = kahan(-c1.i, c1.r, c2.i, c2.r);
-  // p3 = RN(c1.r * c2.i)
-  // I = RN(RN(p3 + c1.i * c2.r) + RN(c1.r * c2.i - p3))
-  const auto i = kahan(c1.i, c1.r, c2.r, c2.i);
+  // Trade cancellation accuracy for throughput in this hot path.
+  const auto r = std::fma(-c1.i, c2.i, c1.r * c2.r);
+  const auto i = std::fma(c1.i, c2.r, c1.r * c2.i);
   return {r, i};
 }
 

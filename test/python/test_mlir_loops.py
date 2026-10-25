@@ -19,45 +19,35 @@ from qiskit.circuit import Parameter
 from qiskit.circuit.classical import expr, types
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.dd import DDPackage
-from mqt.core.mlir import JeffProgram, QCProgram
+from mqt.core.mlir import JeffProgram, OpenQASMProgram, QCOProgram, QCProgram, sample, simulate
 
 if not supports_qiskit_translation():
     pytest.skip(f"No registered Qiskit adapter for {qiskit.__version__}", allow_module_level=True)
 
 
-def observe(program: QCProgram) -> int:
+def observe(program: QCProgram | QCOProgram | QuantumCircuit | OpenQASMProgram | str) -> int:
     """Return the deterministic classical result using the existing interpreter."""
-    counts = program.to_qco(copy=True).sample(shots=1, seed=1)
+    counts = sample(program, shots=1, seed=1)
     assert len(counts) == 1
     return int(next(iter(counts)).replace(" ", ""), 2)
-
-
-def amplitude(program: QCProgram) -> complex:
-    """Return the single-qubit zero-state amplitude."""
-    package = DDPackage(1)
-    result = program.to_qco(copy=True).simulate(package.zero_state(1), package, seed=1)
-    value = complex(result.get_vector()[0])
-    package.dec_ref_vec(result)
-    return value
 
 
 def check_paths(program: QCProgram, expected: int) -> None:
     """Check observable behavior, serialized interchange, and source preservation."""
     original = program.ir
     assert observe(program) == expected
-    source = program.to_openqasm3().source
-    assert source == program.to_openqasm3().source
-    assert observe(QCProgram.from_openqasm_str(source)) == expected
+    source = program.to_openqasm3(copy=True).source
+    assert source == program.to_openqasm3(copy=True).source
+    assert observe(source) == expected
     qiskit = program.to_qiskit(copy=True)
     # Each export owns fresh native variables; their serialized structure is stable.
     assert qasm3.dumps(qiskit) == qasm3.dumps(program.to_qiskit(copy=True))
-    assert observe(QCProgram.from_qiskit(qiskit)) == expected
+    assert observe(qiskit) == expected
     jeff = program.to_qco(copy=True).to_jeff()
-    restored = JeffProgram.from_bytes(jeff.to_bytes()).to_qco().to_qc()
+    restored = JeffProgram.from_bytes(jeff.to_bytes()).to_qco()
     assert observe(restored) == expected
-    assert observe(QCProgram.from_qiskit(restored.to_qiskit(copy=True))) == expected
-    assert observe(QCProgram.from_openqasm_str(restored.to_openqasm3().source)) == expected
+    assert observe(restored.to_qiskit(copy=True)) == expected
+    assert observe(restored.to_qc().to_openqasm3()) == expected
     assert program.ir == original
 
 
@@ -84,7 +74,7 @@ def test_do_while_round_trip(iterations: int) -> None:
     imported = QCProgram.from_qiskit(restored)
     assert imported.ir.count("scf.while") == 1
     assert "scf.if" not in imported.ir
-    qasm = QCProgram.from_openqasm_str(program.to_openqasm3().source)
+    qasm = QCProgram.from_openqasm_str(program.to_openqasm3(copy=True).source)
     assert qasm.ir.count("scf.while") == 1
     assert "scf.if" not in qasm.ir
     check_paths(program, iterations % 2)
@@ -105,14 +95,30 @@ while (counter < 2) {
 }
 result = false;
 """)
-    restored = QCProgram.from_qiskit(program.to_qiskit(copy=True))
-    assert amplitude(program) == pytest.approx(1j)
-    assert amplitude(restored) == pytest.approx(1j)
+    assert simulate(program)[0] == pytest.approx(1j)
+    restored = program.to_qiskit()
+    assert simulate(restored)[0] == pytest.approx(1j)
+
+
+def test_sampling_with_loop_dependent_gates() -> None:
+    """Each qubit receives rotations by 2 pi, 3 pi, and 4 pi."""
+    program = QCProgram.from_openqasm_str("""
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+for int i in [0:2] {
+  for int j in [0:2] {
+    ry((i + 2) * pi) q[j];
+  }
+}
+bit[3] c = measure q;
+""").to_qco()
+    assert sample(program, shots=128, seed=17) == {"111": 128}
 
 
 @pytest.mark.parametrize("stale", [False, True])
 def test_wide_register_condition_in_do_while(*, stale: bool) -> None:
-    """Preserve wide snapshots across stores in OpenQASM loop conditions."""
+    """Preserve wide snapshots across stores in loop conditions."""
     read = "%bits = cbit.read %out : !cbit.reg<65> -> i65"
     program = QCProgram.from_mlir_str(f"""
 module {{
@@ -144,21 +150,8 @@ module {{
   }}
 }}
 """)
-    if stale:
-        with pytest.raises(RuntimeError, match="stale classical snapshot"):
-            program.to_qiskit(copy=True)
-        assert observe(QCProgram.from_openqasm_str(program.to_openqasm3().source)) == 1 << 64
-    else:
-        check_paths(program, (1 << 64) | 1)
-        assert program.to_qiskit().num_clbits == 65
-
-
-def test_unused_wide_qiskit_local_is_rejected() -> None:
-    """Wide register comparison support does not permit wide scalar locals."""
-    circuit = QuantumCircuit(1, 1)
-    circuit.add_uninitialized_var(expr.Var.new("wide", types.Uint(65)))
-    with pytest.raises(RuntimeError, match=r"local variables.*64"):
-        QCProgram.from_qiskit(circuit)
+    check_paths(program, (1 << 64) | int(not stale))
+    assert program.to_qiskit().num_clbits == 65
 
 
 def test_unequal_tuples_swaps_and_float_state() -> None:
@@ -455,14 +448,14 @@ module {
 """)
     original = program.ir
     with pytest.raises(RuntimeError, match="OpenQASM") as qasm_error:
-        program.to_openqasm3()
+        program.to_openqasm3(copy=True)
     assert "unsupported-loop.mlir" in str(qasm_error.value)
     assert "i128" in str(qasm_error.value)
-    with pytest.raises(RuntimeError, match="Qiskit") as qiskit_error:
-        program.to_qiskit(copy=True)
-    assert "scf.while" in str(qiskit_error.value)
-    assert "unsupported-loop.mlir" in str(qiskit_error.value)
+    assert observe(program.to_qiskit(copy=True)) == 0
     assert program.ir == original
+    with pytest.raises(RuntimeError, match="OpenQASM"):
+        program.to_openqasm3()
+    assert not program.is_valid
 
 
 def test_runtime_gate_parameter_is_distinct_from_local_state() -> None:

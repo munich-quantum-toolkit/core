@@ -17,6 +17,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_magic_state_distillation.cpp
       register_modular_multiplier.cpp
       register_multiplexer.cpp
+      register_qaoa.cpp
       register_qft.cpp
       register_qft_adder.cpp
       register_qpe.cpp
@@ -39,9 +40,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
   # install the Python stub files in editable mode for better IDE support
   if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
     file(GLOB_RECURSE BENCH_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/bench/*.pyi)
-    install(
-      FILES ${BENCH_PYI_FILES}
-      DESTINATION ./bench
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+    install(FILES ${BENCH_PYI_FILES} DESTINATION ./bench COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
 endif()

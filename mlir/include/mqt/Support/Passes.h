@@ -21,6 +21,9 @@ namespace mlir {
 class ModuleOp;
 class OpPassManager;
 class PassManager;
+namespace mqt {
+class PayloadSpecAttr;
+} // namespace mqt
 } // namespace mlir
 
 /// Run a pass pipeline on valid IR and verify its output.
@@ -49,8 +52,13 @@ void registerMQTCompilerPasses();
 /// Populate the default QCO optimization pipeline.
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 
-/// Prepare reusable QC functions and modifiers for QIR conversion.
-void populateQIRPreparationPipeline(mlir::OpPassManager& pm);
+/// Prepare QC functions, modifiers, and classical expressions for QIR.
+///
+/// Base QIR uses payload legalization to expand static counted loops within
+/// its cloning budget. The QIR conversion checks remaining control flow.
+/// Hardware metadata is not required.
+void populateQIRPreparationPipeline(mlir::OpPassManager& pm,
+                                    mlir::mqt::PayloadSpecAttr payload);
 
 /// Populate the qubit reuse pipeline including its preparation passes.
 void populateQubitReusePipeline(mlir::OpPassManager& pm);

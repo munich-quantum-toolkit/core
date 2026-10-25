@@ -268,14 +268,10 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
       reg.array = storage;
       if (op.getInitialization() == cbit::Initialization::Zero) {
         rewriter.setInsertionPoint(op);
-        auto zero = LLVM::ConstantOp::create(rewriter, loc,
-                                             rewriter.getI8IntegerAttr(0));
-        auto null = LLVM::ZeroOp::create(rewriter, loc, ptrType);
-        auto end = LLVM::GEPOp::create(rewriter, loc, ptrType, i1Type, null,
-                                       ValueRange{size});
-        auto bytes =
-            LLVM::PtrToIntOp::create(rewriter, loc, rewriter.getI64Type(), end);
-        LLVM::MemsetOp::create(rewriter, loc, storage, zero, bytes, false);
+        auto zero = LLVM::ZeroOp::create(
+            rewriter, loc,
+            LLVM::LLVMArrayType::get(i1Type, op.getType().getWidth()));
+        LLVM::StoreOp::create(rewriter, loc, zero, storage);
       }
       rewriter.replaceOp(op, storage);
       return success();

@@ -153,7 +153,7 @@ build = [
   "vcs-versioning>=2.3",
 ]
 cpp-lint = [
-  "cpp-linter==1.14.1",
+  "cpp-linter==1.15",
   "nanobind~=3.1.0",
 ]
 test-base = [
@@ -238,7 +238,7 @@ wheel.py-api = "cp315t"
 
 
 [tool.uv]
-required-version = ">=0.5.20"
+required-version = ">=0.13.4"
 cache-keys = [
   { file = "pyproject.toml" },
   { git = { commit = true, tags = true } },
@@ -408,6 +408,9 @@ extend-ignore-re = [
   "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on", # ignore block
   "FoMaC"
 ]
+
+[tool.typos.default.extend-identifiers]
+MemCpyOptPass = "MemCpyOptPass"
 
 [tool.typos.default.extend-words]
 wille = "wille"

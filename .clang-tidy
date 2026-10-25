@@ -38,6 +38,9 @@ Checks: |
   -*-prefer-static-over-anonymous-namespace
 
 CheckOptions:
+  # LLVM JSON uses non-POD key/value pairs as an initializer-list API.
+  - key: modernize-use-designated-initializers.RestrictToPODTypes
+    value: true
   - key: readability-trailing-comma.SingleLineCommaPolicy
     value: Ignore
   - key: readability-identifier-naming.ClassCase

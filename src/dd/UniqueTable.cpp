@@ -15,7 +15,7 @@
 
 #include "statistics/StatisticsJson.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <bit>
@@ -39,18 +39,23 @@ UniqueTable::UniqueTable(MemoryManager& manager,
 
 void UniqueTable::resize(const std::size_t nVars) {
   const auto oldSize = tables.size();
-  for (auto i = nVars; i < oldSize; ++i) {
-    entryCount_ -= stats[i].numEntries;
+  if (nVars < oldSize) {
+    throw std::invalid_argument("A unique table cannot be shrunk.");
+  }
+  tables.resize(nVars);
+  try {
+    stats.resize(nVars);
+    for (auto i = oldSize; i < nVars; ++i) {
+      tables[i].resize(cfg.nBuckets);
+      stats[i].entrySize = sizeof(Bucket);
+      stats[i].numBuckets = cfg.nBuckets;
+    }
+  } catch (...) {
+    tables.resize(oldSize);
+    stats.resize(oldSize);
+    throw;
   }
   cfg.nVars = nVars;
-  tables.resize(nVars);
-  // TODO: release entries for removed levels when shrinking populated tables.
-  stats.resize(nVars);
-  for (auto i = oldSize; i < nVars; ++i) {
-    tables[i].resize(cfg.nBuckets);
-    stats[i].entrySize = sizeof(Bucket);
-    stats[i].numBuckets = cfg.nBuckets;
-  }
 }
 
 bool UniqueTable::possiblyNeedsCollection() const {
@@ -114,17 +119,18 @@ void UniqueTable::clear() {
 };
 
 const UniqueTableStatistics&
-UniqueTable::getStats(const std::size_t idx) const noexcept {
+UniqueTable::getStats(const std::size_t idx) const {
   return stats.at(idx);
 }
 
-nlohmann::basic_json<> toJson(const UniqueTable& table,
-                              const bool includeIndividualTables) {
+void writeJson(llvm::json::OStream& json, const UniqueTable& table,
+               const bool includeIndividualTables, const size_t activeEntries) {
   const auto& stats = table.getStats();
   if (std::ranges::all_of(stats, [](const UniqueTableStatistics& stat) {
         return stat.peakNumEntries == 0U;
       })) {
-    return "unused";
+    json.value("unused");
+    return;
   }
 
   UniqueTableStatistics totalStats;
@@ -140,16 +146,20 @@ nlohmann::basic_json<> toJson(const UniqueTable& table,
     totalStats.gcRuns = std::max(totalStats.gcRuns, stat.gcRuns);
   }
 
-  nlohmann::basic_json<> j;
-  j["total"] = toJson(totalStats);
-  if (includeIndividualTables) {
-    std::size_t v = 0U;
-    for (const auto& stat : stats) {
-      j[std::to_string(v)] = toJson(stat);
-      ++v;
+  json.object([&] {
+    json.attributeBegin("total");
+    writeJson(json, totalStats, activeEntries);
+    json.attributeEnd();
+    if (includeIndividualTables) {
+      size_t v = 0U;
+      for (const auto& stat : stats) {
+        json.attributeBegin(std::to_string(v));
+        writeJson(json, stat);
+        json.attributeEnd();
+        ++v;
+      }
     }
-  }
-  return j;
+  });
 }
 
 std::size_t UniqueTable::getNumEntries() const noexcept { return entryCount_; }

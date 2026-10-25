@@ -88,10 +88,18 @@ struct ProgramCapability {
 /// contains all optional device capabilities.
 class PayloadSpecification {
 public:
+  /// Return compiler-supported capabilities for OpenQASM 3 or a QIR profile.
+  ///
+  /// Optional device capabilities remain unknown until supplied by a target.
+  [[nodiscard]] static llvm::Expected<PayloadSpecification>
+  forProgramFormat(ProgramFormat format,
+                   PayloadEncoding encoding = PayloadEncoding::Text);
+
   /// Create and validate a selected payload specification.
   ///
   /// Numeric versions accept one to three components; omitted components are
   /// zero, and the stored version always uses major.minor.patch.
+  /// An empty version identifies an unversioned format.
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(PayloadFormat format, std::vector<ProgramCapability> capabilities = {},
          bool optionalCapabilitiesKnown = false);
@@ -111,6 +119,14 @@ public:
 
   /// Return whether optional capability metadata is complete.
   [[nodiscard]] bool optionalCapabilitiesKnown() const noexcept;
+
+  /// Restrict capabilities to those supported by both payloads.
+  ///
+  /// Keep this format. Across different formats, only structural control-flow
+  /// capabilities are comparable; format-specific capabilities remain
+  /// unchanged.
+  [[nodiscard]] PayloadSpecification
+  restrictCapabilities(const PayloadSpecification& other) const;
 
   /// Whether generated switches may have arbitrary nesting and case counts.
   [[nodiscard]] bool supportsUnrestrictedMultiwayBranching() const noexcept;

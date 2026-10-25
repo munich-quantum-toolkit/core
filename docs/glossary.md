@@ -427,6 +427,12 @@ continued fraction
   called convergents, give rational approximations used to recover candidate
   exponents from measured phases in Shor's algorithm.
 
+QAOA
+quantum approximate optimization algorithm
+  **Preferred term:** quantum approximate optimization algorithm. **Accepted
+  abbreviation:** QAOA. A variational algorithm that alternates cost and mixer
+  unitaries to prepare candidate solutions to a discrete optimization problem.
+
 quantum fan-out
 fan-out
   **Preferred term:** quantum fan-out. **Accepted alias:** fan-out when the

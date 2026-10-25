@@ -15,9 +15,11 @@
 #include "bench/FanOut.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
+#include "bench/QAOA.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
@@ -25,10 +27,10 @@
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
-#include "bench/WeakMeasurementGrover.hpp"
 #include "bench/mqt_core_bench_export.h"
 
-#include <cstddef>
+#include "llvm/Support/Error.h"
+
 #include <string>
 #include <string_view>
 #include <variant>
@@ -37,9 +39,9 @@ namespace mqt::bench {
 
 /// One validated benchmark instance from the JSON registry.
 using BenchmarkInstance =
-    std::variant<BV, FanOut, GHZ, Grover, WeakMeasurementGrover,
-                 MagicStateDistillation, ModularMultiplier, Multiplexer, QFT,
-                 QFTAdder, QPE, RepeatUntilSuccess, Shor, Teleportation,
+    std::variant<BV, FanOut, GHZ, Grover, GroverWeakMeasurement,
+                 MagicStateDistillation, ModularMultiplier, Multiplexer, QAOA,
+                 QFT, QFTAdder, QPE, RepeatUntilSuccess, Shor, Teleportation,
                  WState>;
 
 /// Owns a validated benchmark and its canonical manifest metadata.
@@ -50,22 +52,23 @@ struct ParsedBenchmark {
   std::string manifestJSON;
 };
 
-/// Parse a strict instance specification and resolve its benchmark metadata.
+/// Parse an instance specification and resolve its benchmark metadata.
 ///
-/// Throws std::invalid_argument for invalid JSON or unsupported parameters.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT ParsedBenchmark
+/// Returns an error for invalid JSON or unsupported parameters.
+/// JSON APIs use the C numeric locale.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<ParsedBenchmark>
 parseInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
 
-/// Return the benchmark ID from a strict instance specification.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+/// Return the benchmark ID from an instance specification.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 benchmarkIdFromInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
 
-/// Return the benchmark ID from a strict manifest envelope.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+/// Return the benchmark ID from a manifest envelope.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 benchmarkIdFromManifestJSON(std::string_view json,
                             std::string_view source = "<manifest>");
 
@@ -73,42 +76,33 @@ benchmarkIdFromManifestJSON(std::string_view json,
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string listBenchmarksJSON();
 
 /// Return the instance specification schema for a benchmark as canonical JSON.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 describeBenchmarkJSON(std::string_view benchmark);
 
 /// Family-specific JSON conversions and stable semantic case IDs.
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  [[nodiscard]] MQT_CORE_BENCH_EXPORT TYPE                                     \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<TYPE>                     \
   STEM##FromInstanceSpecificationJSON(std::string_view json,                   \
                                       std::string_view source =                \
                                           "<instance-specification>");         \
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string toInstanceSpecificationJSON( \
       const TYPE& benchmark);                                                  \
-  [[nodiscard]] MQT_CORE_BENCH_EXPORT TYPE STEM##FromManifestJSON(             \
-      std::string_view json, std::string_view source = "<manifest>");          \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<TYPE>                     \
+  STEM##FromManifestJSON(std::string_view json,                                \
+                         std::string_view source = "<manifest>");              \
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string toManifestJSON(              \
       const TYPE& benchmark);                                                  \
   [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const TYPE& benchmark);
 #include "bench/BenchmarkFamilies.inc"
 
-/// Parse sampled outcomes from a strict counts document.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT Counts
-countsFromJSON(std::string_view json, std::string_view source = "<counts>");
+/// Parse sampled outcomes from a counts document.
+[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<Counts>
+countsFromJSON(std::string_view text, std::string_view source = "<counts>");
 
 /// Evaluate a counts document against a benchmark manifest.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+[[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 evaluateJSON(std::string_view manifest, std::string_view counts,
              std::string_view manifestSource = "<manifest>",
              std::string_view countsSource = "<counts>");
-
-/// Serialize one evaluation result as canonical JSON.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-evaluationToJSON(std::string_view caseId, size_t shots,
-                 const Evaluation& evaluation);
-
-/// Serialize classical factor verification without distribution-fit metrics.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-evaluationToJSON(std::string_view caseId, size_t shots,
-                 const ShorEvaluation& evaluation);
 
 } // namespace mqt::bench

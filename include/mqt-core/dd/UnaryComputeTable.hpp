@@ -40,8 +40,6 @@ public:
     }
     stats.entrySize = sizeof(Entry);
     stats.numBuckets = numBuckets;
-    valid = std::vector(numBuckets, false);
-    table = std::vector<Entry>(numBuckets);
   }
 
   /// An entry in the compute table
@@ -50,7 +48,7 @@ public:
     ResultType result{};
   };
 
-  /// Get a reference to the underlying table
+  /// Get the underlying storage, empty until the first insertion.
   [[nodiscard]] const auto& getTable() const { return table; }
 
   /// Get a reference to the statistics
@@ -68,6 +66,7 @@ public:
   /// @param operand The operand
   /// @param result The result of the operation
   void insert(const OperandType& operand, const ResultType& result) {
+    allocate();
     const auto key = hash(operand);
     if (valid[key]) {
       ++stats.collisions;
@@ -85,6 +84,9 @@ public:
   ResultType* lookup(const OperandType& operand) {
     ResultType* result = nullptr;
     ++stats.lookups;
+    if (table.empty()) {
+      return result;
+    }
     const auto key = hash(operand);
 
     if (!valid[key]) {
@@ -109,6 +111,16 @@ public:
   }
 
 private:
+  void allocate() {
+    if (!table.empty()) {
+      return;
+    }
+    std::vector<Entry> entries(stats.numBuckets);
+    std::vector<bool> occupied(stats.numBuckets, false);
+    table.swap(entries);
+    valid.swap(occupied);
+  }
+
   /// The actual table storing the entries
   std::vector<Entry> table;
   /// Dynamic bitset to mark valid entries

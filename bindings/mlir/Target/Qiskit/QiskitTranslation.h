@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
@@ -18,6 +19,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <complex>
 #include <cstddef>
@@ -297,6 +299,10 @@ enum class ControlFlowKind : uint8_t {
   Switch,
   While,
 };
+
+/// Return the execution capability for a structured control-flow instruction.
+[[nodiscard]] llvm::StringRef controlFlowCapability(ControlFlowKind kind);
+
 enum class ClassicalTargetKind : uint8_t {
   ClassicalBit,
   ClassicalRegister,
@@ -445,6 +451,8 @@ public:
   [[nodiscard]] virtual mlir::CompilerTarget::NativeOperations
   importNativeOperations(nb::handle target,
                          nb::handle operationNames) const = 0;
+  [[nodiscard]] virtual mlir::PayloadSpecification
+  payloadSpecification(nb::handle target) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
   createCircuit(uint32_t looseQubits, uint32_t looseClbits,
                 const mlir::CompilerTarget* target = nullptr) const = 0;

@@ -21,6 +21,8 @@
 #include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -76,7 +78,14 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     if (!loaded) {
       return loadStatus;
     }
-    const auto configuration = sc::readJSON(loaded->json, loaded->source);
+    auto parsed = sc::readJSON(loaded->json, loaded->source);
+    if (!parsed) {
+      qdmi::diagnostics::error("Invalid SC device configuration from {}: {}",
+                               loaded->source,
+                               llvm::toString(parsed.takeError()));
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    const auto& configuration = *parsed;
 
     std::vector<std::unique_ptr<MQT_SC_QDMI_Site_impl_d>> newSiteStorage;
     std::vector<MQT_SC_QDMI_Site> newSites;

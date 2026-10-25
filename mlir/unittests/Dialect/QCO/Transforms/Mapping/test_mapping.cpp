@@ -397,6 +397,112 @@ class MappingPassTest : public MappingPassFixture,
 
 }; // namespace
 
+TEST_F(MappingPassFixture, PreservesAliasedRegisterFeedback) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  for (const auto& [source, expected] : {
+           std::pair{R"mlir(
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %other = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.alloc : !qco.qubit
+      %q2 = qco.alloc : !qco.qubit
+      %selector = qco.x %q2 : !qco.qubit
+      %selected, %choose = qco.measure %selector : !qco.qubit
+      qco.sink %selected : !qco.qubit
+      %alias = scf.if %choose -> !cbit.reg<1> {
+        scf.yield %reg : !cbit.reg<1>
+      } else { scf.yield %other : !cbit.reg<1> }
+      %flipped = qco.x %q0 : !qco.qubit
+      %measured, %bit = qco.measure %flipped : !qco.qubit
+      cbit.store %bit, %alias[%zero] : !cbit.reg<1>
+      qco.sink %measured : !qco.qubit
+      %read = cbit.load %reg[%zero] : !cbit.reg<1>
+      %changed = qco.if %read args(%wire = %q1) -> !qco.qubit {
+        %result = qco.x %wire : !qco.qubit
+        qco.yield %result : !qco.qubit
+      } else args(%wire = %q1) { qco.yield %wire : !qco.qubit }
+      %finished, %result = qco.measure %changed : !qco.qubit
+      cbit.store %result, %out[%zero] : !cbit.reg<1>
+      qco.sink %finished : !qco.qubit
+      return %out : !cbit.reg<1>
+    }
+  )mlir",
+                     "1"},
+           std::pair{R"mlir(
+    func.func @main() -> (!cbit.reg<1>, !cbit.reg<1>, !cbit.reg<1>)
+        attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %true = arith.constant true
+      %false = arith.constant false
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %other = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      cbit.store %true, %other[%zero] : !cbit.reg<1>
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.alloc : !qco.qubit
+      %loop:3 = scf.for %i = %zero to %two step %one
+          iter_args(%alias = %reg, %a = %q0, %b = %q1)
+          -> (!cbit.reg<1>, !qco.qubit, !qco.qubit) {
+        %flipped = qco.x %a : !qco.qubit
+        %measured, %bit = qco.measure %flipped : !qco.qubit
+        cbit.store %bit, %alias[%zero] : !cbit.reg<1>
+        %read = cbit.load %reg[%zero] : !cbit.reg<1>
+        %changed = qco.if %read args(%wire = %b) -> !qco.qubit {
+          %result = qco.x %wire : !qco.qubit
+          qco.yield %result : !qco.qubit
+        } else args(%wire = %b) { qco.yield %wire : !qco.qubit }
+        %next = scf.if %bit -> !cbit.reg<1> {
+          scf.yield %other : !cbit.reg<1>
+        } else { scf.yield %reg : !cbit.reg<1> }
+        scf.yield %next, %measured, %changed
+            : !cbit.reg<1>, !qco.qubit, !qco.qubit
+      }
+      cbit.store %false, %loop#0[%zero] : !cbit.reg<1>
+      qco.sink %loop#1 : !qco.qubit
+      %finished, %result = qco.measure %loop#2 : !qco.qubit
+      cbit.store %result, %out[%zero] : !cbit.reg<1>
+      qco.sink %finished : !qco.qubit
+      return %reg, %other, %out : !cbit.reg<1>, !cbit.reg<1>, !cbit.reg<1>
+    }
+  )mlir",
+                     "000"},
+       }) {
+    SCOPED_TRACE(expected);
+    for (bool canonicalize : {false, true}) {
+      SCOPED_TRACE(canonicalize);
+      auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+      ASSERT_TRUE(moduleOp);
+      if (canonicalize) {
+        PassManager pm(context.get());
+        pm.addPass(createCanonicalizerPass());
+        ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      }
+      // Two reads of the original loop register flip the output twice. Writes
+      // through both selected handles must also reach the original storage.
+      for (bool mapped : {false, true}) {
+        SCOPED_TRACE(mapped);
+        if (mapped) {
+          ASSERT_TRUE(succeeded(
+              runMapping(*moduleOp, target, MappingPassOptions{.ntrials = 1})));
+        }
+        ASSERT_TRUE(succeeded(verify(*moduleOp)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+        const auto counts = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+        ASSERT_TRUE(succeeded(counts));
+        ASSERT_EQ(counts->size(), 1U);
+        EXPECT_EQ(counts->begin()->first, expected);
+      }
+    }
+  }
+}
+
 TEST_F(MappingPassFixture, RouteBeforeLaterClassicalControl) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {0, 2}, {0, 3}}),
@@ -520,7 +626,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
 
   for (const bool placement : {false, true}) {
     SCOPED_TRACE(placement);
-    auto moduleOp = input->clone();
+    OwningOpRef<ModuleOp> moduleOp = input->clone();
     std::string diagnostics;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
       diagnostics += diagnostic.str();
@@ -530,7 +636,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
     PassManager pm(context.get());
     pm.addPass(placement ? createPlacementPass()
                          : createMappingPass(MappingPassOptions{.ntrials = 1}));
-    EXPECT_TRUE(failed(pm.run(moduleOp))) << diagnostics;
+    EXPECT_TRUE(failed(pm.run(*moduleOp))) << diagnostics;
     EXPECT_NE(diagnostics.find("expected a valid mqt.target_env"),
               std::string::npos)
         << diagnostics;

@@ -74,15 +74,14 @@ cx q[0], q[1];
 bit[2] result = measure q;
 """
 
-compiled = compile_program(source, target=device, program_format=ProgramFormat.QASM3)
+compiled = compile_program(source, target=device)
 print("Selected format:", compiled.program_format.name)
-print(compiled.payload)
+print("Payload size:", len(compiled.payload))
 ```
 
 The returned `CompiledProgram` owns the payload and the target contract used to
-produce it. We selected OpenQASM 3 explicitly so this example can also inspect
-DDSIM's state before terminal measurements. Omitting `program_format` lets the
-compiler choose from the device's supported formats.
+produce it. The compiler selects a native format from those supported by the
+device. Reusing this object avoids recompilation for subsequent jobs.
 
 ## Submit, wait, and retrieve counts
 
@@ -120,8 +119,9 @@ it does not change the underlying state.
 
 ## Recover individual shots
 
-A histogram loses ordering. `get_shots()` returns the individual outcomes in
-sampling order, and counting them must reconstruct the same histogram:
+A histogram records how often each outcome occurs. `get_shots()` returns each
+individual outcome in unspecified order, and counting them must reconstruct the
+same histogram:
 
 ```{code-cell} ipython3
 samples = job.get_shots()
@@ -137,13 +137,15 @@ asymmetric outputs to make that ordering visible.
 
 ## Inspect the state behind terminal measurements
 
-DDSIM can prepare this program's state once and sample it repeatedly. It retains
-that uncollapsed state, so the same job can also provide a statevector and
-probabilities:
+DDSIM can also return this program's statevector and probabilities. State
+extraction depends on the execution path; request OpenQASM with zero shots to
+inspect the state without sampling:
 
 ```{code-cell} ipython3
-state = job.get_dense_statevector()
-probabilities = job.get_dense_probabilities()
+state_job = submit_program(source, target=device, program_format=ProgramFormat.QASM3, num_shots=0)
+assert state_job.wait()
+state = state_job.get_dense_statevector()
+probabilities = state_job.get_dense_probabilities()
 expected_state = np.array([cos(theta / 2), 0, 0, sin(theta / 2)], dtype=complex)
 np.testing.assert_allclose(state, expected_state, rtol=0, atol=1e-12)
 np.testing.assert_allclose(probabilities, np.abs(expected_state) ** 2, rtol=0, atol=1e-12)
@@ -177,22 +179,20 @@ changing only the shot count requires another submission.
 
 ## Change the program format, keep the job API
 
-DDSIM also accepts QIR. Recompile the same source as Base Profile bitcode and
-use the same submission and result methods:
+To select an exact execution format, pass `program_format` to `submit_program`.
+This compiles and submits the source in one call:
 
 ```{code-cell} ipython3
-qir_compiled = compile_program(source, target=device, program_format=ProgramFormat.QIR_BASE_MODULE)
-assert isinstance(qir_compiled.payload, bytes)
-qir_job = submit_program(qir_compiled, target=device, num_shots=shots, custom1=seed)
-assert qir_job.wait()
-qir_counts = qir_job.get_counts()
-assert sum(qir_counts.values()) == shots
-assert abs(qir_counts.get("00", 0) / shots - expected["00"]) < 0.05
-plot_distribution([counts, qir_counts], legend=["OpenQASM 3", "QIR Base"])
+qasm_job = submit_program(source, target=device, program_format=ProgramFormat.QASM3, num_shots=shots, custom1=seed)
+assert qasm_job.wait()
+qasm_counts = qasm_job.get_counts()
+assert sum(qasm_counts.values()) == shots
+assert abs(qasm_counts.get("00", 0) / shots - expected["00"]) < 0.05
+plot_distribution([counts, qasm_counts], legend=["Default QIR", "OpenQASM 3"])
 ```
 
-The payload changed from text to bytes, but the QDMI job workflow stayed the
-same. Different execution paths can use different random sequences; compare the
+The execution format changed, but the QDMI job workflow stayed the same.
+Different execution paths can use different random sequences; compare the
 semantics and distribution rather than requiring identical counts.
 
 Use {doc}`Qiskit <../qdmi/qdmi_backend>` or

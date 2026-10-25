@@ -30,8 +30,9 @@ def CBit_RegisterType : TypeDef<CBitDialect, "Register", [OpAsmTypeInterface]> {
   let mnemonic = "reg";
   let summary = "A static classical-bit register";
   let description = [{
-    `!cbit.reg<N>` is a non-aliasing register of `N` classical bits. `N` must
-    be positive and is part of the type.
+    `!cbit.reg<N>` is a mutable register of `N` classical bits. `N` must
+    be positive and is part of the type. Allocations own distinct storage;
+    register arguments may alias.
   }];
   let parameters = (ins "int64_t":$width);
   let assemblyFormat = "`<` $width `>`";
@@ -93,7 +94,7 @@ def LoadOp : CBitOp<"load", [DeclareOpInterfaceMethods<
   let assemblyFormat = [{
     $reg `[` $index `]` attr-dict `:` qualified(type($reg))
   }];
-  let hasCanonicalizer = 1;
+  let hasCanonicalizeMethod = 1;
   let hasVerifier = 1;
 }
 
@@ -103,7 +104,8 @@ def ReadOp : CBitOp<"read", [DeclareOpInterfaceMethods<
   let description = [{
     Reads the complete register as an exact-width integer bit pattern. Register
     element zero is the least-significant result bit, and the result width must
-    equal the static register width.
+    equal the static register width. The result is a snapshot: later writes do
+    not change its value.
 
     Example:
     ```mlir
@@ -116,6 +118,7 @@ def ReadOp : CBitOp<"read", [DeclareOpInterfaceMethods<
   let assemblyFormat = [{
     $reg attr-dict `:` qualified(type($reg)) `->` qualified(type($result))
   }];
+  let hasCanonicalizeMethod = 1;
   let hasVerifier = 1;
 }
 

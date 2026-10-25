@@ -14,8 +14,11 @@
 
 #include "StatisticsJson.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
 namespace dd {
@@ -23,16 +26,25 @@ namespace dd {
 void UniqueTableStatistics::reset() noexcept { TableStatistics::reset(); }
 
 std::string UniqueTableStatistics::toString() const {
-  return toJson(*this).dump(2U);
+  std::string result;
+  llvm::raw_string_ostream out(result);
+  llvm::json::OStream json(out, 2);
+  writeJson(json, *this);
+  return result;
 }
 
-nlohmann::basic_json<> toJson(const UniqueTableStatistics& s) {
+void writeJson(llvm::json::OStream& json, const UniqueTableStatistics& s,
+               const std::optional<size_t> activeEntries) {
   if (s.lookups == 0) {
-    return "unused";
+    json.value("unused");
+    return;
   }
-
-  auto j = toJson(static_cast<const TableStatistics&>(s));
-  j["gc_runs"] = s.gcRuns;
-  return j;
+  json.object([&] {
+    writeTableStatistics(json, s);
+    json.attribute("gc_runs", s.gcRuns);
+    if (activeEntries) {
+      json.attribute("num_active_entries", *activeEntries);
+    }
+  });
 }
 } // namespace dd

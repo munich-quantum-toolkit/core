@@ -147,4 +147,8 @@ importNativeOperations(nb::handle target, nb::handle operationNames) {
   return selectTranslation()->importNativeOperations(target, operationNames);
 }
 
+mlir::PayloadSpecification payloadSpecification(nb::handle target) {
+  return selectTranslation()->payloadSpecification(target);
+}
+
 } // namespace mqt::bindings::qiskit

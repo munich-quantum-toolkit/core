@@ -28,6 +28,9 @@ packaged device definitions. Treat `MQT_CORE_QDMI_CONFIG_JSON` as trusted input
 too.
 :::
 
+Decimal numbers in JSON configuration require the C numeric locale
+(`LC_NUMERIC=C`).
+
 ## Device definitions
 
 The following `qdmi.json` registers one device:

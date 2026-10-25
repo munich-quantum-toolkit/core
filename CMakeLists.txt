@@ -15,9 +15,7 @@ project(
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
-  set(CMAKE_CXX_STANDARD
-      20
-      CACHE STRING "C++ standard to conform to" FORCE)
+  set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard to conform to" FORCE)
 endif()
 
 # Add path for custom modules
@@ -37,23 +35,19 @@ include(AddMQTQDMIDevice)
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
   # ensure that the BINDINGS option is set
-  set(BINDINGS
-      ON
-      CACHE INTERNAL "Enable settings related to Python bindings")
+  set(BINDINGS ON CACHE INTERNAL "Enable settings related to Python bindings")
   # Some common settings for finding Python
-  set(Python_FIND_VIRTUALENV
-      FIRST
+  set(Python_FIND_VIRTUALENV FIRST
       CACHE STRING "Give precedence to virtualenvs when searching for Python")
-  set(Python_FIND_FRAMEWORK
-      LAST
-      CACHE STRING "Prefer Brew/Conda to Apple framework Python")
-  set(Python_ARTIFACTS_INTERACTIVE
-      ON
+  set(Python_FIND_FRAMEWORK LAST CACHE STRING "Prefer Brew/Conda to Apple framework Python")
+  set(Python_ARTIFACTS_INTERACTIVE ON
       CACHE BOOL "Prevent multiple searches for Python and instead cache the results.")
 
   # top-level call to find Python
-  find_package(Python 3.11 REQUIRED COMPONENTS Interpreter Development.Module
-                                               ${SKBUILD_SABI_COMPONENT})
+  find_package(
+    Python 3.11
+    REQUIRED
+    COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 endif()
 
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
@@ -65,15 +59,14 @@ option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI de
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
-if(BUILD_MQT_CORE_TESTS AND (NOT BUILD_MQT_CORE_QDMI_SC_DEVICE OR NOT
-                                                                  BUILD_MQT_CORE_QDMI_DDSIM_DEVICE))
+if(BUILD_MQT_CORE_TESTS
+   AND (NOT BUILD_MQT_CORE_QDMI_SC_DEVICE OR NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE))
   message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
 endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR
-      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library"
-  )
+      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library")
 endif()
 if(APPLE
    AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"
@@ -107,7 +100,7 @@ if(MQT_CORE_INSTALL)
     set(BASEPOINT $ORIGIN)
   endif()
   set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
-                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
+      ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   if(APPLE)
     # Avoid invalidating code signatures by rewriting Mach-O libraries during installation.
@@ -134,16 +127,17 @@ add_custom_target(mqt-core-lint-headers)
 
 add_subdirectory(mlir)
 
-# Preserve the top-level `mlir-doc` behavior without modifying a target owned by an embedding
-# project.
+# Configure `mlir-doc` only when this project owns the target.
 if(PROJECT_IS_TOP_LEVEL)
   add_custom_command(
     TARGET mlir-doc
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
-            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
-    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
-            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+    COMMAND
+      ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
     COMMENT "Copying and cleaning up generated MLIR documentation"
     VERBATIM)
 endif()
@@ -153,10 +147,12 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
   else()
     add_custom_target(
       mqt-core-docs
-      COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
-              ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
-      COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
-              ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+        ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+      COMMAND
+        ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
       DEPENDS mlir-doc
       COMMENT "Copying and cleaning up generated MLIR documentation"
       VERBATIM)
@@ -169,8 +165,9 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
-  set(MQT_CORE_WHEEL_TARGETS mqt-core-bench-bindings mqt-core-dd-bindings mqt-core-qdmi-bindings
-                             mqt-cc mqt-core-bench mqt-core-mlir-bindings)
+  set(MQT_CORE_WHEEL_TARGETS
+      mqt-core-bench-bindings mqt-core-dd-bindings mqt-core-qdmi-bindings mqt-cc mqt-core-bench
+      mqt-core-mlir-bindings)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
   endif()
@@ -183,13 +180,14 @@ endif()
 
 if(PROJECT_IS_TOP_LEVEL)
   if(NOT TARGET mqt-core-uninstall)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in
-                   ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
-    add_custom_target(mqt-core-uninstall COMMAND ${CMAKE_COMMAND} -P
-                                                 ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+    configure_file(
+      ${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in
+      ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE
+      @ONLY)
+    add_custom_target(
+      mqt-core-uninstall
+      COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
   endif()
 else()
-  set(mqt-core_FOUND
-      TRUE
-      CACHE INTERNAL "True if mqt-core is found on the system")
+  set(mqt-core_FOUND TRUE CACHE INTERNAL "True if mqt-core is found on the system")
 endif()

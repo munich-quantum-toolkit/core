@@ -18,7 +18,9 @@
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>
@@ -26,7 +28,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <random>
 #include <span>
 #include <stdexcept>
@@ -44,6 +45,7 @@
 /// pointer opaque such that it cannot be dereferenced
 struct ResultStruct {
   bool r{};
+  std::optional<dd::Qubit> deferredWire;
 };
 struct ArrayImpl {
   int32_t refcount{};
@@ -133,17 +135,32 @@ private:
   uintptr_t currentMaxResultAddress;
   QState qState;
   std::mt19937_64 mt;
-  std::ostream* os = &std::cout;
+  struct SamplingBranches {
+    std::vector<bool> path;
+    std::vector<std::pair<std::vector<bool>, size_t>> pending;
+    size_t count;
+    size_t position = 0;
+  };
+  SamplingBranches* samplingBranches_ = nullptr;
+  std::vector<dd::SamplingOutput>* deferredOutputs_ = nullptr;
+  llvm::raw_ostream* os = &llvm::outs();
+  // Set only while building a terminal-sampling template in a
+  // raw_string_ostream.
+  std::vector<uint64_t>* outputResultPositions_ = nullptr;
   // The QIR spec does not define a default output schema.
   // The runtime picks @c Labeled when a program doesn't declare one.
   OutputSchema outputSchema = OutputSchema::Labeled;
   std::vector<std::pair<std::string, std::string>> metadata;
 
   auto enlargeState(size_t maxQubit) -> void;
+  bool measureQubit(dd::Qubit target);
   void configureStaticResources(std::optional<size_t> qubits,
                                 std::optional<size_t> results);
-  auto sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
-                          std::vector<std::string>& results) -> void;
+  auto
+  sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
+                     llvm::function_ref<void(std::string&&)> emitOwned,
+                     llvm::function_ref<void(std::string_view)> emitBorrowed)
+      -> void;
   static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
     const auto id = reinterpret_cast<uintptr_t>(qubit);
     if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {
@@ -219,7 +236,8 @@ public:
   auto rFree(Result* result) -> void;
 
   /// Append a measurement bit to the measurement string.
-  auto appendMeasurementBit(bool result) -> void;
+  auto appendMeasurementBit(bool result, std::optional<dd::Qubit> deferredWire =
+                                             std::nullopt) -> void;
 
   /// Returns the accumulated measurement string.
   auto getMeasurements() const -> const std::string&;
@@ -233,7 +251,8 @@ public:
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 
-  auto setOstream(std::ostream& other) -> void;
+  /// Borrow a stream that outlives execution and session teardown.
+  auto setOstream(llvm::raw_ostream& other) -> void;
   auto resetOstream() -> void;
   /// Disable textual records while retaining measurement bits.
   auto disableOutput() -> void;
@@ -283,7 +302,7 @@ public:
 };
 
 /// Write the schema's spec-mandated literal (`labeled` or `ordered`).
-auto operator<<(std::ostream& os, Runtime::OutputSchema schema)
-    -> std::ostream&;
+auto operator<<(llvm::raw_ostream& os, Runtime::OutputSchema schema)
+    -> llvm::raw_ostream&;
 
 } // namespace qir

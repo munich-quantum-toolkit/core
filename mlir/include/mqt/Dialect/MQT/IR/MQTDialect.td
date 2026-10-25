@@ -297,6 +297,8 @@ def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
     Identifies a payload by format ID, exact version, optional profile ID, and
     encoding. Every field takes part in identity. An empty profile denotes a
     payload without a named profile.
+    An empty version identifies an unversioned format. Nonempty versions use
+    `major[.minor[.patch]]`.
 
     The following identity selects binary QIR 2.1 with the base profile:
 

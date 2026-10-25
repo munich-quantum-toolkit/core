@@ -112,6 +112,77 @@ barrier q[first:step:0], r[1:2];
   EXPECT_EQ(barriers, 1);
 }
 
+TEST(OpenQASMTargetTest, ArrayIterationDoesNotCopyOrUnrollTheArray) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 3] a = {1, 2, 3}; "
+      "int sum = 0; for int x in a[:-1:] { sum += x; }",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0, loops = 0, loads = 0;
+  moduleOp->walk([&](memref::AllocaOp) { ++arrays; });
+  moduleOp->walk([&](scf::ForOp) { ++loops; });
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  EXPECT_EQ(arrays, 1);
+  EXPECT_EQ(loops, 1);
+  EXPECT_EQ(loads, 1);
+}
+
+TEST(OpenQASMTargetTest, RangeCopiesReuseScratchOutsideLoops) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 4] a = {1, 2, 3, 4}; "
+      "for int i in [0:2] { a[i+1:] = a[:2-i]; } a[1:] = a[:2];",
+      &context, {.maxOperations = 256});
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t allocations = 0;
+  moduleOp->walk([&](memref::AllocaOp alloc) {
+    ++allocations;
+    EXPECT_FALSE(alloc->getParentOfType<scf::ForOp>());
+    EXPECT_EQ(alloc.getType().getShape(), ArrayRef<int64_t>{4});
+  });
+  EXPECT_EQ(allocations, 2); // Original array and reused scratch.
+}
+
+TEST(OpenQASMTargetTest, RuntimeArraySizeQueriesDoNotReadOrCopyElements) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3.0; array[int, 2, 4] a; int row = 1; int step = -2; "
+      "output uint n; n = sizeof(a[row, :step:]);",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0;
+  moduleOp->walk([&](memref::AllocaOp) { ++arrays; });
+  EXPECT_EQ(arrays, 1);
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_FALSE(
+        (isa<memref::LoadOp, memref::CopyOp, memref::SubViewOp>(operation)));
+  });
+}
+
+TEST(OpenQASMTargetTest,
+     ConcatenationCopiesEachOperandWithoutIntermediateArrays) {
+  std::string source =
+      "OPENQASM 3.0; array[int, 1] a = {1}; array[int, 128] b = a";
+  for (size_t i = 1; i < 128; ++i) {
+    source += " ++ a";
+  }
+  source += ';';
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t arrays = 0;
+  moduleOp->walk([&](memref::AllocaOp) { ++arrays; });
+  EXPECT_EQ(arrays, 2);
+  size_t copies = 0;
+  moduleOp->walk([&](memref::CopyOp) { ++copies; });
+  EXPECT_EQ(copies, 128);
+}
+
 TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
   std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";
   const auto source = StringRef(storage).take_front(storage.find("invalid"));
@@ -1931,7 +2002,36 @@ TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
     return operations;
   };
 
-  EXPECT_EQ(operationCount(2), operationCount(100'000));
+  EXPECT_EQ(operationCount(2),
+            operationCount(std::numeric_limits<int64_t>::max()));
+}
+
+TEST(OpenQASMTargetTest, ImportsLargeQuantumAndClassicalRegisters) {
+  constexpr llvm::StringLiteral source =
+      "OPENQASM 3.1; include \"stdgates.inc\"; "
+      "qubit[2000001] q; bit[2000000] c; x q[2000000]; "
+      "c[1999999] = measure q[2000000]; "
+      "output bit result; result = c[1999999];";
+  MLIRContext context;
+  auto moduleOp =
+      qc::translateOpenQASMToQC(source, &context, {.maxOperations = 32});
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t quantumRegisters = 0;
+  moduleOp->walk([&](memref::AllocOp alloc) {
+    if (isa<qc::QubitType>(alloc.getType().getElementType())) {
+      ++quantumRegisters;
+      EXPECT_EQ(alloc.getType().getDimSize(0), 2'000'001);
+    }
+  });
+  EXPECT_EQ(quantumRegisters, 1);
+  size_t classicalRegisters = 0;
+  moduleOp->walk([&](cbit::AllocOp alloc) {
+    if (alloc.getType().getWidth() == 2'000'000) {
+      ++classicalRegisters;
+    }
+  });
+  EXPECT_EQ(classicalRegisters, 1);
 }
 
 TEST(OpenQASMTargetTest, LargeStaticBarrierAvoidsAliasChecks) {
@@ -2853,6 +2953,8 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
 
 TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
   constexpr std::array sources{
+      R"qasm(OPENQASM 3.1; array[int, 4] a; int n = 1; output uint result; result = sizeof(a[:sizeof(a[:n])]);)qasm",
+      R"qasm(OPENQASM 3.1; array[int, 4] a = {0, 1, 2, 3}; int n = 1; a = a[n:] ++ a[:n-1];)qasm",
       R"qasm(OPENQASM 3.1; output int result; int x = 2; result = (x + x) ** 3;)qasm",
       R"qasm(OPENQASM 3.1; output bool result; int x = 2; result = !(x == 1) && (x < 3 || x > 4);)qasm",
       R"qasm(OPENQASM 3.1; bit[4] c = "0000"; int i = 1; c[i] = true; output bool result; result = c[i];)qasm",

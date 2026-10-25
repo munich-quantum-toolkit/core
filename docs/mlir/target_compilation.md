@@ -9,8 +9,8 @@ mystnb:
 # Compile for a QDMI device
 
 `compile_program` maps a program to a device's topology and native operations.
-The resulting {py:class}`~mqt.core.mlir.CompiledProgram` can be submitted with
-`submit_program` in the MLIR submodule.
+For a QDMI device, it returns a {py:class}`~mqt.core.mlir.CompiledProgram` by
+default. Submit it with `submit_program` in the MLIR submodule.
 
 For a hands-on comparison of connectivity, native gates, and logical outputs,
 see the
@@ -40,6 +40,28 @@ job.wait()
 print(job.get_counts())
 ```
 
+For several programs, pass a homogeneous Python sequence, such as a list or
+tuple. All elements share the target and compilation options. The returned list
+follows input order; an empty sequence returns `[]`.
+
+```{code-cell} ipython3
+sources = (bell_qasm, bell_qasm.replace("h q[0];", "x q[0];"))
+for compiled in compile_program(sources, target=device):
+    job = submit_program(compiled, target=device, num_shots=16)
+    job.wait()
+    print(job.get_counts())
+```
+
+Elements must share one input kind (subclasses are accepted). Strings and paths
+are single inputs; generators and binary buffers are unsupported. An explicit
+`output` selects every result's representation. Output defaults follow the same
+rules as for a single program.
+
+Typed MLIR inputs are consumed; use `copy=True` to preserve them. Input kinds
+are checked before compilation. A compilation failure stops the sequence and
+returns no results; processed inputs may be consumed, while later inputs remain
+usable.
+
 `target` accepts an open device or a registered device ID. To compile and submit
 in one call:
 
@@ -61,8 +83,9 @@ Pass `num_shots` to `submit_program` to choose the number of samples. For
 simulator statevectors and probabilities, see {doc}`../qdmi/ddsim_device`. A
 compiled program can be submitted again without recompilation. Submission checks
 that the device still has matching sites, topology, operations, timing units,
-and program capabilities. Names and calibration-only changes do not require
-recompilation. Use `device.submit_job` to submit raw payloads.
+and program capabilities. IQM JSON also requires unchanged site names because
+the payload embeds them. Calibration-only changes do not require recompilation.
+Use `device.submit_job` to submit raw payloads.
 
 ### Compilation options
 
@@ -135,15 +158,27 @@ and fallback behavior.
 
 ### Choose a format
 
-The compiler selects the first supported format in this order: Adaptive QIR
-(binary, then text), OpenQASM 3.1, then Base QIR (binary, then text). To select
-a format explicitly:
+For a submission payload, the compiler selects the first supported format in
+this order: Adaptive QIR (binary, then text), OpenQASM 3.1, IQM JSON, then Base
+QIR (binary, then text). To select an exact execution format, compile and submit
+in one call:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import ProgramFormat
 
-compiled = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
+job = submit_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3, num_shots=64)
+assert job.wait()
 ```
+
+`compile_program` uses `output` to select a typed representation, such as
+`OutputFormat.QC`, `OutputFormat.QCO_OPTIMIZED`, or `OutputFormat.QISKIT`. The
+device still supplies the compilation constraints. The raw `QC_IMPORT` and `QCO`
+checkpoints stop before target compilation and cannot be combined with a target.
+
+Typed outputs support inspection and interchange. In particular, jeff output
+does not retain hardware placement. The default `CompiledProgram` retains the
+automatically selected native payload for repeated QDMI submissions; exact
+wire-format selection belongs to `submit_program`.
 
 ### Define a target
 
@@ -151,9 +186,9 @@ Use `CompilerTarget` to describe a device for compilation without opening a
 connection. Bundled SC devices such as `mqt.sc.iqm.garnet` provide ready-made
 hardware models; they do not execute programs.
 
-An explicit target requires `output` for a typed compiler program, or
-`program_format` for a `CompiledProgram` ready for submission. To define a
-target with three sites and nearest-neighbor connectivity:
+With an explicit `CompilerTarget`, the default result preserves the input's
+program family. Select `output` for another representation. To define a target
+with three sites and nearest-neighbor connectivity:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import CompilerTarget, OutputFormat
@@ -454,14 +489,16 @@ flow with `legalize-control-flow`:
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
 unrolled when this clones at most one billion body operations by default. The
 `unroll-loops-for-payload` pass exposes this limit as `max-operations`. The same
-bound applies to loops unrolled for qubit placement. Cleanup runs again because
-unrolling can make nested bounds and conditions constant. An unsupported index
-switch is lowered to a linear chain of nested forward branches when that form
-fits the selected contract. Before expansion, the compiler checks the selected
-forward-branching nesting limit and a compiler safety limit of 256 total
-control-flow levels, including enclosing control flow. This compiler limit is
-not a QDMI requirement and does not apply to switches retained under multiway
-branching.
+bound applies to loops unrolled for qubit placement. Between expansion rounds,
+local classical memory is promoted and expressions fold to expose constant array
+accesses, nested bounds, and conditions. Standalone Base QIR export uses this
+same unroller with an explicit `payload-spec`, without requiring hardware
+metadata. An unsupported index switch is lowered to a linear chain of nested
+forward branches when that form fits the selected contract. Before expansion,
+the compiler checks the selected forward-branching nesting limit and a compiler
+safety limit of 256 total control-flow levels, including enclosing control flow.
+This compiler limit is not a QDMI requirement and does not apply to switches
+retained under multiway branching.
 
 Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
 the corresponding QCO branch operation for linear quantum state. SCF loops must
@@ -511,9 +548,80 @@ its signed arithmetic. The scaled step must also fit the loop induction-variable
 type. A zero, unknown, or misapplied constraint makes that capability group
 unusable. A capability absent from the selected specification is unsupported.
 
-This stage checks structural control flow only. Later lowering stages remain
-responsible for scalar types and operations, measurement provenance, function
-features, allocation, and final payload-profile conformance.
+This stage checks structural control flow. Final QIR output also checks its
+emitted feature requirements: dynamic qubit and result management, arrays, IR
+functions, multiple return points, integer and floating-point computations,
+multiway branching, and counted or conditional loops. The check applies to both
+typed QIR and submission payloads. QIR loop bounds are not re-proved after
+lowering; a loop capability required by emitted QIR must be unconstrained.
+
+An explicit output combines the output format's capabilities with the target's
+contract. Matching language versions and profiles retain only capabilities
+supported by both, regardless of text or binary encoding. Different formats
+share structural control-flow restrictions; QIR-specific features are not
+inferred from their absence in a Qiskit contract. Later lowering stages remain
+responsible for scalar types and operations, measurement provenance, allocation,
+and payload-profile conformance.
+
+## IQM JSON circuits
+
+Select `OutputFormat.IQM_JSON` to compile a Qiskit or OpenQASM circuit for IQM.
+A target is required and supplies IQM native operations, connectivity, and
+physical site names:
+
+```{code-cell} ipython3
+import json
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+
+iqm_target = CompilerTarget(
+    [CompilerTarget.Site(0, "QB1"), CompilerTarget.Site(1, "QB2")],
+    connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("r", 1, 2),
+        CompilerTarget.OperationCapability("cz", 2, 0),
+        CompilerTarget.OperationCapability("measure", 1, 0),
+    ]),
+)
+iqm_circuit = compile_program(
+    bell_qasm, target=iqm_target, output=OutputFormat.IQM_JSON
+)
+print(json.loads(iqm_circuit.source)["instructions"][-1])
+```
+
+The returned `IQMJSONProgram` contains one circuit object. Use `.source`,
+`str(program)`, or `.write(path)` to read or save it. For a QDMI-on-IQM device,
+pass `program_format=ProgramFormat.IQM_JSON` to `submit_program` to select the
+execution format explicitly.
+
+Compilation lowers the placed circuit to Base Profile QIR, then converts its PRX
+and CZ calls to IQM JSON. PRX angle and phase use radians. Physical QIR qubit
+handles map to target site IDs, not positions in the target's site list.
+
+The converter emits one IQM measurement per QIR result record, in record order.
+Array labels, sizes, and positions provide IQM Qiskit SDK measurement keys:
+`registerName_registerSize_registerIndex_bitIndex`. Original register names,
+including underscores, are preserved. Scalar outputs form one-bit registers;
+unlabeled QIR outputs receive names `c0`, `c1`, and so on.
+
+For supported Qiskit and OpenQASM register readout, the compiler emits these
+records in source classical-slot order. The keys match the SDK even when its
+source instruction order differs. Complete terminal readout gives each output
+slot exactly one measurement of a distinct qubit. IQM measurement columns
+therefore already follow the source slots; QDMI-on-IQM reverses them into QDMI
+bit strings, and Qiskit formats the original registers without a decoding hook.
+This does not require measuring unused physical target qubits.
+
+Qiskit initializes untouched classical bits to zero. The IQM JSON result path
+does not reconstruct those slots, so compilation requires complete readout even
+for Qiskit inputs. Use `QuantumCircuit(2)` with `measure_all()` to let Qiskit
+allocate the measured register without an extra untouched register.
+
+Gate parameters must be finite constants, and qubit and result handles must be
+static. The converter accepts one Base Profile entry point with acyclic,
+unconditional control flow. Missing or overwritten output slots, repeated qubit
+measurements, reset, feedback, MOVE, and classical result computation are
+unsupported. QDMI-on-IQM transports the circuit, authentication, calibration
+selection, and execution options. IQM owns pulse compilation.
 
 ## Command line from a source build
 
@@ -521,6 +629,14 @@ List the stable IDs of configured QDMI devices:
 
 ```console
 mqt-cc --qdmi-list-devices
+```
+
+To synthesize and place for a named IQM target:
+
+```console
+mqt-cc --qdmi-device=mqt.sc.iqm.garnet \
+  --payload-spec='#mqt.payload_spec<format = <id = "iqm-json", version = "", profile = "", encoding = text>, capabilities = [], optional_capabilities_known = false>' \
+  -o circuit.json input.qasm
 ```
 
 Select a device when compiling:
@@ -601,15 +717,18 @@ these native names directly.
 The `sqrt_iswap` synthesis shorthand requires a matching `xx_plus_yy` capability
 for native payload export.
 
-The adapter assumes all compiler-supported capabilities for the selected format
-(OpenQASM 3.1 or QIR 2.1). Use `TargetEnvironment` and `PayloadSpecification`
+QDMI's supported-format list does not provide per-format capability
+restrictions. The adapter therefore uses the compiler-supported baseline for the
+selected format (OpenQASM 3.1, IQM JSON, or QIR 2.1), with optional capability
+metadata marked as unknown. Use `TargetEnvironment` and `PayloadSpecification`
 for staged compilation with explicit restrictions.
 
 QIR submission requires a parameterless entry point. QC-to-QIR conversion
 records direct measurements and CBit-register results, then emits runtime status
-0 for successful execution. All explicit QC and QCO returns are program data;
-scalar entry results, including a constant-zero `i64`, are unsupported with or
-without a target. Keep classical temporaries local, or select OpenQASM 3 for
+0 for successful execution. Adaptive Profile also records computed Boolean
+(`i1`) results. All explicit QC and QCO returns are program data; other scalar
+entry results, including a constant-zero `i64`, are unsupported with or without
+a target. Keep other classical temporaries local, or select OpenQASM 3 for wider
 scalar outputs. In OpenQASM 3, declare `output bit` registers explicitly when
 global scalar variables are only temporaries. See the
 {doc}`QIR execution contracts <../qir/index>`.

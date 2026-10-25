@@ -12,6 +12,7 @@
 
 // Each minor compiles this implementation with its own C API headers and table.
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
@@ -865,15 +866,15 @@ public:
                                    const std::string_view name,
                                    nb::handle parameters) {
     const nb::tuple parameterTuple(parameters);
-    auto parameterHash = PyObject_Hash(parameterTuple.ptr());
-    if (parameterHash == -1) {
-      if (PyErr_ExceptionMatches(PyExc_TypeError) == 0) {
-        throwPythonError("Qiskit Gate parameter hashing failed");
+    Py_hash_t parameterHash = 0;
+    try {
+      parameterHash = nb::hash(parameterTuple);
+    } catch (const nb::python_error& error) {
+      if (!error.matches(nb::module_::import_("builtins").attr("TypeError"))) {
+        throwPythonError("Qiskit Gate parameter hashing failed", error);
       }
       // Array-valued parameters specialize the definition, not its scalar
       // call signature. Compare those definitions in one fallback bucket.
-      PyErr_Clear();
-      parameterHash = 0;
     }
     // ponytail: use a structural circuit hash if many same-signature Gate
     // definitions become common.
@@ -1159,7 +1160,7 @@ public:
       // Finish reading the borrowed view before invoking Python fallbacks.
       if (!symbolic.empty()) {
         const auto parameters =
-            pythonAttribute(pythonOperation(index), "params",
+            pythonAttribute(data_[index], "params",
                             "Qiskit operation does not expose its parameters");
         if (nb::len(parameters) != native.num_params) {
           throw std::runtime_error(
@@ -1172,7 +1173,7 @@ public:
       }
 #else
       const auto parameters =
-          pythonAttribute(pythonOperation(index), "params",
+          pythonAttribute(data_[index], "params",
                           "Qiskit operation does not expose its parameters");
       result.parameters.reserve(native.num_params);
       try {
@@ -1600,9 +1601,8 @@ normalizePythonTarget(const nb::handle target,
   }
   if (nb::isinstance(target, circuitModule.attr("ClassicalRegister"))) {
     const auto size = nb::len(target);
-    if (size == 0U || size > 64U) {
-      throw std::runtime_error(
-          "Qiskit classical targets require between 1 and 64 bits");
+    if (size == 0U || size > std::numeric_limits<uint32_t>::max()) {
+      throw std::runtime_error("Qiskit classical target has an invalid width");
     }
     result.kind = ClassicalTargetKind::ClassicalRegister;
     result.reg = pythonRegister(target, resolveBit);
@@ -2482,16 +2482,17 @@ public:
       values.append(pythonParameter(parameter));
     }
     if (!standardInstruction_.is_valid()) {
-      standardGates_ = nb::module_::import_("qiskit.circuit.library")
-                           .attr("get_standard_gate_name_mapping")();
+      standardGateIds_ = nb::module_::import_("qiskit._accelerate.circuit")
+                             .attr("StandardGate")
+                             .attr("all_gates")();
       standardInstruction_ = nb::module_::import_("qiskit.circuit")
                                  .attr("CircuitInstruction")
                                  .attr("from_standard");
     }
-    const nb::object standard =
-        standardGates_[nb::str(gate->name.data(), gate->name.size())];
-    auto instruction = standardInstruction_(standard.attr("_standard_gate"),
-                                            pythonQubits(qubits), values);
+    // Qiskit's Python and C gate enums share the all_gates() order.
+    auto instruction = standardInstruction_(
+        standardGateIds_[static_cast<size_t>(gate->native)],
+        pythonQubits(qubits), values);
     // As with numeric appends, this private circuit has no builder scope or
     // cached duration.
     data_.attr("append")(instruction);
@@ -2744,7 +2745,8 @@ private:
                     metadata.identity);
               } catch (const nb::python_error& error) {
                 // Other frontends can use non-UUID group identities.
-                if (!error.matches(nb::handle(PyExc_ValueError))) {
+                if (!error.matches(
+                        nb::module_::import_("builtins").attr("ValueError"))) {
                   throw;
                 }
               }
@@ -2974,6 +2976,7 @@ private:
   nb::object data_;
   QkCircuit* circuit_;
   nb::object standardGates_;
+  nb::object standardGateIds_;
   nb::object standardInstruction_;
   PythonVariables variables_;
   std::optional<PythonClassicalBuilder> classical_;
@@ -3140,9 +3143,7 @@ public:
           throw nb::value_error(message.c_str());
         }
         message += "; omitting it from the compiler target";
-        if (PyErr_WarnEx(PyExc_UserWarning, message.c_str(), 1) < 0) {
-          throw nb::python_error();
-        }
+        nb::module_::import_("warnings").attr("warn")(message);
         continue;
       }
 
@@ -3183,6 +3184,36 @@ public:
   importNativeOperations(nb::handle source,
                          nb::handle operationNames) const override {
     return readOperations(source, operationNames, false);
+  }
+
+  [[nodiscard]] mlir::PayloadSpecification
+  payloadSpecification(nb::handle source) const override {
+    using Capability = mlir::ProgramCapability;
+    const auto target = source.is_none() ? nb::none() : targetObject(source);
+    const auto circuit = nb::module_::import_("qiskit.circuit");
+    std::vector<Capability> capabilities;
+    for (const auto& [name, type, kind] : {
+             std::tuple{"if_else", "IfElseOp", ControlFlowKind::IfElse},
+             std::tuple{"for_loop", "ForLoopOp", ControlFlowKind::For},
+             std::tuple{"while_loop", "WhileLoopOp", ControlFlowKind::While},
+             std::tuple{"switch_case", "SwitchCaseOp", ControlFlowKind::Switch},
+         }) {
+      if (target.is_none() ||
+          (nb::cast<bool>(
+               target.attr("operation_names").attr("__contains__")(name)) &&
+           target.attr("operation_from_name")(name).is(circuit.attr(type)))) {
+        capabilities.push_back({.id = controlFlowCapability(kind).str()});
+      }
+    }
+    return takeTargetResult(mlir::PayloadSpecification::create(
+        {
+            .id = "qiskit",
+            .version = std::to_string(QISKIT_VERSION_MAJOR) + "." +
+                       std::to_string(QISKIT_VERSION_MINOR),
+            .profile = "",
+            .encoding = mlir::PayloadEncoding::Binary,
+        },
+        std::move(capabilities), true));
   }
 
   [[nodiscard]] mlir::CompilerTarget

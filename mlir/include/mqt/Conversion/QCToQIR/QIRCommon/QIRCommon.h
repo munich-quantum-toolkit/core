@@ -30,6 +30,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace mlir {
 
@@ -77,8 +78,8 @@ struct LoweringState {
   /// Map from `cbit::AllocOp` to its index in `cregs`.
   DenseMap<Operation*, size_t> cregIndices;
 
-  /// Defining operations in return order, including repeated outputs.
-  SmallVector<Operation*> returnedOutputs;
+  /// Resource definitions or scalar return indices in output order.
+  SmallVector<std::variant<Operation*, int64_t>> returnedOutputs;
 
   /// Result pointers for returned measurements, resolved during conversion.
   DenseMap<Operation*, qir::OutputRecord> measuredResults;
@@ -183,8 +184,10 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// quantum resources, or store to a provably distinct constant index of the
 /// same register.
 ///
-/// With \p allowComputedOutputs, returned registers that contain computed bits
-/// use boolean storage and keep ordinary stores. Otherwise these stores fail.
+/// With \p allowComputedOutputs, returned registers use Boolean storage when
+/// they contain computed bits or fusion cannot preserve their stores and
+/// returned measurement snapshots. Otherwise these cases fail.
+/// Boolean scalar outputs remain function results until output recording.
 /// Local CBit stores retain ordinary semantics.
 ///
 /// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain in

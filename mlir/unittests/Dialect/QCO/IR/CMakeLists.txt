@@ -19,22 +19,23 @@ add_executable(
   test_qco_wire_canonicalization.cpp)
 target_link_libraries(
   ${qco_ir_target}
-  PRIVATE MLIRParser
-          MLIRCBitDialect
-          MLIRMQTDialect
-          MLIRSupportMQT
-          GTest::gtest_main
-          MLIRQCOProgramBuilder
-          MLIRQCOPrograms
-          MLIRQCODDFunctionality
-          MLIRExactUnitaryTest
-          MLIRQCOUtils
-          MLIRMQTTransforms
-          MQT::CoreDD)
+  PRIVATE
+    MLIRParser
+    MLIRCBitDialect
+    MLIRMQTDialect
+    MLIRSupportMQT
+    GTest::gtest_main
+    MLIRQCOProgramBuilder
+    MLIRQCOPrograms
+    MLIRQCODDFunctionality
+    MLIRExactUnitaryTest
+    MLIRQCOUtils
+    MLIRMQTTransforms
+    MQT::CoreDD)
 mqt_mlir_configure_unittest_target(${qco_ir_target} REQUIRES_EH)
 
 # These cheap verifier cases share a process; retain per-case GoogleTest results.
-add_test(NAME ${qco_ir_target}
-         COMMAND ${qco_ir_target}
-                 --gtest_output=xml:${CMAKE_CURRENT_BINARY_DIR}/${qco_ir_target}.xml)
+add_test(
+  NAME ${qco_ir_target}
+  COMMAND ${qco_ir_target} --gtest_output=xml:${CMAKE_CURRENT_BINARY_DIR}/${qco_ir_target}.xml)
 set_tests_properties(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests)

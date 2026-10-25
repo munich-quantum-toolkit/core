@@ -1,3 +1,20 @@
+mqt\.core\.mlir\._generate_benchmark$:
+
+mqt\.core\.mlir\.(?:QC|QCO)Program\.bind_parameters$:
+    \from collections.abc import Mapping, Sequence
+    \from typing import Any, SupportsFloat
+    \import numpy
+    def bind_parameters(
+        self,
+        values: Mapping[
+            str,
+            SupportsFloat
+            | Sequence[SupportsFloat]
+            | numpy.ndarray[tuple[int], numpy.dtype[numpy.floating[Any] | numpy.integer[Any]]],
+        ],
+    ) -> None:
+        \doc
+
 mqt\.core\.mlir\.JeffProgram\.from_segments$:
     \from collections.abc import Sequence
     @staticmethod
@@ -170,136 +187,249 @@ mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
     def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
         \doc
 
-mqt.core.mlir.compile_program:
+mqt\.core\.mlir\.__prefix__$:
+    \from typing import TypeAlias, TypeVar, TypedDict, Unpack
+    _CompilerInput: TypeAlias = str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
+    _CompilerTarget: TypeAlias = CompilerTarget | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
+    _CompilerOutput: TypeAlias = qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
+    _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
+    _CompilerInputT = TypeVar("_CompilerInputT", str, os.PathLike[str], qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
+    _SourceT = TypeVar("_SourceT", str, os.PathLike[str])
+
+    class _CompileOptions(TypedDict, total=False, closed=True):
+        copy: bool
+        qco_pipeline: str
+        options: CompilationOptions
+
+mqt\.core\.mlir\.compile_program$:
     \from typing import overload, Literal
+    \from collections.abc import Sequence
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: _CompilerInput,
         *,
-        output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        options: CompilationOptions = ...,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QC],
+        **kwargs: Unpack[_CompileOptions],
     ) -> QCProgram: ...
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: _CompilerInput,
         *,
-        output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        options: CompilationOptions = ...,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QCO_OPTIMIZED],
+        **kwargs: Unpack[_CompileOptions],
     ) -> QCOProgram: ...
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: _CompilerInput,
         *,
+        target: None = None,
+        output: Literal[OutputFormat.QC_IMPORT],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> QCProgram: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: None = None,
+        output: Literal[OutputFormat.QCO],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> QCOProgram: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: _CompilerTarget | None = None,
         output: Literal[OutputFormat.OPENQASM3],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        options: CompilationOptions = ...,
+        **kwargs: Unpack[_CompileOptions],
     ) -> OpenQASMProgram: ...
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: _CompilerInput,
         *,
+        target: _CompilerTarget,
+        output: Literal[OutputFormat.IQM_JSON],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> IQMJSONProgram: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: _CompilerTarget | None = None,
         output: Literal[OutputFormat.JEFF],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        options: CompilationOptions = ...,
+        **kwargs: Unpack[_CompileOptions],
     ) -> JeffProgram: ...
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: _CompilerInput,
         *,
+        target: _CompilerTarget | None = None,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        options: CompilationOptions = ...,
+        **kwargs: Unpack[_CompileOptions],
     ) -> QIRProgram: ...
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: _CompilerInput,
         *,
-        output: OutputFormat,
-        inplace: bool = False,
-        qco_pipeline: str = "mqt-qco-default",
-        options: CompilationOptions = ...,
-    ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
-        \doc
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QISKIT],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> qiskit.circuit.QuantumCircuit: ...
     @overload
     def compile_program(
-        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        program: _CompilerInput,
         *,
-        target: str | mqt.core.qdmi.Device,
-        program_format: mqt.core.qdmi.ProgramFormat | None = None,
-        inplace: bool = False,
-        options: CompilationOptions = ...,
-    ) -> CompiledProgram:
-        \doc
+        target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> qiskit.circuit.QuantumCircuit: ...
     @overload
     def compile_program(
-        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        program: _CompilerInput,
         *,
-        target: CompilerTarget,
-        program_format: mqt.core.qdmi.ProgramFormat,
-        inplace: bool = False,
-        options: CompilationOptions = ...,
+        target: mqt.core.qdmi.Device | str,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
     ) -> CompiledProgram: ...
     @overload
     def compile_program(
-        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        program: _ProgramT,
         *,
-        target: CompilerTarget,
-        output: Literal[OutputFormat.OPENQASM3],
-        inplace: bool = False,
-        options: CompilationOptions = ...,
-    ) -> OpenQASMProgram: ...
+        target: CompilerTarget | None = None,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> _ProgramT: ...
     @overload
     def compile_program(
-        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        program: str | os.PathLike[str],
         *,
-        target: CompilerTarget,
+        target: CompilerTarget | None = None,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> QCProgram | JeffProgram | OpenQASMProgram: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: _CompilerTarget | None = None,
+        output: OutputFormat,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> _CompilerOutput: ...
+
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QC],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[QCProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QCO_OPTIMIZED],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[QCOProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: None = None,
+        output: Literal[OutputFormat.QC_IMPORT],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[QCProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: None = None,
+        output: Literal[OutputFormat.QCO],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[QCOProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.OPENQASM3],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[OpenQASMProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget,
+        output: Literal[OutputFormat.IQM_JSON],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[IQMJSONProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.JEFF],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[JeffProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
-        inplace: bool = False,
-        options: CompilationOptions = ...,
-    ) -> QIRProgram: ...
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[QIRProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QISKIT],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: mqt.core.qdmi.Device | str,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[CompiledProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_ProgramT],
+        *,
+        target: CompilerTarget | None = None,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[_ProgramT]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_SourceT],
+        *,
+        target: CompilerTarget | None = None,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
+        output: OutputFormat,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[_CompilerOutput]:
+        \doc
 
 
 mqt\.core\.mlir\.submit_program$:

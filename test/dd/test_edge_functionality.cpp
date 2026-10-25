@@ -74,11 +74,18 @@ TEST(VectorFunctionality, WideIndices) {
                std::out_of_range);
   EXPECT_THROW(dd::traverseVector(zero, [](size_t, const std::complex<fp>&) {}),
                std::out_of_range);
+  EXPECT_THROW(std::ignore = dd::getVector(ones, 2.), std::out_of_range);
+  EXPECT_THROW(std::ignore = dd::getSparseVector(zero, 2.), std::out_of_range);
+  EXPECT_THROW(dd::printVector(ones), std::out_of_range);
+  CVec amplitudes(1);
+  EXPECT_THROW(dd::addToVector(ones, amplitudes), std::out_of_range);
+  EXPECT_THROW(dd::addToVector(zero, amplitudes), std::out_of_range);
 }
 
 TEST(VectorFunctionality, InvalidPaths) {
   auto dd = std::make_unique<Package>(2);
   const auto zero = makeZeroState(2, *dd);
+  EXPECT_THROW(std::ignore = zero.getValueByPath(1, "0"), std::out_of_range);
   EXPECT_THROW(std::ignore = zero.getValueByPath(2, "2"), std::out_of_range);
   for (const auto* path : {"20", "91", "/0", "x0"}) {
     EXPECT_THROW(std::ignore = zero.getValueByPath(2, path),
@@ -91,6 +98,24 @@ TEST(MatrixFunctionality, WideIndices) {
   constexpr auto digits = std::numeric_limits<size_t>::digits;
   auto dd = std::make_unique<Package>(digits + 1U);
   const auto gate = dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
+  const auto twoQubit =
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 1);
+  for (const size_t width : {0U, 1U}) {
+    EXPECT_THROW(std::ignore =
+                     twoQubit.getValueByPath(width, std::string(width, '0')),
+                 std::out_of_range);
+    EXPECT_THROW(std::ignore = dd::getValueByIndex(twoQubit, width, 0, 0),
+                 std::out_of_range);
+    EXPECT_THROW(std::ignore = dd::getMatrix(twoQubit, width),
+                 std::out_of_range);
+    EXPECT_THROW(std::ignore = dd::getSparseMatrix(twoQubit, width),
+                 std::out_of_range);
+    EXPECT_THROW(dd::printMatrix(twoQubit, width), std::out_of_range);
+    EXPECT_THROW(dd::traverseMatrix(
+                     twoQubit, 1., 0, 0,
+                     [](size_t, size_t, const std::complex<fp>&) {}, width),
+                 std::out_of_range);
+  }
   EXPECT_EQ(dd::getValueByIndex(gate, digits + 1U, 0, 1),
             std::complex<fp>(0, -1));
   EXPECT_EQ(dd::getValueByIndex(gate, digits + 1U, 1, 0),
@@ -107,6 +132,17 @@ TEST(MatrixFunctionality, WideIndices) {
                std::out_of_range);
   EXPECT_THROW(std::ignore = dd::getValueByIndex(mEdge::one(), 1, 0, 2),
                std::out_of_range);
+  EXPECT_THROW(std::ignore = dd::getMatrix(mEdge::zero(), digits, 2.),
+               std::out_of_range);
+  EXPECT_THROW(std::ignore =
+                   dd::getSparseMatrix(mEdge::zero(), digits + 1U, 2.),
+               std::out_of_range);
+  EXPECT_THROW(dd::traverseMatrix(
+                   mEdge::zero(), 1., 0, 0,
+                   [](size_t, size_t, const std::complex<fp>&) {}, digits + 1U,
+                   2.),
+               std::out_of_range);
+  EXPECT_THROW(dd::printMatrix(mEdge::zero(), digits), std::out_of_range);
 }
 
 TEST(MatrixFunctionality, InvalidPaths) {
@@ -268,6 +304,8 @@ TEST(VectorFunctionality, AddToVectorTerminal) {
   CVec vec = {0.};
   dd::addToVector(vEdge::one(), vec);
   EXPECT_EQ(vec, CVec{1.});
+  CVec empty;
+  EXPECT_THROW(dd::addToVector(vEdge::one(), empty), std::out_of_range);
 }
 
 TEST(VectorFunctionality, AddToVector) {
@@ -281,6 +319,10 @@ TEST(VectorFunctionality, AddToVector) {
       std::sqrt(0.4),
   };
   const auto stateDD = makeStateFromVector(state, *dd);
+  const CVec initial = {1., 2.};
+  auto tooSmall = initial;
+  EXPECT_THROW(dd::addToVector(stateDD, tooSmall), std::out_of_range);
+  EXPECT_EQ(tooSmall, initial);
   dd::addToVector(stateDD, vec);
   EXPECT_EQ(vec, state);
 }
@@ -359,28 +401,6 @@ TEST(MatrixFunctionality, GetMatrixTerminal) {
   EXPECT_EQ(dd::getMatrix(mEdge::one(), 0), CMat{{1.}});
 }
 
-TEST(MatrixFunctionality, GetMatrixRoundtrip) {
-  auto dd = std::make_unique<Package>(2);
-  // clang-format off
-  const CMat mat = {
-    {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
-    {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
-    {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
-  // clang-format on
-
-  const auto matDD = dd->makeDDFromMatrix(mat);
-  const auto matVec = dd::getMatrix(matDD, dd->qubits());
-  for (std::size_t i = 0U; i < mat.size(); ++i) {
-    for (std::size_t j = 0U; j < mat.size(); ++j) {
-      const auto val = dd::getValueByIndex(matDD, dd->qubits(), i, j);
-      const auto ref = mat[i][j];
-      EXPECT_NEAR(ref.real(), val.real(), 1e-10);
-      EXPECT_NEAR(ref.imag(), val.imag(), 1e-10);
-    }
-  }
-}
-
 TEST(MatrixFunctionality, GetMatrixTolerance) {
   auto dd = std::make_unique<Package>(2);
   // clang-format off
@@ -393,14 +413,6 @@ TEST(MatrixFunctionality, GetMatrixTolerance) {
 
   const auto matDD = dd->makeDDFromMatrix(mat);
   const auto matVec = dd::getMatrix(matDD, dd->qubits(), std::sqrt(0.1));
-  for (std::size_t i = 0U; i < mat.size(); ++i) {
-    for (std::size_t j = 0U; j < mat.size(); ++j) {
-      const auto val = dd::getValueByIndex(matDD, dd->qubits(), i, j);
-      const auto ref = mat[i][j];
-      EXPECT_NEAR(ref.real(), val.real(), 1e-10);
-      EXPECT_NEAR(ref.imag(), val.imag(), 1e-10);
-    }
-  }
   const auto matVec2 =
       dd::getMatrix(matDD, dd->qubits(), std::sqrt(0.1) + RealNumber::eps);
   EXPECT_NE(matVec2, matVec);

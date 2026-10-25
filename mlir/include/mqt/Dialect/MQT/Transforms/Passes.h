@@ -15,7 +15,7 @@
 
 namespace mlir::mqt {
 
-/// Forward block-local classical memory and propagate scoped QCO conditions.
+/// Propagate scoped QCO branch conditions.
 void simplifyClassicalControl(Operation* operation);
 
 #define GEN_PASS_DECL

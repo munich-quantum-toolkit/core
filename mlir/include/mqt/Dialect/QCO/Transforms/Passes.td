@@ -125,18 +125,28 @@ def QuantumLoopUnroll
 // Payload legalization passes
 //===----------------------------------------------------------------------===//
 
-def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::arith::ArithDialect",
+class PayloadControlFlowPass<string argument>
+    : Pass<argument, "mlir::ModuleOp"> {
+  list<Option> payloadOptions = [Option<
+      "payloadSpec", "payload-spec", "std::string", "\"\"",
+      "Explicit #mqt.payload_spec; defaults to mqt.target_env.">];
+}
+
+def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::mqt::MQTDialect",
                            "mlir::qtensor::QTensorDialect",
                            "mlir::scf::SCFDialect"];
   let summary =
       "Unroll static loops required by the payload or qubit placement";
   let description = [{
-    Reads the selected payload from `mqt.target_env` and fully unrolls static
-    `scf.for` operations that its counted-iteration capability does not cover.
-    Tensor-carrying loops remain indexed for Adaptive QIR on all-to-all targets
-    whose native operations have no site tuples. Other targets and payloads
-    require fixed quantum indices and specialize these loops. Scalar loops
+    Uses an explicit `payload-spec` attribute when set, otherwise reads
+    `mqt.target_env`. Explicit payloads do not require hardware metadata. Fully unrolls
+    static `scf.for` operations that its counted-iteration capability does not
+    cover. Local classical memory is promoted and static branches fold between
+    expansion rounds, exposing constant accesses and nested loop bounds.
+    In target-environment mode, tensor-carrying loops remain indexed for Adaptive
+    QIR on all-to-all targets whose native operations have no site tuples. Other
+    cases require fixed quantum indices and specialize these loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
     Constant inner sweeps can become scalar-qubit loops after tensor cleanup,
@@ -147,18 +157,22 @@ def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
-  let options = [Option<"maxOperations", "max-operations", "uint64_t",
-                        "1'000'000'000",
-                        "Maximum number of cloned loop-body operations.">];
+  let options =
+      payloadOptions#[Option<"maxOperations", "max-operations", "uint64_t",
+                             "1'000'000'000",
+                             "Maximum number of cloned loop-body operations.">];
 }
 
-def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect",
+def LegalizeControlFlow : PayloadControlFlowPass<"legalize-control-flow"> {
+  let options = payloadOptions;
+  let dependentDialects = ["mlir::mqt::MQTDialect", "mlir::qco::QCODialect",
+                           "mlir::scf::SCFDialect",
                            "mlir::arith::ArithDialect"];
   let summary = "Legalize control flow for the selected payload";
   let description = [{
-    Reads the selected payload from `mqt.target_env`. The pass retains covered
-    QCO and SCF branches and loops, lowers unsupported index switches to nested
+    Uses an explicit `payload-spec` attribute when set, otherwise reads
+    `mqt.target_env`. Explicit payloads do not require hardware metadata. The pass
+    retains covered QCO and SCF branches and loops, lowers unsupported index switches to nested
     forward branches when possible, and rejects residual structural control
     flow that the payload does not support.
     Switch expansion checks the selected forward-branching depth limit before
@@ -189,7 +203,6 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The entry function and supported structured-control-flow regions must each
     contain one block. Calls that carry qubits must be inlined before mapping.
-    Adaptive classical dependencies must be represented by SSA def-use chains.
     Classical side effects must use CBit operations; opaque calls and other
     memory effects must be lowered before mapping. Tensor allocations must
     follow a flat extract/insert/deallocate chain without tensor control flow.

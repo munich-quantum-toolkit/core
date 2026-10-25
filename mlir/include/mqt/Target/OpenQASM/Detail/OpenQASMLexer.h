@@ -56,6 +56,7 @@ enum class TokenKind : uint8_t {
   Gphase,
   Inv,
   Pow,
+  SizeOf,
   Ctrl,
   NegCtrl,
 
@@ -92,6 +93,7 @@ enum class TokenKind : uint8_t {
   // Operators
   Equals,
   Plus,
+  DoublePlus,
   Minus,
   Asterisk,
   DoubleAsterisk,

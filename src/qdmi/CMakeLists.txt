@@ -17,8 +17,12 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_sources(${TARGET_NAME} PRIVATE QDMI.cpp)
 
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/QDMI.hpp)
+  target_sources(
+    ${TARGET_NAME}
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/QDMI.hpp)
 
   target_link_libraries(
     ${TARGET_NAME}
@@ -33,6 +37,4 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

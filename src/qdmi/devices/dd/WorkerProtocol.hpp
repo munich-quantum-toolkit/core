@@ -13,7 +13,9 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_socket_stream.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -43,10 +45,20 @@ struct WorkerRequest {
 struct WorkerSlots {
   uint64_t count = 1;
 };
+/// Terminal shot records appended after the header and constructor output.
+struct OutputTemplate {
+  std::string text;
+  std::vector<uint64_t> resultOffsets;
+};
 struct WorkerResponse {
   bool succeeded = false;
-  std::vector<std::string> shots;
+  uint64_t shotCount = 0;
+  /// One comma-terminated bit string per ordered QIR shot, including empty
+  /// shots.
+  std::string shots;
+  std::map<std::string, size_t> counts;
   std::optional<std::string> output;
+  std::optional<OutputTemplate> outputTemplate;
   uint32_t qubits = 0;
   std::optional<std::string> state;
 };

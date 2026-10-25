@@ -45,15 +45,16 @@ PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
                           const StringAttr id, const StringAttr version,
                           const StringAttr profile,
                           const PayloadEncoding /*encoding*/) {
-  if (id.getValue().empty() || version.getValue().empty()) {
-    return emitError() << "payload format requires an ID and version";
+  if (id.getValue().empty()) {
+    return emitError() << "payload format requires an ID";
   }
   if (id.getValue().contains('\0') || version.getValue().contains('\0') ||
       profile.getValue().contains('\0')) {
     return emitError()
            << "payload format fields must not contain null characters";
   }
-  if (!isCanonicalPayloadVersion(version.getValue())) {
+  if (!version.getValue().empty() &&
+      !isCanonicalPayloadVersion(version.getValue())) {
     return emitError()
            << "payload format version must use major[.minor[.patch]]";
   }

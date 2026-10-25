@@ -19,12 +19,17 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/LLVMCommon/MemRefBuilder.h"
+#include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
@@ -34,8 +39,13 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/Transforms.h"
+#include "mlir/Dialect/MemRef/Utils/MemRefUtils.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -67,10 +77,52 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace mlir {
 using namespace qc;
 using namespace qir;
+
+namespace {
+
+class ContiguousCopyOpLowering final
+    : public ConvertOpToLLVMPattern<memref::CopyOp> {
+public:
+  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::CopyOp copy, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto sourceType = dyn_cast<MemRefType>(copy.getSource().getType());
+    auto targetType = dyn_cast<MemRefType>(copy.getTarget().getType());
+    if (!sourceType || !targetType ||
+        !memref::isStaticShapeAndContiguousRowMajor(sourceType) ||
+        !memref::isStaticShapeAndContiguousRowMajor(targetType)) {
+      return failure();
+    }
+    auto elementType =
+        getTypeConverter()->convertType(sourceType.getElementType());
+    if (!elementType) {
+      return failure();
+    }
+    auto loc = copy.getLoc();
+    auto source =
+        MemRefDescriptor(adaptor.getSource())
+            .bufferPtr(rewriter, loc, *getTypeConverter(), sourceType);
+    auto target =
+        MemRefDescriptor(adaptor.getTarget())
+            .bufferPtr(rewriter, loc, *getTypeConverter(), targetType);
+    auto arrayType =
+        LLVM::LLVMArrayType::get(elementType, sourceType.getNumElements());
+    auto value = LLVM::LoadOp::create(rewriter, loc, arrayType, source,
+                                      /*alignment=*/1);
+    LLVM::StoreOp::create(rewriter, loc, value, target, /*alignment=*/1);
+    rewriter.eraseOp(copy);
+    return success();
+  }
+};
+
+} // namespace
 
 LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
                                                   Operation* op) {
@@ -86,8 +138,9 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
 }
 
 void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
-  registry.insert<bufferization::BufferizationDialect, memref::MemRefDialect,
-                  tensor::TensorDialect>();
+  registry.insert<affine::AffineDialect, bufferization::BufferizationDialect,
+                  memref::MemRefDialect, scf::SCFDialect, tensor::TensorDialect,
+                  linalg::LinalgDialect>();
   arith::registerBufferizableOpInterfaceExternalModels(registry);
   tensor::registerBufferizableOpInterfaceExternalModels(registry);
 }
@@ -95,11 +148,11 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
                                     LLVMTypeConverter& typeConverter) {
   auto* ctx = moduleOp.getContext();
-  // Constant tensors and element reads require no allocation or alias
-  // analysis.
+  // Read-only tensors and explicit destinations need no alias analysis.
   bufferization::BufferizationOptions options;
   options.allowUnknownOps = true;
-  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp>();
+  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp,
+                                  bufferization::MaterializeInDestinationOp>();
   bufferization::BufferizationState state;
   if (failed(bufferization::bufferizeOp(moduleOp, options, state))) {
     return failure();
@@ -124,12 +177,52 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
     return failure();
   }
 
+  // QIR arrays provide loads/stores, not memcpy or the MLIR memrefCopy runtime.
+  if (moduleOp
+          .walk([](memref::CopyOp copy) {
+            auto sourceType = dyn_cast<MemRefType>(copy.getSource().getType());
+            auto targetType = dyn_cast<MemRefType>(copy.getTarget().getType());
+            if (!sourceType || !targetType) {
+              copy.emitError("QIR classical copies require ranked memrefs");
+              return WalkResult::interrupt();
+            }
+            if (sourceType.hasStaticShape() &&
+                sourceType.getNumElements() == 0) {
+              copy.erase();
+              return WalkResult::advance();
+            }
+            if (memref::isStaticShapeAndContiguousRowMajor(sourceType) &&
+                memref::isStaticShapeAndContiguousRowMajor(targetType)) {
+              return WalkResult::advance();
+            }
+            IRRewriter rewriter(copy.getContext());
+            rewriter.setInsertionPoint(copy);
+            auto structuredCopy = linalg::CopyOp::create(
+                rewriter, copy.getLoc(), copy.getSource(), copy.getTarget());
+            if (failed(linalg::linalgOpToLoops(rewriter, structuredCopy))) {
+              copy.emitError("could not lower strided copy to loops");
+              return WalkResult::interrupt();
+            }
+            rewriter.eraseOp(structuredCopy);
+            rewriter.eraseOp(copy);
+            return WalkResult::advance();
+          })
+          .wasInterrupted()) {
+    return failure();
+  }
+
   RewritePatternSet patterns(ctx);
-  target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
-                           math::MathDialect, memref::MemRefDialect,
-                           tensor::TensorDialect,
+  target.addIllegalDialect<affine::AffineDialect, arith::ArithDialect,
+                           cf::ControlFlowDialect, math::MathDialect,
+                           memref::MemRefDialect, scf::SCFDialect,
+                           linalg::LinalgDialect, tensor::TensorDialect,
                            bufferization::BufferizationDialect>();
   LLVMTypeConverter memoryTypeConverter(ctx);
+  populateSCFToControlFlowConversionPatterns(patterns);
+  memref::populateExpandStridedMetadataPatterns(patterns);
+  populateAffineToStdConversionPatterns(patterns);
+  patterns.add<ContiguousCopyOpLowering>(memoryTypeConverter,
+                                         PatternBenefit(2));
   populateFinalizeMemRefToLLVMConversionPatterns(memoryTypeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
@@ -438,10 +531,22 @@ void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
   OpBuilder builder(ctx);
-  builder.setInsertionPoint(&main.getBlocks().back().back());
+  auto returnOp = cast<LLVM::ReturnOp>(&main.getBlocks().back().back());
+  builder.setInsertionPoint(returnOp);
+  auto returned = returnOp.getOperand(0);
   SmallVector<qir::OutputRecord> outputs;
   outputs.reserve(state.returnedOutputs.size());
-  for (auto* operation : state.returnedOutputs) {
+  for (const auto& output : state.returnedOutputs) {
+    if (const auto* index = std::get_if<int64_t>(&output)) {
+      auto value = builder.createOrFold<LLVM::ExtractValueOp>(
+          returnOp.getLoc(), returned, ArrayRef<int64_t>{*index});
+      outputs.push_back({
+          .label = "__unnamed__" + std::to_string(outputs.size()),
+          .value = value,
+      });
+      continue;
+    }
+    auto* operation = std::get<Operation*>(output);
     if (const auto it = state.cregIndices.find(operation);
         it != state.cregIndices.end()) {
       const auto& reg = state.cregs[it->second];
@@ -449,6 +554,13 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
     } else {
       outputs.push_back(state.measuredResults.at(operation));
     }
+  }
+  if (isa<LLVM::LLVMStructType>(returned.getType())) {
+    auto status = builder.createOrFold<LLVM::ExtractValueOp>(
+        returnOp.getLoc(), returned, ArrayRef<int64_t>{0});
+    returnOp->setOperands(status);
+    main.setFunctionType(
+        LLVM::LLVMFunctionType::get(status.getType(), main.getArgumentTypes()));
   }
   emitOutputRecording(builder, main, outputs);
 }
@@ -495,14 +607,13 @@ Value getResultPtr(LoweringState& state, Operation* op,
 
 /// Summarize the interference before each store in one block traversal.
 ///
-/// Only disjoint constant-index stores to the same register can be crossed.
+/// Only stores to distinct constant-index locations in direct allocations can
+/// be crossed.
 static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
   DenseSet<Operation*> candidates;
   DenseMap<Operation*, size_t> measurements;
   DenseMap<std::pair<Value, int64_t>, size_t> lastStoreAtIndex;
-  Value lastRegister;
   size_t lastStore = 0;
-  size_t lastOtherRegisterStore = 0;
   size_t lastBarrier = 0;
   size_t position = 0;
   for (auto& operation : *block) {
@@ -512,23 +623,18 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
     }
     if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
       const auto index = getConstantIntValue(store.getIndex());
+      const bool knownLocation =
+          index && store.getReg().getDefiningOp<cbit::AllocOp>();
       auto conflict = std::max(lastBarrier, lastStore);
-      if (index) {
-        conflict = std::max({
-            lastBarrier,
-            lastRegister == store.getReg() ? lastOtherRegisterStore : lastStore,
-            lastStoreAtIndex.lookup({store.getReg(), *index}),
-        });
+      if (knownLocation) {
+        conflict = std::max(lastBarrier,
+                            lastStoreAtIndex.lookup({store.getReg(), *index}));
       }
       auto measure = store.getValue().getDefiningOp<MeasureOp>();
       if (measure && measurements.lookup(measure.getOperation()) > conflict) {
         candidates.insert(store.getOperation());
       }
-      if (index) {
-        if (lastRegister != store.getReg()) {
-          lastOtherRegisterStore = lastStore;
-          lastRegister = store.getReg();
-        }
+      if (knownLocation) {
         lastStore = position;
         lastStoreAtIndex[{store.getReg(), *index}] = position;
       } else {
@@ -632,6 +738,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     return failure();
   }
   size_t registerCount = 0;
+  SmallVector<Value> scalarOutputs;
   for (auto operand : returnOp.getOperands()) {
     auto* definition = operand.getDefiningOp();
     if (isa_and_nonnull<MeasureOp>(definition)) {
@@ -653,10 +760,15 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
         reg.record = true;
       }
       state.returnedOutputs.push_back(definition);
+    } else if (allowComputedOutputs && operand.getType().isInteger(1)) {
+      scalarOutputs.push_back(operand);
+      state.returnedOutputs.emplace_back(
+          static_cast<int64_t>(scalarOutputs.size()));
     } else {
       return returnOp.emitError(
           "QIR entry return supports only direct measurements and CBit "
-          "allocations; other scalar program outputs are not supported");
+          "allocations, plus Boolean scalars in Adaptive Profile; other "
+          "scalar program outputs are not supported");
     }
   }
 
@@ -669,6 +781,14 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       }
     });
   }
+
+  const auto useBooleanStorage = [&](size_t registerIndex) {
+    if (!allowComputedOutputs) {
+      return false;
+    }
+    state.cregs[registerIndex].booleanStorage = true;
+    return true;
+  };
 
   DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
   funcOp.walk([&](cbit::StoreOp storeOp) {
@@ -710,6 +830,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                                measureOp, dominance));
     }
     if (!canFuse) {
+      if (useBooleanStorage(registerIndex)) {
+        return;
+      }
       storeOp.emitError("QIR output cannot fuse this measurement/store pair: "
                         "require the same block, an index available or safely "
                         "computable before measurement, and no intervening "
@@ -722,6 +845,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     const auto [it, inserted] = state.cregMeasurements.try_emplace(
         measureOp.getOperation(), destination);
     if (!inserted && it->second != destination) {
+      if (useBooleanStorage(registerIndex)) {
+        return;
+      }
       storeOp.emitError("a measurement result cannot be stored in multiple "
                         "classical register locations during QIR conversion");
       hasInvalidMemory = true;
@@ -731,7 +857,6 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   if (hasInvalidMemory) {
     return failure();
   }
-
   DenseSet<size_t> sharedRegisters;
   for (auto* measurement : llvm::make_first_range(state.measuredResults)) {
     if (auto it = state.cregMeasurements.find(measurement);
@@ -768,6 +893,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       if (!index || dynamicStores.contains(destination.first) ||
           storedMeasurements.lookup({destination.first, *index}) !=
               measurement) {
+        if (useBooleanStorage(destination.first)) {
+          continue;
+        }
         measurement->emitError(
             "returned scalar measurement cannot share overwritten register "
             "storage; require distinct constant store indices");
@@ -779,12 +907,21 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
   }
 
+  llvm::erase_if(consumedStores, [&](cbit::StoreOp store) {
+    return state.cregs[state.cregIndices.at(store.getReg().getDefiningOp())]
+        .booleanStorage;
+  });
+  state.cregMeasurements.remove_if([&](const auto& measurement) {
+    return state.cregs[measurement.second.first].booleanStorage;
+  });
+
   OpBuilder builder(returnOp);
   auto zero = arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
-  returnOp.getOperandsMutable().assign(zero);
+  scalarOutputs.insert(scalarOutputs.begin(), zero);
+  returnOp.getOperandsMutable().assign(scalarOutputs);
   funcOp.setFunctionType(FunctionType::get(funcOp.getContext(),
                                            funcOp.getFunctionType().getInputs(),
-                                           {zero.getType()}));
+                                           returnOp.getOperandTypes()));
   for (auto storeOp : consumedStores) {
     auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
     auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();

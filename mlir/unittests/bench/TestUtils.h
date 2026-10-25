@@ -26,6 +26,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
@@ -75,12 +76,7 @@ generateQCO(const Benchmark& benchmark) {
   if (mlir::failed(program)) {
     return mlir::failure();
   }
-  auto compiled = mlir::runDefaultPipeline(
-      mlir::CompilerInput{std::move(*program)}, mlir::ProgramFormat::QCO);
-  if (mlir::failed(compiled)) {
-    return mlir::failure();
-  }
-  return std::get<mlir::QCOProgram>(std::move(*compiled));
+  return std::move(*program).intoQCO();
 }
 
 template <class Benchmark>
@@ -92,7 +88,8 @@ void expectSamplingMatchesReference(const Benchmark& benchmark,
   auto counts =
       mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
   ASSERT_TRUE(mlir::succeeded(counts));
-  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, tolerance);
+  EXPECT_LT(llvm::cantFail(benchmark.evaluate(*counts)).totalVariationDistance,
+            tolerance);
 }
 
 template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {

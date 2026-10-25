@@ -10,7 +10,10 @@
 
 #include "QiskitTranslation.h"
 
+#include "mqt/Compiler/TargetEnvironment.h"
+
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/JSON.h"
 
 #include <cstdint>
@@ -20,6 +23,25 @@
 #include <vector>
 
 namespace mqt::bindings::qiskit {
+
+llvm::StringRef controlFlowCapability(ControlFlowKind kind) {
+  using Capability = mlir::ProgramCapability;
+  switch (kind) {
+  case ControlFlowKind::IfElse:
+    return Capability::FORWARD_BRANCHING;
+  case ControlFlowKind::For:
+    return Capability::COUNTED_ITERATION;
+  case ControlFlowKind::While:
+    return Capability::CONDITIONAL_LOOP;
+  case ControlFlowKind::Switch:
+    return Capability::MULTIWAY_BRANCHING;
+  case ControlFlowKind::Box:
+  case ControlFlowKind::Break:
+  case ControlFlowKind::Continue:
+    return {};
+  }
+  llvm_unreachable("unknown Qiskit control-flow kind");
+}
 
 void ParameterGroupRegistry::add(const ParameterGroup& group) {
   const auto [known, inserted] = groups.try_emplace(group.identity, group);

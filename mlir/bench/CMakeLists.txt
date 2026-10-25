@@ -12,9 +12,6 @@ add_subdirectory(programs)
 add_library(MQTBenchmarkGenerate STATIC Generate.cpp)
 add_library(MQT::CoreBenchGenerate ALIAS MQTBenchmarkGenerate)
 target_link_libraries(MQTBenchmarkGenerate PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
-# JSON parsing errors must unwind through the generation library.
-set(LLVM_REQUIRES_EH ON)
-set(LLVM_REQUIRES_RTTI ON)
 mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)
 
 # The executable that generates and evaluates configured benchmarks.
@@ -25,8 +22,6 @@ if(WIN32)
 endif()
 target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchGenerate MLIRSupport)
 mqt_mlir_target_use_project_options(mqt-core-bench)
-unset(LLVM_REQUIRES_EH)
-unset(LLVM_REQUIRES_RTTI)
 mlir_check_all_link_libraries(mqt-core-bench)
 
 if(MQT_CORE_INSTALL)

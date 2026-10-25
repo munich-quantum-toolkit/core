@@ -13,13 +13,13 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Qiskit's extension C API tables are translation-unit local. Each supported minor therefore gets
   # one source file with a private header snapshot.
-  file(STRINGS Target/Qiskit/SupportedVersions.inc qiskit_version_registrations
-       REGEX "^MQT_QISKIT_VERSION\\(")
+  file(
+    STRINGS Target/Qiskit/SupportedVersions.inc qiskit_version_registrations
+    REGEX "^MQT_QISKIT_VERSION\\(")
   foreach(registration IN LISTS qiskit_version_registrations)
-    string(
-      REGEX MATCH
-            "^MQT_QISKIT_VERSION\\(([0-9]+), *([0-9]+), *(2\\.[0-9]+\\.[0-9]+), *\"[^\"]+\"\\)$"
-            registration_match "${registration}")
+    string(REGEX MATCH
+           "^MQT_QISKIT_VERSION\\(([0-9]+), *([0-9]+), *(2\\.[0-9]+\\.[0-9]+), *\"[^\"]+\"\\)$"
+           registration_match "${registration}")
     if(NOT registration_match)
       message(FATAL_ERROR "Invalid Qiskit version registration: ${registration}")
     endif()
@@ -35,16 +35,14 @@ if(NOT TARGET ${TARGET_NAME})
       message(FATAL_ERROR "Missing Qiskit ${version_release} C API headers: ${version_include}")
     endif()
     set_source_files_properties(
-      ${translation_source} PROPERTIES COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION
-                                       INCLUDE_DIRECTORIES "${version_include}")
+      ${translation_source}
+      PROPERTIES
+        COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES "${version_include}")
   endforeach()
 
-  set(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE
-      ""
+  set(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE ""
       CACHE PATH "CI-only include directory for an exact non-shipping Qiskit version")
-  set(MQT_QISKIT_CAPI_CANDIDATE_VERSION
-      ""
-      CACHE STRING "CI-only exact Qiskit development version")
+  set(MQT_QISKIT_CAPI_CANDIDATE_VERSION "" CACHE STRING "CI-only exact Qiskit development version")
   if(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE OR MQT_QISKIT_CAPI_CANDIDATE_VERSION)
     if(NOT IS_DIRECTORY "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE}")
       message(FATAL_ERROR "MQT_QISKIT_CAPI_CANDIDATE_INCLUDE must be a directory")
@@ -58,9 +56,9 @@ if(NOT TARGET ${TARGET_NAME})
     list(APPEND SOURCES ${candidate_source})
     set_source_files_properties(
       ${candidate_source}
-      PROPERTIES COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION
-                 INCLUDE_DIRECTORIES
-                 "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE};${CMAKE_CURRENT_SOURCE_DIR}/Target/Qiskit")
+      PROPERTIES
+        COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES
+        "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE};${CMAKE_CURRENT_SOURCE_DIR}/Target/Qiskit")
   endif()
 
   add_mqt_python_binding(

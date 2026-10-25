@@ -22,6 +22,7 @@
 
 #include "llvm/Support/LogicalResult.h"
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -35,14 +36,22 @@
 #include <variant>
 #include <vector>
 
+namespace llvm {
+class raw_ostream;
+} // namespace llvm
+
 namespace mlir {
 
 class QCProgram;
 class QCOProgram;
 class JeffProgram;
 class OpenQASMProgram;
+class IQMJSONProgram;
 class QIRProgram;
 class TargetEnvironment;
+
+/// A value for a scalar or statically sized one-dimensional f64 input.
+using ParameterValue = std::variant<std::vector<double>, double>;
 
 /// Quantum resources and static IR statistics.
 struct QuantumProgramInfo {
@@ -111,6 +120,8 @@ enum class ProgramFormat : uint8_t {
   QIRBase,
   /// QIR for the Adaptive Profile.
   QIRAdaptive,
+  /// An IQM circuit with physical PRX/CZ gates and terminal readout.
+  IQMJSON,
 };
 
 /// A move-aware MLIR program with a shared dialect context.
@@ -118,6 +129,7 @@ enum class ProgramFormat : uint8_t {
 /// Programs own their module and keep the context alive for its full
 /// lifetime. Dialect-changing operations consume an rvalue program, making
 /// ownership transfer explicit and avoiding expensive implicit cloning.
+/// Consuming operations invalidate the source even when they fail.
 class Program {
 public:
   Program(const Program&) = delete;
@@ -143,6 +155,9 @@ public:
   /// The returned operation remains valid while this program owns its
   /// module. Consuming or destroying the program invalidates the operation.
   [[nodiscard]] ModuleOp module() const;
+
+  /// Keep the dialect context alive across consuming compiler operations.
+  [[nodiscard]] std::shared_ptr<MLIRContext> context() const noexcept;
 
 protected:
   struct Storage {
@@ -175,10 +190,34 @@ public:
   /// Return the OpenQASM source.
   [[nodiscard]] const std::string& source() const noexcept;
 
+  /// Transfer ownership of the OpenQASM source.
+  [[nodiscard]] std::string intoSource() &&;
+
   /// Return the OpenQASM source.
   [[nodiscard]] const std::string& str() const noexcept;
 
   /// Write the OpenQASM source to a file.
+  [[nodiscard]] LogicalResult write(const std::filesystem::path& path) const;
+
+private:
+  std::string source_;
+};
+
+/// An emitted IQM circuit object, without submission options.
+class IQMJSONProgram final {
+public:
+  explicit IQMJSONProgram(std::string source) : source_(std::move(source)) {}
+
+  /// Return the IQM JSON source.
+  [[nodiscard]] const std::string& source() const noexcept { return source_; }
+
+  /// Transfer ownership of the IQM JSON source.
+  [[nodiscard]] std::string intoSource() && { return std::move(source_); }
+
+  /// Return the IQM JSON source.
+  [[nodiscard]] const std::string& str() const noexcept { return source_; }
+
+  /// Write the IQM JSON source to a file.
   [[nodiscard]] LogicalResult write(const std::filesystem::path& path) const;
 
 private:
@@ -220,6 +259,9 @@ public:
   [[nodiscard]] static FailureOr<QCProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
+  // Reject implicit adoption of a borrowed module.
+  static FailureOr<QCProgram> fromModule(std::shared_ptr<MLIRContext>,
+                                         ModuleOp) = delete;
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
@@ -228,15 +270,26 @@ public:
   /// Returns resource information and gate, control-flow, and operation counts.
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
-  /// Return named f64 entry-point inputs in function argument order.
+  /// Return names of scalar and static rank-one f64 inputs in argument order.
   [[nodiscard]] std::vector<std::string> parameters() const;
 
-  /// Bind named f64 inputs in place, preserving unbound inputs and metadata.
+  /// Bind named f64 scalars and arrays in place, preserving unbound inputs.
   ///
-  /// Reject unknown names, non-finite values, or references to the entry point
-  /// without changing the program. Does not run cleanup or fold expressions.
+  /// Arrays must match the length of a static rank-one f64 tensor input.
+  /// Reject unknown names, mismatched types or lengths, non-finite values, or
+  /// references to the entry point without changing the program. Preserve
+  /// unbound input metadata and fold expressions using the bound values.
+  /// Folding failures may leave the program modified.
   [[nodiscard]] LogicalResult
-  bindParameters(const std::map<std::string, double>& values);
+  bindParameters(const std::map<std::string, ParameterValue>& values);
+
+  /// Bind a scalar-only map under the same contract.
+  template <std::same_as<double> T = double>
+  [[nodiscard]] LogicalResult
+  bindParameters(const std::map<std::string, T>& values) {
+    return bindParameters(
+        std::map<std::string, ParameterValue>(values.begin(), values.end()));
+  }
 
   /// Run the standard QC cleanup passes in place.
   [[nodiscard]] LogicalResult cleanup();
@@ -244,8 +297,11 @@ public:
   /// Normalize scoped global phases in place.
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
-  /// Translate this program to portable OpenQASM 3.1 without consuming it.
-  [[nodiscard]] FailureOr<OpenQASMProgram> toOpenQASM3() const;
+  /// Consume this program and translate it to portable OpenQASM 3.1.
+  ///
+  /// Run QC cleanup before export. The program is consumed even when export
+  /// fails; call copy() first to preserve it.
+  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] FailureOr<QCOProgram> intoQCO() &&;
@@ -254,7 +310,9 @@ public:
   ///
   /// Entry results must be direct measurements or CBit registers. Other scalar
   /// outputs are unsupported. The generated QIR returns a zero execution
-  /// status.
+  /// status. Base conversion unrolls static counted loops, allowing at most
+  /// one billion cloned body operations, and rejects runtime-dependent loops.
+  /// Adaptive conversion retains loops.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
 
   /// Return the static gate count of the entry-point IR.
@@ -314,6 +372,9 @@ public:
   [[nodiscard]] static FailureOr<QCOProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
+  // Reject implicit adoption of a borrowed module.
+  static FailureOr<QCOProgram> fromModule(std::shared_ptr<MLIRContext>,
+                                          ModuleOp) = delete;
 
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
@@ -323,12 +384,20 @@ public:
   /// Uses the rules of QCProgram::inspect().
   [[nodiscard]] QuantumProgramInfo inspect() const;
 
-  /// Return named f64 entry-point inputs in function argument order.
+  /// Return names of scalar and static rank-one f64 inputs in argument order.
   [[nodiscard]] std::vector<std::string> parameters() const;
 
-  /// Bind named f64 inputs in place under the same contract as QCProgram.
+  /// Bind named f64 scalars and arrays under the same contract as QCProgram.
   [[nodiscard]] LogicalResult
-  bindParameters(const std::map<std::string, double>& values);
+  bindParameters(const std::map<std::string, ParameterValue>& values);
+
+  /// Bind a scalar-only map under the same contract as QCProgram.
+  template <std::same_as<double> T = double>
+  [[nodiscard]] LogicalResult
+  bindParameters(const std::map<std::string, T>& values) {
+    return bindParameters(
+        std::map<std::string, ParameterValue>(values.begin(), values.end()));
+  }
 
   /// Run the standard QCO cleanup passes in place.
   [[nodiscard]] LogicalResult cleanup();
@@ -485,15 +554,20 @@ public:
   /// Return the selected QIR profile.
   [[nodiscard]] QIRProfile profile() const noexcept;
 
-  /// Translate this QIR MLIR program to LLVM IR text.
-  [[nodiscard]] FailureOr<std::string> llvmIR() const;
+  /// Consume this QIR program and translate it to LLVM IR text.
+  [[nodiscard]] FailureOr<std::string> intoLLVMIR() &&;
 
-  /// Translate this QIR program to LLVM bitcode in memory.
-  [[nodiscard]] FailureOr<std::vector<std::byte>> toBitcode() const;
+  /// Consume this QIR program and translate it to LLVM bitcode in memory.
+  [[nodiscard]] FailureOr<std::vector<std::byte>> intoBitcode() &&;
 
-  /// Translate and write this QIR program as LLVM bitcode.
+  /// Consume this QIR program and write verified bitcode to a stream.
+  ///
+  /// Leave the stream unchanged if translation or verification fails.
+  [[nodiscard]] LogicalResult intoBitcode(llvm::raw_ostream& output) &&;
+
+  /// Consume this QIR program and write it as LLVM bitcode.
   [[nodiscard]] LogicalResult
-  writeBitcode(const std::filesystem::path& path) const;
+  writeBitcode(const std::filesystem::path& path) &&;
 
 private:
   QIRProfile profile_;
@@ -510,16 +584,26 @@ using CompilerInput =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram>;
 
 /// The program variants returned by the default compiler pipeline.
-using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
-                                     OpenQASMProgram, QIRProgram>;
+using CompilerProgram =
+    std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,
+                 QIRProgram, IQMJSONProgram>;
 
 /// Run the coordinated default compiler pipeline.
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
 [[nodiscard]] FailureOr<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
+runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    std::string_view qcoPipeline = "mqt-qco-default",
+                   const CompilationOptions& options = {});
+
+/// Compile for a target and return the requested representation.
+///
+/// QCImport and raw QCO stop before target compilation and are not accepted.
+/// The environment must include the requested output's lowering constraints.
+[[nodiscard]] FailureOr<CompilerProgram>
+runDefaultPipeline(CompilerInput program, ProgramFormat output,
+                   const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
 
 /// Run the coordinated default compiler pipeline for a target.
@@ -527,8 +611,7 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
 [[nodiscard]] FailureOr<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program,
-                   const TargetEnvironment& environment,
+runDefaultPipeline(CompilerInput program, const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
 
 } // namespace mlir

@@ -19,6 +19,7 @@ include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/MemorySlotInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -1529,6 +1530,7 @@ def IfOp
                                                   "getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
+                    DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
                     SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
                     AttrSizedResultSegments]> {
@@ -1670,6 +1672,7 @@ def IndexSwitchOp
                         RegionBranchOpInterface, ["getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
+                    DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
                     SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
                     AttrSizedResultSegments]> {

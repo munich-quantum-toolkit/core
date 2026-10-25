@@ -14,16 +14,11 @@ function(set_project_warnings target_name)
   set(microsoft_msvc_warnings
       /W4 # Baseline reasonable warnings
       /w14242 # 'identifier': conversion from 'type1' to 'type2', possible loss of data
-      /w14254 # 'operator': conversion from 'type1:field_bits' to 'type2:field_bits', possible loss
-              # of data
+      /w14254 # Conversion between bit fields may lose data
       /w14263 # 'function': member function does not override any base class virtual member function
-      /w14265 # 'classname': class has virtual functions, but destructor is not virtual instances of
-              # this class may not
-      # be destructed correctly
+      /w14265 # Virtual functions with a non-virtual destructor
       /w14287 # 'operator': unsigned/negative constant mismatch
-      /we4289 # nonstandard extension used: 'variable': loop control variable declared in the
-              # for-loop is used outside
-      # the for-loop scope
+      /we4289 # Loop control variable used outside the for-loop scope
       /w14296 # 'operator': expression is always 'boolean_value'
       /w14311 # 'variable': pointer truncation from 'type1' to 'type2'
       /w14545 # expression before comma evaluates to a function which is missing an argument list
@@ -33,12 +28,10 @@ function(set_project_warnings target_name)
       /w14555 # expression has no effect; expected expression with side- effect
       /w14619 # pragma warning: there is no warning number 'number'
       /w14640 # Enable warning on thread un-safe static member initialization
-      /w14826 # Conversion from 'type1' to 'type_2' is sign-extended. This may cause unexpected
-              # runtime behavior.
+      /w14826 # Sign extension during integer conversion
       /w14905 # wide string literal cast to 'LPSTR'
       /w14906 # string literal cast to 'LPWSTR'
-      /w14928 # illegal copy-initialization; more than one user-defined conversion has been
-              # implicitly applied
+      /w14928 # Copy-initialization with multiple implicit user-defined conversions
       /permissive- # standards conformance mode for MSVC compiler.
   )
 
@@ -46,9 +39,7 @@ function(set_project_warnings target_name)
       -Wall
       -Wextra # reasonable and standard
       -Wshadow # warn the user if a variable declaration shadows one from a parent context
-      -Wnon-virtual-dtor # warn the user if a class with virtual functions has a non-virtual
-                         # destructor. This helps
-      # catch hard to track down memory errors
+      -Wnon-virtual-dtor # Virtual functions with a non-virtual destructor
       -Wold-style-cast # warn for c-style casts
       -Wcast-align # warn for potential performance problem casts
       -Wunused # warn on anything being unused
@@ -61,10 +52,8 @@ function(set_project_warnings target_name)
       -Wformat=2 # warn on security issues around functions that format output (ie printf)
       -Wno-unknown-pragmas # do not warn if encountering unknown pragmas
       -Wno-pragmas # do not warn if encountering unknown pragma options
-      $<$<CXX_COMPILER_ID:AppleClang,Clang>:-Wno-unknown-warning-option> # do not warn if
-                                                                         # encountering unknown
-                                                                         # warning options
-  )
+      # AppleClang and Clang support different warning options.
+      $<$<CXX_COMPILER_ID:AppleClang,Clang>:-Wno-unknown-warning-option>)
 
   if(WARNINGS_AS_ERRORS)
     set(clang_warnings ${clang_warnings} -Werror)
@@ -78,8 +67,7 @@ function(set_project_warnings target_name)
       -Wduplicated-branches # warn if if / else branches have duplicated code
       -Wlogical-op # warn about logical operations being used where bitwise were probably wanted
       -Wuseless-cast # warn if you perform a cast to the same type
-      -Wmissing-noreturn # warn if a function that is declared with attribute noreturn does in fact
-                         # return
+      -Wmissing-noreturn # Warn about missing noreturn attributes
   )
 
   if(MSVC)

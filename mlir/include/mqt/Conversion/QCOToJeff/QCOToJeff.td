@@ -22,10 +22,19 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     in order. Canonicalize or unroll modifiers outside this normal form before
     conversion.
 
+    Fixed-size contiguous classical stack arrays become flat jeff arrays in
+    row-major order. Views and copies are normalized before conversion;
+    residual runtime safety assertions are rejected. Array lengths must fit
+    signed i32. Mutable array arguments in helpers remain unsupported.
+
     `qco.static` exports as `jeff.qubit_alloc`; static site indices are not
     preserved. Exchange logical programs before device mapping.
   }];
 
   let dependentDialects = ["mlir::func::FuncDialect", "mlir::jeff::JeffDialect",
-                           "mlir::arith::ArithDialect"];
+                           "mlir::arith::ArithDialect",
+                           "mlir::affine::AffineDialect",
+                           "mlir::linalg::LinalgDialect",
+                           "mlir::memref::MemRefDialect",
+                           "mlir::scf::SCFDialect"];
 }

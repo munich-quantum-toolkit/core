@@ -997,7 +997,7 @@ TEST_F(QIRTest, ClassicalStorageRequiresArrayAndElementCapabilities) {
             Builder(context.get()).getStrArrayAttr({"double"}));
   const auto loops = findModuleFlag(*moduleOp, "backwards_branching");
   ASSERT_TRUE(loops);
-  EXPECT_EQ(cast<IntegerAttr>(loops.getValue()).getInt(), 2);
+  EXPECT_EQ(cast<IntegerAttr>(loops.getValue()).getInt(), 0);
 }
 
 TEST_F(QIRTest, OutputLabelPointerDoesNotRequireArrays) {

@@ -23,6 +23,7 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Support/Passes.h"
+#include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
 #include "mqt/Target/QIR/Export.h"
@@ -44,6 +45,8 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -165,6 +168,7 @@ enum class OutputFormat : std::uint8_t {
   QCO,
   QCOOptimized,
   OpenQASM3,
+  IQMJSON,
   QIRBase,
   QIRAdaptive,
   Jeff,
@@ -357,14 +361,15 @@ static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
 
 /// Write MLIR or encoded QIR to an output file.
 static LogicalResult
-writeOutput(ModuleOp mod, StringRef filename,
+writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
             std::optional<PayloadEncoding> qirEncoding = std::nullopt) {
   std::string qirOutput;
   if (qirEncoding) {
     llvm::raw_string_ostream stream(qirOutput);
-    const auto result = *qirEncoding == PayloadEncoding::Text
-                            ? qir::translateQIRToLLVMIR(mod, stream)
-                            : qir::translateQIRToBitcode(mod, stream);
+    const auto result =
+        *qirEncoding == PayloadEncoding::Text
+            ? qir::translateQIRToLLVMIR(std::move(mod), stream)
+            : qir::translateQIRToBitcode(std::move(mod), stream);
     if (failed(result)) {
       return failure();
     }
@@ -380,8 +385,10 @@ writeOutput(ModuleOp mod, StringRef filename,
   if (qirEncoding) {
     output->os() << qirOutput;
   } else if (filename == "-") {
-    mod.print(output->os());
-  } else if (failed(writeBytecodeToFile(mod, output->os()))) {
+    // QIR export consumes mod only when qirEncoding is set.
+    // NOLINTNEXTLINE(bugprone-use-after-move)
+    mod->print(output->os());
+  } else if (failed(writeBytecodeToFile(*mod, output->os()))) {
     return failure();
   }
 
@@ -601,6 +608,9 @@ static int runCompiler(int argc, char** argv) {
       case ProgramFormat::OpenQASM3:
         parsedOutputFormat = OutputFormat::OpenQASM3;
         break;
+      case ProgramFormat::IQMJSON:
+        parsedOutputFormat = OutputFormat::IQMJSON;
+        break;
       case ProgramFormat::QIRBase:
         parsedOutputFormat = OutputFormat::QIRBase;
         break;
@@ -613,6 +623,13 @@ static int runCompiler(int argc, char** argv) {
     }
     targetEnvironment.emplace(std::move(*compilerTarget),
                               std::move(*selectedPayload));
+  }
+
+  if (*parsedOutputFormat == OutputFormat::IQMJSON &&
+      targetEnvironment->target().nativeOperationsKind() ==
+          CompilerTarget::NativeOperations::Kind::Unrestricted) {
+    llvm::errs() << "IQM JSON requires explicit native IQM operations.\n";
+    return 1;
   }
 
   ParsedProgram program;
@@ -680,7 +697,7 @@ static int runCompiler(int argc, char** argv) {
     if (!runReproducer && failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }
-    return failed(writeOutput(*program.mod, outputFilename)) ? 1 : 0;
+    return failed(writeOutput(std::move(program.mod), outputFilename)) ? 1 : 0;
   }
 
   if (*parsedOutputFormat == OutputFormat::QCImport &&
@@ -774,6 +791,7 @@ static int runCompiler(int argc, char** argv) {
 
   if ((*parsedOutputFormat == OutputFormat::QC ||
        *parsedOutputFormat == OutputFormat::OpenQASM3 ||
+       *parsedOutputFormat == OutputFormat::IQMJSON ||
        *parsedOutputFormat == OutputFormat::QIRBase ||
        *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
       failed(runPasses([](OpPassManager& pm) {
@@ -784,21 +802,18 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat == OutputFormat::QIRBase &&
-      failed(runPasses([](OpPassManager& pm) {
-        populateQIRPreparationPipeline(pm);
-        pm.addPass(createQCToQIRBase());
-        populateQIRCleanupPipeline(pm, false);
-        return success();
-      }))) {
-    return 1;
-  }
-
-  if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
-      failed(runPasses([](OpPassManager& pm) {
-        populateQIRPreparationPipeline(pm);
-        pm.addPass(createQCToQIRAdaptive());
-        populateQIRCleanupPipeline(pm, true);
+  if ((*parsedOutputFormat == OutputFormat::QIRBase ||
+       *parsedOutputFormat == OutputFormat::QIRAdaptive ||
+       *parsedOutputFormat == OutputFormat::IQMJSON) &&
+      failed(runPasses([&](OpPassManager& pm) {
+        const bool adaptive = *parsedOutputFormat == OutputFormat::QIRAdaptive;
+        const auto payload =
+            llvm::cantFail(PayloadSpecification::forProgramFormat(
+                adaptive ? ProgramFormat::QIRAdaptive
+                         : ProgramFormat::QIRBase));
+        populateQIRPreparationPipeline(pm, payload.materialize(*context));
+        pm.addPass(adaptive ? createQCToQIRAdaptive() : createQCToQIRBase());
+        populateQIRCleanupPipeline(pm, adaptive);
         return success();
       }))) {
     return 1;
@@ -809,6 +824,26 @@ static int runCompiler(int argc, char** argv) {
     if (failed(writeJeffOutput(*program.mod, outputFilename))) {
       return 1;
     }
+  } else if (*parsedOutputFormat == OutputFormat::IQMJSON) {
+    llvm::LLVMContext llvmContext;
+    auto llvmModule = qir::translateQIRToLLVM(*program.mod, llvmContext);
+    if (!llvmModule) {
+      return 1;
+    }
+    auto source = qir::exportIQMJSON(*llvmModule, targetEnvironment->target());
+    if (!source) {
+      llvm::errs() << llvm::toString(source.takeError()) << '\n';
+      return 1;
+    }
+    std::string errorMessage;
+    auto output = openOutputFile(outputFilename, &errorMessage);
+    if (!output) {
+      llvm::errs() << "Failed to open output file '" << outputFilename
+                   << "': " << errorMessage << "\n";
+      return 1;
+    }
+    output->os() << *source;
+    output->keep();
   } else if (*parsedOutputFormat == OutputFormat::OpenQASM3) {
     std::string errorMessage;
     auto output = openOutputFile(outputFilename, &errorMessage);
@@ -817,7 +852,8 @@ static int runCompiler(int argc, char** argv) {
                    << "': " << errorMessage << "\n";
       return 1;
     }
-    if (failed(qc::translateQCToOpenQASM3(*program.mod, output->os()))) {
+    if (failed(
+            qc::translateQCToOpenQASM3(std::move(program.mod), output->os()))) {
       return 1;
     }
     output->keep();
@@ -830,10 +866,11 @@ static int runCompiler(int argc, char** argv) {
                 llvm::sys::path::extension(outputFilename) == ".ll"
             ? PayloadEncoding::Text
             : PayloadEncoding::Binary;
-    if (failed(writeOutput(*program.mod, outputFilename, qirEncoding))) {
+    if (failed(
+            writeOutput(std::move(program.mod), outputFilename, qirEncoding))) {
       return 1;
     }
-  } else if (writeOutput(program.mod.get(), outputFilename).failed()) {
+  } else if (writeOutput(std::move(program.mod), outputFilename).failed()) {
     return 1;
   }
 

@@ -15,9 +15,7 @@ function(run_success description output_variable)
   if(NOT result EQUAL 0)
     message(FATAL_ERROR "${description} failed with exit code ${result}:\n${output}${error}")
   endif()
-  set(${output_variable}
-      "${output}"
-      PARENT_SCOPE)
+  set(${output_variable} "${output}" PARENT_SCOPE)
 endfunction()
 
 function(run_failure description)
@@ -45,8 +43,8 @@ endif()
 
 run_success("benchmark listing" list_output "${CLI}" list)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
-if(NOT benchmark_count EQUAL 15)
-  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 15")
+if(NOT benchmark_count EQUAL 16)
+  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 16")
 endif()
 
 run_success("multiplexer description" describe_output "${CLI}" describe multiplexer)
@@ -54,16 +52,7 @@ string(JSON schema GET "${describe_output}" "$schema")
 if(NOT schema STREQUAL "https://json-schema.org/draft/2020-12/schema")
   message(FATAL_ERROR "describe did not return a JSON Schema")
 endif()
-string(
-  JSON
-  minimum_qubits
-  GET
-  "${describe_output}"
-  properties
-  parameters
-  properties
-  qubits
-  minimum)
+string(JSON minimum_qubits GET "${describe_output}" properties parameters properties qubits minimum)
 if(NOT minimum_qubits EQUAL 2)
   message(FATAL_ERROR "multiplexer schema returned minimum ${minimum_qubits} instead of 2")
 endif()
@@ -116,8 +105,8 @@ run_failure(
   --output
   "${manifest_only_directory}")
 file(SHA256 "${manifest_only_path}" retained_manifest_only_hash)
-if(EXISTS "${manifest_only_program_path}" OR NOT retained_manifest_only_hash STREQUAL
-                                             original_manifest_hash)
+if(EXISTS "${manifest_only_program_path}"
+   OR NOT retained_manifest_only_hash STREQUAL original_manifest_hash)
   message(FATAL_ERROR "a manifest collision created a program or changed the manifest")
 endif()
 
@@ -133,8 +122,8 @@ run_failure(
   "${qc_directory}")
 file(SHA256 "${program_path}" retained_program_hash)
 file(SHA256 "${manifest_path}" retained_manifest_hash)
-if(NOT retained_program_hash STREQUAL original_program_hash OR NOT retained_manifest_hash STREQUAL
-                                                               original_manifest_hash)
+if(NOT retained_program_hash STREQUAL original_program_hash
+   OR NOT retained_manifest_hash STREQUAL original_manifest_hash)
   message(FATAL_ERROR "a rejected generation changed an existing output")
 endif()
 file(GLOB qc_temporary_files "${qc_directory}/*.tmp-*")
@@ -171,8 +160,7 @@ execute_process(
 if(NOT evaluation_result EQUAL 0)
   message(
     FATAL_ERROR
-      "evaluation failed with exit code ${evaluation_result}:\n${evaluation_output}${evaluation_error}"
-  )
+      "evaluation failed with exit code ${evaluation_result}:\n${evaluation_output}${evaluation_error}")
 endif()
 string(JSON evaluated_case_id GET "${evaluation_output}" case_id)
 string(JSON total_variation_distance GET "${evaluation_output}" metrics total_variation_distance)
@@ -181,15 +169,22 @@ if(NOT evaluated_case_id STREQUAL case_id OR total_variation_distance GREATER 1e
 endif()
 
 execute_process(
-  COMMAND "${CLI}" generate --instance-specification - --format jeff --output "${qc_directory}"
+  COMMAND
+    "${CLI}"
+    generate
+    --instance-specification
+    -
+    --format
+    jeff
+    --output
+    "${qc_directory}"
   INPUT_FILE "${instance_specification}"
   RESULT_VARIABLE jeff_result
   OUTPUT_VARIABLE jeff_output
   ERROR_VARIABLE jeff_error)
 if(NOT jeff_result EQUAL 0)
   message(
-    FATAL_ERROR "jeff generation failed with exit code ${jeff_result}:\n${jeff_output}${jeff_error}"
-  )
+    FATAL_ERROR "jeff generation failed with exit code ${jeff_result}:\n${jeff_output}${jeff_error}")
 endif()
 string(JSON jeff_case_id GET "${jeff_output}" case_id)
 string(JSON jeff_path GET "${jeff_output}" program_path)

@@ -45,7 +45,7 @@ repos:
 
   ## Check for security issues in GitHub Actions workflows
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.30.1
+    rev: v1.31.1
     hooks:
       - id: zizmor
         priority: 0
@@ -60,14 +60,14 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.10.11
+    rev: 2026.10.17
     hooks:
       - id: validate-pyproject
         priority: 0
 
   ## Ensure uv.lock is up to date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.0
+    rev: 0.13.5
     hooks:
       - id: uv-lock
         priority: 0
@@ -143,7 +143,7 @@ repos:
 
   ## Format Markdown files with rumdl
   - repo: https://github.com/rvben/rumdl-pre-commit
-    rev: v0.2.79
+    rev: v0.3.0
     hooks:
       - id: rumdl
         args: [--fix]
@@ -158,14 +158,13 @@ repos:
       - id: pyproject-fmt
         priority: 5
 
-  ## Format CMake files with cmake-format
-  - repo: https://github.com/cheshirekow/cmake-format-precommit
-    rev: v0.6.13
+  ## Format CMake files with cmakefmt
+  - repo: https://github.com/cmakefmt/cmakefmt
+    rev: v2.2.0
     hooks:
-      - id: cmake-format
-        additional_dependencies: [pyyaml]
+      - id: cmakefmt-fix
         types: [file]
-        files: (\.cmake|CMakeLists.txt)(.in)?$
+        files: (\.cmake|CMakeLists\.txt)(\.in)?$
         priority: 5
 
   ## Format C++ files with clang-format
@@ -184,7 +183,7 @@ repos:
 
   ## Format and lint Python files with ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.0
+    rev: v0.17.1
     hooks:
       - id: ruff-check
         require_serial: true
@@ -204,7 +203,7 @@ repos:
 
   ## Check Python types with ty
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.86
+    rev: v0.0.91
     hooks:
       - id: ty
         args: [--no-install-project]

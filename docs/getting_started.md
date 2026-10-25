@@ -29,13 +29,13 @@ device selection, compilation, shot count, and execution seed.
 :load: _build/readme_example.py
 ```
 
-Compilation and submission are separate operations:
-{py:func}`~mqt.core.mlir.compile_program` produces a reusable
-{py:class}`~mqt.core.mlir.CompiledProgram`, and
-{py:func}`~mqt.core.mlir.submit_program` creates a device job. `job.wait()`
-waits for completion and reports execution failure. Both Adaptive QIR and
-OpenQASM 3 execute the same circuit; `custom1=17` selects DDSIM's random seed.
-Custom job properties are device-specific.
+{py:func}`~mqt.core.mlir.submit_program` compiles the program for the
+destination and creates a device job in one call. Use
+{py:func}`~mqt.core.mlir.compile_program` separately when reusing a native
+{py:class}`~mqt.core.mlir.CompiledProgram` for multiple jobs. `job.wait()` waits
+for completion and reports execution failure. Both Adaptive QIR and OpenQASM 3
+execute the same circuit; `custom1=17` selects DDSIM's random seed. Custom job
+properties are device-specific.
 
 The driver first checks for even numbers, primes, and perfect powers. These need
 no quantum execution and use zero attempts. Otherwise it tries base 2, then

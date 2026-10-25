@@ -18,9 +18,9 @@ whole-register write followed by an indexed load during dominance repair.
 
 ## Decisions
 
-- Keep main's recursive memory-effect ordering and FIFO topological sorter from
-  #2436 unchanged. The sorter preserves mutable-register dependencies but cannot
-  repair a cycle introduced by routing.
+- Keep main's recursive memory-effect ordering and FIFO topological sorter
+  from #2436 unchanged. The sorter preserves mutable-register dependencies but
+  cannot repair a cycle introduced by routing.
 - Do not require measurement/store adjacency in the mapper. Native Qiskit export
   supports intervening quantum operations since #2439.
 - Defer composites while an earlier wire operation still needs routing. Terminal

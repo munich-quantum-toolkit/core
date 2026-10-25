@@ -24,8 +24,8 @@ and Python tests continue to pass for all retained behavior.
   `GenerationWireStrategy` have no Core consumer other than their own tests. The
   exponential helper previously supplied approximation tests, but Core removed
   approximation support in pull request #2154. Evidence: a repository search on
-  Core `main` at `1c8f61ae2` and the history of pull requests #975, #985, and
-  #2154.
+  Core `main` at `1c8f61ae2` and the history of pull requests #975, #985,
+  and #2154.
 
 - `buildFunctionalityRecursive` has two current production entry points: MQT
   DDSIM's `UnitarySimulator` and Core's untested Python `recursive` options.

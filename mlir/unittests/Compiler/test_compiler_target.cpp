@@ -152,8 +152,7 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
                 "use major[.minor[.patch]]");
   expectInvalid(
       mlir::PayloadSpecification::create({.id = "", .version = "2.1.0"}),
-      "Invalid payload specification: Payload format requires an ID and "
-      "version");
+      "Invalid payload specification: Payload format requires an ID");
   expectInvalid(
       mlir::PayloadSpecification::create(
           {.id = std::string("qir\0", 4), .version = "2.1.0"}),
@@ -207,8 +206,94 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
                 "a duplicate capability ID/value pair");
 }
 
+TEST(PayloadSpecificationTest, RestrictsCapabilitiesWithoutChangingFormat) {
+  using Capability = mlir::ProgramCapability;
+  const auto output = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2.1", .profile = "adaptive"},
+      {
+          {
+              .id = "forward-branching",
+              .constraints =
+                  {
+                      {
+                          .id = "max-control-flow-nesting-depth",
+                          .value = 8,
+                      },
+                  },
+          },
+          {
+              .id = "counted-iteration",
+              .constraints = {{.id = "max-iteration-count", .value = 4}},
+          },
+          {.id = "conditional-loop"},
+          {.id = "qir.int-computations"},
+      }));
+  const auto target = valid(mlir::PayloadSpecification::create(
+      {.id = "vendor.ir", .version = "1"},
+      {
+          {
+              .id = "forward-branching",
+              .constraints =
+                  {
+                      {
+                          .id = "max-control-flow-nesting-depth",
+                          .value = 2,
+                      },
+                  },
+          },
+          {
+              .id = "counted-iteration",
+              .constraints =
+                  {
+                      {.id = "max-iteration-count", .value = 16},
+                      {.id = "max-control-flow-nesting-depth", .value = 3},
+                  },
+          },
+          {.id = "multiway-branching"},
+      },
+      true));
+  const auto restricted = output.restrictCapabilities(target);
+  EXPECT_EQ(restricted.format(), output.format());
+  std::vector<Capability> expected{
+      {
+          .id = "forward-branching",
+          .constraints = {{.id = "max-control-flow-nesting-depth", .value = 2}},
+      },
+      {
+          .id = "counted-iteration",
+          .constraints =
+              {
+                  {.id = "max-iteration-count", .value = 4},
+                  {.id = "max-control-flow-nesting-depth", .value = 3},
+              },
+      },
+      {.id = "qir.int-computations"},
+  };
+  EXPECT_EQ(restricted.capabilities(), llvm::ArrayRef(expected));
+  EXPECT_FALSE(restricted.optionalCapabilitiesKnown());
+
+  auto format = output.format();
+  format.encoding = mlir::PayloadEncoding::Binary;
+  const auto sameFormat = valid(mlir::PayloadSpecification::create(
+      format, {target.capabilities().begin(), target.capabilities().end()},
+      true));
+  const auto allRestricted = output.restrictCapabilities(sameFormat);
+  expected.pop_back();
+  EXPECT_EQ(allRestricted.capabilities(), llvm::ArrayRef(expected));
+
+  format.profile = "base";
+  const auto otherProfile = valid(mlir::PayloadSpecification::create(
+      format, {target.capabilities().begin(), target.capabilities().end()},
+      true));
+  EXPECT_EQ(output.restrictCapabilities(otherProfile).capabilities(),
+            restricted.capabilities());
+}
+
 TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
   for (const auto& [input, expected] : std::array{
+           std::pair{"", ""},
            std::pair{"2", "2.0.0"},
            std::pair{"2.1", "2.1.0"},
            std::pair{"2.1.3", "2.1.3"},
@@ -217,8 +302,15 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
     const auto payload = valid(mlir::PayloadSpecification::create(
         {.id = "qir", .version = input, .profile = "base"}));
     EXPECT_EQ(payload.format().version, expected);
+    EXPECT_EQ(
+        valid(mlir::PayloadSpecification::create(payload.materialize(context)))
+            .format(),
+        payload.format());
   }
 
+  EXPECT_EQ(valid(valid(mlir::PayloadSpecification::create({.id = "iqm-json"}))
+                      .compilerOutput()),
+            mlir::ProgramFormat::IQMJSON);
   const auto qir = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2.1", .profile = "base"}));
   EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);

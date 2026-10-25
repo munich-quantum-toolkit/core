@@ -29,8 +29,11 @@ function(enable_project_options target_name)
     if(ENABLE_CACHE AND CMAKE_INTERPROCEDURAL_OPTIMIZATION)
       set(lto_cache "${PROJECT_BINARY_DIR}/thinlto-cache-$<CONFIG>")
       if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND linker_id STREQUAL "LLD")
-        target_link_options(${target_name} INTERFACE "LINKER:--thinlto-cache-dir=${lto_cache}"
-                            "LINKER:--thinlto-cache-policy=cache_size_bytes=1g")
+        target_link_options(
+          ${target_name}
+          INTERFACE
+            "LINKER:--thinlto-cache-dir=${lto_cache}"
+            "LINKER:--thinlto-cache-policy=cache_size_bytes=1g")
       elseif(APPLE AND linker_id MATCHES "^(AppleClang|DEFAULT|SYSTEM|APPLE_CLASSIC)$")
         target_link_options(${target_name} INTERFACE "LINKER:-cache_path_lto,${lto_cache}")
       endif()
@@ -44,7 +47,11 @@ function(enable_project_options target_name)
   endif()
 
   if(MSVC)
-    target_compile_options(${target_name} INTERFACE /utf-8 /EHsc)
+    # Respect LLVM targets that explicitly disable exceptions.
+    target_compile_options(
+      ${target_name}
+      INTERFACE
+        /utf-8 "$<$<NOT:$<IN_LIST:_HAS_EXCEPTIONS=0,$<TARGET_PROPERTY:COMPILE_DEFINITIONS>>>:/EHsc>")
   else()
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
@@ -61,8 +68,8 @@ function(enable_project_options target_name)
 
       check_cxx_compiler_flag(-march=native HAS_MARCH_NATIVE)
       if(HAS_MARCH_NATIVE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_SYSTEM_PROCESSOR MATCHES
-                                                      "(x86)|(x86_64)|(AMD64)|(amd64)")
+        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+           OR CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(x86_64)|(AMD64)|(amd64)")
           target_compile_options(${target_name} INTERFACE -march=native)
         else()
           target_compile_options(${target_name} INTERFACE -mcpu=native)
@@ -71,13 +78,15 @@ function(enable_project_options target_name)
     endif()
 
     # enable some more optimizations in release mode
-    target_compile_options(${target_name} INTERFACE $<$<CONFIG:RELEASE>:-fno-math-errno
-                                                    -fno-trapping-math -fno-stack-protector>)
+    target_compile_options(
+      ${target_name}
+      INTERFACE "$<$<CONFIG:RELEASE>:-fno-math-errno;-fno-trapping-math;-fno-stack-protector>")
 
     # enable some more options for better debugging
     target_compile_options(
-      ${target_name} INTERFACE $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer
-                               -fno-optimize-sibling-calls -fno-inline-functions>)
+      ${target_name}
+      INTERFACE
+        "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer;-fno-optimize-sibling-calls;-fno-inline-functions>")
   endif()
 
   option(BINDINGS "Configure for building Python bindings")

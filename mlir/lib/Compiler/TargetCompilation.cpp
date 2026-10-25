@@ -29,7 +29,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/WalkResult.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -216,17 +215,9 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
-  // Unrolling exposes static tensor slots and unreachable callees.
-  pm.addPass(mqt::createSimplifyClassicalControl());
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
-          GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(createCSEPass());
-  // Preserve unused, initialized slots as potential decomposition helpers.
-  if (ancillaBudget == 0) {
-    pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  }
-  pm.addPass(createSymbolDCEPass());
+  // Unrolling exposes static register indices and tensor slots.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
+                             /*shrinkQTensor=*/ancillaBudget == 0);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target, 3, ancillaBudget));
   if (ancillaBudget != 0) {

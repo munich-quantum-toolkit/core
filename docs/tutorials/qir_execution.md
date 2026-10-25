@@ -49,12 +49,14 @@ circuit.draw("mpl")
 ```
 
 A single call compiles that Qiskit circuit to QIR. LLVM text lets us inspect the
-calls and metadata; bitcode serializes the same program for execution.
+calls and metadata; bitcode serializes the same program for execution. Export
+consumes the program, so use `copy=True` when both encodings are needed.
 
 ```{code-cell} ipython3
 base = compile_program(circuit, output=OutputFormat.QIR_BASE)
 assert base.profile is QIRProfile.BASE
-display(Code(base.llvm_ir, language="llvm"))
+base_llvm = base.to_llvm_ir(copy=True)
+display(Code(base_llvm, language="llvm"))
 ```
 
 Look for three parts of the output:
@@ -80,14 +82,14 @@ assert abs(counts["00"] / shots - 0.5) < 0.08
 plot_distribution(counts, title="Base Profile: Bell measurements")
 ```
 
-Try submitting `base.llvm_ir` with `ProgramFormat.QIR_BASE_STRING` instead. Does
+Try submitting `base_llvm` with `ProgramFormat.QIR_BASE_STRING` instead. Does
 changing the serialization change the circuit's meaning?
 
 ```{code-cell} ipython3
-text_job = device.submit_job(base.llvm_ir, ProgramFormat.QIR_BASE_STRING, shots, custom1=seed)
+text_job = device.submit_job(base_llvm, ProgramFormat.QIR_BASE_STRING, shots, custom1=seed)
 assert text_job.wait()
 assert text_job.get_shots() == job.get_shots()
-print(f"LLVM text: {len(base.llvm_ir.encode())} bytes; bitcode: {len(bitcode)} bytes")
+print(f"LLVM text: {len(base_llvm.encode())} bytes; bitcode: {len(bitcode)} bytes")
 ```
 
 The equality here uses the same DDSIM execution path and seed. Different
@@ -112,6 +114,8 @@ bit answer = measure q[1];
 """
 
 adaptive = compile_program(feedback_source, output=OutputFormat.QIR_ADAPTIVE)
+assert adaptive.profile is QIRProfile.ADAPTIVE
+adaptive_llvm = adaptive.to_llvm_ir(copy=True)
 adaptive_job = device.submit_job(
     adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, shots, custom1=seed
 )
@@ -133,10 +137,9 @@ Inspect the Adaptive program's result read and conditional branch:
 
 ```{code-cell} ipython3
 :tags: [hide-input]
-for line in adaptive.llvm_ir.splitlines():
+for line in adaptive_llvm.splitlines():
     if "read_result" in line or "br i1" in line or '"qir_profiles"' in line:
         print(line)
-assert adaptive.profile is QIRProfile.ADAPTIVE
 ```
 
 **Experiment:** change `x q[1]` to `z q[1]`. Qubit 1 starts in $|0\rangle$;
@@ -178,10 +181,11 @@ this program declares its conditional loop and resource management:
 
 ```{code-cell} ipython3
 :tags: [hide-input]
-for line in loop.llvm_ir.splitlines():
+loop_llvm = loop.to_llvm_ir(copy=True)
+for line in loop_llvm.splitlines():
     if line.startswith("!"):
         print(line)
-assert '"backwards_branching"' in loop.llvm_ir
+assert '"backwards_branching"' in loop_llvm
 ```
 
 `backwards_branching` describes the loop capability; LLVM prints the
@@ -194,8 +198,8 @@ unsupported control flow:
 
 ```{code-cell} ipython3
 try:
-    compile_program(loop_source, target=device, program_format=ProgramFormat.QIR_BASE_MODULE)
-except ValueError as error:
+    compile_program(loop_source, target=device, output=OutputFormat.QIR_BASE)
+except RuntimeError as error:
     print(error)
 else:
     raise AssertionError("A conditional loop requires an Adaptive payload")
@@ -224,10 +228,9 @@ The header identifies the output schema. `START` and `END` delimit each shot;
 recorded measurement bits, not every intermediate measurement performed in the
 loop.
 
-Capture runs once per shot and retains the text in memory. Leave it disabled for
-ordinary sampling; it also prevents the terminal-sampling statevector from being
-retained. The {doc}`QIR guide <../qir/index>` covers both output schemas,
-resource lifetimes, and state-extraction restrictions.
+Leave capture disabled for ordinary sampling. The
+{doc}`QIR guide <../qir/index>` covers both output schemas, resource lifetimes,
+and state-extraction restrictions.
 
 Continue with {doc}`qdmi_execution` to explore device discovery, payload
 selection, repeated jobs, and the different kinds of results behind this API.
