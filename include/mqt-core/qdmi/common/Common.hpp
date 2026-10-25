@@ -40,9 +40,6 @@ using CustomJobParameter =
 /// Preserve a provider status in an owned LLVM error.
 [[nodiscard]] llvm::Error makeError(int status, const llvm::Twine& message);
 
-/// Throws the established C++ exception for a failed QDMI operation.
-void throwIfError(int result, const std::string& message);
-
 namespace detail {
 /// Encode a native path for LLVM's UTF-8 Windows filesystem APIs.
 [[nodiscard]] llvm::Expected<std::string>

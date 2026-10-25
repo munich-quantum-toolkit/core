@@ -18,6 +18,15 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/ilist.h"
+#include "llvm/ADT/ilist_node.h"
+#include "llvm/Support/Error.h"
+
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -27,9 +36,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -162,30 +168,18 @@ struct DeviceAPI {
   virtual ~DeviceAPI() = default;
 };
 
-/// Loads a device API from a shared library and owns its lifetime.
+/// Owns a dynamic provider library and its QDMI function table.
 class LoadedDeviceAPI final : public DeviceAPI {
-  /// Handle to the dynamic library
   void* libHandle_;
-
-  LoadedDeviceAPI(void* handle, const std::string& libName,
-                  const std::string& prefix);
+  bool initialized_ = false;
+  explicit LoadedDeviceAPI(void* handle) : libHandle_(handle) {}
+  llvm::Error initialize(const std::string& prefix);
   friend auto loadDeviceAPI(const std::string& libName,
                             const std::string& prefix)
-      -> std::shared_ptr<LoadedDeviceAPI>;
+      -> llvm::Expected<LoadedDeviceAPI*>;
 
 public:
-  /// Constructs a LoadedDeviceAPI object.
-  ///
-  /// This constructor loads the QDMI device interface functions
-  /// from the dynamic library specified by `libName` and `prefix`.
-  /// @param libName is the name of the dynamic library to load.
-  /// @param prefix is the prefix used for the function names in the library.
-  LoadedDeviceAPI(const std::string& libName, const std::string& prefix);
-
-  /// Destructor for the LoadedDeviceAPI.
-  ///
-  /// This destructor calls the @ref QDMI_device_finalize function if it
-  /// is not null and closes the dynamic library.
+  /// Finalize a successfully initialized provider and close the library.
   ~LoadedDeviceAPI() override;
 };
 
@@ -205,60 +199,39 @@ private:
   /// Stable ID assigned by the driver.
   std::string id_;
 
-  /// The function table and library lifetime for this device.
-  std::shared_ptr<qdmi::DeviceAPI> api_;
+  /// Function table owned by the process-lifetime library cache or caller.
+  const qdmi::DeviceAPI* api_;
   /// The device session handle.
   QDMI_Device_Session deviceSession_ = nullptr;
   /// Client-facing wrappers for direct child devices.
   std::vector<std::unique_ptr<QDMI_Device_impl_d>> childDevices_;
   /// Guards the owned job wrappers.
   std::mutex jobsMutex_;
-  /// Map of jobs to their corresponding unique pointers of
-  /// QDMI_Job_impl_d objects.
-  std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs_;
+  /// Intrusive ownership avoids allocating a second node for each job.
+  llvm::iplist<QDMI_Job_impl_d> jobs_;
 
-  /// Takes ownership of a successfully created or retrieved provider job.
-  auto adoptJob(int status, QDMI_Device_Job deviceJob, QDMI_Job* job) -> int;
+  auto adoptJob(int status, QDMI_Device_Job deviceJob,
+                std::unique_ptr<QDMI_Job_impl_d> wrapper, QDMI_Job* job) -> int;
+
+  explicit QDMI_Device_impl_d(const qdmi::DeviceAPI& library)
+      : api_(&library) {}
+  llvm::Error initialize(const qdmi::DeviceSessionConfig& config,
+                         QDMI_Child_Device childDevice, bool strict);
 
 public:
-  /// Constructs a top-level QDMI device from an exclusively owned library.
+  /// Open a device session and its children.
   ///
-  /// @param lib is the device library to take ownership of.
-  /// @param config is the configuration for device session parameters.
-  /// @param id is the configured stable ID; empty for an unnamed child.
-  /// @param strict rejects session parameters the device does not support.
-  explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceAPI>&& api,
-                              const qdmi::DeviceSessionConfig& config = {},
-                              std::string id = {}, const bool strict = false)
-      : QDMI_Device_impl_d(std::shared_ptr(std::move(api)), config,
-                           std::move(id), nullptr, strict) {}
-
-  /// Constructor for the QDMI device.
-  ///
-  /// This constructor initializes the device session and allocates
-  /// the device session handle.
-  /// @param lib is a shared pointer to the device library that provides the
-  /// device interface functions.
-  /// @param config is the configuration for device session parameters.
-  /// @param id is the configured stable ID; empty for an unnamed child.
-  /// @param strict rejects session parameters the device does not support.
-  /// @param childDevice optionally selects a child device for this wrapper.
-  explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceAPI> api,
-                              const qdmi::DeviceSessionConfig& config = {},
-                              std::string id = {},
-                              QDMI_Child_Device childDevice = nullptr,
-                              bool strict = false);
+  /// Failure releases partial sessions.
+  [[nodiscard]] static llvm::Expected<std::unique_ptr<QDMI_Device_impl_d>>
+  create(const qdmi::DeviceAPI& library,
+         const qdmi::DeviceSessionConfig& config = {},
+         QDMI_Child_Device childDevice = nullptr, std::string id = {},
+         bool strict = false);
 
   /// Destructor for the QDMI device.
   ///
-  /// This destructor frees the device session and clears the jobs map.
-  ~QDMI_Device_impl_d() {
-    jobs_.clear();
-    childDevices_.clear();
-    if (api_ && deviceSession_ != nullptr) {
-      api_->device_session_free(deviceSession_);
-    }
-  }
+  /// This destructor frees the device session and frees its jobs.
+  ~QDMI_Device_impl_d();
 
   /// Returns The device interface function table.
   [[nodiscard]] auto api() const -> const qdmi::DeviceAPI& { return *api_; }
@@ -301,7 +274,9 @@ public:
 };
 
 /// Definition of the QDMI Job.
-struct QDMI_Job_impl_d {
+struct QDMI_Job_impl_d : llvm::ilist_node<QDMI_Job_impl_d> {
+  friend struct QDMI_Device_impl_d;
+
 private:
   /// The device job handle.
   QDMI_Device_Job deviceJob_ = nullptr;
@@ -315,7 +290,8 @@ public:
   /// and the device library.
   /// @param deviceJob is the handle to the device job.
   /// @param device is the device associated with the job.
-  explicit QDMI_Job_impl_d(QDMI_Device_Job deviceJob, QDMI_Device device)
+  explicit QDMI_Job_impl_d(QDMI_Device_Job deviceJob,
+                           QDMI_Device device) noexcept
       : deviceJob_(deviceJob), device_(device) {}
 
   /// Destructor for the QDMI job.
@@ -393,21 +369,30 @@ private:
   /// The status of the session.
   qdmi::SessionStatus status_ = qdmi::SessionStatus::ALLOCATED;
   /// Snapshot of devices visible when this session was allocated.
-  std::vector<QDMI_Device> devices_;
+  llvm::ArrayRef<QDMI_Device> devices_;
 
   /// A targeted private allocation creates one device outside the shared
   /// registry.
   ///
   /// Keep that device alive for the lifetime of this session; ordinary sessions
-  /// instead hold a snapshot of registry-owned devices in devices_.
-  std::shared_ptr<QDMI_Device_impl_d> ownedDevice_;
+  /// instead borrow the fixed catalog of registry-owned devices.
+  std::unique_ptr<QDMI_Device_impl_d> ownedDevice_;
+  QDMI_Device privateDevice_ = nullptr;
 
 public:
-  /// Constructor from an explicit device-handle snapshot.
-  explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
+  /// Constructor borrowing the fixed device catalog.
+  explicit QDMI_Session_impl_d(llvm::ArrayRef<QDMI_Device> devices) noexcept;
 
   /// Constructor for one privately targeted device session.
-  explicit QDMI_Session_impl_d(std::shared_ptr<QDMI_Device_impl_d> device);
+  explicit QDMI_Session_impl_d(
+      std::unique_ptr<QDMI_Device_impl_d> device) noexcept;
+
+  // The targeted device view points into this object.
+  QDMI_Session_impl_d(const QDMI_Session_impl_d&) = delete;
+  QDMI_Session_impl_d& operator=(const QDMI_Session_impl_d&) = delete;
+  QDMI_Session_impl_d(QDMI_Session_impl_d&&) = delete;
+  QDMI_Session_impl_d& operator=(QDMI_Session_impl_d&&) = delete;
+  ~QDMI_Session_impl_d() = default;
 
   /// Initializes the session.
   ///
@@ -435,12 +420,18 @@ namespace qdmi {
 /// @note This class is a singleton that manages the QDMI libraries and
 /// sessions. It is responsible for loading the libraries, allocating sessions,
 /// and providing access to the devices.
+/// Fallible C++ methods return owned llvm::Error or llvm::Expected results.
+/// The QDMI C API reports failures with status codes.
 class Driver final : public Singleton<Driver> {
   friend class Singleton;
   friend class Session;
 
   /// Private constructor to enforce the singleton pattern.
-  Driver();
+  Driver() = default;
+
+  /// Called with stateMutex_ held. A failed discovery can be retried.
+  llvm::Error initialize();
+  bool initialized_ = false;
 
   /// Guards all mutable driver state below.
   mutable std::mutex stateMutex_;
@@ -451,38 +442,28 @@ class Driver final : public Singleton<Driver> {
   /// Ensures that the configured client catalog is materialized once.
   std::once_flag clientCatalogOnce_;
 
-  /// Vector of unique pointers to QDMI_Device_impl_d objects.
-  std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
-
-  /// Registered definitions in stable registration order.
-  std::vector<DeviceDefinition> definitions_;
-
-  /// IDs disabled by the highest-precedence configuration source.
-  std::unordered_set<std::string> disabledDeviceIds_;
-
-  /// Initially discovered definitions visible to the client API.
-  std::vector<std::string> clientDefinitionIds_;
-
-  /// Materialized devices exposed through the client API.
-  std::vector<QDMI_Device> clientDevices_;
-
-  /// Opened devices indexed by their stable registration ID.
-  std::unordered_map<std::string, QDMI_Device> openedDevices_;
-
-  /// Device IDs whose persistent sessions are being opened.
-  std::unordered_set<std::string> openingDeviceIds_;
-
-  /// Map of sessions to their corresponding unique pointers to
-  /// QDMI_Session_impl_d objects.
-  std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
-      sessions_;
+  struct RegistryEntry {
+    DeviceDefinition definition;
+    std::unique_ptr<QDMI_Device_impl_d> device;
+    bool opening = false;
+  };
+  /// Entries stay at stable addresses while the registry grows.
+  llvm::StringMap<RegistryEntry> definitions_;
+  llvm::SmallVector<RegistryEntry*> registrationOrder_;
+  llvm::StringSet<> disabledDeviceIds_;
+  /// Keys owned by definitions_; runtime registration does not extend this
+  /// list.
+  llvm::SmallVector<llvm::StringRef> clientDefinitionIds_;
+  /// Published once; sessions borrow this immutable catalog.
+  llvm::SmallVector<QDMI_Device> clientDevices_;
 
   /// Opens the initially configured definitions for the client API.
   void materializeClientCatalog();
 
   /// Opens a fresh device session with per-call overrides.
   auto openFresh(std::string_view id, const DeviceSessionConfig& overrides,
-                 bool strict = false) -> std::shared_ptr<QDMI_Device_impl_d>;
+                 bool strict = false)
+      -> llvm::Expected<std::unique_ptr<QDMI_Device_impl_d>>;
 
 public:
   /// Returns the instance owned by this driver library.
@@ -495,20 +476,21 @@ public:
   ///
   /// @param definition The definition to validate and store.
   /// @param replace Whether an existing unopened definition may be replaced.
-  /// @throws std::invalid_argument If the definition is incomplete or its ID is
-  /// already registered.
-  /// @throws std::runtime_error If replacing an already opened definition.
-  void registerDevice(DeviceDefinition definition, bool replace = false);
+  /// Reports QDMI_ERROR_INVALIDARGUMENT if the definition is incomplete or its
+  /// ID is already registered. Replacing an opened definition also fails.
+  [[nodiscard]] llvm::Error registerDevice(DeviceDefinition definition,
+                                           bool replace = false);
 
   /// Registers a device definition unless its ID is already present.
   ///
   /// @param definition The definition to validate and store.
   /// @returns Whether the definition was inserted.
-  /// @throws std::invalid_argument If the definition is incomplete.
+  /// Reports QDMI_ERROR_INVALIDARGUMENT if the definition is incomplete.
   ///
-  /// Existing and explicitly disabled IDs are not inserted. The complete
-  /// definition is validated before checking for either condition.
-  auto registerDeviceIfAbsent(DeviceDefinition definition) -> bool;
+  /// Existing and explicitly disabled IDs are not inserted. The
+  /// complete definition is validated before checking for either condition.
+  auto registerDeviceIfAbsent(DeviceDefinition definition)
+      -> llvm::Expected<bool>;
 
   /// Lists the stable IDs of all registered devices.
   ///
@@ -516,14 +498,15 @@ public:
   ///
   /// This query includes runtime registrations and does not load device
   /// libraries or expose their definitions.
-  [[nodiscard]] auto registeredDeviceIds() const -> std::vector<std::string>;
+  [[nodiscard]] auto registeredDeviceIds()
+      -> llvm::Expected<std::vector<std::string>>;
 
   /// Opens the registered device with the given stable ID.
   ///
   /// @returns The existing device handle when the ID is already open.
-  /// @throws std::out_of_range If the ID is unknown.
-  /// @throws std::runtime_error If loading or session initialization fails.
-  auto open(std::string_view id) -> QDMI_Device;
+  /// Reports QDMI_ERROR_NOTFOUND if the ID is unknown.
+  /// Loading or session initialization can also fail.
+  auto open(std::string_view id) -> llvm::Expected<QDMI_Device>;
 
   /// Allocates a new session.
   ///
@@ -534,11 +517,6 @@ public:
   auto sessionAllocForDevice(std::string_view id,
                              const DeviceSessionConfig& config,
                              QDMI_Session* session) -> int;
-
-  /// Frees a session.
-  ///
-  /// @see QDMI_session_free
-  auto sessionFree(QDMI_Session session) -> void;
 };
 
 } // namespace qdmi

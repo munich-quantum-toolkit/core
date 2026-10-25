@@ -20,6 +20,12 @@
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
@@ -27,20 +33,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <exception>
 #include <filesystem>
-#include <iterator>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -58,19 +58,22 @@ namespace qdmi {
 namespace {
 /// Loads the device library with the given name, searching in the driver
 /// directory if no path is specified.
-[[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
+[[nodiscard]] auto loadDeviceLibrary(const std::string& libName)
+    -> llvm::Expected<HMODULE> {
   auto requested = detail::pathFromString(libName);
   if (!requested) {
-    throw std::invalid_argument(llvm::toString(requested.takeError()));
+    return requested.takeError();
   }
+  // Bare filenames are resolved relative to the Driver. Configured paths are
+  // already absolute or relative to their declaring file.
   auto path = *requested;
-  if (!path.has_parent_path()) {
+  if (!requested->has_parent_path()) {
     auto directory = detail::moduleDirectory(
         reinterpret_cast<const void*>(&loadDeviceLibrary));
     if (!directory) {
-      throw std::runtime_error(llvm::toString(directory.takeError()));
+      return directory.takeError();
     }
-    path = *directory / path;
+    path = *directory / *requested;
   }
   // Search beside the device DLL for its dependencies. This is required for
   // device implementations such as DDSIM in an installed Python wheel.
@@ -80,7 +83,6 @@ namespace {
 }
 } // namespace
 
-#define DL_OPEN(lib) loadDeviceLibrary((lib))
 #define DL_SYM(lib, sym)                                                       \
   reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>((lib)), (sym)))
 #define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))
@@ -90,31 +92,7 @@ namespace {
 #define DL_CLOSE(lib) dlclose((lib))
 #endif
 
-namespace {
-class DeviceStatusError final : public std::runtime_error {
-public:
-  DeviceStatusError(const int status, const std::string& message)
-      : std::runtime_error(message), status_(status) {}
-
-  [[nodiscard]] auto status() const -> int { return status_; }
-
-private:
-  int status_;
-};
-} // namespace
-
-LoadedDeviceAPI::LoadedDeviceAPI(const std::string& libName,
-                                 const std::string& prefix)
-    : LoadedDeviceAPI(DL_OPEN(libName.c_str()), libName, prefix) {}
-
-LoadedDeviceAPI::LoadedDeviceAPI(void* handle, const std::string& libName,
-                                 const std::string& prefix)
-    : libHandle_(handle) {
-  if (libHandle_ == nullptr) {
-    throw DeviceStatusError(QDMI_ERROR_LIBNOTFOUND,
-                            "Couldn't open the device library: " + libName);
-  }
-
+llvm::Error LoadedDeviceAPI::initialize(const std::string& prefix) {
 //===----------------------------------------------------------------------===//
 // Macro for loading a symbol from the dynamic library.
 // @param symbol is the name of the symbol to load.
@@ -124,8 +102,8 @@ LoadedDeviceAPI::LoadedDeviceAPI(void* handle, const std::string& libName,
     (symbol) = reinterpret_cast<decltype(symbol)>(                             \
         DL_SYM(libHandle_, symbolName.c_str()));                               \
     if ((symbol) == nullptr) {                                                 \
-      throw DeviceStatusError(QDMI_ERROR_FATAL,                                \
-                              "Failed to load symbol: " + symbolName);         \
+      return qdmi::makeError(QDMI_ERROR_FATAL,                                 \
+                             "Failed to load symbol: " + symbolName);          \
     }                                                                          \
   }
 
@@ -137,55 +115,49 @@ LoadedDeviceAPI::LoadedDeviceAPI(void* handle, const std::string& libName,
   }
   //===----------------------------------------------------------------------===//
 
-  try {
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    // load the function symbols from the dynamic library
-    LOAD_DYNAMIC_SYMBOL(device_initialize)
-    LOAD_DYNAMIC_SYMBOL(device_finalize)
-    // device session interface
-    LOAD_DYNAMIC_SYMBOL(device_session_alloc)
-    LOAD_DYNAMIC_SYMBOL(device_session_init)
-    LOAD_DYNAMIC_SYMBOL(device_session_free)
-    LOAD_DYNAMIC_SYMBOL(device_session_set_parameter)
-    // device job interface
-    LOAD_DYNAMIC_SYMBOL(device_session_create_device_job)
-    LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
-    LOAD_DYNAMIC_SYMBOL(device_job_free)
-    LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
-    LOAD_DYNAMIC_SYMBOL(device_job_set_programs)
-    LOAD_DYNAMIC_SYMBOL(device_job_get_program)
-    LOAD_DYNAMIC_SYMBOL(device_job_get_program_status)
-    LOAD_DYNAMIC_SYMBOL(device_job_query_property)
-    LOAD_DYNAMIC_SYMBOL(device_job_submit)
-    LOAD_DYNAMIC_SYMBOL(device_job_cancel)
-    LOAD_DYNAMIC_SYMBOL(device_job_check)
-    LOAD_DYNAMIC_SYMBOL(device_job_wait)
-    LOAD_DYNAMIC_SYMBOL(device_job_get_results)
-    // device query interface
-    LOAD_DYNAMIC_SYMBOL(device_session_query_device_property)
-    LOAD_DYNAMIC_SYMBOL(device_session_query_site_property)
-    LOAD_DYNAMIC_SYMBOL(device_session_query_operation_property)
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
-    // Initialize the device library only after every required symbol is
-    // available.
-    if (const auto status = device_initialize(); status == QDMI_WARN_GENERAL) {
-      diagnostics::warn(
-          "QDMI device library initialization returned a warning");
-    } else if (status != QDMI_SUCCESS) {
-      throw DeviceStatusError(status, "Failed to initialize device library");
-    }
-  } catch (...) {
-    DL_CLOSE(libHandle_);
-    libHandle_ = nullptr;
-    throw;
+  // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+  // load the function symbols from the dynamic library
+  LOAD_DYNAMIC_SYMBOL(device_initialize)
+  LOAD_DYNAMIC_SYMBOL(device_finalize)
+  // device session interface
+  LOAD_DYNAMIC_SYMBOL(device_session_alloc)
+  LOAD_DYNAMIC_SYMBOL(device_session_init)
+  LOAD_DYNAMIC_SYMBOL(device_session_free)
+  LOAD_DYNAMIC_SYMBOL(device_session_set_parameter)
+  // device job interface
+  LOAD_DYNAMIC_SYMBOL(device_session_create_device_job)
+  LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
+  LOAD_DYNAMIC_SYMBOL(device_job_free)
+  LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
+  LOAD_DYNAMIC_SYMBOL(device_job_set_programs)
+  LOAD_DYNAMIC_SYMBOL(device_job_get_program)
+  LOAD_DYNAMIC_SYMBOL(device_job_get_program_status)
+  LOAD_DYNAMIC_SYMBOL(device_job_query_property)
+  LOAD_DYNAMIC_SYMBOL(device_job_submit)
+  LOAD_DYNAMIC_SYMBOL(device_job_cancel)
+  LOAD_DYNAMIC_SYMBOL(device_job_check)
+  LOAD_DYNAMIC_SYMBOL(device_job_wait)
+  LOAD_DYNAMIC_SYMBOL(device_job_get_results)
+  // device query interface
+  LOAD_DYNAMIC_SYMBOL(device_session_query_device_property)
+  LOAD_DYNAMIC_SYMBOL(device_session_query_site_property)
+  LOAD_DYNAMIC_SYMBOL(device_session_query_operation_property)
+  // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+  // Initialize the device library only after every required symbol is
+  // available.
+  if (auto error = checkError(device_initialize(),
+                              "Failed to initialize device library")) {
+    return error;
   }
+  initialized_ = true;
+  return llvm::Error::success();
 }
 
 #undef LOAD_OPTIONAL_DYNAMIC_SYMBOL
 #undef LOAD_DYNAMIC_SYMBOL
 
 LoadedDeviceAPI::~LoadedDeviceAPI() {
-  if (device_finalize != nullptr) {
+  if (initialized_) {
     device_finalize();
   }
   if (libHandle_ != nullptr) {
@@ -197,10 +169,10 @@ namespace {
 struct DeviceAPICache {
   struct Module {
     std::mutex mutex;
-    std::map<std::string, std::shared_ptr<LoadedDeviceAPI>> apis;
+    llvm::StringMap<std::unique_ptr<LoadedDeviceAPI>> apis;
   };
   std::mutex mutex;
-  std::map<void*, Module> libraries;
+  llvm::DenseMap<void*, std::unique_ptr<Module>> libraries;
 };
 
 [[nodiscard]] auto deviceAPICache() -> DeviceAPICache& {
@@ -213,32 +185,46 @@ struct DeviceAPICache {
 
 [[nodiscard]] auto loadDeviceAPI(const std::string& libName,
                                  const std::string& prefix)
-    -> std::shared_ptr<LoadedDeviceAPI> {
+    -> llvm::Expected<LoadedDeviceAPI*> {
   auto& cache = deviceAPICache();
   const auto closeLibrary = [](void* handle) { DL_CLOSE(handle); };
-  std::unique_ptr<void, decltype(closeLibrary)> handle(DL_OPEN(libName.c_str()),
-                                                       closeLibrary);
+#ifdef _WIN32
+  auto loaded = loadDeviceLibrary(libName);
+  if (!loaded) {
+    return loaded.takeError();
+  }
+  auto* rawHandle = static_cast<void*>(*loaded);
+#else
+  auto* rawHandle = DL_OPEN(libName.c_str());
+#endif
+  std::unique_ptr<void, decltype(closeLibrary)> handle(rawHandle, closeLibrary);
   if (!handle) {
-    throw DeviceStatusError(QDMI_ERROR_LIBNOTFOUND,
-                            "Couldn't open the device library: " + libName);
+    return qdmi::makeError(QDMI_ERROR_LIBNOTFOUND,
+                           "Couldn't open the device library: " + libName);
   }
   auto& module = [&]() -> auto& {
     const std::scoped_lock lock(cache.mutex);
-    return cache.libraries[handle.get()];
+    auto& module = cache.libraries[handle.get()];
+    if (!module) {
+      module = std::make_unique<DeviceAPICache::Module>();
+    }
+    return *module;
   }();
   // Modules may contain providers that share initialization state. Keep their
   // initialization serialized without blocking unrelated modules.
   const std::scoped_lock lock(module.mutex);
   auto& apis = module.apis;
   if (const auto found = apis.find(prefix); found != apis.end()) {
-    return found->second;
+    return found->second.get();
   }
   // The private constructor takes ownership of the already loaded module.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto api = std::shared_ptr<LoadedDeviceAPI>(
-      new LoadedDeviceAPI(handle.release(), libName, prefix));
-  apis.emplace(prefix, api);
-  return api;
+  auto library =
+      std::unique_ptr<LoadedDeviceAPI>(new LoadedDeviceAPI(handle.release()));
+  if (auto error = library->initialize(prefix)) {
+    return error;
+  }
+  return apis.try_emplace(prefix, std::move(library)).first->second.get();
 }
 
 #undef DL_OPEN
@@ -246,143 +232,205 @@ struct DeviceAPICache {
 #undef DL_CLOSE
 } // namespace qdmi
 
-using namespace qdmi;
+llvm::Expected<std::unique_ptr<QDMI_Device_impl_d>> QDMI_Device_impl_d::create(
+    const qdmi::DeviceAPI& library, const qdmi::DeviceSessionConfig& config,
+    QDMI_Child_Device childDevice, std::string id, const bool strict) {
+  auto device =
+      std::unique_ptr<QDMI_Device_impl_d>(new QDMI_Device_impl_d(library));
+  device->id_ = std::move(id);
+  if (auto error = device->initialize(config, childDevice, strict)) {
+    return error;
+  }
+  return device;
+}
 
-QDMI_Device_impl_d::QDMI_Device_impl_d(
-    std::shared_ptr<DeviceAPI> api, const DeviceSessionConfig& config,
-    std::string id, QDMI_Child_Device_impl_d* const childDevice,
-    const bool strict)
-    : id_(std::move(id)), api_(std::move(api)) {
-  const auto checkStatus = [](const int status, const std::string& action) {
-    if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
-      throw DeviceStatusError(
-          status, action + ": " + toString(static_cast<QDMI_STATUS>(status)));
+llvm::Error
+QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
+                               QDMI_Child_Device childDevice,
+                               const bool strict) {
+  if (auto error = qdmi::checkError(api_->device_session_alloc(&deviceSession_),
+                                    "Failed to allocate device session")) {
+    return error;
+  }
+  if (deviceSession_ == nullptr) {
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           "Device returned a null session handle");
+  }
+  // All views borrow NUL-terminated strings for this synchronous call.
+  const auto setParameter =
+      [&](const std::optional<std::string_view> value,
+          const QDMI_Device_Session_Parameter param) -> llvm::Error {
+    if (!value) {
+      return llvm::Error::success();
     }
-    throwIfError(status, action);
+    if (api_->device_session_set_parameter == nullptr) {
+      return strict ? qdmi::makeError(QDMI_ERROR_NOTSUPPORTED,
+                                      "Device has no session parameter setter")
+                    : llvm::Error::success();
+    }
+    const auto status = api_->device_session_set_parameter(
+        deviceSession_, param, value->size() + 1, value->data());
+    if (status == QDMI_ERROR_NOTSUPPORTED && !strict) {
+      qdmi::diagnostics::info(
+          "Device session parameter {0} not supported by device (skipped)",
+          qdmi::toString(param));
+      return llvm::Error::success();
+    }
+    if (auto error = qdmi::checkError(
+            status, llvm::Twine("Failed to set device session parameter ") +
+                        qdmi::toString(param))) {
+      return error;
+    }
+    return llvm::Error::success();
   };
-  const auto allocationStatus = api_->device_session_alloc(&deviceSession_);
-  try {
-    checkStatus(allocationStatus, "Failed to allocate device session");
-    if (deviceSession_ == nullptr) {
-      throw DeviceStatusError(QDMI_ERROR_FATAL,
-                              "Device returned a null session handle");
+  if (auto error =
+          setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN)) {
+    return error;
+  }
+  if (config.authFile) {
+    auto filename = qdmi::detail::pathToString(*config.authFile);
+    if (!filename) {
+      return filename.takeError();
     }
-    // All views borrow NUL-terminated strings for this synchronous call.
-    const auto setParameter = [&](const std::optional<std::string_view> value,
-                                  const QDMI_Device_Session_Parameter param) {
-      if (!value) {
-        return;
-      }
-      if (api_->device_session_set_parameter == nullptr) {
-        if (strict) {
-          throw DeviceStatusError(QDMI_ERROR_NOTSUPPORTED,
-                                  "Device has no session parameter setter");
-        }
-        return;
-      }
-      const auto status = api_->device_session_set_parameter(
-          deviceSession_, param, value->size() + 1, value->data());
-      if (status == QDMI_ERROR_NOTSUPPORTED && !strict) {
-        diagnostics::info(
-            "Device session parameter {0} not supported by device (skipped)",
-            toString(param));
-        return;
-      }
-      checkStatus(status,
-                  std::string("Failed to set device session parameter ") +
-                      toString(param));
-    };
-    setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
-    setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
-    if (config.authFile) {
-      auto filename = detail::pathToString(*config.authFile);
-      if (!filename) {
-        throw std::invalid_argument(llvm::toString(filename.takeError()));
-      }
-      setParameter(*filename, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
+    if (auto error =
+            setParameter(*filename, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE)) {
+      return error;
     }
-    setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
-    setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
-    setParameter(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD);
-    if (config.deviceConfiguration && (config.custom1 || config.custom2)) {
-      throw std::invalid_argument(
-          "Typed device configuration cannot be combined with raw custom1 or "
-          "custom2 session parameters");
-    }
-    if (config.deviceConfiguration) {
-      std::visit(
-          [&](const auto& source) {
-            using Source = std::decay_t<decltype(source)>;
-            if constexpr (std::is_same_v<Source, InlineDeviceConfiguration>) {
-              setParameter(source.json, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
-            } else {
-              auto filename = detail::pathToString(source.path);
-              if (!filename) {
-                throw std::invalid_argument(
-                    llvm::toString(filename.takeError()));
-              }
-              setParameter(*filename, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+  }
+  if (auto error =
+          setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL)) {
+    return error;
+  }
+  if (auto error = setParameter(config.username,
+                                QDMI_DEVICE_SESSION_PARAMETER_USERNAME)) {
+    return error;
+  }
+  if (auto error = setParameter(config.password,
+                                QDMI_DEVICE_SESSION_PARAMETER_PASSWORD)) {
+    return error;
+  }
+  if (config.deviceConfiguration && (config.custom1 || config.custom2)) {
+    return qdmi::makeError(
+        QDMI_ERROR_INVALIDARGUMENT,
+        "Typed device configuration cannot be combined with raw custom1 or "
+        "custom2 session parameters");
+  }
+  if (config.deviceConfiguration) {
+    auto error = std::visit(
+        [&](const auto& source) {
+          using Source = std::decay_t<decltype(source)>;
+          if constexpr (std::is_same_v<Source,
+                                       qdmi::InlineDeviceConfiguration>) {
+            return setParameter(source.json,
+                                QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+          } else {
+            auto filename = qdmi::detail::pathToString(source.path);
+            if (!filename) {
+              return filename.takeError();
             }
-          },
-          *config.deviceConfiguration);
+            return setParameter(*filename,
+                                QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+          }
+        },
+        *config.deviceConfiguration);
+    if (error) {
+      return error;
     }
-    setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
-    setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
-    setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3);
-    setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
-    setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5);
-    if (childDevice != nullptr) {
-      checkStatus(api_->device_session_set_parameter(
-                      deviceSession_, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
-                      sizeof(QDMI_Child_Device),
-                      static_cast<const void*>(&childDevice)),
-                  "Failed to select child device");
+  }
+  if (auto error =
+          setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5)) {
+    return error;
+  }
+  if ((childDevice != nullptr)) {
+    if (auto error = qdmi::checkError(
+            api_->device_session_set_parameter(
+                deviceSession_, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
+                sizeof(QDMI_Child_Device),
+                static_cast<const void*>(&childDevice)),
+            "Failed to select child device")) {
+      return error;
     }
-    checkStatus(api_->device_session_init(deviceSession_),
-                "Failed to initialize device session");
-    // Child sessions are leaves; only the parent discovers children.
-    if (childDevice != nullptr) {
-      return;
+  }
+
+  if (auto error = qdmi::checkError(api_->device_session_init(deviceSession_),
+                                    "Failed to initialize device session")) {
+    return error;
+  }
+  // Child sessions are leaves; only the parent discovers children.
+  if (childDevice != nullptr) {
+    return llvm::Error::success();
+  }
+  size_t childrenSize = 0;
+  const auto status = api_->device_session_query_device_property(
+      deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
+      &childrenSize);
+  if (status == QDMI_ERROR_NOTSUPPORTED) {
+    return llvm::Error::success();
+  }
+  if (auto error = qdmi::checkError(status, "Failed to query child devices")) {
+    return error;
+  }
+  if (childrenSize % sizeof(QDMI_Child_Device) != 0) {
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           "Device returned an invalid child device list");
+  }
+  std::vector<QDMI_Child_Device> children(childrenSize /
+                                          sizeof(QDMI_Child_Device));
+  if ((!children.empty())) {
+    if (auto error = qdmi::checkError(
+            api_->device_session_query_device_property(
+                deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, childrenSize,
+                static_cast<void*>(children.data()), nullptr),
+            "Failed to query child devices")) {
+      return error;
     }
-    size_t childrenSize = 0;
-    const auto status = api_->device_session_query_device_property(
-        deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
-        &childrenSize);
-    if (status == QDMI_ERROR_NOTSUPPORTED) {
-      return;
+  }
+
+  childDevices_.reserve(children.size());
+  for (auto* const child : children) {
+    if (child == nullptr) {
+      return qdmi::makeError(QDMI_ERROR_FATAL,
+                             "Device returned a null child device handle");
     }
-    checkStatus(status, "Failed to query child devices");
-    if (childrenSize % sizeof(QDMI_Child_Device) != 0) {
-      throw std::runtime_error("Device returned an invalid child device list");
+    auto device = create(*api_, config, child, {}, strict);
+    if (!device) {
+      return device.takeError();
     }
-    std::vector<QDMI_Child_Device> children(childrenSize /
-                                            sizeof(QDMI_Child_Device));
-    if (!children.empty()) {
-      checkStatus(api_->device_session_query_device_property(
-                      deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES,
-                      childrenSize, static_cast<void*>(children.data()),
-                      nullptr),
-                  "Failed to query child devices");
-    }
-    childDevices_.reserve(children.size());
-    for (auto* const child : children) {
-      if (child == nullptr) {
-        throw std::runtime_error("Device returned a null child device handle");
-      }
-      childDevices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-          api_, config, std::string{}, child, strict));
-    }
-  } catch (...) {
-    childDevices_.clear();
-    if (deviceSession_ != nullptr) {
-      api_->device_session_free(deviceSession_);
-      deviceSession_ = nullptr;
-    }
-    throw;
+    childDevices_.emplace_back(std::move(*device));
+  }
+  return llvm::Error::success();
+}
+
+QDMI_Device_impl_d::~QDMI_Device_impl_d() {
+  jobs_.clear();
+  childDevices_.clear();
+  if (deviceSession_ != nullptr) {
+    api_->device_session_free(deviceSession_);
   }
 }
 
 auto QDMI_Device_impl_d::adoptJob(const int status, QDMI_Device_Job deviceJob,
+                                  std::unique_ptr<QDMI_Job_impl_d> wrapper,
                                   QDMI_Job* job) -> int {
   if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
     return status;
@@ -390,16 +438,13 @@ auto QDMI_Device_impl_d::adoptJob(const int status, QDMI_Device_Job deviceJob,
   if (deviceJob == nullptr) {
     return QDMI_ERROR_FATAL;
   }
-  std::unique_ptr<QDMI_Device_Job_impl_d, decltype(api_->device_job_free)>
-      providerJob(deviceJob, api_->device_job_free);
-  auto uniqueJob = std::make_unique<QDMI_Job_impl_d>(providerJob.get(), this);
-  std::ignore = providerJob.release();
-  auto* const jobHandle = uniqueJob.get();
+  wrapper->deviceJob_ = deviceJob;
+  auto* const handle = wrapper.get();
   {
     const std::scoped_lock lock(jobsMutex_);
-    jobs_.emplace(jobHandle, std::move(uniqueJob));
+    jobs_.push_back(wrapper.release());
   }
-  *job = jobHandle;
+  *job = handle;
   return status;
 }
 
@@ -408,10 +453,15 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   *job = nullptr;
+  auto wrapper = std::unique_ptr<QDMI_Job_impl_d>(
+      new (std::nothrow) QDMI_Job_impl_d(nullptr, this));
+  if (!wrapper) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
   QDMI_Device_Job deviceJob = nullptr;
   const auto status =
       api_->device_session_create_device_job(deviceSession_, &deviceJob);
-  return adoptJob(status, deviceJob, job);
+  return adoptJob(status, deviceJob, std::move(wrapper), job);
 }
 
 auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
@@ -419,24 +469,26 @@ auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
   if (jobId == nullptr || *jobId == '\0' || job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  *job = nullptr;
   if (api_->device_session_retrieve_device_job_by_id == nullptr) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
-  *job = nullptr;
+  auto wrapper = std::unique_ptr<QDMI_Job_impl_d>(
+      new (std::nothrow) QDMI_Job_impl_d(nullptr, this));
+  if (!wrapper) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
   QDMI_Device_Job deviceJob = nullptr;
   const auto status = api_->device_session_retrieve_device_job_by_id(
       deviceSession_, jobId, &deviceJob);
-  return adoptJob(status, deviceJob, job);
+  return adoptJob(status, deviceJob, std::move(wrapper), job);
 }
 
 auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
   std::unique_ptr<QDMI_Job_impl_d> ownedJob;
   {
-    const std::scoped_lock lock(jobsMutex_);
-    if (const auto entry = jobs_.find(job); entry != jobs_.end()) {
-      ownedJob = std::move(entry->second);
-      jobs_.erase(entry);
-    }
+    const auto lock = std::scoped_lock(jobsMutex_);
+    ownedJob.reset(jobs_.remove(job));
   }
 }
 
@@ -504,22 +556,27 @@ namespace {
   case QDMI_JOB_PARAMETER_CUSTOM5:
     return QDMI_DEVICE_JOB_PARAMETER_CUSTOM5;
   default:
-    // Retired standard slots keep the same values on both QDMI interfaces.
+    // Reserved slots 0 and 1 are representable but have no named enumerators.
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     return static_cast<QDMI_Device_Job_Parameter>(param);
   }
 }
 } // namespace
 
 QDMI_Session_impl_d::QDMI_Session_impl_d(
-    const std::vector<QDMI_Device>& devices)
+    llvm::ArrayRef<QDMI_Device> devices) noexcept
     : devices_(devices) {}
 
 QDMI_Session_impl_d::QDMI_Session_impl_d(
-    std::shared_ptr<QDMI_Device_impl_d> device)
-    : devices_{device.get()}, ownedDevice_(std::move(device)) {}
+    std::unique_ptr<QDMI_Device_impl_d> device) noexcept
+    : ownedDevice_(std::move(device)), privateDevice_(ownedDevice_.get()) {
+  devices_ = llvm::ArrayRef<QDMI_Device>(&privateDevice_, 1);
+}
 
 QDMI_Job_impl_d::~QDMI_Job_impl_d() {
-  device_->api().device_job_free(deviceJob_);
+  if (deviceJob_ != nullptr) {
+    device_->api().device_job_free(deviceJob_);
+  }
 }
 auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
                                    const void* value) const -> int {
@@ -613,10 +670,10 @@ auto QDMI_Job_impl_d::getResults(const size_t programIndex,
 auto QDMI_Job_impl_d::free() -> void { device_->freeJob(this); }
 
 auto QDMI_Session_impl_d::init() -> int {
-  if (status_ != SessionStatus::ALLOCATED) {
+  if (status_ != qdmi::SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  status_ = SessionStatus::INITIALIZED;
+  status_ = qdmi::SessionStatus::INITIALIZED;
   return QDMI_SUCCESS;
 }
 
@@ -627,7 +684,7 @@ auto QDMI_Session_impl_d::setParameter(QDMI_Session_Parameter param,
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (status_ != SessionStatus::ALLOCATED) {
+  if (status_ != qdmi::SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -640,7 +697,7 @@ auto QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
       QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_SESSION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (status_ != SessionStatus::INITIALIZED) {
+  if (status_ != qdmi::SessionStatus::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
   if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
@@ -661,45 +718,64 @@ auto QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
 
 namespace qdmi {
 namespace {
-void validatePath(const std::filesystem::path& path,
-                  const std::string_view description) {
+llvm::Error validatePath(const std::filesystem::path& path,
+                         const std::string_view description) {
   if (path.empty()) {
-    throw std::invalid_argument(std::string(description) +
-                                " must not be empty");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           std::string(description) + " must not be empty");
   }
   if (path.native().find(std::filesystem::path::value_type{}) !=
       std::filesystem::path::string_type::npos) {
-    throw std::invalid_argument(std::string(description) +
-                                " must not contain null bytes");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           std::string(description) +
+                               " must not contain null bytes");
   }
+  return llvm::Error::success();
 }
 
-void validateSessionConfig(const DeviceSessionConfig& config) {
+llvm::Error validateSessionConfig(const DeviceSessionConfig& config) {
   if (config.authFile) {
-    validatePath(*config.authFile, "Device session auth file");
+    if (auto error =
+            validatePath(*config.authFile, "Device session auth file")) {
+      return error;
+    }
   }
   if (const auto* source = config.deviceConfiguration
                                ? std::get_if<FileDeviceConfiguration>(
                                      &*config.deviceConfiguration)
-                               : nullptr) {
-    validatePath(source->path, "Device configuration file");
+                               : nullptr;
+      source != nullptr) {
+    if (auto error = validatePath(source->path, "Device configuration file")) {
+      return error;
+    }
   }
   if (config.deviceConfiguration && (config.custom1 || config.custom2)) {
-    throw std::invalid_argument(
+    return qdmi::makeError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "Typed device configuration cannot be combined with raw custom1 or "
         "custom2 session parameters");
   }
+  return llvm::Error::success();
 }
 
-void validateDefinition(const DeviceDefinition& definition) {
-  detail::validateDeviceId(definition.id);
-  validatePath(definition.library, "Device definition library");
+llvm::Error validateDefinition(const DeviceDefinition& definition) {
+  if (auto error = detail::validateDeviceId(definition.id)) {
+    return error;
+  }
+  if (auto error =
+          validatePath(definition.library, "Device definition library")) {
+    return error;
+  }
   if (definition.prefix.empty() ||
       definition.prefix.find('\0') != std::string::npos) {
-    throw std::invalid_argument(
+    return qdmi::makeError(
+        QDMI_ERROR_INVALIDARGUMENT,
         "Device definition prefix must not be empty or contain null bytes");
   }
-  validateSessionConfig(definition.session);
+  if (auto error = validateSessionConfig(definition.session)) {
+    return error;
+  }
+  return llvm::Error::success();
 }
 } // namespace
 
@@ -709,212 +785,216 @@ auto Driver::get() -> Driver& {
   return *instance;
 }
 
-Driver::Driver() {
-  try {
-    const detail::DeviceRegistry registry;
-    disabledDeviceIds_.insert(registry.disabledIds().begin(),
-                              registry.disabledIds().end());
-    for (const auto& definition : registry.definitions()) {
-      registerDevice(definition);
-      clientDefinitionIds_.emplace_back(definition.id);
-    }
-  } catch (...) {
-    detail::rollbackDeviceManifestFreeze();
-    throw;
+llvm::Error Driver::initialize() {
+  if (initialized_) {
+    return llvm::Error::success();
   }
+  const llvm::scope_exit rollback([&] {
+    if (!initialized_) {
+      detail::rollbackDeviceManifestFreeze();
+    }
+  });
+  auto result = detail::DeviceRegistry::discover();
+  if (!result) {
+    return result.takeError();
+  }
+  auto const& registry = (*result);
+  for (const auto& definition : registry.definitions()) {
+    if (auto error = validateDefinition(definition)) {
+      return error;
+    }
+  }
+  for (const auto& id : registry.disabledIds()) {
+    disabledDeviceIds_.insert(id);
+  }
+  for (const auto& definition : registry.definitions()) {
+    const auto entry = definitions_.try_emplace(definition.id).first;
+    entry->second.definition = definition;
+    registrationOrder_.push_back(&entry->second);
+    clientDefinitionIds_.push_back(entry->getKey());
+  }
+  initialized_ = true;
+  return llvm::Error::success();
 }
 
-void Driver::registerDevice(DeviceDefinition definition, const bool replace) {
-  validateDefinition(definition);
+llvm::Error Driver::registerDevice(DeviceDefinition definition,
+                                   const bool replace) {
+  if (auto error = validateDefinition(definition)) {
+    return error;
+  }
   std::unique_lock lock(stateMutex_);
+  if (auto error = initialize()) {
+    return error;
+  }
   if (disabledDeviceIds_.contains(definition.id)) {
     if (!replace) {
-      throw std::invalid_argument("QDMI device ID '" + definition.id +
-                                  "' is disabled by configuration");
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             "QDMI device ID '" + definition.id +
+                                 "' is disabled by configuration");
     }
     disabledDeviceIds_.erase(definition.id);
   }
-  auto existing =
-      std::ranges::find(definitions_, definition.id, &DeviceDefinition::id);
-  if (existing == definitions_.end()) {
-    definitions_.emplace_back(std::move(definition));
-    return;
+  auto [entry, inserted] = definitions_.try_emplace(definition.id);
+  auto& record = entry->second;
+  if (inserted) {
+    record.definition = std::move(definition);
+    registrationOrder_.push_back(&record);
+    return llvm::Error::success();
   }
   if (!replace) {
-    throw std::invalid_argument("QDMI device ID '" + definition.id +
-                                "' is already registered");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           "QDMI device ID '" + definition.id +
+                               "' is already registered");
   }
-  stateChanged_.wait(lock, [this, &definition] {
-    return !openingDeviceIds_.contains(definition.id);
-  });
-  existing =
-      std::ranges::find(definitions_, definition.id, &DeviceDefinition::id);
-  if (openedDevices_.contains(definition.id)) {
-    throw std::runtime_error("Cannot replace opened QDMI device ID '" +
-                             definition.id + "'");
+  stateChanged_.wait(lock, [&record] { return !record.opening; });
+  if (record.device) {
+    return qdmi::makeError(QDMI_ERROR_BADSTATE,
+                           "Cannot replace opened QDMI device ID '" +
+                               definition.id + "'");
   }
-  *existing = std::move(definition);
+  record.definition = std::move(definition);
+  return llvm::Error::success();
 }
 
-auto Driver::registerDeviceIfAbsent(DeviceDefinition definition) -> bool {
-  validateDefinition(definition);
-  const std::scoped_lock lock(stateMutex_);
-  if (disabledDeviceIds_.contains(definition.id) ||
-      std::ranges::find(definitions_, definition.id, &DeviceDefinition::id) !=
-          definitions_.end()) {
+auto Driver::registerDeviceIfAbsent(DeviceDefinition definition)
+    -> llvm::Expected<bool> {
+  if (auto error = validateDefinition(definition)) {
+    return error;
+  }
+  const auto lock = std::scoped_lock(stateMutex_);
+  if (auto error = initialize()) {
+    return error;
+  }
+  if (disabledDeviceIds_.contains(definition.id)) {
     return false;
   }
-  definitions_.emplace_back(std::move(definition));
-  return true;
+  auto [entry, inserted] = definitions_.try_emplace(definition.id);
+  if (inserted) {
+    entry->second.definition = std::move(definition);
+    registrationOrder_.push_back(&entry->second);
+  }
+  return inserted;
 }
 
-auto Driver::registeredDeviceIds() const -> std::vector<std::string> {
-  const std::scoped_lock lock(stateMutex_);
+auto Driver::registeredDeviceIds() -> llvm::Expected<std::vector<std::string>> {
+  const auto lock = std::scoped_lock(stateMutex_);
+  if (auto error = initialize()) {
+    return error;
+  }
   std::vector<std::string> ids;
-  ids.reserve(definitions_.size());
-  std::ranges::transform(definitions_, std::back_inserter(ids),
-                         &DeviceDefinition::id);
+  ids.reserve(registrationOrder_.size());
+  for (const auto* entry : registrationOrder_) {
+    ids.push_back(entry->definition.id);
+  }
   return ids;
 }
 
-auto Driver::open(const std::string_view id) -> QDMI_Device {
-  const std::string deviceId{id};
-  DeviceDefinition definition;
+auto Driver::open(const std::string_view id) -> llvm::Expected<QDMI_Device> {
+  RegistryEntry* record = nullptr;
   {
     std::unique_lock lock(stateMutex_);
-    stateChanged_.wait(lock, [this, &deviceId] {
-      return !openingDeviceIds_.contains(deviceId);
-    });
-    if (disabledDeviceIds_.contains(deviceId)) {
-      throw std::runtime_error("QDMI device ID '" + deviceId +
-                               "' is disabled by configuration");
+    if (auto error = initialize()) {
+      return error;
     }
-    if (const auto opened = openedDevices_.find(deviceId);
-        opened != openedDevices_.end()) {
-      return opened->second;
+    if (disabledDeviceIds_.contains(id)) {
+      return qdmi::makeError(QDMI_ERROR_PERMISSIONDENIED,
+                             "QDMI device ID '" + llvm::Twine(id) +
+                                 "' is disabled by configuration");
     }
-    const auto registered =
-        std::ranges::find(definitions_, id, &DeviceDefinition::id);
-    if (registered == definitions_.end()) {
-      throw std::out_of_range("Unknown QDMI device ID '" + deviceId + "'");
+    const auto entry = definitions_.find(id);
+    if (entry == definitions_.end()) {
+      return qdmi::makeError(QDMI_ERROR_NOTFOUND, "Unknown QDMI device ID '" +
+                                                      llvm::Twine(id) + "'");
     }
-    definition = *registered;
-    openingDeviceIds_.emplace(deviceId);
+    record = &entry->second;
+    stateChanged_.wait(lock, [record] { return !record->opening; });
+    if (record->device) {
+      return record->device.get();
+    }
+    record->opening = true;
   }
-
-  std::unique_ptr<QDMI_Device_impl_d> candidate;
-  try {
-    auto filename = detail::pathToString(definition.library);
-    if (!filename) {
-      throw std::invalid_argument(llvm::toString(filename.takeError()));
-    }
-    candidate = std::make_unique<QDMI_Device_impl_d>(
-        loadDeviceAPI(*filename, definition.prefix), definition.session,
-        definition.id);
-  } catch (...) {
+  const llvm::scope_exit finish([&] {
     {
-      const std::scoped_lock lock(stateMutex_);
-      openingDeviceIds_.erase(deviceId);
+      const auto lock = std::scoped_lock(stateMutex_);
+      record->opening = false;
     }
     stateChanged_.notify_all();
-    throw;
+  });
+  // Replacement waits for opening; other insertions keep this entry stable.
+  const auto& definition = record->definition;
+  auto filename = detail::pathToString(definition.library);
+  if (!filename) {
+    return filename.takeError();
   }
-
-  auto* device = candidate.get();
-  try {
-    const std::scoped_lock lock(stateMutex_);
-    const auto [opened, inserted] =
-        openedDevices_.emplace(deviceId, candidate.get());
-    if (inserted) {
-      try {
-        devices_.emplace_back(std::move(candidate));
-      } catch (...) {
-        openedDevices_.erase(opened);
-        throw;
-      }
-    } else {
-      device = opened->second;
-    }
-    openingDeviceIds_.erase(deviceId);
-  } catch (...) {
-    {
-      const std::scoped_lock lock(stateMutex_);
-      openingDeviceIds_.erase(deviceId);
-    }
-    stateChanged_.notify_all();
-    throw;
+  auto library = loadDeviceAPI(*filename, definition.prefix);
+  if (!library) {
+    return library.takeError();
   }
-  stateChanged_.notify_all();
-  return device;
+  auto candidate = QDMI_Device_impl_d::create(**library, definition.session,
+                                              nullptr, definition.id);
+  if (!candidate) {
+    return candidate.takeError();
+  }
+  const auto lock = std::scoped_lock(stateMutex_);
+  record->device = std::move(*candidate);
+  return record->device.get();
 }
 
 auto Driver::openFresh(const std::string_view id,
                        const DeviceSessionConfig& overrides, const bool strict)
-    -> std::shared_ptr<QDMI_Device_impl_d> {
+    -> llvm::Expected<std::unique_ptr<QDMI_Device_impl_d>> {
   DeviceDefinition definition;
   {
     const std::scoped_lock lock(stateMutex_);
-    if (disabledDeviceIds_.contains(std::string(id))) {
-      throw DeviceStatusError(QDMI_ERROR_PERMISSIONDENIED,
-                              "QDMI device ID '" + std::string(id) +
-                                  "' is disabled by configuration");
+    if (auto error = initialize()) {
+      return error;
     }
-    const auto registered =
-        std::ranges::find(definitions_, id, &DeviceDefinition::id);
+    if (disabledDeviceIds_.contains(id)) {
+      return qdmi::makeError(QDMI_ERROR_PERMISSIONDENIED,
+                             "QDMI device ID '" + std::string(id) +
+                                 "' is disabled by configuration");
+    }
+    const auto registered = definitions_.find(id);
     if (registered == definitions_.end()) {
-      throw DeviceStatusError(QDMI_ERROR_NOTFOUND, "Unknown QDMI device ID '" +
-                                                       std::string(id) + "'");
+      return qdmi::makeError(QDMI_ERROR_NOTFOUND, "Unknown QDMI device ID '" +
+                                                      std::string(id) + "'");
     }
-    definition = *registered;
+    definition = registered->second.definition;
   }
   const auto config =
       detail::mergeSessionConfig(std::move(definition.session), overrides);
-  validateSessionConfig(config);
+  if (auto error = validateSessionConfig(config)) {
+    return error;
+  }
   auto filename = detail::pathToString(definition.library);
   if (!filename) {
-    throw std::invalid_argument(llvm::toString(filename.takeError()));
+    return filename.takeError();
   }
-  auto api = loadDeviceAPI(*filename, definition.prefix);
-  return std::make_shared<QDMI_Device_impl_d>(std::move(api), config,
-                                              definition.id, nullptr, strict);
+  auto library = loadDeviceAPI(*filename, definition.prefix);
+  if (!library) {
+    return library.takeError();
+  }
+  auto device = QDMI_Device_impl_d::create(**library, config, nullptr,
+                                           definition.id, strict);
+  if (!device) {
+    return device.takeError();
+  }
+  return std::move(*device);
 }
 
 void Driver::materializeClientCatalog() {
   std::call_once(clientCatalogOnce_, [this] {
-    std::vector<std::string> definitionIds;
-    {
-      const std::scoped_lock lock(stateMutex_);
-      definitionIds = clientDefinitionIds_;
-    }
-    std::vector<QDMI_Device> clientDevices;
-    clientDevices.reserve(definitionIds.size());
-    for (const auto& id : definitionIds) {
-      try {
-        clientDevices.emplace_back(open(id));
-      } catch (const std::exception& ex) {
-        std::string library;
-        try {
-          const std::scoped_lock lock(stateMutex_);
-          if (const auto definition =
-                  std::ranges::find(definitions_, id, &DeviceDefinition::id);
-              definition != definitions_.end()) {
-            auto filename = detail::pathToString(definition->library);
-            if (!filename) {
-              throw std::invalid_argument(llvm::toString(filename.takeError()));
-            }
-            library = std::move(*filename);
-          }
-        } catch (...) {
-          library.clear();
-        }
-        const std::string_view libraryText =
-            library.empty() ? "<unknown>" : std::string_view(library);
-        qdmi::diagnostics::warn(
-            "Skipping configured QDMI device '{0}' from '{1}': {2}", id,
-            libraryText, ex.what());
+    llvm::SmallVector<QDMI_Device> clientDevices;
+    clientDevices.reserve(clientDefinitionIds_.size());
+    for (const auto& id : clientDefinitionIds_) {
+      auto result = open(id);
+      if (result) {
+        clientDevices.emplace_back(*result);
+      } else {
+        qdmi::diagnostics::warn("Skipping configured QDMI device '{0}': {1}",
+                                id, llvm::toString(result.takeError()));
       }
     }
-    const std::scoped_lock lock(stateMutex_);
     clientDevices_ = std::move(clientDevices);
   });
 }
@@ -924,13 +1004,18 @@ auto Driver::sessionAlloc(QDMI_Session* session) -> int {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   *session = nullptr;
+  {
+    const std::scoped_lock lock(stateMutex_);
+    const auto status = qdmi::toStatus(initialize());
+    if (status != QDMI_SUCCESS) {
+      return status;
+    }
+  }
   materializeClientCatalog();
-  const std::scoped_lock lock(stateMutex_);
-  auto uniqueSession = std::make_unique<QDMI_Session_impl_d>(clientDevices_);
-  auto* const sessionHandle = uniqueSession.get();
-  sessions_.emplace(sessionHandle, std::move(uniqueSession));
-  *session = sessionHandle;
-  return QDMI_SUCCESS;
+  // Ownership passes to QDMI_session_free through the C handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  *session = new (std::nothrow) QDMI_Session_impl_d(clientDevices_);
+  return *session != nullptr ? QDMI_SUCCESS : QDMI_ERROR_OUTOFMEM;
 }
 
 auto Driver::sessionAllocForDevice(const std::string_view id,
@@ -940,35 +1025,16 @@ auto Driver::sessionAllocForDevice(const std::string_view id,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   *session = nullptr;
-  try {
-    auto uniqueSession =
-        std::make_unique<QDMI_Session_impl_d>(openFresh(id, config, true));
-    auto* const sessionHandle = uniqueSession.get();
-    const std::scoped_lock lock(stateMutex_);
-    sessions_.emplace(sessionHandle, std::move(uniqueSession));
-    *session = sessionHandle;
-    return QDMI_SUCCESS;
-  } catch (const DeviceStatusError& error) {
-    return error.status();
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::invalid_argument&) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  } catch (...) {
-    return QDMI_ERROR_FATAL;
+  auto device = openFresh(id, config, true);
+  if (!device) {
+    return qdmi::toStatus(device.takeError());
   }
+  // Ownership passes to QDMI_session_free through the C handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  *session = new (std::nothrow) QDMI_Session_impl_d(std::move(*device));
+  return *session != nullptr ? QDMI_SUCCESS : QDMI_ERROR_OUTOFMEM;
 }
 
-auto Driver::sessionFree(QDMI_Session session) -> void {
-  std::unique_ptr<QDMI_Session_impl_d> ownedSession;
-  {
-    const std::scoped_lock lock(stateMutex_);
-    if (const auto entry = sessions_.find(session); entry != sessions_.end()) {
-      ownedSession = std::move(entry->second);
-      sessions_.erase(entry);
-    }
-  }
-}
 } // namespace qdmi
 
 uint32_t QDMI_driver_get_client_abi_version() {
@@ -982,17 +1048,12 @@ MQT_CORE_QDMI_driver_add_manifest_v1(const char* const manifestPath) {
   if (manifestPath == nullptr || *manifestPath == '\0') {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  try {
-    auto path = qdmi::detail::pathFromString(manifestPath);
-    if (!path) {
-      return qdmi::toStatus(path.takeError());
-    }
-    return qdmi::detail::stageDeviceManifest(*path);
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (...) {
-    return QDMI_ERROR_INVALIDARGUMENT;
+
+  auto path = qdmi::detail::pathFromString(manifestPath);
+  if (!path) {
+    return qdmi::toStatus(path.takeError());
   }
+  return qdmi::detail::stageDeviceManifest(*path);
 }
 
 extern "C" QDMI_DRIVER_EXPORT int MQT_CORE_QDMI_driver_registered_device_ids_v1(
@@ -1000,26 +1061,29 @@ extern "C" QDMI_DRIVER_EXPORT int MQT_CORE_QDMI_driver_registered_device_ids_v1(
   if ((ids == nullptr && sizeRet == nullptr) || (ids != nullptr && size == 0)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  try {
-    std::string buffer;
-    for (const auto& id : qdmi::Driver::get().registeredDeviceIds()) {
-      buffer.append(id).push_back('\0');
-    }
-    if (sizeRet != nullptr) {
-      *sizeRet = buffer.size();
-    }
-    if (ids != nullptr) {
-      if (size < buffer.size()) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      std::ranges::copy(buffer, ids);
-    }
-    return QDMI_SUCCESS;
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (...) {
-    return QDMI_ERROR_FATAL;
+
+  auto idsValue = qdmi::Driver::get().registeredDeviceIds();
+  if (!idsValue) {
+    return qdmi::toStatus(idsValue.takeError());
   }
+  size_t required = 0;
+  for (const auto& id : *idsValue) {
+    required += id.size() + 1;
+  }
+  if (sizeRet != nullptr) {
+    *sizeRet = required;
+  }
+  if (ids != nullptr) {
+    if (size < required) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto output = llvm::MutableArrayRef(ids, required);
+    for (const auto& id : *idsValue) {
+      std::memcpy(output.data(), id.c_str(), id.size() + 1);
+      output = output.drop_front(id.size() + 1);
+    }
+  }
+  return QDMI_SUCCESS;
 }
 
 extern "C" QDMI_DRIVER_EXPORT int
@@ -1040,15 +1104,8 @@ MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
       status != QDMI_SUCCESS) {
     return status;
   }
-  try {
-    return qdmi::Driver::get().sessionAllocForDevice(deviceId, config, session);
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::invalid_argument&) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  } catch (...) {
-    return QDMI_ERROR_FATAL;
-  }
+
+  return qdmi::Driver::get().sessionAllocForDevice(deviceId, config, session);
 }
 // NOLINTEND(readability-identifier-naming)
 
@@ -1057,13 +1114,8 @@ int QDMI_session_alloc(QDMI_Session* session) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   *session = nullptr;
-  try {
-    return qdmi::Driver::get().sessionAlloc(session);
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (...) {
-    return QDMI_ERROR_FATAL;
-  }
+
+  return qdmi::Driver::get().sessionAlloc(session);
 }
 
 int QDMI_session_init(QDMI_Session session) {
@@ -1074,7 +1126,8 @@ int QDMI_session_init(QDMI_Session session) {
 }
 
 void QDMI_session_free(QDMI_Session session) {
-  qdmi::Driver::get().sessionFree(session);
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete session;
 }
 
 int QDMI_session_set_parameter(QDMI_Session session,
@@ -1095,27 +1148,19 @@ int QDMI_session_query_session_property(QDMI_Session session,
   return session->querySessionProperty(prop, size, value, sizeRet);
 }
 
-int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) try {
+int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) {
   if (dev == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return dev->createJob(job);
-} catch (const std::bad_alloc&) {
-  return QDMI_ERROR_OUTOFMEM;
-} catch (...) {
-  return QDMI_ERROR_FATAL;
 }
 
 int QDMI_session_retrieve_job_by_id(QDMI_Device device, const char* jobId,
-                                    QDMI_Job* job) try {
+                                    QDMI_Job* job) {
   if (device == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return device->retrieveJobById(jobId, job);
-} catch (const std::bad_alloc&) {
-  return QDMI_ERROR_OUTOFMEM;
-} catch (...) {
-  return QDMI_ERROR_FATAL;
 }
 
 void QDMI_job_free(QDMI_Job job) {
