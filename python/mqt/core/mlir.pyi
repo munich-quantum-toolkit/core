@@ -1154,6 +1154,29 @@ class QCOProgram(Program):
                 has too few qubits, or the program is unsupported for simulation.
         """
 
+    def expectation_values(self, observables: Sequence[Mapping[str, float]]) -> list[float]:
+        """Evaluate Pauli observables on one uncollapsed zero-state preparation.
+
+        The program is preserved. The DD package and state stay inside this call;
+        neither the state nor the observables are converted to dense arrays.
+        Terminal measurements are deferred under the same conditions as
+        ``mqt.core.mlir.simulate``. Resets and measurement-dependent evolution are rejected.
+
+        Args:
+            observables: Sequence of mappings from Pauli strings to finite real
+                coefficients. Each string spans every program wire and contains only
+                ``I``, ``X``, ``Y`` and ``Z``, with the rightmost character acting on
+                wire zero. An empty mapping represents the zero observable.
+
+        Returns:
+            Numerical expectation values in observable order.
+
+        Raises:
+            ValueError: When an observable is invalid or the program cannot prepare an
+                uncollapsed state.
+            OverflowError: When an expectation is not finite.
+        """
+
     def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
         """Sample the declared outputs of a QCO program.
 

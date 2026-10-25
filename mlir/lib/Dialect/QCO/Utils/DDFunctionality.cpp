@@ -78,6 +78,7 @@
 #include <mutex>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -2460,6 +2461,22 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
               "measured qubit before program end";
   }
   return state;
+}
+
+FailureOr<std::vector<dd::fp>>
+expectationValues(func::FuncOp func,
+                  std::span<const dd::PauliObservable> observables,
+                  const DDArgumentBindings& argumentBindings,
+                  const DDExecutionOptions& options) {
+  dd::Package package(0);
+  auto state = simulateStatevector(func, package, argumentBindings, options);
+  if (failed(state)) {
+    return failure();
+  }
+  const auto guard = llvm::make_scope_exit([&] { package.decRef(*state); });
+  const size_t numQubits =
+      state->isTerminal() ? 0U : static_cast<size_t>(state->p->v) + 1U;
+  return package.expectationValues(*state, numQubits, observables);
 }
 
 static LogicalResult visitOutputBits(

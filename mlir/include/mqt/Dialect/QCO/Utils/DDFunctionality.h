@@ -11,6 +11,7 @@
 #pragma once
 
 #include "dd/Package_fwd.hpp"
+#include "dd/Pauli.hpp"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Attributes.h"
@@ -25,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -118,6 +120,23 @@ simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
 FailureOr<dd::VectorDD> simulateStatevector(
     func::FuncOp func, dd::Package& dd,
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+    const DDExecutionOptions& options = {});
+
+/// Evaluate real Pauli sums on one uncollapsed zero-state preparation.
+///
+/// State preparation has the same restrictions as `simulateStatevector`.
+/// The package and state are owned by this call. Observable labels span all
+/// output wires, with the rightmost character acting on wire zero. No dense
+/// state or observable is materialized. Results follow observable order.
+///
+/// The containing module must pass MLIR verification and
+/// `qco::verifyLinearity`.
+///
+/// @throws std::invalid_argument If an observable is invalid.
+/// @throws std::overflow_error If an expectation is not finite.
+FailureOr<std::vector<dd::fp>> expectationValues(
+    func::FuncOp func, std::span<const dd::PauliObservable> observables,
     const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
     const DDExecutionOptions& options = {});
 

@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/Pauli.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
@@ -64,6 +65,7 @@
 #include <memory>
 #include <numbers>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -2560,6 +2562,11 @@ TEST_F(QCODDFunctionalityTest, ParameterizedUnitaryCallsUseClassicalBindings) {
   EXPECT_NEAR(std::abs(dd::getVector(*state)[1] - std::complex<double>(0., 1.)),
               0., 1e-12);
   package.decRef(*state);
+  const std::vector<dd::PauliObservable> observables{{{.paulis = "Z"}}};
+  const auto expectations = expectationValues(func, observables, bindings);
+  ASSERT_TRUE(succeeded(expectations));
+  ASSERT_EQ(expectations->size(), 1U);
+  EXPECT_NEAR(expectations->front(), -1., 1e-12);
   auto counts = sample(func, 8, 17, bindings);
   ASSERT_TRUE(succeeded(counts));
   EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
@@ -4293,6 +4300,70 @@ TEST_F(QCODDFunctionalityTest, StatevectorSupportsTerminalMeasurements) {
   dd->decRef(*state);
 }
 
+TEST_F(QCODDFunctionalityTest, ExpectationsDeferTerminalMeasurements) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    auto q = b.h(b.staticQubit(0));
+    std::tie(q, std::ignore) = b.measure(q, reg, 0);
+    b.sink(q);
+    return reg;
+  });
+  ASSERT_TRUE(mod);
+  const std::vector<dd::PauliObservable> observables{
+      {{.paulis = "X"}},
+      {{.paulis = "Z"}},
+      {{.paulis = "X", .coefficient = .5}, {.paulis = "Z", .coefficient = .25}},
+      {},
+  };
+  const auto values = expectationValues(mainFunc(*mod), observables);
+  ASSERT_TRUE(succeeded(values));
+  ASSERT_EQ(values->size(), 4U);
+  EXPECT_NEAR((*values)[0], 1., 1e-12);
+  EXPECT_NEAR((*values)[1], 0., 1e-12);
+  EXPECT_NEAR((*values)[2], .5, 1e-12);
+  EXPECT_EQ((*values)[3], 0.);
+
+  const std::vector<dd::PauliObservable> invalid{{{.paulis = "XX"}}};
+  EXPECT_THROW(expectationValues(mainFunc(*mod), invalid),
+               std::invalid_argument);
+  EXPECT_TRUE(succeeded(expectationValues(mainFunc(*mod), observables)));
+}
+
+TEST_F(QCODDFunctionalityTest, ExpectationsSupportScalarAndCompactStates) {
+  auto empty =
+      buildModule([](QCOProgramBuilder&) { return SmallVector<Value>{}; });
+  ASSERT_TRUE(empty);
+  const std::vector<dd::PauliObservable> scalarObservables{
+      {{.paulis = "", .coefficient = 2.5}},
+      {},
+  };
+  const auto scalar = expectationValues(mainFunc(*empty), scalarObservables);
+  ASSERT_TRUE(succeeded(scalar));
+  EXPECT_EQ(*scalar, (std::vector<dd::fp>{2.5, 0.}));
+
+  auto ghz = buildModule([](QCOProgramBuilder& b) {
+    auto control = b.h(b.staticQubit(0));
+    for (size_t index = 1; index < 64; ++index) {
+      auto [nextControl, target] = b.cx(control, b.staticQubit(index));
+      control = nextControl;
+      b.sink(target);
+    }
+    b.sink(control);
+    return SmallVector<Value>{};
+  });
+  ASSERT_TRUE(ghz);
+  const std::vector<dd::PauliObservable> observables{
+      {{.paulis = std::string(64, 'X')}},
+      {{.paulis = "Z" + std::string(62, 'I') + "Z"}},
+  };
+  const auto values = expectationValues(mainFunc(*ghz), observables);
+  ASSERT_TRUE(succeeded(values));
+  ASSERT_EQ(values->size(), 2U);
+  EXPECT_NEAR((*values)[0], 1., 1e-12);
+  EXPECT_NEAR((*values)[1], 1., 1e-12);
+}
+
 TEST_F(QCODDFunctionalityTest, StatevectorRejectsNonTerminalMeasurement) {
   auto reuse = buildModule([](QCOProgramBuilder& b) {
     auto q = b.h(b.staticQubit(0));
@@ -4327,6 +4398,10 @@ TEST_F(QCODDFunctionalityTest, StatevectorRejectsNonTerminalMeasurement) {
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*reuse), *dd)));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*reset), *dd)));
   EXPECT_TRUE(failed(simulateStatevector(mainFunc(*call), *dd)));
+  const std::vector<dd::PauliObservable> observables{{{.paulis = "Z"}}};
+  EXPECT_TRUE(failed(expectationValues(mainFunc(*reuse), observables)));
+  EXPECT_TRUE(failed(expectationValues(mainFunc(*reset), observables)));
+  EXPECT_TRUE(failed(expectationValues(mainFunc(*call), observables)));
 }
 
 TEST_F(QCODDFunctionalityTest, LifetimeMarkersPreserveEntangledState) {
