@@ -54,6 +54,7 @@ Args:
 }
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerDD(const nb::module_& m) {
   m.doc() = "MQT Core decision diagram module.";
 

@@ -36,6 +36,7 @@ void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
 void registerWState(const nb::module_& m);
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerBench(nb::module_& m) {
   m.doc() = "Typed benchmark instances and references.";
 

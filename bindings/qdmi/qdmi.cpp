@@ -216,6 +216,7 @@ template <typename Query>
 
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerQDMI(nb::module_& qdmiModule) {
   qdmiModule.doc() = "QDMI sessions, devices, and jobs.";
   auto builtinDriver = qdmiModule.def_submodule(

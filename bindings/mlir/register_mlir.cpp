@@ -1031,6 +1031,7 @@ generateBenchmark(const Benchmark& benchmark) {
   return std::move(*generated);
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerMLIR(nb::module_& m) {
 #ifdef __APPLE__
   nb::register_exception_translator(&translateRuntimeError);
