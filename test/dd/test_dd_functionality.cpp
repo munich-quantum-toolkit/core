@@ -30,19 +30,21 @@
 #include <system_error>
 #include <vector>
 
+using mqt::test::errorCode;
+using mqt::test::value;
+
 namespace dd {
 
 TEST(DDHistogram, ProjectsEntangledStateWithoutChangingIt) {
-  auto packageOwner = ::mqt::test::value(dd::Package::create(3));
+  auto packageOwner = value(dd::Package::create(3));
   auto& package = *packageOwner;
   const CVec amplitudes{
       {0., 0.},  {0.1, 0.2}, {0.2, 0.1}, {0.3, 0.},
       {0., 0.4}, {0.5, 0.},  {0., 0.6},  {0.2, 0.},
   };
   // Squared amplitudes sum to one; hidden qubits have different suffixes.
-  const auto state =
-      ::mqt::test::value(makeStateFromVector(amplitudes, package));
-  const auto original = ::mqt::test::value(getVector(state));
+  const auto state = value(makeStateFromVector(amplitudes, package));
+  const auto original = value(getVector(state));
   const std::vector<SamplingOutput> outputs{Qubit{0}, true, Qubit{2}, Qubit{0}};
   std::map<std::string, double> probabilities;
   for (size_t i = 0; i < amplitudes.size(); ++i) {
@@ -53,8 +55,7 @@ TEST(DDHistogram, ProjectsEntangledStateWithoutChangingIt) {
   }
   constexpr size_t shots = 32768;
   std::mt19937_64 rng(17);
-  const auto counts =
-      ::mqt::test::value(Package::sampleCounts(state, outputs, shots, rng));
+  const auto counts = value(Package::sampleCounts(state, outputs, shots, rng));
   size_t total = 0;
   for (const auto& [key, count] : counts) {
     ASSERT_TRUE(probabilities.contains(key));
@@ -64,41 +65,37 @@ TEST(DDHistogram, ProjectsEntangledStateWithoutChangingIt) {
     total += count;
   }
   EXPECT_EQ(total, shots);
-  EXPECT_EQ(::mqt::test::value(getVector(state)), original);
-  EXPECT_TRUE(::mqt::test::value(Package::sampleCounts(state, outputs, 0, rng))
-                  .empty());
-  EXPECT_EQ(::mqt::test::value(Package::sampleCounts(state, {}, shots, rng)),
+  EXPECT_EQ(value(getVector(state)), original);
+  EXPECT_TRUE(value(Package::sampleCounts(state, outputs, 0, rng)).empty());
+  EXPECT_EQ(value(Package::sampleCounts(state, {}, shots, rng)),
             (std::map<std::string, size_t>{{"", shots}}));
   const std::vector<SamplingOutput> invalid{Qubit{3}};
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return Package::sampleCounts(state, invalid, 1, rng); }),
-            std::errc::invalid_argument);
+  EXPECT_EQ(
+      errorCode([&] { return Package::sampleCounts(state, invalid, 1, rng); }),
+      std::errc::invalid_argument);
   package.decRef(state);
 }
 
 TEST(DDHistogram, SamplesWideCorrelatedAndIndependentBits) {
-  auto packageOwner = ::mqt::test::value(dd::Package::create(128));
+  auto packageOwner = value(dd::Package::create(128));
   auto& package = *packageOwner;
-  const auto ghz = ::mqt::test::value(makeGHZState(128, package));
+  const auto ghz = value(makeGHZState(128, package));
   std::vector<SamplingOutput> outputs;
   for (size_t i = 128; i > 0; --i) {
     outputs.emplace_back(static_cast<Qubit>(i - 1));
   }
   std::mt19937_64 rng(17);
-  const auto counts =
-      ::mqt::test::value(Package::sampleCounts(ghz, outputs, 1000000, rng));
+  const auto counts = value(Package::sampleCounts(ghz, outputs, 1000000, rng));
   ASSERT_EQ(counts.size(), 2);
   EXPECT_NEAR(static_cast<double>(counts.at(std::string(128, '0'))), 500000.,
               3000.);
   EXPECT_EQ(counts.at(std::string(128, '0')) + counts.at(std::string(128, '1')),
             1000000);
   rng.seed(17);
-  EXPECT_EQ(
-      ::mqt::test::value(Package::sampleCounts(ghz, outputs, 1000000, rng)),
-      counts);
+  EXPECT_EQ(value(Package::sampleCounts(ghz, outputs, 1000000, rng)), counts);
   package.decRef(ghz);
 
-  const auto uniform = ::mqt::test::value(makeBasisState(
+  const auto uniform = value(makeBasisState(
       24, std::vector<BasisStates>(24, BasisStates::plus), package));
   outputs.resize(24);
   for (size_t i = 0; i < outputs.size(); ++i) {
@@ -106,7 +103,7 @@ TEST(DDHistogram, SamplesWideCorrelatedAndIndependentBits) {
   }
   constexpr size_t shots = 32768;
   const auto independent =
-      ::mqt::test::value(Package::sampleCounts(uniform, outputs, shots, rng));
+      value(Package::sampleCounts(uniform, outputs, shots, rng));
   size_t total = 0;
   std::vector<size_t> ones(24);
   std::map<std::string, size_t> prefixes;
@@ -132,13 +129,13 @@ TEST(DDHistogram, SamplesWideCorrelatedAndIndependentBits) {
 }
 
 TEST(DDGateConstruction, AppliesGlobalPhase) {
-  auto packageOwner = ::mqt::test::value(Package::create(1));
+  auto packageOwner = value(Package::create(1));
   auto& package = *packageOwner;
-  auto state = ::mqt::test::value(makeZeroState(1, package));
+  auto state = value(makeZeroState(1, package));
 
   const auto phased = applyGlobalPhase(state, std::numbers::pi / 2., package);
   EXPECT_EQ(state, phased);
-  const auto vector = ::mqt::test::value(dd::getVector(phased));
+  const auto vector = value(dd::getVector(phased));
 
   ASSERT_EQ(vector.size(), 2);
   EXPECT_NEAR(vector[0].real(), 0., RealNumber::eps);
@@ -147,7 +144,7 @@ TEST(DDGateConstruction, AppliesGlobalPhase) {
 
   package.garbageCollect(true);
   state = package.applyOperation(Package::makeIdent(), state);
-  EXPECT_EQ(::mqt::test::value(dd::getVector(state)), vector);
+  EXPECT_EQ(value(dd::getVector(state)), vector);
   package.decRef(state);
   package.garbageCollect(true);
   const auto [vectors, matrices, reals] = package.computeActiveCounts();
@@ -157,14 +154,14 @@ TEST(DDGateConstruction, AppliesGlobalPhase) {
 }
 
 TEST(DDGateConstruction, ScalarGlobalPhaseSurvivesCollection) {
-  auto packageOwner = ::mqt::test::value(Package::create(0));
+  auto packageOwner = value(Package::create(0));
   auto& package = *packageOwner;
   auto state = vEdge::one();
   applyGlobalPhase(state, 0.3, package);
   package.garbageCollect(true);
-  EXPECT_NEAR(std::abs(::mqt::test::value(dd::getVector(state)).front() -
-                       std::polar(1., 0.3)),
-              0., RealNumber::eps);
+  EXPECT_NEAR(
+      std::abs(value(dd::getVector(state)).front() - std::polar(1., 0.3)), 0.,
+      RealNumber::eps);
   package.decRef(state);
   package.garbageCollect(true);
 }
@@ -172,10 +169,10 @@ TEST(DDGateConstruction, ScalarGlobalPhaseSurvivesCollection) {
 TEST(DDGateConstruction, VectorKroneckerWithTerminal) {
   constexpr std::size_t nq = 1;
   constexpr auto root = vEdge::one();
-  auto packageOwner = ::mqt::test::value(Package::create(nq));
+  auto packageOwner = value(Package::create(nq));
   auto& package = *packageOwner;
 
-  const auto zeroState = ::mqt::test::value(makeZeroState(nq, package));
+  const auto zeroState = value(makeZeroState(nq, package));
   const auto extendedRoot = package.kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
 

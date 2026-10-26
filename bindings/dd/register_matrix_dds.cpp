@@ -12,7 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
-#include "../Result.hpp"
+#include "Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"
@@ -29,6 +29,9 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+using bindings::bindResult;
+using bindings::unwrap;
 
 using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
@@ -54,7 +57,7 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
 
   const auto dim = 1ULL << numQubits;
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
-  bindings::unwrap(dd::traverseMatrix(
+  unwrap(dd::traverseMatrix(
       m, std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](const std::size_t i, const std::size_t j,
                       const std::complex<dd::fp>& c) {
@@ -93,14 +96,14 @@ Returns:
   mat.def("size", nb::overload_cast<>(&dd::mEdge::size, nb::const_),
           "Get the size of the DD by traversing it once.");
 
-  mat.def("get_entry",
-          bindings::bindResult(
-              nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
-                  &dd::getValueByIndex)),
-          "num_qubits"_a, "row"_a, "col"_a,
-          "Get the entry of the matrix by row and column index.");
+  mat.def(
+      "get_entry",
+      bindResult(nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
+          &dd::getValueByIndex)),
+      "num_qubits"_a, "row"_a, "col"_a,
+      "Get the entry of the matrix by row and column index.");
 
-  mat.def("get_entry_by_path", bindings::bindResult(&dd::mEdge::getValueByPath),
+  mat.def("get_entry_by_path", bindResult(&dd::mEdge::getValueByPath),
           "num_qubits"_a, "decisions"_a,
           R"pb(Get the entry of the matrix by decisions.
 

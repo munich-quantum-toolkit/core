@@ -14,7 +14,7 @@
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 
-#include "../Result.hpp"
+#include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
@@ -34,6 +34,9 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+using bindings::bindResult;
+using bindings::unwrap;
 
 namespace {
 template <class Node>
@@ -79,12 +82,12 @@ Args:
 
   // Constructor
   dd.def(nb::new_([](size_t numQubits) {
-           return bindings::unwrap(dd::Package::create(numQubits));
+           return unwrap(dd::Package::create(numQubits));
          }),
          "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
 
   // Resizing the package
-  dd.def("resize", bindings::bindResult(&dd::Package::resize), "num_qubits"_a,
+  dd.def("resize", bindResult(&dd::Package::resize), "num_qubits"_a,
          R"pb(Grow the DDPackage to accommodate more qubits.
 
 Args:
@@ -104,7 +107,7 @@ Raises:
   dd.def(
       "zero_state",
       [](dd::Package& p, const size_t numQubits) {
-        return bindings::unwrap(makeZeroState(numQubits, p));
+        return unwrap(makeZeroState(numQubits, p));
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -123,7 +126,7 @@ Returns:
       "computational_basis_state",
       [](dd::Package& p, const size_t numQubits,
          const std::vector<bool>& state) {
-        return bindings::unwrap(makeBasisState(numQubits, state, p));
+        return unwrap(makeBasisState(numQubits, state, p));
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -162,7 +165,7 @@ Returns:
       "basis_state",
       [](dd::Package& p, const size_t numQubits,
          const std::vector<dd::BasisStates>& state) {
-        return bindings::unwrap(makeBasisState(numQubits, state, p));
+        return unwrap(makeBasisState(numQubits, state, p));
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -182,7 +185,7 @@ Returns:
   dd.def(
       "ghz_state",
       [](dd::Package& p, const size_t numQubits) {
-        return bindings::unwrap(makeGHZState(numQubits, p));
+        return unwrap(makeGHZState(numQubits, p));
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -200,7 +203,7 @@ Returns:
   dd.def(
       "w_state",
       [](dd::Package& p, const size_t numQubits) {
-        return bindings::unwrap(makeWState(numQubits, p));
+        return unwrap(makeWState(numQubits, p));
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -221,8 +224,7 @@ Returns:
   dd.def(
       "from_vector",
       [](dd::Package& p, const VectorInput& v) {
-        return bindings::unwrap(
-            dd::makeStateFromVector(v.shape(0), v.view(), p));
+        return unwrap(dd::makeStateFromVector(v.shape(0), v.view(), p));
       },
       "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -242,7 +244,7 @@ Returns:
       [](dd::Package& p, dd::vEdge& v, const dd::Qubit q) {
         requireRoot(p, v);
         static thread_local std::mt19937_64 rng(std::random_device{}());
-        return bindings::unwrap(p.measureOneCollapsing(v, q, rng));
+        return unwrap(p.measureOneCollapsing(v, q, rng));
       },
       "vec"_a, "qubit"_a, R"pb(Measure a qubit and collapse the DD.
 
@@ -264,7 +266,7 @@ Returns:
           requireRoot(p, v);
         }
         static thread_local std::mt19937_64 rng(std::random_device{}());
-        return bindings::unwrap(p.measureAll(v, collapse, rng));
+        return unwrap(p.measureAll(v, collapse, rng));
       },
       "vec"_a, "collapse"_a = false, R"pb(Measure all qubits.
 
@@ -291,7 +293,7 @@ Returns:
   dd.def(
       "single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat, const dd::Qubit target) {
-        return bindings::unwrap(
+        return unwrap(
             p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)}, target));
       },
       "matrix"_a, "target"_a,
@@ -309,8 +311,8 @@ Returns:
       "controlled_single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat,
          const dd::Control& control, const dd::Qubit target) {
-        return bindings::unwrap(p.makeGateDD(
-            {mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)}, control, target));
+        return unwrap(p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
+                                   control, target));
       },
       "matrix"_a, "control"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -334,8 +336,8 @@ Returns:
       "multi_controlled_single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat,
          const dd::Controls& controls, const dd::Qubit target) {
-        return bindings::unwrap(p.makeGateDD(
-            {mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)}, controls, target));
+        return unwrap(p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
+                                   controls, target));
       },
       "matrix"_a, "controls"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -359,7 +361,7 @@ Returns:
       "two_qubit_gate",
       [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Qubit target0,
          const dd::Qubit target1) {
-        return bindings::unwrap(p.makeTwoQubitGateDD(
+        return unwrap(p.makeTwoQubitGateDD(
             {
                 std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
                 {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
@@ -384,7 +386,7 @@ Returns:
       "controlled_two_qubit_gate",
       [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
-        return bindings::unwrap(p.makeTwoQubitGateDD(
+        return unwrap(p.makeTwoQubitGateDD(
             {
                 std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
                 {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
@@ -417,7 +419,7 @@ Returns:
       [](dd::Package& p, const TwoQubitMatrix& mat,
          const dd::Controls& controls, const dd::Qubit target0,
          const dd::Qubit target1) {
-        return bindings::unwrap(p.makeTwoQubitGateDD(
+        return unwrap(p.makeTwoQubitGateDD(
             {
                 std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
                 {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
@@ -453,7 +455,7 @@ Returns:
         if (rows != cols) {
           throw nb::value_error("Matrix must be square.");
         }
-        return bindings::unwrap(p.makeDDFromMatrix(rows, mat.view()));
+        return unwrap(p.makeDDFromMatrix(rows, mat.view()));
       },
       "matrix"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -621,9 +623,9 @@ Args:
 Returns:
     The fidelity of the two vectors.)pb");
 
-  dd.def("expectation_value",
-         bindings::bindResult(&dd::Package::expectationValue), "observable"_a,
-         "state"_a, R"pb(Compute the expectation value of an observable.
+  dd.def("expectation_value", bindResult(&dd::Package::expectationValue),
+         "observable"_a, "state"_a,
+         R"pb(Compute the expectation value of an observable.
 
 Notes:
     The state must have at least as many qubits as the observable non-trivially acts on.

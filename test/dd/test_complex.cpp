@@ -37,6 +37,9 @@
 #include <unordered_set>
 #include <vector>
 
+using mqt::test::errorCode;
+using mqt::test::value;
+
 using namespace dd;
 
 namespace {
@@ -45,7 +48,7 @@ class CNTest : public testing::Test {
 protected:
   const fp savedTolerance = RealNumber::eps;
   void TearDown() override {
-    ::mqt::test::value(ComplexNumbers::setTolerance(savedTolerance));
+    value(ComplexNumbers::setTolerance(savedTolerance));
   }
 
   MemoryManager mm{MemoryManager::create<RealNumber>()};
@@ -63,9 +66,9 @@ TEST_F(CNTest, RejectsInvalidTolerance) {
            std::numeric_limits<fp>::infinity(),
            std::numeric_limits<fp>::quiet_NaN(),
        }) {
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return ComplexNumbers::setTolerance(tolerance); }),
-              std::errc::invalid_argument);
+    EXPECT_EQ(
+        errorCode([&] { return ComplexNumbers::setTolerance(tolerance); }),
+        std::errc::invalid_argument);
     EXPECT_EQ(RealNumber::eps, savedTolerance);
   }
 }
@@ -186,7 +189,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
   auto* second = ut.lookup(0.25 + (4 * RealNumber::eps));
   ASSERT_NE(first, second);
   RealNumber::mark(first);
-  ::mqt::test::value(ComplexNumbers::setTolerance(RealNumber::eps * 16));
+  value(ComplexNumbers::setTolerance(RealNumber::eps * 16));
   EXPECT_EQ(ut.lookup(second->value), second);
   EXPECT_EQ(ut.lookup(first->value), first);
   EXPECT_TRUE(RealNumber::isMarked(first));
@@ -198,7 +201,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
            1e-6,
            1e-3,
        }) {
-    ::mqt::test::value(ComplexNumbers::setTolerance(tolerance));
+    value(ComplexNumbers::setTolerance(tolerance));
     for (const fp value : {
              0.25,
              std::nextafter(0.25, 0.),

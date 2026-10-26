@@ -24,11 +24,11 @@
 #include "llvm/Support/ConvertUTF.h"
 #endif
 
-#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <optional>
 #include <stdexcept>
+#include <stdlib.h> // NOLINT(modernize-deprecated-headers): environment API.
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -142,7 +142,6 @@ private:
     return _wputenv_s(name.data(), contents.data()) == 0;
 #else
     const auto* const name = name_.c_str();
-    // NOLINTNEXTLINE(misc-include-cleaner): POSIX environment functions.
     return (value ? setenv(name, value->c_str(), 1) : unsetenv(name)) == 0;
 #endif
   }
@@ -204,3 +203,6 @@ private:
 };
 
 } // namespace mqt::test
+
+// A macro keeps GoogleTest fatal assertions in the calling test.
+#define MQT_ASSERT_SUCCESS(...) ASSERT_TRUE(::mqt::test::succeeded(__VA_ARGS__))
