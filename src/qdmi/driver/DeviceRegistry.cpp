@@ -20,6 +20,7 @@
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -35,7 +36,6 @@
 #include <map>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -70,7 +70,7 @@ struct DefinitionPatch {
 struct DeviceManifestState {
   std::mutex mutex;
   std::vector<std::filesystem::path> paths;
-  std::set<std::string> ids;
+  llvm::StringSet<> ids;
   bool frozen = false;
 };
 
@@ -364,7 +364,7 @@ parseDevicePatch(const Json& value, const std::string_view source,
                            sourceLabel(source, "$.qdmi.devices") +
                                " must be an array");
   }
-  std::set<std::string> ids;
+  llvm::StringSet<> ids;
   std::vector<DefinitionPatch> patches;
   patches.reserve(devices->getAsArray()->size());
   for (size_t i = 0; i < devices->getAsArray()->size(); ++i) {
@@ -375,7 +375,7 @@ parseDevicePatch(const Json& value, const std::string_view source,
       return result.takeError();
     }
     auto& patch = (*result);
-    if (!ids.emplace(patch.id).second) {
+    if (!ids.insert(patch.id).second) {
       return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                              sourceLabel(source, "$.qdmi.devices") +
                                  " contains duplicate id '" + patch.id + "'");
@@ -682,14 +682,10 @@ auto stageDeviceManifest(const std::filesystem::path& path) -> int {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
   }
-  auto paths = state.paths;
-  auto storedIds = state.ids;
-  paths.emplace_back(canonical);
+  state.paths.emplace_back(canonical);
   for (const auto& patch : *patches) {
-    storedIds.emplace(patch.id);
+    state.ids.insert(patch.id);
   }
-  state.paths.swap(paths);
-  state.ids.swap(storedIds);
   return QDMI_SUCCESS;
 }
 

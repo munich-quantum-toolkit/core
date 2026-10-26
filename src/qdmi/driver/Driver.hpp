@@ -168,7 +168,7 @@ struct DeviceAPI {
   virtual ~DeviceAPI() = default;
 };
 
-/// Owns a dynamic provider library and its QDMI function table.
+/// Owns a dynamic device library and its QDMI function table.
 class LoadedDeviceAPI final : public DeviceAPI {
   void* libHandle_;
   bool initialized_ = false;
@@ -179,7 +179,7 @@ class LoadedDeviceAPI final : public DeviceAPI {
       -> llvm::Expected<LoadedDeviceAPI*>;
 
 public:
-  /// Finalize a successfully initialized provider and close the library.
+  /// Finalize a successfully initialized device and close the library.
   ~LoadedDeviceAPI() override;
 };
 

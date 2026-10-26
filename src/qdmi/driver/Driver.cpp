@@ -210,7 +210,7 @@ struct DeviceAPICache {
     }
     return *module;
   }();
-  // Modules may contain providers that share initialization state. Keep their
+  // Modules may contain devices that share initialization state. Keep their
   // initialization serialized without blocking unrelated modules.
   const std::scoped_lock lock(module.mutex);
   auto& apis = module.apis;

@@ -36,7 +36,7 @@ The builtin MQT Core QDMI driver shares device libraries across path aliases
 with the same symbol prefix. Independent sessions keep their own parameters.
 Initializing one device does not block initialization of unrelated devices.
 Standard sessions borrow a fixed device catalog; targeted sessions own their
-device. Devices own their jobs and release them before closing the provider
+device. Devices own their jobs and release them before closing the device
 session.
 
 The builtin driver returns `QDMI_ERROR_OUTOFMEM` when allocating a session or
