@@ -19,6 +19,11 @@ programs using the Base or Adaptive Profile. See the
 [QIR Support in the MQT](../qir/index.md) for the supported operations, exact
 QDMI program formats, and payload contracts.
 
+The Qiskit target advertises `if_else`, `for_loop`, `while_loop`, `switch_case`,
+`break_loop`, `continue_loop`, and `store`. Loop bodies use the same gate
+capabilities as the enclosing program. Break and continue affect the nearest
+loop. Sampling supports measurement feedback and reset; loops must terminate.
+
 The device can perform weak simulation for every supported format, i.e., sample
 from the distribution produced by the program. It can also perform strong
 simulation for OpenQASM and eligible QIR Base or Adaptive Profile programs,

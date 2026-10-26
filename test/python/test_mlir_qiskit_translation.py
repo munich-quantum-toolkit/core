@@ -41,7 +41,7 @@ from qiskit.circuit import (
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
-from qiskit.quantum_info import Operator, random_unitary
+from qiskit.quantum_info import Operator, Statevector, random_unitary
 from qiskit.transpiler import Layout, TranspileLayout
 from qiskit_support import supports_qiskit_translation
 
@@ -56,6 +56,7 @@ from mqt.core.mlir import (
     TargetEnvironment,
     compile_program,
     sample,
+    simulate,
 )
 
 if TYPE_CHECKING:
@@ -4865,3 +4866,110 @@ def test_invalid_named_qubit_register_export_is_rejected(size: int, name: str, e
     ])
     with pytest.raises(RuntimeError, match=error):
         program.to_qiskit()
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool) -> None:
+    """Block-local register membership need not partition its captured operands."""
+    selector = ClassicalRegister(2, "selector")
+    output = ClassicalRegister(2, "output")
+    circuit = QuantumCircuit(QuantumRegister(4, "q"), selector, output)
+    circuit.x(1)
+    circuit.measure([0, 1], selector)
+    with circuit.for_loop(range(1)), circuit.switch(selector) as case:
+        with case(0, 2):
+            circuit.x(2)
+            circuit.measure(2, selector[0])
+        with case(1):
+            circuit.x(3)
+            circuit.reset(0)
+            circuit.measure(0, selector[0])
+        with case(case.DEFAULT):
+            circuit.x(2)
+            circuit.x(3)
+    circuit.measure([2, 3], output)
+    source = QCProgram.from_qiskit(circuit, native=native).to_openqasm3().source
+    assert sample(source, shots=8) == {"0111": 8}
+
+
+def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
+    """Native export preserves idle-site holes and exact gate/global phases."""
+    circuit = QuantumCircuit(4, global_phase=0.37)
+    circuit.h(0)
+    circuit.u(0.2, 0.3, 0.4, 2)
+    circuit.cx(2, 0)
+    circuit.sxdg(3)
+    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
+    assert "cx $2, $0;" in source
+    assert "sxdg $3;" in source
+    np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
+
+
+def test_qiskit_native_opaque_gate_has_no_invented_definition() -> None:
+    """Receiver-defined gates retain their parameters and ordered physical sites."""
+    circuit = QuantumCircuit(4)
+    circuit.append(Gate("hop", 2, [0.125]), [3, 1])
+    with pytest.raises(RuntimeError, match="no circuit definition"):
+        QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_qiskit(circuit, native=True)
+    assert "func.func private" in program.ir
+    with pytest.raises(ValueError, match="callee must have a body"):
+        sample(program.copy(), shots=1)
+    source = program.to_openqasm3().source
+    assert "hop(0.125) $3, $1;" in source
+    assert "gate hop" not in source
+    with pytest.raises(RuntimeError):
+        sample(source, shots=1)
+
+
+@pytest.mark.parametrize("name", ["bad;gate", "if"])
+def test_qiskit_native_export_rejects_invalid_gate_names(name: str) -> None:
+    """Opaque names cannot introduce OpenQASM syntax or keywords."""
+    circuit = QuantumCircuit(1)
+    circuit.append(Gate(name, 1, []), [0])
+    with pytest.raises(RuntimeError, match="external gate name"):
+        QCProgram.from_qiskit(circuit, native=True).to_openqasm3()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [AnnotatedOperation(library.SGate(), InverseModifier()), Instruction("custom", 1, 0, [])],
+)
+def test_qiskit_native_import_rejects_unlowered_operations(operation: Instruction | AnnotatedOperation) -> None:
+    """Native import rejects instructions and modifiers before reading definitions."""
+    circuit = QuantumCircuit(1)
+    circuit.append(operation, [0])
+    with pytest.raises(RuntimeError, match="Native import requires concrete gates"):
+        QCProgram.from_qiskit(circuit, native=True)
+
+
+def test_qiskit_opaque_gate_rejects_conflicting_signatures() -> None:
+    """OpenQASM cannot overload one gate name with different arities."""
+    circuit = QuantumCircuit(2)
+    circuit.append(Gate("hop", 1, []), [0])
+    circuit.append(Gate("hop", 2, []), [0, 1])
+    with pytest.raises(RuntimeError, match="conflicting signatures"):
+        QCProgram.from_qiskit(circuit, native=True)
+
+
+@pytest.mark.parametrize("width", [0, 1])
+def test_native_import_never_reads_gate_definitions(width: int) -> None:
+    """Opaque gates use their signature; unsupported zero-qubit calls fail first."""
+
+    class DeviceGate(Gate):
+        @property
+        def definition(self) -> QuantumCircuit:
+            msg = "native import read a device gate definition"
+            raise AssertionError(msg)
+
+        @definition.setter
+        def definition(self, value: object) -> None:
+            pass
+
+    circuit = QuantumCircuit(1)
+    circuit.append(DeviceGate("device_gate", width, []), range(width))
+    if width == 0:
+        with pytest.raises(RuntimeError, match="Opaque gates must act on device qubits"):
+            QCProgram.from_qiskit(circuit, native=True)
+    else:
+        assert "device_gate $0;" in QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source

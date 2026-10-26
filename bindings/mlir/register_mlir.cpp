@@ -1826,13 +1826,17 @@ Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
           "from_qiskit", &bindings::qiskit::importCircuit, "circuit"_a,
-          nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
-                  "-> QCProgram"),
+          nb::kw_only(), "native"_a = false,
+          nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, "
+                  "native: bool = False) -> QCProgram"),
           R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
 
 Args:
     circuit: Circuit to import. A complete transpiler layout is retained as
-        metadata.)pb")
+        metadata.
+    native: Whether the circuit is already compiled for a device. Fixes circuit
+        indices to device qubits and preserves gate names and operands without
+        importing definitions. The caller validates device support and placements.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
