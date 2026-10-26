@@ -163,15 +163,13 @@ llvm::Expected<std::map<std::string, T>> getSparseResult(
 #ifdef _WIN32
 using LibraryHandle = HMODULE;
 
-[[nodiscard]] auto openLibrary(const std::filesystem::path& path)
-    -> LibraryHandle {
+[[nodiscard]] LibraryHandle openLibrary(const std::filesystem::path& path) {
   return LoadLibraryExW(path.wstring().c_str(), nullptr,
                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
                             LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
 }
 
-[[nodiscard]] auto findSymbol(LibraryHandle library, const char* name)
-    -> void* {
+[[nodiscard]] void* findSymbol(LibraryHandle library, const char* name) {
   return reinterpret_cast<void*>(GetProcAddress(library, name));
 }
 
@@ -179,21 +177,19 @@ void closeLibrary(LibraryHandle library) { FreeLibrary(library); }
 #else
 using LibraryHandle = void*;
 
-[[nodiscard]] auto openLibrary(const std::filesystem::path& path)
-    -> LibraryHandle {
+[[nodiscard]] LibraryHandle openLibrary(const std::filesystem::path& path) {
   return dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
 }
 
-[[nodiscard]] auto findSymbol(LibraryHandle library, const char* name)
-    -> void* {
+[[nodiscard]] void* findSymbol(LibraryHandle library, const char* name) {
   return dlsym(library, name);
 }
 
 void closeLibrary(LibraryHandle library) { dlclose(library); }
 #endif
 
-[[nodiscard]] auto normalizePath(const std::filesystem::path& path)
-    -> llvm::Expected<std::filesystem::path> {
+[[nodiscard]] llvm::Expected<std::filesystem::path>
+normalizePath(const std::filesystem::path& path) {
   if (path.empty()) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            "QDMI driver path must not be empty");
@@ -210,8 +206,7 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   return normalized;
 }
 
-[[nodiscard]] auto packagedDriverPath()
-    -> llvm::Expected<std::filesystem::path> {
+[[nodiscard]] llvm::Expected<std::filesystem::path> packagedDriverPath() {
   auto directory = detail::moduleDirectory(
       reinterpret_cast<const void*>(&packagedDriverPath));
   if (!directory) {
@@ -239,8 +234,8 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
 #endif
 }
 
-[[nodiscard]] auto requestedDriverPath(const SessionConfig& config)
-    -> llvm::Expected<std::filesystem::path> {
+[[nodiscard]] llvm::Expected<std::filesystem::path>
+requestedDriverPath(const SessionConfig& config) {
   if (config.driverPath) {
     return normalizePath(*config.driverPath);
   }
@@ -274,8 +269,8 @@ struct LoadedDriverAPI : detail::DriverAPI {
 };
 
 template <class Function>
-[[nodiscard]] auto loadSymbol(LibraryHandle library, const char* name)
-    -> llvm::Expected<Function> {
+[[nodiscard]] llvm::Expected<Function> loadSymbol(LibraryHandle library,
+                                                  const char* name) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   const auto function = reinterpret_cast<Function>(findSymbol(library, name));
   if (function == nullptr) {
@@ -285,8 +280,8 @@ template <class Function>
   return function;
 }
 
-[[nodiscard]] auto loadDriverAPI(const std::filesystem::path& path)
-    -> llvm::Expected<std::shared_ptr<const LoadedDriverAPI>> {
+[[nodiscard]] llvm::Expected<std::shared_ptr<const LoadedDriverAPI>>
+loadDriverAPI(const std::filesystem::path& path) {
   struct DriverAPICache {
     std::mutex mutex;
     std::map<std::filesystem::path, std::shared_ptr<const LoadedDriverAPI>>
@@ -385,8 +380,8 @@ llvm::Error validateSessionAllocation(const int status, QDMI_Session session) {
   return qdmi::checkError(status, "Allocating QDMI session");
 }
 
-[[nodiscard]] auto allocateSession(const SessionConfig& config)
-    -> llvm::Expected<std::shared_ptr<detail::DriverSession>> {
+[[nodiscard]] llvm::Expected<std::shared_ptr<detail::DriverSession>>
+allocateSession(const SessionConfig& config) {
   auto path = requestedDriverPath(config);
   if (!path) {
     return path.takeError();
