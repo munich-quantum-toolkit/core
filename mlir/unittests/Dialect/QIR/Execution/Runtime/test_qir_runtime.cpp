@@ -15,6 +15,8 @@
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
@@ -33,6 +35,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+using mqt::test::value;
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -188,7 +192,7 @@ TEST_F(QIRRuntimeTest, RejectsStaticQubitBeyondDDRange) {
 TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
   Runtime runtime{0};
   for (size_t i = 0; i < dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
-    static_cast<void>(llvm::cantFail(runtime.qAlloc()));
+    static_cast<void>(value(runtime.qAlloc()));
   }
   EXPECT_FALSE(llvm::toString(runtime.qAlloc().takeError()).empty());
 }
@@ -318,8 +322,8 @@ TEST_F(QIRRuntimeTest, GlobalPhase) {
   __quantum__qis__i__body(q0);
   __quantum__qis__gphase__body(dd::PI_2);
 
-  const auto state = llvm::cantFail(Runtime::getInstance().takeState());
-  const auto vector = llvm::cantFail(dd::getVector(state.edge));
+  const auto state = value(Runtime::getInstance().takeState());
+  const auto vector = value(dd::getVector(state.edge));
   ASSERT_EQ(vector.size(), 2);
   EXPECT_NEAR(vector[0].real(), 0., 1e-12);
   EXPECT_NEAR(vector[0].imag(), 1., 1e-12);
@@ -868,7 +872,7 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q0);
 
-  auto state = llvm::cantFail(Runtime::getInstance().takeState());
+  auto state = value(Runtime::getInstance().takeState());
   EXPECT_NE(state.dd, nullptr);
   EXPECT_FALSE(state.edge.isTerminal());
   EXPECT_EQ(state.numQubits, 1);
@@ -970,9 +974,9 @@ TEST_F(QIRRuntimeTest, PreservesPhaseBeforeFirstQubitAndFollowingGates) {
   __quantum__qis__x__body(nullptr);
   __quantum__qis__gphase__body(0.4);
   __quantum__qis__x__body(nullptr);
-  auto state = llvm::cantFail(Runtime::getInstance().takeState());
+  auto state = value(Runtime::getInstance().takeState());
   state.dd->garbageCollect(true);
-  const auto values = llvm::cantFail(dd::getVector(state.edge));
+  const auto values = value(dd::getVector(state.edge));
   ASSERT_EQ(values.size(), 2);
   EXPECT_NEAR(std::abs(values[0] - std::polar(1., 0.7)), 0., 1e-12);
   EXPECT_EQ(values[1], 0.);
@@ -988,8 +992,8 @@ TEST_F(QIRRuntimeTest, ExtractsLogicalOrderAfterSwapCycle) {
   __quantum__qis__x__body(q0);
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__swap__body(q1, q2);
-  auto state = llvm::cantFail(Runtime::getInstance().takeState());
-  const auto values = llvm::cantFail(dd::getVector(state.edge));
+  auto state = value(Runtime::getInstance().takeState());
+  const auto values = value(dd::getVector(state.edge));
   ASSERT_EQ(values.size(), 8);
   for (size_t i = 0; i < values.size(); ++i) {
     EXPECT_EQ(values[i], i == 4 ? 1. : 0.);
@@ -1011,7 +1015,7 @@ TEST_F(QIRRuntimeTest, ReusesReleasedWiresWithoutReusingHandles) {
     __quantum__rt__qubit_release(qubit);
   }
   EXPECT_DEATH(__quantum__qis__x__body(first), "Qubit not allocated");
-  auto state = llvm::cantFail(Runtime::getInstance().takeState());
+  auto state = value(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 1);
   state.dd->decRef(state.edge);
 }
@@ -1029,7 +1033,7 @@ TEST_F(QIRRuntimeTest, ReleasedSwappedWireIsResetBeforeReuse) {
   __quantum__qis__x__body(a);
   __quantum__qis__mz__body(c, nullptr);
   EXPECT_FALSE(__quantum__rt__read_result(nullptr));
-  auto state = llvm::cantFail(Runtime::getInstance().takeState());
+  auto state = value(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 2);
   state.dd->decRef(state.edge);
 }
@@ -1039,7 +1043,7 @@ TEST_F(QIRRuntimeTest, ReleasingUnusedQubitsDoesNotEnlargeState) {
   for (size_t i = 0; i <= dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
     __quantum__rt__qubit_release(__quantum__rt__qubit_allocate(nullptr));
   }
-  auto state = llvm::cantFail(Runtime::getInstance().takeState());
+  auto state = value(Runtime::getInstance().takeState());
   EXPECT_EQ(state.numQubits, 0);
 }
 
@@ -1077,17 +1081,17 @@ TEST(QIRRuntimeGrowth, PreservesStateAndPhaseAcrossGrowthAndTransfer) {
     for (size_t job = 0; job < 2; ++job) {
       runtime.applyGlobalPhase(dd::PI);
       for (size_t q = 0; q < width; ++q) {
-        auto* qubit = dynamic ? llvm::cantFail(runtime.qAlloc())
-                              : reinterpret_cast<Qubit*>(q);
+        auto* qubit =
+            dynamic ? value(runtime.qAlloc()) : reinterpret_cast<Qubit*>(q);
         const std::array targets{qubit};
-        llvm::cantFail(runtime.apply(x, {}, targets));
+        MQT_ASSERT_SUCCESS(runtime.apply(x, {}, targets));
       }
-      auto state = llvm::cantFail(runtime.takeState());
+      auto state = value(runtime.takeState());
       EXPECT_EQ(state.numQubits, width);
       EXPECT_GE(state.dd->qubits(), width);
       EXPECT_LT(state.dd->qubits(), 2 * width);
-      const auto amplitude = llvm::cantFail(
-          state.edge.getValueByPath(width, std::string(width, '1')));
+      const auto amplitude =
+          value(state.edge.getValueByPath(width, std::string(width, '1')));
       EXPECT_NEAR(amplitude.real(), -1., 1e-12);
       EXPECT_NEAR(amplitude.imag(), 0., 1e-12);
       state.dd->decRef(state.edge);

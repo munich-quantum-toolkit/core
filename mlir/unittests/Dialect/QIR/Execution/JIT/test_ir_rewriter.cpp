@@ -10,6 +10,8 @@
 
 #include "mqt/Dialect/QIR/Execution/JIT/IRRewriter.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -32,6 +34,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+using mqt::test::value;
 
 static std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
   std::size_t count = 0;
@@ -83,7 +87,7 @@ TEST_P(IRRewriterTest, TruncatesAtIrreversibleBoundary) {
   ASSERT_GT(countCallsTo(*llvmModule, "__quantum__rt__result_record_output"),
             0U);
 
-  EXPECT_TRUE(llvm::cantFail(qir::prepareForStateExtraction(*entryPoint)));
+  EXPECT_TRUE(value(qir::prepareForStateExtraction(*entryPoint)));
   EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__qis__mz__body"), 0U);
   EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__rt__qubit_release"), 0U);
   EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__rt__result_record_output"),
@@ -114,7 +118,7 @@ attributes #1 = { "irreversible" }
   auto* entryPoint = module->getFunction("main");
   ASSERT_NE(entryPoint, nullptr);
 
-  EXPECT_TRUE(llvm::cantFail(qir::prepareForStateExtraction(*entryPoint)));
+  EXPECT_TRUE(value(qir::prepareForStateExtraction(*entryPoint)));
   EXPECT_EQ(countCallsTo(*module, "prepare"), 1U);
   EXPECT_EQ(countCallsTo(*module, "measure"), 0U);
   EXPECT_EQ(countCallsTo(*module, "must_not_run"), 0U);
@@ -148,8 +152,8 @@ attributes #1 = { "irreversible" }
   ASSERT_NE(llvmModule, nullptr);
   ASSERT_FALSE(llvm::verifyModule(*llvmModule));
 
-  EXPECT_TRUE(llvm::cantFail(
-      qir::prepareForStateExtraction(*llvmModule->getFunction("main"))));
+  EXPECT_TRUE(
+      value(qir::prepareForStateExtraction(*llvmModule->getFunction("main"))));
   EXPECT_EQ(countCallsTo(*llvmModule, "prepare"), 1U);
   EXPECT_EQ(countCallsTo(*llvmModule, "measure"), 0U);
   EXPECT_FALSE(llvm::verifyModule(*llvmModule));
