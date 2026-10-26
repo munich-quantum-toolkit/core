@@ -14,7 +14,7 @@
 #include "dd/Export.hpp"
 #include "dd/Package.hpp"
 
-#include "../Result.hpp"
+#include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)

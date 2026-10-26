@@ -63,13 +63,16 @@
 #include <vector>
 
 using mqt::test::errorCode;
+using mqt::test::errorMessage;
+using mqt::test::ScopedEnvironmentVariable;
+using mqt::test::TemporaryDirectory;
 using mqt::test::value;
 
 namespace dd {
 namespace {
 template <class Node>
 void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
-  ::mqt::test::value(
+  MQT_ASSERT_SUCCESS(
       exportToDot(edge, filename, true, true, false, false, false));
   auto input = llvm::MemoryBuffer::getFile(filename);
   ASSERT_TRUE(input);
@@ -135,8 +138,8 @@ TEST(DDPackageTest, MatrixDotIdsAreUniqueAndIndependentOfAddresses) {
 
 #ifndef _WIN32
 TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
-  const mqt::test::TemporaryDirectory temp;
-  const mqt::test::ScopedEnvironmentVariable path("PATH", temp.path().string());
+  const TemporaryDirectory temp;
+  const ScopedEnvironmentVariable path("PATH", temp.path().string());
   const auto executable =
       temp.write("dot", "#!/bin/sh\nprintf 'native dot\\n' > \"$4\"\n");
   std::filesystem::permissions(executable, std::filesystem::perms::owner_exec,
@@ -147,24 +150,22 @@ TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
   auto svgFile = dotFile;
   svgFile.replace_extension(".svg");
 
-  auto packageOwner = ::mqt::test::value(dd::Package::create(1));
+  auto packageOwner = value(dd::Package::create(1));
   auto& package = *packageOwner;
-  ::mqt::test::value(exportToDot(::mqt::test::value(makeZeroState(1, package)),
-                                 dotFile.string()));
+  MQT_ASSERT_SUCCESS(
+      exportToDot(value(makeZeroState(1, package)), dotFile.string()));
   auto svg = llvm::MemoryBuffer::getFile(svgFile.string());
   ASSERT_TRUE(svg);
   EXPECT_EQ((*svg)->getBuffer().trim(), "native dot");
   EXPECT_TRUE(std::filesystem::exists(dotFile));
 
   temp.write("dot", "#!/bin/sh\nexit 7\n");
-  EXPECT_EQ(::mqt::test::errorMessage(
-                [&] { return renderDotToSvg(dotFile.string()); }),
+  EXPECT_EQ(errorMessage([&] { return renderDotToSvg(dotFile.string()); }),
             "Graphviz dot exited with code 7");
 
   std::filesystem::remove(executable);
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return renderDotToSvg(dotFile.string()); }),
-      std::errc::no_such_file_or_directory);
+  EXPECT_EQ(errorCode([&] { return renderDotToSvg(dotFile.string()); }),
+            std::errc::no_such_file_or_directory);
 }
 #endif
 
@@ -325,7 +326,7 @@ TEST(DDPackageTest, BellState) {
   auto const zeroState = value(makeZeroState(2, *dd));
 
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
-  value(dd::printVector(bellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(bellState));
 
   // repeated calculation is practically for free
   auto const bellState2 = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
@@ -374,7 +375,7 @@ TEST(DDPackageTest, QFTState) {
   qftOp = dd->multiply(swapGate, qftOp);
   auto const qftState = dd->multiply(qftOp, value(makeZeroState(3, *dd)));
 
-  value(dd::printVector(qftState));
+  MQT_ASSERT_SUCCESS(dd::printVector(qftState));
 
   for (size_t qubit = 0; qubit < 7; ++qubit) {
     ASSERT_NEAR(value(dd::getValueByIndex(qftState, qubit)).real(),
@@ -625,16 +626,14 @@ TEST(DDPackageTest, VectorSerializationTest) {
 
   for (const auto state : {
            vEdge::one(),
-           ::mqt::test::value(
+           value(
                makeBasisState(2, {BasisStates::right, BasisStates::left}, *dd)),
        }) {
     for (const bool binary : {false, true}) {
       std::string serializedStorage;
       llvm::raw_string_ostream serialized(serializedStorage);
       serialize(state, serialized, binary);
-      EXPECT_EQ(
-          ::mqt::test::value(dd->deserialize<vNode>(serialized.str(), binary)),
-          state);
+      EXPECT_EQ(value(dd->deserialize<vNode>(serialized.str(), binary)), state);
     }
   }
 
@@ -644,15 +643,15 @@ TEST(DDPackageTest, VectorSerializationTest) {
 
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
-  ::mqt::test::value(serialize(bellState, "bell_state.dd", false));
+  MQT_ASSERT_SUCCESS(serialize(bellState, "bell_state.dd", false));
   auto deserializedBellState =
-      ::mqt::test::value(dd->deserializeFile<vNode>("bell_state.dd", false));
+      value(dd->deserializeFile<vNode>("bell_state.dd", false));
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state.dd");
 
-  ::mqt::test::value(serialize(bellState, "bell_state_binary.dd", true));
-  deserializedBellState = ::mqt::test::value(
-      dd->deserializeFile<vNode>("bell_state_binary.dd", true));
+  MQT_ASSERT_SUCCESS(serialize(bellState, "bell_state_binary.dd", true));
+  deserializedBellState =
+      value(dd->deserializeFile<vNode>("bell_state_binary.dd", true));
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state_binary.dd");
 }
@@ -665,7 +664,7 @@ TEST(DDPackageTest, BellMatrix) {
 
   auto const bellMatrix = dd->multiply(cxGate, hGate);
 
-  value(dd::printMatrix(bellMatrix, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(bellMatrix, dd->qubits()));
 
   ASSERT_EQ(value(bellMatrix.getValueByPath(dd->qubits(), "00")), SQRT2_2);
   ASSERT_EQ(value(bellMatrix.getValueByPath(dd->qubits(), "02")), 0.);
@@ -691,9 +690,8 @@ TEST(DDPackageTest, MatrixSerializationTest) {
     std::string serializedStorage;
     llvm::raw_string_ostream serialized(serializedStorage);
     serialize(mEdge::one(), serialized, binary);
-    EXPECT_EQ(
-        ::mqt::test::value(dd->deserialize<mNode>(serialized.str(), binary)),
-        mEdge::one());
+    EXPECT_EQ(value(dd->deserialize<mNode>(serialized.str(), binary)),
+              mEdge::one());
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -701,38 +699,35 @@ TEST(DDPackageTest, MatrixSerializationTest) {
 
   auto const bellMatrix = dd->multiply(cxGate, hGate);
 
-  ::mqt::test::value(serialize(bellMatrix, "bell_matrix.dd", false));
+  MQT_ASSERT_SUCCESS(serialize(bellMatrix, "bell_matrix.dd", false));
   auto deserializedBellMatrix =
-      ::mqt::test::value(dd->deserializeFile<mNode>("bell_matrix.dd", false));
+      value(dd->deserializeFile<mNode>("bell_matrix.dd", false));
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix.dd");
 
-  ::mqt::test::value(serialize(bellMatrix, "bell_matrix_binary.dd", true));
-  deserializedBellMatrix = ::mqt::test::value(
-      dd->deserializeFile<mNode>("bell_matrix_binary.dd", true));
+  MQT_ASSERT_SUCCESS(serialize(bellMatrix, "bell_matrix_binary.dd", true));
+  deserializedBellMatrix =
+      value(dd->deserializeFile<mNode>("bell_matrix_binary.dd", true));
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix_binary.dd");
 }
 
 TEST(DDPackageTest, SerializationErrors) {
-  auto package = ::mqt::test::value(Package::create(1));
-  const mqt::test::TemporaryDirectory temp;
+  auto package = value(Package::create(1));
+  const TemporaryDirectory temp;
   const auto missing = (temp.path() / "missing" / "state.dd").string();
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return serialize(vEdge::one(), missing); }),
-      std::errc::io_error);
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return package->deserializeFile<vNode>(missing, true); }),
+  EXPECT_EQ(errorCode([&] { return serialize(vEdge::one(), missing); }),
             std::errc::io_error);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserializeFile<vNode>(missing, true); }),
+      std::errc::io_error);
 
   for (const auto* input :
        {"2\n1\n", "1\nnot_complex\n", "1\n1\nno_node_here\n"}) {
     SCOPED_TRACE(input);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(input); }),
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
               std::errc::state_not_recoverable);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<mNode>(input); }),
+    EXPECT_EQ(errorCode([&] { return package->deserialize<mNode>(input); }),
               std::errc::state_not_recoverable);
   }
 
@@ -741,17 +736,17 @@ TEST(DDPackageTest, SerializationErrors) {
   const uint64_t version = SERIALIZATION_VERSION + 1;
   stream.write(reinterpret_cast<const char*>(&version), sizeof(version));
   ComplexValue{1., 0.}.writeBinary(stream);
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return package->deserialize<vNode>(binary, true); }),
-            std::errc::state_not_recoverable);
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return package->deserialize<mNode>(binary, true); }),
-            std::errc::state_not_recoverable);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserialize<vNode>(binary, true); }),
+      std::errc::state_not_recoverable);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserialize<mNode>(binary, true); }),
+      std::errc::state_not_recoverable);
 }
 
 TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
-  auto package = ::mqt::test::value(Package::create(2));
-  const auto state = ::mqt::test::value(makeZeroState(2, *package));
+  auto package = value(Package::create(2));
+  const auto state = value(makeZeroState(2, *package));
   std::string binaryStorage;
   llvm::raw_string_ostream binary(binaryStorage);
   serialize(state, binary, true);
@@ -768,19 +763,17 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
        }) {
     SCOPED_TRACE(length);
     const std::string input(bytes.substr(0, length));
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(input, true); }),
-              std::errc::state_not_recoverable);
+    EXPECT_EQ(
+        errorCode([&] { return package->deserialize<vNode>(input, true); }),
+        std::errc::state_not_recoverable);
   }
   for (const auto* text : {"", "1\n"}) {
     const std::string input(text);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(input); }),
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
               std::errc::state_not_recoverable);
   }
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return package->deserialize<vNode>("\n"); }),
-      std::errc::invalid_argument);
+  EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>("\n"); }),
+            std::errc::invalid_argument);
 }
 
 TEST(DDPackageTest, SerializationReportsWriteFailures) {
@@ -788,17 +781,17 @@ TEST(DDPackageTest, SerializationReportsWriteFailures) {
     GTEST_SKIP() << "Requires /dev/full to reject writes after opening";
   }
   for (const bool binary : {false, true}) {
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return serialize(vEdge::one(), "/dev/full", binary); }),
-              std::errc::io_error);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return serialize(mEdge::one(), "/dev/full", binary); }),
-              std::errc::io_error);
+    EXPECT_EQ(
+        errorCode([&] { return serialize(vEdge::one(), "/dev/full", binary); }),
+        std::errc::io_error);
+    EXPECT_EQ(
+        errorCode([&] { return serialize(mEdge::one(), "/dev/full", binary); }),
+        std::errc::io_error);
   }
 }
 
 TEST(DDPackageTest, OutputFilesCanReuseClosedStandardDescriptors) {
-  const mqt::test::TemporaryDirectory temp;
+  const TemporaryDirectory temp;
   const auto filename = (temp.path() / "output.dd").string();
   EXPECT_EXIT(
       {
@@ -820,23 +813,23 @@ TEST(DDPackageTest, OutputFilesCanReuseClosedStandardDescriptors) {
 }
 
 TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
-  auto package = ::mqt::test::value(Package::create(1));
+  auto package = value(Package::create(1));
   for (const auto* unit : {"i", "I", "+i", "+I", "-i", "-I"}) {
     SCOPED_TRACE(unit);
     const std::complex<fp> phase{0., *unit == '-' ? -1. : 1.};
     const std::string root(std::string("1\n") + unit + "\n");
-    EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(
-                  ::mqt::test::value(package->deserialize<vNode>(root)), 0)),
-              phase);
+    EXPECT_EQ(
+        value(dd::getValueByIndex(value(package->deserialize<vNode>(root)), 0)),
+        phase);
     const std::string edge(std::string("1\n1\n0 0 (-1 ") + unit + ") ()\n");
-    EXPECT_EQ(::mqt::test::value(dd::getValueByIndex(
-                  ::mqt::test::value(package->deserialize<vNode>(edge)), 0)),
-              phase);
+    EXPECT_EQ(
+        value(dd::getValueByIndex(value(package->deserialize<vNode>(edge)), 0)),
+        phase);
   }
 }
 
 TEST(DDPackageTest, DeserializationPreservesImaginaryExponents) {
-  auto package = ::mqt::test::value(Package::create(1));
+  auto package = value(Package::create(1));
   for (const auto& [weight, expected] :
        std::array<std::pair<const char*, std::complex<fp>>, 4>{
            {
@@ -851,21 +844,20 @@ TEST(DDPackageTest, DeserializationPreservesImaginaryExponents) {
              std::string("1\n") + weight + "\n",
              std::string("1\n1\n0 0 (-1 ") + weight + ") ()\n",
          }) {
-      EXPECT_EQ(::mqt::test::value(getValueByIndex(
-                    ::mqt::test::value(package->deserialize<vNode>(input)), 0)),
-                expected);
+      EXPECT_EQ(
+          value(getValueByIndex(value(package->deserialize<vNode>(input)), 0)),
+          expected);
     }
   }
 }
 
 TEST(DDPackageTest, TextDeserializationPreservesSpacingAndVersionGrammar) {
-  auto package = ::mqt::test::value(Package::create(1));
+  auto package = value(Package::create(1));
   for (const auto* weight :
        {"1+2 3i", "1  + 2i", "1+  2i", "1+2i ", "1+2\ti", "1 2e3i"}) {
     SCOPED_TRACE(weight);
     const auto input = std::string("1\n") + weight + "\n";
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(input); }),
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
               std::errc::state_not_recoverable);
   }
   for (const auto* version : {"1", "+1", " 1", "\t1"}) {
@@ -875,28 +867,27 @@ TEST(DDPackageTest, TextDeserializationPreservesSpacingAndVersionGrammar) {
                                                weight + "\n");
       ASSERT_TRUE(static_cast<bool>(state))
           << llvm::toString(state.takeError());
-      EXPECT_EQ(::mqt::test::value(getValueByIndex(*state, 0)),
-                (std::complex<fp>{1., 2.}));
+      EXPECT_EQ(value(getValueByIndex(*state, 0)), (std::complex<fp>{1., 2.}));
     }
   }
 }
 
 TEST(DDPackageTest, DeserializationRespectsTextSliceBounds) {
-  auto package = ::mqt::test::value(Package::create(1));
+  auto package = value(Package::create(1));
   const std::string storage = "1\n1\n0 0 (-1 1) ()suffix";
   const llvm::StringRef input(storage.data(), storage.size() - 6);
-  EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(input)),
-            ::mqt::test::value(makeZeroState(1, *package)));
+  EXPECT_EQ(value(package->deserialize<vNode>(input)),
+            value(makeZeroState(1, *package)));
   std::string embeddedNull(input);
   embeddedNull += '\0';
   embeddedNull += "ignored";
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return package->deserialize<vNode>(embeddedNull); }),
-            std::errc::state_not_recoverable);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserialize<vNode>(embeddedNull); }),
+      std::errc::state_not_recoverable);
 }
 
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
-  auto package = ::mqt::test::value(Package::create(2));
+  auto package = value(Package::create(2));
   for (const auto* text : {
            "1x\n1\n",
            "1\n\n",
@@ -924,8 +915,7 @@ TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
        }) {
     SCOPED_TRACE(text);
     const std::string input(text);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(input); }),
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
               std::errc::state_not_recoverable);
   }
   for (const auto* text : {
@@ -937,19 +927,18 @@ TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
            "1\n1\n0 0 (999999999999999999999999999 1) ()\n",
        }) {
     SCOPED_TRACE(text);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(text); }),
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(text); }),
               std::errc::result_out_of_range);
   }
   const std::string valid("1\n1\n2147483648 0 (-1 1) ()\n9223372036854775807 "
                           "1 (2147483648 1) ()\n");
-  EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(valid)),
-            ::mqt::test::value(makeZeroState(2, *package)));
+  EXPECT_EQ(value(package->deserialize<vNode>(valid)),
+            value(makeZeroState(2, *package)));
 }
 
 TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
-  auto package = ::mqt::test::value(Package::create(2));
-  const auto state = ::mqt::test::value(makeZeroState(2, *package));
+  auto package = value(Package::create(2));
+  const auto state = value(makeZeroState(2, *package));
   std::string binaryStorage;
   llvm::raw_string_ostream binary(binaryStorage);
   serialize(state, binary, true);
@@ -966,9 +955,9 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     auto invalid = bytes;
     std::memcpy(&invalid.at(offset), &value, sizeof(value));
     const std::string input(invalid);
-    EXPECT_EQ(::mqt::test::errorCode(
-                  [&] { return package->deserialize<vNode>(input, true); }),
-              std::errc::state_not_recoverable);
+    EXPECT_EQ(
+        errorCode([&] { return package->deserialize<vNode>(input, true); }),
+        std::errc::state_not_recoverable);
   };
   reject(nodeOffset, int64_t{-1});
   reject(nodeOffset, int64_t{-2});
@@ -995,15 +984,14 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     std::string streamStorage;
     llvm::raw_string_ostream stream(streamStorage);
     serialize(state, stream, isBinary);
-    EXPECT_EQ(
-        ::mqt::test::value(package->deserialize<vNode>(stream.str(), isBinary)),
-        state);
+    EXPECT_EQ(value(package->deserialize<vNode>(stream.str(), isBinary)),
+              state);
   }
 }
 
 TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
-  auto package = ::mqt::test::value(Package::create(3));
-  const auto oneQubit = ::mqt::test::value(makeZeroState(1, *package));
+  auto package = value(Package::create(3));
+  const auto oneQubit = value(makeZeroState(1, *package));
   for (const bool binary : {false, true}) {
     for (const auto& child : {vEdge::one(), oneQubit}) {
       SCOPED_TRACE(::testing::Message() << "binary=" << binary
@@ -1015,7 +1003,7 @@ TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
       llvm::raw_string_ostream stream(streamStorage);
 
       serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
-      EXPECT_EQ(::mqt::test::errorCode([&] {
+      EXPECT_EQ(errorCode([&] {
                   return package->deserialize<vNode>(stream.str(), binary);
                 }),
                 std::errc::state_not_recoverable);
@@ -1024,17 +1012,16 @@ TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
 }
 
 TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
-  auto package = ::mqt::test::value(Package::create(3));
-  const auto high = ::mqt::test::value(package->makeGateDD(X_MAT, 2));
-  const auto low = ::mqt::test::value(package->makeGateDD(X_MAT, 0));
+  auto package = value(Package::create(3));
+  const auto high = value(package->makeGateDD(X_MAT, 2));
+  const auto low = value(package->makeGateDD(X_MAT, 0));
   for (const auto& matrix : {high, package->multiply(high, low)}) {
     for (const bool binary : {false, true}) {
       std::string streamStorage;
       llvm::raw_string_ostream stream(streamStorage);
       serialize(matrix, stream, binary);
-      EXPECT_EQ(
-          ::mqt::test::value(package->deserialize<mNode>(stream.str(), binary)),
-          matrix);
+      EXPECT_EQ(value(package->deserialize<mNode>(stream.str(), binary)),
+                matrix);
     }
   }
 }
@@ -1082,7 +1069,7 @@ TEST(DDPackageTest, GarbageVector) {
   auto const zeroState = value(makeZeroState(2, *dd));
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   llvm::outs() << "Bell State:\n";
-  value(dd::printVector(bellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(bellState));
 
   dd->incRef(bellState);
   auto reducedBellState =
@@ -1096,14 +1083,14 @@ TEST(DDPackageTest, GarbageVector) {
   reducedBellState = dd->reduceGarbage(bellState, {false, true, false, false});
   auto vec = value(dd::getVector(reducedBellState));
   llvm::outs() << "Reduced Bell State (q1 garbage):\n";
-  value(dd::printVector(reducedBellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedBellState));
   EXPECT_EQ(vec[2], 0.);
   EXPECT_EQ(vec[3], 0.);
 
   dd->incRef(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {true, false, false, false});
   llvm::outs() << "Reduced Bell State (q0 garbage):\n";
-  value(dd::printVector(reducedBellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedBellState));
   vec = value(dd::getVector(reducedBellState));
   EXPECT_EQ(vec[1], 0.);
   EXPECT_EQ(vec[3], 0.);
@@ -1153,13 +1140,13 @@ TEST(DDPackageTest, ReduceGarbageVector) {
   auto const zeroState = value(makeZeroState(3, *dd));
   auto initialState = dd->multiply(dd->multiply(hGate, xGate), zeroState);
   llvm::outs() << "Initial State:\n";
-  value(dd::printVector(initialState));
+  MQT_ASSERT_SUCCESS(dd::printVector(initialState));
 
   dd->incRef(initialState);
   auto const reducedState =
       dd->reduceGarbage(initialState, {false, true, true});
   llvm::outs() << "After reduceGarbage():\n";
-  value(dd::printVector(reducedState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedState));
   EXPECT_EQ(reducedState, value(makeZeroState(3, *dd)));
 
   dd->incRef(initialState);
@@ -1180,13 +1167,13 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   auto initialState = dd->multiply(
       dd->multiply(tdgGate0, dd->multiply(xGate0, xGate1)), zeroState);
   llvm::outs() << "Initial State:\n";
-  value(dd::printVector(initialState));
+  MQT_ASSERT_SUCCESS(dd::printVector(initialState));
 
   dd->incRef(initialState);
   auto const reducedState =
       dd->reduceGarbage(initialState, {false, false}, true);
   llvm::outs() << "After reduceGarbage():\n";
-  value(dd::printVector(reducedState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedState));
   EXPECT_EQ(reducedState,
             dd->multiply(dd->multiply(xGate0, xGate1), zeroState));
 }
@@ -1199,13 +1186,13 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   auto const initialState = dd->multiply(hGate, cNotGate);
 
   llvm::outs() << "Initial State:\n";
-  value(dd::printMatrix(initialState, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(initialState, dd->qubits()));
 
   dd->incRef(initialState);
   auto const reducedState1 =
       dd->reduceGarbage(initialState, {false, true, true}, true, true);
   llvm::outs() << "After reduceGarbage(q1 and q2 are garbage):\n";
-  value(dd::printMatrix(reducedState1, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(reducedState1, dd->qubits()));
 
   auto const expectedMatrix1 = CMat{
       {SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2},
@@ -1223,7 +1210,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   auto const reducedState2 =
       dd->reduceGarbage(initialState, {true, false, false}, true, true);
   llvm::outs() << "After reduceGarbage(q0 is garbage):\n";
-  value(dd::printMatrix(reducedState2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(reducedState2, dd->qubits()));
 
   auto const expectedMatrix2 = CMat{
       {1, 0, 0, 1, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
@@ -1250,18 +1237,18 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
   auto const c2 = dd->multiply(controlledHGate, xGate);
 
   llvm::outs() << "c1:\n";
-  value(dd::printMatrix(c1, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c1);
   auto const c1Reduced = dd->reduceGarbage(c1, {false, true, true}, true, true);
-  value(dd::printMatrix(c1Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1Reduced, dd->qubits()));
 
   llvm::outs() << "c2:\n";
-  value(dd::printMatrix(c2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, true, true}, true, true);
-  value(dd::printMatrix(c2Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2Reduced, dd->qubits()));
 
   EXPECT_EQ(c1Reduced, c2Reduced);
 }
@@ -1276,11 +1263,11 @@ TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
   auto const c2 = dd->multiply(tdgGate0, tdgGate1);
 
   llvm::outs() << "c2:\n";
-  value(dd::printMatrix(c2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, false}, true, true);
-  value(dd::printMatrix(c2Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2Reduced, dd->qubits()));
 
   EXPECT_EQ(c1, c2Reduced);
 }
@@ -1295,18 +1282,18 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
   auto const c2 = dd->multiply(tdgGate0, tdgGate1);
 
   llvm::outs() << "c1:\n";
-  value(dd::printMatrix(c1, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c1);
   auto const c1Reduced = dd->reduceGarbage(c1, {false, true}, true, true);
-  value(dd::printMatrix(c1Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1Reduced, dd->qubits()));
 
   llvm::outs() << "c2:\n";
-  value(dd::printMatrix(c2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, true}, true, true);
-  value(dd::printMatrix(c2Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2Reduced, dd->qubits()));
 
   EXPECT_EQ(c1Reduced, c2Reduced);
 }
@@ -3206,10 +3193,10 @@ TEST(DDPackageTest, VectorConjugate) {
 
   const auto vecDD = value(makeStateFromVector(vec, *dd));
   llvm::outs() << "Vector:\n";
-  value(dd::printVector(vecDD));
+  MQT_ASSERT_SUCCESS(dd::printVector(vecDD));
   const auto conjVecDD = dd->conjugate(vecDD);
   llvm::outs() << "Conjugated vector:\n";
-  value(dd::printVector(conjVecDD));
+  MQT_ASSERT_SUCCESS(dd::printVector(conjVecDD));
 
   const auto conjVec = value(dd::getVector(conjVecDD));
   for (auto i = 0U; i < vec.size(); ++i) {
@@ -3375,13 +3362,12 @@ TEST(DDPackageTest, MagnitudeAdditionAvoidsSquaredWeightOverflow) {
 }
 TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   constexpr size_t width = 128;
-  auto package = ::mqt::test::value(Package::create(width + 1));
+  auto package = value(Package::create(width + 1));
   auto matrix = mEdge::one();
   package->incRef(matrix);
   for (size_t q = 0; q < width; ++q) {
     matrix = package->applyOperation(
-        ::mqt::test::value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))),
-        matrix);
+        value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))), matrix);
   }
   const auto expected = std::ldexp(1., -static_cast<int>(width / 2));
   const auto check = [&](const mEdge& value, size_t n, fp amplitude) {
@@ -3395,16 +3381,16 @@ TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   check(package->conjugateTranspose(matrix), width, expected);
   check(package->partialTrace(matrix, std::vector<bool>(width, false)), width,
         expected);
-  auto other = ::mqt::test::value(Package::create(width));
+  auto other = value(Package::create(width));
   check(other->transfer(matrix), width, expected);
   for (const bool binary : {false, true}) {
     std::string streamStorage;
     llvm::raw_string_ostream stream(streamStorage);
     serialize(matrix, stream, binary);
-    check(::mqt::test::value(other->deserialize<mNode>(stream.str(), binary)),
-          width, expected);
+    check(value(other->deserialize<mNode>(stream.str(), binary)), width,
+          expected);
   }
-  const auto h = ::mqt::test::value(package->makeGateDD(H_MAT, 0));
+  const auto h = value(package->makeGateDD(H_MAT, 0));
   for (size_t repetition = 0; repetition < 2; ++repetition) {
     check(package->kronecker(matrix, h, 1), width + 1, expected * SQRT2_2);
     check(package->kronecker(h, matrix, width), width + 1, expected * SQRT2_2);
@@ -3414,8 +3400,7 @@ TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   check(matrix, width, expected);
   for (size_t q = width; q-- > 0;) {
     matrix = package->applyOperation(
-        ::mqt::test::value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))),
-        matrix);
+        value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))), matrix);
   }
   EXPECT_TRUE(dd::isIdentity(matrix, false));
   package->decRef(matrix);
@@ -3450,7 +3435,7 @@ TEST(DDPackageTest, MatrixRootsRemainDistinctAndSurviveCollection) {
 }
 
 TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
-  auto package = ::mqt::test::value(Package::create(1));
+  auto package = value(Package::create(1));
   for (const fp value :
        {1e-100, 1e-310, std::numeric_limits<fp>::denorm_min()}) {
     SCOPED_TRACE(value);
@@ -3460,7 +3445,7 @@ TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
       llvm::raw_string_ostream stream(streamStorage);
       serialize(root, stream, binary);
       const auto restored =
-          ::mqt::test::value(package->deserialize<mNode>(stream.str(), binary));
+          mqt::test::value(package->deserialize<mNode>(stream.str(), binary));
       EXPECT_EQ(RealNumber::val(restored.w.r), value);
       EXPECT_EQ(RealNumber::val(restored.w.i), -value);
     }
@@ -3576,7 +3561,7 @@ TEST(DDPackageTest, RejectsInvalidConfigurationBeforeAllocation) {
 }
 
 TEST(DDPackageTest, BinarySerializationPreservesNulsAndRejectsTrailingBytes) {
-  auto package = ::mqt::test::value(Package::create(0));
+  auto package = value(Package::create(0));
   std::string bytes;
   llvm::raw_string_ostream output(bytes);
   serialize(vEdge::one(), output, true);
@@ -3590,11 +3575,9 @@ TEST(DDPackageTest, BinarySerializationPreservesNulsAndRejectsTrailingBytes) {
   std::memcpy(std::addressof(expected.at(sizeof(SERIALIZATION_VERSION))), &real,
               sizeof(real));
   EXPECT_EQ(bytes, expected);
-  EXPECT_EQ(::mqt::test::value(package->deserialize<vNode>(bytes, true)),
-            vEdge::one());
+  EXPECT_EQ(value(package->deserialize<vNode>(bytes, true)), vEdge::one());
   bytes.push_back('\0');
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return package->deserialize<vNode>(bytes, true); }),
+  EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(bytes, true); }),
             std::errc::state_not_recoverable);
 }
 

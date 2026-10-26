@@ -280,7 +280,7 @@ TEST(DDComplexTest, ParsesFiniteSerializedComponents) {
        })) {
     SCOPED_TRACE(::testing::Message() << real << ": " << imaginary);
     ComplexValue parsed;
-    ::mqt::test::value(parsed.fromString(real, imaginary));
+    MQT_ASSERT_SUCCESS(parsed.fromString(real, imaginary));
     EXPECT_DOUBLE_EQ(parsed.r, expected.r);
     EXPECT_DOUBLE_EQ(parsed.i, expected.i);
     EXPECT_EQ(std::fpclassify(parsed.r), std::fpclassify(expected.r));
@@ -529,19 +529,16 @@ TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
   ComplexValue value;
   for (const auto* real : {"invalid", "nan", "inf"}) {
     SCOPED_TRACE(real);
-    EXPECT_EQ(
-        ::mqt::test::errorCode([&] { return value.fromString(real, ""); }),
-        std::errc::invalid_argument);
+    EXPECT_EQ(errorCode([&] { return value.fromString(real, ""); }),
+              std::errc::invalid_argument);
   }
   for (const auto* real : {"1e-400", "1e400"}) {
     SCOPED_TRACE(real);
-    EXPECT_EQ(
-        ::mqt::test::errorCode([&] { return value.fromString(real, ""); }),
-        std::errc::result_out_of_range);
+    EXPECT_EQ(errorCode([&] { return value.fromString(real, ""); }),
+              std::errc::result_out_of_range);
   }
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return value.fromString("", "1e400i"); }),
-      std::errc::result_out_of_range);
+  EXPECT_EQ(errorCode([&] { return value.fromString("", "1e400i"); }),
+            std::errc::result_out_of_range);
 }
 
 TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
@@ -553,7 +550,7 @@ TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
        }) {
     SCOPED_TRACE(value);
     ComplexValue parsed;
-    ::mqt::test::value(parsed.fromString(
+    MQT_ASSERT_SUCCESS(parsed.fromString(
         ComplexValue::toString(value, 0., false,
                                std::numeric_limits<fp>::max_digits10),
         ""));
@@ -572,7 +569,7 @@ TEST(DDComplexTest, SerializedNumbersIgnoreNumericLocale) {
   }
   EXPECT_EQ(ComplexValue::toString(0.125, -0.375, false), "0.125-0.375i");
   ComplexValue parsed;
-  ::mqt::test::value(parsed.fromString("0.125", "-0.375i"));
+  MQT_ASSERT_SUCCESS(parsed.fromString("0.125", "-0.375i"));
   EXPECT_EQ(parsed.r, 0.125);
   EXPECT_EQ(parsed.i, -0.375);
 }
