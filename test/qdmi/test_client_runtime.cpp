@@ -44,7 +44,9 @@ using mqt::test::ScopedEnvironmentVariable;
 TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   const mqt::test::TemporaryDirectory directory;
   const std::filesystem::path fixture{MQT_CORE_QDMI_INCOMPLETE_DRIVER};
-  const auto libraryPath = directory.path() / fixture.filename();
+  // Windows searches the executable directory before the current directory.
+  const auto libraryPath =
+      directory.path() / ("relocated-" + fixture.filename().string());
   std::filesystem::copy_file(fixture, libraryPath);
   // The temporary directory can be on a different Windows drive.
   const auto previous = std::filesystem::current_path();
@@ -56,7 +58,7 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   std::filesystem::current_path(directory.path());
   // Load relative first; the loader may retain the image after dlclose.
   for (const auto& path :
-       {std::filesystem::path(".") / fixture.filename(), libraryPath}) {
+       {std::filesystem::path(".") / libraryPath.filename(), libraryPath}) {
     SCOPED_TRACE(path);
     auto encoded = detail::pathToString(path);
     ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
@@ -71,7 +73,8 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
     ASSERT_NE(anchor, nullptr);
     auto located = detail::moduleDirectory(anchor);
     ASSERT_TRUE(!!located) << llvm::toString(located.takeError());
-    EXPECT_EQ(*located, std::filesystem::canonical(directory.path()));
+    // GetModuleFileNameW can preserve the temporary path's short 8.3 spelling.
+    EXPECT_TRUE(std::filesystem::equivalent(*located, directory.path()));
   }
 }
 
