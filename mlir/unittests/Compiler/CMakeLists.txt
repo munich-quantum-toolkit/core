@@ -22,6 +22,7 @@ target_include_directories(
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
   PRIVATE
+    MQTCoreTestSupport
     GTest::gtest_main
     MQT::CoreQIRJIT
     MLIRExactUnitaryTest
@@ -50,6 +51,7 @@ mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
 
 gtest_discover_tests(
   mqt-core-mlir-unittests-compiler
+  NO_PRETTY_VALUES
   PROPERTIES LABELS mqt-mlir-unittests
   DISCOVERY_TIMEOUT 60)
 

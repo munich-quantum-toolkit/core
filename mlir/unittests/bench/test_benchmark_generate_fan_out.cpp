@@ -36,32 +36,34 @@ TEST(GenerateProgramTest, FanOutMatchesSequentialPhasesAndCleansAncillas) {
     auto program = test::generateQCO(
         llvm::cantFail(FanOut::create({.controls = controls})));
     ASSERT_TRUE(mlir::succeeded(program));
-    dd::Package package(0);
+    auto packageOwner = llvm::cantFail(dd::Package::create(0));
+    auto& package = *packageOwner;
     auto state = mlir::qco::simulateStatevector(
         mlir::mqt::getEntryPoint(program->module()), package);
     ASSERT_TRUE(mlir::succeeded(state));
     ASSERT_EQ(package.qubits(), 2U * controls);
 
     // The sequential reference never touches the clean ancillas.
-    auto expected = dd::makeZeroState(2U * controls, package);
+    auto expected = llvm::cantFail(dd::makeZeroState(2U * controls, package));
     const auto target = static_cast<dd::Qubit>(controls);
     expected = package.applyOperation(
-        mlir::qco::makeGateDD(package, mlir::qco::HOp::getUnitaryMatrix(),
-                              {target}),
+        llvm::cantFail(mlir::qco::makeGateDD(
+            package, mlir::qco::HOp::getUnitaryMatrix(), {target})),
         expected);
     for (dd::Qubit control = 0; control < target; ++control) {
       expected = package.applyOperation(
-          mlir::qco::makeGateDD(package, mlir::qco::HOp::getUnitaryMatrix(),
-                                {control}),
+          llvm::cantFail(mlir::qco::makeGateDD(
+              package, mlir::qco::HOp::getUnitaryMatrix(), {control})),
           expected);
       expected = package.applyOperation(
-          mlir::qco::makeGateDD(package, mlir::qco::SOp::getUnitaryMatrix(),
-                                {target}, {{control}}),
+          llvm::cantFail(
+              mlir::qco::makeGateDD(package, mlir::qco::SOp::getUnitaryMatrix(),
+                                    {target}, {{control}})),
           expected);
     }
     expected = package.applyOperation(
-        mlir::qco::makeGateDD(package, mlir::qco::HOp::getUnitaryMatrix(),
-                              {target}),
+        llvm::cantFail(mlir::qco::makeGateDD(
+            package, mlir::qco::HOp::getUnitaryMatrix(), {target})),
         expected);
     EXPECT_NEAR(package.fidelity(*state, expected), 1., 1e-10);
     package.decRef(expected);

@@ -11,23 +11,24 @@
 #include "qdmi/common/DeviceConfiguration.hpp"
 
 #include "qdmi/common/Common.hpp"
-#include "qdmi/common/Diagnostics.hpp"
 
 #include "qdmi/device.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <format>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #ifdef _WIN32
 #include <memory>
@@ -44,20 +45,24 @@
 #endif
 
 namespace qdmi::detail {
-[[nodiscard]] std::filesystem::path moduleDirectory(const void* anchor) {
+llvm::Expected<std::filesystem::path> moduleDirectory(const void* anchor) {
+  if (anchor == nullptr) {
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           "Module anchor must not be null");
+  }
 #ifdef _WIN32
   HMODULE module = nullptr;
   if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                          reinterpret_cast<LPCWSTR>(anchor), &module) == 0) {
-    return {};
+    return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot locate the QDMI module");
   }
   std::wstring buffer(MAX_PATH, L'\0');
   while (true) {
     const auto length = GetModuleFileNameW(module, buffer.data(),
                                            static_cast<DWORD>(buffer.size()));
     if (length == 0) {
-      return {};
+      return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot locate the QDMI module");
     }
     if (length < buffer.size()) {
       buffer.resize(length);
@@ -68,7 +73,7 @@ namespace qdmi::detail {
 #else
   Dl_info info{};
   if (dladdr(anchor, &info) == 0 || info.dli_fname == nullptr) {
-    return {};
+    return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot locate the QDMI module");
   }
   auto path = std::filesystem::path(info.dli_fname);
   if (!path.is_absolute()) {
@@ -80,7 +85,8 @@ namespace qdmi::detail {
       std::error_code error;
       path = std::filesystem::read_symlink("/proc/self/exe", error);
       if (error) {
-        return {};
+        return qdmi::makeError(QDMI_ERROR_FATAL,
+                               "Cannot locate the QDMI module");
       }
     }
 #elif defined(__APPLE__)
@@ -89,38 +95,49 @@ namespace qdmi::detail {
       static_cast<void>(_NSGetExecutablePath(nullptr, &size));
       std::vector<char> buffer(size);
       if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
-        return {};
+        return qdmi::makeError(QDMI_ERROR_FATAL,
+                               "Cannot locate the QDMI module");
       }
       path = buffer.data();
     }
 #endif
   }
-  return std::filesystem::weakly_canonical(path).parent_path();
+  std::error_code error;
+  const auto canonical = std::filesystem::weakly_canonical(path, error);
+  if (error) {
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           "Cannot resolve the QDMI module path: " +
+                               error.message());
+  }
+  return canonical.parent_path();
 #endif
 }
 
 namespace {
-[[nodiscard]] std::optional<LoadedDeviceConfiguration>
-readFile(const std::filesystem::path& path, const bool bundled, int& status) {
-  const auto source = qdmi::detail::pathToString(path);
-  auto buffer = llvm::MemoryBuffer::getFile(source);
+[[nodiscard]] llvm::Expected<LoadedDeviceConfiguration>
+readFile(const std::filesystem::path& path, const bool bundled) {
+  auto source = qdmi::detail::pathToString(path);
+  if (!source) {
+    return source.takeError();
+  }
+  auto buffer = llvm::MemoryBuffer::getFile(*source);
   if (!buffer) {
+    int status = QDMI_ERROR_PERMISSIONDENIED;
     if (bundled) {
       status = QDMI_ERROR_FATAL;
     } else if (buffer.getError() == std::errc::no_such_file_or_directory ||
                buffer.getError() == std::errc::not_a_directory) {
       status = QDMI_ERROR_NOTFOUND;
-    } else {
-      status = QDMI_ERROR_PERMISSIONDENIED;
     }
-    qdmi::diagnostics::error("Cannot read QDMI device configuration '{}': {}",
-                             source, buffer.getError().message());
-    return std::nullopt;
+    return qdmi::makeError(
+        status,
+        llvm::formatv("Cannot read QDMI device configuration '{0}': {1}",
+                      *source, buffer.getError().message())
+            .str());
   }
-  status = QDMI_SUCCESS;
   return LoadedDeviceConfiguration{
       .json = (*buffer)->getBuffer().str(),
-      .source = source,
+      .source = std::move(*source),
   };
 }
 } // namespace
@@ -149,54 +166,60 @@ int setDeviceConfigurationParameter(
     inlineJson =
         stringValue.empty() ? std::nullopt : std::optional{stringValue};
   } else {
-    file = stringValue.empty()
-               ? std::nullopt
-               : std::optional{std::filesystem::path(stringValue)};
+    if (stringValue.empty()) {
+      file.reset();
+    } else {
+      auto path = pathFromString(stringValue);
+      if (!path) {
+        return toStatus(path.takeError());
+      }
+      file = std::move(*path);
+    }
   }
   return QDMI_SUCCESS;
 }
 
-std::optional<LoadedDeviceConfiguration>
+llvm::Expected<LoadedDeviceConfiguration>
 loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
                         const std::optional<std::filesystem::path>& file,
                         const std::string_view inlineEnvironment,
                         const std::string_view fileEnvironment,
                         const std::string_view bundledFilename,
-                        const void* anchor, int& status) {
+                        const void* anchor) {
   if (inlineJson) {
-    status = QDMI_SUCCESS;
     return LoadedDeviceConfiguration{
         .json = *inlineJson,
         .source = "inline session configuration",
     };
   }
   if (file) {
-    return readFile(*file, false, status);
+    return readFile(*file, false);
   }
   const auto environmentJson = llvm::sys::Process::GetEnv(inlineEnvironment);
   const auto environmentFile = llvm::sys::Process::GetEnv(fileEnvironment);
   if (environmentJson && environmentFile) {
-    qdmi::diagnostics::error("Both {} and {} are set", inlineEnvironment,
-                             fileEnvironment);
-    status = QDMI_ERROR_INVALIDARGUMENT;
-    return std::nullopt;
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           llvm::formatv("Both {0} and {1} are set",
+                                         inlineEnvironment, fileEnvironment)
+                               .str());
   }
   if (environmentJson) {
-    status = QDMI_SUCCESS;
     return LoadedDeviceConfiguration{
         .json = *environmentJson,
         .source = std::string(inlineEnvironment),
     };
   }
   if (environmentFile) {
-    return readFile(std::filesystem::path(*environmentFile), false, status);
+    auto path = pathFromString(*environmentFile);
+    if (!path) {
+      return path.takeError();
+    }
+    return readFile(*path, false);
   }
-  const auto directory = moduleDirectory(anchor);
-  if (directory.empty()) {
-    qdmi::diagnostics::error("Cannot locate the QDMI provider module");
-    status = QDMI_ERROR_FATAL;
-    return std::nullopt;
+  auto directory = moduleDirectory(anchor);
+  if (!directory) {
+    return directory.takeError();
   }
-  return readFile(directory / bundledFilename, true, status);
+  return readFile(*directory / bundledFilename, true);
 }
 } // namespace qdmi::detail

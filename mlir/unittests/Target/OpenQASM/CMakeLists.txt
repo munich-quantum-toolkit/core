@@ -44,4 +44,8 @@ target_link_libraries(
 
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 
-gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
+gtest_discover_tests(
+  ${target_name}
+  NO_PRETTY_VALUES
+  PROPERTIES LABELS mqt-mlir-unittests
+  DISCOVERY_TIMEOUT 60)

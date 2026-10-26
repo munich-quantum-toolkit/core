@@ -118,6 +118,9 @@ message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "LLVM/MLIR ${MLIR_VERSION}, assertions ${LLVM_ENABLE_ASSERTIONS}")
 
+# LLVM component targets do not propagate headers to native consumers.
+target_include_directories(LLVMSupport SYSTEM INTERFACE "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>")
+
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 

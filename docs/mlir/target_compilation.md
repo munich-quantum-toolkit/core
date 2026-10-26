@@ -641,42 +641,56 @@ because the target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
-Program factories and conversions return `mlir::FailureOr<T>`. Fallible in-place
-and file operations return `mlir::LogicalResult`. Check results with
-`mlir::failed` or `mlir::succeeded`; compiler diagnostics describe the errors.
+Program factories and the coordinated compiler pipeline return
+`llvm::Expected<T>`; text-program writes return `llvm::Error`. These results own
+their error details. MLIR transformations on an existing program retain
+`mlir::FailureOr<T>` or `mlir::LogicalResult` and report diagnostics through
+that program's context.
 
 Compile a file and submit it to DDSIM:
 
 ```cpp
+#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "qdmi/QDMI.hpp"
+
 #include "llvm/Support/Error.h"
-#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
-if (mlir::failed(input)) {
-  return 1;
-}
-auto compiled = mlir::compileProgram(std::move(*input), device);
-if (!compiled) {
-  llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
-  return 1;
-}
-auto job = mlir::submitProgram(device, *compiled);
-if (!job) {
-  llvm::errs() << llvm::toString(job.takeError()) << '\n';
-  return 1;
-}
-if (!job->wait()) {
-  return 1;
+#include <utility>
+
+int main() {
+  auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  if (!device) {
+    llvm::errs() << llvm::toString(device.takeError()) << '\n';
+    return 1;
+  }
+  auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
+  if (!input) {
+    llvm::errs() << llvm::toString(input.takeError()) << '\n';
+    return 1;
+  }
+  auto compiled = mlir::compileProgram(std::move(*input), *device);
+  if (!compiled) {
+    llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
+    return 1;
+  }
+  auto job = mlir::submitProgram(*device, *compiled);
+  if (!job) {
+    llvm::errs() << llvm::toString(job.takeError()) << '\n';
+    return 1;
+  }
+  auto completed = job->wait();
+  if (!completed) {
+    llvm::errs() << llvm::toString(completed.takeError()) << '\n';
+    return 1;
+  }
+  return *completed ? 0 : 1;
 }
 ```
 
-`compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
-available for hardware snapshots and staged compilation with a
-`TargetEnvironment`.
+`compilerTargetFromDevice` and `compilerTargetFromDeviceId` provide hardware
+snapshots for staged compilation with a `TargetEnvironment`.
 
 ### Payload support
 

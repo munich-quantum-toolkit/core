@@ -16,12 +16,13 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <bit>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <string>
 
 namespace dd {
@@ -105,7 +106,7 @@ struct Complex {
   ///
   /// @param os The output stream to write to.
   /// @see RealNumber::writeBinary
-  void writeBinary(std::ostream& os) const;
+  void writeBinary(llvm::raw_ostream& os) const;
 
   /// Convert the Complex number to an std::complex<fp>.
   ///
@@ -123,7 +124,7 @@ struct Complex {
 /// @param os The output stream to write to.
 /// @param c The complex number to print.
 /// @returns The output stream.
-std::ostream& operator<<(std::ostream& os, const Complex& c);
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Complex& c);
 
 ComplexValue operator*(const Complex& c1, const ComplexValue& c2);
 ComplexValue operator*(const ComplexValue& c1, const Complex& c2);

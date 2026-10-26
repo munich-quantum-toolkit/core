@@ -8,8 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/TestUtils.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
+
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -29,6 +30,8 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+
+using mqt::test::TemporaryDirectory;
 
 namespace sc {
 namespace {
@@ -312,6 +315,24 @@ TEST(ScConfigurationTest, ValidatesOperationSupportAndCalibration) {
       "siteOverrides");
 }
 
+TEST(ScConfigurationTest, RejectsRepeatedSiteTuples) {
+  expectInvalid(
+      [](auto& root) {
+        (*(*root.getAsObject()->getArray("operations"))[0]
+              .getAsObject())["sites"] =
+            llvm::json::Array{llvm::json::Array{0}, llvm::json::Array{0}};
+      },
+      "unique tuple");
+  expectInvalid(
+      [](auto& root) {
+        auto& overrides = *(*root.getAsObject()->getArray("operations"))[1]
+                               .getAsObject()
+                               ->getArray("siteOverrides");
+        overrides.push_back(overrides.front());
+      },
+      "unique supported tuple");
+}
+
 TEST(ScConfigurationTest, AcceptsZeroDurationAndRejectsOverflowingJsonNumber) {
   auto root = bundledJson();
   (*(*root.getAsObject()->getArray("operations"))[0]
@@ -364,7 +385,7 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
 }
 
 TEST(ScConfigurationTest, ReportsFileReadFailures) {
-  const mqt::test::TemporaryDirectory directory;
+  const TemporaryDirectory directory;
   const auto path = (directory.path() / "missing.json").string();
   auto parsed = readJSON(path);
   ASSERT_FALSE(static_cast<bool>(parsed));

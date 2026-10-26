@@ -13,11 +13,14 @@
 
 #include "Driver.hpp"
 #include "SessionConfig.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 #include "qdmi/client.h"
 #include "qdmi/device.h"
+
+#include "llvm/Support/MemoryBuffer.h"
 
 #include <algorithm>
 #include <array>
@@ -29,9 +32,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <future>
 #include <iterator>
+#include <llvm/Support/Error.h>
 #include <map>
 #include <memory>
 #include <optional>
@@ -51,6 +54,9 @@
 #else
 #include <dlfcn.h>
 #endif
+
+using mqt::test::errorStatus;
+using mqt::test::value;
 
 namespace {
 
@@ -291,9 +297,9 @@ public:
   static size_t nextId = 0;
   auto& driver = qdmi::Driver::get();
   const auto id = "test.runtime." + std::to_string(nextId++);
-  driver.registerDevice(
-      {.id = id, .library = library, .prefix = prefix, .session = session});
-  return driver.open(id);
+  value(driver.registerDevice(
+      {.id = id, .library = library, .prefix = prefix, .session = session}));
+  return value(driver.open(id));
 }
 
 class DriverTest : public testing::TestWithParam<const char*> {
@@ -372,7 +378,8 @@ protected:
 TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   {
-    QDMI_Device_impl_d parent(library);
+    auto parentOwner = value(QDMI_Device_impl_d::create(*library));
+    auto& parent = *parentOwner;
     size_t size = 0;
     ASSERT_EQ(
         QDMI_device_query_device_property(
@@ -418,7 +425,8 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
 TEST(ChildDeviceTest, PreservesWarningJobsAndRejectsNullHandles) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDevicesNotSupported = true;
-  QDMI_Device_impl_d device(library);
+  auto deviceOwner = value(QDMI_Device_impl_d::create(*library));
+  auto& device = *deviceOwner;
   for (const auto status : {QDMI_SUCCESS, QDMI_WARN_GENERAL}) {
     library->jobStatus = status;
     for (const auto nullJob : {false, true}) {
@@ -446,7 +454,8 @@ TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->successStatus = QDMI_WARN_GENERAL;
   {
-    const QDMI_Device_impl_d parent(library, {.custom1 = "setting"});
+    auto const parentOwner =
+        value(QDMI_Device_impl_d::create(*library, {.custom1 = "setting"}));
     EXPECT_EQ(library->allocatedSessions, 3);
     EXPECT_EQ(library->selectedChildren.size(), 2);
   }
@@ -456,11 +465,15 @@ TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {
 TEST(ChildDeviceTest, RejectsNullProviderHandles) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->nullSession = true;
-  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_TRUE(errorStatus([&] {
+                return QDMI_Device_impl_d::create(*library);
+              }).has_value());
   EXPECT_EQ(library->allocatedSessions, 0);
   library->nullSession = false;
   library->nullChild = true;
-  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_TRUE(errorStatus([&] {
+                return QDMI_Device_impl_d::create(*library);
+              }).has_value());
   EXPECT_EQ(library->allocatedSessions, 2);
   EXPECT_EQ(library->freedSessions, 2);
 }
@@ -468,7 +481,9 @@ TEST(ChildDeviceTest, RejectsNullProviderHandles) {
 TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->rejectChildSelection = true;
-  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_TRUE(errorStatus([&] {
+                return QDMI_Device_impl_d::create(*library);
+              }).has_value());
   EXPECT_EQ(library->allocatedSessions, 2);
   EXPECT_EQ(library->freedSessions, 2);
 }
@@ -476,7 +491,9 @@ TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
 TEST(ChildDeviceTest, RejectsMalformedChildLists) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->malformedChildList = true;
-  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_TRUE(errorStatus([&] {
+                return QDMI_Device_impl_d::create(*library);
+              }).has_value());
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
 }
@@ -485,7 +502,8 @@ TEST(ChildDeviceTest, SupportsDevicesWithoutChildDevices) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDevicesNotSupported = true;
   {
-    QDMI_Device_impl_d parent(library);
+    auto parentOwner = value(QDMI_Device_impl_d::create(*library));
+    auto& parent = *parentOwner;
     size_t size = 0;
     EXPECT_EQ(
         QDMI_device_query_device_property(
@@ -499,7 +517,9 @@ TEST(ChildDeviceTest, SupportsDevicesWithoutChildDevices) {
 TEST(ChildDeviceTest, CleansUpWhenQueryingChildDevicesFails) {
   const auto library = std::make_shared<ChildDeviceAPI>();
   library->childDeviceQueryFails = true;
-  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_TRUE(errorStatus([&] {
+                return QDMI_Device_impl_d::create(*library);
+              }).has_value());
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
 }
@@ -915,7 +935,7 @@ constexpr std::array DEVICES{
 
 namespace {
 void registerSessionTestDevice() {
-  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent({
+  static_cast<void>(value(qdmi::Driver::get().registerDeviceIfAbsent({
       .id = "test.session-overrides",
       .library = MQT_CORE_QDMI_SESSION_DEVICE,
       .prefix = "TEST_SESSION",
@@ -925,7 +945,7 @@ void registerSessionTestDevice() {
               .token = "registered-token",
               .custom1 = "registered-custom",
           },
-  }));
+  })));
 }
 } // namespace
 
@@ -949,8 +969,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(ConfiguredDriverTest, ConstructionRegistersWithoutOpeningDevices) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  EXPECT_NO_THROW(qdmi::Driver::get().registerDevice(
-      {.id = "mqt.sc.default", .library = library, .prefix = prefix}, true));
+  EXPECT_NO_THROW(value(qdmi::Driver::get().registerDevice(
+      {.id = "mqt.sc.default", .library = library, .prefix = prefix}, true)));
 }
 
 TEST(DriverSessionTest, CustomEnumsAreValidButUnsupported) {
@@ -1057,10 +1077,25 @@ TEST(ConfiguredDriverTest,
   EXPECT_EQ(session, nullptr);
 }
 
+TEST(DeviceRegistrationTest, ErrorSurvivesAnUnrelatedOperation) {
+  auto& driver = qdmi::Driver::get();
+  auto result = driver.open("test.missing-diagnostic");
+  ASSERT_FALSE(result);
+  auto error = result.takeError();
+  static_cast<void>(value(driver.registeredDeviceIds()));
+  llvm::visitErrors(error, [](const llvm::ErrorInfoBase& info) {
+    EXPECT_EQ(info.convertToErrorCode().value(), QDMI_ERROR_NOTFOUND);
+  });
+  EXPECT_THAT(llvm::toString(std::move(error)),
+              testing::HasSubstr("test.missing-diagnostic"));
+}
+
 TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   auto& driver = qdmi::Driver::get();
-  EXPECT_THROW(driver.registerDevice({}), std::invalid_argument);
-  EXPECT_THROW(driver.open("test.unknown"), std::out_of_range);
+  EXPECT_EQ(errorStatus([&] { return driver.registerDevice({}); }),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(errorStatus([&] { return driver.open("test.unknown"); }),
+            QDMI_ERROR_NOTFOUND);
 
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
   const qdmi::DeviceDefinition original{
@@ -1070,30 +1105,36 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   };
   auto invalidId = original;
   invalidId.id = std::string{"test.alias\0hidden", 17};
-  EXPECT_THROW(driver.registerDevice(std::move(invalidId)),
-               std::invalid_argument);
+  EXPECT_TRUE(errorStatus([&] {
+                return driver.registerDevice(std::move(invalidId));
+              }).has_value());
   auto invalidLibrary = original;
   invalidLibrary.library =
       std::filesystem::path{std::string{"device\0alias", 12}};
-  EXPECT_THROW(driver.registerDevice(std::move(invalidLibrary)),
-               std::invalid_argument);
+  EXPECT_TRUE(errorStatus([&] {
+                return driver.registerDevice(std::move(invalidLibrary));
+              }).has_value());
   auto invalidPrefix = original;
   invalidPrefix.prefix.clear();
-  EXPECT_THROW(driver.registerDevice(std::move(invalidPrefix)),
-               std::invalid_argument);
-  driver.registerDevice(original);
-  EXPECT_THROW(driver.registerDevice(original), std::invalid_argument);
+  EXPECT_TRUE(errorStatus([&] {
+                return driver.registerDevice(std::move(invalidPrefix));
+              }).has_value());
+  value(driver.registerDevice(original));
+  EXPECT_TRUE(
+      errorStatus([&] { return driver.registerDevice(original); }).has_value());
 
   auto replacement = original;
   replacement.session.custom3 = "replacement";
-  EXPECT_NO_THROW(driver.registerDevice(replacement, true));
-  auto* const opened = driver.open(original.id);
+  EXPECT_NO_THROW(value(driver.registerDevice(replacement, true)));
+  auto* const opened = value(driver.open(original.id));
   ASSERT_NE(opened, nullptr);
-  EXPECT_EQ(driver.open(original.id), opened);
-  EXPECT_THROW(driver.registerDevice(original, true), std::runtime_error);
-  EXPECT_NO_THROW(driver.registerDevice(
-      {.id = "test.upserted", .library = library, .prefix = prefix}, true));
-  EXPECT_NE(driver.open("test.upserted"), nullptr);
+  EXPECT_EQ(value(driver.open(original.id)), opened);
+  EXPECT_TRUE(errorStatus([&] {
+                return driver.registerDevice(original, true);
+              }).has_value());
+  EXPECT_NO_THROW(value(driver.registerDevice(
+      {.id = "test.upserted", .library = library, .prefix = prefix}, true)));
+  EXPECT_NE(value(driver.open("test.upserted")), nullptr);
 }
 
 TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
@@ -1104,23 +1145,26 @@ TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
       .library = library,
       .prefix = prefix,
   };
-  EXPECT_TRUE(driver.registerDeviceIfAbsent(definition));
-  EXPECT_FALSE(driver.registerDeviceIfAbsent(definition));
+  EXPECT_TRUE(value(driver.registerDeviceIfAbsent(definition)));
+  EXPECT_FALSE(value(driver.registerDeviceIfAbsent(definition)));
 
   auto invalidDuplicate = definition;
   invalidDuplicate.library.clear();
-  EXPECT_THROW(static_cast<void>(
-                   driver.registerDeviceIfAbsent(std::move(invalidDuplicate))),
-               std::invalid_argument);
+  EXPECT_EQ(errorStatus([&] {
+              return driver.registerDeviceIfAbsent(std::move(invalidDuplicate));
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 
   const qdmi::DeviceDefinition disabled{
       .id = "test.disabled",
       .library = library,
       .prefix = prefix,
   };
-  EXPECT_FALSE(driver.registerDeviceIfAbsent(disabled));
-  EXPECT_THROW(static_cast<void>(driver.open(disabled.id)), std::runtime_error);
-  EXPECT_THROW(driver.registerDevice(disabled), std::invalid_argument);
+  EXPECT_FALSE(value(driver.registerDeviceIfAbsent(disabled)));
+  EXPECT_TRUE(
+      errorStatus([&] { return driver.open(disabled.id); }).has_value());
+  EXPECT_EQ(errorStatus([&] { return driver.registerDevice(disabled); }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, ConcurrentRegistrationInsertsOnce) {
@@ -1140,7 +1184,7 @@ TEST(DeviceRegistrationTest, ConcurrentRegistrationInsertsOnce) {
   for (size_t thread = 0; thread < threadCount; ++thread) {
     threads.emplace_back([&, thread] {
       start.arrive_and_wait();
-      inserted[thread] = driver.registerDeviceIfAbsent(definition);
+      inserted[thread] = value(driver.registerDeviceIfAbsent(definition));
     });
   }
   for (auto& thread : threads) {
@@ -1148,7 +1192,9 @@ TEST(DeviceRegistrationTest, ConcurrentRegistrationInsertsOnce) {
   }
 
   EXPECT_EQ(std::ranges::count(inserted, true), 1);
-  EXPECT_EQ(std::ranges::count(driver.registeredDeviceIds(), definition.id), 1);
+  EXPECT_EQ(
+      std::ranges::count(value(driver.registeredDeviceIds()), definition.id),
+      1);
 }
 
 TEST(DeviceRegistrationTest, ConcurrentOpenReturnsOnePersistentDevice) {
@@ -1160,7 +1206,7 @@ TEST(DeviceRegistrationTest, ConcurrentOpenReturnsOnePersistentDevice) {
       .library = library,
       .prefix = prefix,
   };
-  driver.registerDevice(definition);
+  value(driver.registerDevice(definition));
   std::array<QDMI_Device, threadCount> devices{};
   std::barrier start(threadCount);
   std::vector<std::thread> threads;
@@ -1169,7 +1215,7 @@ TEST(DeviceRegistrationTest, ConcurrentOpenReturnsOnePersistentDevice) {
   for (size_t thread = 0; thread < threadCount; ++thread) {
     threads.emplace_back([&, thread] {
       start.arrive_and_wait();
-      devices[thread] = driver.open(definition.id);
+      devices[thread] = value(driver.open(definition.id));
     });
   }
   for (auto& thread : threads) {
@@ -1183,55 +1229,67 @@ TEST(DeviceRegistrationTest, ConcurrentOpenReturnsOnePersistentDevice) {
 
 TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
   auto& driver = qdmi::Driver::get();
-  driver.registerDevice({
+  value(driver.registerDevice({
       .id = "test.missing-library",
       .library = "/nonexistent/device-library",
       .prefix = "MISSING",
-  });
-  EXPECT_THROW(static_cast<void>(driver.open("test.missing-library")),
-               std::runtime_error);
+  }));
+  EXPECT_EQ(errorStatus([&] { return driver.open("test.missing-library"); }),
+            QDMI_ERROR_LIBNOTFOUND);
+  value(driver.registerDevice(
+      {
+          .id = "test.missing-library",
+          .library = MQT_CORE_QDMI_SESSION_DEVICE,
+          .prefix = "MISSING",
+      },
+      true));
+  QDMI_Session session = nullptr;
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
+                "test.missing-library", 0, nullptr, &session),
+            QDMI_ERROR_FATAL);
+  EXPECT_EQ(session, nullptr);
 }
 
 TEST(DeviceRegistrationTest,
      EnumeratesEnabledIdsInOrderWithoutLoadingLibraries) {
   auto& driver = qdmi::Driver::get();
-  const auto idsBefore = driver.registeredDeviceIds();
-  EXPECT_THAT(qdmi::builtin_driver::registeredDeviceIds(),
+  const auto idsBefore = value(driver.registeredDeviceIds());
+  EXPECT_THAT(value(qdmi::builtin_driver::registeredDeviceIds()),
               testing::Contains("broken.example"));
-  driver.registerDevice({
+  value(driver.registerDevice({
       .id = "test.enumeration.first",
       .library = "/nonexistent/first-device-library",
       .prefix = "MISSING_FIRST",
-  });
-  driver.registerDevice({
+  }));
+  value(driver.registerDevice({
       .id = "test.enumeration.second",
       .library = "/nonexistent/second-device-library",
       .prefix = "MISSING_SECOND",
-  });
+  }));
 
-  const auto idsAfter = driver.registeredDeviceIds();
+  const auto idsAfter = value(driver.registeredDeviceIds());
   ASSERT_EQ(idsAfter.size(), idsBefore.size() + 2);
   EXPECT_TRUE(std::equal(idsBefore.begin(), idsBefore.end(), idsAfter.begin()));
   EXPECT_EQ(idsAfter[idsBefore.size()], "test.enumeration.first");
   EXPECT_EQ(idsAfter[idsBefore.size() + 1], "test.enumeration.second");
   EXPECT_THAT(idsAfter, testing::Not(testing::Contains("test.disabled")));
 
-  EXPECT_THROW(static_cast<void>(driver.open("test.enumeration.first")),
-               std::runtime_error);
+  EXPECT_TRUE(errorStatus([&] {
+                return driver.open("test.enumeration.first");
+              }).has_value());
 }
 
 TEST(DeviceRegistrationTest, SynthesizesManifestForMetadataOnlyTarget) {
-  std::ifstream manifest(MQT_CORE_QDMI_METADATA_MANIFEST);
+  auto manifest = llvm::MemoryBuffer::getFile(MQT_CORE_QDMI_METADATA_MANIFEST);
   ASSERT_TRUE(manifest);
-  const std::string contents{std::istreambuf_iterator<char>(manifest),
-                             std::istreambuf_iterator<char>()};
+  const auto contents = (*manifest)->getBuffer().str();
   EXPECT_THAT(contents, testing::HasSubstr("\"id\": \"test.metadata-only\""));
   EXPECT_THAT(contents, testing::HasSubstr("\"prefix\": \"TEST_METADATA\""));
   EXPECT_THAT(contents, testing::HasSubstr("mqt-core-qdmi-metadata-device"));
 }
 
 TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
-  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent({
+  static_cast<void>(value(qdmi::Driver::get().registerDeviceIfAbsent({
       .id = "test.typed-configuration",
       .library = MQT_CORE_QDMI_SESSION_DEVICE,
       .prefix = "TEST_SESSION",
@@ -1242,12 +1300,12 @@ TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
                       .json = R"({"name":"inline"})",
                   },
           },
-  }));
+  })));
 
   const auto inlineDevice =
-      qdmi::Session::openDevice("test.typed-configuration");
+      value(qdmi::Session::openDevice("test.typed-configuration"));
   EXPECT_THAT(
-      inlineDevice.getName(),
+      value(inlineDevice.getName()),
       testing::HasSubstr(R"(custom1={"name":"inline"};custom2=<unset>)"));
 }
 
@@ -1264,18 +1322,20 @@ TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
               .custom1 = "raw",
           },
   };
-  EXPECT_THROW(driver.registerDevice(definition), std::invalid_argument);
+  EXPECT_TRUE(errorStatus([&] {
+                return driver.registerDevice(definition);
+              }).has_value());
 }
 
 TEST(DeviceRegistrationTest,
      RuntimeConfigurationSeparatesModelsUsingOneScProviderLibrary) {
   auto& driver = qdmi::Driver::get();
-  static_cast<void>(driver.registerDeviceIfAbsent({
+  static_cast<void>(value(driver.registerDeviceIfAbsent({
       .id = "test.sc.runtime-default",
       .library = MQT_CORE_QDMI_SC_LIBRARY,
       .prefix = "MQT_SC",
-  }));
-  static_cast<void>(driver.registerDeviceIfAbsent({
+  })));
+  static_cast<void>(value(driver.registerDeviceIfAbsent({
       .id = "test.sc.runtime-custom",
       .library = MQT_CORE_QDMI_SC_LIBRARY,
       .prefix = "MQT_SC",
@@ -1286,19 +1346,22 @@ TEST(DeviceRegistrationTest,
                       .path = MQT_CORE_QDMI_CUSTOM_SC_FILE,
                   },
           },
-  }));
+  })));
 
   const auto defaultDevice =
-      qdmi::Session::openDevice("test.sc.runtime-default");
-  const auto customDevice = qdmi::Session::openDevice("test.sc.runtime-custom");
-  EXPECT_EQ(defaultDevice.getName(), "MQT SC Default QDMI Device");
-  EXPECT_EQ(customDevice.getName(), "Custom SC Driver Device");
-  ASSERT_FALSE(defaultDevice.getOperations().empty());
-  ASSERT_FALSE(customDevice.getOperations().empty());
-  EXPECT_EQ(defaultDevice.getOperations().front().getDuration(), 20);
-  EXPECT_EQ(customDevice.getOperations().front().getDuration(), 77);
+      value(qdmi::Session::openDevice("test.sc.runtime-default"));
+  const auto customDevice =
+      value(qdmi::Session::openDevice("test.sc.runtime-custom"));
+  EXPECT_EQ(value(defaultDevice.getName()), "MQT SC Default QDMI Device");
+  EXPECT_EQ(value(customDevice.getName()), "Custom SC Driver Device");
+  ASSERT_FALSE(value(defaultDevice.getOperations()).empty());
+  ASSERT_FALSE(value(customDevice.getOperations()).empty());
+  EXPECT_EQ(value(value(defaultDevice.getOperations()).front().getDuration()),
+            20);
+  EXPECT_EQ(value(value(customDevice.getOperations()).front().getDuration()),
+            77);
 
-  static_cast<void>(driver.registerDeviceIfAbsent({
+  static_cast<void>(value(driver.registerDeviceIfAbsent({
       .id = "test.sc.runtime-invalid",
       .library = MQT_CORE_QDMI_SC_LIBRARY,
       .prefix = "MQT_SC",
@@ -1309,24 +1372,27 @@ TEST(DeviceRegistrationTest,
                       .json = "{}",
                   },
           },
-  }));
-  EXPECT_THROW(
-      static_cast<void>(qdmi::Session::openDevice("test.sc.runtime-invalid")),
-      std::out_of_range);
-  EXPECT_EQ(qdmi::Session::openDevice("test.sc.runtime-default").getName(),
+  })));
+  EXPECT_TRUE(errorStatus([&] {
+                return qdmi::Session::openDevice("test.sc.runtime-invalid");
+              }).has_value());
+  EXPECT_EQ(value(value(qdmi::Session::openDevice("test.sc.runtime-default"))
+                      .getName()),
             "MQT SC Default QDMI Device");
 }
 
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   registerSessionTestDevice();
-  const auto first = qdmi::Session::openDevice("test.session-overrides");
-  const auto second = qdmi::Session::openDevice("test.session-overrides");
+  const auto first = value(qdmi::Session::openDevice("test.session-overrides"));
+  const auto second =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   EXPECT_NE(first, second);
 }
 
 TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   const auto bytesOf = [](const auto& value) {
     std::vector<std::byte> bytes(sizeof(value));
     std::memcpy(bytes.data(), &value, sizeof(value));
@@ -1344,36 +1410,38 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
       qdmi::CustomProperty::Custom3, qdmi::CustomProperty::Custom4,
       qdmi::CustomProperty::Custom5,
   };
-  const auto job =
+  const auto job = value(
       device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1, payloads[0],
-                       payloads[1], payloads[2], payloads[3], payloads[4]);
+                       payloads[1], payloads[2], payloads[3], payloads[4]));
   const auto expectedPayloads = payloads;
   for (auto& payload : payloads) {
     payload.clear();
   }
   for (size_t i = 0; i < slots.size(); ++i) {
-    EXPECT_EQ(job.getCustomResult<std::vector<std::byte>>(slots[i]),
+    EXPECT_EQ(value(job.getCustomResult<std::vector<std::byte>>(slots[i])),
               expectedPayloads[i]);
   }
   const auto scalarJob =
-      device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
-                       std::string{"text"}, true, -7, 2.5);
-  EXPECT_EQ(scalarJob.getCustomResult<std::string>(slots[0]), "text");
-  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[1]),
+      value(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
+                             std::string{"text"}, true, -7, 2.5));
+  EXPECT_EQ(value(scalarJob.getCustomResult<std::string>(slots[0])), "text");
+  EXPECT_EQ(value(scalarJob.getCustomResult<std::vector<std::byte>>(slots[1])),
             bytesOf(true));
-  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[2]),
+  EXPECT_EQ(value(scalarJob.getCustomResult<std::vector<std::byte>>(slots[2])),
             bytesOf(-7));
-  EXPECT_EQ(scalarJob.getCustomResult<std::vector<std::byte>>(slots[3]),
+  EXPECT_EQ(value(scalarJob.getCustomResult<std::vector<std::byte>>(slots[3])),
             bytesOf(2.5));
-  EXPECT_THROW(
-      static_cast<void>(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3,
-                                         1, std::vector<std::byte>{})),
-      std::invalid_argument);
+  EXPECT_EQ(errorStatus([&] {
+              return device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
+                                      std::vector<std::byte>{});
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
 
   size_t size = 0;
   ASSERT_EQ(QDMI_device_query_device_property(
@@ -1392,57 +1460,60 @@ TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {
             QDMI_SUCCESS);
 
   const auto operations =
-      device.queryCustomOperations(qdmi::CustomProperty::Custom1);
+      value(device.queryCustomOperations(qdmi::CustomProperty::Custom1));
   ASSERT_TRUE(operations.has_value());
   ASSERT_EQ(operations->size(), rawOperations.size());
   EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(0)),
             rawOperations.at(0));
   EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(1)),
             rawOperations.at(1));
-  EXPECT_EQ(operations->at(0).getName(), "custom-rx");
-  EXPECT_EQ(operations->at(0).getQubitsNum(), 1);
-  EXPECT_EQ(operations->at(0).getParametersNum(), 1);
-  EXPECT_EQ(operations->at(1).getName(), "custom-cx");
-  EXPECT_EQ(operations->at(1).getQubitsNum(), 2);
-  EXPECT_EQ(operations->at(1).getParametersNum(), 0);
+  EXPECT_EQ(value(operations->at(0).getName()), "custom-rx");
+  EXPECT_EQ(value(operations->at(0).getQubitsNum()), 1);
+  EXPECT_EQ(value(operations->at(0).getParametersNum()), 1);
+  EXPECT_EQ(value(operations->at(1).getName()), "custom-cx");
+  EXPECT_EQ(value(operations->at(1).getQubitsNum()), 2);
+  EXPECT_EQ(value(operations->at(1).getParametersNum()), 0);
 }
 
 TEST(DeviceRegistrationTest,
      CustomOperationListDistinguishesUnsupportedEmptyAndMalformed) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
 
-  EXPECT_EQ(device.queryCustomOperations(qdmi::CustomProperty::Custom4),
+  EXPECT_EQ(value(device.queryCustomOperations(qdmi::CustomProperty::Custom4)),
             std::nullopt);
   const auto empty =
-      device.queryCustomOperations(qdmi::CustomProperty::Custom2);
+      value(device.queryCustomOperations(qdmi::CustomProperty::Custom2));
   ASSERT_TRUE(empty.has_value());
   EXPECT_TRUE(empty->empty());
-  EXPECT_THROW(static_cast<void>(
-                   device.queryCustomOperations(qdmi::CustomProperty::Custom3)),
-               std::invalid_argument);
+  EXPECT_EQ(errorStatus([&] {
+              return device.queryCustomOperations(
+                  qdmi::CustomProperty::Custom3);
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationRetainsOwningDeviceSession) {
   registerSessionTestDevice();
   const auto operation = [] {
     const auto operations =
-        qdmi::Session::openDevice("test.session-overrides")
-            .queryCustomOperations(qdmi::CustomProperty::Custom1);
+        value(value(qdmi::Session::openDevice("test.session-overrides"))
+                  .queryCustomOperations(qdmi::CustomProperty::Custom1));
     if (!operations.has_value() || operations->empty()) {
       throw std::runtime_error("Test provider returned no custom operations");
     }
     return operations->front();
   }();
 
-  EXPECT_EQ(operation.getName(), "custom-rx");
-  EXPECT_EQ(operation.getQubitsNum(), 1);
+  EXPECT_EQ(value(operation.getName()), "custom-rx");
+  EXPECT_EQ(value(operation.getQubitsNum()), 1);
 }
 
 TEST(DeviceRegistrationTest,
      ScRuntimeConfigurationSeparatesModelsUsingOneProviderLibrary) {
   auto& driver = qdmi::Driver::get();
-  static_cast<void>(driver.registerDeviceIfAbsent({
+  static_cast<void>(value(driver.registerDeviceIfAbsent({
       .id = "test.sc.runtime-one",
       .library = MQT_CORE_QDMI_SC_LIBRARY,
       .prefix = "MQT_SC",
@@ -1467,8 +1538,8 @@ TEST(DeviceRegistrationTest,
                })",
                   },
           },
-  }));
-  static_cast<void>(driver.registerDeviceIfAbsent({
+  })));
+  static_cast<void>(value(driver.registerDeviceIfAbsent({
       .id = "test.sc.runtime-two",
       .library = MQT_CORE_QDMI_SC_LIBRARY,
       .prefix = "MQT_SC",
@@ -1487,24 +1558,24 @@ TEST(DeviceRegistrationTest,
                })",
                   },
           },
-  }));
+  })));
 
-  const auto first = qdmi::Session::openDevice("test.sc.runtime-one");
-  const auto second = qdmi::Session::openDevice("test.sc.runtime-two");
-  EXPECT_EQ(first.getName(), "SC runtime one");
-  EXPECT_EQ(first.getQubitsNum(), 1);
-  const auto firstSites = first.getSites();
+  const auto first = value(qdmi::Session::openDevice("test.sc.runtime-one"));
+  const auto second = value(qdmi::Session::openDevice("test.sc.runtime-two"));
+  EXPECT_EQ(value(first.getName()), "SC runtime one");
+  EXPECT_EQ(value(first.getQubitsNum()), 1);
+  const auto firstSites = value(first.getSites());
   ASSERT_EQ(firstSites.size(), 1);
-  EXPECT_EQ(firstSites[0].getT1(), 10);
-  EXPECT_EQ(firstSites[0].getT2(), 20);
-  const auto firstOperations = first.getOperations();
+  EXPECT_EQ(value(firstSites[0].getT1()), 10);
+  EXPECT_EQ(value(firstSites[0].getT2()), 20);
+  const auto firstOperations = value(first.getOperations());
   ASSERT_EQ(firstOperations.size(), 1);
-  EXPECT_EQ(firstOperations[0].getName(), "r");
-  EXPECT_EQ(firstOperations[0].getDuration({firstSites[0]}), 7);
-  EXPECT_EQ(firstOperations[0].getFidelity({firstSites[0]}), 0.8);
-  EXPECT_EQ(second.getName(), "SC runtime two");
-  EXPECT_EQ(second.getQubitsNum(), 2);
-  const auto secondCouplingMap = second.getCouplingMap();
+  EXPECT_EQ(value(firstOperations[0].getName()), "r");
+  EXPECT_EQ(value(firstOperations[0].getDuration({firstSites[0]})), 7);
+  EXPECT_EQ(value(firstOperations[0].getFidelity({firstSites[0]})), 0.8);
+  EXPECT_EQ(value(second.getName()), "SC runtime two");
+  EXPECT_EQ(value(second.getQubitsNum()), 2);
+  const auto secondCouplingMap = value(second.getCouplingMap());
   ASSERT_TRUE(secondCouplingMap.has_value());
   ASSERT_EQ(secondCouplingMap->size(), 1);
 }
@@ -1514,66 +1585,74 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   std::optional<qdmi::Job> job;
   std::string baseline;
   {
-    auto const device = qdmi::Session::openDevice("test.session-overrides");
-    baseline = device.getName();
+    auto const device =
+        value(qdmi::Session::openDevice("test.session-overrides"));
+    baseline = value(device.getName());
     job.emplace(
-        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
+        value(device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1)));
   }
 
   ASSERT_TRUE(job.has_value());
-  EXPECT_EQ(job->getId(), "session-job");
+  EXPECT_EQ(value(job->getId()), "session-job");
   job.reset();
 
-  const auto probe = qdmi::Session::openDevice("test.session-overrides");
+  const auto probe = value(qdmi::Session::openDevice("test.session-overrides"));
   EXPECT_EQ(queryName(probe), baseline);
 }
 
 TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
   registerSessionTestDevice();
-  for (const auto* keys : {"", "00", "00,11"}) {
-    const auto device = qdmi::builtin_driver::openDevice(
+  for (const auto* keys : {"", "00", "00,", ",", "00,11", ",00", "00,,"}) {
+    const auto device = value(qdmi::builtin_driver::openDevice(
         "test.session-overrides",
-        std::string{R"({"custom3":")"} + keys + R"("})");
+        std::string{R"({"custom3":")"} + keys + R"("})"));
     const auto job =
-        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2);
-    if (std::string_view(keys) == "00,11") {
-      EXPECT_THROW(std::ignore = job.getCounts(), std::runtime_error);
+        value(device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2));
+    const std::string_view input(keys);
+    if (input == "00,11" || input == ",00" || input == "00,,") {
+      EXPECT_TRUE(errorStatus([&] { return job.getCounts(); }).has_value());
     } else {
-      const auto counts = job.getCounts();
+      const auto counts = value(job.getCounts());
       ASSERT_EQ(counts.size(), 1);
-      EXPECT_EQ(counts.at(keys), 5);
+      EXPECT_EQ(counts.at(input.starts_with("00") ? "00" : ""), 5);
     }
   }
 }
 
 TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   constexpr std::array payload{std::byte{0}, std::byte{1}};
 
-  EXPECT_NO_THROW(std::ignore =
-                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
-               std::runtime_error);
+  EXPECT_NO_THROW(std::ignore = value(
+                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1)));
+  EXPECT_TRUE(errorStatus([&] {
+                return device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1,
+                                        size_t{1});
+              }).has_value());
 }
 
 TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
 
-  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
-                                                 QDMI_PROGRAM_FORMAT_QASM2));
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
-                                              QDMI_PROGRAM_FORMAT_QPY),
-               std::invalid_argument);
+  EXPECT_NO_THROW(std::ignore = value(device.submitJob(
+                      "OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2)));
+  EXPECT_EQ(errorStatus([&] {
+              return device.submitJob(std::string{"binary"},
+                                      QDMI_PROGRAM_FORMAT_QPY);
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
   constexpr size_t threadCount = 8;
   constexpr size_t jobCount = 64;
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   size_t freedBefore = 0;
   ASSERT_EQ(QDMI_device_query_device_property(
                 device, QDMI_DEVICE_PROPERTY_CUSTOM5, sizeof(freedBefore),
@@ -1608,12 +1687,13 @@ TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
 
 TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
 
   using namespace std::string_view_literals;
   for (const auto id : {""sv, "session-job\0different-job"sv}) {
-    EXPECT_THROW(std::ignore = device.retrieveJobById(id),
-                 std::invalid_argument);
+    EXPECT_EQ(errorStatus([&] { return device.retrieveJobById(id); }),
+              QDMI_ERROR_INVALIDARGUMENT);
   }
 
   QDMI_Job job = nullptr;
@@ -1637,24 +1717,27 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
             QDMI_ERROR_NOTFOUND);
   EXPECT_EQ(job, nullptr);
 
-  const auto retrievedJob = device.retrieveJobById("session-job");
-  EXPECT_EQ(retrievedJob.getId(), "session-job");
-  EXPECT_EQ(retrievedJob.getNumPrograms(), 2U);
-  EXPECT_EQ(retrievedJob.getNumShots(), 2U);
-  EXPECT_EQ(retrievedJob.getShots(), (std::vector<std::string>{"10", "01"}));
-  EXPECT_EQ(retrievedJob.getProgramBytes(0U),
+  const auto retrievedJob = value(device.retrieveJobById("session-job"));
+  EXPECT_EQ(value(retrievedJob.getId()), "session-job");
+  EXPECT_EQ(value(retrievedJob.getNumPrograms()), 2U);
+  EXPECT_EQ(value(retrievedJob.getNumShots()), 2U);
+  EXPECT_EQ(value(retrievedJob.getShots()),
+            (std::vector<std::string>{"10", "01"}));
+  EXPECT_EQ(value(retrievedJob.getProgramBytes(0U)),
             (std::vector<std::byte>{std::byte{'x'}, std::byte{0},
                                     std::byte{'y'}, std::byte{0}}));
-  EXPECT_EQ(retrievedJob.getShots(1U), (std::vector<std::string>{"11", "00"}));
-  EXPECT_EQ(retrievedJob.getProgramBytes(1U),
+  EXPECT_EQ(value(retrievedJob.getShots(1U)),
+            (std::vector<std::string>{"11", "00"}));
+  EXPECT_EQ(value(retrievedJob.getProgramBytes(1U)),
             (std::vector<std::byte>{std::byte{'z'}, std::byte{0}}));
-  EXPECT_THROW(std::ignore = retrievedJob.getProgramBytes(2U),
-               std::out_of_range);
+  EXPECT_EQ(errorStatus([&] { return retrievedJob.getProgramBytes(2U); }),
+            QDMI_ERROR_OUTOFRANGE);
 }
 
 TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   const std::array programs{
       std::vector<std::byte>{
           std::byte{'a'},
@@ -1673,27 +1756,30 @@ TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
       programs[1],
   };
   const auto job =
-      device.submitJob(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U);
-  EXPECT_EQ(job.getNumPrograms(), programs.size());
-  EXPECT_EQ(job.getProgramBytes(0U), programs[0]);
-  EXPECT_EQ(job.getProgramBytes(1U), programs[1]);
+      value(device.submitJob(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U));
+  EXPECT_EQ(value(job.getNumPrograms()), programs.size());
+  EXPECT_EQ(value(job.getProgramBytes(0U)), programs[0]);
+  EXPECT_EQ(value(job.getProgramBytes(1U)), programs[1]);
 }
 
 TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   const std::array<std::string, 2> programs{"OPENQASM 3.0;", "OPENQASM 3.0;"};
 
-  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U);
-  ASSERT_EQ(job.getNumPrograms(), programs.size());
+  const auto job =
+      value(device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U));
+  ASSERT_EQ(value(job.getNumPrograms()), programs.size());
   for (size_t index = 0U; index < programs.size(); ++index) {
-    EXPECT_EQ(job.getProgram(index), programs[index]);
+    EXPECT_EQ(value(job.getProgram(index)), programs[index]);
   }
 }
 
 TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
   QDMI_Job handle = nullptr;
   ASSERT_EQ(QDMI_device_create_job(device, &handle), QDMI_SUCCESS);
   const std::unique_ptr<QDMI_Job_impl_d, decltype(&QDMI_job_free)> job{
@@ -1722,12 +1808,13 @@ TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
 
 TEST(DeviceRegistrationTest, RetrievesIndexedHistograms) {
   registerSessionTestDevice();
-  const auto device = qdmi::Session::openDevice("test.session-overrides");
-  const auto job = device.retrieveJobById("session-job");
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
+  const auto job = value(device.retrieveJobById("session-job"));
 
-  EXPECT_EQ(job.getCounts(0U),
+  EXPECT_EQ(value(job.getCounts(0U)),
             (std::map<std::string, size_t>{{"10", 1U}, {"01", 1U}}));
-  EXPECT_EQ(job.getCounts(1U),
+  EXPECT_EQ(value(job.getCounts(1U)),
             (std::map<std::string, size_t>{{"11", 1U}, {"00", 1U}}));
 }
 
@@ -1742,10 +1829,22 @@ TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {
                                                 0, nullptr, &originalSize),
             QDMI_SUCCESS);
 
+  std::vector<QDMI_Device> original(originalSize / sizeof(QDMI_Device));
+  ASSERT_EQ(QDMI_session_query_session_property(
+                existingSession, QDMI_SESSION_PROPERTY_DEVICES, originalSize,
+                static_cast<void*>(original.data()), nullptr),
+            QDMI_SUCCESS);
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  driver.registerDevice(
-      {.id = "test.snapshot", .library = library, .prefix = prefix});
-  ASSERT_NE(driver.open("test.snapshot"), nullptr);
+  for (size_t i = 0; i < 256; ++i) {
+    value(driver.registerDevice({
+        .id = "test.growth." + std::to_string(i),
+        .library = library,
+        .prefix = prefix,
+    }));
+  }
+  value(driver.registerDevice(
+      {.id = "test.snapshot", .library = library, .prefix = prefix}));
+  ASSERT_NE(value(driver.open("test.snapshot")), nullptr);
 
   size_t existingSize = 0;
   EXPECT_EQ(QDMI_session_query_session_property(existingSession,
@@ -1753,6 +1852,12 @@ TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {
                                                 0, nullptr, &existingSize),
             QDMI_SUCCESS);
   EXPECT_EQ(existingSize, originalSize);
+  std::vector<QDMI_Device> current(original.size());
+  ASSERT_EQ(QDMI_session_query_session_property(
+                existingSession, QDMI_SESSION_PROPERTY_DEVICES, existingSize,
+                static_cast<void*>(current.data()), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(current, original);
 
   QDMI_Session newSession = nullptr;
   ASSERT_EQ(QDMI_session_alloc(&newSession), QDMI_SUCCESS);
@@ -1783,7 +1888,7 @@ TEST(DeviceSessionConfigTest, MovesAndBorrowsInlineConfiguration) {
       std::get<qdmi::InlineDeviceConfiguration>(*merged.deviceConfiguration)
           .json.data(),
       data);
-  const QDMI_Device_impl_d device(library, merged);
+  auto const deviceOwner = value(QDMI_Device_impl_d::create(*library, merged));
   // The parent and both children borrow the same configuration buffer.
   EXPECT_THAT(library->custom1Data, testing::ElementsAre(data, data, data));
 }
@@ -1971,25 +2076,20 @@ TEST(LoadedDeviceAPIDeathTest,
     });
 
     auto& driver = qdmi::Driver::get();
-    driver.registerDevice({
+    value(driver.registerDevice({
         .id = "cache.slow",
         .library = MQT_CORE_QDMI_SESSION_DEVICE,
         .prefix = "TEST_SESSION",
-    });
-    driver.registerDevice({
+    }));
+    value(driver.registerDevice({
         .id = "cache.alias",
         .library =
             std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
         .prefix = "TEST_SESSION",
-    });
-    static_cast<void>(driver.open("mqt.sc.default"));
+    }));
+    static_cast<void>(value(driver.open("mqt.sc.default")));
     auto first = std::async(std::launch::async, [&driver] {
-      try {
-        static_cast<void>(driver.open("cache.slow"));
-        return false;
-      } catch (const std::runtime_error&) {
-        return true;
-      }
+      return errorStatus([&] { return driver.open("cache.slow"); }).has_value();
     });
     if (entered.get_future().wait_for(std::chrono::seconds(5)) !=
         std::future_status::ready) {
@@ -2006,9 +2106,9 @@ TEST(LoadedDeviceAPIDeathTest,
                                 std::future_status::ready;
     release.set_value();
     const auto failed = first.get();
-    const auto* const retried = alias.get();
-    static_cast<void>(unrelated.get());
-    const auto* const later = driver.open("cache.slow");
+    const auto* const retried = value(alias.get());
+    static_cast<void>(value(unrelated.get()));
+    const auto* const later = value(driver.open("cache.slow"));
     const auto shared = &retried->api() == &later->api();
     std::_Exit(
         failed && aliasWaited && unrelatedReady && shared && attempts == 2 ? 0

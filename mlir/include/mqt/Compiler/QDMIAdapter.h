@@ -44,15 +44,14 @@ compilerTargetFromDevice(const qdmi::Device& device);
 
 /// Open a QDMI device by stable ID and snapshot it as a compiler target.
 ///
-/// This adapter contains exceptions from the QDMI C++ API and returns
-/// them as LLVM errors. The returned target owns all queried metadata.
+/// The returned target owns all queried metadata. QDMI query errors are
+/// returned to the caller.
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDeviceId(std::string_view deviceId);
 
 /// List the stable IDs visible to a fresh QDMI session.
 ///
-/// This adapter contains exceptions from QDMI session discovery and
-/// returns them as LLVM errors.
+/// QDMI session discovery errors are returned to the caller.
 [[nodiscard]] llvm::Expected<std::vector<std::string>>
 registeredQDMIDeviceIds();
 

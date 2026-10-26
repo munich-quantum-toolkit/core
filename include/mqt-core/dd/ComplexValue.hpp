@@ -15,12 +15,15 @@
 
 #include "dd/DDDefinitions.hpp"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <string>
 #include <utility>
 
@@ -80,19 +83,13 @@ struct ComplexValue {
   /// stream.
   ///
   /// @param os The output stream to write to.
-  void writeBinary(std::ostream& os) const;
+  void writeBinary(llvm::raw_ostream& os) const;
 
-  /// Read a binary representation of the complex number from the given input
-  /// stream.
+  /// Parse the real and imaginary components of a serialized DD weight.
   ///
-  /// @param is The input stream to read from.
-  void readBinary(std::istream& is);
-
-  /// Construct a complex number from a string.
-  ///
-  /// @param realStr The string representation of the real part.
-  /// @param imagStr The string representation of the imaginary part.
-  void fromString(const std::string& realStr, std::string imagStr);
+  /// The caller validates the complex-number syntax.
+  [[nodiscard]] llvm::Error fromString(llvm::StringRef realStr,
+                                       llvm::StringRef imagStr);
 
   /// Get the closest fraction to the given number.
   ///
@@ -108,14 +105,16 @@ struct ComplexValue {
   /// @param os The output stream to write to.
   /// @param num The number to print.
   /// @param imaginary Whether the number is imaginary.
-  static void printFormatted(std::ostream& os, fp num, bool imaginary = false);
+  /// @param precision Significant decimal digits; negative uses six, zero one.
+  static void printFormatted(llvm::raw_ostream& os, fp num,
+                             bool imaginary = false, int precision = -1);
 
   /// Print the given complex number to the given output stream.
   ///
   /// @param real The real part of the complex number.
   /// @param imag The imaginary part of the complex number.
   /// @param formatted Whether to pretty print the number.
-  /// @param precision The precision to use for printing numbers..
+  /// @param precision Significant decimal digits; negative uses six, zero one.
   /// @returns The string representation of the complex number.
   static std::string toString(const fp& real, const fp& imag,
                               bool formatted = true, int precision = -1);
@@ -151,7 +150,7 @@ ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2);
 /// @param os The output stream to write to.
 /// @param c The complex value to print.
 /// @returns The output stream.
-std::ostream& operator<<(std::ostream& os, const ComplexValue& c);
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const ComplexValue& c);
 } // namespace dd
 
 /// Hash function for complex values

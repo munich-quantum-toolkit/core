@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "llvm/Support/Error.h"
+
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -41,11 +43,10 @@ namespace qir {
 ///
 /// @param entryPoint QIR entry point to rewrite in place.
 /// @return Whether an irreversible boundary was found and truncated.
-/// @throws std::invalid_argument for an unsupported profile, signature or
-/// effects. Base Profile extraction additionally rejects non-terminal
-/// irreversible regions and defined helpers; neither profile supports indirect
-/// calls.
-bool prepareForStateExtraction(llvm::Function& entryPoint);
+/// Returns an owned error for an unsupported profile, signature or effects.
+/// Base Profile extraction additionally rejects non-terminal irreversible
+/// regions and defined helpers; neither profile supports indirect calls.
+llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint);
 
 /// Return logical qubit IDs in output order for deferred sampling.
 ///

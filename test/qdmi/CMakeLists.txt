@@ -39,7 +39,6 @@ if(TARGET MQT::CoreQDMI)
   add_dependencies(mqt-core-qdmi-client-runtime-test qdmi_example_driver
                    mqt-core-qdmi-incomplete-client mqt-core-qdmi-incompatible-client
                    mqt-core-qdmi-session-device)
-  mqt_copy_qdmi_runtime(mqt-core-qdmi-client-runtime-test)
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMI test_client.cpp)
   set(client_test_config "$<TARGET_FILE_DIR:${TARGET_NAME}>/client-test-catalog.json")
@@ -62,4 +61,6 @@ if(TARGET MQT::CoreQDMI)
   endif()
   add_dependencies(${TARGET_NAME} mqt-core-qdmi-session-device)
   mqt_copy_qdmi_runtime(${TARGET_NAME})
+  # Both executables share one output directory and one runtime staging owner.
+  add_dependencies(mqt-core-qdmi-client-runtime-test ${TARGET_NAME})
 endif()

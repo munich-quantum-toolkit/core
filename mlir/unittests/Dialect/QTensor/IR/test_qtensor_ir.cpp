@@ -49,7 +49,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -746,16 +745,7 @@ struct QTensorIntegrationTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QTensorIntegrationTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os,
-                         const QTensorIntegrationTestCase& info) {
-  return os << "QTensor{" << info.name << "}";
-}
 
 class QTensorIntegrationTest
     : public testing::TestWithParam<QTensorIntegrationTestCase> {
@@ -773,6 +763,7 @@ protected:
 };
 
 TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
+  SCOPED_TRACE(GetParam().name);
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;

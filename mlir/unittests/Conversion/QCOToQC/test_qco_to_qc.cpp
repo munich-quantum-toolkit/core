@@ -47,10 +47,10 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 
@@ -62,18 +62,7 @@ struct QCOToQCTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QCOToQCTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCOToQCTestCase& info) {
-  return os << "QCOToQC{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
 protected:
@@ -946,6 +935,11 @@ module {
 }
 
 TEST_P(QCOToQCTest, ProgramEquivalence) {
+  SCOPED_TRACE(llvm::formatv(
+                   "QCOToQC: {0}, original={1}, reference={2}", GetParam().name,
+                   ::mqt::test::displayName(GetParam().programBuilder.name),
+                   ::mqt::test::displayName(GetParam().referenceBuilder.name))
+                   .str());
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
   ::mqt::test::DeferredPrinter printer;

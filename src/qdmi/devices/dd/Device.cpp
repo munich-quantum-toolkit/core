@@ -20,11 +20,13 @@
 #include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include "Worker.hpp"
 #include "WorkerProtocol.hpp"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 
@@ -41,7 +43,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <iostream>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -53,7 +54,6 @@
 #include <ranges>
 #include <semaphore>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -357,16 +357,15 @@ auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
   *session = nullptr;
   auto uniqueSession = std::make_unique<MQT_DDSIM_QDMI_Device_Session_impl_d>();
   const std::scoped_lock<std::mutex> lock(sessionsMutex_);
-  const auto& it =
-      sessions_.emplace(uniqueSession.get(), std::move(uniqueSession)).first;
-  // get the key, i.e., the raw pointer to the session from the map iterator
-  *session = it->first;
+  sessions_.push_back(uniqueSession.get());
+  *session = uniqueSession.release();
   return QDMI_SUCCESS;
 }
 auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
   if (session != nullptr) {
     std::unique_lock lock(sessionsMutex_);
-    const auto removed = sessions_.extract(session);
+    const std::unique_ptr<MQT_DDSIM_QDMI_Device_Session_impl_d> removed(
+        sessions_.remove(*session));
     lock.unlock(); // Job destruction can wait for running programs.
   }
 }
@@ -455,14 +454,16 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::createDeviceJob(
   }
   auto uniqueJob = std::make_unique<MQT_DDSIM_QDMI_Device_Job_impl_d>(this);
   const std::scoped_lock<std::mutex> lock(jobsMutex_);
-  *job = jobs_.emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
+  jobs_.push_back(uniqueJob.get());
+  *job = uniqueJob.release();
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob(
     MQT_DDSIM_QDMI_Device_Job job) -> void {
   if (job != nullptr) {
     std::unique_lock lock(jobsMutex_);
-    const auto removed = jobs_.extract(job);
+    const std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d> removed(
+        jobs_.remove(*job));
     lock.unlock(); // Do not block other jobs while this one finishes.
   }
 }
@@ -791,8 +792,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             } catch (const std::exception& error) {
               result.reset();
               worker->terminate();
-              std::cerr << "Could not release DDSIM worker: " << error.what()
-                        << '\n';
+              qdmi::diagnostics::error("Could not release DDSIM worker: {0}",
+                                       error.what());
             }
           }
           device.decreaseRunningJobs();
@@ -854,17 +855,30 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             result->qirOutput_ = std::move(response.output);
             result->outputTemplate_ = std::move(response.outputTemplate);
             if (response.state) {
-              result->dd_ = std::make_unique<dd::Package>(
-                  response.qubits, RESULT_PACKAGE_CONFIG);
-              std::istringstream bytes(std::move(*response.state),
-                                       std::ios::binary);
-              result->stateVecDD_ =
-                  result->dd_->deserialize<dd::vNode>(bytes, true);
+              auto package =
+                  dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
+              if (!package) {
+                qdmi::diagnostics::error("DDSIM worker failed: {0}",
+                                         llvm::toString(package.takeError()));
+                result.reset();
+                reusable = false;
+                return;
+              }
+              result->dd_ = std::move(*package);
+              auto state =
+                  result->dd_->deserialize<dd::vNode>(*response.state, true);
+              if (!state) {
+                qdmi::diagnostics::error("DDSIM worker failed: {0}",
+                                         llvm::toString(state.takeError()));
+                result.reset();
+                reusable = false;
+                return;
+              }
+              result->stateVecDD_ = *state;
               const auto root = result->stateVecDD_;
               const auto qubits =
                   root.isTerminal() ? 0U : static_cast<uint32_t>(root.p->v) + 1;
-              if (qubits != response.qubits ||
-                  bytes.peek() != std::char_traits<char>::eof()) {
+              if (qubits != response.qubits) {
                 result.reset();
                 reusable = false;
               } else {
@@ -875,13 +889,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         } catch (const std::exception& error) {
           result.reset();
           reusable = false;
-          std::cerr << "DDSIM worker failed: " << error.what() << '\n';
+          qdmi::diagnostics::error("DDSIM worker failed: {0}", error.what());
         }
       });
     } catch (const std::exception& error) {
       execution->programs[index].status = QDMI_JOB_STATUS_FAILED;
       execution->finish();
-      std::cerr << "Could not schedule DDSIM program: " << error.what() << '\n';
+      qdmi::diagnostics::error("Could not schedule DDSIM program: {0}",
+                               error.what());
     }
   }
   return QDMI_SUCCESS;
@@ -1070,7 +1085,7 @@ auto qdmi::dd::ProgramResult::getDenseResults(const QDMI_Job_Result result,
     }
     const std::span output(static_cast<double*>(data), dimension * components);
     std::ranges::fill(output, 0.);
-    ::dd::traverseVector(
+    llvm::cantFail(::dd::traverseVector(
         stateVecDD_,
         [&output, probabilities](const size_t index,
                                  const std::complex<::dd::fp>& amplitude) {
@@ -1080,7 +1095,7 @@ auto qdmi::dd::ProgramResult::getDenseResults(const QDMI_Job_Result result,
             output[2 * index] = amplitude.real();
             output[(2 * index) + 1] = amplitude.imag();
           }
-        });
+        }));
   }
   if (sizeRet != nullptr) {
     *sizeRet = reqSize;
@@ -1113,7 +1128,9 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
       }
       const auto right = low.p == high.p ? left : self(self, high.p);
       if (right > std::numeric_limits<size_t>::max() - left) {
-        throw std::bad_alloc{};
+        // Every result element needs multiple bytes; a saturated count cannot
+        // fit.
+        return std::numeric_limits<size_t>::max();
       }
       return left + right;
     };
@@ -1138,7 +1155,7 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
     }
     if (keys) {
       auto* dataPtr = static_cast<char*>(data);
-      ::dd::traverseVector(
+      llvm::cantFail(::dd::traverseVector(
           stateVecDD_, [&dataPtr, numQubits](const size_t index,
                                              const std::complex<::dd::fp>&) {
             for (size_t j = numQubits; j > 0; --j) {
@@ -1147,29 +1164,29 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
             }
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = ',';
-          });
+          }));
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       *(dataPtr - 1) = '\0'; // Replace last comma with null terminator
     } else if (complex) {
       // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
-      ::dd::traverseVector(
+      llvm::cantFail(::dd::traverseVector(
           stateVecDD_,
           [&dataPtr](const size_t, const std::complex<::dd::fp>& amplitude) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = amplitude.real();
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = amplitude.imag();
-          });
+          }));
     } else {
       // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
-      ::dd::traverseVector(
+      llvm::cantFail(::dd::traverseVector(
           stateVecDD_,
           [&dataPtr](const size_t, const std::complex<::dd::fp>& amplitude) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             *dataPtr++ = std::norm(amplitude);
-          });
+          }));
     }
   }
   if (sizeRet != nullptr) {

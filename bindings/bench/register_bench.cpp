@@ -36,9 +36,8 @@ void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
 void registerWState(const nb::module_& m);
 
-// The nanobind module macro requires its module handle by value.
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
+void registerBench(nb::module_& m) {
   m.doc() = "Typed benchmark instances and references.";
 
   nb::class_<bench::Output>(m, "Output",

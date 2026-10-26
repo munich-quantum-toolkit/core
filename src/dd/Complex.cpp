@@ -14,8 +14,9 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <complex>
-#include <ostream>
 #include <string>
 
 namespace dd {
@@ -44,7 +45,7 @@ std::string Complex::toString(bool formatted, int precision) const {
                                 formatted, precision);
 }
 
-void Complex::writeBinary(std::ostream& os) const {
+void Complex::writeBinary(llvm::raw_ostream& os) const {
   RealNumber::writeBinary(r, os);
   RealNumber::writeBinary(i, os);
 }
@@ -57,7 +58,7 @@ Complex::operator ComplexValue() const noexcept {
   return ComplexValue{RealNumber::val(r), RealNumber::val(i)};
 }
 
-std::ostream& operator<<(std::ostream& os, const Complex& c) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Complex& c) {
   return os << c.toString();
 }
 
