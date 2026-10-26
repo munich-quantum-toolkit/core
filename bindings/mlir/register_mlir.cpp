@@ -73,7 +73,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <exception>
 #include <filesystem>
 #include <limits>
 #include <map>
@@ -94,26 +93,6 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
-
-#ifdef __APPLE__
-/// Translate standard exceptions that nanobind's split-mode backend can miss
-/// on Darwin.
-static void translateRuntimeError(const std::exception_ptr& error,
-                                  void* /*unused*/) {
-  try {
-    std::rethrow_exception(error);
-  } catch (const std::range_error& exception) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
-    nb::chain_error(nb::handle(PyExc_ValueError), "%s", exception.what());
-  } catch (const std::overflow_error& exception) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
-    nb::chain_error(nb::handle(PyExc_OverflowError), "%s", exception.what());
-  } catch (const std::runtime_error& exception) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg): nanobind's error API.
-    nb::chain_error(nb::handle(PyExc_RuntimeError), "%s", exception.what());
-  }
-}
-#endif
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
@@ -1033,9 +1012,6 @@ generateBenchmark(const Benchmark& benchmark) {
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerMLIR(nb::module_& m) {
-#ifdef __APPLE__
-  nb::register_exception_translator(&translateRuntimeError);
-#endif
 
   m.doc() = "MQT Core MLIR compiler bindings.";
 
