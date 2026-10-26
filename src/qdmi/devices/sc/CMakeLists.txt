@@ -12,6 +12,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig FORCE_STATIC HIDDEN_VISIBILITY)
 
+  llvm_update_compile_flags(${TARGET_NAME})
+
   target_sources(${TARGET_NAME} PRIVATE Configuration.cpp)
 
   target_sources(
@@ -41,6 +43,8 @@ set(QDMI_PREFIX "MQT_SC")
 if(NOT TARGET ${TARGET_NAME})
 
   add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMIScDevice)
+
+  llvm_update_compile_flags(${TARGET_NAME})
 
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
   file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_qdmi/**.h)

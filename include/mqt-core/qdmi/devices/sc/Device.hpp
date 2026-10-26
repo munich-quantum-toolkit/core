@@ -14,43 +14,20 @@
 #pragma once
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/common/Diagnostics.hpp"
+
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/ilist.h"
+#include "llvm/ADT/ilist_node.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <filesystem>
-#include <memory>
 #include <mutex>
-#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <utility>
 #include <vector>
-
-namespace sc::detail {
-
-/// Maps exceptions from an allocation-capable device call to QDMI status codes.
-template <class Callable>
-[[nodiscard]] auto guardDeviceCall(const std::string_view action,
-                                   Callable&& callable) noexcept -> int {
-  try {
-    return std::forward<Callable>(callable)();
-  } catch (const std::bad_alloc&) {
-    qdmi::diagnostics::error("Out of memory while {0}", action);
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::exception& error) {
-    qdmi::diagnostics::error("Failed while {0}: {1}", action, error.what());
-    return QDMI_ERROR_FATAL;
-  } catch (...) {
-    qdmi::diagnostics::error("Failed while {0}: unknown exception", action);
-    return QDMI_ERROR_FATAL;
-  }
-}
-
-} // namespace sc::detail
 
 struct MQT_SC_QDMI_Device_Session_impl_d;
 
@@ -76,12 +53,13 @@ struct MQT_SC_QDMI_Operation_impl_d {
   size_t numParameters = 0;
   size_t numQubits = 0;
   /// Sorted lexicographically by site ID for lookup.
-  std::vector<std::vector<MQT_SC_QDMI_Site>> supportedSites;
+  using SiteTuple = llvm::SmallVector<MQT_SC_QDMI_Site, 2>;
+  std::vector<SiteTuple> supportedSites;
   /// Supported tuples in their configured order for QDMI queries.
   std::vector<MQT_SC_QDMI_Site> flattenedSites;
   Calibration defaults;
   /// Sorted by the same tuple order as supportedSites.
-  std::vector<std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>> overrides;
+  std::vector<std::pair<SiteTuple, Calibration>> overrides;
 
   int queryProperty(size_t numSites, const MQT_SC_QDMI_Site* sites,
                     size_t numParams, const double* params,
@@ -89,13 +67,13 @@ struct MQT_SC_QDMI_Operation_impl_d {
                     size_t* sizeRet) const;
 };
 
-struct MQT_SC_QDMI_Device_Job_impl_d {
+struct MQT_SC_QDMI_Device_Job_impl_d
+    : llvm::ilist_node<MQT_SC_QDMI_Device_Job_impl_d> {
   explicit MQT_SC_QDMI_Device_Job_impl_d(
-      MQT_SC_QDMI_Device_Session_impl_d* session)
+      MQT_SC_QDMI_Device_Session_impl_d* session) noexcept
       : session(session) {}
 
   MQT_SC_QDMI_Device_Session_impl_d* session;
-  void free();
   int setParameter(QDMI_Device_Job_Parameter parameter, size_t size,
                    const void* value);
   int setPrograms(QDMI_Program_Format format, size_t count, const size_t* sizes,
@@ -120,15 +98,13 @@ struct MQT_SC_QDMI_Device_Session_impl_d {
   std::string durationUnit;
   double durationScaleFactor = 1.;
   size_t qubitsNum = 0;
-  std::vector<std::unique_ptr<MQT_SC_QDMI_Site_impl_d>> siteStorage;
+  std::vector<MQT_SC_QDMI_Site_impl_d> siteStorage;
   std::vector<MQT_SC_QDMI_Site> sites;
   std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>> couplingMap;
-  std::vector<std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>> operationStorage;
+  std::vector<MQT_SC_QDMI_Operation_impl_d> operationStorage;
   std::vector<MQT_SC_QDMI_Operation> operations;
   std::mutex jobsMutex;
-  std::unordered_map<MQT_SC_QDMI_Device_Job,
-                     std::unique_ptr<MQT_SC_QDMI_Device_Job_impl_d>>
-      jobs;
+  llvm::iplist<MQT_SC_QDMI_Device_Job_impl_d> jobs;
 
   int init();
   int setParameter(QDMI_Device_Session_Parameter parameter, size_t size,
