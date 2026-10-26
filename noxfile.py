@@ -408,6 +408,8 @@ def stubs(session: nox.Session) -> None:
         "--output-dir",
         str(package_root),
         "--module",
+        "mqt.core._core",
+        "--module",
         "mqt.core.bench",
         "--module",
         "mqt.core.dd",

@@ -24,7 +24,8 @@ understand the project's ecosystem.
 
 Projects use `nanobind`'s split mode to build one `cp311-abi3` wheel per
 platform for GIL-enabled CPython 3.11 and newer. The `nanobind-backend` package
-supplies the interpreter-specific runtime.
+supplies the interpreter-specific runtime. MQT Core links its native libraries
+into one extension; public Python modules expose its submodules.
 
 Free-threaded CPython uses the separate
 [Stable ABI for Free-Threaded Builds (`abi3t`)](https://peps.python.org/pep-0803/).

@@ -13,7 +13,7 @@ add_subdirectory(driver)
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi)
 
 if(NOT TARGET ${TARGET_NAME})
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI FORCE_STATIC HIDDEN_VISIBILITY)
 
   target_sources(${TARGET_NAME} PRIVATE QDMI.cpp)
 

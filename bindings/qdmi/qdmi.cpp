@@ -216,7 +216,8 @@ template <typename Query>
 
 } // namespace
 
-NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
+void registerQDMI(nb::module_& qdmiModule) {
   qdmiModule.doc() = "QDMI sessions, devices, and jobs.";
   auto builtinDriver = qdmiModule.def_submodule(
       "builtin_driver", "Configure the MQT Core QDMI driver.");
@@ -944,9 +945,6 @@ The first call fixes the MQT Core QDMI driver configuration.)pb");
       "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
       "custom5"_a = std::nullopt,
       "Open an independent device session with the MQT Core QDMI driver.");
-
-  nb::module_::import_("mqt.core._qdmi_discovery")
-      .attr("discover_qdmi_manifests")(builtinDriver.attr("add_manifest"));
 }
 
 } // namespace mqt

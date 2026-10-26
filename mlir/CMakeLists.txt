@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+set(BUILD_SHARED_LIBS OFF)
+
 if(MSVC)
   add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 endif()

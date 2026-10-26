@@ -15,7 +15,6 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/LinkedListBase.hpp"
-#include "dd/mqt_core_dd_export.h"
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -205,11 +204,11 @@ static_assert(alignof(RealNumber) == 8);
 namespace constants {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 /// The constant zero.
-MQT_CORE_DD_EXPORT extern RealNumber zero;
+extern RealNumber zero;
 /// The constant one.
-MQT_CORE_DD_EXPORT extern RealNumber one;
+extern RealNumber one;
 /// The constant sqrt(2)/2 = 1/sqrt(2).
-MQT_CORE_DD_EXPORT extern RealNumber sqrt2over2;
+extern RealNumber sqrt2over2;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 /// Check whether a number is one of the static numbers.
