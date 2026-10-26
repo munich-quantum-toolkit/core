@@ -28,7 +28,6 @@
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <memory>
 #include <optional>
 #include <string>
 #include <system_error>

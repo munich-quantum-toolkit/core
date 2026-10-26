@@ -12,7 +12,7 @@
 
 #include "qdmi/common/Common.hpp"
 
-#include "Result.hpp"
+#include "../Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
