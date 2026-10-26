@@ -37,16 +37,20 @@
 #include <unordered_set>
 #include <utility>
 
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
+
 namespace dd {
 namespace {
 
-llvm::Error checkMatrixWidth(const mEdge& edge, const size_t width) {
+Error checkMatrixWidth(const mEdge& edge, const size_t width) {
   if (!edge.isTerminal() && width <= static_cast<size_t>(edge.p->v)) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Matrix width is smaller than the DD dimension.");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
 void traverseVectorImpl(
@@ -114,25 +118,24 @@ void traverseMatrixImpl(const mEdge& edge, const std::complex<fp>& amp,
 //-----------------------------------------------------------------------------
 
 template <class Node>
-llvm::Expected<std::complex<fp>>
+Expected<std::complex<fp>>
 Edge<Node>::getValueByPath(const std::size_t numQubits,
                            const std::string& decisions) const {
   if (!isTerminal() && numQubits <= static_cast<size_t>(p->v)) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Decision path does not cover the DD dimension.");
   }
   if (decisions.size() < numQubits) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Decision path is shorter than the number of qubits.");
   }
   const auto path = std::string_view(decisions).substr(0, numQubits);
   if (path.find_first_not_of(IsVector<Node> ? "01" : "0123") !=
       std::string_view::npos) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Decision path contains an invalid digit.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Decision path contains an invalid digit.");
   }
   auto c = static_cast<std::complex<fp>>(w);
   if constexpr (IsVector<Node>) {
@@ -280,13 +283,12 @@ Edge<vNode> normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
   return r;
 }
 
-llvm::Expected<std::complex<fp>> getValueByIndex(const vEdge& edge,
-                                                 const size_t i) {
+Expected<std::complex<fp>> getValueByIndex(const vEdge& edge, const size_t i) {
   const auto numQubits =
       edge.isTerminal() ? 0U : static_cast<size_t>(edge.p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
       (i >> numQubits) != 0U) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Vector index is out of range.");
   }
@@ -302,12 +304,12 @@ llvm::Expected<std::complex<fp>> getValueByIndex(const vEdge& edge,
   return amplitude;
 }
 
-llvm::Expected<CVec> getVector(const vEdge& edge, const fp threshold) {
+Expected<CVec> getVector(const vEdge& edge, const fp threshold) {
   if (edge.isTerminal()) {
     return CVec{static_cast<std::complex<fp>>(edge.w)};
   }
   if (edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Vector dimension does not fit in size_t.");
   }
@@ -321,8 +323,7 @@ llvm::Expected<CVec> getVector(const vEdge& edge, const fp threshold) {
   return vec;
 }
 
-llvm::Expected<SparseCVec> getSparseVector(const vEdge& edge,
-                                           const fp threshold) {
+Expected<SparseCVec> getSparseVector(const vEdge& edge, const fp threshold) {
   if (edge.isTerminal()) {
     return SparseCVec{{0, static_cast<std::complex<fp>>(edge.w)}};
   }
@@ -337,21 +338,21 @@ llvm::Expected<SparseCVec> getSparseVector(const vEdge& edge,
   return vec;
 }
 
-llvm::Error traverseVector(const vEdge& edge, const AmplitudeFunc& f,
-                           const fp threshold) {
+Error traverseVector(const vEdge& edge, const AmplitudeFunc& f,
+                     const fp threshold) {
   if (!edge.isTerminal() && edge.p->v >= std::numeric_limits<size_t>::digits) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Vector basis indices do not fit in size_t.");
   }
   traverseVectorImpl(edge, 1., 0, f, threshold);
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Error printVector(const vEdge& edge) {
+Error printVector(const vEdge& edge) {
   if (!edge.isTerminal() &&
       edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Vector dimension does not fit in size_t.");
   }
@@ -363,7 +364,7 @@ llvm::Error printVector(const vEdge& edge) {
                            RealNumber::val(edge.w.i))
            << "\n";
     output.flush();
-    return llvm::Error::success();
+    return Error::success();
   }
   const size_t element = size_t{1} << (edge.p->v + 1U);
   for (size_t i = 0; i < element; ++i) {
@@ -377,26 +378,26 @@ llvm::Error printVector(const vEdge& edge) {
            << "\n";
   }
   output.flush();
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Error addToVector(const vEdge& edge, CVec& amplitudes) {
+Error addToVector(const vEdge& edge, CVec& amplitudes) {
   if (edge.isTerminal()) {
     if (amplitudes.empty()) {
-      return llvm::createStringError(
+      return createStringError(
           std::make_error_code(std::errc::result_out_of_range),
           "Destination vector is too small.");
     }
     amplitudes[0] += static_cast<std::complex<fp>>(edge.w);
-    return llvm::Error::success();
+    return Error::success();
   }
   if (edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Vector dimension does not fit in size_t.");
   }
   if (amplitudes.size() < (size_t{1} << (edge.p->v + 1U))) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Destination vector is too small.");
   }
@@ -407,7 +408,7 @@ llvm::Error addToVector(const vEdge& edge, CVec& amplitudes) {
         amplitudes[i] += c;
       },
       0.);
-  return llvm::Error::success();
+  return Error::success();
 }
 
 //-----------------------------------------------------------------------------
@@ -491,16 +492,15 @@ Edge<mNode> normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
   return mEdge{.p = p, .w = maxVal};
 }
 
-llvm::Expected<std::complex<fp>> getValueByIndex(const mEdge& edge,
-                                                 const size_t numQubits,
-                                                 const size_t i,
-                                                 const size_t j) {
+Expected<std::complex<fp>> getValueByIndex(const mEdge& edge,
+                                           const size_t numQubits,
+                                           const size_t i, const size_t j) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Matrix index is out of range.");
   }
@@ -528,13 +528,13 @@ llvm::Expected<std::complex<fp>> getValueByIndex(const mEdge& edge,
   return amplitude;
 }
 
-llvm::Expected<CMat> getMatrix(const mEdge& edge, const size_t numQubits,
-                               const fp threshold) {
+Expected<CMat> getMatrix(const mEdge& edge, const size_t numQubits,
+                         const fp threshold) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
   if (numQubits >= std::numeric_limits<size_t>::digits) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Matrix dimension does not fit in size_t.");
   }
@@ -555,8 +555,8 @@ llvm::Expected<CMat> getMatrix(const mEdge& edge, const size_t numQubits,
   return mat;
 }
 
-llvm::Expected<SparseCMat>
-getSparseMatrix(const mEdge& edge, const size_t numQubits, const fp threshold) {
+Expected<SparseCMat> getSparseMatrix(const mEdge& edge, const size_t numQubits,
+                                     const fp threshold) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
@@ -577,12 +577,12 @@ getSparseMatrix(const mEdge& edge, const size_t numQubits, const fp threshold) {
   return mat;
 }
 
-llvm::Error printMatrix(const mEdge& edge, const size_t numQubits) {
+Error printMatrix(const mEdge& edge, const size_t numQubits) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
   if (numQubits >= std::numeric_limits<size_t>::digits) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Matrix dimension does not fit in size_t.");
   }
@@ -593,7 +593,7 @@ llvm::Error printMatrix(const mEdge& edge, const size_t numQubits) {
                            RealNumber::val(edge.w.i))
            << "\n";
     output.flush();
-    return llvm::Error::success();
+    return Error::success();
   }
   const size_t element = size_t{1} << numQubits;
   for (size_t i = 0; i < element; ++i) {
@@ -606,17 +606,17 @@ llvm::Error printMatrix(const mEdge& edge, const size_t numQubits) {
     output << "\n";
   }
   output.flush();
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Error
-traverseMatrix(const mEdge& edge, const std::complex<fp>& amp, const size_t i,
-               const size_t j,
-               // Keep one callback copy at the public traversal boundary.
-               // NOLINTNEXTLINE(performance-unnecessary-value-param)
-               MatrixEntryFunc f, const size_t level, const fp threshold) {
+Error traverseMatrix(const mEdge& edge, const std::complex<fp>& amp,
+                     const size_t i, const size_t j,
+                     // Keep one callback copy at the public traversal boundary.
+                     // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                     MatrixEntryFunc f, const size_t level,
+                     const fp threshold) {
   if (level > std::numeric_limits<size_t>::digits) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Matrix basis indices do not fit in size_t.");
   }
@@ -624,7 +624,7 @@ traverseMatrix(const mEdge& edge, const std::complex<fp>& amp, const size_t i,
     return error;
   }
   traverseMatrixImpl(edge, amp, i, j, f, level, threshold);
-  return llvm::Error::success();
+  return Error::success();
 }
 
 //-----------------------------------------------------------------------------

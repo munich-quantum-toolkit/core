@@ -27,16 +27,20 @@
 #include <system_error>
 #include <vector>
 
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
+
 namespace dd {
 namespace {
 /// Validate that @p n qubits starting at @p start fit in the package.
 ///
 /// @returns An error if the qubit interval exceeds the capacity.
-llvm::Error suitablePackage(const size_t n, const Package& dd,
-                            const size_t start = 0) {
+Error suitablePackage(const size_t n, const Package& dd,
+                      const size_t start = 0) {
   const std::size_t nqubits = dd.qubits();
   if (start > nqubits || n > nqubits - start) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Requested state with " + std::to_string(n) + " qubits starting at " +
             std::to_string(start) +
@@ -44,21 +48,21 @@ llvm::Error suitablePackage(const size_t n, const Package& dd,
             std::to_string(nqubits) +
             " qubits. Please allocate a larger package instance.");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
 template <class BasisEntry>
-llvm::Expected<VectorDD> buildBasisState(const size_t n, const size_t available,
-                                         const BasisEntry& entry, Package& dd,
-                                         const size_t start) {
+Expected<VectorDD> buildBasisState(const size_t n, const size_t available,
+                                   const BasisEntry& entry, Package& dd,
+                                   const size_t start) {
   if (auto error = suitablePackage(n, dd, start)) {
     return error;
   }
   if (available < n) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Insufficient qubit states provided. Requested " + std::to_string(n) +
-            ", but received " + std::to_string(available));
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Insufficient qubit states provided. Requested " +
+                                 std::to_string(n) + ", but received " +
+                                 std::to_string(available));
   }
 
   vCachedEdge f = vCachedEdge::one();
@@ -95,15 +99,15 @@ llvm::Expected<VectorDD> buildBasisState(const size_t n, const size_t available,
 
 } // namespace
 
-llvm::Expected<VectorDD> makeZeroState(const size_t n, Package& dd,
-                                       const size_t start) {
+Expected<VectorDD> makeZeroState(const size_t n, Package& dd,
+                                 const size_t start) {
   return buildBasisState(
       n, n, [](size_t) { return BasisStates::zero; }, dd, start);
 }
 
-llvm::Expected<VectorDD> makeBasisState(const size_t n,
-                                        const std::vector<bool>& state,
-                                        Package& dd, const size_t start) {
+Expected<VectorDD> makeBasisState(const size_t n,
+                                  const std::vector<bool>& state, Package& dd,
+                                  const size_t start) {
   return buildBasisState(
       n, state.size(),
       [&state](const size_t i) {
@@ -112,15 +116,15 @@ llvm::Expected<VectorDD> makeBasisState(const size_t n,
       dd, start);
 }
 
-llvm::Expected<VectorDD> makeBasisState(const size_t n,
-                                        const std::vector<BasisStates>& state,
-                                        Package& dd, const size_t start) {
+Expected<VectorDD> makeBasisState(const size_t n,
+                                  const std::vector<BasisStates>& state,
+                                  Package& dd, const size_t start) {
   return buildBasisState(
       n, state.size(), [&state](const size_t i) { return state[i]; }, dd,
       start);
 }
 
-llvm::Expected<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
+Expected<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
   if (auto error = suitablePackage(n, dd)) {
     return error;
   }
@@ -157,7 +161,7 @@ llvm::Expected<VectorDD> makeGHZState(const std::size_t n, Package& dd) {
   return e;
 }
 
-llvm::Expected<VectorDD> makeWState(const std::size_t n, Package& dd) {
+Expected<VectorDD> makeWState(const std::size_t n, Package& dd) {
   if (auto error = suitablePackage(n, dd)) {
     return error;
   }
@@ -167,7 +171,7 @@ llvm::Expected<VectorDD> makeWState(const std::size_t n, Package& dd) {
   }
 
   if ((1. / sqrt(static_cast<double>(n))) < RealNumber::eps) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Requested qubit size for generating W-state would lead to an "
         "underflow due to 1 / sqrt(n) being smaller than the currently set "
@@ -191,7 +195,7 @@ llvm::Expected<VectorDD> makeWState(const std::size_t n, Package& dd) {
   return leftSubtree;
 }
 
-llvm::Expected<VectorDD> makeStateFromVector(const CVec& vec, Package& dd) {
+Expected<VectorDD> makeStateFromVector(const CVec& vec, Package& dd) {
   return makeStateFromVector(
       vec.size(), [&vec](const size_t index) { return vec[index]; }, dd);
 }

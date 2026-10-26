@@ -56,11 +56,15 @@
 #include <variant>
 #include <vector>
 
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
+
 namespace dd {
 namespace {
-llvm::Error checkCapacity(const size_t nq) {
+Error checkCapacity(const size_t nq) {
   if (nq > Package::MAX_POSSIBLE_QUBITS) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Requested too many qubits from package. Qubit datatype only "
         "allows up to " +
@@ -69,14 +73,13 @@ llvm::Error checkCapacity(const size_t nq) {
             " were requested. Please recompile the package with a wider "
             "Qubit type!");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Error checkMeasurementNormalization(const vEdge& state,
-                                          const fp epsilon) {
+Error checkMeasurementNormalization(const vEdge& state, const fp epsilon) {
   const auto probability = ComplexNumbers::mag2(state.w);
   if (!std::isfinite(probability) || state.w.approximatelyZero()) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::argument_out_of_domain),
         "Numerical instability in measurement state");
   }
@@ -85,15 +88,14 @@ llvm::Error checkMeasurementNormalization(const vEdge& state,
                     "simulation: |alpha|^2 + |beta|^2 = "
                  << probability << ", but should be 1!\n";
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Expected<fp> measurementProbabilityZero(const vNode& node,
-                                              const fp epsilon) {
+Expected<fp> measurementProbabilityZero(const vNode& node, const fp epsilon) {
   const auto p0 = ComplexNumbers::mag2(node.e[0].w);
   const auto sum = p0 + ComplexNumbers::mag2(node.e[1].w);
   if (!std::isfinite(sum) || std::abs(sum - 1) > epsilon) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::argument_out_of_domain),
         "Added probabilities differ from 1 by " +
             std::to_string(std::abs(sum - 1)));
@@ -102,7 +104,7 @@ llvm::Expected<fp> measurementProbabilityZero(const vNode& node,
 }
 } // namespace
 
-llvm::Expected<std::unique_ptr<Package>>
+Expected<std::unique_ptr<Package>>
 Package::create(const size_t nq, const DDPackageConfig& config) {
   if (auto error = checkCapacity(nq)) {
     return error;
@@ -123,15 +125,13 @@ Package::create(const size_t nq, const DDPackageConfig& config) {
   };
   if (std::ranges::any_of(
           buckets, [](size_t count) { return !std::has_single_bit(count); })) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Number of buckets must be a power of two.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Number of buckets must be a power of two.");
   }
   if (config.utVecInitialAllocationSize == 0 ||
       config.utMatInitialAllocationSize == 0) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Initial DD allocation sizes must be positive.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Initial DD allocation sizes must be positive.");
   }
   return std::unique_ptr<Package>(new Package(nq, config));
 }
@@ -142,11 +142,10 @@ Package::Package(const size_t nq, const DDPackageConfig& config)
   llvm::cantFail(mUniqueTable.resize(nqubits));
 }
 
-llvm::Error Package::resize(const size_t nq) {
+Error Package::resize(const size_t nq) {
   if (nq < nqubits) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "A DD package cannot be shrunk.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "A DD package cannot be shrunk.");
   }
   if (auto error = checkCapacity(nq)) {
     return error;
@@ -154,7 +153,7 @@ llvm::Error Package::resize(const size_t nq) {
   llvm::cantFail(vUniqueTable.resize(nq));
   llvm::cantFail(mUniqueTable.resize(nq));
   nqubits = nq;
-  return llvm::Error::success();
+  return Error::success();
 }
 
 void Package::reset() {
@@ -240,13 +239,13 @@ Package::ActiveCounts Package::computeActiveCounts() {
 
 namespace {
 
-[[nodiscard]] llvm::Error gateQubitOutOfRange(const std::size_t nqubits) {
+[[nodiscard]] Error gateQubitOutOfRange(const std::size_t nqubits) {
   if (nqubits == 0U) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::state_not_recoverable),
         "Cannot construct a gate in a package with zero qubits.");
   }
-  return llvm::createStringError(
+  return createStringError(
       std::make_error_code(std::errc::state_not_recoverable),
       "Requested gate acting on qubit(s) with index larger than " +
           std::to_string(nqubits - 1U) +
@@ -255,15 +254,15 @@ namespace {
           " qubits. Please allocate a larger package instance.");
 }
 
-[[nodiscard]] llvm::Error gateQubitsNotDistinct() {
-  return llvm::createStringError(
+[[nodiscard]] Error gateQubitsNotDistinct() {
+  return createStringError(
       std::make_error_code(std::errc::state_not_recoverable),
       "Requested gate has duplicate or overlapping control/target qubits.");
 }
 
-llvm::Error ensureGateQubitsInRange(const std::size_t nqubits,
-                                    const Controls& controls,
-                                    const std::span<const Qubit> targets) {
+Error ensureGateQubitsInRange(const std::size_t nqubits,
+                              const Controls& controls,
+                              const std::span<const Qubit> targets) {
   if (nqubits == 0U ||
       std::ranges::any_of(controls,
                           [nqubits](const auto& c) {
@@ -292,7 +291,7 @@ llvm::Error ensureGateQubitsInRange(const std::size_t nqubits,
       })) {
     return gateQubitsNotDistinct();
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
 template <std::size_t Dim>
@@ -395,7 +394,7 @@ void wrapControlsAbove(Package& dd, Controls::const_iterator& it,
 }
 
 template <typename Matrix>
-[[nodiscard]] llvm::Expected<mEdge>
+[[nodiscard]] Expected<mEdge>
 buildSingleQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                        const Qubit target) {
   const std::array targets{target};
@@ -420,7 +419,7 @@ buildSingleQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 }
 
 template <typename Matrix>
-[[nodiscard]] llvm::Expected<mEdge>
+[[nodiscard]] Expected<mEdge>
 buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                     const Qubit target0, const Qubit target1) {
   const std::array targets{target0, target1};
@@ -468,7 +467,7 @@ buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 }
 
 template <typename Matrix>
-[[nodiscard]] llvm::Expected<mEdge>
+[[nodiscard]] Expected<mEdge>
 buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
                       const Qubit target0, const Qubit target1,
                       const Qubit target2) {
@@ -547,69 +546,70 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
 
 } // namespace
 
-llvm::Expected<mEdge> Package::makeGateDD(const GateMatrix& mat,
-                                          const Qubit target) {
+Expected<mEdge> Package::makeGateDD(const GateMatrix& mat, const Qubit target) {
   return makeGateDD(mat, Controls{}, target);
 }
-llvm::Expected<mEdge> Package::makeGateDD(const GateMatrix& mat,
-                                          const Control& control,
-                                          const Qubit target) {
+Expected<mEdge> Package::makeGateDD(const GateMatrix& mat,
+                                    const Control& control,
+                                    const Qubit target) {
   return makeGateDD(mat, Controls{control}, target);
 }
-llvm::Expected<mEdge> Package::makeGateDD(const GateMatrix& mat,
-                                          const Controls& controls,
-                                          const Qubit target) {
+Expected<mEdge> Package::makeGateDD(const GateMatrix& mat,
+                                    const Controls& controls,
+                                    const Qubit target) {
   return buildSingleQubitGateDD(*this, mat, controls, target);
 }
-llvm::Expected<mEdge>
+Expected<mEdge>
 Package::makeGateDD(const std::span<const std::complex<fp>, NEDGE> mat,
                     const Controls& controls, const Qubit target) {
   return buildSingleQubitGateDD(*this, mat, controls, target);
 }
-llvm::Expected<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                                  const Qubit target0,
-                                                  const Qubit target1) {
+Expected<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                            const Qubit target0,
+                                            const Qubit target1) {
   return makeTwoQubitGateDD(mat, Controls{}, target0, target1);
 }
-llvm::Expected<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                                  const Control& control,
-                                                  const Qubit target0,
-                                                  const Qubit target1) {
+Expected<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                            const Control& control,
+                                            const Qubit target0,
+                                            const Qubit target1) {
   return makeTwoQubitGateDD(mat, Controls{control}, target0, target1);
 }
-llvm::Expected<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                                  const Controls& controls,
-                                                  const Qubit target0,
-                                                  const Qubit target1) {
+Expected<mEdge> Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                            const Controls& controls,
+                                            const Qubit target0,
+                                            const Qubit target1) {
   return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
 }
-llvm::Expected<mEdge> Package::makeTwoQubitGateDD(
+Expected<mEdge> Package::makeTwoQubitGateDD(
     const std::span<const std::complex<fp>,
                     static_cast<std::size_t>(NEDGE) * NEDGE>
         mat,
     const Controls& controls, const Qubit target0, const Qubit target1) {
   return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
 }
-llvm::Expected<mEdge>
-Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                              const Qubit target0, const Qubit target1,
-                              const Qubit target2) {
+Expected<mEdge> Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                              const Qubit target0,
+                                              const Qubit target1,
+                                              const Qubit target2) {
   return makeThreeQubitGateDD(mat, Controls{}, target0, target1, target2);
 }
-llvm::Expected<mEdge>
-Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                              const Control& control, const Qubit target0,
-                              const Qubit target1, const Qubit target2) {
+Expected<mEdge> Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                              const Control& control,
+                                              const Qubit target0,
+                                              const Qubit target1,
+                                              const Qubit target2) {
   return makeThreeQubitGateDD(mat, Controls{control}, target0, target1,
                               target2);
 }
-llvm::Expected<mEdge>
-Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                              const Controls& controls, const Qubit target0,
-                              const Qubit target1, const Qubit target2) {
+Expected<mEdge> Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                              const Controls& controls,
+                                              const Qubit target0,
+                                              const Qubit target1,
+                                              const Qubit target2) {
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
-llvm::Expected<mEdge> Package::makeThreeQubitGateDD(
+Expected<mEdge> Package::makeThreeQubitGateDD(
     const std::span<const std::complex<fp>,
                     static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
                         THREE_QUBIT_GATE_DIM>
@@ -619,15 +619,14 @@ llvm::Expected<mEdge> Package::makeThreeQubitGateDD(
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
 
-llvm::Expected<mEdge>
+Expected<mEdge>
 Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
                     const std::span<const Qubit> targets,
                     const Controls& controls) {
   if (targets.size() >= std::numeric_limits<size_t>::digits / 2 ||
       matrix.size() != (size_t{1} << (2 * targets.size()))) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Matrix size does not match its target count.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Matrix size does not match its target count.");
   }
   switch (targets.size()) {
   case 1:
@@ -643,7 +642,7 @@ Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
     break;
   }
   if (!controls.empty()) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Sparse controls require one to three target qubits.");
   }
@@ -675,13 +674,12 @@ Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
   return toMatrixDD(*this, root);
 }
 
-llvm::Expected<mEdge> Package::makeDDFromMatrix(const CMat& matrix) {
+Expected<mEdge> Package::makeDDFromMatrix(const CMat& matrix) {
   if (std::ranges::any_of(matrix, [&matrix](const auto& row) {
         return row.size() != matrix.size();
       })) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Matrix must be square.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Matrix must be square.");
   }
   return makeDDFromMatrix(matrix.size(),
                           [&matrix](const size_t row, const size_t col) {
@@ -702,10 +700,9 @@ void Package::clearComputeTables() {
   matrixKronecker.clear();
   matrixTrace.clear();
 }
-llvm::Expected<std::string> Package::measureAll(vEdge& rootEdge,
-                                                const bool collapse,
-                                                std::mt19937_64& mt,
-                                                const fp epsilon) {
+Expected<std::string> Package::measureAll(vEdge& rootEdge, const bool collapse,
+                                          std::mt19937_64& mt,
+                                          const fp epsilon) {
   if (auto error = checkMeasurementNormalization(rootEdge, epsilon)) {
     return error;
   }
@@ -757,7 +754,7 @@ llvm::Expected<std::string> Package::measureAll(vEdge& rootEdge,
   return result;
 }
 
-llvm::Expected<std::map<std::string, size_t>> Package::sampleCounts(
+Expected<std::map<std::string, size_t>> Package::sampleCounts(
     const vEdge& state, const std::span<const SamplingOutput> outputs,
     const size_t shots, std::mt19937_64& mt, const fp epsilon) {
   const size_t width = state.isTerminal() ? 0 : size_t{state.p->v} + 1;
@@ -767,7 +764,7 @@ llvm::Expected<std::map<std::string, size_t>> Package::sampleCounts(
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (const auto* qubit = std::get_if<Qubit>(&outputs[i])) {
       if (*qubit >= width) {
-        return llvm::createStringError(
+        return createStringError(
             std::make_error_code(std::errc::invalid_argument),
             "Measurement qubit is outside the state.");
       }
@@ -795,7 +792,7 @@ llvm::Expected<std::map<std::string, size_t>> Package::sampleCounts(
   };
   std::uniform_real_distribution<fp> uniform(0., 1.);
   const auto visit = [&](auto&& self, const vNode* node,
-                         size_t count) -> llvm::Error {
+                         size_t count) -> Error {
     while (node != nullptr && node->v >= lowest) {
       auto p0 = measurementProbabilityZero(*node, epsilon);
       if (!p0) {
@@ -821,7 +818,7 @@ llvm::Expected<std::map<std::string, size_t>> Package::sampleCounts(
           }
           ++counts[outcome];
         }
-        return llvm::Error::success();
+        return Error::success();
       }
       auto zeros = count;
       if (*p0 != 1) {
@@ -846,7 +843,7 @@ llvm::Expected<std::map<std::string, size_t>> Package::sampleCounts(
       }
     }
     counts[outcome] += count;
-    return llvm::Error::success();
+    return Error::success();
   };
   if (auto error = visit(visit, state.p, shots)) {
     return error;
@@ -936,19 +933,17 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
 
   return std::pair{pzero, pone};
 }
-llvm::Expected<char> Package::measureOneCollapsing(vEdge& rootEdge,
-                                                   const Qubit index,
-                                                   std::mt19937_64& mt,
-                                                   const fp epsilon) {
+Expected<char> Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
+                                             std::mt19937_64& mt,
+                                             const fp epsilon) {
   if (rootEdge.isTerminal() || index > rootEdge.p->v) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Measurement qubit is outside the state.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Measurement qubit is outside the state.");
   }
   const auto [pzero, pone] = determineMeasurementProbabilities(rootEdge, index);
   const fp sum = pzero + pone;
   if (std::abs(sum - 1) > epsilon) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::argument_out_of_domain),
         "Numerical instability occurred during measurement: |alpha|^2 + "
         "|beta|^2 = " +
@@ -1099,20 +1094,20 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
 fp Package::fidelity(const vEdge& x, const vEdge& y) {
   return innerProduct(x, y).mag2();
 }
-llvm::Expected<fp>
+Expected<fp>
 Package::fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
                                        const Permutation& permutation) {
   const auto numQubits =
       e.isTerminal() ? size_t{0} : static_cast<size_t>(e.p->v) + 1U;
   if (numQubits > std::numeric_limits<size_t>::digits ||
       permutation.size() > std::numeric_limits<size_t>::digits) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Measurement outcomes must fit size_t.");
   }
   for (const auto& [physical, logical] : permutation) {
     if (physical >= numQubits || logical >= permutation.size()) {
-      return llvm::createStringError(
+      return createStringError(
           std::make_error_code(std::errc::result_out_of_range),
           "Measurement permutation index is out of range.");
     }
@@ -1204,10 +1199,10 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
 
   return top * (leftContribution + rightContribution);
 }
-llvm::Expected<fp> Package::expectationValue(const mEdge& x, const vEdge& y) {
+Expected<fp> Package::expectationValue(const mEdge& x, const vEdge& y) {
   assert(!x.isZeroTerminal() && !y.isTerminal());
   if (!x.isTerminal() && x.p->v > y.p->v) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Observable must not act on more qubits than the state to "
         "compute the"

@@ -24,22 +24,25 @@
 #include <string>
 #include <system_error>
 
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
+
 namespace dd {
 
-llvm::Error UniqueTable::checkCapacity(const size_t initial,
-                                       const size_t maximum) {
+Error UniqueTable::checkCapacity(const size_t initial, const size_t maximum) {
   if (!std::has_single_bit(initial) || !std::has_single_bit(maximum) ||
       maximum < initial) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "Unique table capacities must be powers of two, with maximum "
         "at least the initial capacity.");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Expected<UniqueTable>
-UniqueTable::create(MemoryManager& manager, const UniqueTableConfig& config) {
+Expected<UniqueTable> UniqueTable::create(MemoryManager& manager,
+                                          const UniqueTableConfig& config) {
   if (auto error = checkCapacity(config.nBuckets, config.maxBuckets)) {
     return error;
   }
@@ -52,12 +55,11 @@ UniqueTable::UniqueTable(MemoryManager& manager,
   llvm::cantFail(resize(config.nVars));
 }
 
-llvm::Error UniqueTable::resize(const std::size_t nVars) {
+Error UniqueTable::resize(const std::size_t nVars) {
   const auto oldSize = tables.size();
   if (nVars < oldSize) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "A unique table cannot be shrunk.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "A unique table cannot be shrunk.");
   }
   tables.resize(nVars);
   stats.resize(nVars);
@@ -67,7 +69,7 @@ llvm::Error UniqueTable::resize(const std::size_t nVars) {
     stats[i].numBuckets = cfg.nBuckets;
   }
   cfg.nVars = nVars;
-  return llvm::Error::success();
+  return Error::success();
 }
 
 bool UniqueTable::possiblyNeedsCollection() const {
@@ -130,10 +132,10 @@ void UniqueTable::clear() {
   }
 };
 
-llvm::Expected<const UniqueTableStatistics&>
+Expected<const UniqueTableStatistics&>
 UniqueTable::getStats(const std::size_t idx) const {
   if (idx >= stats.size()) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::result_out_of_range),
         "Unique table level is out of range.");
   }
