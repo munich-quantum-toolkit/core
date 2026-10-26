@@ -29,6 +29,8 @@
 #include <string_view>
 #include <vector>
 
+using mqt::test::TemporaryDirectory;
+
 namespace {
 
 [[nodiscard]] std::vector<MQT_SC_QDMI_Site>
@@ -454,7 +456,7 @@ TEST(ScRuntimeConfiguration, SelectsEnvironmentAndExplicitFileSources) {
 }
 
 TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
-  const mqt::test::TemporaryDirectory directory;
+  const TemporaryDirectory directory;
   const auto regularFile = directory.write("regular-file", "");
   for (const auto& path : {
            directory.path() / "missing.json",

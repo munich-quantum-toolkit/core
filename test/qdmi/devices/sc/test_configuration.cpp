@@ -31,6 +31,8 @@
 #include <utility>
 #include <vector>
 
+using mqt::test::TemporaryDirectory;
+
 namespace sc {
 namespace {
 using Json = llvm::json::Value;
@@ -383,7 +385,7 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
 }
 
 TEST(ScConfigurationTest, ReportsFileReadFailures) {
-  const mqt::test::TemporaryDirectory directory;
+  const TemporaryDirectory directory;
   const auto path = (directory.path() / "missing.json").string();
   auto parsed = readJSON(path);
   ASSERT_FALSE(static_cast<bool>(parsed));
