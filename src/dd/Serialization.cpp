@@ -33,11 +33,14 @@
 #include <unordered_map>
 #include <utility>
 
+using llvm::createStringError;
+using llvm::Expected;
+using llvm::StringRef;
+
 namespace dd {
 
 namespace {
-bool splitWeight(llvm::StringRef text, llvm::StringRef& real,
-                 llvm::StringRef& imaginary) {
+bool splitWeight(StringRef text, StringRef& real, StringRef& imaginary) {
   static constexpr auto NUMBER =
       R"(([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?)";
   static const llvm::Regex IMAGINARY_ONLY("^ ?[+-]? ?(" + std::string(NUMBER) +
@@ -49,7 +52,7 @@ bool splitWeight(llvm::StringRef text, llvm::StringRef& real,
     imaginary = text;
     return true;
   }
-  llvm::SmallVector<llvm::StringRef, 10> parts;
+  llvm::SmallVector<StringRef, 10> parts;
   if (!COMPLEX.match(text, &parts)) {
     return false;
   }
@@ -60,13 +63,13 @@ bool splitWeight(llvm::StringRef text, llvm::StringRef& real,
 } // namespace
 
 template <class Node, size_t N>
-llvm::Expected<CachedEdge<Node>>
+Expected<CachedEdge<Node>>
 Package::deserializeNode(const int64_t index, const Qubit v,
                          const std::array<int64_t, N>& edgeIdx,
                          const std::array<ComplexValue, N>& edgeWeight,
                          std::unordered_map<int64_t, Node*>& nodes) {
   if (index < 0 || v >= qubits() || nodes.contains(index)) {
-    return llvm::createStringError(
+    return createStringError(
         std::make_error_code(std::errc::state_not_recoverable),
         "Invalid serialized DD node index or qubit.");
   }
@@ -82,7 +85,7 @@ Package::deserializeNode(const int64_t index, const Qubit v,
         const auto child = nodes.find(edgeIdx[i]);
         if (child == nodes.end() ||
             (!Node::isTerminal(child->second) && child->second->v >= v)) {
-          return llvm::createStringError(
+          return createStringError(
               std::make_error_code(std::errc::state_not_recoverable),
               "Serialized DD edges must refer to preceding nodes on "
               "lower qubits.");
@@ -90,7 +93,7 @@ Package::deserializeNode(const int64_t index, const Qubit v,
         edges[i].p = child->second;
       }
       if (!std::isfinite(edgeWeight[i].r) || !std::isfinite(edgeWeight[i].i)) {
-        return llvm::createStringError(
+        return createStringError(
             std::make_error_code(std::errc::state_not_recoverable),
             "Serialized DD weights must be finite.");
       }
@@ -99,7 +102,7 @@ Package::deserializeNode(const int64_t index, const Qubit v,
     if constexpr (IsVector<Node>) {
       if (!edges[i].w.exactlyZero() &&
           (edges[i].isTerminal() ? v != 0 : edges[i].p->v + 1 != v)) {
-        return llvm::createStringError(
+        return createStringError(
             std::make_error_code(std::errc::state_not_recoverable),
             "Serialized vector DD edges must follow consecutive qubit "
             "levels.");
@@ -112,14 +115,13 @@ Package::deserializeNode(const int64_t index, const Qubit v,
 }
 
 template <class Node, class Edge, size_t N>
-llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
-                                          const bool readBinary) {
+Expected<Edge> Package::deserialize(StringRef data, const bool readBinary) {
   auto result = CachedEdge<Node>::one();
   ComplexValue rootweight{};
   std::unordered_map<int64_t, Node*> nodes;
   const auto invalid = [] {
-    return llvm::createStringError(std::errc::state_not_recoverable,
-                                   "Invalid or truncated serialized DD.");
+    return createStringError(std::errc::state_not_recoverable,
+                             "Invalid or truncated serialized DD.");
   };
   const auto read = [&data]<class T>(T& value) {
     if (data.size() < sizeof(T)) {
@@ -130,7 +132,7 @@ llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
     data = data.drop_front(sizeof(T));
     return true;
   };
-  const auto readLine = [&data](llvm::StringRef& line) {
+  const auto readLine = [&data](StringRef& line) {
     if (data.empty()) {
       return false;
     }
@@ -166,22 +168,21 @@ llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
       result = (*node);
     }
   } else {
-    llvm::StringRef line;
+    StringRef line;
     if (!readLine(line)) {
       return invalid();
     }
     auto versionText = line.ltrim(" \t\n\v\f\r");
     const bool hadPlus = versionText.consume_front("+");
     if (versionText.empty() || (hadPlus && versionText.starts_with("-"))) {
-      return llvm::createStringError(std::errc::invalid_argument,
-                                     "Invalid serialized DD version.");
+      return createStringError(std::errc::invalid_argument,
+                               "Invalid serialized DD version.");
     }
     int version{};
     const auto parsed =
         std::from_chars(versionText.begin(), versionText.end(), version);
     if (parsed.ec != std::errc{}) {
-      return llvm::createStringError(parsed.ec,
-                                     "Invalid serialized DD version.");
+      return createStringError(parsed.ec, "Invalid serialized DD version.");
     }
     if (parsed.ptr != versionText.end() ||
         std::cmp_not_equal(version, SERIALIZATION_VERSION)) {
@@ -195,9 +196,9 @@ llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
       }
       return pattern + " *(#[^\r]*)?$";
     }());
-    llvm::SmallVector<llvm::StringRef, 16> match;
-    llvm::StringRef real;
-    llvm::StringRef imaginary;
+    llvm::SmallVector<StringRef, 16> match;
+    StringRef real;
+    StringRef imaginary;
     if (!readLine(line) || !splitWeight(line, real, imaginary)) {
       return invalid();
     }
@@ -214,8 +215,8 @@ llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
       int64_t index{};
       uint64_t wire{};
       if (match[1].getAsInteger(10, index) || match[2].getAsInteger(10, wire)) {
-        return llvm::createStringError(std::errc::result_out_of_range,
-                                       "Serialized DD index is out of range.");
+        return createStringError(std::errc::result_out_of_range,
+                                 "Serialized DD index is out of range.");
       }
       if (wire >= qubits()) {
         return invalid();
@@ -231,9 +232,8 @@ llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
           return invalid();
         }
         if (match[group + 1].getAsInteger(10, indices[i])) {
-          return llvm::createStringError(
-              std::errc::result_out_of_range,
-              "Serialized DD edge index is out of range.");
+          return createStringError(std::errc::result_out_of_range,
+                                   "Serialized DD edge index is out of range.");
         }
         if (auto error = weights[i].fromString(real, imaginary)) {
           return error;
@@ -251,24 +251,20 @@ llvm::Expected<Edge> Package::deserialize(llvm::StringRef data,
 }
 
 template <class Node, class Edge>
-llvm::Expected<Edge> Package::deserializeFile(llvm::StringRef inputFilename,
-                                              const bool readBinary) {
+Expected<Edge> Package::deserializeFile(StringRef inputFilename,
+                                        const bool readBinary) {
   auto input = llvm::MemoryBuffer::getFile(inputFilename);
   if (!input) {
-    return llvm::createStringError(
+    return createStringError(
         std::errc::io_error, "Cannot open serialized file: %s: %s",
         inputFilename.str().c_str(), input.getError().message().c_str());
   }
   return deserialize<Node>((*input)->getBuffer(), readBinary);
 }
 
-template llvm::Expected<vEdge> Package::deserialize<vNode>(llvm::StringRef,
-                                                           bool);
-template llvm::Expected<mEdge> Package::deserialize<mNode>(llvm::StringRef,
-                                                           bool);
-template llvm::Expected<vEdge> Package::deserializeFile<vNode>(llvm::StringRef,
-                                                               bool);
-template llvm::Expected<mEdge> Package::deserializeFile<mNode>(llvm::StringRef,
-                                                               bool);
+template Expected<vEdge> Package::deserialize<vNode>(StringRef, bool);
+template Expected<mEdge> Package::deserialize<mNode>(StringRef, bool);
+template Expected<vEdge> Package::deserializeFile<vNode>(StringRef, bool);
+template Expected<mEdge> Package::deserializeFile<mNode>(StringRef, bool);
 
 } // namespace dd

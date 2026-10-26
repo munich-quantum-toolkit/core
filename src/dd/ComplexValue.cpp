@@ -29,6 +29,10 @@
 #include <system_error>
 #include <utility>
 
+using llvm::createStringError;
+using llvm::Error;
+using llvm::StringRef;
+
 namespace dd {
 bool ComplexValue::operator==(const ComplexValue& other) const noexcept {
   // NOLINTNEXTLINE(clang-diagnostic-float-equal)
@@ -52,9 +56,8 @@ void ComplexValue::writeBinary(llvm::raw_ostream& os) const {
   RealNumber::writeBinary(r, os);
   RealNumber::writeBinary(i, os);
 }
-llvm::Error ComplexValue::fromString(llvm::StringRef realStr,
-                                     llvm::StringRef imagStr) {
-  const auto parse = [](llvm::StringRef text) -> llvm::Expected<fp> {
+Error ComplexValue::fromString(StringRef realStr, StringRef imagStr) {
+  const auto parse = [](StringRef text) -> llvm::Expected<fp> {
     if (text.empty()) {
       return 0.;
     }
@@ -62,19 +65,19 @@ llvm::Error ComplexValue::fromString(llvm::StringRef realStr,
     auto status =
         value.convertFromString(text, llvm::APFloat::rmNearestTiesToEven);
     if (!status) {
-      return llvm::createStringError(
+      return createStringError(
           std::make_error_code(std::errc::invalid_argument),
           llvm::toString(status.takeError()));
     }
     if ((*status & llvm::APFloat::opOverflow) != 0 ||
         ((*status & llvm::APFloat::opUnderflow) != 0 && value.isZero())) {
-      return llvm::createStringError(
+      return createStringError(
           std::errc::result_out_of_range,
           "Serialized number is outside the finite floating-point range.");
     }
     if (!value.isFinite()) {
-      return llvm::createStringError(std::errc::invalid_argument,
-                                     "Serialized number must be finite.");
+      return createStringError(std::errc::invalid_argument,
+                               "Serialized number must be finite.");
     }
     return value.convertToDouble();
   };
@@ -102,7 +105,7 @@ llvm::Error ComplexValue::fromString(llvm::StringRef realStr,
   }
   r = *real;
   i = negative ? -*imaginary : *imaginary;
-  return llvm::Error::success();
+  return Error::success();
 }
 
 std::pair<std::uint64_t, std::uint64_t>
