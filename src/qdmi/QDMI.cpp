@@ -48,6 +48,9 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+
+using llvm::Error;
+using llvm::Expected;
 #endif
 
 #ifndef MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME
@@ -57,8 +60,8 @@
 
 namespace qdmi {
 namespace detail {
-llvm::Expected<std::vector<std::string>>
-parseShots(const std::string_view shots, const size_t numShots) {
+Expected<std::vector<std::string>> parseShots(const std::string_view shots,
+                                              const size_t numShots) {
   if (numShots == 0) {
     if (!shots.empty()) {
       return qdmi::makeError(QDMI_ERROR_FATAL, "Number of shots mismatch");
@@ -87,7 +90,7 @@ parseShots(const std::string_view shots, const size_t numShots) {
 
 namespace {
 template <typename T>
-llvm::Expected<std::map<std::string, T>> getSparseResult(
+Expected<std::map<std::string, T>> getSparseResult(
     const detail::DriverAPI& api, QDMI_Job job, size_t programIndex,
     const QDMI_Job_Result keysResult, const QDMI_Job_Result valuesResult,
     const std::string_view description, const std::string_view valueType,
@@ -188,7 +191,7 @@ using LibraryHandle = void*;
 void closeLibrary(LibraryHandle library) { dlclose(library); }
 #endif
 
-[[nodiscard]] llvm::Expected<std::filesystem::path>
+[[nodiscard]] Expected<std::filesystem::path>
 normalizePath(const std::filesystem::path& path) {
   if (path.empty()) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
@@ -206,7 +209,7 @@ normalizePath(const std::filesystem::path& path) {
   return normalized;
 }
 
-[[nodiscard]] llvm::Expected<std::filesystem::path> packagedDriverPath() {
+[[nodiscard]] Expected<std::filesystem::path> packagedDriverPath() {
   auto directory = detail::moduleDirectory(
       reinterpret_cast<const void*>(&packagedDriverPath));
   if (!directory) {
@@ -234,7 +237,7 @@ normalizePath(const std::filesystem::path& path) {
 #endif
 }
 
-[[nodiscard]] llvm::Expected<std::filesystem::path>
+[[nodiscard]] Expected<std::filesystem::path>
 requestedDriverPath(const SessionConfig& config) {
   if (config.driverPath) {
     return normalizePath(*config.driverPath);
@@ -269,8 +272,8 @@ struct LoadedDriverAPI : detail::DriverAPI {
 };
 
 template <class Function>
-[[nodiscard]] llvm::Expected<Function> loadSymbol(LibraryHandle library,
-                                                  const char* name) {
+[[nodiscard]] Expected<Function> loadSymbol(LibraryHandle library,
+                                            const char* name) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   const auto function = reinterpret_cast<Function>(findSymbol(library, name));
   if (function == nullptr) {
@@ -280,7 +283,7 @@ template <class Function>
   return function;
 }
 
-[[nodiscard]] llvm::Expected<std::shared_ptr<const LoadedDriverAPI>>
+[[nodiscard]] Expected<std::shared_ptr<const LoadedDriverAPI>>
 loadDriverAPI(const std::filesystem::path& path) {
   struct DriverAPICache {
     std::mutex mutex;
@@ -371,7 +374,7 @@ loadDriverAPI(const std::filesystem::path& path) {
 using SessionGuard =
     std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)>;
 
-llvm::Error validateSessionAllocation(const int status, QDMI_Session session) {
+Error validateSessionAllocation(const int status, QDMI_Session session) {
   if (session == nullptr &&
       (status == QDMI_SUCCESS || status == QDMI_WARN_GENERAL)) {
     return qdmi::makeError(QDMI_ERROR_FATAL,
@@ -380,7 +383,7 @@ llvm::Error validateSessionAllocation(const int status, QDMI_Session session) {
   return qdmi::checkError(status, "Allocating QDMI session");
 }
 
-[[nodiscard]] llvm::Expected<std::shared_ptr<detail::DriverSession>>
+[[nodiscard]] Expected<std::shared_ptr<detail::DriverSession>>
 allocateSession(const SessionConfig& config) {
   auto path = requestedDriverPath(config);
   if (!path) {
@@ -405,7 +408,7 @@ allocateSession(const SessionConfig& config) {
 }
 } // namespace
 
-llvm::Error builtin_driver::addManifest(const std::filesystem::path& path) {
+Error builtin_driver::addManifest(const std::filesystem::path& path) {
   auto driverPath = packagedDriverPath();
   if (!driverPath) {
     return driverPath.takeError();
@@ -432,7 +435,7 @@ llvm::Error builtin_driver::addManifest(const std::filesystem::path& path) {
                           "Registering QDMI device manifest");
 }
 
-llvm::Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
+Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
   auto path = packagedDriverPath();
   if (!path) {
     return path.takeError();
@@ -473,7 +476,7 @@ llvm::Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
   return ids;
 }
 
-llvm::Expected<Device> builtin_driver::openDevice(
+Expected<Device> builtin_driver::openDevice(
     const std::string_view id, const std::string_view deviceSessionJson,
     const std::optional<std::filesystem::path>& driverPath) {
   if (id.empty() || id.find('\0') != std::string_view::npos) {
@@ -543,99 +546,99 @@ void detail::JobDeleter::operator()(QDMI_Job_impl_d* const job) const {
   }
 }
 
-llvm::Expected<size_t> Site::getIndex() const {
+Expected<size_t> Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getT1() const {
+Expected<std::optional<uint64_t>> Site::getT1() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T1);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getT2() const {
+Expected<std::optional<uint64_t>> Site::getT2() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T2);
 }
-llvm::Expected<std::optional<std::string>> Site::getName() const {
+Expected<std::optional<std::string>> Site::getName() const {
   return queryProperty<std::optional<std::string>>(QDMI_SITE_PROPERTY_NAME);
 }
-llvm::Expected<std::optional<int64_t>> Site::getXCoordinate() const {
+Expected<std::optional<int64_t>> Site::getXCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
-llvm::Expected<std::optional<int64_t>> Site::getYCoordinate() const {
+Expected<std::optional<int64_t>> Site::getYCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
-llvm::Expected<std::optional<int64_t>> Site::getZCoordinate() const {
+Expected<std::optional<int64_t>> Site::getZCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-llvm::Expected<bool> Site::isZone() const {
+Expected<bool> Site::isZone() const {
   auto result = queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE);
   if (!result) {
     return result.takeError();
   }
   return (*result).value_or(false);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getXExtent() const {
+Expected<std::optional<uint64_t>> Site::getXExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getYExtent() const {
+Expected<std::optional<uint64_t>> Site::getYExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_YEXTENT);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getZExtent() const {
+Expected<std::optional<uint64_t>> Site::getZExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getModuleIndex() const {
+Expected<std::optional<uint64_t>> Site::getModuleIndex() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-llvm::Expected<std::optional<uint64_t>> Site::getSubmoduleIndex() const {
+Expected<std::optional<uint64_t>> Site::getSubmoduleIndex() const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_SITE_PROPERTY_SUBMODULEINDEX);
 }
-llvm::Expected<std::string>
+Expected<std::string>
 Operation::getName(const std::vector<Site>& sites,
                    const std::vector<double>& params) const {
   return queryProperty<std::string>(QDMI_OPERATION_PROPERTY_NAME, sites,
                                     params);
 }
-llvm::Expected<std::optional<size_t>>
+Expected<std::optional<size_t>>
 Operation::getQubitsNum(const std::vector<Site>& sites,
                         const std::vector<double>& params) const {
   return queryProperty<std::optional<size_t>>(QDMI_OPERATION_PROPERTY_QUBITSNUM,
                                               sites, params);
 }
-llvm::Expected<size_t>
+Expected<size_t>
 Operation::getParametersNum(const std::vector<Site>& sites,
                             const std::vector<double>& params) const {
   return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sites,
                                params);
 }
-llvm::Expected<std::optional<uint64_t>>
+Expected<std::optional<uint64_t>>
 Operation::getDuration(const std::vector<Site>& sites,
                        const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_DURATION, sites, params);
 }
-llvm::Expected<std::optional<double>>
+Expected<std::optional<double>>
 Operation::getFidelity(const std::vector<Site>& sites,
                        const std::vector<double>& params) const {
   return queryProperty<std::optional<double>>(QDMI_OPERATION_PROPERTY_FIDELITY,
                                               sites, params);
 }
-llvm::Expected<std::optional<uint64_t>>
+Expected<std::optional<uint64_t>>
 Operation::getInteractionRadius(const std::vector<Site>& sites,
                                 const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, sites, params);
 }
-llvm::Expected<std::optional<uint64_t>>
+Expected<std::optional<uint64_t>>
 Operation::getBlockingRadius(const std::vector<Site>& sites,
                              const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites, params);
 }
-llvm::Expected<std::optional<double>>
+Expected<std::optional<double>>
 Operation::getIdlingFidelity(const std::vector<Site>& sites,
                              const std::vector<double>& params) const {
   return queryProperty<std::optional<double>>(
       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
-llvm::Expected<bool> Operation::isZoned() const {
+Expected<bool> Operation::isZoned() const {
   auto result = queryProperty<std::optional<bool>>(
       QDMI_OPERATION_PROPERTY_ISZONED, {}, {});
   if (!result) {
@@ -643,7 +646,7 @@ llvm::Expected<bool> Operation::isZoned() const {
   }
   return (*result).value_or(false);
 }
-llvm::Expected<std::optional<std::vector<Site>>> Operation::getSites() const {
+Expected<std::optional<std::vector<Site>>> Operation::getSites() const {
   auto qdmiSitesResult = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, {}, {});
   if (!qdmiSitesResult) {
@@ -661,7 +664,7 @@ llvm::Expected<std::optional<std::vector<Site>>> Operation::getSites() const {
                          });
   return std::optional<std::vector<Site>>{std::move(returnedSites)};
 }
-llvm::Expected<std::optional<std::vector<std::pair<Site, Site>>>>
+Expected<std::optional<std::vector<std::pair<Site, Site>>>>
 Operation::getSitePairs() const {
   auto qubitsNum = getQubitsNum({}, {});
   if (!qubitsNum) {
@@ -692,36 +695,36 @@ Operation::getSitePairs() const {
   }
   return std::optional<std::vector<std::pair<Site, Site>>>{std::move(pairs)};
 }
-llvm::Expected<std::optional<uint64_t>>
+Expected<std::optional<uint64_t>>
 Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
                                  const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
-llvm::Expected<std::string> Device::getId() const {
+Expected<std::string> Device::getId() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_ID);
 }
-llvm::Expected<std::string> Device::getName() const {
+Expected<std::string> Device::getName() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_NAME);
 }
 
-llvm::Expected<std::string> Device::getVersion() const {
+Expected<std::string> Device::getVersion() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_VERSION);
 }
 
-llvm::Expected<QDMI_Device_Status> Device::getStatus() const {
+Expected<QDMI_Device_Status> Device::getStatus() const {
   return queryProperty<QDMI_Device_Status>(QDMI_DEVICE_PROPERTY_STATUS);
 }
 
-llvm::Expected<std::string> Device::getLibraryVersion() const {
+Expected<std::string> Device::getLibraryVersion() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LIBRARYVERSION);
 }
 
-llvm::Expected<size_t> Device::getQubitsNum() const {
+Expected<size_t> Device::getQubitsNum() const {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
 
-llvm::Expected<std::vector<Site>> Device::getSites() const {
+Expected<std::vector<Site>> Device::getSites() const {
   auto qdmiSitesResult =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
   if (!qdmiSitesResult) {
@@ -737,7 +740,7 @@ llvm::Expected<std::vector<Site>> Device::getSites() const {
   return sites;
 }
 
-llvm::Expected<std::vector<Site>> Device::getRegularSites() const {
+Expected<std::vector<Site>> Device::getRegularSites() const {
   auto result = getSites();
   if (!result) {
     return result.takeError();
@@ -755,7 +758,7 @@ llvm::Expected<std::vector<Site>> Device::getRegularSites() const {
   return sites;
 }
 
-llvm::Expected<std::vector<Site>> Device::getZones() const {
+Expected<std::vector<Site>> Device::getZones() const {
   auto result = getSites();
   if (!result) {
     return result.takeError();
@@ -773,7 +776,7 @@ llvm::Expected<std::vector<Site>> Device::getZones() const {
   return sites;
 }
 
-llvm::Expected<std::vector<Operation>> Device::getOperations() const {
+Expected<std::vector<Operation>> Device::getOperations() const {
   auto qdmiOperationsResult = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
   if (!qdmiOperationsResult) {
@@ -783,7 +786,7 @@ llvm::Expected<std::vector<Operation>> Device::getOperations() const {
   return wrapOperations(qdmiOperations);
 }
 
-llvm::Expected<std::optional<std::vector<Operation>>>
+Expected<std::optional<std::vector<Operation>>>
 Device::queryCustomOperations(const CustomProperty property) const {
   auto propertyResult = detail::toDeviceProperty(property);
   if (!propertyResult) {
@@ -818,7 +821,7 @@ Device::wrapOperations(const std::span<const QDMI_Operation> operations) const {
   return wrappedOperations;
 }
 
-llvm::Expected<std::optional<std::vector<std::pair<Site, Site>>>>
+Expected<std::optional<std::vector<std::pair<Site, Site>>>>
 Device::getCouplingMap() const {
   auto qdmiCouplingMapResult = queryProperty<
       std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
@@ -845,42 +848,42 @@ Device::getCouplingMap() const {
       std::move(couplingMap)};
 }
 
-llvm::Expected<std::optional<size_t>> Device::getQueueLength() const {
+Expected<std::optional<size_t>> Device::getQueueLength() const {
   return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
 }
 
-llvm::Expected<std::optional<std::string>> Device::getLengthUnit() const {
+Expected<std::optional<std::string>> Device::getLengthUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
 }
 
-llvm::Expected<std::optional<double>> Device::getLengthScaleFactor() const {
+Expected<std::optional<double>> Device::getLengthScaleFactor() const {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
 }
 
-llvm::Expected<std::optional<std::string>> Device::getDurationUnit() const {
+Expected<std::optional<std::string>> Device::getDurationUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_DURATIONUNIT);
 }
 
-llvm::Expected<std::optional<double>> Device::getDurationScaleFactor() const {
+Expected<std::optional<double>> Device::getDurationScaleFactor() const {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
 }
 
-llvm::Expected<std::optional<uint64_t>> Device::getMinAtomDistance() const {
+Expected<std::optional<uint64_t>> Device::getMinAtomDistance() const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
 
-llvm::Expected<std::vector<QDMI_Program_Format>>
+Expected<std::vector<QDMI_Program_Format>>
 Device::getSupportedProgramFormats() const {
   return queryProperty<std::vector<QDMI_Program_Format>>(
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
-llvm::Expected<std::vector<Device>> Device::getChildDevices() const {
+Expected<std::vector<Device>> Device::getChildDevices() const {
   size_t size = 0;
   auto result = api().device_query_device_property(
       device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
@@ -913,7 +916,7 @@ llvm::Expected<std::vector<Device>> Device::getChildDevices() const {
   return devices;
 }
 
-llvm::Expected<Job>
+Expected<Job>
 Device::submitJob(const std::string& program, const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
                   const std::optional<CustomJobParameter>& custom1,
@@ -925,7 +928,7 @@ Device::submitJob(const std::string& program, const QDMI_Program_Format format,
                    custom3, custom4, custom5);
 }
 
-llvm::Expected<Job>
+Expected<Job>
 Device::submitJob(const std::span<const std::byte> program,
                   const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
@@ -938,7 +941,7 @@ Device::submitJob(const std::span<const std::byte> program,
                    custom3, custom4, custom5);
 }
 
-llvm::Expected<std::optional<Job>>
+Expected<std::optional<Job>>
 Device::trySubmitJob(const std::string& program,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
@@ -951,7 +954,7 @@ Device::trySubmitJob(const std::string& program,
                       custom2, custom3, custom4, custom5);
 }
 
-llvm::Expected<std::optional<Job>>
+Expected<std::optional<Job>>
 Device::trySubmitJob(const std::span<const std::byte> program,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
@@ -964,7 +967,7 @@ Device::trySubmitJob(const std::span<const std::byte> program,
                       custom2, custom3, custom4, custom5);
 }
 
-llvm::Expected<Job>
+Expected<Job>
 Device::submitJob(const std::span<const std::string> programs,
                   const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
@@ -984,7 +987,7 @@ Device::submitJob(const std::span<const std::string> programs,
   return std::move(**job);
 }
 
-llvm::Expected<std::optional<Job>>
+Expected<std::optional<Job>>
 Device::trySubmitJob(const std::span<const std::string> programs,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
@@ -1016,7 +1019,7 @@ Device::trySubmitJob(const std::span<const std::string> programs,
                        custom3, custom4, custom5);
 }
 
-llvm::Expected<Job>
+Expected<Job>
 Device::submitJob(const std::span<const std::span<const std::byte>> programs,
                   const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
@@ -1036,7 +1039,7 @@ Device::submitJob(const std::span<const std::span<const std::byte>> programs,
   return std::move(**job);
 }
 
-llvm::Expected<std::optional<Job>>
+Expected<std::optional<Job>>
 Device::trySubmitJob(const std::span<const std::span<const std::byte>> programs,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
@@ -1057,7 +1060,7 @@ Device::trySubmitJob(const std::span<const std::span<const std::byte>> programs,
                        custom3, custom4, custom5);
 }
 
-llvm::Expected<std::optional<Job>>
+Expected<std::optional<Job>>
 Device::submitJobImpl(const QDMI_Program_Format format,
                       const std::span<const size_t> sizes,
                       const std::span<const void* const> programs,
@@ -1111,8 +1114,7 @@ Device::submitJobImpl(const QDMI_Program_Format format,
   return std::optional<Job>{std::move(jobWrapper)};
 }
 
-llvm::Expected<Job>
-Device::retrieveJobById(const std::string_view jobId) const {
+Expected<Job> Device::retrieveJobById(const std::string_view jobId) const {
   if (jobId.empty() || jobId.find('\0') != std::string_view::npos) {
     return qdmi::makeError(
         QDMI_ERROR_INVALIDARGUMENT,
@@ -1128,9 +1130,8 @@ Device::retrieveJobById(const std::string_view jobId) const {
   return Job{job, session_};
 }
 
-llvm::Error Device::setCustomJobParam(QDMI_Job job,
-                                      const QDMI_Job_Parameter param,
-                                      const CustomJobParameter& value) const {
+Error Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
+                                const CustomJobParameter& value) const {
   const auto [size, data] = std::visit(
       []<typename T>(const T& payload) -> std::pair<size_t, const void*> {
         if constexpr (std::is_same_v<T, std::string>) {
@@ -1152,7 +1153,7 @@ llvm::Error Device::setCustomJobParam(QDMI_Job job,
                           "Setting custom parameter");
 }
 
-llvm::Expected<QDMI_Job_Status> Job::check() const {
+Expected<QDMI_Job_Status> Job::check() const {
   QDMI_Job_Status status{};
   if (auto error = qdmi::checkError(api().job_check(job_.get(), &status),
                                     "Checking job status")) {
@@ -1161,7 +1162,7 @@ llvm::Expected<QDMI_Job_Status> Job::check() const {
   return status;
 }
 
-llvm::Expected<bool> Job::wait(const size_t timeout) const {
+Expected<bool> Job::wait(const size_t timeout) const {
   const auto ret = api().job_wait(job_.get(), timeout);
   if (ret == QDMI_SUCCESS) {
     return true;
@@ -1175,11 +1176,11 @@ llvm::Expected<bool> Job::wait(const size_t timeout) const {
   return true;
 }
 
-llvm::Error Job::cancel() const {
+Error Job::cancel() const {
   return qdmi::checkError(api().job_cancel(job_.get()), "Cancelling job");
 }
 
-llvm::Expected<std::string> Job::getId() const {
+Expected<std::string> Job::getId() const {
   return detail::queryProperty<std::string>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID, size,
@@ -1188,7 +1189,7 @@ llvm::Expected<std::string> Job::getId() const {
       "Querying job ID", "Querying job ID size");
 }
 
-llvm::Expected<QDMI_Program_Format> Job::getProgramFormat() const {
+Expected<QDMI_Program_Format> Job::getProgramFormat() const {
   QDMI_Program_Format format{};
   if (auto error = qdmi::checkError(
           api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_PROGRAMFORMAT,
@@ -1199,7 +1200,7 @@ llvm::Expected<QDMI_Program_Format> Job::getProgramFormat() const {
   return format;
 }
 
-llvm::Expected<std::vector<std::byte>>
+Expected<std::vector<std::byte>>
 Job::getProgramBytes(const size_t programIndex) const {
   size_t size = 0;
   if (auto error = qdmi::checkError(
@@ -1221,7 +1222,7 @@ Job::getProgramBytes(const size_t programIndex) const {
   return program;
 }
 
-llvm::Expected<std::string> Job::getProgram(const size_t programIndex) const {
+Expected<std::string> Job::getProgram(const size_t programIndex) const {
   auto formatResult = getProgramFormat();
   if (!formatResult) {
     return formatResult.takeError();
@@ -1248,7 +1249,7 @@ llvm::Expected<std::string> Job::getProgram(const size_t programIndex) const {
                      program.size() - 1);
 }
 
-llvm::Expected<size_t> Job::getNumShots() const {
+Expected<size_t> Job::getNumShots() const {
   size_t numShots = 0;
   if (auto error = qdmi::checkError(
           api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_SHOTSNUM,
@@ -1259,7 +1260,7 @@ llvm::Expected<size_t> Job::getNumShots() const {
   return numShots;
 }
 
-llvm::Expected<size_t> Job::getNumPrograms() const {
+Expected<size_t> Job::getNumPrograms() const {
   size_t count = 0;
   if (auto error = qdmi::checkError(
           api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_PROGRAMSNUM,
@@ -1270,7 +1271,7 @@ llvm::Expected<size_t> Job::getNumPrograms() const {
   return count;
 }
 
-llvm::Expected<std::optional<QDMI_Job_Status>>
+Expected<std::optional<QDMI_Job_Status>>
 Job::getProgramStatus(const size_t programIndex) const {
   QDMI_Job_Status status{};
   const auto result =
@@ -1284,7 +1285,7 @@ Job::getProgramStatus(const size_t programIndex) const {
   return std::optional{status};
 }
 
-llvm::Expected<std::vector<std::byte>>
+Expected<std::vector<std::byte>>
 Job::getResults(const QDMI_Job_Result result, const size_t programIndex) const {
   size_t size = 0;
   if (auto error =
@@ -1305,7 +1306,7 @@ Job::getResults(const QDMI_Job_Result result, const size_t programIndex) const {
   return value;
 }
 
-llvm::Expected<std::optional<size_t>> Job::getQueuePosition() const {
+Expected<std::optional<size_t>> Job::getQueuePosition() const {
   size_t queuePosition = 0;
   const auto result =
       api().job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
@@ -1313,7 +1314,7 @@ llvm::Expected<std::optional<size_t>> Job::getQueuePosition() const {
   return detail::queuePositionFromResult(result, queuePosition);
 }
 
-llvm::Expected<std::vector<std::string>>
+Expected<std::vector<std::string>>
 Job::getShots(const size_t programIndex) const {
   size_t shotsSize = 0;
   if (auto error = qdmi::checkError(
@@ -1343,7 +1344,7 @@ Job::getShots(const size_t programIndex) const {
   return detail::parseShots(shots, (*count));
 }
 
-llvm::Expected<std::map<std::string, size_t>>
+Expected<std::map<std::string, size_t>>
 Job::getCounts(const size_t programIndex) const {
   return getSparseResult<size_t>(
       api(), job_.get(), programIndex, QDMI_JOB_RESULT_HIST_KEYS,
@@ -1351,7 +1352,7 @@ Job::getCounts(const size_t programIndex) const {
       "Histogram key/value count mismatch");
 }
 
-llvm::Expected<std::vector<std::complex<double>>>
+Expected<std::vector<std::complex<double>>>
 Job::getDenseStateVector(const size_t programIndex) const {
   size_t size = 0;
   if (auto error = qdmi::checkError(
@@ -1380,7 +1381,7 @@ Job::getDenseStateVector(const size_t programIndex) const {
   return stateVector;
 }
 
-llvm::Expected<std::vector<double>>
+Expected<std::vector<double>>
 Job::getDenseProbabilities(const size_t programIndex) const {
   size_t size = 0;
   if (auto error = qdmi::checkError(
@@ -1408,7 +1409,7 @@ Job::getDenseProbabilities(const size_t programIndex) const {
   return probabilities;
 }
 
-llvm::Expected<std::map<std::string, std::complex<double>>>
+Expected<std::map<std::string, std::complex<double>>>
 Job::getSparseStateVector(const size_t programIndex) const {
   return getSparseResult<std::complex<double>>(
       api(), job_.get(), programIndex, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
@@ -1416,7 +1417,7 @@ Job::getSparseStateVector(const size_t programIndex) const {
       "complex<double>", "Sparse state vector key/value count mismatch");
 }
 
-llvm::Expected<std::map<std::string, double>>
+Expected<std::map<std::string, double>>
 Job::getSparseProbabilities(const size_t programIndex) const {
   return getSparseResult<double>(
       api(), job_.get(), programIndex,
@@ -1425,8 +1426,8 @@ Job::getSparseProbabilities(const size_t programIndex) const {
       "double", "Sparse probabilities key/value count mismatch");
 }
 
-llvm::Expected<Device> Session::openDevice(const std::string_view id,
-                                           const SessionConfig& config) {
+Expected<Device> Session::openDevice(const std::string_view id,
+                                     const SessionConfig& config) {
   auto session = Session::create(config);
   if (!session) {
     return session.takeError();
@@ -1434,7 +1435,7 @@ llvm::Expected<Device> Session::openDevice(const std::string_view id,
   return session->getDevice(id);
 }
 
-llvm::Expected<std::vector<std::string>> Session::getDeviceIds() {
+Expected<std::vector<std::string>> Session::getDeviceIds() {
   std::vector<std::string> ids;
   auto devices = getDevices();
   if (!devices) {
@@ -1450,7 +1451,7 @@ llvm::Expected<std::vector<std::string>> Session::getDeviceIds() {
   return ids;
 }
 
-llvm::Expected<Device> Session::getDevice(const std::string_view id) {
+Expected<Device> Session::getDevice(const std::string_view id) {
   if (id.empty() || id.find('\0') != std::string_view::npos) {
     return qdmi::makeError(
         QDMI_ERROR_INVALIDARGUMENT,
@@ -1480,18 +1481,17 @@ llvm::Expected<Device> Session::getDevice(const std::string_view id) {
                              "'; available IDs: " + available);
 }
 
-llvm::Expected<Session> Session::create(const SessionConfig& config) {
+Expected<Session> Session::create(const SessionConfig& config) {
   auto allocated = allocateSession(config);
   if (!allocated) {
     return allocated.takeError();
   }
   Session session;
   session.session_ = std::move(*allocated);
-  const auto setParameter =
-      [&session](const std::optional<std::string>& value,
-                 QDMI_Session_Parameter param) -> llvm::Error {
+  const auto setParameter = [&session](const std::optional<std::string>& value,
+                                       QDMI_Session_Parameter param) -> Error {
     if (!value) {
-      return llvm::Error::success();
+      return Error::success();
     }
     const auto status = session.api().session_set_parameter(
         session.session_->handle.get(), param, value->size() + 1U,
@@ -1500,7 +1500,7 @@ llvm::Expected<Session> Session::create(const SessionConfig& config) {
       llvm::errs() << llvm::formatv(
           "[mqt-core] [info] Session parameter {0} not supported (skipped)\n",
           qdmi::toString(param));
-      return llvm::Error::success();
+      return Error::success();
     }
     return qdmi::checkError(status, llvm::Twine("Setting session parameter ") +
                                         qdmi::toString(param));
@@ -1538,7 +1538,7 @@ llvm::Expected<Session> Session::create(const SessionConfig& config) {
   return session;
 }
 
-llvm::Expected<std::vector<Device>> Session::getDevices() {
+Expected<std::vector<Device>> Session::getDevices() {
   auto qdmiDevicesResult =
       queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);
   if (!qdmiDevicesResult) {
