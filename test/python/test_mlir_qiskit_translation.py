@@ -2114,8 +2114,8 @@ def test_excessively_nested_parameter_expression_fails_closed_without_mutation()
     assert circuit.parameters == {theta}
 
 
-def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
-    """Bound a wide parameter expression before changing the source circuit."""
+def test_wide_parameter_expression_respects_replay_size_without_mutation() -> None:
+    """Bound a wide expression if Qiskit preserves its operation replay."""
     theta = Parameter("theta")
     level: list[ParameterExpression] = [theta]
     level.extend(theta + float(index) for index in range(1, 16385))
@@ -2128,8 +2128,16 @@ def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
     circuit.rz(level[0], 0)
     source_data = list(circuit.data)
 
-    with pytest.raises(RuntimeError, match="exceeds the supported 32768-node size"):
-        QCProgram.from_qiskit(circuit)
+    if len(level[0]._qpy_replay) >= 32768:  # ruff: ignore[private-member-access]
+        with pytest.raises(RuntimeError, match="exceeds the supported 32768-node size"):
+            QCProgram.from_qiskit(circuit)
+    else:
+        result = QCProgram.from_qiskit(circuit).to_qiskit()
+        assert result.parameters == {theta}
+        assert np.allclose(
+            Operator(result.assign_parameters({theta: 0.1})).data,
+            Operator(circuit.assign_parameters({theta: 0.1})).data,
+        )
 
     assert list(circuit.data) == source_data
     assert circuit.parameters == {theta}
