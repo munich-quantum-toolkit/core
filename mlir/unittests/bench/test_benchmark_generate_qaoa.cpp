@@ -19,6 +19,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -164,8 +165,7 @@ TEST(GenerateProgramTest, PreservesQAOAInputsThroughJeff) {
   auto jeff = std::move(*program).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
   auto restored = mlir::JeffProgram::fromBytes(jeff->toBytes());
-  ASSERT_TRUE(static_cast<bool>(restored))
-      << llvm::toString(restored.takeError());
+  ASSERT_TRUE(::mqt::test::succeeded(restored));
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto entry = mlir::mqt::getEntryPoint(qco->module());

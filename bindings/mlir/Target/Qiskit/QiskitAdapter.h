@@ -17,8 +17,8 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
+#include "../../../Result.hpp"
 #include "QiskitTranslation.h"
-#include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"

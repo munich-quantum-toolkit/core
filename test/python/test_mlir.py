@@ -113,13 +113,6 @@ def test_mlir_verifier_notes_reach_python(capfd: pytest.CaptureFixture[str]) -> 
     assert not capfd.readouterr().err
 
 
-def test_openqasm_write_failure_keeps_python_category(tmp_path: Path) -> None:
-    """Report output failures through the established RuntimeError category."""
-    program = QCProgram.from_openqasm_str(QASM_STRING).to_openqasm3()
-    with pytest.raises(RuntimeError, match="failed to open OpenQASM output file"):
-        program.write(tmp_path / "missing" / "output.qasm")
-
-
 def _test_payload_specification() -> PayloadSpecification:
     """Return one explicit selected payload contract for target tests."""
     return PayloadSpecification(
@@ -424,6 +417,8 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     path = tmp_path / "program.qasm"
     direct.write(path)
     assert path.read_text(encoding="utf-8") == direct.source
+    with pytest.raises(RuntimeError, match="failed to open OpenQASM output file"):
+        direct.write(tmp_path / "missing" / "output.qasm")
     assert set(sample(path, shots=32, seed=1)) == {"00", "11"}
 
     optimized = compile_program(direct)

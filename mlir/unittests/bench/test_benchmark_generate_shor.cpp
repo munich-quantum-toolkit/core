@@ -26,7 +26,6 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
@@ -46,13 +45,13 @@ using namespace mlir;
 TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
   // Keep the circuit small enough for unoptimized coverage builds.
   constexpr uint64_t number = 15;
-  const auto benchmark = llvm::cantFail(Shor::create({.number = number}));
+  const auto benchmark = ::mqt::test::value(Shor::create({.number = number}));
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 64, 17);
   ASSERT_TRUE(succeeded(counts));
-  auto evaluation = llvm::cantFail(benchmark.evaluate(*counts));
+  auto evaluation = ::mqt::test::value(benchmark.evaluate(*counts));
   ASSERT_TRUE(evaluation.factors);
   EXPECT_EQ(evaluation.factors->first * evaluation.factors->second, number);
   // Base 2 has order 4 modulo 15: four equally likely phases, with no tails.
@@ -67,11 +66,10 @@ TEST(GenerateProgramTest, SamplesShorAndRecoversFactors) {
       qco::sample(mlir::mqt::getEntryPoint(program->module()), 256, 17,
                   qco::DDArgumentBindings{}, nullptr, nullptr, {}, 1);
   ASSERT_TRUE(succeeded(shared));
-  EXPECT_TRUE(llvm::cantFail(benchmark.evaluate(*shared)).factors);
+  EXPECT_TRUE(::mqt::test::value(benchmark.evaluate(*shared)).factors);
 }
 
-static mlir::FailureOr<QCOProgram> inPlaceMultiplier(uint64_t number,
-                                                     uint64_t multiplier) {
+static QCOProgram inPlaceMultiplier(uint64_t number, uint64_t multiplier) {
   const auto bits = static_cast<int64_t>(std::bit_width(number));
   uint64_t inverse = 1;
   while ((inverse * multiplier) % number != 1) {
@@ -100,17 +98,11 @@ static mlir::FailureOr<QCOProgram> inPlaceMultiplier(uint64_t number,
                              });
         return SmallVector<Value>{};
       });
-  auto qcProgram = QCProgram::fromModule(context, std::move(moduleOp));
-  if (mlir::failed(qcProgram)) {
-    return mlir::failure();
-  }
-  auto compiled = runDefaultPipeline(CompilerInput{std::move(*qcProgram)},
-                                     ProgramFormat::QCO);
-  if (!compiled) {
-    ADD_FAILURE() << llvm::toString(compiled.takeError());
-    return mlir::failure();
-  }
-  return std::get<QCOProgram>(std::move(*compiled));
+  auto qcProgram =
+      ::mqt::test::value(QCProgram::fromModule(context, std::move(moduleOp)));
+  auto compiled = ::mqt::test::value(runDefaultPipeline(
+      CompilerInput{std::move(qcProgram)}, ProgramFormat::QCO));
+  return std::get<QCOProgram>(std::move(compiled));
 }
 
 TEST(GenerateProgramTest,
@@ -123,14 +115,13 @@ TEST(GenerateProgramTest,
         continue;
       }
       auto program = inPlaceMultiplier(number, multiplier);
-      ASSERT_TRUE(mlir::succeeded(program));
-      auto packageOwner = llvm::cantFail(dd::Package::create(qubits));
+      auto packageOwner = ::mqt::test::value(dd::Package::create(qubits));
       auto& package = *packageOwner;
       auto functionality = qco::buildFunctionality(
-          mlir::mqt::getEntryPoint(program->module()), package);
+          mlir::mqt::getEntryPoint(program.module()), package);
       ASSERT_TRUE(succeeded(functionality));
       const auto phase =
-          llvm::cantFail(dd::getValueByIndex(*functionality, qubits, 0, 0));
+          ::mqt::test::value(dd::getValueByIndex(*functionality, qubits, 0, 0));
       EXPECT_NEAR(std::norm(phase), 1., 1e-11);
       dd::CVec input(size_t{1} << qubits);
       dd::CVec expectedOutput(input.size());
@@ -143,7 +134,7 @@ TEST(GenerateProgramTest,
           const auto product =
               control != 0 ? multiplier * value % number : value;
           const auto expected = (product << 1U) | control;
-          const auto amplitude = llvm::cantFail(dd::getValueByIndex(
+          const auto amplitude = ::mqt::test::value(dd::getValueByIndex(
               *functionality, qubits, expected, (value << 1U) | control));
           EXPECT_NEAR(std::abs(amplitude - phase), 0., 1e-11);
           const auto index = (value << 1U) | control;
@@ -155,8 +146,8 @@ TEST(GenerateProgramTest,
       }
       auto state = package.applyOperation(
           *functionality,
-          llvm::cantFail(dd::makeStateFromVector(input, package)));
-      const auto output = llvm::cantFail(dd::getVector(state));
+          ::mqt::test::value(dd::makeStateFromVector(input, package)));
+      const auto output = ::mqt::test::value(dd::getVector(state));
       for (size_t index = 0; index < output.size(); ++index) {
         EXPECT_NEAR(std::abs(output[index] - expectedOutput[index]), 0., 1e-11);
       }
@@ -168,7 +159,7 @@ TEST(GenerateProgramTest,
 
 TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   const auto benchmark =
-      llvm::cantFail(Shor::create({.number = ShorOptions::MAX_NUMBER}));
+      ::mqt::test::value(Shor::create({.number = ShorOptions::MAX_NUMBER}));
   auto program = generate(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(program->str().size(), 32'768U);

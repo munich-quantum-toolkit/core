@@ -15,6 +15,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -100,13 +101,11 @@ TEST(GenerateProgramTest, BoundsQPEPayloadAtMaximumPrecision) {
     EXPECT_LT(program->str().size(), 4096U);
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::Jeff);
-    ASSERT_TRUE(static_cast<bool>(compiled))
-        << llvm::toString(compiled.takeError());
+    ASSERT_TRUE(::mqt::test::succeeded(compiled));
     const auto bytes = std::get<JeffProgram>(*compiled).toBytes();
     EXPECT_LT(bytes.size(), 16'384U);
     auto restored = JeffProgram::fromBytes(bytes);
-    ASSERT_TRUE(static_cast<bool>(restored))
-        << llvm::toString(restored.takeError());
+    ASSERT_TRUE(::mqt::test::succeeded(restored));
     EXPECT_EQ(restored->toBytes(), bytes);
   }
 }
