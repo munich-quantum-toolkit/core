@@ -298,7 +298,7 @@ public:
   /// Normalize scoped global phases in place.
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
-  /// Consume this program and translate it to portable OpenQASM 3.1.
+  /// Consume this program and translate it to portable OpenQASM 3.
   ///
   /// Run QC cleanup before export. The program is consumed even when export
   /// fails; call copy() first to preserve it.

@@ -4537,6 +4537,9 @@ private:
   [[nodiscard]] LogicalResult
   analyzeGateDefinition(SMLoc location,
                         const SyntaxGateDefinition& declaration) {
+    if (declaration.opaque && !program.openQASM2) {
+      return fail(location, "opaque declarations require OpenQASM 2");
+    }
     if (customGates.contains(declaration.identifier) ||
         lookup(declaration.identifier) != nullptr) {
       return fail(location,
@@ -4547,7 +4550,7 @@ private:
       // OpenQASM 2 programs often repeat standard library gate definitions
       // (e.g. `gate sx`). Prefer the standard-library entry and skip the
       // duplicate body to avoid later inlining overhead.
-      if (program.openQASM2) {
+      if (program.openQASM2 && !declaration.opaque) {
         return success();
       }
       // MQT-compatible OpenQASM 3 may carry portable definitions for gates
@@ -4555,7 +4558,8 @@ private:
       // lowering when the declaration has the catalog signature. Strict mode
       // does not make compatibility entries available and analyzes the body as
       // an ordinary custom gate.
-      if (catalog->availability == GateAvailability::Compatibility) {
+      if (!declaration.opaque &&
+          catalog->availability == GateAvailability::Compatibility) {
         if (declaration.parameters.size() != catalog->parameterCount ||
             declaration.qubits.size() != catalog->qubitCount()) {
           return fail(location,
@@ -4564,7 +4568,7 @@ private:
         }
         return success();
       }
-      // OpenQASM 3 rejects shadowing language and standard-library gates.
+      // Reject shadowing of available language and standard-library gates.
       return fail(location,
                   "gate '" + declaration.identifier + "' is already declared");
     }
@@ -4573,6 +4577,7 @@ private:
         .qubitCount = declaration.qubits.size(),
     };
     GateDefinition definition{
+        .opaque = declaration.opaque,
         .name = declaration.identifier.str(),
         .parameterCount = declaration.parameters.size(),
         .qubitCount = declaration.qubits.size(),

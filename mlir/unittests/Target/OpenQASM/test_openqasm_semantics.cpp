@@ -39,6 +39,29 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMFrontendTest, OpaqueGateDeclarations) {
+  auto result = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.0; opaque hop(theta) a,b; qreg q[2]; hop(0.125) q[1],q[0];");
+  ASSERT_TRUE(result);
+  ASSERT_EQ(result.program->gates.size(), 1);
+  const auto& gate = result.program->gates.front();
+  EXPECT_TRUE(gate.opaque);
+  EXPECT_TRUE(gate.body.empty());
+  EXPECT_EQ(gate.parameterCount, 1);
+  EXPECT_EQ(gate.qubitCount, 2);
+  for (const auto* source : {
+           "OPENQASM 3.1; opaque hop a;",
+           "OPENQASM 2.0; opaque sx a;",
+           "OPENQASM 2.0; opaque hop(a,a) q;",
+           "OPENQASM 2.0; opaque hop(a) a;",
+           "OPENQASM 2.0; opaque hop(a) q; qreg q[1]; hop q[0];",
+           "OPENQASM 2.0; opaque hop a,b; qreg q[1]; hop q[0];",
+       }) {
+    SCOPED_TRACE(source);
+    EXPECT_FALSE(openqasm::frontend::analyzeOpenQASM(source));
+  }
+}
+
 TEST(OpenQASMFrontendTest, ResolvesRegisterSlicesInSelectionOrder) {
   using namespace openqasm::frontend;
   const auto cases =

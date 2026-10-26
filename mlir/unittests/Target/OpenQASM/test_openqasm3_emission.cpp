@@ -94,6 +94,76 @@ ctrl @ x q[0], q[1];
 bit[2] c = measure q;
 )qasm";
 
+TEST(OpenQASM3EmissionTest, PreservesOpaqueGateSignatureAndOperands) {
+  MLIRContext context(emissionDialects());
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 2.0; opaque hop(theta) a,b; qreg q[2]; hop(0.125) q[1],q[0];",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  auto gate = moduleOp->lookupSymbol<func::FuncOp>("hop");
+  ASSERT_TRUE(gate);
+  EXPECT_TRUE(gate.isPrivate());
+  EXPECT_TRUE(gate.isExternal());
+  ASSERT_EQ(gate.getNumArguments(), 3);
+  EXPECT_TRUE(gate.getArgumentTypes()[0].isF64());
+  EXPECT_TRUE(isa<qc::QubitType>(gate.getArgumentTypes()[1]));
+  EXPECT_TRUE(isa<qc::QubitType>(gate.getArgumentTypes()[2]));
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("hop(0.125) q[1], q[0];"), std::string::npos);
+  EXPECT_EQ(emitted->find("gate hop"), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, ValidatesExternalGateNames) {
+  for (const auto* declarations : {
+           "func.func private @a(!qc.qubit) attributes {mqt.source_name = "
+           "\"pulse\"} "
+           "func.func private @b(f64, !qc.qubit) attributes {mqt.source_name = "
+           "\"pulse\"}",
+           "func.func private @x(f64, !qc.qubit)",
+           "func.func private @a(!qc.qubit) attributes {mqt.source_name = "
+           "\"if\"}",
+       }) {
+    SCOPED_TRACE(declarations);
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(
+        std::string("module { ") + declarations +
+            " func.func @main() attributes {mqt.entry_point} { return } }",
+        &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+  }
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @x(!qc.qubit)
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 0 : !qc.qubit
+      func.call @x(%q) : (!qc.qubit) -> ()
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+}
+
+TEST(OpenQASM3EmissionTest, RejectsOpaqueNameUsedByGeneratedGate) {
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @ecr(!qc.qubit)
+    func.func @main() attributes {mqt.entry_point} {
+      %a = qc.static 0 : !qc.qubit
+      %b = qc.static 1 : !qc.qubit
+      func.call @ecr(%a) : (!qc.qubit) -> ()
+      qc.ecr %a, %b : !qc.qubit, !qc.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+}
+
 TEST(OpenQASM3EmissionTest, PreservesIndexCastBitPatterns) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<9> {
@@ -277,7 +347,7 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
       succeeded(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
   stream.flush();
   EXPECT_EQ(streamedSource, *source);
-  EXPECT_TRUE(source->starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(source->starts_with("OPENQASM 3;\n"));
   EXPECT_NE(source->find("include \"stdgates.inc\";"), std::string::npos);
   EXPECT_NE(source->find("cx q[0], q[1];"), std::string::npos);
   EXPECT_NE(source->find("output bit[2] c;"), std::string::npos);
@@ -1263,6 +1333,7 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(emitted->find("switch (1)"), std::string::npos);
   EXPECT_NE(emitted->find("case 1 {"), std::string::npos);
   EXPECT_NE(emitted->find("default {"), std::string::npos);
@@ -2410,6 +2481,7 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   auto repeated = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   EXPECT_EQ(emitted->find("array["), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);

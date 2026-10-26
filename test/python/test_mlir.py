@@ -411,7 +411,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert isinstance(direct, OpenQASMProgram)
     assert not source.is_valid
     assert direct.source == preserved.source
-    assert direct.source.startswith("OPENQASM 3.1;")
+    assert direct.source.startswith("OPENQASM 3;")
     assert str(direct) == direct.source
 
     path = tmp_path / "program.qasm"
