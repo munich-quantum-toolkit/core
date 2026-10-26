@@ -16,6 +16,9 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
+#include "llvm/ADT/ilist.h"
+#include "llvm/ADT/ilist_node.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +28,6 @@
 #include <optional>
 #include <random>
 #include <string>
-#include <unordered_map>
 
 namespace qdmi::dd {
 struct Execution;
@@ -39,9 +41,7 @@ class Device final : public Singleton<Device> {
   size_t qubitsNum_ = 0;
 
   /// The list of device sessions.
-  std::unordered_map<MQT_DDSIM_QDMI_Device_Session,
-                     std::unique_ptr<MQT_DDSIM_QDMI_Device_Session_impl_d>>
-      sessions_;
+  llvm::iplist<MQT_DDSIM_QDMI_Device_Session_impl_d> sessions_;
   /// Mutex protecting access to sessions_.
   mutable std::mutex sessionsMutex_;
 
@@ -89,7 +89,8 @@ public:
 } // namespace qdmi::dd
 
 /// Implementation of the MQT_DDSIM_QDMI_Device_Session structure.
-struct MQT_DDSIM_QDMI_Device_Session_impl_d {
+struct MQT_DDSIM_QDMI_Device_Session_impl_d
+    : llvm::ilist_node<MQT_DDSIM_QDMI_Device_Session_impl_d> {
 private:
   /// The status of the session.
   enum class Status : uint8_t {
@@ -99,9 +100,7 @@ private:
   /// The current status of the session.
   Status status_ = Status::ALLOCATED;
   /// The device jobs associated with this session.
-  std::unordered_map<MQT_DDSIM_QDMI_Device_Job,
-                     std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d>>
-      jobs_;
+  llvm::iplist<MQT_DDSIM_QDMI_Device_Job_impl_d> jobs_;
   /// Mutex protecting access to jobs_.
   mutable std::mutex jobsMutex_;
 
@@ -152,7 +151,8 @@ public:
 };
 
 /// Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
-struct MQT_DDSIM_QDMI_Device_Job_impl_d {
+struct MQT_DDSIM_QDMI_Device_Job_impl_d
+    : llvm::ilist_node<MQT_DDSIM_QDMI_Device_Job_impl_d> {
 private:
   /// The device session associated with the job.
   MQT_DDSIM_QDMI_Device_Session_impl_d* session_;
