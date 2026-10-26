@@ -25,6 +25,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -1077,34 +1078,17 @@ Device::submitJobImpl(const QDMI_Program_Format format,
     return error;
   }
   Job jobWrapper{job, session_};
-  if (custom1.has_value()) {
-    if (auto error = setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1,
-                                       *custom1)) {
-      return error;
-    }
-  }
-  if (custom2.has_value()) {
-    if (auto error = setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2,
-                                       *custom2)) {
-      return error;
-    }
-  }
-  if (custom3.has_value()) {
-    if (auto error = setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3,
-                                       *custom3)) {
-      return error;
-    }
-  }
-  if (custom4.has_value()) {
-    if (auto error = setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4,
-                                       *custom4)) {
-      return error;
-    }
-  }
-  if (custom5.has_value()) {
-    if (auto error = setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5,
-                                       *custom5)) {
-      return error;
+  for (const auto& [value, parameter] : std::array{
+           std::pair{&custom1, QDMI_JOB_PARAMETER_CUSTOM1},
+           std::pair{&custom2, QDMI_JOB_PARAMETER_CUSTOM2},
+           std::pair{&custom3, QDMI_JOB_PARAMETER_CUSTOM3},
+           std::pair{&custom4, QDMI_JOB_PARAMETER_CUSTOM4},
+           std::pair{&custom5, QDMI_JOB_PARAMETER_CUSTOM5},
+       }) {
+    if (*value) {
+      if (auto error = setCustomJobParam(jobWrapper, parameter, **value)) {
+        return error;
+      }
     }
   }
 
@@ -1526,44 +1510,21 @@ llvm::Expected<Session> Session::create(const SessionConfig& config) {
     return qdmi::checkError(status, llvm::Twine("Setting session parameter ") +
                                         qdmi::toString(param));
   };
-  if (auto error = setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4)) {
-    return error;
-  }
-  if (auto error =
-          setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5)) {
-    return error;
+  for (const auto& [value, parameter] : std::array{
+           std::pair{&config.token, QDMI_SESSION_PARAMETER_TOKEN},
+           std::pair{&config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL},
+           std::pair{&config.username, QDMI_SESSION_PARAMETER_USERNAME},
+           std::pair{&config.password, QDMI_SESSION_PARAMETER_PASSWORD},
+           std::pair{&config.projectId, QDMI_SESSION_PARAMETER_PROJECTID},
+           std::pair{&config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1},
+           std::pair{&config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2},
+           std::pair{&config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3},
+           std::pair{&config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4},
+           std::pair{&config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5},
+       }) {
+    if (auto error = setParameter(*value, parameter)) {
+      return error;
+    }
   }
   if (config.authFile) {
     auto filename = detail::pathToString(*config.authFile);
