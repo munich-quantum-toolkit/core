@@ -357,16 +357,15 @@ auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
   *session = nullptr;
   auto uniqueSession = std::make_unique<MQT_DDSIM_QDMI_Device_Session_impl_d>();
   const std::scoped_lock<std::mutex> lock(sessionsMutex_);
-  const auto& it =
-      sessions_.emplace(uniqueSession.get(), std::move(uniqueSession)).first;
-  // get the key, i.e., the raw pointer to the session from the map iterator
-  *session = it->first;
+  sessions_.push_back(uniqueSession.get());
+  *session = uniqueSession.release();
   return QDMI_SUCCESS;
 }
 auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
   if (session != nullptr) {
     std::unique_lock lock(sessionsMutex_);
-    const auto removed = sessions_.extract(session);
+    const std::unique_ptr<MQT_DDSIM_QDMI_Device_Session_impl_d> removed(
+        sessions_.remove(*session));
     lock.unlock(); // Job destruction can wait for running programs.
   }
 }
@@ -455,14 +454,16 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::createDeviceJob(
   }
   auto uniqueJob = std::make_unique<MQT_DDSIM_QDMI_Device_Job_impl_d>(this);
   const std::scoped_lock<std::mutex> lock(jobsMutex_);
-  *job = jobs_.emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
+  jobs_.push_back(uniqueJob.get());
+  *job = uniqueJob.release();
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob(
     MQT_DDSIM_QDMI_Device_Job job) -> void {
   if (job != nullptr) {
     std::unique_lock lock(jobsMutex_);
-    const auto removed = jobs_.extract(job);
+    const std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d> removed(
+        jobs_.remove(*job));
     lock.unlock(); // Do not block other jobs while this one finishes.
   }
 }
