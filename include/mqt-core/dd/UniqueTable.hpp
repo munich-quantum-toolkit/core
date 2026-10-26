@@ -18,6 +18,8 @@
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -25,8 +27,8 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <ranges>
-#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -60,21 +62,19 @@ public:
     size_t maxBuckets = 1048576U;
   };
 
-  /// The default constructor
+  /// Validate capacities and create a table.
   ///
-  /// @param manager The memory manager to use
-  /// @param config The configuration for the unique table
-  ///
-  /// The MemoryManager shall be constructed from the same type that the unique
-  /// table is then used for in the lookup method.
-  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  /// The manager must allocate the node type used in lookup and outlive the
+  /// table.
+  [[nodiscard]] static llvm::Expected<UniqueTable>
+  create(MemoryManager& manager, const UniqueTableConfig& config);
 
   /// Grow the table without invalidating existing entries.
   ///
   /// @param nVars The requested number of levels.
-  /// @throws std::invalid_argument If nVars is less than the current number of
+  /// Returns an error if nVars is less than the current number of
   /// levels.
-  void resize(std::size_t nVars);
+  [[nodiscard]] llvm::Error resize(std::size_t nVars);
 
   /// The hash function for the hash table.
   ///
@@ -132,7 +132,7 @@ public:
     // if node not found → add it to front of unique table bucket
     if (p->id == 0U) {
       if (nextId_ == std::numeric_limits<uint32_t>::max()) {
-        throw std::overflow_error("Unique table node IDs exhausted.");
+        llvm::report_fatal_error("Unique table node IDs exhausted.");
       }
       p->id = ++nextId_;
     }
@@ -156,8 +156,9 @@ public:
   /// Get a reference to the statistics for a level.
   ///
   /// @param idx The level index.
-  /// @throws std::out_of_range If idx does not name an allocated level.
-  [[nodiscard]] const UniqueTableStatistics& getStats(std::size_t idx) const;
+  /// Returns an error if idx does not name an allocated level.
+  [[nodiscard]] llvm::Expected<const UniqueTableStatistics&>
+  getStats(std::size_t idx) const;
 
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;
@@ -212,6 +213,11 @@ public:
   }
 
 private:
+  friend class Package;
+  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  [[nodiscard]] static llvm::Error checkCapacity(size_t initial,
+                                                 size_t maximum);
+
   /// Typedef for a bucket in the table
   using Bucket = NodeBase*;
   /// Typedef for the table

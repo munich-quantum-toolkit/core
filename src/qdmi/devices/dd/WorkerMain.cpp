@@ -128,7 +128,7 @@ struct Execution {
       stateVecDD_ = retainedState.state;
       return true;
     }
-    dd_ = std::make_unique<dd::Package>();
+    dd_ = llvm::cantFail(dd::Package::create());
     auto state = mlir::qco::simulateStatevector(entryPoint, *dd_);
     if (llvm::failed(state)) {
       return false;

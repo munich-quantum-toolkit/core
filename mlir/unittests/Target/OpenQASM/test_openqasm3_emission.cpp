@@ -48,6 +48,7 @@
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -329,15 +330,16 @@ ctrl(2) @ z q[0], q[1], q[2];
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*original)));
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(3);
+  auto packageOwner = llvm::cantFail(dd::Package::create(3));
+  auto& package = *packageOwner;
   auto expected =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*original), package);
   ASSERT_TRUE(succeeded(expected));
-  const auto expectedMatrix = dd::getMatrix(*expected, 3);
+  const auto expectedMatrix = llvm::cantFail(dd::getMatrix(*expected, 3));
   auto actual =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*restored), package);
   ASSERT_TRUE(succeeded(actual));
-  const auto actualMatrix = dd::getMatrix(*actual, 3);
+  const auto actualMatrix = llvm::cantFail(dd::getMatrix(*actual, 3));
   for (size_t row = 0; row < 8; ++row) {
     for (size_t column = 0; column < 8; ++column) {
       EXPECT_NEAR(
@@ -1424,15 +1426,16 @@ TEST(OpenQASM3EmissionTest, CapturesFinalParametersInCompositeGates) {
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*original)));
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(2);
+  auto packageOwner = llvm::cantFail(dd::Package::create(2));
+  auto& package = *packageOwner;
   auto before =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*original), package);
   auto after =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*restored), package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
-  const auto expected = dd::getMatrix(*before, 2);
-  const auto actual = dd::getMatrix(*after, 2);
+  const auto expected = llvm::cantFail(dd::getMatrix(*before, 2));
+  const auto actual = llvm::cantFail(dd::getMatrix(*after, 2));
   for (size_t row = 0; row < 4; ++row) {
     for (size_t column = 0; column < 4; ++column) {
       EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
@@ -1473,15 +1476,16 @@ U(0.4, -0.2, 0.7) q;
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
   ASSERT_TRUE(succeeded(manager.run(*roundTrip)));
-  dd::Package package(1);
+  auto packageOwner = llvm::cantFail(dd::Package::create(1));
+  auto& package = *packageOwner;
   auto before =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), package);
   auto after =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
-  const auto expected = dd::getMatrix(*before, 1);
-  const auto actual = dd::getMatrix(*after, 1);
+  const auto expected = llvm::cantFail(dd::getMatrix(*before, 1));
+  const auto actual = llvm::cantFail(dd::getMatrix(*after, 1));
   for (size_t row = 0; row < 2; ++row) {
     for (size_t column = 0; column < 2; ++column) {
       EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
@@ -1576,11 +1580,12 @@ wrapper(0.25) q;
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
     checkGateStructure(moduleOp);
-    dd::Package package(1);
+    auto packageOwner = llvm::cantFail(dd::Package::create(1));
+    auto& package = *packageOwner;
     auto functionality =
         qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
     ASSERT_TRUE(succeeded(functionality));
-    const auto matrix = dd::getMatrix(*functionality, 1);
+    const auto matrix = llvm::cantFail(dd::getMatrix(*functionality, 1));
     // The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
     for (size_t row = 0; row < 2; ++row) {
       for (size_t column = 0; column < 2; ++column) {
@@ -2412,11 +2417,12 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   PassManager manager(&context);
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(2);
+  auto packageOwner = llvm::cantFail(dd::Package::create(2));
+  auto& package = *packageOwner;
   auto functionality = qco::buildFunctionality(
       restored->lookupSymbol<func::FuncOp>("main"), package);
   ASSERT_TRUE(succeeded(functionality));
-  const auto matrix = dd::getMatrix(*functionality, 2);
+  const auto matrix = llvm::cantFail(dd::getMatrix(*functionality, 2));
   for (size_t row = 0; row < 4; ++row) {
     for (size_t column = 0; column < 4; ++column) {
       const auto expected = row != column ? 0.0 : row == 3 ? -1.0 : 1.0;
@@ -3347,7 +3353,8 @@ TEST(OpenQASM3EmissionTest,
           *emitted, &context,
           {.gatePolicy = openqasm::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
-      dd::Package package(width);
+      auto packageOwner = llvm::cantFail(dd::Package::create(width));
+      auto& package = *packageOwner;
       PassManager manager(&context);
       manager.addPass(createInlinerPass());
       manager.addPass(createCanonicalizerPass());
@@ -3357,11 +3364,11 @@ TEST(OpenQASM3EmissionTest,
       auto lhs = qco::buildFunctionality(
           original->lookupSymbol<func::FuncOp>("main"), package);
       ASSERT_TRUE(succeeded(lhs));
-      const auto expected = dd::getMatrix(*lhs, width);
+      const auto expected = llvm::cantFail(dd::getMatrix(*lhs, width));
       auto rhs = qco::buildFunctionality(
           restored->lookupSymbol<func::FuncOp>("main"), package);
       ASSERT_TRUE(succeeded(rhs));
-      const auto actual = dd::getMatrix(*rhs, width);
+      const auto actual = llvm::cantFail(dd::getMatrix(*rhs, width));
       bool nonIdentity = false;
       for (size_t row = 0; row < expected.size(); ++row) {
         for (size_t column = 0; column < expected.size(); ++column) {

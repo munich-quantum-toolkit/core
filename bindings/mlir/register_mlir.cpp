@@ -39,6 +39,7 @@
 #include "mqt/bench/Generate.h"
 #include "qdmi/QDMI.hpp"
 
+#include "Result.hpp"
 #include "Target/Qiskit/Qiskit.h"
 
 #include "capnp/common.h"
@@ -93,6 +94,8 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
@@ -935,7 +938,7 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
           "dense statevector dimensions exceed addressable memory");
     }
   }
-  auto dataPtr = std::make_unique<dd::CVec>(dd::getVector(state));
+  auto dataPtr = std::make_unique<dd::CVec>(unwrap(dd::getVector(state)));
   auto* const data = dataPtr->data();
   const auto size = dataPtr->size();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
@@ -958,12 +961,12 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
   }
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
   auto* const data = dataPtr->data();
-  dd::traverseMatrix(
+  unwrap(dd::traverseMatrix(
       matrix, std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [data, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
         data[i * dim + j] = value;
       },
-      numQubits);
+      numQubits));
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
     delete static_cast<dd::CVec*>(ptr);
   });
@@ -974,20 +977,20 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
 [[nodiscard]] static DenseMatrix
 buildDenseFunctionality(PythonInputTypes& types, const nb::handle program) {
   return withQCOProgram(types, program, [](const mlir::QCOProgram& qco) {
-    dd::Package ddPackage(0);
-    const auto matrix = buildQCOFunctionality(qco, ddPackage);
-    return toDenseMatrix(matrix, ddPackage.qubits());
+    auto ddPackage = unwrap(dd::Package::create(0));
+    const auto matrix = buildQCOFunctionality(qco, *ddPackage);
+    return toDenseMatrix(matrix, ddPackage->qubits());
   });
 }
 
 [[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,
                                                const nb::handle program) {
   return withQCOProgram(types, program, [](const mlir::QCOProgram& qco) {
-    dd::Package ddPackage(0);
+    auto ddPackage = unwrap(dd::Package::create(0));
     auto func = entryFunc(qco);
     const auto state = withDiagnostics(
         func.getContext(), "cannot simulate this QCO program",
-        [&] { return mlir::qco::simulateStatevector(func, ddPackage); });
+        [&] { return mlir::qco::simulateStatevector(func, *ddPackage); });
     return toDenseVector(state);
   });
 }

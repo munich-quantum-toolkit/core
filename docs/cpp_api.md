@@ -125,6 +125,32 @@ target_link_libraries(my-application PRIVATE MQT::CoreDD)
 Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
 {doc}`installation` for source builds and other CMake integration options.
 
+## Handle native errors
+
+DD construction and numerical operations return `llvm::Expected<T>` or
+`llvm::Error` on fallible paths. Check an `Expected` before accessing its value;
+consume or propagate its `takeError()` on failure. An `Error` converts to true
+on failure. Infallible operations return ordinary values or `void`.
+
+Use `create(...)` for fallible construction:
+
+```cpp
+#include "dd/Package.hpp"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+
+auto package = dd::Package::create(2);
+if (!package) {
+  llvm::logAllUnhandledErrors(package.takeError(), llvm::errs());
+  return 1;
+}
+```
+
+Errors own their messages and categories. Bindings translate them to Python
+exceptions. Internal memory exhaustion is outside the recoverable-error
+contract.
+
 ## Extend the compiler or QIR runtime
 
 The MLIR compiler and QIR runtime use source-tree C++ interfaces. They are not

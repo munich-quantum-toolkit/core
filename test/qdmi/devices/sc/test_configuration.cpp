@@ -8,8 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/TestUtils.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
+
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"

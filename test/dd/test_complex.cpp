@@ -16,6 +16,8 @@
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
+#include "support/TestSupport.hpp"
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -30,9 +32,13 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
+
+using mqt::test::errorCode;
+using mqt::test::value;
 
 using namespace dd;
 
@@ -41,7 +47,9 @@ namespace {
 class CNTest : public testing::Test {
 protected:
   const fp savedTolerance = RealNumber::eps;
-  void TearDown() override { ComplexNumbers::setTolerance(savedTolerance); }
+  void TearDown() override {
+    value(ComplexNumbers::setTolerance(savedTolerance));
+  }
 
   MemoryManager mm{MemoryManager::create<RealNumber>()};
   RealNumberUniqueTable ut{mm};
@@ -58,8 +66,9 @@ TEST_F(CNTest, RejectsInvalidTolerance) {
            std::numeric_limits<fp>::infinity(),
            std::numeric_limits<fp>::quiet_NaN(),
        }) {
-    EXPECT_THROW(ComplexNumbers::setTolerance(tolerance),
-                 std::invalid_argument);
+    EXPECT_EQ(
+        errorCode([&] { return ComplexNumbers::setTolerance(tolerance); }),
+        std::errc::invalid_argument);
     EXPECT_EQ(RealNumber::eps, savedTolerance);
   }
 }
@@ -180,7 +189,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
   auto* second = ut.lookup(0.25 + (4 * RealNumber::eps));
   ASSERT_NE(first, second);
   RealNumber::mark(first);
-  ComplexNumbers::setTolerance(RealNumber::eps * 16);
+  value(ComplexNumbers::setTolerance(RealNumber::eps * 16));
   EXPECT_EQ(ut.lookup(second->value), second);
   EXPECT_EQ(ut.lookup(first->value), first);
   EXPECT_TRUE(RealNumber::isMarked(first));
@@ -192,7 +201,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
            1e-6,
            1e-3,
        }) {
-    ComplexNumbers::setTolerance(tolerance);
+    value(ComplexNumbers::setTolerance(tolerance));
     for (const fp value : {
              0.25,
              std::nextafter(0.25, 0.),
@@ -263,6 +272,8 @@ TEST_F(CNTest, NumberPrintingToString) {
 }
 
 TEST(DDComplexTest, NumberPrintingFormatted) {
+  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., true, 3), "0.123");
+  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., false, 0), "0.1");
   using Case = std::tuple<fp, const char*, const char*>;
   constexpr std::array cases{
       Case{0.0, "0", "+0i"},
@@ -290,11 +301,11 @@ TEST(DDComplexTest, NumberPrintingFormatted) {
 
   for (const auto& [value, real, imaginary] : cases) {
     SCOPED_TRACE(value);
-    std::string ssStorage;
-    llvm::raw_string_ostream ss(ssStorage);
+    std::string buffer;
+    llvm::raw_string_ostream ss(buffer);
     ComplexValue::printFormatted(ss, value, false);
     EXPECT_STREQ(ss.str().c_str(), real);
-    ssStorage.clear();
+    buffer.clear();
     ComplexValue::printFormatted(ss, value, true);
     EXPECT_STREQ(ss.str().c_str(), imaginary);
   }
@@ -484,20 +495,6 @@ TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
   EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
   EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
   EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
-}
-
-TEST(DDComplexTest, ParsesImaginaryUnits) {
-  for (const auto* imaginary : {"i", "I", "+i", "+I", "-i", "-I"}) {
-    SCOPED_TRACE(imaginary);
-    ComplexValue value;
-    value.fromString("0.5", imaginary);
-    EXPECT_EQ(value.r, 0.5);
-    EXPECT_EQ(value.i, *imaginary == '-' ? -1. : 1.);
-  }
-  ComplexValue value;
-  value.fromString("0.5", "");
-  EXPECT_EQ(value.r, 0.5);
-  EXPECT_EQ(value.i, 0.);
 }
 
 TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {

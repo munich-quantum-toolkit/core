@@ -3240,11 +3240,11 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
       ASSERT_TRUE(mlir::succeeded(qc));
       auto program = std::move(*qc).intoQCO();
       ASSERT_TRUE(mlir::succeeded(program));
-      auto package = std::make_unique<dd::Package>(4);
+      auto package = llvm::cantFail(dd::Package::create(4));
       const auto expectedDD = qco::buildFunctionality(
           mlir::mqt::getEntryPoint(program->module()), *package);
       ASSERT_TRUE(succeeded(expectedDD));
-      const auto expected = dd::getMatrix(*expectedDD, 4);
+      const auto expected = llvm::cantFail(dd::getMatrix(*expectedDD, 4));
       package->decRef(*expectedDD);
 
       const auto payload = llvm::cantFail(PayloadSpecification::create(
@@ -3270,7 +3270,7 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
       const auto actualDD = qco::buildFunctionality(
           mlir::mqt::getEntryPoint(program->module()), *package);
       ASSERT_TRUE(succeeded(actualDD));
-      const auto actual = dd::getMatrix(*actualDD, 4);
+      const auto actual = llvm::cantFail(dd::getMatrix(*actualDD, 4));
       package->decRef(*actualDD);
       const auto physicalIndex = [](size_t basis,
                                     const std::vector<int64_t>& sites) {
@@ -3863,11 +3863,11 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesDependentOuterLoops) {
     auto program = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(program));
     ASSERT_TRUE(StringRef(program->str()).contains("scf.for"));
-    auto package = std::make_unique<dd::Package>(3);
+    auto package = llvm::cantFail(dd::Package::create(3));
     const auto expectedDD = qco::buildFunctionality(
         mlir::mqt::getEntryPoint(program->module()), *package);
     ASSERT_TRUE(succeeded(expectedDD));
-    const auto expected = dd::getMatrix(*expectedDD, 3);
+    const auto expected = llvm::cantFail(dd::getMatrix(*expectedDD, 3));
     package->decRef(*expectedDD);
     ASSERT_TRUE(succeeded(program->compileForTarget(TargetEnvironment(
         target, makeControlPayloadSpecification(
@@ -3882,7 +3882,7 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesDependentOuterLoops) {
     const auto actualDD = qco::buildFunctionality(
         mlir::mqt::getEntryPoint(program->module()), *package);
     ASSERT_TRUE(succeeded(actualDD));
-    const auto actual = dd::getMatrix(*actualDD, 3);
+    const auto actual = llvm::cantFail(dd::getMatrix(*actualDD, 3));
     package->decRef(*actualDD);
     const auto physicalIndex = [&](size_t basis, bool output) {
       size_t physical = 0;
@@ -5697,14 +5697,14 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
   ASSERT_TRUE(succeeded(layout));
   ASSERT_EQ(layout->inputCount, 2);
   ASSERT_TRUE(layout->sites);
-  auto package = std::make_unique<dd::Package>(0);
+  auto package = llvm::cantFail(dd::Package::create(0));
   const auto expectedDD =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*reference), *package);
   const auto actualDD = qco::buildFunctionality(
       mlir::mqt::getEntryPoint(program->module()), *package);
   ASSERT_TRUE(succeeded(expectedDD));
   ASSERT_TRUE(succeeded(actualDD));
-  const auto expected = dd::getMatrix(*expectedDD, 2);
+  const auto expected = llvm::cantFail(dd::getMatrix(*expectedDD, 2));
   const auto physicalIndex = [&](size_t basis, bool output) {
     size_t physical = 0;
     for (size_t qubit = 0; qubit < 2; ++qubit) {
@@ -5718,11 +5718,12 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
   };
   for (size_t row = 0; row < 4; ++row) {
     for (size_t column = 0; column < 4; ++column) {
-      EXPECT_LE(std::abs(dd::getValueByIndex(*actualDD, package->qubits(),
-                                             physicalIndex(row, true),
-                                             physicalIndex(column, false)) -
-                         expected[row][column]),
-                1e-12);
+      EXPECT_LE(
+          std::abs(llvm::cantFail(dd::getValueByIndex(
+                       *actualDD, package->qubits(), physicalIndex(row, true),
+                       physicalIndex(column, false))) -
+                   expected[row][column]),
+          1e-12);
     }
   }
   package->decRef(*expectedDD);

@@ -16,6 +16,8 @@
 #include "dd/statistics/TableStatistics.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "support/TestSupport.hpp"
+
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/ScopeExit.h"
@@ -27,6 +29,8 @@
 #include <clocale>
 #include <cstddef>
 #include <string>
+
+using mqt::test::value;
 
 TEST(DDStatistics, SerializesIndependentlyOfNumericLocale) {
   const auto originalLocale = std::string(std::setlocale(LC_NUMERIC, nullptr));
@@ -43,8 +47,9 @@ TEST(DDStatistics, SerializesIndependentlyOfNumericLocale) {
   table.hits = 1;
   table.collisions = 1;
   table.numEntries = 2;
-  dd::Package package(2);
-  package.incRef(dd::makeZeroState(2, package));
+  auto packageOwner = value(dd::Package::create(2));
+  auto& package = *packageOwner;
+  package.incRef(value(dd::makeZeroState(2, package)));
   const auto serialize = [&] {
     std::string streamedMemory;
     llvm::raw_string_ostream(streamedMemory) << memory;
@@ -75,8 +80,7 @@ TEST(DDStatistics, SerializesIndependentlyOfNumericLocale) {
   for (size_t i = 0; i < actual.size(); ++i) {
     SCOPED_TRACE(i);
     auto parsed = llvm::json::parse(actual[i]);
-    ASSERT_TRUE(static_cast<bool>(parsed))
-        << llvm::toString(parsed.takeError());
+    MQT_ASSERT_SUCCESS(parsed);
     EXPECT_EQ(*parsed, llvm::cantFail(llvm::json::parse(expected[i])));
   }
 }

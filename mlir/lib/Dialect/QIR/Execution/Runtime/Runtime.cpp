@@ -21,6 +21,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -135,9 +136,9 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
         dd::Package::MAX_POSSIBLE_QUBITS,
         std::max({numQubits, dd::Package::DEFAULT_QUBITS, 2 * capacity})));
     if (!qState.dd) {
-      qState.dd = std::make_unique<dd::Package>(newCapacity);
+      qState.dd = llvm::cantFail(dd::Package::create(newCapacity));
     } else {
-      qState.dd->resize(newCapacity);
+      llvm::cantFail(qState.dd->resize(newCapacity));
     }
   }
   qubitPermutation.resize(numQubits);
@@ -210,7 +211,7 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
     return;
   }
   if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>(0);
+    qState.dd = llvm::cantFail(dd::Package::create(0));
   }
   std::ranges::transform(addresses, addresses.begin(), [&](const auto address) {
     return qubitPermutation[address];
@@ -220,14 +221,17 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
   const auto mappedTargets = mappedAddresses.drop_front(controls.size());
   const dd::Controls mappedControls(mappedAddresses.begin(),
                                     mappedTargets.begin());
-  qState.edge = qState.dd->applyOperation(
-      mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls),
-      qState.edge);
+  auto gate =
+      mlir::qco::makeGateDD(*qState.dd, matrix, mappedTargets, mappedControls);
+  if (!gate) {
+    throw std::runtime_error(llvm::toString(gate.takeError()));
+  }
+  qState.edge = qState.dd->applyOperation(*gate, qState.edge);
 }
 
 auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
   if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>(0);
+    qState.dd = llvm::cantFail(dd::Package::create(0));
   }
   qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
 }
@@ -248,7 +252,11 @@ bool Runtime::measureQubit(dd::Qubit target) {
   if (samplingBranches_ == nullptr ||
       (samplingBranches_->count == 1 &&
        samplingBranches_->position == samplingBranches_->path.size())) {
-    return qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1';
+    auto outcome = qState.dd->measureOneCollapsing(qState.edge, target, mt);
+    if (!outcome) {
+      throw std::runtime_error(llvm::toString(outcome.takeError()));
+    }
+    return *outcome == '1';
   }
   auto& branches = *samplingBranches_;
   const auto [pzero, pone] =
@@ -296,7 +304,11 @@ auto Runtime::sampleMeasurements(
   }
   if (ascending) {
     for (size_t i = 0; i < shots; ++i) {
-      auto basis = qState.dd->measureAll(qState.edge, false, mt);
+      auto measured = qState.dd->measureAll(qState.edge, false, mt);
+      if (!measured) {
+        throw std::runtime_error(llvm::toString(measured.takeError()));
+      }
+      auto basis = std::move(*measured);
       std::ranges::reverse(basis);
       if (i + 1 == shots) {
         measurements = basis;
@@ -307,7 +319,11 @@ auto Runtime::sampleMeasurements(
   }
   measurements.reserve(qubits.size());
   for (size_t i = 0; i < shots; ++i) {
-    const auto basis = qState.dd->measureAll(qState.edge, false, mt);
+    auto measured = qState.dd->measureAll(qState.edge, false, mt);
+    if (!measured) {
+      throw std::runtime_error(llvm::toString(measured.takeError()));
+    }
+    auto basis = std::move(*measured);
     measurements.clear();
     for (const auto qubit : qubits) {
       measurements.push_back(basis[basis.size() - 1 - qubitPermutation[qubit]]);
@@ -339,7 +355,9 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
         qState.dd->performCollapsingMeasurement(zero, target, pzero, true);
         qState.dd->performCollapsingMeasurement(one, target, pone, false);
         one = qState.dd->applyOperation(
-            mlir::qco::makeGateDD(*qState.dd, matrix, std::array{target}), one);
+            llvm::cantFail(
+                mlir::qco::makeGateDD(*qState.dd, matrix, std::array{target})),
+            one);
         // Reset outcomes with equal normalized states can keep one population.
         const bool equal = zero.p == one.p;
         qState.dd->decRef(one);
@@ -355,8 +373,10 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
     }
     if (measureQubit(target)) {
       const std::array targetArray{target};
-      qState.edge = qState.dd->applyOperation(
-          mlir::qco::makeGateDD(*qState.dd, matrix, targetArray), qState.edge);
+      qState.edge =
+          qState.dd->applyOperation(llvm::cantFail(mlir::qco::makeGateDD(
+                                        *qState.dd, matrix, targetArray)),
+                                    qState.edge);
     }
   }
 }
@@ -493,12 +513,13 @@ auto Runtime::takeState() -> QState {
       const auto other = qubitPermutation[q];
       const std::array targets{other, qubitPermutation[other]};
       qState.edge = qState.dd->applyOperation(
-          mlir::qco::makeGateDD(*qState.dd, matrix, targets), qState.edge);
+          llvm::cantFail(mlir::qco::makeGateDD(*qState.dd, matrix, targets)),
+          qState.edge);
       std::swap(qubitPermutation[q], qubitPermutation[other]);
     }
   }
   if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>(0);
+    qState.dd = llvm::cantFail(dd::Package::create(0));
   }
   QState ret = std::move(qState);
   reset();

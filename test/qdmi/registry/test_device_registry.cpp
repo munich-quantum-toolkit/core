@@ -8,10 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/TestUtils.hpp"
-
 #include "DeviceRegistry.hpp"
 #include "Driver.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 #include "qdmi/constants.h"

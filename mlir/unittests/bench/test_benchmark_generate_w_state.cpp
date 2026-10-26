@@ -47,18 +47,21 @@ TEST(GenerateProgramTest, WStatePreservesCoherenceAndStructuredLoops) {
     auto qco = qc->copy().intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
     const auto before = qco->str();
-    dd::Package package(0);
+    auto packageOwner = llvm::cantFail(dd::Package::create(0));
+    auto& package = *packageOwner;
     const auto root = mlir::qco::simulateStatevector(
         mlir::mqt::getEntryPoint(qco->module()), package);
     ASSERT_TRUE(mlir::succeeded(root));
     EXPECT_EQ(qco->str(), before);
     qco.reset();
-    EXPECT_NEAR(package.fidelity(*root, dd::makeWState(qubits, package)), 1.,
-                1e-10);
+    EXPECT_NEAR(package.fidelity(
+                    *root, llvm::cantFail(dd::makeWState(qubits, package))),
+                1., 1e-10);
     for (size_t wire = 0; wire < qubits; ++wire) {
       auto outcome = std::string(qubits, '0');
       outcome[qubits - wire - 1] = '1';
-      const auto amplitude = root->getValueByPath(qubits, outcome);
+      const auto amplitude =
+          llvm::cantFail(root->getValueByPath(qubits, outcome));
       EXPECT_NEAR(amplitude.real(), 1. / std::sqrt(static_cast<double>(qubits)),
                   1e-10);
       EXPECT_NEAR(amplitude.imag(), 0., 1e-10);
@@ -82,18 +85,21 @@ TEST(GenerateProgramTest, Simulates1024QubitWStateWithoutDenseExtraction) {
   ASSERT_TRUE(mlir::succeeded(restored));
   qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
-  dd::Package package(0);
+  auto packageOwner = llvm::cantFail(dd::Package::create(0));
+  auto& package = *packageOwner;
   const auto root = mlir::qco::simulateStatevector(
       mlir::mqt::getEntryPoint(qco->module()), package);
   ASSERT_TRUE(mlir::succeeded(root));
   EXPECT_EQ(package.qubits(), qubits);
-  EXPECT_NEAR(package.fidelity(*root, dd::makeWState(qubits, package)), 1.,
-              1e-8);
+  EXPECT_NEAR(
+      package.fidelity(*root, llvm::cantFail(dd::makeWState(qubits, package))),
+      1., 1e-8);
   EXPECT_NEAR(package.innerProduct(*root, *root).r, 1., 1e-8);
   for (const size_t index : {size_t{0}, qubits / 2, qubits - 1}) {
     auto outcome = std::string(qubits, '0');
     outcome[index] = '1';
-    const auto amplitude = root->getValueByPath(qubits, outcome);
+    const auto amplitude =
+        llvm::cantFail(root->getValueByPath(qubits, outcome));
     EXPECT_NEAR(amplitude.real(), 1. / std::sqrt(static_cast<double>(qubits)),
                 1e-8);
     EXPECT_NEAR(amplitude.imag(), 0., 1e-8);

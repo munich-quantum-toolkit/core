@@ -515,8 +515,12 @@ int64_t JitSession::sampleCounts(size_t shots,
       return code;
     }
     if (!runtime.invalidStateExtraction_) {
-      counts = dd::Package::sampleCounts(runtime.qState.edge, outputs, shots,
-                                         runtime.mt);
+      auto sampled = dd::Package::sampleCounts(runtime.qState.edge, outputs,
+                                               shots, runtime.mt);
+      if (!sampled) {
+        throw std::runtime_error(llvm::toString(sampled.takeError()));
+      }
+      counts = std::move(*sampled);
       if (stateAvailable != nullptr) {
         *stateAvailable = true;
       }
