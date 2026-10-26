@@ -20,12 +20,8 @@ target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(${TARGET_NAME} PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
-# Keep statically linked LLVM and native libraries inside the extension.
-if(APPLE)
-  target_link_options(
-    ${TARGET_NAME}
-    PRIVATE "LINKER:-twolevel_namespace" "LINKER:-exported_symbol,_PyInit__core")
-elseif(UNIX)
+# Hide archive symbols without hiding C++ exception type information on Mach-O.
+if(UNIX AND NOT APPLE)
   target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
 endif()
 

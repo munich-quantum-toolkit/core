@@ -10,8 +10,6 @@
 
 #include "dd/DDDefinitions.hpp"
 
-#include "Bindings.hpp"
-
 #include "nanobind/nanobind.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner)

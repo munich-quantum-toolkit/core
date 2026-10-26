@@ -156,6 +156,8 @@ autoapi_add_toctree_entry = False
 autoapi_ignore = [
     "*/**/_version.py",
     "*/mqt/core/bench.py",
+    "*/mqt/core/dd.py",
+    "*/mqt/core/mlir.py",
     "*/mqt/core/qdmi.py",
 ]
 autoapi_options = [

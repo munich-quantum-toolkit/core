@@ -8,16 +8,22 @@
  * Licensed under the MIT License
  */
 
-#include "Bindings.hpp"
-
 #include "nanobind/nanobind.h"
 
-NB_MODULE(_core, module) {
-  auto bench = module.def_submodule("bench");
-  const auto dd = module.def_submodule("dd");
-  auto qdmi = module.def_submodule("qdmi");
-  auto mlir = module.def_submodule("mlir");
-  // Keep public type names independent of the native extension's filename.
+namespace mqt {
+void registerBench(nanobind::module_& mod);
+void registerDD(const nanobind::module_& mod);
+void registerQDMI(nanobind::module_& mod);
+void registerMLIR(nanobind::module_& mod);
+} // namespace mqt
+
+NB_MODULE(_core, mod) {
+  auto bench = mod.def_submodule("bench");
+  const auto dd = mod.def_submodule("dd");
+  auto qdmi = mod.def_submodule("qdmi");
+  auto mlir = mod.def_submodule("mlir");
+  // Set the public scope before nanobind records class and function module
+  // names.
   bench.attr("__name__") = "mqt.core.bench";
   dd.attr("__name__") = "mqt.core.dd";
   qdmi.attr("__name__") = "mqt.core.qdmi";

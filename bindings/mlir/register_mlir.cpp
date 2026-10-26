@@ -39,7 +39,6 @@
 #include "mqt/bench/Generate.h"
 #include "qdmi/QDMI.hpp"
 
-#include "Bindings.hpp"
 #include "Target/Qiskit/Qiskit.h"
 
 #include "capnp/common.h"
