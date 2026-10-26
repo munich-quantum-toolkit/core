@@ -103,7 +103,7 @@ bool Worker::start() {
   llvm::SmallString<128> directory;
   if (const auto error =
           llvm::sys::fs::createUniqueDirectory("mqt-dd", directory)) {
-    qdmi::diagnostics::error("Cannot create DDSIM worker socket: {}",
+    qdmi::diagnostics::error("Cannot create DDSIM worker socket: {0}",
                              error.message());
     return false;
   }
@@ -113,12 +113,15 @@ bool Worker::start() {
   llvm::sys::path::append(socketPath, "socket");
   auto listener = llvm::ListeningSocket::createUnix(socketPath);
   if (!listener) {
-    qdmi::diagnostics::error("{}", llvm::toString(listener.takeError()));
+    qdmi::diagnostics::error("{0}", llvm::toString(listener.takeError()));
     return false;
   }
-  const auto executablePath =
-      (qdmi::detail::moduleDirectory(&MODULE_ANCHOR) / MQT_DDSIM_WORKER_NAME)
-          .u8string();
+  auto modulePath = qdmi::detail::moduleDirectory(&MODULE_ANCHOR);
+  if (!modulePath) {
+    qdmi::diagnostics::error("{0}", llvm::toString(modulePath.takeError()));
+    return false;
+  }
+  const auto executablePath = (*modulePath / MQT_DDSIM_WORKER_NAME).u8string();
   const std::string executable(executablePath.begin(), executablePath.end());
   {
     const std::scoped_lock lock(mutex_);
@@ -129,7 +132,7 @@ bool Worker::start() {
     process_ = llvm::sys::ExecuteNoWait(executable, {executable, socketPath},
                                         std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
-      qdmi::diagnostics::error("Cannot start DDSIM worker: {}", error);
+      qdmi::diagnostics::error("Cannot start DDSIM worker: {0}", error);
       return false;
     }
   }

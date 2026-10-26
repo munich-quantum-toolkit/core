@@ -39,13 +39,13 @@ template <class Callable>
   try {
     return std::forward<Callable>(callable)();
   } catch (const std::bad_alloc&) {
-    qdmi::diagnostics::error("Out of memory while {}", action);
+    qdmi::diagnostics::error("Out of memory while {0}", action);
     return QDMI_ERROR_OUTOFMEM;
   } catch (const std::exception& error) {
-    qdmi::diagnostics::error("Failed while {}: {}", action, error.what());
+    qdmi::diagnostics::error("Failed while {0}: {1}", action, error.what());
     return QDMI_ERROR_FATAL;
   } catch (...) {
-    qdmi::diagnostics::error("Failed while {}: unknown exception", action);
+    qdmi::diagnostics::error("Failed while {0}: unknown exception", action);
     return QDMI_ERROR_FATAL;
   }
 }

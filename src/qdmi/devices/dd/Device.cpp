@@ -790,7 +790,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             } catch (const std::exception& error) {
               result.reset();
               worker->terminate();
-              qdmi::diagnostics::error("Could not release DDSIM worker: {}",
+              qdmi::diagnostics::error("Could not release DDSIM worker: {0}",
                                        error.what());
             }
           }
@@ -871,13 +871,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         } catch (const std::exception& error) {
           result.reset();
           reusable = false;
-          qdmi::diagnostics::error("DDSIM worker failed: {}", error.what());
+          qdmi::diagnostics::error("DDSIM worker failed: {0}", error.what());
         }
       });
     } catch (const std::exception& error) {
       execution->programs[index].status = QDMI_JOB_STATUS_FAILED;
       execution->finish();
-      qdmi::diagnostics::error("Could not schedule DDSIM program: {}",
+      qdmi::diagnostics::error("Could not schedule DDSIM program: {0}",
                                error.what());
     }
   }

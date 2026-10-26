@@ -148,7 +148,11 @@ qdmi::SessionConfig makeDriverSessionConfig(
   setString("base-url", baseUrl);
   setString("token", token);
   if (authFile) {
-    setString("auth-file", qdmi::detail::pathToString(*authFile));
+    auto path = qdmi::detail::pathToString(*authFile);
+    if (!path) {
+      throw nb::value_error(llvm::toString(path.takeError()).c_str());
+    }
+    setString("auth-file", *path);
   }
   setString("auth-url", authUrl);
   setString("username", username);
@@ -166,11 +170,14 @@ qdmi::SessionConfig makeDriverSessionConfig(
     session["device-config"] =
         llvm::json::Object{{"inline", std::move(*parsed)}};
   } else if (deviceConfigFile) {
-    const auto path = qdmi::detail::pathToString(*deviceConfigFile);
-    if (!llvm::json::isUTF8(path)) {
+    auto path = qdmi::detail::pathToString(*deviceConfigFile);
+    if (!path) {
+      throw nb::value_error(llvm::toString(path.takeError()).c_str());
+    }
+    if (!llvm::json::isUTF8(*path)) {
       throw nb::value_error("device_config_file must be valid UTF-8");
     }
-    session["device-config"] = llvm::json::Object{{"file", path}};
+    session["device-config"] = llvm::json::Object{{"file", *path}};
   }
   return session.empty()
              ? std::string{}

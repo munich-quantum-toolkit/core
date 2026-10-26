@@ -77,7 +77,11 @@ struct DeviceManifestState {
 
 [[nodiscard]] auto sourceLabel(const std::filesystem::path& source,
                                const std::string_view path) -> std::string {
-  return pathToString(source) + ":" + std::string(path);
+  auto filename = pathToString(source);
+  if (!filename) {
+    throw std::invalid_argument(llvm::toString(filename.takeError()));
+  }
+  return *filename + ":" + std::string(path);
 }
 
 void requireObject(const Json& value, const std::filesystem::path& source,
@@ -194,8 +198,12 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                                     " must be a non-empty path without null "
                                     "bytes");
       }
+      auto filename = pathFromString(*file);
+      if (!filename) {
+        throw std::invalid_argument(llvm::toString(filename.takeError()));
+      }
       patch.deviceConfiguration = FileDeviceConfiguration{
-          .path = resolvePath(pathFromString(*file), base),
+          .path = resolvePath(std::move(*filename), base),
       };
     }
   }
@@ -205,7 +213,11 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                                   " must be a non-empty path without null "
                                   "bytes");
     }
-    patch.authFile = resolvePath(pathFromString(*authFile), base);
+    auto filename = pathFromString(*authFile);
+    if (!filename) {
+      throw std::invalid_argument(llvm::toString(filename.takeError()));
+    }
+    patch.authFile = resolvePath(std::move(*filename), base);
   }
   if (patch.deviceConfiguration && (patch.custom1 || patch.custom2)) {
     throw std::invalid_argument(
@@ -237,7 +249,11 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
                                   " must be a non-empty path without null "
                                   "bytes");
     }
-    patch.library = resolvePath(pathFromString(*library), base);
+    auto filename = pathFromString(*library);
+    if (!filename) {
+      throw std::invalid_argument(llvm::toString(filename.takeError()));
+    }
+    patch.library = resolvePath(std::move(*filename), base);
   }
   patch.prefix = optionalString(value, "prefix", source, path);
   if (patch.prefix && patch.prefix->find('\0') != std::string::npos) {
@@ -301,14 +317,17 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
 }
 
 [[nodiscard]] auto readJson(const std::filesystem::path& path) -> Json {
-  const auto source = pathToString(path);
-  auto buffer = llvm::MemoryBuffer::getFile(source);
+  auto source = pathToString(path);
+  if (!source) {
+    throw std::invalid_argument(llvm::toString(source.takeError()));
+  }
+  auto buffer = llvm::MemoryBuffer::getFile(*source);
   if (!buffer) {
-    throw std::runtime_error(source + ": " + buffer.getError().message());
+    throw std::runtime_error(*source + ": " + buffer.getError().message());
   }
   auto value = llvm::json::parse((*buffer)->getBuffer());
   if (!value) {
-    throw std::invalid_argument(source + ": " +
+    throw std::invalid_argument(*source + ": " +
                                 llvm::toString(value.takeError()));
   }
   return std::move(*value);
@@ -374,25 +393,35 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 
 [[nodiscard]] auto discoverFiles() -> std::vector<std::filesystem::path> {
   std::vector<std::filesystem::path> files;
-  const auto root =
-      moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
-  appendFragments(files, root);
-  appendFragments(files, root / "bin");
-  appendFragments(files, root / "lib");
-  appendFragments(files, root / "mqt-core" / "qdmi");
-  appendFragments(files, root / "qdmi");
+  auto root = moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
+  if (!root) {
+    throw std::runtime_error(llvm::toString(root.takeError()));
+  }
+  appendFragments(files, *root);
+  appendFragments(files, *root / "bin");
+  appendFragments(files, *root / "lib");
+  appendFragments(files, *root / "mqt-core" / "qdmi");
+  appendFragments(files, *root / "qdmi");
 
   std::optional<std::filesystem::path> explicitFile;
   if (auto value = llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_FILE")) {
-    explicitFile = pathFromString(*value);
+    auto filename = pathFromString(*value);
+    if (!filename) {
+      throw std::invalid_argument(llvm::toString(filename.takeError()));
+    }
+    explicitFile = std::move(*filename);
   }
   if (explicitFile) {
     const auto resolved =
         resolvePath(*explicitFile, std::filesystem::current_path());
     if (!std::filesystem::is_regular_file(resolved)) {
+      auto filename = pathToString(resolved);
+      if (!filename) {
+        throw std::invalid_argument(llvm::toString(filename.takeError()));
+      }
       throw std::runtime_error("Explicit QDMI configuration file does not "
                                "exist: " +
-                               pathToString(resolved));
+                               *filename);
     }
     files.emplace_back(resolved);
     return files;
@@ -400,20 +429,34 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 
 #ifdef _WIN32
   if (auto programData = llvm::sys::Process::GetEnv("PROGRAMDATA")) {
-    appendIfFile(files,
-                 pathFromString(*programData) / "mqt-core" / "qdmi.json");
+    auto directory = pathFromString(*programData);
+    if (!directory) {
+      throw std::invalid_argument(llvm::toString(directory.takeError()));
+    }
+    appendIfFile(files, *directory / "mqt-core" / "qdmi.json");
   }
   if (auto appData = llvm::sys::Process::GetEnv("APPDATA")) {
-    appendIfFile(files, pathFromString(*appData) / "mqt-core" / "qdmi.json");
+    auto directory = pathFromString(*appData);
+    if (!directory) {
+      throw std::invalid_argument(llvm::toString(directory.takeError()));
+    }
+    appendIfFile(files, *directory / "mqt-core" / "qdmi.json");
   }
 #else
   appendIfFile(files, "/etc/mqt-core/qdmi.json");
   if (auto xdg = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME");
       xdg && !xdg->empty()) {
-    appendIfFile(files, pathFromString(*xdg) / "mqt-core" / "qdmi.json");
+    auto directory = pathFromString(*xdg);
+    if (!directory) {
+      throw std::invalid_argument(llvm::toString(directory.takeError()));
+    }
+    appendIfFile(files, *directory / "mqt-core" / "qdmi.json");
   } else if (auto home = llvm::sys::Process::GetEnv("HOME")) {
-    appendIfFile(files,
-                 pathFromString(*home) / ".config" / "mqt-core" / "qdmi.json");
+    auto directory = pathFromString(*home);
+    if (!directory) {
+      throw std::invalid_argument(llvm::toString(directory.takeError()));
+    }
+    appendIfFile(files, *directory / ".config" / "mqt-core" / "qdmi.json");
   }
 #endif
   if (auto project =
@@ -429,12 +472,12 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     return std::nullopt;
   }
   if (!patch.library || patch.library->empty()) {
-    throw std::invalid_argument(pathToString(patch.source) +
+    throw std::invalid_argument(sourceLabel(patch.source, "") +
                                 ": enabled device '" + patch.id +
                                 "' is missing library");
   }
   if (!patch.prefix || patch.prefix->empty()) {
-    throw std::invalid_argument(pathToString(patch.source) +
+    throw std::invalid_argument(sourceLabel(patch.source, "") +
                                 ": enabled device '" + patch.id +
                                 "' is missing prefix");
   }
