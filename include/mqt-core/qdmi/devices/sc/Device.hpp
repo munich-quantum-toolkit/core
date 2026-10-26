@@ -74,7 +74,6 @@ struct MQT_SC_QDMI_Device_Job_impl_d
       : session(session) {}
 
   MQT_SC_QDMI_Device_Session_impl_d* session;
-  void free();
   int setParameter(QDMI_Device_Job_Parameter parameter, size_t size,
                    const void* value);
   int setPrograms(QDMI_Program_Format format, size_t count, const size_t* sizes,

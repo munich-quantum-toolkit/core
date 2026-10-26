@@ -91,16 +91,16 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     site->t2 = configuration.qubitProperties.defaults.t2;
     sites.emplace_back(site);
   }
-  for (const auto& override : configuration.qubitProperties.overrides) {
-    auto* site = &siteStorage[override.qubit];
-    if (override.name) {
-      site->name = override.name;
+  for (const auto& qubitOverride : configuration.qubitProperties.overrides) {
+    auto* site = &siteStorage[qubitOverride.qubit];
+    if (qubitOverride.name) {
+      site->name = qubitOverride.name;
     }
-    if (override.t1) {
-      site->t1 = override.t1;
+    if (qubitOverride.t1) {
+      site->t1 = qubitOverride.t1;
     }
-    if (override.t2) {
-      site->t2 = override.t2;
+    if (qubitOverride.t2) {
+      site->t2 = qubitOverride.t2;
     }
   }
 
@@ -141,12 +141,12 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     }
     // Keep the public flattened site list in its configured order.
     std::ranges::sort(operation->supportedSites, siteTupleLess);
-    for (const auto& override : operationConfiguration.siteOverrides) {
-      auto tuple = materializeTuple(override.sites, sites);
+    for (const auto& siteOverride : operationConfiguration.siteOverrides) {
+      auto tuple = materializeTuple(siteOverride.sites, sites);
       operation->overrides.emplace_back(
           std::move(tuple), MQT_SC_QDMI_Operation_impl_d::Calibration{
-                                .duration = override.duration,
-                                .fidelity = override.fidelity,
+                                .duration = siteOverride.duration,
+                                .fidelity = siteOverride.fidelity,
                             });
     }
     std::ranges::sort(
@@ -389,7 +389,6 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-void MQT_SC_QDMI_Device_Job_impl_d::free() { session->freeDeviceJob(this); }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter parameter, const size_t size,
@@ -482,7 +481,7 @@ int MQT_SC_QDMI_device_session_retrieve_device_job_by_id(
 }
 void MQT_SC_QDMI_device_job_free(MQT_SC_QDMI_Device_Job job) {
   if (job != nullptr) {
-    job->free();
+    job->session->freeDeviceJob(job);
   }
 }
 int MQT_SC_QDMI_device_job_set_parameter(

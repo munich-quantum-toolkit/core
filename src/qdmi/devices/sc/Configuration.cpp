@@ -10,7 +10,10 @@
 
 #include "qdmi/devices/sc/Configuration.hpp"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -23,7 +26,6 @@
 #include <initializer_list>
 #include <limits>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -195,11 +197,11 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
     return fail(source, "$/qubitProperties/defaults",
                 "t1 and t2 must be positive when present");
   }
-  std::set<uint64_t> overridden;
+  llvm::DenseSet<uint64_t> overridden;
   for (size_t i = 0; i < result.qubitProperties.overrides.size(); ++i) {
     const auto& entry = result.qubitProperties.overrides[i];
     if (entry.qubit >= result.numQubits ||
-        !overridden.emplace(entry.qubit).second ||
+        !overridden.insert(entry.qubit).second ||
         (!entry.name && !entry.t1 && !entry.t2) ||
         !positiveCalibration(entry) ||
         (entry.name && (entry.name->empty() ||
@@ -209,7 +211,7 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
                   "or t2 with valid values");
     }
   }
-  std::set<std::pair<uint64_t, uint64_t>> uniqueCouplings;
+  llvm::DenseSet<std::pair<uint64_t, uint64_t>> uniqueCouplings;
   for (size_t i = 0; i < couplings.size(); ++i) {
     const auto& coupling = couplings[i];
     const auto pointer = "$/couplings/" + std::to_string(i);
@@ -218,13 +220,13 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
     }
     if (coupling[0] >= result.numQubits || coupling[1] >= result.numQubits ||
         coupling[0] == coupling[1] ||
-        !uniqueCouplings.emplace(coupling[0], coupling[1]).second) {
+        !uniqueCouplings.insert({coupling[0], coupling[1]}).second) {
       return fail(source, pointer,
                   "must be a unique, non-self tuple of valid qubits");
     }
     result.couplings.emplace_back(coupling[0], coupling[1]);
   }
-  std::set<std::string> names;
+  llvm::StringSet<> names;
   for (size_t i = 0; i < result.operations.size(); ++i) {
     const auto pointer = "$/operations/" + std::to_string(i);
     const auto& operation = result.operations[i];
@@ -236,27 +238,27 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
         operation.name.find('\0') != std::string::npos ||
         operation.numQubits == 0 || operation.numQubits > result.numQubits ||
         operation.numParameters > std::numeric_limits<size_t>::max() ||
-        !names.emplace(operation.name).second) {
+        !names.insert(operation.name).second) {
       return fail(source, pointer,
                   "must have a unique non-empty name without NUL bytes and "
                   "representable counts");
     }
     const auto validTuple = [&](const std::vector<uint64_t>& tuple) {
       return tuple.size() == operation.numQubits &&
-             std::set<uint64_t>(tuple.begin(), tuple.end()).size() ==
-                 tuple.size() &&
-             std::ranges::all_of(tuple, [&](uint64_t qubit) {
-               return qubit < result.numQubits;
-             });
+             std::ranges::all_of(
+                 tuple,
+                 [&](uint64_t qubit) { return qubit < result.numQubits; }) &&
+             llvm::SmallDenseSet<uint64_t, 4>(tuple.begin(), tuple.end())
+                     .size() == tuple.size();
     };
-    std::set<std::vector<uint64_t>> uniqueSites;
+    llvm::DenseSet<llvm::ArrayRef<uint64_t>> uniqueSites;
     if (operation.sites) {
       for (size_t j = 0; j < operation.sites->size(); ++j) {
         const auto& tuple = (*operation.sites)[j];
         if (!validTuple(tuple) ||
             (operation.numQubits == 2 &&
              !uniqueCouplings.contains({tuple[0], tuple[1]})) ||
-            !uniqueSites.emplace(tuple).second) {
+            !uniqueSites.insert(tuple).second) {
           return fail(source, pointer + "/sites/" + std::to_string(j),
                       "must be a unique tuple matching the operation arity and "
                       "device connectivity");
@@ -266,26 +268,27 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
       return fail(source, pointer + "/sites",
                   "is required for operations with arity greater than two");
     }
-    std::set<std::vector<uint64_t>> overriddenSites;
+    llvm::DenseSet<llvm::ArrayRef<uint64_t>> overriddenSites;
     for (size_t j = 0; j < operation.siteOverrides.size(); ++j) {
-      const auto& override = operation.siteOverrides[j];
+      const auto& siteOverride = operation.siteOverrides[j];
       const auto overridePointer =
           pointer + "/siteOverrides/" + std::to_string(j);
-      if (!validFidelity(override.fidelity)) {
+      if (!validFidelity(siteOverride.fidelity)) {
         return fail(source, overridePointer + "/fidelity",
                     "must be finite and in [0, 1]");
       }
       const auto supported =
-          validTuple(override.sites) &&
-          (operation.sites ? uniqueSites.contains(override.sites)
-                           : operation.numQubits == 1 ||
-                                 uniqueCouplings.contains(
-                                     {override.sites[0], override.sites[1]}));
-      if (!supported || !overriddenSites.emplace(override.sites).second ||
-          (!override.duration && !override.fidelity)) {
-        return fail(
-            source, overridePointer,
-            "must be one unique supported tuple and override a valid value");
+          validTuple(siteOverride.sites) &&
+          (operation.sites
+               ? uniqueSites.contains(siteOverride.sites)
+               : operation.numQubits == 1 ||
+                     uniqueCouplings.contains(
+                         {siteOverride.sites[0], siteOverride.sites[1]}));
+      if (!supported || !overriddenSites.insert(siteOverride.sites).second ||
+          (!siteOverride.duration && !siteOverride.fidelity)) {
+        return fail(source, overridePointer,
+                    "must be one unique supported tuple and override a "
+                    "valid value");
       }
     }
   }

@@ -9,7 +9,6 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/devices/sc/Device.hpp"
 
 #include "support/TestSupport.hpp"
 
