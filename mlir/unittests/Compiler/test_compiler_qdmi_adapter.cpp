@@ -14,6 +14,7 @@
 #include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 #include "qdmi/client.h"
@@ -535,8 +536,7 @@ TEST(CompilerQDMIAdapterTest,
                             "qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; "
                             "c[1] = measure q[0]; c[0] = measure q[1];"),
       device);
-  ASSERT_TRUE(static_cast<bool>(compiled))
-      << llvm::toString(compiled.takeError());
+  MQT_ASSERT_SUCCESS(compiled);
   EXPECT_EQ(compiled->programFormat(), QDMI_PROGRAM_FORMAT_IQMJSON);
   const auto json = llvm::cantFail(llvm::json::parse(compiled->payload()));
   const auto& measurement =
@@ -613,7 +613,7 @@ TEST(CompilerQDMIAdapterTest,
   const auto restricted = llvm::cantFail(mlir::PayloadSpecification::create(
       payload.format(), {{.id = "forward-branching"}}));
   auto input = mlir::QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(mlir::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   std::string diagnostics;
   const auto context = input->context();
   const mlir::ScopedDiagnosticHandler handler(
@@ -624,14 +624,18 @@ TEST(CompilerQDMIAdapterTest,
       });
   const mlir::TargetEnvironment restrictedEnvironment(
       compiled.environment().target(), restricted);
-  EXPECT_TRUE(mlir::failed(mlir::runDefaultPipeline(
-      input->copy(), mlir::ProgramFormat::QIRAdaptive, restrictedEnvironment)));
+  diagnostics = llvm::toString(
+      (mlir::runDefaultPipeline(input->copy(), mlir::ProgramFormat::QIRAdaptive,
+                                restrictedEnvironment))
+          .takeError());
+  EXPECT_FALSE(diagnostics.empty());
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
   diagnostics.clear();
-  EXPECT_TRUE(llvm::errorToBool(
+  diagnostics = llvm::toString(
       mlir::CompiledProgram::compile(input->copy(), restrictedEnvironment)
-          .takeError()));
+          .takeError());
+  EXPECT_FALSE(diagnostics.empty());
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
 
@@ -645,8 +649,10 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
   diagnostics.clear();
-  EXPECT_TRUE(mlir::failed(
-      mlir::runDefaultPipeline(qc->copy(), mlir::ProgramFormat::QIRAdaptive)));
+  diagnostics = llvm::toString(
+      (mlir::runDefaultPipeline(qc->copy(), mlir::ProgramFormat::QIRAdaptive))
+          .takeError());
+  EXPECT_FALSE(diagnostics.empty());
   EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
             std::string::npos);
 
@@ -692,7 +698,7 @@ TEST(CompilerQDMIAdapterTest, DynamicQIRIndexingDoesNotRequireLoops) {
       return
     }
   })mlir");
-  ASSERT_TRUE(mlir::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   const auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -705,11 +711,12 @@ TEST(CompilerQDMIAdapterTest, DynamicQIRIndexingDoesNotRequireLoops) {
     return capability.id == mlir::ProgramCapability::CONDITIONAL_LOOP ||
            capability.id == mlir::ProgramCapability::COUNTED_ITERATION;
   });
-  EXPECT_TRUE(mlir::succeeded(mlir::runDefaultPipeline(
+  auto result = mlir::runDefaultPipeline(
       std::move(*input), mlir::ProgramFormat::QIRAdaptive,
       mlir::TargetEnvironment(target,
                               llvm::cantFail(mlir::PayloadSpecification::create(
-                                  baseline.format(), capabilities))))));
+                                  baseline.format(), capabilities))));
+  EXPECT_TRUE(static_cast<bool>(result)) << llvm::toString(result.takeError());
 }
 
 TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
@@ -752,13 +759,13 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
       return %bits : !cbit.reg<2>
     }
   })mlir");
-  ASSERT_TRUE(mlir::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   ASSERT_TRUE(mlir::succeeded(program->cleanup()));
   auto qco = std::move(*program).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
-  program = std::move(*qco).intoQC();
-  ASSERT_TRUE(mlir::succeeded(program));
-  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Adaptive);
+  auto restored = std::move(*qco).intoQC();
+  ASSERT_TRUE(mlir::succeeded(restored));
+  auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
   ASSERT_TRUE(mlir::succeeded(qir));
   auto ir = std::move(*qir).intoLLVMIR();
   ASSERT_TRUE(mlir::succeeded(ir));
@@ -887,8 +894,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         llvm::consumeError(compiled.takeError());
         continue;
       }
-      ASSERT_TRUE(static_cast<bool>(compiled))
-          << llvm::toString(compiled.takeError());
+      MQT_ASSERT_SUCCESS(compiled);
       const auto& payload = compiled->payload();
       if (format == QDMI_PROGRAM_FORMAT_QASM3) {
         EXPECT_NE(payload.find(std::string(single) + "("), std::string::npos);
@@ -928,8 +934,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
                               "qubit q; h q; bit c = measure q;"),
         environment);
-    ASSERT_TRUE(static_cast<bool>(compiled))
-        << llvm::toString(compiled.takeError());
+    MQT_ASSERT_SUCCESS(compiled);
     EXPECT_NE(compiled->payload().find("u("), std::string::npos);
     EXPECT_NE(compiled->payload().find("measure $0"), std::string::npos);
   }
@@ -948,7 +953,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         "%phi = arith.constant -0.42 : f64 "
         "%lambda = arith.constant 0.19 : f64 " +
         gate + " return } }");
-    ASSERT_TRUE(mlir::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     const auto target = llvm::cantFail(CompilerTarget::create(
         2, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations({
@@ -976,7 +981,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         "%phi = arith.constant -0.42 : f64 "
         "%lambda = arith.constant 0.19 : f64 "
         "qc.u2(%phi, %lambda) %q : !qc.qubit return } }");
-    ASSERT_TRUE(mlir::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     const auto target = llvm::cantFail(CompilerTarget::create(
         1, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations({
@@ -1002,7 +1007,7 @@ TEST(CompilerQDMIAdapterTest, RejectsScalarProgramOutputs) {
         "module { func.func @main() -> i64 attributes {mqt.entry_point} { "
         "%value = arith.constant " +
         std::to_string(value) + " : i64 return %value : i64 } }");
-    ASSERT_TRUE(mlir::succeeded(scalar));
+    MQT_ASSERT_SUCCESS(scalar);
     auto compiled = mlir::compileProgram(scalar->copy(), device,
                                          QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING);
     ASSERT_FALSE(static_cast<bool>(compiled));
@@ -1016,7 +1021,7 @@ TEST(CompilerQDMIAdapterTest, RejectsScalarProgramOutputs) {
     SCOPED_TRACE(width);
     const auto source = "OPENQASM 3; int[" + std::to_string(width) + "] k = 1;";
     auto qc = mlir::QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(mlir::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
     auto rejected = mlir::compileProgram(qco->copy(), device);
@@ -1042,7 +1047,7 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
       return
     }
   })mlir");
-  ASSERT_TRUE(mlir::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({

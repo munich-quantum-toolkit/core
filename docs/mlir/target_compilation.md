@@ -641,22 +641,28 @@ because the target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
-Program factories and conversions return `mlir::FailureOr<T>`. Fallible in-place
-and file operations return `mlir::LogicalResult`. Check results with
-`mlir::failed` or `mlir::succeeded`; compiler diagnostics describe the errors.
+Program factories and the coordinated compiler pipeline return
+`llvm::Expected<T>`; text-program writes return `llvm::Error`. These results own
+their error details. MLIR transformations on an existing program retain
+`mlir::FailureOr<T>` or `mlir::LogicalResult` and report diagnostics through
+that program's context.
 
 Compile a file and submit it to DDSIM:
 
 ```cpp
+#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "qdmi/QDMI.hpp"
+
 #include "llvm/Support/Error.h"
-#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include <utility>
 
 auto device = qdmi::Session::openDevice("mqt.ddsim.default");
 auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
-if (mlir::failed(input)) {
+if (!input) {
+  llvm::errs() << llvm::toString(input.takeError()) << '\n';
   return 1;
 }
 auto compiled = mlir::compileProgram(std::move(*input), device);

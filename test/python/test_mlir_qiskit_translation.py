@@ -4198,7 +4198,7 @@ def test_bound_parameter_names_are_unique_across_scopes() -> None:
 
 def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
     """Reject duplicate program input names when parsing QC IR."""
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="duplicate program name 'theta'"):
         _single_qubit_program(
             [
                 "qc.rx(%first) %q : !qc.qubit",
@@ -4221,7 +4221,7 @@ def test_parameter_and_register_names_must_be_unique() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="duplicate program name 'theta'"):
         QCProgram.from_mlir_str(
             """module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
@@ -4246,7 +4246,7 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="must not contain a null character"):
         _single_qubit_program(
             ["qc.rz(%theta) %q : !qc.qubit"],
             arguments='%theta: f64 {mqt.input_name = "before\\00after"}',
@@ -4416,8 +4416,9 @@ def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
-def test_mlir_binding_import_does_not_import_qiskit() -> None:
-    """Keep Qiskit optional and allow it to be imported after MLIR."""
+@pytest.mark.parametrize("first_module", ["dd", "bench", "qdmi", "mlir"])
+def test_native_binding_import_does_not_import_qiskit(first_module: str) -> None:
+    """Keep optional integrations lazy regardless of the first native module."""
     script = """
 import importlib.abc
 import sys
@@ -4430,7 +4431,11 @@ class RejectQiskit(importlib.abc.MetaPathFinder):
 
 blocker = RejectQiskit()
 sys.meta_path.insert(0, blocker)
+importlib.import_module("mqt.core." + sys.argv[1])
+if sys.argv[1] in {"dd", "bench"}:
+    assert "mqt.core._qdmi_discovery" not in sys.modules
 import mqt.core.mlir
+assert "mqt.core._qdmi_discovery" in sys.modules
 assert "qiskit" not in sys.modules
 
 sys.meta_path.remove(blocker)
@@ -4442,7 +4447,7 @@ assert sample(circuit, shots=1) == {"1": 1}
 programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
 assert sample(programs[0], shots=1) == {"1": 1}
 """
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+    subprocess.run([sys.executable, "-c", script, first_module], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 
 
 @pytest.mark.parametrize("kind", ["quantum_register", "classical_register", "gate", "loop_parameter"])

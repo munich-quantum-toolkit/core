@@ -60,7 +60,7 @@ static std::string getProgram(const std::string_view file) {
 static void expectOpenQASMSampling(std::string_view source,
                                    std::string_view expected) {
   auto qc = mlir::QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto sampled =
@@ -154,7 +154,7 @@ if (sum == 199990000) { x q; }
 output bit result;
 result = measure q;
 )qasm");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
   ASSERT_TRUE(mlir::succeeded(qir));
   const auto ir = std::move(*qir).intoLLVMIR();
@@ -796,7 +796,7 @@ c[0] = measure q[1];
 c[1] = measure q[0];
 c[2] = measure q[0];
 )qasm");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
   ASSERT_TRUE(mlir::succeeded(qir));
   auto ir = std::move(*qir).intoLLVMIR();
