@@ -18,37 +18,44 @@
 
 #include "qdmi/constants.h"
 
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
-#include <cstddef>
+#include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
 #include <map>
 #include <mutex>
-#include <new>
 #include <optional>
-#include <set>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
 
+using llvm::Error;
+using llvm::Expected;
+
 namespace qdmi::detail {
-void validateDeviceId(const std::string_view id) {
+Error validateDeviceId(const std::string_view id) {
   if (id.empty()) {
-    throw std::invalid_argument("Device definition ID must not be empty");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           "Device definition ID must not be empty");
   }
   if (id.find('\0') != std::string_view::npos) {
-    throw std::invalid_argument("Device definition ID must not contain NUL");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           "Device definition ID must not contain NUL");
   }
+  return Error::success();
 }
 
 namespace {
@@ -60,277 +67,344 @@ struct DefinitionPatch {
   std::optional<std::string> prefix;
   std::optional<bool> enabled;
   DeviceSessionConfig session;
-  std::filesystem::path source;
+  std::string source;
 };
 
 struct DeviceManifestState {
   std::mutex mutex;
   std::vector<std::filesystem::path> paths;
-  std::set<std::string> ids;
+  llvm::StringSet<> ids;
   bool frozen = false;
 };
 
-[[nodiscard]] auto deviceManifestState() -> DeviceManifestState& {
+[[nodiscard]] DeviceManifestState& deviceManifestState() {
   static DeviceManifestState state;
   return state;
 }
 
-[[nodiscard]] auto sourceLabel(const std::filesystem::path& source,
-                               const std::string_view path) -> std::string {
-  auto filename = pathToString(source);
-  if (!filename) {
-    throw std::invalid_argument(llvm::toString(filename.takeError()));
-  }
-  return *filename + ":" + std::string(path);
+[[nodiscard]] std::string sourceLabel(const std::string_view source,
+                                      const std::string_view path) {
+  return std::string(source) + ":" + std::string(path);
 }
 
-void requireObject(const Json& value, const std::filesystem::path& source,
-                   const std::string_view path) {
+Error requireObject(const Json& value, const std::string_view source,
+                    const std::string_view path) {
   if (value.getAsObject() == nullptr) {
-    throw std::invalid_argument(sourceLabel(source, path) +
-                                " must be an object");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path) + " must be an object");
   }
+  return Error::success();
 }
 
-void rejectUnknownKeys(const Json& value,
-                       const std::initializer_list<std::string_view> allowed,
-                       const std::filesystem::path& source,
-                       const std::string_view path) {
+Error rejectUnknownKeys(const Json& value,
+                        const std::initializer_list<std::string_view> allowed,
+                        const std::string_view source,
+                        const std::string_view path) {
   for (const auto& [key, unused] : *value.getAsObject()) {
     static_cast<void>(unused);
     if (std::ranges::find(allowed, llvm::StringRef(key).str()) ==
         allowed.end()) {
-      throw std::invalid_argument(sourceLabel(source, path) +
-                                  " contains unknown key '" +
-                                  llvm::StringRef(key).str() + "'");
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, path) +
+                                 " contains unknown key '" +
+                                 llvm::StringRef(key).str() + "'");
     }
   }
+  return Error::success();
 }
 
-[[nodiscard]] auto optionalString(const Json& value, const std::string& key,
-                                  const std::filesystem::path& source,
-                                  const std::string& path)
-    -> std::optional<std::string> {
+[[nodiscard]] Expected<std::optional<std::string>>
+optionalString(const Json& value, const std::string& key,
+               const std::string_view source, const std::string& path) {
   const auto* const it = value.getAsObject()->get(key);
   if (it == nullptr) {
-    return std::nullopt;
+    return std::optional<std::string>{};
   }
   if (!it->getAsString()) {
-    throw std::invalid_argument(sourceLabel(source, path + "." + key) +
-                                " must be a string");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path + "." + key) +
+                               " must be a string");
   }
-  return it->getAsString()->str();
+  return std::optional<std::string>{it->getAsString()->str()};
 }
 
-[[nodiscard]] auto resolvePath(std::filesystem::path path,
-                               const std::filesystem::path& base)
-    -> std::filesystem::path {
+[[nodiscard]] std::filesystem::path
+resolvePath(std::filesystem::path path, const std::filesystem::path& base) {
   if (path.is_relative()) {
     path = base / path;
   }
   return path.lexically_normal();
 }
 
-[[nodiscard]] auto absolutePath(const std::filesystem::path& path)
-    -> std::filesystem::path {
-  if (path.empty()) {
-    return {};
+[[nodiscard]] Expected<DeviceSessionConfig>
+parseSessionPatch(const Json& value, const std::string_view source,
+                  const std::string& path, const std::filesystem::path& base) {
+  if (auto error = requireObject(value, source, path)) {
+    return error;
   }
-  return std::filesystem::absolute(path).lexically_normal();
-}
-
-[[nodiscard]] auto
-parseSessionPatch(const Json& value, const std::filesystem::path& source,
-                  const std::string& path, const std::filesystem::path& base)
-    -> DeviceSessionConfig {
-  requireObject(value, source, path);
-  rejectUnknownKeys(value,
-                    {
-                        "base-url",
-                        "token",
-                        "auth-file",
-                        "auth-url",
-                        "username",
-                        "password",
-                        "custom1",
-                        "custom2",
-                        "custom3",
-                        "custom4",
-                        "custom5",
-                        "device-config",
-                    },
-                    source, path);
+  if (auto error = rejectUnknownKeys(value,
+                                     {
+                                         "base-url",
+                                         "token",
+                                         "auth-file",
+                                         "auth-url",
+                                         "username",
+                                         "password",
+                                         "custom1",
+                                         "custom2",
+                                         "custom3",
+                                         "custom4",
+                                         "custom5",
+                                         "device-config",
+                                     },
+                                     source, path)) {
+    return error;
+  }
   DeviceSessionConfig patch;
-  patch.baseUrl = optionalString(value, "base-url", source, path);
-  patch.token = optionalString(value, "token", source, path);
-  patch.authUrl = optionalString(value, "auth-url", source, path);
-  patch.username = optionalString(value, "username", source, path);
-  patch.password = optionalString(value, "password", source, path);
-  patch.custom1 = optionalString(value, "custom1", source, path);
-  patch.custom2 = optionalString(value, "custom2", source, path);
-  patch.custom3 = optionalString(value, "custom3", source, path);
-  patch.custom4 = optionalString(value, "custom4", source, path);
-  patch.custom5 = optionalString(value, "custom5", source, path);
+  const std::array<std::pair<const char*, std::optional<std::string>*>, 10>
+      fields = {
+          {
+              {"base-url", &patch.baseUrl},
+              {"token", &patch.token},
+              {"auth-url", &patch.authUrl},
+              {"username", &patch.username},
+              {"password", &patch.password},
+              {"custom1", &patch.custom1},
+              {"custom2", &patch.custom2},
+              {"custom3", &patch.custom3},
+              {"custom4", &patch.custom4},
+              {"custom5", &patch.custom5},
+          },
+  };
+  for (const auto& [key, destination] : fields) {
+    auto result = optionalString(value, key, source, path);
+    if (!result) {
+      return result.takeError();
+    }
+    *destination = std::move(*result);
+  }
   if (const auto* const config = value.getAsObject()->get("device-config");
       config != nullptr) {
     const auto configPath = path + ".device-config";
-    requireObject(*config, source, configPath);
-    rejectUnknownKeys(*config, {"inline", "file"}, source, configPath);
+    if (auto error = requireObject(*config, source, configPath)) {
+      return error;
+    }
+    if (auto error = rejectUnknownKeys(*config, {"inline", "file"}, source,
+                                       configPath)) {
+      return error;
+    }
     const auto* const inlineConfig = config->getAsObject()->get("inline");
     const auto* const fileConfig = config->getAsObject()->get("file");
     if ((inlineConfig == nullptr) == (fileConfig == nullptr)) {
-      throw std::invalid_argument(sourceLabel(source, configPath) +
-                                  " must contain exactly one of 'inline' and "
-                                  "'file'");
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, configPath) +
+                                 " must contain exactly one of 'inline' and "
+                                 "'file'");
     }
     if (inlineConfig != nullptr) {
       if (inlineConfig->getAsObject() == nullptr) {
-        throw std::invalid_argument(
-            sourceLabel(source, configPath + ".inline") + " must be an object");
+        return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                               sourceLabel(source, configPath + ".inline") +
+                                   " must be an object");
       }
       patch.deviceConfiguration = InlineDeviceConfiguration{
           .json = llvm::formatv("{0}", *inlineConfig).str(),
       };
     } else {
-      const auto file = optionalString(*config, "file", source, configPath);
-      if (!file || file->empty() || file->find('\0') != std::string::npos) {
-        throw std::invalid_argument(sourceLabel(source, configPath + ".file") +
-                                    " must be a non-empty path without null "
-                                    "bytes");
+      if (!fileConfig->getAsString() || fileConfig->getAsString()->empty() ||
+          fileConfig->getAsString()->contains('\0')) {
+        return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                               sourceLabel(source, configPath + ".file") +
+                                   " must be a non-empty string");
       }
-      auto filename = pathFromString(*file);
-      if (!filename) {
-        throw std::invalid_argument(llvm::toString(filename.takeError()));
+      auto filePath = pathFromString(*fileConfig->getAsString());
+      if (!filePath) {
+        return filePath.takeError();
       }
       patch.deviceConfiguration = FileDeviceConfiguration{
-          .path = resolvePath(std::move(*filename), base),
+          .path = resolvePath(std::move(*filePath), base),
       };
     }
   }
-  if (auto authFile = optionalString(value, "auth-file", source, path)) {
-    if (authFile->empty() || authFile->find('\0') != std::string::npos) {
-      throw std::invalid_argument(sourceLabel(source, path + ".auth-file") +
-                                  " must be a non-empty path without null "
-                                  "bytes");
+  auto authFile = optionalString(value, "auth-file", source, path);
+  if (!authFile) {
+    return authFile.takeError();
+  }
+  if (*authFile) {
+    if ((*authFile)->empty() || (*authFile)->find('\0') != std::string::npos) {
+      return qdmi::makeError(
+          QDMI_ERROR_INVALIDARGUMENT,
+          sourceLabel(source, path + ".auth-file") +
+              " must be a non-empty path without null bytes");
     }
-    auto filename = pathFromString(*authFile);
-    if (!filename) {
-      throw std::invalid_argument(llvm::toString(filename.takeError()));
+    auto filePath = pathFromString(**authFile);
+    if (!filePath) {
+      return filePath.takeError();
     }
-    patch.authFile = resolvePath(std::move(*filename), base);
+    patch.authFile = resolvePath(std::move(*filePath), base);
   }
   if (patch.deviceConfiguration && (patch.custom1 || patch.custom2)) {
-    throw std::invalid_argument(
+    return qdmi::makeError(
+        QDMI_ERROR_INVALIDARGUMENT,
         sourceLabel(source, path) +
-        " must not combine device-config with custom1 or custom2");
+            " must not combine device-config with custom1 or custom2");
   }
   return patch;
 }
 
-[[nodiscard]] auto
-parseDevicePatch(const Json& value, const std::filesystem::path& source,
-                 const std::string& path, const std::filesystem::path& base)
-    -> DefinitionPatch {
-  requireObject(value, source, path);
-  rejectUnknownKeys(value, {"id", "library", "prefix", "enabled", "session"},
-                    source, path);
-  const auto id = optionalString(value, "id", source, path);
-  if (!id || id->empty()) {
-    throw std::invalid_argument(sourceLabel(source, path + ".id") +
-                                " must be a non-empty string");
+[[nodiscard]] Expected<DefinitionPatch>
+parseDevicePatch(const Json& value, const std::string_view source,
+                 const std::string& path, const std::filesystem::path& base) {
+  if (auto error = requireObject(value, source, path)) {
+    return error;
   }
-  validateDeviceId(*id);
+  if (auto error = rejectUnknownKeys(
+          value, {"id", "library", "prefix", "enabled", "session"}, source,
+          path)) {
+    return error;
+  }
+  auto idResult = optionalString(value, "id", source, path);
+  if (!idResult) {
+    return idResult.takeError();
+  }
+  const auto& id = (*idResult);
+  if (!id || id->empty()) {
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path + ".id") +
+                               " must be a non-empty string");
+  }
+  if (auto error = validateDeviceId(*id)) {
+    return error;
+  }
   DefinitionPatch patch;
   patch.id = *id;
   patch.source = source;
-  if (auto library = optionalString(value, "library", source, path)) {
-    if (library->empty() || library->find('\0') != std::string::npos) {
-      throw std::invalid_argument(sourceLabel(source, path + ".library") +
-                                  " must be a non-empty path without null "
-                                  "bytes");
-    }
-    auto filename = pathFromString(*library);
-    if (!filename) {
-      throw std::invalid_argument(llvm::toString(filename.takeError()));
-    }
-    patch.library = resolvePath(std::move(*filename), base);
+  auto library = optionalString(value, "library", source, path);
+  if (!library) {
+    return library.takeError();
   }
-  patch.prefix = optionalString(value, "prefix", source, path);
+  if (*library) {
+    if ((*library)->empty() || (*library)->find('\0') != std::string::npos) {
+      return qdmi::makeError(
+          QDMI_ERROR_INVALIDARGUMENT,
+          sourceLabel(source, path + ".library") +
+              " must be a non-empty path without null bytes");
+    }
+    auto libraryPath = pathFromString(**library);
+    if (!libraryPath) {
+      return libraryPath.takeError();
+    }
+    patch.library = resolvePath(std::move(*libraryPath), base);
+  }
+  auto prefix = optionalString(value, "prefix", source, path);
+  if (!prefix) {
+    return prefix.takeError();
+  }
+  patch.prefix = std::move(*prefix);
   if (patch.prefix && patch.prefix->find('\0') != std::string::npos) {
-    throw std::invalid_argument(sourceLabel(source, path + ".prefix") +
-                                " must not contain null bytes");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, path + ".prefix") +
+                               " must not contain null bytes");
   }
   if (const auto* const it = value.getAsObject()->get("enabled");
       it != nullptr) {
     if (!it->getAsBoolean()) {
-      throw std::invalid_argument(sourceLabel(source, path + ".enabled") +
-                                  " must be a boolean");
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, path + ".enabled") +
+                                 " must be a boolean");
     }
     patch.enabled = it->getAsBoolean();
   }
   if (const auto* const it = value.getAsObject()->get("session");
       it != nullptr) {
-    patch.session = parseSessionPatch(*it, source, path + ".session", base);
+    auto session = parseSessionPatch(*it, source, path + ".session", base);
+    if (!session) {
+      return session.takeError();
+    }
+    patch.session = std::move(*session);
   }
   return patch;
 }
 
-[[nodiscard]] auto parseConfiguration(const Json& root,
-                                      const std::filesystem::path& source,
-                                      const std::filesystem::path& base)
-    -> std::vector<DefinitionPatch> {
-  requireObject(root, source, "$");
-  rejectUnknownKeys(root, {"schema-version", "qdmi"}, source, "$");
+[[nodiscard]] Expected<std::vector<DefinitionPatch>>
+parseConfiguration(const Json& root, const std::string_view source,
+                   const std::filesystem::path& base) {
+  if (auto error = requireObject(root, source, "$")) {
+    return error;
+  }
+  if (auto error =
+          rejectUnknownKeys(root, {"schema-version", "qdmi"}, source, "$")) {
+    return error;
+  }
   const auto* const version = root.getAsObject()->get("schema-version");
   if (version == nullptr || version->getAsUINT64() != 1) {
-    throw std::invalid_argument(sourceLabel(source, "$.schema-version") +
-                                " must be the integer 1");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, "$.schema-version") +
+                               " must be the integer 1");
   }
   const auto* const qdmiConfig = root.getAsObject()->get("qdmi");
   if (qdmiConfig == nullptr) {
-    return {};
+    return std::vector<DefinitionPatch>{};
   }
-  requireObject(*qdmiConfig, source, "$.qdmi");
-  rejectUnknownKeys(*qdmiConfig, {"devices"}, source, "$.qdmi");
+  if (auto error = requireObject(*qdmiConfig, source, "$.qdmi")) {
+    return error;
+  }
+  if (auto error =
+          rejectUnknownKeys(*qdmiConfig, {"devices"}, source, "$.qdmi")) {
+    return error;
+  }
   const auto* const devices = qdmiConfig->getAsObject()->get("devices");
   if (devices == nullptr) {
-    return {};
+    return std::vector<DefinitionPatch>{};
   }
   if (devices->getAsArray() == nullptr) {
-    throw std::invalid_argument(sourceLabel(source, "$.qdmi.devices") +
-                                " must be an array");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           sourceLabel(source, "$.qdmi.devices") +
+                               " must be an array");
   }
-  std::set<std::string> ids;
+  llvm::StringSet<> ids;
   std::vector<DefinitionPatch> patches;
   patches.reserve(devices->getAsArray()->size());
   for (size_t i = 0; i < devices->getAsArray()->size(); ++i) {
-    auto patch =
+    auto result =
         parseDevicePatch((*devices->getAsArray())[i], source,
                          "$.qdmi.devices[" + std::to_string(i) + "]", base);
-    if (!ids.emplace(patch.id).second) {
-      throw std::invalid_argument(sourceLabel(source, "$.qdmi.devices") +
-                                  " contains duplicate id '" + patch.id + "'");
+    if (!result) {
+      return result.takeError();
+    }
+    auto& patch = (*result);
+    if (!ids.insert(patch.id).second) {
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, "$.qdmi.devices") +
+                                 " contains duplicate id '" + patch.id + "'");
     }
     patches.emplace_back(std::move(patch));
   }
   return patches;
 }
 
-[[nodiscard]] auto readJson(const std::filesystem::path& path) -> Json {
+[[nodiscard]] Expected<Json> parseJson(std::string_view text,
+                                       const std::string_view source) {
+  auto value = llvm::json::parse(text);
+  if (!value) {
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           std::string(source) + ": " +
+                               llvm::toString(value.takeError()));
+  }
+  return std::move(*value);
+}
+
+[[nodiscard]] Expected<Json> readJson(const std::filesystem::path& path) {
   auto source = pathToString(path);
   if (!source) {
-    throw std::invalid_argument(llvm::toString(source.takeError()));
+    return source.takeError();
   }
   auto buffer = llvm::MemoryBuffer::getFile(*source);
   if (!buffer) {
-    throw std::runtime_error(*source + ": " + buffer.getError().message());
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           *source + ": " + buffer.getError().message());
   }
-  auto value = llvm::json::parse((*buffer)->getBuffer());
-  if (!value) {
-    throw std::invalid_argument(*source + ": " +
-                                llvm::toString(value.takeError()));
-  }
-  return std::move(*value);
+  return parseJson((*buffer)->getBuffer(), *source);
 }
 
 void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
@@ -341,46 +415,79 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
   target.source = source.source;
 }
 
-void appendIfFile(std::vector<std::filesystem::path>& files,
-                  const std::filesystem::path& path) {
-  const auto absolute = absolutePath(path);
+Error appendIfFile(std::vector<std::filesystem::path>& files,
+                   const std::filesystem::path& path) {
+  const auto& absolute = path;
   if (absolute.empty()) {
-    return;
+    return Error::success();
   }
-  std::error_code error;
-  if (std::filesystem::is_regular_file(absolute, error)) {
+  auto filename = pathToString(absolute);
+  if (!filename) {
+    return filename.takeError();
+  }
+  if (llvm::sys::fs::is_regular_file(*filename)) {
     files.emplace_back(absolute);
   }
+  return Error::success();
 }
 
-void appendFragments(std::vector<std::filesystem::path>& files,
-                     const std::filesystem::path& directory) {
-  const auto absolute = absolutePath(directory);
+Error appendFragments(std::vector<std::filesystem::path>& files,
+                      const std::filesystem::path& directory) {
+  const auto& absolute = directory;
   if (absolute.empty()) {
-    return;
+    return Error::success();
   }
-  std::error_code error;
-  if (!std::filesystem::is_directory(absolute, error)) {
-    return;
+  auto filename = pathToString(absolute);
+  if (!filename) {
+    return filename.takeError();
+  }
+  if (!llvm::sys::fs::is_directory(*filename)) {
+    return Error::success();
   }
   std::vector<std::filesystem::path> found;
-  const auto manifestSuffix = std::filesystem::path{".qdmi.json"}.native();
-  for (const auto& entry : std::filesystem::directory_iterator(absolute)) {
-    if (entry.is_regular_file() &&
-        entry.path().filename().native().ends_with(manifestSuffix)) {
-      found.emplace_back(entry.path());
+  std::error_code error;
+  for (llvm::sys::fs::directory_iterator entry(*filename, error), end;
+       !error && entry != end; entry.increment(error)) {
+    const auto status = entry->status();
+    if (!status) {
+      return qdmi::makeError(QDMI_ERROR_FATAL, entry->path() + ": " +
+                                                   status.getError().message());
     }
+    if (llvm::sys::fs::is_regular_file(*status) &&
+        llvm::StringRef(entry->path()).ends_with(".qdmi.json")) {
+      auto foundPath = pathFromString(entry->path());
+      if (!foundPath) {
+        return foundPath.takeError();
+      }
+      found.emplace_back(std::move(*foundPath));
+    }
+  }
+  if (error) {
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           *filename + ": " + error.message());
   }
   std::ranges::sort(found);
   files.insert(files.end(), found.begin(), found.end());
+  return Error::success();
 }
 
-[[nodiscard]] auto nearestProjectConfiguration(std::filesystem::path directory)
-    -> std::optional<std::filesystem::path> {
+[[nodiscard]] Expected<std::optional<std::filesystem::path>>
+nearestProjectConfiguration(std::filesystem::path directory) {
   while (!directory.empty()) {
     auto dedicated = directory / "qdmi.json";
-    if (std::filesystem::is_regular_file(dedicated)) {
-      return dedicated;
+    auto filename = pathToString(dedicated);
+    if (!filename) {
+      return filename.takeError();
+    }
+    bool regular = false;
+    const auto error = llvm::sys::fs::is_regular_file(*filename, regular);
+    if (regular) {
+      return std::optional<std::filesystem::path>{std::move(dedicated)};
+    }
+    if (error && error != std::errc::no_such_file_or_directory &&
+        error != std::errc::not_a_directory) {
+      return qdmi::makeError(QDMI_ERROR_FATAL,
+                             *filename + ": " + error.message());
     }
     const auto parent = directory.parent_path();
     if (parent == directory) {
@@ -388,98 +495,108 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     }
     directory = parent;
   }
-  return std::nullopt;
+  return std::optional<std::filesystem::path>{};
 }
 
-[[nodiscard]] auto discoverFiles() -> std::vector<std::filesystem::path> {
+[[nodiscard]] Expected<std::vector<std::filesystem::path>>
+discoverFiles(const std::filesystem::path& cwd) {
   std::vector<std::filesystem::path> files;
-  auto root = moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
-  if (!root) {
-    throw std::runtime_error(llvm::toString(root.takeError()));
+  auto module = moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
+  if (!module) {
+    return module.takeError();
   }
-  appendFragments(files, *root);
-  appendFragments(files, *root / "bin");
-  appendFragments(files, *root / "lib");
-  appendFragments(files, *root / "mqt-core" / "qdmi");
-  appendFragments(files, *root / "qdmi");
+  const auto root = resolvePath(*module, cwd);
+  for (const auto& directory : {
+           root,
+           root / "bin",
+           root / "lib",
+           root / "mqt-core" / "qdmi",
+           root / "qdmi",
+       }) {
+    if (auto error = appendFragments(files, directory)) {
+      return error;
+    }
+  }
 
   std::optional<std::filesystem::path> explicitFile;
   if (auto value = llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_FILE")) {
     auto filename = pathFromString(*value);
     if (!filename) {
-      throw std::invalid_argument(llvm::toString(filename.takeError()));
+      return filename.takeError();
     }
     explicitFile = std::move(*filename);
   }
   if (explicitFile) {
-    const auto resolved =
-        resolvePath(*explicitFile, std::filesystem::current_path());
-    if (!std::filesystem::is_regular_file(resolved)) {
-      auto filename = pathToString(resolved);
-      if (!filename) {
-        throw std::invalid_argument(llvm::toString(filename.takeError()));
-      }
-      throw std::runtime_error("Explicit QDMI configuration file does not "
-                               "exist: " +
-                               *filename);
+    const auto resolved = resolvePath(*explicitFile, cwd);
+    auto filename = pathToString(resolved);
+    if (!filename) {
+      return filename.takeError();
+    }
+    if (!llvm::sys::fs::is_regular_file(*filename)) {
+      return qdmi::makeError(QDMI_ERROR_FATAL,
+                             "Explicit QDMI configuration file does not "
+                             "exist: " +
+                                 *filename);
     }
     files.emplace_back(resolved);
     return files;
   }
 
 #ifdef _WIN32
-  if (auto programData = llvm::sys::Process::GetEnv("PROGRAMDATA")) {
-    auto directory = pathFromString(*programData);
-    if (!directory) {
-      throw std::invalid_argument(llvm::toString(directory.takeError()));
+  for (const auto* variable : {"PROGRAMDATA", "APPDATA"}) {
+    if (auto value = llvm::sys::Process::GetEnv(variable)) {
+      auto directory = pathFromString(*value);
+      if (!directory) {
+        return directory.takeError();
+      }
+      if (auto error =
+              appendIfFile(files, *directory / "mqt-core" / "qdmi.json")) {
+        return error;
+      }
     }
-    appendIfFile(files, *directory / "mqt-core" / "qdmi.json");
-  }
-  if (auto appData = llvm::sys::Process::GetEnv("APPDATA")) {
-    auto directory = pathFromString(*appData);
-    if (!directory) {
-      throw std::invalid_argument(llvm::toString(directory.takeError()));
-    }
-    appendIfFile(files, *directory / "mqt-core" / "qdmi.json");
   }
 #else
-  appendIfFile(files, "/etc/mqt-core/qdmi.json");
+  if (auto error = appendIfFile(files, "/etc/mqt-core/qdmi.json")) {
+    return error;
+  }
   if (auto xdg = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME");
       xdg && !xdg->empty()) {
-    auto directory = pathFromString(*xdg);
-    if (!directory) {
-      throw std::invalid_argument(llvm::toString(directory.takeError()));
+    if (auto error = appendIfFile(files, std::filesystem::path(*xdg) /
+                                             "mqt-core" / "qdmi.json")) {
+      return error;
     }
-    appendIfFile(files, *directory / "mqt-core" / "qdmi.json");
   } else if (auto home = llvm::sys::Process::GetEnv("HOME")) {
-    auto directory = pathFromString(*home);
-    if (!directory) {
-      throw std::invalid_argument(llvm::toString(directory.takeError()));
+    if (auto error =
+            appendIfFile(files, std::filesystem::path(*home) / ".config" /
+                                    "mqt-core" / "qdmi.json")) {
+      return error;
     }
-    appendIfFile(files, *directory / ".config" / "mqt-core" / "qdmi.json");
   }
 #endif
-  if (auto project =
-          nearestProjectConfiguration(std::filesystem::current_path())) {
-    files.emplace_back(std::move(*project));
+  auto project = nearestProjectConfiguration(cwd);
+  if (!project) {
+    return project.takeError();
+  }
+  if ((*project)) {
+    files.emplace_back(*(*project));
+  }
+  for (auto& file : files) {
+    file = resolvePath(std::move(file), cwd);
   }
   return files;
 }
 
-[[nodiscard]] auto materialize(const DefinitionPatch& patch)
-    -> std::optional<qdmi::DeviceDefinition> {
-  if (!patch.enabled.value_or(true)) {
-    return std::nullopt;
-  }
+[[nodiscard]] Expected<qdmi::DeviceDefinition>
+materialize(const DefinitionPatch& patch) {
   if (!patch.library || patch.library->empty()) {
-    throw std::invalid_argument(sourceLabel(patch.source, "") +
-                                ": enabled device '" + patch.id +
-                                "' is missing library");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           patch.source + ": enabled device '" + patch.id +
+                               "' is missing library");
   }
   if (!patch.prefix || patch.prefix->empty()) {
-    throw std::invalid_argument(sourceLabel(patch.source, "") +
-                                ": enabled device '" + patch.id +
-                                "' is missing prefix");
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           patch.source + ": enabled device '" + patch.id +
+                               "' is missing prefix");
   }
   qdmi::DeviceDefinition definition;
   definition.id = patch.id;
@@ -491,41 +608,19 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 
 } // namespace
 
-auto stageDeviceManifest(const std::filesystem::path& path) -> int {
+int stageDeviceManifest(const std::filesystem::path& path) {
   if (path.empty()) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  try {
-    std::error_code error;
-    const auto canonical = std::filesystem::weakly_canonical(path, error);
-    if (error) {
-      return QDMI_ERROR_LIBNOTFOUND;
-    }
 
-    auto& state = deviceManifestState();
-    {
-      const std::scoped_lock lock(state.mutex);
-      if (std::ranges::find(state.paths, canonical) != state.paths.end()) {
-        return QDMI_SUCCESS;
-      }
-      if (state.frozen) {
-        return QDMI_ERROR_BADSTATE;
-      }
-    }
-    if (!std::filesystem::is_regular_file(canonical, error) || error) {
-      return QDMI_ERROR_LIBNOTFOUND;
-    }
+  std::error_code error;
+  const auto canonical = std::filesystem::weakly_canonical(path, error);
+  if (error) {
+    return QDMI_ERROR_LIBNOTFOUND;
+  }
 
-    const auto patches = parseConfiguration(readJson(canonical), canonical,
-                                            canonical.parent_path());
-    for (const auto& patch : patches) {
-      if (const auto definition = materialize(patch);
-          definition &&
-          !std::filesystem::is_regular_file(definition->library)) {
-        return QDMI_ERROR_LIBNOTFOUND;
-      }
-    }
-
+  auto& state = deviceManifestState();
+  {
     const std::scoped_lock lock(state.mutex);
     if (std::ranges::find(state.paths, canonical) != state.paths.end()) {
       return QDMI_SUCCESS;
@@ -533,55 +628,94 @@ auto stageDeviceManifest(const std::filesystem::path& path) -> int {
     if (state.frozen) {
       return QDMI_ERROR_BADSTATE;
     }
-    for (const auto& patch : patches) {
-      if (state.ids.contains(patch.id)) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-    }
-    auto paths = state.paths;
-    auto storedIds = state.ids;
-    paths.emplace_back(canonical);
-    for (const auto& patch : patches) {
-      storedIds.emplace(patch.id);
-    }
-    state.paths.swap(paths);
-    state.ids.swap(storedIds);
-    return QDMI_SUCCESS;
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
-  } catch (const std::invalid_argument&) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  } catch (...) {
-    return QDMI_ERROR_FATAL;
   }
+  auto filename = pathToString(canonical);
+  if (!filename) {
+    return qdmi::toStatus(filename.takeError());
+  }
+  if (!llvm::sys::fs::is_regular_file(*filename)) {
+    return QDMI_ERROR_LIBNOTFOUND;
+  }
+
+  auto root = readJson(canonical);
+  if (!root) {
+    return qdmi::toStatus(root.takeError());
+  }
+  auto patches = parseConfiguration(*root, *filename, canonical.parent_path());
+  if (!patches) {
+    return qdmi::toStatus(patches.takeError());
+  }
+  for (const auto& patch : *patches) {
+    if (!patch.enabled.value_or(true)) {
+      continue;
+    }
+    auto definition = materialize(patch);
+    if (!definition) {
+      return qdmi::toStatus(definition.takeError());
+    }
+    bool regular = false;
+    auto libraryPath = pathToString(definition->library);
+    if (!libraryPath) {
+      return qdmi::toStatus(libraryPath.takeError());
+    }
+    error = llvm::sys::fs::is_regular_file(*libraryPath, regular);
+    if (error && error != std::errc::no_such_file_or_directory &&
+        error != std::errc::not_a_directory) {
+      return QDMI_ERROR_FATAL;
+    }
+    if (!regular) {
+      return QDMI_ERROR_LIBNOTFOUND;
+    }
+  }
+
+  const std::scoped_lock lock(state.mutex);
+  if (std::ranges::find(state.paths, canonical) != state.paths.end()) {
+    return QDMI_SUCCESS;
+  }
+  if (state.frozen) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  for (const auto& patch : *patches) {
+    if (state.ids.contains(patch.id)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+  }
+  state.paths.emplace_back(canonical);
+  for (const auto& patch : *patches) {
+    state.ids.insert(patch.id);
+  }
+  return QDMI_SUCCESS;
 }
 
-auto parseDeviceSessionJson(const char* const data, const size_t size,
-                            DeviceSessionConfig& config) -> int {
+int parseDeviceSessionJson(const char* const data, const size_t size,
+                           DeviceSessionConfig& config) {
   config = {};
   if (data == nullptr && size == 0) {
     return QDMI_SUCCESS;
   }
-  try {
-    auto value = llvm::json::parse(llvm::StringRef(data, size));
-    if (!value) {
-      llvm::consumeError(value.takeError());
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    config = parseSessionPatch(*value, "<device-session-json>", "$",
-                               std::filesystem::current_path());
-    return QDMI_SUCCESS;
-  } catch (const std::bad_alloc&) {
-    return QDMI_ERROR_OUTOFMEM;
 
-  } catch (const std::invalid_argument&) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  } catch (...) {
+  auto value = parseJson(std::string_view{data, size}, "<device-session-json>");
+  if (!value) {
+    return qdmi::toStatus(value.takeError());
+  }
+  llvm::SmallString<256> cwd;
+  if (llvm::sys::fs::current_path(cwd)) {
     return QDMI_ERROR_FATAL;
   }
+  auto directory = pathFromString(cwd.str());
+  if (!directory) {
+    return qdmi::toStatus(directory.takeError());
+  }
+  auto parsed =
+      parseSessionPatch(*value, "<device-session-json>", "$", *directory);
+  if (!parsed) {
+    return qdmi::toStatus(parsed.takeError());
+  }
+  config = std::move(*parsed);
+  return QDMI_SUCCESS;
 }
 
-auto freezeDeviceManifests() -> std::vector<std::filesystem::path> {
+std::vector<std::filesystem::path> freezeDeviceManifests() {
   auto& state = deviceManifestState();
   const std::scoped_lock lock(state.mutex);
   state.frozen = true;
@@ -594,43 +728,76 @@ void rollbackDeviceManifestFreeze() {
   state.frozen = false;
 }
 
-DeviceRegistry::DeviceRegistry() {
+Expected<DeviceRegistry> DeviceRegistry::discover() {
+  llvm::SmallString<256> directory;
+  if (const auto filesystemError = llvm::sys::fs::current_path(directory)) {
+    return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot read current directory: " +
+                                                 filesystemError.message());
+  }
+  auto cwd = pathFromString(directory.str());
+  if (!cwd) {
+    return cwd.takeError();
+  }
+  auto files = discoverFiles(*cwd);
+  if (!files) {
+    return files.takeError();
+  }
   std::map<std::string, DefinitionPatch> merged;
-  const auto mergePatches = [&merged](std::vector<DefinitionPatch> patches) {
-    for (auto& patch : patches) {
+  const auto mergePatches =
+      [&merged](const Json& root, const std::string_view source,
+                const std::filesystem::path& base) -> Error {
+    auto result = parseConfiguration(root, source, base);
+    if (!result) {
+      return result.takeError();
+    }
+    for (auto& patch : (*result)) {
       if (auto const it = merged.find(patch.id); it != merged.end()) {
         mergePatch(it->second, patch);
       } else {
         merged.emplace(patch.id, std::move(patch));
       }
     }
+    return Error::success();
   };
-
-  auto files = freezeDeviceManifests();
-  const auto discovered = discoverFiles();
-  files.insert(files.end(), discovered.begin(), discovered.end());
-  for (const auto& file : files) {
-    mergePatches(parseConfiguration(readJson(file), file, file.parent_path()));
+  auto staged = freezeDeviceManifests();
+  files->insert(files->begin(), staged.begin(), staged.end());
+  for (const auto& file : (*files)) {
+    auto root = readJson(file);
+    if (!root) {
+      return root.takeError();
+    }
+    auto source = pathToString(file);
+    if (!source) {
+      return source.takeError();
+    }
+    if (auto error = mergePatches((*root), *source, file.parent_path())) {
+      return error;
+    }
   }
-  const auto inlineBase = std::filesystem::current_path();
   if (auto inlineJson =
           llvm::sys::Process::GetEnv("MQT_CORE_QDMI_CONFIG_JSON")) {
-    auto value = llvm::json::parse(*inlineJson);
-    if (!value) {
-      throw std::invalid_argument(llvm::toString(value.takeError()));
+    auto root = parseJson(*inlineJson, "<MQT_CORE_QDMI_CONFIG_JSON>");
+    if (!root) {
+      return root.takeError();
     }
-    mergePatches(
-        parseConfiguration(*value, "<MQT_CORE_QDMI_CONFIG_JSON>", inlineBase));
+    if (auto error =
+            mergePatches((*root), "<MQT_CORE_QDMI_CONFIG_JSON>", *cwd)) {
+      return error;
+    }
   }
-
+  DeviceRegistry registry;
   for (auto& [unused, patch] : merged) {
-    static_cast<void>(unused);
     if (!patch.enabled.value_or(true)) {
-      disabledIds_.emplace_back(std::move(patch.id));
-    } else if (auto definition = materialize(patch)) {
-      definitions_.emplace_back(std::move(*definition));
+      registry.disabledIds_.emplace_back(std::move(patch.id));
+    } else {
+      auto definition = materialize(patch);
+      if (!definition) {
+        return definition.takeError();
+      }
+      registry.definitions_.emplace_back(std::move(*definition));
     }
   }
+  return registry;
 }
 
 } // namespace qdmi::detail

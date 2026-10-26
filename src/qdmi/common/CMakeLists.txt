@@ -11,6 +11,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-common)
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon FORCE_STATIC HIDDEN_VISIBILITY)
 
+  llvm_update_compile_flags(${TARGET_NAME})
+
   target_sources(${TARGET_NAME} PRIVATE Common.cpp DeviceConfiguration.cpp)
 
   target_sources(
