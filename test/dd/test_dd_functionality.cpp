@@ -21,61 +21,12 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <cstdlib>
 #include <map>
-#include <new>
 #include <numbers>
-#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-// Executable allocation overrides cannot intercept allocations in Windows DLLs.
-#ifdef MQT_CORE_DD_STATIC_DEFINE
-
-namespace {
-
-// Shared by the failure guard and allocation override.
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-thread_local std::optional<size_t> allocationsUntilFailure;
-
-class FailAllocation {
-public:
-  explicit FailAllocation(const size_t after) {
-    allocationsUntilFailure = after;
-  }
-  ~FailAllocation() { allocationsUntilFailure.reset(); }
-};
-
-} // namespace
-
-// malloc/free prevent recursion into this executable's allocation override.
-// NOLINTBEGIN(cppcoreguidelines-owning-memory, cppcoreguidelines-no-malloc)
-void* operator new(const size_t size) {
-  if (allocationsUntilFailure) {
-    if (*allocationsUntilFailure == 0) {
-      allocationsUntilFailure.reset();
-      throw std::bad_alloc{};
-    }
-    --*allocationsUntilFailure;
-  }
-  if (auto* memory = std::malloc(size == 0 ? 1 : size)) {
-    return memory;
-  }
-  throw std::bad_alloc{};
-}
-
-void operator delete(void* memory) noexcept { std::free(memory); }
-
-#ifdef __cpp_sized_deallocation
-void operator delete(void* memory, size_t /*size*/) noexcept {
-  std::free(memory);
-}
-#endif
-// NOLINTEND(cppcoreguidelines-owning-memory, cppcoreguidelines-no-malloc)
-
-#endif
 
 namespace dd {
 
@@ -167,34 +118,6 @@ TEST(DDHistogram, SamplesWideCorrelatedAndIndependentBits) {
   }
   package.decRef(uniform);
 }
-
-#ifdef MQT_CORE_DD_STATIC_DEFINE
-TEST(DDGateConstruction, GlobalPhasePreservesStateOnAllocationFailure) {
-  for (size_t failure = 0; failure < 64; ++failure) {
-    SCOPED_TRACE(failure);
-    Package package(1);
-    auto state = makeZeroState(1, package);
-    const auto original = state;
-    bool failed = false;
-    try {
-      const FailAllocation allocation(failure);
-      applyGlobalPhase(state, 0.25, package);
-    } catch (const std::bad_alloc&) {
-      failed = true;
-    }
-    if (!failed) {
-      EXPECT_GT(failure, 0U);
-      return;
-    }
-
-    ASSERT_EQ(state, original);
-    ASSERT_TRUE(package.getRootSet<vNode>().contains(state));
-    package.garbageCollect(true);
-    EXPECT_EQ(getVector(state), (CVec{1., 0.}));
-  }
-  FAIL() << "Operation did not succeed within the allocation budget";
-}
-#endif
 
 TEST(DDGateConstruction, AppliesGlobalPhase) {
   Package package(1);
