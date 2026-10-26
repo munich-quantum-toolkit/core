@@ -14,6 +14,7 @@ After=slurmdbd.service
 
 [Service]
 Type=oneshot
+Environment=PATH=/opt/slurm/bin:/opt/slurm/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/local/sbin/mqt-slurm-accounting
 RemainAfterExit=yes
 Restart=on-failure

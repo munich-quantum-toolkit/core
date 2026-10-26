@@ -52,45 +52,42 @@ def runner() -> ModuleType:
     return load_script(Path(__file__).parents[1] / "slurm" / "run_integration.py")
 
 
-@pytest.fixture(scope="module")
-def monitor(runner: ModuleType) -> ModuleType:
-    """Load the Slurm availability monitor.
-
-    Returns:
-        The monitor module from the source checkout.
-    """
-    return load_script(runner.CLUSTER / "update_availability.py")
-
-
-def test_probe_timeout_keeps_admission_closed(monitor: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A hung device leaves its license reserved until a later successful probe."""
-    commands = []
-
-    def scontrol(*arguments: str) -> str:
-        commands.append(arguments)
-        return '{"reservations": []}'
-
-    def probe(*_arguments: object, **_options: object) -> None:
-        assert commands[-1][0] == "create"
-        msg = "probe"
-        raise subprocess.TimeoutExpired(msg, 10)
-
-    monkeypatch.setattr(monitor, "scontrol", scontrol)
-    monkeypatch.setattr(monitor.subprocess, "run", probe)
-    assert monitor.main(("--license", "example.device:2", "--watch")) == 1
-    assert all(command[0] != "delete" for command in commands)
+def test_qan_joins_only_quantum_layers(runner: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A dynamic QAN uses the configured controller layers without copying IDs."""
+    qan = load_script(runner.CLUSTER / "qan.py")
+    records = (
+        '{"licenses":[{"LicenseName":"device.a","LayerName":"quantum"},'
+        '{"LicenseName":"software"},{"LicenseName":"device.b","LayerName":"another-site"}]}'
+    )
+    monkeypatch.setattr(
+        qan.subprocess, "run", lambda *args, **_kwargs: subprocess.CompletedProcess(args, 0, records, "")
+    )
+    calls = []
+    monkeypatch.setattr(qan.os, "execv", lambda *args: calls.append(args))
+    qan.main("CPUs=4 Feature=quantum")
+    assert calls == [
+        (
+            "/opt/slurm/sbin/slurmd",
+            (
+                "slurmd",
+                "--systemd",
+                "-Z",
+                "--conf",
+                'CPUs=4 Feature=quantum HRES=[{"hres_name":"device.a","layer_name":"quantum"}]',
+            ),
+        )
+    ]
 
 
-def test_controller_failure_never_runs_probe(monitor: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failed admission update cannot produce a healthy, open result."""
-
-    def unavailable(*_arguments: str) -> str:
-        msg = "scontrol"
-        raise subprocess.TimeoutExpired(msg, 10)
-
-    monkeypatch.setattr(monitor, "scontrol", unavailable)
-    monkeypatch.setattr(monitor.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("probe ran before blocking"))
-    assert monitor.main(("--license", "example.device:2")) == 2
+def test_qan_rejects_missing_layers(runner: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Do not register a QAN that cannot reach any of the configured resources."""
+    qan = load_script(runner.CLUSTER / "qan.py")
+    monkeypatch.setattr(
+        qan.subprocess, "run", lambda *args, **_kwargs: subprocess.CompletedProcess(args, 0, '{"licenses":[]}', "")
+    )
+    monkeypatch.setattr(qan.os, "execv", lambda *_args: pytest.fail("slurmd started without membership"))
+    with pytest.raises(RuntimeError, match="No quantum HRES"):
+        qan.main("CPUs=4 Feature=quantum")
 
 
 def test_prepare_keeps_private_key_and_preserves_existing_cluster(runner: ModuleType, tmp_path: Path) -> None:

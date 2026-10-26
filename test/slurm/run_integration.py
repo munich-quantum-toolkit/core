@@ -338,7 +338,7 @@ def test_core() -> None:
     third = submit("bell_job.py", "mqt.ddsim.default:1")
     wait_for(
         "the third DDSIM job to wait for its license",
-        lambda: job_matches(third, "PENDING", reason="Licenses"),
+        lambda: job_matches(third, "PENDING", node="", reason="ReqNodeNotAvail, May be reserved for other job"),
     )
     assert_license("mqt.ddsim.default", total=2, used=2, free=0)
 
@@ -353,35 +353,56 @@ def test_core() -> None:
         msg = "The SC job did not complete while both DDSIM licenses remained held"
         raise AssertionError(msg)
 
-    monitor_service = "qdmi-availability@mqt.ddsim.default:2.service"
-    controller("systemctl", "stop", monitor_service)
-    configuration = RUNTIME / "jobs" / "availability.json"
+    configuration = RUNTIME / "qdmi.json"
     configuration.write_text(
         json.dumps({"schema-version": 1, "qdmi": {"devices": [{"id": "mqt.ddsim.default", "enabled": False}]}}),
         encoding="utf-8",
     )
-    monitor = ("python3", "/workspace/examples/slurm/update_availability.py", "--license", "mqt.ddsim.default:2")
-    assert controller("env", "MQT_CORE_QDMI_CONFIG_FILE=/jobs/availability.json", *monitor, check=False).returncode == 1
-    assert license_record("mqt.ddsim.default")["Reserved"] == "2"
+    controller("scontrol", "reconfigure")
+    wait_for(
+        "the failed QDMI probe to disable its HRES layer",
+        lambda: license_record("mqt.ddsim.default")["DisableLayer"] == "true",
+    )
+    for license_name in ("mqt.ddsim.default", "mqt.sc.default"):
+        wait_for(
+            f"{license_name} to recover its QAN membership after reconfiguration",
+            lambda license_name=license_name: (
+                set(controller("scontrol", "show", "hostnames", license_record(license_name)["Nodes"]).stdout.split())
+                == set(QANS)
+            ),
+        )
+    wait_for("the unaffected SC layer to recover", lambda: license_record("mqt.sc.default")["DisableLayer"] == "false")
+    assert_license("mqt.ddsim.default", total=2, used=2, free=0)
     assert job_matches(first, "RUNNING")
     assert job_matches(second, "RUNNING")
     for job_id in (first, second):
         (RUNTIME / "jobs" / f"release-{job_id}").touch()
         wait_for(f"the released DDSIM job {job_id} to finish", lambda job_id=job_id: job_finished(job_id))
     assert_license("mqt.ddsim.default", total=2, used=0, free=2)
-    controller(*monitor, "--block-only")
     job(
         "srun", "--immediate=5", "--time=1", "--partition=quantum", "--licenses=mqt.sc.default", "/bin/true", timeout=60
     )
-    assert job_matches(third, "PENDING", node="", reason="Licenses")
-    assert job("scontrol", "delete", "ReservationName=qdmi-unavailable-mqt.ddsim.default", check=False).returncode != 0
+    wait_for(
+        "the disabled HRES to hold its pending job without nodes",
+        lambda: job_matches(third, "PENDING", node="", reason="HRESDisabled"),
+    )
+    assert job("scontrol", "update", "HRESName=mqt.ddsim.default", "DisableHRES=false", check=False).returncode != 0
 
-    controller("systemctl", "start", monitor_service)
+    configuration.write_text('{"schema-version":1,"qdmi":{"devices":[]}}', encoding="utf-8")
     wait_for_result("ddsim", third, "the pending DDSIM job to execute after recovery")
     wait_for("the third DDSIM job to finish", lambda: job_finished(third))
     assert_allocation(first, QANS[0])
     assert_allocation(second, QANS[1])
     assert_allocation(third)
+    controller("scontrol", "update", "HRESName=mqt.sc.default", "LayerName=quantum", f"Nodes=-{QANS[0]}")
+    started_before = re.findall(r"SlurmdStartTime=(\S+)", node_record(QANS[0]))[0]
+    compose("exec", "-T", "--index", "1", "qan", "systemctl", "restart", "slurmd")
+    wait_for(
+        "the QAN to register again without undoing administrator HRES changes",
+        lambda: re.findall(r"SlurmdStartTime=(\S+)", node_record(QANS[0]))[0] != started_before,
+    )
+    assert license_record("mqt.sc.default")["Nodes"] == QANS[1]
+    controller("scontrol", "update", "HRESName=mqt.sc.default", "LayerName=quantum", f"Nodes=+{QANS[0]}")
     compose("up", "--detach", "--no-deps", "--force-recreate", "--wait", "accounting", timeout=120)
     accounting = job(
         "sacct",
@@ -456,6 +477,18 @@ def test_partitions() -> None:
     assert set(hostnames) == set(QANS), hostnames
     hostname = job("srun", "--immediate=5", "--time=1", "hostname").stdout.strip()
     assert hostname in NODES, hostname
+    assert (
+        job(
+            "srun",
+            "--immediate=2",
+            "--time=1",
+            "--partition=compute",
+            "--licenses=mqt.ddsim.default",
+            "hostname",
+            check=False,
+        ).returncode
+        != 0
+    )
 
 
 def test_job_environment() -> None:
@@ -512,9 +545,12 @@ def main(arguments: Sequence[str] = ()) -> None:
         clean_runtime()
         if options.device_license:
             configuration = (RUNTIME / "slurm.conf").read_text(encoding="utf-8")
-            configuration = re.sub(
-                r"^Licenses=(.*)$", rf"Licenses=\1,{options.device_license}:2", configuration, flags=re.MULTILINE
-            )
+            resource_template = (CLUSTER / "resources.yaml").read_text(encoding="utf-8")
+            resource = resource_template[
+                resource_template.index("- resource:") : resource_template.index("- resource: mqt.sc.default")
+            ]
+            with (RUNTIME / "resources.yaml").open("a", encoding="utf-8") as resources:
+                resources.write(resource.replace("mqt.ddsim.default", options.device_license))
             configuration = re.sub(
                 r"^AccountingStorageTRES=(.*)$",
                 rf"AccountingStorageTRES=\1,license/{options.device_license}",
@@ -546,8 +582,8 @@ def main(arguments: Sequence[str] = ()) -> None:
 
         version_output = controller("scontrol", "--version").stdout.strip()
         version_match = re.search(r"^slurm(?:-wlm)?\s+(\d+)\.(\d+)\b", version_output, flags=re.IGNORECASE)
-        if version_match is None or tuple(map(int, version_match.groups())) < (25, 11):
-            msg = f"The fixture requires Slurm 25.11 or newer, got {version_output!r}"
+        if version_match is None or tuple(map(int, version_match.groups())) < (26, 11):
+            msg = f"The fixture requires Slurm 26.11 or newer, got {version_output!r}"
             raise RuntimeError(msg)
 
         for partition, nodes, cpus, memory in (("compute", NODES, 2, 2048), ("quantum", QANS, 4, 8192)):
@@ -568,7 +604,7 @@ def main(arguments: Sequence[str] = ()) -> None:
         for license_name in healthy_licenses:
             wait_for(
                 f"{license_name} to become available",
-                lambda license_name=license_name: license_record(license_name)["Reserved"] == "0",
+                lambda license_name=license_name: license_record(license_name)["DisableLayer"] == "false",
             )
         test_partitions()
         if options.command:

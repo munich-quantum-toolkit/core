@@ -16,13 +16,25 @@ A shared filesystem connects workflow stages; QDMI connects quantum devices.
 | Setting            | Purpose                                                  |
 | ------------------ | -------------------------------------------------------- |
 | **Partition**      | Place applications on classical or quantum access nodes. |
-| **Device license** | Limit concurrent allocations for a QDMI device.          |
+| **HRES**           | Set device capacity, eligible nodes, and availability.   |
 | **Credentials**    | Authenticate with the device service.                    |
 
-The playground names each Slurm license after its QDMI device ID. Licenses
-coordinate allocations within the cluster; they neither authorize device access
-nor reserve capacity at a remote service. An availability monitor keeps new jobs
-pending while a device is unavailable.
+The playground uses Slurm hierarchical resources (HRES), named after QDMI device
+IDs. HRES controls placement and concurrent allocations. Its Lua plugin queries
+QDMI availability before admitting jobs. Applications own their QDMI sessions
+and credentials; HRES does not reserve capacity at a remote service. The
+existing `--licenses` submission syntax and `license/ID` accounting apply.
+
+:::{important}
+This prototype builds Slurm 26.11.0rc1 development revision
+`ba178ef837c4ba799fb3de72bcdaf30bc2b1616d` with `hres/lua`. Its callbacks and
+configuration may change before release. The included
+`slurm-hres-reconfigure.patch` restores dynamic QAN membership after controller
+reconfiguration or state recovery. Registration restores each node once per
+controller process, preserving later administrator membership changes. The
+unpatched revision loses that membership on `scontrol reconfigure`. See the
+[pinned HRES documentation](https://github.com/SchedMD/slurm/blob/ba178ef837c4ba799fb3de72bcdaf30bc2b1616d/doc/html/hres.shtml).
+:::
 
 Already have a cluster? Start with [job submission](#submit-your-first-job) or
 [site configuration](#deploy-on-an-existing-cluster). Otherwise, the
@@ -32,7 +44,7 @@ provide a cluster to experiment with:
 | Host                     | Role                                                             |
 | ------------------------ | ---------------------------------------------------------------- |
 | `login`                  | User shell, Slurm clients, and shared software environment       |
-| `controller`             | Scheduling and device availability monitors                      |
+| `controller`             | Scheduling and HRES availability callbacks                       |
 | `node` (two by default)  | Classical computation in the `compute` partition                 |
 | `qan` (two by default)   | Compilation and access to all devices in the `quantum` partition |
 | `accounting`, `database` | Persistent job and resource accounting with SlurmDBD and MariaDB |
@@ -51,6 +63,12 @@ access for systemd and Slurm resource isolation. The Compose settings follow
 [Docker Desktop's systemd setup](https://docs.docker.com/desktop/release-notes/#430).
 Disable Enhanced Container Isolation and allocate at least four CPUs and 12 GiB
 of RAM to Docker for small demonstrations. Use trusted development workloads.
+
+Each systemd container consumes host inotify instances. If startup reports
+`Failed to create control group inotify object: Too many open files`, stop
+unused playground projects or ask the host administrator to raise
+`fs.inotify.max_user_instances`. Running multiple full clusters can exhaust a
+host limit of 128 before any Slurm job starts.
 
 From the MQT Core checkout:
 
@@ -151,11 +169,31 @@ packages are compiled inside Docker for its architecture. MQT Core's Qiskit and
 PennyLane extras are already installed; add any application-specific
 dependencies to the same list.
 
-Configure device license counts and accounting records in
-`build/slurm/slurm.conf` before starting the updated cluster:
+Configure each device in `build/slurm/resources.yaml`. For example:
+
+```yaml
+- resource: iqm.emerald.mock
+  mode: 1
+  count: 1
+  plugin: lua
+  maintenance_cycle: 30
+  maintenance_timeout: 15
+  config:
+    lua_script: /etc/slurm/hres_qdmi.lua
+    probe_timeout: 10
+  layers:
+    - name: quantum
+```
+
+Use one explicit block per device; the pinned Slurm YAML parser does not support
+anchors. Each dynamic QAN registers membership in every `quantum` layer by
+reading `scontrol --json show licenses`. Classical nodes join none. For a site
+with distinct access paths, configure eligible node membership per layer
+instead. After adding resources, restart QANs when idle so they register new
+membership. Also extend the existing accounting list in
+`build/slurm/slurm.conf`:
 
 ```ini
-Licenses=mqt.ddsim.default:2,mqt.sc.default:1,iqm.emerald.mock:1,amazon.braket.sv1:2
 AccountingStorageTRES=license/mqt.ddsim.default,license/mqt.sc.default,license/iqm.emerald.mock,license/amazon.braket.sv1
 ```
 
@@ -170,15 +208,16 @@ docker compose -f examples/slurm/compose.yml up --build -d --wait
 ```
 
 All implementations share `/opt/venv`, and every QAN can reach them. Adding a
-device requires its implementation, catalogue entry, license, and credentials;
-it does not require a new partition or node type. Classical nodes use an
-internal network; QANs, the login node, and the monitoring controller also have
+device requires its implementation, catalogue entry, HRES block, and
+credentials; it does not require a new partition or node type. Classical nodes
+use an internal network; QANs, the login node, and the HRES controller also have
 outbound connectivity.
 
 ### Supply credentials
 
-Monitors use site credentials independently of jobs. Put their references in the
-private `build/slurm/qdmi.env` file, using systemd `EnvironmentFile` syntax:
+The controller probe uses site credentials independently of jobs. Put their
+references in the private `build/slurm/qdmi.env` file, using systemd
+`EnvironmentFile` syntax:
 
 ```ini
 IQM_TOKENS_FILE=/run/credentials/iqm.json
@@ -202,67 +241,71 @@ squeue --me
 
 ## Admit jobs while devices are operational
 
-A license count limits concurrent Slurm allocations, not the number of circuits
-an application can submit. Choose counts according to site policy and service
-capacity. The playground runs one administrative monitor per device. It probes
-QDMI in a bounded child process and updates a
-[license-only reservation](https://slurm.schedmd.com/reservations.html):
+An HRES count limits concurrent Slurm allocations, not submitted circuits.
+Choose it according to site policy. The Lua callback starts with admission
+closed, then probes the selected QDMI device in a separate process:
 
-| Probe result       | Scheduling behavior                                           |
-| ------------------ | ------------------------------------------------------------- |
-| `IDLE` or `BUSY`   | Release the reservation; jobs can acquire the device license  |
-| Failure or timeout | Keep all units reserved; new jobs wait with reason `Licenses` |
-| Monitor stopped    | Reserve all units until monitoring resumes successfully       |
+| Probe result                           | Scheduling behavior                              |
+| -------------------------------------- | ------------------------------------------------ |
+| `IDLE` or `BUSY`                       | Enable the layer for new allocations             |
+| Initialization/status error or timeout | Disable the layer; jobs wait with `HRESDisabled` |
+| Capacity exhausted                     | Keep jobs pending without allocating nodes       |
 
-`BUSY` means operational; the remote service may queue a submitted job. Waiting
-jobs occupy no compute nodes. Reservations affect new allocations, while running
-jobs and other device licenses continue unaffected.
+The default probe runs every 30 seconds and has a ten-second deadline, followed
+by forced termination after two seconds. Slurm's `maintenance_timeout` only
+reports slow callbacks; the separate process deadline enforces the bound.
+Startup and reconfiguration require a new successful probe. Running jobs keep
+their allocations when a device becomes unavailable; unrelated devices remain
+usable. An application must handle execution failure and remote queuing.
 
-The controller reserves licenses before opening the partitions. Each
-`qdmi-availability@ID:COUNT.service` checks its device every 30 seconds with a
-ten-second probe timeout. Systemd restarts failed monitors and closes admission
-when a monitor stops. Probe output is suppressed because device diagnostics can
-contain credentials; service failures appear in the journal. From an
-administrator shell on the controller, exercise admission with:
+`BUSY` means operational, not immediately available. Admission reflects the
+probe identity and the last successful observation, not a user's authorization.
+Secrets belong in the private environment/credential files, never in HRES
+`config` or callback payloads, which Slurm can pass to job users. Probe output
+and core dumps are disabled because device diagnostics can contain credentials.
+
+Inspect `DisableLayer`, `Nodes`, `Used`, and `Free` in `scontrol show licenses`.
+From an administrator shell on the controller, a manual stop is:
 
 ```bash
-systemctl stop qdmi-availability@mqt.ddsim.default:2.service
-systemctl start qdmi-availability@mqt.ddsim.default:2.service
+scontrol update HRESName=mqt.ddsim.default DisableHRES=true
+scontrol update HRESName=mqt.ddsim.default DisableHRES=false
 ```
 
-Open that shell with
-`docker compose -f examples/slurm/compose.yml exec controller bash`. The monitor
-maintains `qdmi-unavailable-ID`; do not create a conflicting reservation.
-Inspect both `Free` and `Reserved` in `scontrol show licenses`, since reserved
-tokens can still appear in `Free`.
-
-:::{important}
-Availability is a snapshot for the monitor's identity, not user authorization.
-Applications must handle expired credentials, device failures, and remote
-queueing. Controller communication failures require administrator attention: a
-failed reservation update can leave the last scheduler state in effect.
-:::
+This administrative flag is independent of the probe-controlled layer flag. For
+an automatic outage/recovery test, temporarily disable the device in the shared
+QDMI catalogue, then restore it; the integration test exercises this path.
 
 ## Chain quantum and classical stages
 
-A quantum-assisted AFQMC application can measure a trial state on a QAN, save
-results to `/jobs`, and propagate classical walkers on compute nodes. Submit its
-two batch scripts from the login shell:
+The
+[complete QC-AFQMC example](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm/afqmc)
+submits three dependent jobs: prepare shadow circuits on classical nodes,
+compile for and sample the allocated device on a QAN, then propagate walkers
+with MPI on classical nodes. Each stage releases its allocation before the next
+starts. Only the quantum stage requests an HRES unit.
 
 ```bash
-measurement=$(sbatch --parsable --partition=quantum --licenses=iqm.emerald.mock measure.sh)
+preparation=$(sbatch --parsable --partition=compute prepare.sh)
+measurement=$(sbatch --parsable --partition=quantum --licenses=iqm.emerald.mock \
+  --dependency=afterok:"$preparation" measure.sh)
 sbatch --partition=compute --dependency=afterok:"$measurement" propagate.sh
 ```
 
-The scripts choose their resources and agree on an output path. The classical
-stage starts only after successful measurement and holds no quantum license.
-Scientific code, validation, and dependencies belong with the application.
+Stages exchange files through `/jobs`; `afterok` requires the predecessor to
+succeed. The example uses actual QDMI-on-IQM and Amazon Braket QDMI libraries
+against local services that simulate submitted circuits, plus DDSIM. It retains
+all inputs, compiled payloads, shots, allocation identities, and scientific
+checks. It does not submit cloud or hardware jobs.
 
-For tightly coupled iterations, use a
+The quantum application constructs its compiler target from the same open QDMI
+device used for submission. Compilation remains above QDMI. For this workload,
+separate jobs avoid holding classical resources during compilation or remote
+queuing. A
 [heterogeneous allocation](https://slurm.schedmd.com/heterogeneous_jobs.html)
-that includes both node types. Licenses belong to its first component and are
-retained for the allocation. An `srun` step cannot move an ordinary compute job
-into a QAN partition.
+acquires its components together and can suit tightly coupled applications, but
+would retain idle stage resources here. An `srun` step cannot move an ordinary
+compute job into the quantum partition.
 
 ## Inspect and operate the cluster
 
@@ -309,12 +352,18 @@ available across nodes. Where several environments exist, users select a module
 before `sbatch` or load it in their batch script; see the
 [GWDG module guide](https://docs.hpc.gwdg.de/software_stacks/module_basics/index.html).
 
-Use matching Slurm versions across hosts; the playground uses Slurm 25.11 or
-newer. Login nodes need Slurm clients, compute nodes need `slurmd`, and a
-monitor host needs the device libraries and site credentials. Run monitors
-outside Slurm daemons and initialize reservations before opening queues.
-SlurmDBD provides persistent accounting but is not required for static local
-licenses.
+Use the pinned Slurm build on every host. Login nodes need its clients; compute
+nodes need `slurmd`; the controller needs Lua, the QDMI libraries, and probe
+credentials. Install the Lua script and probe at their configured paths. Replace
+the playground's dynamic membership with the site's eligible nodes. Review
+authentication, callback behavior, reconfiguration, and recovery against the
+chosen Slurm revision before deployment. This development build is not a
+production deployment recommendation.
+
+SlurmDBD records resource allocations; it does not measure remote device time or
+billing. A QAN allocation may still wait in a provider queue. Remote reservation
+or QRMI integration would require a separate provider/site contract; this
+prototype provides local admission only.
 
 :::{dropdown} CPU and memory isolation with cgroup v2
 For allocation-based CPU and memory limits, configure:
@@ -346,10 +395,11 @@ and [cgroup configuration](https://slurm.schedmd.com/cgroup.conf.html).
 ## Integration tests
 
 `test/slurm/run_integration.py` exercises login submission, partition placement,
-license contention, unavailable-device admission and recovery, environment
-export, and accounting with DDSIM and SC.
+HRES capacity and node eligibility, unavailable-device admission and recovery,
+environment export, and accounting with DDSIM and SC.
 
-The IQM and Braket repositories install their device packages into the same
-cluster and execute authenticated Emerald Resonance mock and SV1 workloads. They
-supply credentials through a Compose overlay. These tests can incur service
-charges.
+`test/slurm/check_afqmc.py` checks all 16 computational-basis inputs with
+reversed classical destinations through each actual provider, and validates
+completed scientific artifacts. The example README gives the local commands.
+Live provider tests are separate, require explicit credentials and
+authorization, and may incur service charges.

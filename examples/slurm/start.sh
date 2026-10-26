@@ -11,7 +11,7 @@ set -eu
 
 role=${1:-node}
 case "$role" in
-    controller) set -- slurmctld.service qdmi-admission.service ;;
+    controller) set -- slurmctld.service ;;
     accounting)
         set -- slurmdbd.service slurm-accounting.service
         install -o slurm -g slurm -m 0600 /usr/local/share/mqt-slurm/slurmdbd.conf /etc/slurm/slurmdbd.conf

@@ -20,6 +20,7 @@ x-cluster: &cluster
     - ${MQT_CORE_SLURM_WORKLOAD:-.}:/workload:ro
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/munge.key:/runtime/munge.key:ro
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/jobs:/jobs
+    - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/resources.yaml:/etc/slurm/resources.yaml:ro
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/slurm.conf:/etc/slurm/slurm.conf:ro
     - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.json:/etc/mqt-core/qdmi.json:ro
     - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
@@ -39,7 +40,11 @@ x-compute: &compute
       condition: service_started
   healthcheck:
     <<: *healthcheck
-    test: [CMD, systemctl, is-active, --quiet, munge.service, slurmd.service]
+    test:
+      [
+        CMD-SHELL,
+        "systemctl is-active --quiet munge.service && systemctl is-active --quiet slurmd.service",
+      ]
 
 services:
   database:
@@ -79,12 +84,8 @@ services:
       <<: *healthcheck
       test:
         [
-          CMD,
-          systemctl,
-          is-active,
-          --quiet,
-          slurmdbd.service,
-          slurm-accounting.service,
+          CMD-SHELL,
+          "systemctl is-active --quiet slurmdbd.service && systemctl is-active --quiet slurm-accounting.service",
         ]
 
   controller:
@@ -105,6 +106,7 @@ services:
       - ${MQT_CORE_SLURM_WORKLOAD:-.}:/workload:ro
       - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/munge.key:/runtime/munge.key:ro
       - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/jobs:/jobs
+      - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/resources.yaml:/etc/slurm/resources.yaml:ro
       - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/slurm.conf:/etc/slurm/slurm.conf:ro
       - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.json:/etc/mqt-core/qdmi.json:ro
       - ${MQT_CORE_SLURM_RUNTIME:-../../build/slurm}/qdmi.env:/runtime/qdmi.env:ro
@@ -121,13 +123,8 @@ services:
       <<: *healthcheck
       test:
         [
-          CMD,
-          systemctl,
-          is-active,
-          --quiet,
-          munge.service,
-          slurmctld.service,
-          qdmi-admission.service,
+          CMD-SHELL,
+          "systemctl is-active --quiet munge.service && systemctl is-active --quiet slurmctld.service",
         ]
 
   login:

@@ -1,0 +1,72 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+x-local-environment: &local-environment
+  AWS_ACCESS_KEY_ID: local-fixture
+  AWS_SECRET_ACCESS_KEY: local-fixture
+  AWS_EC2_METADATA_DISABLED: "true"
+  AWS_ENDPOINT_URL: http://braket:8080
+  AWS_DEFAULT_REGION: us-east-1
+  AMZN_BRAKET_TASK_RESULTS_S3_URI: s3://local-results/tasks
+  OPENBLAS_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+  NUMBA_CACHE_DIR: /jobs/numba-cache
+  MQT_CORE_DD_WORKER_BUDGET: "4"
+  OMPI_MCA_mpi_yield_when_idle: "1"
+
+services:
+  controller:
+    depends_on:
+      iqm:
+        condition: service_healthy
+      braket:
+        condition: service_healthy
+  login:
+    environment: *local-environment
+  node:
+    scale: 4
+  qan:
+    volumes:
+      - ./afqmc/qan.conf:/usr/local/share/mqt-slurm/qan.conf:ro
+  iqm:
+    image: ${COMPOSE_PROJECT_NAME:-slurm}-controller
+    pull_policy: never
+    command: [python, /workspace/examples/slurm/afqmc/provider_server.py, iqm]
+    volumes:
+      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+    networks: [cluster]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)",
+        ]
+      interval: 2s
+      retries: 30
+  braket:
+    image: ${COMPOSE_PROJECT_NAME:-slurm}-controller
+    pull_policy: never
+    command:
+      [python, /workspace/examples/slurm/afqmc/provider_server.py, braket]
+    volumes:
+      - ${MQT_CORE_SLURM_CORE:-../..}:/workspace:ro
+    networks:
+      cluster:
+        aliases: [local-results.braket]
+    healthcheck:
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)",
+        ]
+      interval: 2s
+      retries: 30
