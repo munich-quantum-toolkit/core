@@ -22,6 +22,7 @@ target_include_directories(
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
   PRIVATE
+    MQTCoreTestSupport
     GTest::gtest_main
     MQT::CoreQIRJIT
     MLIRExactUnitaryTest

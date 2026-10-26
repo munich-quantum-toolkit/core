@@ -19,6 +19,7 @@
 
 #include "ShorMultiplier.h"
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -173,7 +174,7 @@ TEST(GenerateProgramTest, KeepsLargestShorStructuredAndCompilable) {
   EXPECT_LT(program->str().size(), 32'768U);
   auto qir = runDefaultPipeline(CompilerInput{std::move(*program)},
                                 ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(static_cast<bool>(qir)) << llvm::toString(qir.takeError());
+  ASSERT_TRUE(::mqt::test::succeeded(qir));
 }
 
 } // namespace mqt::bench
