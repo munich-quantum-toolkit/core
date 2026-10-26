@@ -48,10 +48,10 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#endif
 
 using llvm::Error;
 using llvm::Expected;
-#endif
 
 #ifndef MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME
 #error                                                                         \
