@@ -64,6 +64,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -512,22 +513,25 @@ programFromPath(const std::filesystem::path& path) {
   std::error_code error;
   const auto exists = std::filesystem::exists(path, error);
   if (error) {
-    throw nb::builtin_exception(nb::exception_type::runtime_error,
-                                std::string("Failed to inspect path '" +
-                                            path.string() +
-                                            "': " + error.message())
-                                    .c_str());
+    throw nb::builtin_exception(
+        nb::exception_type::runtime_error,
+        llvm::formatv("Failed to inspect path '{0}': {1}", path.string(),
+                      error.message())
+            .str()
+            .c_str());
   }
   if (!exists) {
     throw nb::builtin_exception(
         nb::exception_type::runtime_error,
-        std::string("Input file '" + path.string() + "' does not exist.")
+        llvm::formatv("Input file '{0}' does not exist.", path.string())
+            .str()
             .c_str());
   }
   if (!std::filesystem::is_regular_file(path, error) || error) {
     throw nb::builtin_exception(
         nb::exception_type::runtime_error,
-        std::string("Input path '" + path.string() + "' is not a file.")
+        llvm::formatv("Input path '{0}' is not a file.", path.string())
+            .str()
             .c_str());
   }
 
@@ -551,11 +555,12 @@ programFromPath(const std::filesystem::path& path) {
         .format = OutputFormat::OpenQASM3,
     };
   }
-  throw nb::builtin_exception(nb::exception_type::runtime_error,
-                              std::string("Input file '" + path.string() +
-                                          "' has unsupported extension '" +
-                                          extension + "'.")
-                                  .c_str());
+  throw nb::builtin_exception(
+      nb::exception_type::runtime_error,
+      llvm::formatv("Input file '{0}' has unsupported extension '{1}'.",
+                    path.string(), extension)
+          .str()
+          .c_str());
 }
 
 /// Construct a frontend program from a string containing source or path.
@@ -635,9 +640,9 @@ programFromString(const std::string_view input) {
   }
   throw nb::builtin_exception(
       nb::exception_type::runtime_error,
-      std::string("Program type " +
-                  nb::cast<std::string>(program.type().attr("__name__")) +
-                  " is not supported.")
+      llvm::formatv("Program type {0} is not supported.",
+                    nb::cast<std::string>(program.type().attr("__name__")))
+          .str()
           .c_str());
 }
 
@@ -788,11 +793,12 @@ payloadForOutput(OutputFormat output) {
         const nb::handle item = (*programs)[i];
         if (!type || (!item.type().is(first.type()) &&
                       !types.inputType(item).is(type))) {
-          throw nb::type_error(("Program sequences must contain one supported "
-                                "input kind; invalid "
-                                "element at index " +
-                                std::to_string(i))
-                                   .c_str());
+          throw nb::type_error(
+              llvm::formatv("Program sequences must contain one supported "
+                            "input kind; invalid element at index {0}",
+                            i)
+                  .str()
+                  .c_str());
         }
       }
     }
@@ -826,16 +832,6 @@ payloadForOutput(OutputFormat output) {
   return results.commit();
 }
 
-/// Compile or submit through the shared C++ QDMI adapter.
-// The compiler submission API reports rejected requests as ValueError.
-[[nodiscard]] static qdmi::Job
-takeSubmissionResult(llvm::Expected<qdmi::Job> result) {
-  if (!result) {
-    throw nb::value_error(llvm::toString(result.takeError()).c_str());
-  }
-  return std::move(*result);
-}
-
 [[nodiscard]] static qdmi::Job
 submitProgram(PythonInputTypes& types, const nb::handle program,
               const nb::handle target, int64_t numShots,
@@ -866,13 +862,13 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
           "program_format conflicts with the compiled payload");
     }
     const nb::gil_scoped_release release;
-    return takeSubmissionResult(
+    return ::mqt::bindings::unwrap(
         mlir::submitProgram(device, compiled, numShots, params[0], params[1],
                             params[2], params[3], params[4]));
   }
   auto input = programFromInput(types, program, true).program;
   const nb::gil_scoped_release release;
-  return takeSubmissionResult(
+  return ::mqt::bindings::unwrap(
       mlir::submitProgram(device, std::move(input), numShots, programFormat,
                           params[0], params[1], params[2], params[3], params[4],
                           options.value_or(mlir::CompilationOptions{})));

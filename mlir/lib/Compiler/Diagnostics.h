@@ -18,6 +18,7 @@
 
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace mlir {
 // Capture diagnostics only while a native entry point owns the context.
@@ -41,9 +42,11 @@ public:
         }) {}
 
   [[nodiscard]] llvm::Error
-  takeError(std::error_code code = llvm::inconvertibleErrorCode()) const {
-    return llvm::createStringError(
-        code, message.empty() ? "Compiler action failed" : message);
+  takeError(std::error_code code = llvm::inconvertibleErrorCode()) {
+    if (message.empty()) {
+      message = "Compiler action failed";
+    }
+    return llvm::createStringError(std::move(message), code);
   }
 
 private:

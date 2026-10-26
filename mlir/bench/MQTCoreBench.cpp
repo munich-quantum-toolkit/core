@@ -19,6 +19,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -84,8 +85,8 @@ readText(const std::string& path) {
   auto buffer = path == "-" ? llvm::MemoryBuffer::getSTDIN()
                             : llvm::MemoryBuffer::getFile(path);
   if (!buffer) {
-    return llvm::createStringError("failed to read '" + path +
-                                   "': " + buffer.getError().message());
+    return llvm::createStringError(llvm::formatv(
+        "failed to read '{0}': {1}", path, buffer.getError().message()));
   }
   return (*buffer)->getBuffer().str();
 }
@@ -98,8 +99,8 @@ pathExists(const std::filesystem::path& path) {
     return false;
   }
   if (error) {
-    return llvm::createStringError("failed to inspect '" + path.string() +
-                                   "': " + error.message());
+    return llvm::createStringError(llvm::formatv(
+        "failed to inspect '{0}': {1}", path.string(), error.message()));
   }
   return status.type() != std::filesystem::file_type::not_found;
 }
@@ -110,8 +111,8 @@ static llvm::Error validateOutputTarget(const std::filesystem::path& path) {
     return exists.takeError();
   }
   if (*exists) {
-    return llvm::createStringError("refusing to overwrite existing file '" +
-                                   path.string() + "'");
+    return llvm::createStringError(llvm::formatv(
+        "refusing to overwrite existing file '{0}'", path.string()));
   }
   return llvm::Error::success();
 }
@@ -147,13 +148,13 @@ createSibling(const std::filesystem::path& finalPath,
     }
     if (error != std::errc::file_exists) {
       return llvm::createStringError(
-          "failed to create a " + std::string(purpose) + " file next to '" +
-          finalPath.string() + "': " + error.message());
+          llvm::formatv("failed to create a {0} file next to '{1}': {2}",
+                        purpose, finalPath.string(), error.message()));
     }
   }
-  return llvm::createStringError("failed to choose a unique " +
-                                 std::string(purpose) + " file next to '" +
-                                 finalPath.string() + "'");
+  return llvm::createStringError(
+      llvm::formatv("failed to choose a unique {0} file next to '{1}'", purpose,
+                    finalPath.string()));
 }
 
 [[nodiscard]] static llvm::Expected<std::filesystem::path>
@@ -175,9 +176,9 @@ stageFile(const std::filesystem::path& finalPath,
                    << temporary->path.string()
                    << "': " << cleanupError.message() << '\n';
     }
-    return llvm::createStringError("failed to write temporary output for '" +
-                                   finalPath.string() +
-                                   "': " + error.message());
+    return llvm::createStringError(
+        llvm::formatv("failed to write temporary output for '{0}': {1}",
+                      finalPath.string(), error.message()));
   }
   return std::move(temporary->path);
 }
@@ -200,8 +201,8 @@ programExtension(const std::string_view format) {
   if (format == "jeff") {
     return ".jeff";
   }
-  return llvm::createStringError("unsupported output format '" +
-                                 std::string(format) + "'");
+  return llvm::createStringError(
+      llvm::formatv("unsupported output format '{0}'", format));
 }
 
 [[nodiscard]] static llvm::Expected<int>
@@ -214,19 +215,19 @@ publish(mqt::bench::GeneratedBenchmark generated, const std::string_view format,
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error) {
-    return llvm::createStringError("failed to create output directory '" +
-                                   directory.string() +
-                                   "': " + error.message());
+    return llvm::createStringError(
+        llvm::formatv("failed to create output directory '{0}': {1}",
+                      directory.string(), error.message()));
   }
   const auto directoryExists = std::filesystem::is_directory(directory, error);
   if (error) {
-    return llvm::createStringError("failed to inspect output directory '" +
-                                   directory.string() +
-                                   "': " + error.message());
+    return llvm::createStringError(
+        llvm::formatv("failed to inspect output directory '{0}': {1}",
+                      directory.string(), error.message()));
   }
   if (!directoryExists) {
-    return llvm::createStringError("output path is not a directory: '" +
-                                   directory.string() + "'");
+    return llvm::createStringError(llvm::formatv(
+        "output path is not a directory: '{0}'", directory.string()));
   }
 
   const auto baseName = generated.benchmarkId + "-" + generated.caseId;

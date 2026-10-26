@@ -787,7 +787,7 @@ CompiledProgram::compile(CompilerInput program,
         "temporaries local or select OpenQASM 3");
   }
   const auto context = qir.context();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   if (qdmi::isBinaryProgramFormat(*format)) {
     std::string bytes;
     llvm::raw_string_ostream stream(bytes);

@@ -285,7 +285,7 @@ FailureOr<JeffProgram> QCOProgram::intoJeff() && {
 llvm::Expected<JeffProgram>
 JeffProgram::fromMessage(::jeff::Module::Reader module) {
   auto context = createCompilerContext();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   auto mod = deserialize(context.get(), module);
   if (!mod) {
     return diagnostics.takeError();
@@ -305,7 +305,7 @@ JeffProgram::fromBytes(std::span<const std::byte> bytes) {
   std::memcpy(words.begin(), bytes.data(), bytes.size());
 
   auto context = createCompilerContext();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   auto mod = deserialize(context.get(), words.asPtr());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()),
@@ -318,7 +318,7 @@ JeffProgram::fromBytes(std::span<const std::byte> bytes) {
 llvm::Expected<JeffProgram>
 JeffProgram::fromFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   auto mod = deserializeFromFile(context.get(), path.string());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()))
@@ -599,7 +599,7 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
         }
       },
       program);
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   auto result = runDefaultPipelineImpl(std::move(program), output, environment,
                                        qcoPipeline, options);
   if (failed(result)) {

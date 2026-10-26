@@ -149,7 +149,7 @@ template <class ProgramType, class Parse>
 [[nodiscard]] static llvm::Expected<ProgramType>
 parseTypedProgram(Parse&& parse) {
   auto context = createCompilerContext();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   auto mod = std::forward<Parse>(parse)(context.get());
   if (failed(mod)) {
     return diagnostics.takeError();
@@ -279,7 +279,7 @@ QCProgram::fromMLIRFile(const std::filesystem::path& path) {
 llvm::Expected<QCProgram>
 QCProgram::fromOpenQASMString(const std::string_view source) {
   auto context = createCompilerContext();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   auto mod = qc::translateOpenQASMToQC(source, context.get());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()),
@@ -292,7 +292,7 @@ QCProgram::fromOpenQASMString(const std::string_view source) {
 llvm::Expected<QCProgram>
 QCProgram::fromOpenQASMFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
-  const CompilerDiagnostics diagnostics(context.get());
+  CompilerDiagnostics diagnostics(context.get());
   llvm::SourceMgr sourceMgr;
   if (failed(openSourceMgr(path, context.get(), sourceMgr))) {
     return diagnostics.takeError();
