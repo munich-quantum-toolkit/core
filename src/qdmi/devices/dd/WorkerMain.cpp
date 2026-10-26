@@ -45,6 +45,9 @@
 #include <utility>
 #include <vector>
 
+using llvm::raw_socket_stream;
+using llvm::raw_string_ostream;
+
 namespace {
 void appendShot(std::string& packed, std::string_view shot) {
   const auto offset = packed.size();
@@ -71,7 +74,7 @@ void appendShot(std::string& packed, std::string_view shot) {
 }
 
 struct Execution {
-  llvm::raw_socket_stream* stream_;
+  raw_socket_stream* stream_;
   std::string_view program_;
   size_t numShots_;
   std::optional<uint64_t> seed_;
@@ -139,7 +142,7 @@ struct Execution {
     const llvm::StringRef irBytes(program_.data(), program_.size());
     const bool sampling = numShots_ != 0;
     const bool capture = sampling && captureQIROutput_;
-    std::optional<llvm::raw_string_ostream> output;
+    std::optional<raw_string_ostream> output;
     auto created = qir::JitSession::create(
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
@@ -222,7 +225,7 @@ struct Execution {
       std::vector<int64_t> codes(workers);
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
-        llvm::raw_string_ostream localOutput(records[i]);
+        raw_string_ostream localOutput(records[i]);
         std::unique_ptr<qir::JitSession> peer;
         std::unique_ptr<qir::Runtime> workerRuntime;
         if (i != 0 && shareCode) {
@@ -331,7 +334,7 @@ struct Execution {
 };
 
 qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
-                                 llvm::raw_socket_stream& stream) {
+                                 raw_socket_stream& stream) {
   qdmi::dd::WorkerResponse response;
   Execution execution{
       .stream_ = &stream,
@@ -355,7 +358,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
       const auto root = execution.stateVecDD_;
       response.qubits =
           root.isTerminal() ? 0 : static_cast<uint32_t>(root.p->v) + 1;
-      llvm::raw_string_ostream bytes(response.state.emplace());
+      raw_string_ostream bytes(response.state.emplace());
       dd::serialize(root, bytes, true);
     }
   }
@@ -370,7 +373,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto connection =
-      llvm::raw_socket_stream::createConnectedUnix(std::span(argv, 2)[1]);
+      raw_socket_stream::createConnectedUnix(std::span(argv, 2)[1]);
   if (!connection) {
     llvm::consumeError(connection.takeError());
     return 1;
