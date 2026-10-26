@@ -18,6 +18,8 @@
 
 #include "qdmi/constants.h"
 
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
@@ -29,22 +31,16 @@
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
 
-#ifndef _WIN32
-#include <dlfcn.h>
-#endif
-
 namespace qdmi {
 namespace {
 using mqt::test::ScopedEnvironmentVariable;
 
-#ifndef _WIN32
 TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   const mqt::test::TemporaryDirectory directory;
   const std::filesystem::path fixture{MQT_CORE_QDMI_INCOMPLETE_DRIVER};
@@ -54,18 +50,22 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   for (const auto& path :
        {std::filesystem::relative(libraryPath), libraryPath}) {
     SCOPED_TRACE(path);
-    const std::unique_ptr<void, decltype(&dlclose)> library(
-        dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL), dlclose);
-    ASSERT_NE(library.get(), nullptr) << dlerror();
+    auto encoded = detail::pathToString(path);
+    ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
+    std::string error;
+    auto library =
+        llvm::sys::DynamicLibrary::getLibrary(encoded->c_str(), &error);
+    ASSERT_TRUE(library.isValid()) << error;
+    const auto close = llvm::make_scope_exit(
+        [&] { llvm::sys::DynamicLibrary::closeLibrary(library); });
     const auto* anchor =
-        dlsym(library.get(), "QDMI_driver_get_client_abi_version");
-    ASSERT_NE(anchor, nullptr) << dlerror();
+        library.getAddressOfSymbol("QDMI_driver_get_client_abi_version");
+    ASSERT_NE(anchor, nullptr);
     auto located = detail::moduleDirectory(anchor);
     ASSERT_TRUE(!!located) << llvm::toString(located.takeError());
     EXPECT_EQ(*located, std::filesystem::canonical(directory.path()));
   }
 }
-#endif
 
 TEST(ClientRuntimeTest, PreservesQDMIErrorStatus) {
   EXPECT_EQ(toStatus(checkError(QDMI_SUCCESS, "success")), QDMI_SUCCESS);
