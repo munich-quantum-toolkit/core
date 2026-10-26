@@ -18,9 +18,8 @@ A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
 kind a format carries.
 
-MQT Core registers its own OpenQASM 2, OpenQASM 3, and QPY serializers here. Every
-other format belongs to the package that owns the device. Such a package
-advertises its serializer through the ``mqt.core.qiskit.program_serializers``
+MQT Core provides OpenQASM 2, OpenQASM 3, and QPY serializers.
+Device packages can advertise their serializers through the ``mqt.core.qiskit.program_serializers``
 entry point group. The entry point name is the
 :class:`~mqt.core.qdmi.ProgramFormat` member name, and the value points to the
 serializer:
@@ -31,9 +30,8 @@ IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
 ```
 
 :func:`register_program_serializer` does the same at run time. A registration
-takes precedence over an entry point for the same format. The built-in QPY
-serializer is a fallback; QPY registrations and entry points take
-precedence over it.
+takes precedence over an entry point for the same format. All built-in serializers are fallbacks;
+registrations and entry points take precedence over them.
 
 A device usually accepts several formats. :data:`PROGRAM_FORMAT_PREFERENCE`
 records which one to use, from most to least preferred, and
@@ -43,18 +41,20 @@ reports.
 
 from __future__ import annotations
 
-__lazy_modules__ = {"importlib.metadata", "warnings"}
+__lazy_modules__ = {"importlib.metadata", "io", "qiskit", "warnings"}
 
 import warnings
-from enum import Enum, auto
-from functools import cached_property
+from collections.abc import Callable
 from importlib.metadata import entry_points
+from io import BytesIO
 from typing import TYPE_CHECKING, Protocol
+
+from qiskit import qasm2, qasm3, qpy
 
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
     from importlib.metadata import EntryPoint
 
     from qiskit.circuit import QuantumCircuit
@@ -129,7 +129,7 @@ class BinaryProgramSerializer(Protocol):
 
 
 #: A serializer for one program format, text or binary.
-ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
+ProgramSerializer = Callable[["QuantumCircuit", "QDMIBackend"], str | bytes]
 
 #: Preferred formats, in descending order: device-native formats first, then
 #: standard formats with classical control before restricted profiles. Binary
@@ -151,25 +151,125 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
 )
 
 
-class _LoadState(Enum):
-    """Entry-point discovery state."""
+def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+    """Serialize a circuit into an OpenQASM 3 program.
 
-    NOT_STARTED = auto()
-    LOADING = auto()
-    LOADED = auto()
+    Args:
+        circuit: The circuit to serialize.
+        backend: The backend that runs the circuit. Its Target supplies the
+            basis gates.
+
+    Returns:
+        The OpenQASM 3 program.
+    """
+    backend.validate_circuit(circuit, native=True)
+    # Qiskit classical bits start at zero, while OpenQASM 3 bits are
+    # uninitialized. Preserve Qiskit's semantics and make every output valid
+    # even when the circuit measures only part of a register.
+    if circuit.num_clbits:
+        initialization = circuit.copy_empty_like(vars_mode="drop")
+        initialization.global_phase = 0
+        for creg in initialization.cregs:
+            if creg.size:
+                initialization.store(creg, 0)
+        for clbit in initialization.clbits:
+            if not initialization.find_bit(clbit).registers:
+                initialization.store(
+                    clbit,
+                    False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
+                )
+        circuit = circuit.compose(initialization, front=True, inplace=False)
+
+    # Keywords and standard-library gates need no opaque declarations.
+    exclusion_list = {
+        "measure",
+        "reset",
+        "barrier",
+        "if_else",
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "sx",
+        "rx",
+        "ry",
+        "rz",
+        "cx",
+        "cy",
+        "cz",
+        "cp",
+        "crx",
+        "cry",
+        "crz",
+        "ch",
+        "swap",
+        "ccx",
+        "cswap",
+        "cu",
+        "CX",
+        "phase",
+        "cphase",
+        "id",
+        "u1",
+        "u2",
+        "u3",
+    }
+
+    # Emit device-supported gates outside the standard library as opaque gates.
+    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["mcx_gray", "U"]
+
+    return qasm3.dumps(circuit, basis_gates=basis_gates, disable_constants=True)
+
+
+def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+    """Serialize a circuit into an OpenQASM 2 program.
+
+    Args:
+        circuit: The circuit to serialize.
+        backend: The backend whose native placements constrain the circuit.
+
+    Returns:
+        The OpenQASM 2 program.
+    """
+    backend.validate_circuit(circuit, native=True)
+    return qasm2.dumps(circuit)
+
+
+def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
+    """Serialize a circuit after validating native placements.
+
+    Returns:
+        One circuit encoded as QPY bytes, using at most version 17.
+    """
+    backend.validate_circuit(circuit, native=True)
+    with BytesIO() as buffer:
+        # QPY 17 enables native writing and remains readable by Qiskit 2.5.
+        qpy.dump(circuit, buffer, version=17)
+        return buffer.getvalue()
+
+
+_FALLBACKS: dict[ProgramFormat, ProgramSerializer] = {
+    ProgramFormat.QASM2: _serialize_to_qasm2,
+    ProgramFormat.QASM3: _serialize_to_qasm3,
+    ProgramFormat.QPY: _serialize_to_qpy,
+}
 
 
 class _ProgramSerializerRegistry:
     """The serializers for one process, and the entry points behind them.
 
-    Built-in serializers are initialized on the first registry operation.
     The registry reads :data:`ENTRY_POINT_GROUP` once, on the first lookup
     rather than at import, because loading an entry point imports the package
     that advertises it. The registry does not synchronize concurrent first use.
     """
 
     def __init__(self, discover: Callable[[], Iterable[EntryPoint]]) -> None:
-        """Initialize a registry with lazy built-in serializers.
+        """Initialize the built-in serializers and defer entry-point discovery.
 
         Args:
             discover: Returns the entry points that advertise a serializer.
@@ -177,20 +277,8 @@ class _ProgramSerializerRegistry:
                 installed distributions.
         """
         self._discover = discover
-        self._load_state = _LoadState.NOT_STARTED
-
-    @cached_property
-    def _serializers(self) -> dict[ProgramFormat, ProgramSerializer | None]:
-        """Initialize the built-in serializers on first use."""
-        from mqt.core.plugins.qiskit.backend import (  # ruff:ignore[import-outside-top-level] Avoid a circular import
-            _serialize_to_qasm2,
-            _serialize_to_qasm3,
-        )
-
-        return {
-            ProgramFormat.QASM2: _serialize_to_qasm2,
-            ProgramFormat.QASM3: _serialize_to_qasm3,
-        }
+        self._discovery_started = False
+        self._serializers: dict[ProgramFormat, ProgramSerializer | None] = {}
 
     def register(self, fmt: ProgramFormat, serializer: ProgramSerializer, *, replace: bool = False) -> None:
         """Add a serializer for one program format.
@@ -219,9 +307,7 @@ class _ProgramSerializerRegistry:
                 a serializer is ignored.
         """
         self._load_entry_points()
-        self._serializers.pop(fmt, None)
-        if fmt is ProgramFormat.QPY:
-            self._serializers[fmt] = None  # Suppress the fallback after explicit removal.
+        self._serializers[fmt] = None  # Suppress built-in fallback after removal.
 
     def get(self, fmt: ProgramFormat) -> ProgramSerializer | None:
         """Return the serializer for one program format.
@@ -233,25 +319,21 @@ class _ProgramSerializerRegistry:
             The serializer, or ``None`` if no package provides one.
         """
         self._load_entry_points()
-        if fmt is ProgramFormat.QPY and fmt not in self._serializers:
-            from mqt.core.plugins.qiskit.backend import (  # ruff:ignore[import-outside-top-level] Avoid a circular import
-                _serialize_to_qpy,
-            )
-
-            return _serialize_to_qpy
-        return self._serializers.get(fmt)
+        if fmt in self._serializers:
+            return self._serializers[fmt]
+        return _FALLBACKS.get(fmt)
 
     def _load_entry_points(self) -> None:
         """Read the entry points once and publish what they name.
 
         Imported plugins may reenter the registry. During discovery, they see
-        only explicit registrations; discovered serializers are published after
+        built-ins and explicit registrations; discovered serializers are published after
         all entry points have loaded.
         """
-        if self._load_state is not _LoadState.NOT_STARTED:
+        if self._discovery_started:
             return
 
-        self._load_state = _LoadState.LOADING
+        self._discovery_started = True
         discovered: dict[ProgramFormat, ProgramSerializer] = {}
         try:
             for entry_point in self._discover():
@@ -261,13 +343,12 @@ class _ProgramSerializerRegistry:
                     discovered.setdefault(fmt, serializer)
         except BaseException:
             # Allow a later lookup to retry interrupted discovery.
-            self._load_state = _LoadState.NOT_STARTED
+            self._discovery_started = False
             raise
 
         # A registration made before or during discovery keeps precedence.
         for fmt, serializer in discovered.items():
             self._serializers.setdefault(fmt, serializer)
-        self._load_state = _LoadState.LOADED
 
     @staticmethod
     def _load_entry_point(entry_point: EntryPoint) -> tuple[ProgramFormat, ProgramSerializer] | None:
@@ -321,8 +402,7 @@ def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerialize
         replace: Replace an existing serializer for the same format.
 
     Raises:
-        ValueError: If the format does not carry a serialized circuit, or if the
-            format already has a serializer and ``replace`` is false.
+        ValueError: If the format already has a serializer and ``replace`` is false.
     """  # ruff:ignore[docstring-extraneous-exception] The registry raises ValueError.
     _REGISTRY.register(fmt, serializer, replace=replace)
 

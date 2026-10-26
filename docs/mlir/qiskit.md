@@ -1,14 +1,10 @@
 # Qiskit compatibility
 
-MQT Core exposes two distinct Qiskit interfaces:
-
-| Interface                                                | Supported Qiskit versions | Purpose                                                          |
-| -------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------- |
-| {doc}`QDMI backend <../qdmi/qdmi_backend>`               | 2.1 and newer             | Execute circuits through device-specific serializers.            |
-| {doc}`MQT Compiler Collection <mqt_compiler_collection>` | `>=2.5.0,<2.7.0`          | Import and export circuits through the versioned native adapter. |
-
-Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
-the narrower range above; the adapter checks it before inspecting a circuit.
+Install `mqt-core[qiskit]` for Qiskit `>=2.5,<2.7`. The
+{doc}`QDMI backend <../qdmi/qdmi_backend>` executes circuits through
+device-specific serializers. The
+{doc}`MQT Compiler Collection <mqt_compiler_collection>` imports and exports
+circuits through its versioned native adapter.
 
 ## QPY files
 
@@ -44,7 +40,7 @@ failure, serialize to `io.BytesIO` before opening the destination.
 Pass a Qiskit `BackendV2` or `Target` to
 {py:func}`~mqt.core.mlir.compile_program` to compile for its gates, topology,
 and advertised standard control flow. The default result is a `QuantumCircuit`
-with physical qubits; its layout records placement and routing of logical input
+with device qubits; its layout records placement and routing of logical input
 qubits. An explicit `output` selects another compiler representation. Omit
 `target` for target-independent optimization, which preserves the input's
 program family and may remove idle qubits. See the
@@ -90,7 +86,7 @@ this snapshot permits all control-flow forms supported by the exporter.
 
 Target-native synthesis requires a common single-qubit basis across sites and a
 common entangler across routing edges. For explicit pipelines, export with
-`program.to_qiskit(target=target)` to map compiler site IDs to physical qubits.
+`program.to_qiskit(target=target)` to map compiler site IDs to device qubits.
 
 ## Circuit translation contract
 

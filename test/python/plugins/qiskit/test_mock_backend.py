@@ -891,7 +891,7 @@ def test_target_merges_alias_placements(monkeypatch: pytest.MonkeyPatch, placeme
         assert backend.target.instruction_supported("cx", qargs=pair)
         circuit = QuantumCircuit(3)
         circuit.cx(*pair)
-        backend._validate_circuit(circuit, native=True)  # ruff:ignore[private-member-access]
+        backend.validate_circuit(circuit, native=True)
 
 
 @pytest.mark.parametrize(
