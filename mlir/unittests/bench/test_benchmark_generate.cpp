@@ -53,6 +53,8 @@
 #include <variant>
 #include <vector>
 
+using mqt::test::value;
+
 namespace mqt::bench {
 
 using namespace mlir;
@@ -154,13 +156,13 @@ static void expectQIRSampling(const Benchmark& benchmark, QIRProgram qirProgram,
   const auto bitcode = std::move(qirProgram).intoBitcode();
   ASSERT_TRUE(mlir::succeeded(bitcode));
   ASSERT_FALSE(bitcode->empty());
-  qir::JitSession session(
+  auto session = value(qir::JitSession::create(
       llvm::StringRef(reinterpret_cast<const char*>(bitcode->data()),
                       bitcode->size()),
-      "benchmark-bitcode", qir::Execution::Sampling, 17);
-  session.runtime().disableOutput();
+      "benchmark-bitcode", qir::Execution::Sampling, 17));
+  session->runtime().disableOutput();
   std::vector<std::string> outcomes;
-  ASSERT_EQ(session.sample(shots, outcomes), 0);
+  ASSERT_EQ(value(session->sample(shots, outcomes)), 0);
   ASSERT_EQ(outcomes.size(), shots);
   Counts qirCounts;
   for (const auto& outcome : outcomes) {
