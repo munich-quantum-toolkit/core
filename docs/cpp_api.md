@@ -112,10 +112,11 @@ subprocess.run([sys.executable, "../scripts/check_wheel_runtime.py"], check=True
 
 Build and install MQT Core from source, then request the `Development`
 component. It provides `MQT::CoreDD`, `MQT::CoreQDMI`, and `MQT::CoreBench`. The
-DD and QDMI C++ libraries are static; compile consumers with a compatible C++
-toolchain. Development consumers require an LLVM SDK matching the major and
-minor version used to build MQT Core. CMake finds LLVM and propagates its
-headers and libraries through the imported targets.
+DD, QDMI C++ client, and benchmark libraries are static so LLVM errors stay
+within the consuming binary. Compile consumers with a compatible C++ toolchain.
+Development consumers require an LLVM SDK matching the major and minor version
+used to build MQT Core. CMake finds LLVM and propagates its headers and
+libraries through the imported targets.
 
 ```cmake
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Development)
@@ -127,16 +128,16 @@ Point `CMAKE_PREFIX_PATH` at the source installation's prefix. See
 
 ## Handle native errors
 
-DD construction and numerical operations return `llvm::Expected<T>` or
-`llvm::Error` on fallible paths. Check an `Expected` before accessing its value;
-consume or propagate its `takeError()` on failure. An `Error` converts to true
-on failure. Infallible operations return ordinary values or `void`.
+Fallible native operations return `llvm::Expected<T>` or `llvm::Error`. Check an
+`Expected` before accessing its value; consume or propagate its `takeError()` on
+failure. An `Error` converts to true on failure. Infallible operations return
+ordinary values or `void`; `optional<T>` represents successful absence, such as
+an unsupported optional QDMI property.
 
 Use `create(...)` for fallible construction:
 
 ```cpp
 #include "dd/Package.hpp"
-
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -148,8 +149,16 @@ if (!package) {
 ```
 
 Errors own their messages and categories. Bindings translate them to Python
-exceptions. Internal memory exhaustion is outside the recoverable-error
-contract.
+exceptions. MLIR operations with a caller-owned context use `FailureOr<T>` or
+`LogicalResult` and report through that context's diagnostic engine. Native
+compilation boundaries capture those diagnostics in an owned error.
+
+QDMI C interfaces retain status codes and local provider logging. C++ wrappers
+preserve the original provider status in the error's `std::error_code`.
+Allocation exhaustion is outside the native recoverable-error contract; existing
+QDMI session and job handle allocations still return an error status. See
+[driver resource limits](qdmi/driver.md#driver-selection) and
+[QIR runtime failures](qir/index.md#runtime-failures) for direct execution.
 
 ## Extend the compiler or QIR runtime
 

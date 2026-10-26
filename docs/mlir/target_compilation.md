@@ -659,30 +659,38 @@ Compile a file and submit it to DDSIM:
 
 #include <utility>
 
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
-if (!input) {
-  llvm::errs() << llvm::toString(input.takeError()) << '\n';
-  return 1;
-}
-auto compiled = mlir::compileProgram(std::move(*input), device);
-if (!compiled) {
-  llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
-  return 1;
-}
-auto job = mlir::submitProgram(device, *compiled);
-if (!job) {
-  llvm::errs() << llvm::toString(job.takeError()) << '\n';
-  return 1;
-}
-if (!job->wait()) {
-  return 1;
+int main() {
+  auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  if (!device) {
+    llvm::errs() << llvm::toString(device.takeError()) << '\n';
+    return 1;
+  }
+  auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
+  if (!input) {
+    llvm::errs() << llvm::toString(input.takeError()) << '\n';
+    return 1;
+  }
+  auto compiled = mlir::compileProgram(std::move(*input), *device);
+  if (!compiled) {
+    llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
+    return 1;
+  }
+  auto job = mlir::submitProgram(*device, *compiled);
+  if (!job) {
+    llvm::errs() << llvm::toString(job.takeError()) << '\n';
+    return 1;
+  }
+  auto completed = job->wait();
+  if (!completed) {
+    llvm::errs() << llvm::toString(completed.takeError()) << '\n';
+    return 1;
+  }
+  return *completed ? 0 : 1;
 }
 ```
 
-`compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
-available for hardware snapshots and staged compilation with a
-`TargetEnvironment`.
+`compilerTargetFromDevice` and `compilerTargetFromDeviceId` provide hardware
+snapshots for staged compilation with a `TargetEnvironment`.
 
 ### Payload support
 

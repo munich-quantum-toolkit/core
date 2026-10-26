@@ -380,21 +380,21 @@ such as ``scf.yield`` are excluded.)pb");
     std::optional<std::string> custom1, std::optional<std::string> custom2,
     std::optional<std::string> custom3, std::optional<std::string> custom4,
     std::optional<std::string> custom5) {
-  return qdmi::Session::openDevice(deviceId,
-                                   {
-                                       .driverPath = std::move(driverPath),
-                                       .token = std::move(token),
-                                       .authFile = std::move(authFile),
-                                       .authUrl = std::move(authUrl),
-                                       .username = std::move(username),
-                                       .password = std::move(password),
-                                       .projectId = std::move(projectId),
-                                       .custom1 = std::move(custom1),
-                                       .custom2 = std::move(custom2),
-                                       .custom3 = std::move(custom3),
-                                       .custom4 = std::move(custom4),
-                                       .custom5 = std::move(custom5),
-                                   });
+  return unwrap(qdmi::Session::openDevice(
+      deviceId, {
+                    .driverPath = std::move(driverPath),
+                    .token = std::move(token),
+                    .authFile = std::move(authFile),
+                    .authUrl = std::move(authUrl),
+                    .username = std::move(username),
+                    .password = std::move(password),
+                    .projectId = std::move(projectId),
+                    .custom1 = std::move(custom1),
+                    .custom2 = std::move(custom2),
+                    .custom3 = std::move(custom3),
+                    .custom4 = std::move(custom4),
+                    .custom5 = std::move(custom5),
+                }));
 }
 
 template <class ProgramType>
@@ -651,7 +651,7 @@ programFromString(const std::string_view input) {
   if (nb::isinstance<nb::str>(target)) {
     const auto id = nb::cast<std::string>(target);
     const nb::gil_scoped_release release;
-    return qdmi::Session::openDevice(id);
+    return unwrap(qdmi::Session::openDevice(id));
   }
   throw nb::type_error("target must be a QDMI Device or registered device ID");
 }
