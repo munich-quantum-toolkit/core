@@ -710,7 +710,7 @@ def test_compilation_entry_points_forward_mapping_options(output_kind: str, capf
         )
     else:
         compile_call = partial(compile_program, QASM_STRING, target=target, options=options)
-    error_type = RuntimeError if output_kind in {"typed", "default", "submit"} else ValueError
+    error_type = RuntimeError if output_kind in {"typed", "default"} else ValueError
     with pytest.raises(error_type, match="mapping trials must be greater than zero"):
         compile_call()
     assert not capfd.readouterr().err
@@ -729,7 +729,7 @@ while (result) {
 }
 """
     program = QCProgram.from_openqasm_str(source)
-    with pytest.raises(RuntimeError, match=r"scf\.while") as error:
+    with pytest.raises(ValueError, match=r"scf\.while") as error:
         submit_program(program, target="mqt.ddsim.default", program_format=ProgramFormat.QIR_BASE_MODULE)
     assert "see current operation" in str(error.value)
     assert "<input>" in str(error.value)
