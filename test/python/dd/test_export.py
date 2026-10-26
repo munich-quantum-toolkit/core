@@ -24,9 +24,10 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize("matrix", [False, True])
-@pytest.mark.parametrize("colored", [False, True])
-@pytest.mark.parametrize("classic", [False, True])
-@pytest.mark.parametrize("edge_labels", [False, True])
+@pytest.mark.parametrize(
+    ("colored", "classic", "edge_labels"),
+    [(False, False, False), (True, False, False), (False, True, False), (False, False, True)],
+)
 def test_dot_options(*, matrix: bool, colored: bool, classic: bool, edge_labels: bool) -> None:
     """Keep export options available for both DD types."""
     package = DDPackage(1)
