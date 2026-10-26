@@ -380,7 +380,7 @@ such as ``scf.yield`` are excluded.)pb");
     std::optional<std::string> custom1, std::optional<std::string> custom2,
     std::optional<std::string> custom3, std::optional<std::string> custom4,
     std::optional<std::string> custom5) {
-  return ::mqt::bindings::unwrap(qdmi::Session::openDevice(
+  return unwrap(qdmi::Session::openDevice(
       deviceId, {
                     .driverPath = std::move(driverPath),
                     .token = std::move(token),
@@ -651,7 +651,7 @@ programFromString(const std::string_view input) {
   if (nb::isinstance<nb::str>(target)) {
     const auto id = nb::cast<std::string>(target);
     const nb::gil_scoped_release release;
-    return ::mqt::bindings::unwrap(qdmi::Session::openDevice(id));
+    return unwrap(qdmi::Session::openDevice(id));
   }
   throw nb::type_error("target must be a QDMI Device or registered device ID");
 }

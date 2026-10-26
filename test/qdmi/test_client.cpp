@@ -36,6 +36,10 @@
 #include <utility>
 #include <vector>
 
+using mqt::test::errorMessage;
+using mqt::test::errorStatus;
+using mqt::test::value;
+
 namespace qdmi {
 
 namespace {
@@ -90,16 +94,14 @@ class SiteTest : public DeviceTest {
 protected:
   std::vector<Site> sites;
 
-  void SetUp() override { sites = ::mqt::test::value(device.getSites()); }
+  void SetUp() override { sites = value(device.getSites()); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
   std::vector<Operation> operations;
 
-  void SetUp() override {
-    operations = ::mqt::test::value(device.getOperations());
-  }
+  void SetUp() override { operations = value(device.getOperations()); }
 };
 
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
@@ -111,9 +113,9 @@ protected:
 
 private:
   static auto getDDSimulatorDevice() -> Device {
-    auto session = ::mqt::test::value(qdmi::Session::create());
-    for (const auto& dev : ::mqt::test::value(session.getDevices())) {
-      if (::mqt::test::value(dev.getName()) == "MQT Core DDSIM QDMI Device") {
+    auto session = value(qdmi::Session::create());
+    for (const auto& dev : value(session.getDevices())) {
+      if (value(dev.getName()) == "MQT Core DDSIM QDMI Device") {
         return dev;
       }
     }
@@ -135,8 +137,7 @@ bit[1] c;
 h q[0];
 c[0] = measure q[0];
 )";
-    return ::mqt::test::value(
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+    return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
   }
 };
 
@@ -153,8 +154,7 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 )";
-    return ::mqt::test::value(
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0));
+    return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0));
   }
 };
 #endif
@@ -192,71 +192,59 @@ TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
   };
 
   for (size_t i = 0; i < properties.size(); ++i) {
-    EXPECT_EQ(::mqt::test::value(detail::toDeviceProperty(properties[i])),
+    EXPECT_EQ(value(detail::toDeviceProperty(properties[i])),
               deviceProperties[i]);
-    EXPECT_EQ(::mqt::test::value(detail::toSiteProperty(properties[i])),
-              siteProperties[i]);
-    EXPECT_EQ(::mqt::test::value(detail::toOperationProperty(properties[i])),
+    EXPECT_EQ(value(detail::toSiteProperty(properties[i])), siteProperties[i]);
+    EXPECT_EQ(value(detail::toOperationProperty(properties[i])),
               operationProperties[i]);
-    EXPECT_EQ(::mqt::test::value(detail::toJobProperty(properties[i])),
-              jobProperties[i]);
-    EXPECT_EQ(::mqt::test::value(detail::toJobResult(properties[i])),
-              jobResults[i]);
+    EXPECT_EQ(value(detail::toJobProperty(properties[i])), jobProperties[i]);
+    EXPECT_EQ(value(detail::toJobResult(properties[i])), jobResults[i]);
   }
 }
 
 TEST(CustomPropertyTest, RejectsInvalidSelector) {
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalid = static_cast<CustomProperty>(0);
-  EXPECT_EQ(::mqt::test::errorStatus(
-                [&] { return detail::toDeviceProperty(invalid); }),
+  EXPECT_EQ(errorStatus([&] { return detail::toDeviceProperty(invalid); }),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(
-      ::mqt::test::errorStatus([&] { return detail::toSiteProperty(invalid); }),
-      QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(::mqt::test::errorStatus(
-                [&] { return detail::toOperationProperty(invalid); }),
+  EXPECT_EQ(errorStatus([&] { return detail::toSiteProperty(invalid); }),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(
-      ::mqt::test::errorStatus([&] { return detail::toJobProperty(invalid); }),
-      QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(
-      ::mqt::test::errorStatus([&] { return detail::toJobResult(invalid); }),
-      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(errorStatus([&] { return detail::toOperationProperty(invalid); }),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(errorStatus([&] { return detail::toJobProperty(invalid); }),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(errorStatus([&] { return detail::toJobResult(invalid); }),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
   const auto bytes = bytesOf(size_t{42});
   const auto query = queryBytes(bytes);
-  EXPECT_EQ(
-      ::mqt::test::value(detail::queryProperty<size_t>(query, "value", "size")),
-      42);
-  EXPECT_EQ(::mqt::test::value(detail::queryProperty<std::optional<size_t>>(
-                query, "value", "size")),
+  EXPECT_EQ(value(detail::queryProperty<size_t>(query, "value", "size")), 42);
+  EXPECT_EQ(value(detail::queryProperty<std::optional<size_t>>(query, "value",
+                                                               "size")),
             42);
-  EXPECT_EQ(::mqt::test::value(detail::queryProperty<std::vector<size_t>>(
-                query, "value", "size")),
-            std::vector<size_t>{42});
+  EXPECT_EQ(
+      value(detail::queryProperty<std::vector<size_t>>(query, "value", "size")),
+      std::vector<size_t>{42});
   const std::vector<std::byte> text{std::byte{'x'}, std::byte{0}};
-  EXPECT_EQ(::mqt::test::value(detail::queryProperty<std::string>(
-                queryBytes(text), "value", "size")),
+  EXPECT_EQ(value(detail::queryProperty<std::string>(queryBytes(text), "value",
+                                                     "size")),
             "x");
 
   const auto unsupported = [](size_t, void*, size_t*) {
     return QDMI_ERROR_NOTSUPPORTED;
   };
-  EXPECT_EQ(::mqt::test::value(detail::queryProperty<std::optional<size_t>>(
+  EXPECT_EQ(value(detail::queryProperty<std::optional<size_t>>(
                 unsupported, "value", "size")),
             std::nullopt);
-  EXPECT_EQ(
-      ::mqt::test::value(detail::queryProperty<std::optional<std::string>>(
-          unsupported, "value", "size")),
-      std::nullopt);
-  EXPECT_EQ(::mqt::test::value(
-                detail::queryProperty<std::optional<std::vector<size_t>>>(
-                    unsupported, "value", "size")),
+  EXPECT_EQ(value(detail::queryProperty<std::optional<std::string>>(
+                unsupported, "value", "size")),
             std::nullopt);
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(value(detail::queryProperty<std::optional<std::vector<size_t>>>(
+                unsupported, "value", "size")),
+            std::nullopt);
+  EXPECT_TRUE(errorStatus([&] {
                 return detail::queryProperty<size_t>(unsupported, "value",
                                                      "size");
               }).has_value());
@@ -264,15 +252,15 @@ TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
 
 TEST(StandardPropertyTest, ReturnsValuesUnsupportedPropertiesAndErrors) {
   const auto bytes = bytesOf(size_t{42});
-  EXPECT_EQ(mqt::test::value(detail::queryProperty<size_t>(queryBytes(bytes),
-                                                           "value", "size")),
-            42);
+  EXPECT_EQ(
+      value(detail::queryProperty<size_t>(queryBytes(bytes), "value", "size")),
+      42);
   const auto unsupported = [](size_t, void*, size_t*) {
     return QDMI_ERROR_NOTSUPPORTED;
   };
-  EXPECT_FALSE(mqt::test::value(detail::queryProperty<std::optional<size_t>>(
+  EXPECT_FALSE(value(detail::queryProperty<std::optional<size_t>>(
       unsupported, "value", "size")));
-  EXPECT_EQ(mqt::test::errorMessage([&] {
+  EXPECT_EQ(errorMessage([&] {
               return detail::queryProperty<size_t>(unsupported, "value",
                                                    "size");
             }),
@@ -283,13 +271,13 @@ TEST(StandardPropertyTest, ReturnsValuesUnsupportedPropertiesAndErrors) {
     }
     return output == nullptr ? QDMI_SUCCESS : QDMI_ERROR_BADSTATE;
   };
-  EXPECT_EQ(mqt::test::errorMessage([&] {
+  EXPECT_EQ(errorMessage([&] {
               return detail::queryProperty<std::string>(badState, "value",
                                                         "size");
             }),
             "value: Bad state.");
   const std::vector<std::byte> unterminated{std::byte{'x'}};
-  EXPECT_EQ(mqt::test::errorMessage([&] {
+  EXPECT_EQ(errorMessage([&] {
               return detail::queryProperty<std::string>(
                   queryBytes(unterminated), "value", "size");
             }),
@@ -305,12 +293,12 @@ TEST(StandardPropertyTest, RejectsMalformedSizesBeforeReading) {
     read |= value != nullptr;
     return QDMI_SUCCESS;
   };
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
+  EXPECT_TRUE(errorStatus([&] {
                 return detail::queryProperty<std::vector<size_t>>(
                     query, "value", "size");
               }).has_value());
   EXPECT_TRUE(
-      ::mqt::test::errorStatus([&] {
+      errorStatus([&] {
         return detail::queryProperty<std::optional<std::vector<size_t>>>(
             query, "value", "size");
       }).has_value());
@@ -319,21 +307,21 @@ TEST(StandardPropertyTest, RejectsMalformedSizesBeforeReading) {
 
 TEST(StandardPropertyTest, ValidatesStringsAndPreservesEmptyValues) {
   const std::vector<std::byte> empty;
-  EXPECT_TRUE(::mqt::test::value(detail::queryProperty<std::vector<size_t>>(
-                                     queryBytes(empty), "value", "size"))
+  EXPECT_TRUE(value(detail::queryProperty<std::vector<size_t>>(
+                        queryBytes(empty), "value", "size"))
                   .empty());
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
+  EXPECT_TRUE(errorStatus([&] {
                 return detail::queryProperty<std::string>(queryBytes(empty),
                                                           "value", "size");
               }).has_value());
   const std::vector<std::byte> unterminated{std::byte{'x'}};
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
+  EXPECT_TRUE(errorStatus([&] {
                 return detail::queryProperty<std::optional<std::string>>(
                     queryBytes(unterminated), "value", "size");
               }).has_value());
   const std::vector<std::byte> terminated{std::byte{0}};
-  EXPECT_EQ(::mqt::test::value(detail::queryProperty<std::string>(
-                queryBytes(terminated), "value", "size")),
+  EXPECT_EQ(value(detail::queryProperty<std::string>(queryBytes(terminated),
+                                                     "value", "size")),
             "");
 }
 
@@ -342,23 +330,23 @@ TEST(CustomPropertyTest, DecodesSupportedTypes) {
       std::byte{'v'}, std::byte{'a'}, std::byte{'l'},
       std::byte{'u'}, std::byte{'e'}, std::byte{0},
   };
-  EXPECT_EQ(::mqt::test::value(detail::queryCustomValue<std::string>(
-                queryBytes(stringBytes), "test property")),
+  EXPECT_EQ(value(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
+                                                        "test property")),
             "value");
 
   constexpr bool boolValue = true;
-  EXPECT_EQ(::mqt::test::value(detail::queryCustomValue<bool>(
-                queryBytes(bytesOf(boolValue)), "test property")),
+  EXPECT_EQ(value(detail::queryCustomValue<bool>(queryBytes(bytesOf(boolValue)),
+                                                 "test property")),
             boolValue);
   constexpr int intValue = 42;
-  EXPECT_EQ(::mqt::test::value(detail::queryCustomValue<int>(
-                queryBytes(bytesOf(intValue)), "test property")),
+  EXPECT_EQ(value(detail::queryCustomValue<int>(queryBytes(bytesOf(intValue)),
+                                                "test property")),
             intValue);
   constexpr double doubleValue = 1.25;
-  EXPECT_EQ(::mqt::test::value(detail::queryCustomValue<double>(
+  EXPECT_EQ(value(detail::queryCustomValue<double>(
                 queryBytes(bytesOf(doubleValue)), "test property")),
             doubleValue);
-  EXPECT_EQ(::mqt::test::value(detail::queryCustomValue<std::vector<std::byte>>(
+  EXPECT_EQ(value(detail::queryCustomValue<std::vector<std::byte>>(
                 queryBytes(stringBytes), "test property")),
             stringBytes);
 }
@@ -367,16 +355,15 @@ TEST(CustomPropertyTest, ReturnsNulloptWhenUnsupported) {
   const auto query = [](size_t, void*, size_t*) {
     return QDMI_ERROR_NOTSUPPORTED;
   };
-  EXPECT_EQ(
-      ::mqt::test::value(detail::queryCustomValue<int>(query, "test property")),
-      std::nullopt);
+  EXPECT_EQ(value(detail::queryCustomValue<int>(query, "test property")),
+            std::nullopt);
 }
 
 TEST(CustomPropertyTest, PropagatesQueryErrors) {
   const auto failingSizeQuery = [](size_t, void*, size_t*) {
     return QDMI_ERROR_INVALIDARGUMENT;
   };
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<int>(failingSizeQuery,
                                                    "test property");
             }),
@@ -391,7 +378,7 @@ TEST(CustomPropertyTest, PropagatesQueryErrors) {
     EXPECT_NE(value, nullptr);
     return QDMI_ERROR_INVALIDARGUMENT;
   };
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<int>(failingValueQuery,
                                                    "test property");
             }),
@@ -400,25 +387,25 @@ TEST(CustomPropertyTest, PropagatesQueryErrors) {
 
 TEST(CustomPropertyTest, SupportsEmptyRawValues) {
   const std::vector<std::byte> empty;
-  EXPECT_EQ(::mqt::test::value(detail::queryCustomValue<std::vector<std::byte>>(
+  EXPECT_EQ(value(detail::queryCustomValue<std::vector<std::byte>>(
                 queryBytes(empty), "test property")),
             empty);
 }
 
 TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
   const std::vector<std::byte> empty;
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<std::string>(queryBytes(empty),
                                                            "test property");
             }),
             QDMI_ERROR_INVALIDARGUMENT);
   const std::vector<std::byte> malformedString{std::byte{'n'}, std::byte{'o'}};
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<std::string>(
                   queryBytes(malformedString), "test property");
             }),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<double>(queryBytes(bytesOf(true)),
                                                       "test property");
             }),
@@ -426,21 +413,18 @@ TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
 }
 
 TEST(QueuePositionTest, ReturnsPositionOnSuccess) {
-  EXPECT_EQ(
-      ::mqt::test::value(detail::queuePositionFromResult(QDMI_SUCCESS, 3)), 3);
+  EXPECT_EQ(value(detail::queuePositionFromResult(QDMI_SUCCESS, 3)), 3);
 }
 
 TEST(QueuePositionTest, ReturnsNulloptWhenUnavailable) {
-  EXPECT_EQ(::mqt::test::value(
-                detail::queuePositionFromResult(QDMI_ERROR_NOTSUPPORTED, 0)),
+  EXPECT_EQ(value(detail::queuePositionFromResult(QDMI_ERROR_NOTSUPPORTED, 0)),
             std::nullopt);
-  EXPECT_EQ(::mqt::test::value(
-                detail::queuePositionFromResult(QDMI_ERROR_BADSTATE, 0)),
+  EXPECT_EQ(value(detail::queuePositionFromResult(QDMI_ERROR_BADSTATE, 0)),
             std::nullopt);
 }
 
 TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return detail::queuePositionFromResult(QDMI_ERROR_INVALIDARGUMENT,
                                                      0);
             }),
@@ -448,21 +432,17 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
 }
 
 TEST(JobShotsTest, PreservesZeroWidthShots) {
-  EXPECT_EQ(::mqt::test::value(detail::parseShots("", 0)),
-            std::vector<std::string>{});
-  EXPECT_EQ(::mqt::test::value(detail::parseShots("", 1)),
-            std::vector<std::string>{""});
-  EXPECT_EQ(::mqt::test::value(detail::parseShots(",,,", 4)),
+  EXPECT_EQ(value(detail::parseShots("", 0)), std::vector<std::string>{});
+  EXPECT_EQ(value(detail::parseShots("", 1)), std::vector<std::string>{""});
+  EXPECT_EQ(value(detail::parseShots(",,,", 4)),
             (std::vector<std::string>{"", "", "", ""}));
 }
 
 TEST(JobShotsTest, ValidatesShotCount) {
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return detail::parseShots("0,1", 1);
-              }).has_value());
-  EXPECT_TRUE(::mqt::test::errorStatus([&] {
-                return detail::parseShots("0", 2);
-              }).has_value());
+  EXPECT_TRUE(
+      errorStatus([&] { return detail::parseShots("0,1", 1); }).has_value());
+  EXPECT_TRUE(
+      errorStatus([&] { return detail::parseShots("0", 2); }).has_value());
 }
 
 TEST(QDMITest, StatusToString) {
@@ -574,25 +554,23 @@ TEST(QDMITest, DeviceSessionParameterToString) {
 }
 
 TEST(QDMITest, CheckErrorPreservesStatuses) {
-  mqt::test::value(qdmi::checkError(QDMI_SUCCESS, "Test"));
+  value(qdmi::checkError(QDMI_SUCCESS, "Test"));
   testing::internal::CaptureStderr();
-  mqt::test::value(qdmi::checkError(QDMI_WARN_GENERAL, "Test"));
+  value(qdmi::checkError(QDMI_WARN_GENERAL, "Test"));
   EXPECT_THAT(testing::internal::GetCapturedStderr(),
               testing::HasSubstr("[warning] Test"));
   for (int code = QDMI_ERROR_TIMEOUT; code <= QDMI_ERROR_FATAL; ++code) {
-    EXPECT_EQ(
-        mqt::test::errorStatus([&] { return qdmi::checkError(code, "Test"); }),
-        code);
-    EXPECT_EQ(
-        mqt::test::errorMessage([&] { return qdmi::checkError(code, "Test"); }),
-        std::string("Test: ") + toString(static_cast<QDMI_STATUS>(code)) + ".");
+    EXPECT_EQ(errorStatus([&] { return qdmi::checkError(code, "Test"); }),
+              code);
+    EXPECT_EQ(errorMessage([&] { return qdmi::checkError(code, "Test"); }),
+              std::string("Test: ") + toString(static_cast<QDMI_STATUS>(code)) +
+                  ".");
   }
   auto unknown = qdmi::checkError(-99, "Test");
-  mqt::test::value(qdmi::checkError(QDMI_SUCCESS, "Unrelated operation"));
-  EXPECT_EQ(mqt::test::errorStatus([&] { return std::move(unknown); }), -99);
-  EXPECT_EQ(
-      mqt::test::errorMessage([] { return qdmi::checkError(-99, "Test"); }),
-      "Unknown QDMI error code -99. Test");
+  value(qdmi::checkError(QDMI_SUCCESS, "Unrelated operation"));
+  EXPECT_EQ(errorStatus([&] { return std::move(unknown); }), -99);
+  EXPECT_EQ(errorMessage([] { return qdmi::checkError(-99, "Test"); }),
+            "Unknown QDMI error code -99. Test");
 }
 
 TEST(QDMITest, BinaryProgramFormatClassification) {
@@ -646,322 +624,301 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
 }
 
 TEST_P(DeviceTest, Name) {
-  EXPECT_NO_THROW(EXPECT_FALSE(::mqt::test::value(device.getName()).empty()));
+  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getName()).empty()));
 }
 
 TEST_P(DeviceTest, Version) {
-  EXPECT_NO_THROW(
-      EXPECT_FALSE(::mqt::test::value(device.getVersion()).empty()));
+  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getVersion()).empty()));
 }
 
 TEST_P(DeviceTest, Status) {
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(device.getStatus()));
+  EXPECT_NO_THROW(std::ignore = value(device.getStatus()));
 }
 
 TEST_P(DeviceTest, LibraryVersion) {
-  EXPECT_NO_THROW(
-      EXPECT_FALSE(::mqt::test::value(device.getLibraryVersion()).empty()));
+  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getLibraryVersion()).empty()));
 }
 
 TEST_P(DeviceTest, QubitsNum) {
-  EXPECT_NO_THROW(EXPECT_GT(::mqt::test::value(device.getQubitsNum()), 0));
+  EXPECT_NO_THROW(EXPECT_GT(value(device.getQubitsNum()), 0));
 }
 
 TEST_P(DeviceTest, Sites) {
-  EXPECT_NO_THROW(EXPECT_FALSE(::mqt::test::value(device.getSites()).empty()));
+  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getSites()).empty()));
 }
 
 TEST_P(DeviceTest, CouplingMap) {
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(device.getCouplingMap()));
+  EXPECT_NO_THROW(std::ignore = value(device.getCouplingMap()));
 }
 
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
-  EXPECT_EQ(::mqt::test::value(device.getQueueLength()), std::nullopt);
+  EXPECT_EQ(value(device.getQueueLength()), std::nullopt);
 }
 #endif
 
 TEST_P(DeviceTest, LengthUnit) {
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(device.getLengthUnit()));
+  EXPECT_NO_THROW(std::ignore = value(device.getLengthUnit()));
 }
 
 TEST_P(DeviceTest, LengthScaleFactor) {
-  EXPECT_NO_THROW(std::ignore =
-                      ::mqt::test::value(device.getLengthScaleFactor()));
+  EXPECT_NO_THROW(std::ignore = value(device.getLengthScaleFactor()));
 }
 
 TEST_P(DeviceTest, DurationUnit) {
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(device.getDurationUnit()));
+  EXPECT_NO_THROW(std::ignore = value(device.getDurationUnit()));
 }
 
 TEST_P(DeviceTest, DurationScaleFactor) {
-  EXPECT_NO_THROW(std::ignore =
-                      ::mqt::test::value(device.getDurationScaleFactor()));
+  EXPECT_NO_THROW(std::ignore = value(device.getDurationScaleFactor()));
 }
 
 TEST_P(DeviceTest, MinAtomDistance) {
-  EXPECT_NO_THROW(std::ignore =
-                      ::mqt::test::value(device.getMinAtomDistance()));
+  EXPECT_NO_THROW(std::ignore = value(device.getMinAtomDistance()));
 }
 
 TEST_P(DeviceTest, SupportedProgramFormats) {
-  EXPECT_NO_THROW(std::ignore =
-                      ::mqt::test::value(device.getSupportedProgramFormats()));
+  EXPECT_NO_THROW(std::ignore = value(device.getSupportedProgramFormats()));
 }
 
 TEST_P(DeviceTest, ChildDevices) {
-  EXPECT_TRUE(::mqt::test::value(device.getChildDevices()).empty());
+  EXPECT_TRUE(value(device.getChildDevices()).empty());
 }
 
 TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
-  EXPECT_EQ(
-      ::mqt::test::value(device.queryCustomProperty<std::vector<std::byte>>(
-          CustomProperty::Custom2)),
-      std::nullopt);
+  EXPECT_EQ(value(device.queryCustomProperty<std::vector<std::byte>>(
+                CustomProperty::Custom2)),
+            std::nullopt);
 }
 
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
-  EXPECT_EQ(::mqt::test::value(device.queryCustomProperty<std::string>(
-                CustomProperty::Custom1)),
-            "mqt.compiler-target.v1:all-to-all-homogeneous");
+  EXPECT_EQ(
+      value(device.queryCustomProperty<std::string>(CustomProperty::Custom1)),
+      "mqt.compiler-target.v1:all-to-all-homogeneous");
 }
 #endif
 
 TEST_P(SiteTest, Index) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getIndex()));
+    EXPECT_NO_THROW(std::ignore = value(site.getIndex()));
   }
 }
 
 TEST_P(SiteTest, T1) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getT1()));
+    EXPECT_NO_THROW(std::ignore = value(site.getT1()));
   }
 }
 
 TEST_P(SiteTest, T2) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getT2()));
+    EXPECT_NO_THROW(std::ignore = value(site.getT2()));
   }
 }
 
 TEST_P(SiteTest, Name) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getName()));
+    EXPECT_NO_THROW(std::ignore = value(site.getName()));
   }
 }
 
 TEST_P(SiteTest, XCoordinate) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getXCoordinate()));
+    EXPECT_NO_THROW(std::ignore = value(site.getXCoordinate()));
   }
 }
 
 TEST_P(SiteTest, YCoordinate) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getYCoordinate()));
+    EXPECT_NO_THROW(std::ignore = value(site.getYCoordinate()));
   }
 }
 
 TEST_P(SiteTest, ZCoordinate) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getZCoordinate()));
+    EXPECT_NO_THROW(std::ignore = value(site.getZCoordinate()));
   }
 }
 
 TEST_P(SiteTest, IsZone) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.isZone()));
+    EXPECT_NO_THROW(std::ignore = value(site.isZone()));
   }
 }
 
 TEST_P(SiteTest, XExtent) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getXExtent()));
+    EXPECT_NO_THROW(std::ignore = value(site.getXExtent()));
   }
 }
 
 TEST_P(SiteTest, YExtent) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getYExtent()));
+    EXPECT_NO_THROW(std::ignore = value(site.getYExtent()));
   }
 }
 
 TEST_P(SiteTest, ZExtent) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getZExtent()));
+    EXPECT_NO_THROW(std::ignore = value(site.getZExtent()));
   }
 }
 
 TEST_P(SiteTest, ModuleIndex) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getModuleIndex()));
+    EXPECT_NO_THROW(std::ignore = value(site.getModuleIndex()));
   }
 }
 
 TEST_P(SiteTest, SubmoduleIndex) {
   for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(site.getSubmoduleIndex()));
+    EXPECT_NO_THROW(std::ignore = value(site.getSubmoduleIndex()));
   }
 }
 
 TEST_P(SiteTest, UnsupportedCustomPropertyReturnsNullopt) {
   for (const auto& site : sites) {
-    EXPECT_EQ(
-        ::mqt::test::value(site.queryCustomProperty<std::vector<std::byte>>(
-            CustomProperty::Custom1)),
-        std::nullopt);
+    EXPECT_EQ(value(site.queryCustomProperty<std::vector<std::byte>>(
+                  CustomProperty::Custom1)),
+              std::nullopt);
   }
 }
 
 TEST_P(OperationTest, Name) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(
-        EXPECT_FALSE(::mqt::test::value(operation.getName()).empty()));
+    EXPECT_NO_THROW(EXPECT_FALSE(value(operation.getName()).empty()));
   }
 }
 
 TEST_P(OperationTest, QubitsNum) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(operation.getQubitsNum()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getQubitsNum()));
   }
 }
 
 TEST_P(OperationTest, ParametersNum) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore =
-                        ::mqt::test::value(operation.getParametersNum()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getParametersNum()));
   }
 }
 
 TEST_P(OperationTest, Duration) {
   for (const auto& operation : operations) {
-    const auto qubitsNum = ::mqt::test::value(operation.getQubitsNum());
+    const auto qubitsNum = value(operation.getQubitsNum());
     if (!qubitsNum.has_value()) {
-      EXPECT_NO_THROW(std::ignore =
-                          ::mqt::test::value(operation.getDuration()));
+      EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
       continue;
     }
     const auto numQubits = *qubitsNum;
     if (numQubits == 1) {
-      const auto sites = ::mqt::test::value(operation.getSites());
+      const auto sites = value(operation.getSites());
       if (!sites.has_value()) {
-        EXPECT_NO_THROW(std::ignore =
-                            ::mqt::test::value(operation.getDuration()));
+        EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
         continue;
       }
       for (const auto& site : *sites) {
-        EXPECT_NO_THROW(std::ignore =
-                            ::mqt::test::value(operation.getDuration({site})));
+        EXPECT_NO_THROW(std::ignore = value(operation.getDuration({site})));
       }
       continue;
     }
 
     if (numQubits == 2) {
-      const auto sitePairs = ::mqt::test::value(operation.getSitePairs());
+      const auto sitePairs = value(operation.getSitePairs());
       if (!sitePairs.has_value()) {
-        EXPECT_NO_THROW(std::ignore =
-                            ::mqt::test::value(operation.getDuration()));
+        EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
         continue;
       }
       for (const auto& [site1, site2] : *sitePairs) {
-        EXPECT_NO_THROW(std::ignore = ::mqt::test::value(
-                            operation.getDuration({site1, site2})));
+        EXPECT_NO_THROW(std::ignore =
+                            value(operation.getDuration({site1, site2})));
       }
       continue;
     }
 
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(operation.getDuration()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
   }
 }
 
 TEST_P(OperationTest, Fidelity) {
   for (const auto& operation : operations) {
-    const auto qubitsNum = ::mqt::test::value(operation.getQubitsNum());
+    const auto qubitsNum = value(operation.getQubitsNum());
     if (!qubitsNum.has_value()) {
-      EXPECT_NO_THROW(std::ignore =
-                          ::mqt::test::value(operation.getFidelity()));
+      EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
       continue;
     }
     const auto numQubits = *qubitsNum;
     if (numQubits == 1) {
-      const auto sites = ::mqt::test::value(operation.getSites());
+      const auto sites = value(operation.getSites());
       if (!sites.has_value()) {
-        EXPECT_NO_THROW(std::ignore =
-                            ::mqt::test::value(operation.getFidelity()));
+        EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
         continue;
       }
       for (const auto& site : *sites) {
-        EXPECT_NO_THROW(std::ignore =
-                            ::mqt::test::value(operation.getFidelity({site})));
+        EXPECT_NO_THROW(std::ignore = value(operation.getFidelity({site})));
       }
       continue;
     }
 
     if (numQubits == 2) {
-      const auto sitePairs = ::mqt::test::value(operation.getSitePairs());
+      const auto sitePairs = value(operation.getSitePairs());
       if (!sitePairs.has_value()) {
-        EXPECT_NO_THROW(std::ignore =
-                            ::mqt::test::value(operation.getFidelity()));
+        EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
         continue;
       }
       for (const auto& [site1, site2] : *sitePairs) {
-        EXPECT_NO_THROW(std::ignore = ::mqt::test::value(
-                            operation.getFidelity({site1, site2})));
+        EXPECT_NO_THROW(std::ignore =
+                            value(operation.getFidelity({site1, site2})));
       }
       continue;
     }
 
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(operation.getFidelity()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
   }
 }
 
 TEST_P(OperationTest, InteractionRadius) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore =
-                        ::mqt::test::value(operation.getInteractionRadius()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getInteractionRadius()));
   }
 }
 
 TEST_P(OperationTest, BlockingRadius) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore =
-                        ::mqt::test::value(operation.getBlockingRadius()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getBlockingRadius()));
   }
 }
 
 TEST_P(OperationTest, IdlingFidelity) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore =
-                        ::mqt::test::value(operation.getIdlingFidelity()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getIdlingFidelity()));
   }
 }
 
 TEST_P(OperationTest, IsZoned) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(operation.isZoned()));
+    EXPECT_NO_THROW(std::ignore = value(operation.isZoned()));
   }
 }
 
 TEST_P(OperationTest, Sites) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = ::mqt::test::value(operation.getSites()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getSites()));
   }
 }
 
 TEST_P(OperationTest, SitePairs) {
   for (const auto& operation : operations) {
-    const auto sitePairs = ::mqt::test::value(operation.getSitePairs());
-    const auto qubitsNum = ::mqt::test::value(operation.getQubitsNum());
-    const auto isZonedOp = ::mqt::test::value(operation.isZoned());
+    const auto sitePairs = value(operation.getSitePairs());
+    const auto qubitsNum = value(operation.getQubitsNum());
+    const auto isZonedOp = value(operation.isZoned());
 
     if (!qubitsNum.has_value() || *qubitsNum != 2 || isZonedOp) {
       EXPECT_FALSE(sitePairs.has_value());
       continue;
     }
 
-    const auto sites = ::mqt::test::value(operation.getSites());
+    const auto sites = value(operation.getSites());
     if (!sites.has_value() || sites->empty() || sites->size() % 2 != 0) {
       EXPECT_FALSE(sitePairs.has_value());
       continue;
@@ -976,34 +933,32 @@ TEST_P(OperationTest, SitePairs) {
 
 TEST_P(OperationTest, MeanShuttlingSpeed) {
   for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore =
-                        ::mqt::test::value(operation.getMeanShuttlingSpeed()));
+    EXPECT_NO_THROW(std::ignore = value(operation.getMeanShuttlingSpeed()));
   }
 }
 
 TEST_P(OperationTest, UnsupportedCustomPropertyReturnsNullopt) {
   for (const auto& operation : operations) {
-    EXPECT_EQ(::mqt::test::value(
-                  operation.queryCustomProperty<std::vector<std::byte>>(
-                      CustomProperty::Custom2)),
+    EXPECT_EQ(value(operation.queryCustomProperty<std::vector<std::byte>>(
+                  CustomProperty::Custom2)),
               std::nullopt);
   }
 }
 
 TEST_P(DeviceTest, RegularSitesAndZones) {
-  const auto allSites = ::mqt::test::value(device.getSites());
-  const auto regularSites = ::mqt::test::value(device.getRegularSites());
-  const auto zones = ::mqt::test::value(device.getZones());
+  const auto allSites = value(device.getSites());
+  const auto regularSites = value(device.getRegularSites());
+  const auto zones = value(device.getZones());
 
   EXPECT_FALSE(allSites.empty());
   EXPECT_EQ(regularSites.size() + zones.size(), allSites.size());
 
   for (const auto& site : regularSites) {
-    EXPECT_FALSE(::mqt::test::value(site.isZone()));
+    EXPECT_FALSE(value(site.isZone()));
   }
 
   for (const auto& site : zones) {
-    EXPECT_TRUE(::mqt::test::value(site.isZone()));
+    EXPECT_TRUE(value(site.isZone()));
   }
 }
 
@@ -1018,17 +973,15 @@ h q[0];
 cx q[0], q[1];
 c = measure q;)";
 
-  const auto job = ::mqt::test::value(
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100));
+  const auto job =
+      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100));
 
-  EXPECT_FALSE(::mqt::test::value(job.getId()).empty());
-  EXPECT_EQ(::mqt::test::value(job.getProgramFormat()),
-            QDMI_PROGRAM_FORMAT_QASM3);
-  EXPECT_STREQ(::mqt::test::value(job.getProgram()).c_str(),
-               qasm3Program.c_str());
-  EXPECT_EQ(::mqt::test::value(job.getNumShots()), 100);
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
-  EXPECT_EQ(::mqt::test::value(job.check()), QDMI_JOB_STATUS_DONE);
+  EXPECT_FALSE(value(job.getId()).empty());
+  EXPECT_EQ(value(job.getProgramFormat()), QDMI_PROGRAM_FORMAT_QASM3);
+  EXPECT_STREQ(value(job.getProgram()).c_str(), qasm3Program.c_str());
+  EXPECT_EQ(value(job.getNumShots()), 100);
+  EXPECT_TRUE(value(job.wait()));
+  EXPECT_EQ(value(job.check()), QDMI_JOB_STATUS_DONE);
 }
 
 TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
@@ -1037,29 +990,27 @@ TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
       "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; bit[1] c; x "
       "q[0]; c[0] = measure q[0];",
   };
-  const auto job = ::mqt::test::value(
-      device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4));
+  const auto job =
+      value(device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4));
 
-  ASSERT_TRUE(::mqt::test::value(job.wait()));
-  EXPECT_EQ(::mqt::test::value(job.getNumPrograms()), programs.size());
-  EXPECT_EQ(::mqt::test::value(job.getProgram(0)), programs[0]);
-  EXPECT_EQ(::mqt::test::value(job.getProgram(1)), programs[1]);
-  EXPECT_EQ(::mqt::test::value(job.getProgramStatus(0)), QDMI_JOB_STATUS_DONE);
-  EXPECT_EQ(::mqt::test::value(job.getProgramStatus(1)), QDMI_JOB_STATUS_DONE);
-  EXPECT_EQ(::mqt::test::value(job.getCounts(0)),
-            (std::map<std::string, size_t>{{"0", 4}}));
-  EXPECT_EQ(::mqt::test::value(job.getCounts(1)),
-            (std::map<std::string, size_t>{{"1", 4}}));
-  EXPECT_NE(::mqt::test::value(job.getResults(QDMI_JOB_RESULT_SHOTS, 0)),
-            ::mqt::test::value(job.getResults(QDMI_JOB_RESULT_SHOTS, 1)));
-  EXPECT_EQ(::mqt::test::errorStatus([&] { return job.getProgramStatus(2); }),
+  ASSERT_TRUE(value(job.wait()));
+  EXPECT_EQ(value(job.getNumPrograms()), programs.size());
+  EXPECT_EQ(value(job.getProgram(0)), programs[0]);
+  EXPECT_EQ(value(job.getProgram(1)), programs[1]);
+  EXPECT_EQ(value(job.getProgramStatus(0)), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(value(job.getProgramStatus(1)), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(value(job.getCounts(0)), (std::map<std::string, size_t>{{"0", 4}}));
+  EXPECT_EQ(value(job.getCounts(1)), (std::map<std::string, size_t>{{"1", 4}}));
+  EXPECT_NE(value(job.getResults(QDMI_JOB_RESULT_SHOTS, 0)),
+            value(job.getResults(QDMI_JOB_RESULT_SHOTS, 1)));
+  EXPECT_EQ(errorStatus([&] { return job.getProgramStatus(2); }),
             QDMI_ERROR_OUTOFRANGE);
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
 
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return device.submitJob(textProgram,
                                       QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0);
             }),
@@ -1068,34 +1019,33 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobValidatesCustomParameters) {
   constexpr auto program = "OPENQASM 3.0; qubit q; bit c = measure q;";
-  const auto job = ::mqt::test::value(device.submitJob(
-      program, QDMI_PROGRAM_FORMAT_QASM3, 10, 7, std::nullopt, 4));
-  ASSERT_TRUE(::mqt::test::value(job.wait()));
-  EXPECT_EQ(::mqt::test::value(job.getCounts()),
-            (std::map<std::string, size_t>{{"0", 10}}));
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  const auto job = value(device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3,
+                                          10, 7, std::nullopt, 4));
+  ASSERT_TRUE(value(job.wait()));
+  EXPECT_EQ(value(job.getCounts()), (std::map<std::string, size_t>{{"0", 10}}));
+  EXPECT_EQ(errorStatus([&] {
               return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                                       std::nullopt, std::nullopt,
                                       std::string("custom"));
             }),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                                       std::nullopt, std::nullopt, true);
             }),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                                       std::nullopt, std::nullopt, std::nullopt,
                                       42);
             }),
             QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                                       std::nullopt, true);
             }),
             QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
                                       std::nullopt, 1);
             }),
@@ -1110,17 +1060,17 @@ bit[1] c;
 c[0] = measure q[0];
 )";
 
-  const auto job1 = ::mqt::test::value(
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
-  EXPECT_EQ(::mqt::test::value(job1.getNumShots()), 10);
+  const auto job1 =
+      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+  EXPECT_EQ(value(job1.getNumShots()), 10);
 
-  const auto job2 = ::mqt::test::value(
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100));
-  EXPECT_EQ(::mqt::test::value(job2.getNumShots()), 100);
+  const auto job2 =
+      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100));
+  EXPECT_EQ(value(job2.getNumShots()), 100);
 
-  const auto job3 = ::mqt::test::value(
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000));
-  EXPECT_EQ(::mqt::test::value(job3.getNumShots()), 1000);
+  const auto job3 =
+      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000));
+  EXPECT_EQ(value(job3.getNumShots()), 1000);
 }
 
 TEST_F(JobTest, IdIsUnique) {
@@ -1130,38 +1080,38 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto job2 = ::mqt::test::value(
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+  const auto job2 =
+      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
 
-  EXPECT_NE(::mqt::test::value(job.getId()), ::mqt::test::value(job2.getId()));
+  EXPECT_NE(value(job.getId()), value(job2.getId()));
 }
 
 TEST_F(JobTest, QueuePositionIsUnavailable) {
-  EXPECT_EQ(::mqt::test::value(job.getQueuePosition()), std::nullopt);
+  EXPECT_EQ(value(job.getQueuePosition()), std::nullopt);
 }
 
 TEST_F(JobTest, UnsupportedCustomPropertyAndResultReturnNullopt) {
-  EXPECT_EQ(::mqt::test::value(job.queryCustomProperty<std::vector<std::byte>>(
+  EXPECT_EQ(value(job.queryCustomProperty<std::vector<std::byte>>(
                 CustomProperty::Custom1)),
             std::nullopt);
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
-  EXPECT_EQ(::mqt::test::value(job.getCustomResult<std::vector<std::byte>>(
+  EXPECT_TRUE(value(job.wait()));
+  EXPECT_EQ(value(job.getCustomResult<std::vector<std::byte>>(
                 CustomProperty::Custom1)),
             std::nullopt);
 }
 
 TEST_F(JobTest, StatusProgresses) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto finalStatus = ::mqt::test::value(job.check());
+  const auto finalStatus = value(job.check());
   EXPECT_THAT(finalStatus,
               testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
 }
 
 TEST_F(JobTest, GetCountsReturnsValidHistogram) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto counts = ::mqt::test::value(job.getCounts());
+  const auto counts = value(job.getCounts());
   EXPECT_FALSE(counts.empty());
 
   // All keys should be valid binary strings of length 1 (single qubit)
@@ -1175,23 +1125,23 @@ TEST_F(JobTest, GetCountsReturnsValidHistogram) {
   for (const auto& value : counts | std::views::values) {
     totalCounts += value;
   }
-  EXPECT_EQ(totalCounts, ::mqt::test::value(job.getNumShots()));
+  EXPECT_EQ(totalCounts, value(job.getNumShots()));
 }
 
 TEST_F(JobTest, MultipleGetCountsCalls) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto counts1 = ::mqt::test::value(job.getCounts());
-  const auto counts2 = ::mqt::test::value(job.getCounts());
+  const auto counts1 = value(job.getCounts());
+  const auto counts2 = value(job.getCounts());
 
   EXPECT_EQ(counts1, counts2);
 }
 
 TEST_F(JobTest, GetShotsReturnsValidShots) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
   auto result = job.getShots();
   if (!result) {
-    EXPECT_EQ(mqt::test::errorStatus([&] { return result.takeError(); }),
+    EXPECT_EQ(errorStatus([&] { return result.takeError(); }),
               QDMI_ERROR_NOTSUPPORTED);
     return;
   }
@@ -1201,7 +1151,7 @@ TEST_F(JobTest, GetShotsReturnsValidShots) {
     EXPECT_EQ(shot.length(), 1);
     EXPECT_TRUE(shot == "0" || shot == "1");
   }
-  EXPECT_EQ(shots.size(), ::mqt::test::value(job.getNumShots()));
+  EXPECT_EQ(shots.size(), value(job.getNumShots()));
 }
 
 TEST_F(JobTest, CancelJob) {
@@ -1211,13 +1161,13 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto jobToCancel = ::mqt::test::value(
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+  const auto jobToCancel =
+      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
 
   auto error = jobToCancel.cancel();
-  const auto status = ::mqt::test::value(jobToCancel.check());
+  const auto status = value(jobToCancel.check());
   if (error) {
-    EXPECT_EQ(mqt::test::errorStatus([&] { return std::move(error); }),
+    EXPECT_EQ(errorStatus([&] { return std::move(error); }),
               QDMI_ERROR_INVALIDARGUMENT);
     EXPECT_THAT(status,
                 testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
@@ -1227,20 +1177,20 @@ c[0] = measure q[0];
 }
 
 TEST_F(JobTest, CancelCompletedJobReturnsError) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto statusBefore = ::mqt::test::value(job.check());
+  const auto statusBefore = value(job.check());
   EXPECT_THAT(statusBefore,
               testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
 
-  EXPECT_EQ(::mqt::test::errorStatus([&] { return job.cancel(); }),
+  EXPECT_EQ(errorStatus([&] { return job.cancel(); }),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto stateVector = ::mqt::test::value(job.getDenseStateVector());
+  const auto stateVector = value(job.getDenseStateVector());
   EXPECT_EQ(stateVector.size(), 4); // 2 qubits → 4 amplitudes
 
   // The expected state is (|00⟩ + |11⟩)/sqrt(2)
@@ -1252,9 +1202,9 @@ TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
 }
 
 TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto probabilities = ::mqt::test::value(job.getDenseProbabilities());
+  const auto probabilities = value(job.getDenseProbabilities());
   EXPECT_EQ(probabilities.size(), 4); // 2 qubits → 4 probabilities
 
   // The expected probabilities are 0.5 for |00⟩ and |11⟩, and 0 for |01⟩ and
@@ -1266,9 +1216,9 @@ TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
 }
 
 TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto sparseStateVector = ::mqt::test::value(job.getSparseStateVector());
+  const auto sparseStateVector = value(job.getSparseStateVector());
   EXPECT_EQ(sparseStateVector.size(),
             2); // Only |00⟩ and |11⟩ should be present
 
@@ -1283,10 +1233,9 @@ TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
 }
 
 TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
-  EXPECT_TRUE(::mqt::test::value(job.wait()));
+  EXPECT_TRUE(value(job.wait()));
 
-  const auto sparseProbabilities =
-      ::mqt::test::value(job.getSparseProbabilities());
+  const auto sparseProbabilities = value(job.getSparseProbabilities());
   EXPECT_EQ(sparseProbabilities.size(),
             2); // Only |00⟩ and |11⟩ should be present
 
@@ -1319,23 +1268,20 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   // Empty token should be accepted
   SessionConfig config1;
   config1.token = "";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config1));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config1)); });
 
   // Non-empty token should be accepted
   SessionConfig config2;
   config2.token = "test_token_123";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config2));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config2)); });
 
   // Token with special characters should be accepted
   SessionConfig config3;
   config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config3));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config3)); });
 }
 
 TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
@@ -1343,9 +1289,8 @@ TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
   config.token = "test-token";
 
   testing::internal::CaptureStderr();
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config)); });
   const auto diagnostic = testing::internal::GetCapturedStderr();
   EXPECT_THAT(
       diagnostic,
@@ -1357,47 +1302,41 @@ TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
 TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   SessionConfig config;
   config.authUrl = "driver-specific:authentication-endpoint";
-  EXPECT_NO_THROW(
-      { const auto session = ::mqt::test::value(Session::create(config)); });
+  EXPECT_NO_THROW({ const auto session = value(Session::create(config)); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
   SessionConfig config;
   config.authFile = "/driver-owned/nonexistent/authentication-file";
-  EXPECT_NO_THROW(
-      { const auto session = ::mqt::test::value(Session::create(config)); });
+  EXPECT_NO_THROW({ const auto session = value(Session::create(config)); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
   // Username only
   SessionConfig config1;
   config1.username = "user123";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config1));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config1)); });
 
   // Password only
   SessionConfig config2;
   config2.password = "secure_password";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config2));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config2)); });
 
   // Both username and password
   SessionConfig config3;
   config3.username = "user123";
   config3.password = "secure_password";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config3));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config3)); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithProjectId) {
   SessionConfig config;
   config.projectId = "project-123-abc";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config)); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
@@ -1406,9 +1345,8 @@ TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
   config.username = "test_user";
   config.password = "test_pass";
   config.projectId = "test_project";
-  EXPECT_NO_THROW({
-    const auto session = ::mqt::test::value(qdmi::Session::create(config));
-  });
+  EXPECT_NO_THROW(
+      { const auto session = value(qdmi::Session::create(config)); });
 }
 
 TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
@@ -1419,14 +1357,14 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
   // Test custom1 - may succeed or fail with validation/unsupported errors
   SessionConfig config1;
   config1.custom1 = "custom_value_1";
-  auto session1 = ::mqt::test::value(qdmi::Session::create(config1));
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(session1.getDevices()));
+  auto session1 = value(qdmi::Session::create(config1));
+  EXPECT_NO_THROW(std::ignore = value(session1.getDevices()));
 
   // Test custom2
   SessionConfig config2;
   config2.custom2 = "custom_value_2";
-  auto session2 = ::mqt::test::value(qdmi::Session::create(config2));
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(session2.getDevices()));
+  auto session2 = value(qdmi::Session::create(config2));
+  EXPECT_NO_THROW(std::ignore = value(session2.getDevices()));
 
   // Test all custom parameters together
   SessionConfig config3;
@@ -1435,37 +1373,37 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
   config3.custom3 = "value3";
   config3.custom4 = "value4";
   config3.custom5 = "value5";
-  auto session3 = ::mqt::test::value(qdmi::Session::create(config3));
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(session3.getDevices()));
+  auto session3 = value(qdmi::Session::create(config3));
+  EXPECT_NO_THROW(std::ignore = value(session3.getDevices()));
 
   // Test mixing custom parameters with standard authentication
   SessionConfig config4;
   config4.token = "test_token";
   config4.custom1 = "custom_value";
   config4.projectId = "project_id";
-  auto session4 = ::mqt::test::value(qdmi::Session::create(config4));
-  EXPECT_NO_THROW(std::ignore = ::mqt::test::value(session4.getDevices()));
+  auto session4 = value(qdmi::Session::create(config4));
+  EXPECT_NO_THROW(std::ignore = value(session4.getDevices()));
 }
 
 TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
-  auto session = ::mqt::test::value(qdmi::Session::create());
-  auto const devices = ::mqt::test::value(session.getDevices());
+  auto session = value(qdmi::Session::create());
+  auto const devices = value(session.getDevices());
 
   EXPECT_FALSE(devices.empty());
 
   // All elements should be Device instances
   for (const auto& device : devices) {
     // Device should have a name
-    EXPECT_FALSE(::mqt::test::value(device.getName()).empty());
+    EXPECT_FALSE(value(device.getName()).empty());
   }
 }
 
 TEST(AuthenticationTest, SessionMultipleInstances) {
-  auto session1 = ::mqt::test::value(qdmi::Session::create());
-  auto session2 = ::mqt::test::value(qdmi::Session::create());
+  auto session1 = value(qdmi::Session::create());
+  auto session2 = value(qdmi::Session::create());
 
-  auto const devices1 = ::mqt::test::value(session1.getDevices());
-  auto const devices2 = ::mqt::test::value(session2.getDevices());
+  auto const devices1 = value(session1.getDevices());
+  auto const devices2 = value(session2.getDevices());
 
   // Both should return devices
   EXPECT_FALSE(devices1.empty());
@@ -1477,48 +1415,45 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto const device =
-        ::mqt::test::value(Session::openDevice("mqt.sc.default"));
-    return ::mqt::test::value(device.getSites()).front();
+    auto const device = value(Session::openDevice("mqt.sc.default"));
+    return value(device.getSites()).front();
   }();
 
-  EXPECT_EQ(::mqt::test::value(site.getIndex()), 0);
+  EXPECT_EQ(value(site.getIndex()), 0);
 }
 
 TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
   const auto operation = [] {
-    auto const device =
-        ::mqt::test::value(Session::openDevice("mqt.sc.default"));
-    return ::mqt::test::value(device.getOperations()).front();
+    auto const device = value(Session::openDevice("mqt.sc.default"));
+    return value(device.getOperations()).front();
   }();
 
-  EXPECT_FALSE(::mqt::test::value(operation.getName()).empty());
+  EXPECT_FALSE(value(operation.getName()).empty());
 }
 
 TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto const device =
-        ::mqt::test::value(Session::openDevice("mqt.sc.default"));
-    const auto operation = ::mqt::test::value(device.getOperations()).front();
-    return ::mqt::test::value(operation.getSites()).value().front();
+    auto const device = value(Session::openDevice("mqt.sc.default"));
+    const auto operation = value(device.getOperations()).front();
+    return value(operation.getSites()).value().front();
   }();
 
-  EXPECT_FALSE(::mqt::test::value(site.isZone()));
+  EXPECT_FALSE(value(site.isZone()));
 }
 
 namespace {
 auto getDevices() -> std::vector<Device> {
-  auto session = ::mqt::test::value(Session::create());
-  auto devices = ::mqt::test::value(session.getDevices());
+  auto session = value(Session::create());
+  auto devices = value(session.getDevices());
   std::erase_if(devices, [](const Device& device) {
-    return ::mqt::test::value(device.getId()).starts_with("test.");
+    return value(device.getId()).starts_with("test.");
   });
   return devices;
 }
 
 /// Device names may contain punctuation or repeat across sessions.
 auto deviceTestName(const testing::TestParamInfo<Device>& info) {
-  auto name = ::mqt::test::value(info.param.getName());
+  auto name = value(info.param.getName());
   std::ranges::replace_if(
       name, [](unsigned char character) { return !std::isalnum(character); },
       '_');

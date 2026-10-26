@@ -33,12 +33,17 @@
 #include <system_error>
 #include <vector>
 
+using mqt::test::errorMessage;
+using mqt::test::errorStatus;
+using mqt::test::TemporaryDirectory;
+using mqt::test::value;
+
 namespace qdmi {
 namespace {
 using mqt::test::ScopedEnvironmentVariable;
 
 TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
-  const mqt::test::TemporaryDirectory directory;
+  const TemporaryDirectory directory;
   const std::filesystem::path fixture{MQT_CORE_QDMI_INCOMPLETE_DRIVER};
   // Windows searches the executable directory before the current directory.
   const auto libraryPath =
@@ -92,7 +97,7 @@ TEST(ClientRuntimeTest, RejectsMissingModuleAnchors) {
 }
 
 TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
-  const mqt::test::TemporaryDirectory directory;
+  const TemporaryDirectory directory;
   auto filename = detail::pathFromString("\xc3\xa4-\xf0\x9f\x8e\xaf.json");
   MQT_ASSERT_SUCCESS(filename);
   const auto path = directory.path() / *filename;
@@ -151,19 +156,19 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
                                          MQT_CORE_QDMI_EXAMPLE_CONFIG};
   const ScopedEnvironmentVariable driver{"MQT_CORE_QDMI_DRIVER",
                                          "missing-driver"};
-  EXPECT_THAT(::mqt::test::errorMessage([] { return Session::create(); }),
+  EXPECT_THAT(errorMessage([] { return Session::create(); }),
               testing::HasSubstr("Cannot load QDMI driver"));
-  EXPECT_THAT(::mqt::test::errorMessage([] {
+  EXPECT_THAT(errorMessage([] {
                 return Session::create(
                     SessionConfig{.driverPath = std::filesystem::path{}});
               }),
               testing::HasSubstr("QDMI driver path must not be empty"));
-  EXPECT_THAT(::mqt::test::errorMessage([] {
+  EXPECT_THAT(errorMessage([] {
                 return Session::create(SessionConfig{
                     .driverPath = MQT_CORE_QDMI_INCOMPLETE_DRIVER});
               }),
               testing::HasSubstr("missing symbol QDMI_session_alloc"));
-  EXPECT_THAT(::mqt::test::errorMessage([] {
+  EXPECT_THAT(errorMessage([] {
                 return Session::create(SessionConfig{
                     .driverPath = MQT_CORE_QDMI_INCOMPATIBLE_DRIVER});
               }),
@@ -171,7 +176,7 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
 
   // The upstream example requires a token. A failed initialization must allow
   // retry.
-  EXPECT_THAT(::mqt::test::errorMessage([] {
+  EXPECT_THAT(errorMessage([] {
                 return Session::create(
                     SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER});
               }),
@@ -180,53 +185,44 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
       .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
       .token = "first-token",
   };
-  auto first = ::mqt::test::value(Session::create(firstConfig));
-  auto second = ::mqt::test::value(Session::create(SessionConfig{
+  auto first = value(Session::create(firstConfig));
+  auto second = value(Session::create(SessionConfig{
       .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
       .token = "second-token",
   }));
-  EXPECT_EQ(::mqt::test::value(first.getDeviceIds()),
+  EXPECT_EQ(value(first.getDeviceIds()),
             std::vector<std::string>{"test.example"});
-  EXPECT_THAT(
-      ::mqt::test::value(
-          ::mqt::test::value(first.getDevice("test.example")).getName()),
-      testing::HasSubstr("token=first-token"));
-  EXPECT_THAT(
-      ::mqt::test::value(
-          ::mqt::test::value(second.getDevice("test.example")).getName()),
-      testing::HasSubstr("token=second-token"));
-
-  const auto retained =
-      ::mqt::test::value(Session::openDevice("test.example", firstConfig));
-  EXPECT_THAT(::mqt::test::value(retained.getName()),
+  EXPECT_THAT(value(value(first.getDevice("test.example")).getName()),
               testing::HasSubstr("token=first-token"));
-  const auto job = ::mqt::test::value(
-      ::mqt::test::value(Session::openDevice("test.example", firstConfig))
-          .submitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1));
-  EXPECT_EQ(::mqt::test::value(job.getId()), "session-job");
+  EXPECT_THAT(value(value(second.getDevice("test.example")).getName()),
+              testing::HasSubstr("token=second-token"));
+
+  const auto retained = value(Session::openDevice("test.example", firstConfig));
+  EXPECT_THAT(value(retained.getName()),
+              testing::HasSubstr("token=first-token"));
+  const auto job =
+      value(value(Session::openDevice("test.example", firstConfig))
+                .submitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1));
+  EXPECT_EQ(value(job.getId()), "session-job");
   {
     const ScopedEnvironmentVariable optionalToken{
         "MQT_CORE_QDMI_TEST_DEVICE_FAILURE", "token-unsupported"};
     EXPECT_EQ(
-        ::mqt::test::value(
-            ::mqt::test::value(Session::openDevice("test.example", firstConfig))
-                .getId()),
+        value(value(Session::openDevice("test.example", firstConfig)).getId()),
         "test.example");
   }
   {
     const ScopedEnvironmentVariable deniedToken{
         "MQT_CORE_QDMI_TEST_DEVICE_FAILURE", "token-denied"};
-    EXPECT_THAT(
-        ::mqt::test::errorMessage([&] { return Session::create(firstConfig); }),
-        testing::HasSubstr("Permission denied"));
+    EXPECT_THAT(errorMessage([&] { return Session::create(firstConfig); }),
+                testing::HasSubstr("Permission denied"));
   }
 }
 
 TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
-  EXPECT_EQ(
-      ::mqt::test::errorStatus([] { return builtin_driver::openDevice(""); }),
-      QDMI_ERROR_INVALIDARGUMENT);
-  const mqt::test::TemporaryDirectory directory;
+  EXPECT_EQ(errorStatus([] { return builtin_driver::openDevice(""); }),
+            QDMI_ERROR_INVALIDARGUMENT);
+  const TemporaryDirectory directory;
   const auto definition = [](const std::string& id) {
     return llvm::json::Object{
         {"id", id},
@@ -277,52 +273,49 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
                         },
                     }))
           .str());
-  EXPECT_EQ(::mqt::test::errorStatus(
-                [&] { return builtin_driver::addManifest(unavailable); }),
-            QDMI_ERROR_LIBNOTFOUND);
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(
+      errorStatus([&] { return builtin_driver::addManifest(unavailable); }),
+      QDMI_ERROR_LIBNOTFOUND);
+  EXPECT_EQ(errorStatus([&] {
               return builtin_driver::addManifest(directory.path() / "missing");
             }),
             QDMI_ERROR_LIBNOTFOUND);
-  EXPECT_EQ(::mqt::test::errorStatus(
-                [&] { return builtin_driver::addManifest(malformed); }),
+  EXPECT_EQ(errorStatus([&] { return builtin_driver::addManifest(malformed); }),
             QDMI_ERROR_INVALIDARGUMENT);
 
   const ScopedEnvironmentVariable driver{"MQT_CORE_QDMI_DRIVER",
                                          MQT_CORE_QDMI_TEST_DRIVER};
-  ::mqt::test::value(builtin_driver::addManifest(configured));
-  ::mqt::test::value(builtin_driver::addManifest(configured));
-  EXPECT_EQ(::mqt::test::errorStatus(
-                [&] { return builtin_driver::addManifest(conflicting); }),
-            QDMI_ERROR_INVALIDARGUMENT);
-  ::mqt::test::value(builtin_driver::addManifest(unicode));
+  value(builtin_driver::addManifest(configured));
+  value(builtin_driver::addManifest(configured));
+  EXPECT_EQ(
+      errorStatus([&] { return builtin_driver::addManifest(conflicting); }),
+      QDMI_ERROR_INVALIDARGUMENT);
+  value(builtin_driver::addManifest(unicode));
   {
     const ScopedEnvironmentVariable invalidConfig{"MQT_CORE_QDMI_CONFIG_JSON",
                                                   "{"};
-    EXPECT_EQ(::mqt::test::errorStatus(
-                  [&] { return builtin_driver::openDevice("test.session"); }),
-              QDMI_ERROR_INVALIDARGUMENT);
+    EXPECT_EQ(
+        errorStatus([&] { return builtin_driver::openDevice("test.session"); }),
+        QDMI_ERROR_INVALIDARGUMENT);
   }
   // Failed driver initialization must leave manifest registration available.
-  ::mqt::test::value(builtin_driver::addManifest(late));
+  value(builtin_driver::addManifest(late));
   const auto first = [&] {
     const ScopedEnvironmentVariable overrides{
         "MQT_CORE_QDMI_CONFIG_JSON",
         R"({"schema-version":1,"qdmi":{"devices":[{"id":"test.session","session":{"custom4":"busy"}}]}})"};
-    return ::mqt::test::value(builtin_driver::openDevice("test.session"));
+    return value(builtin_driver::openDevice("test.session"));
   }();
-  const auto second = ::mqt::test::value(
+  const auto second = value(
       builtin_driver::openDevice("test.session", R"({"custom4":"offline"})"));
-  EXPECT_EQ(::mqt::test::value(first.getId()), "test.session");
-  EXPECT_EQ(::mqt::test::value(second.getId()), "test.session");
+  EXPECT_EQ(value(first.getId()), "test.session");
+  EXPECT_EQ(value(second.getId()), "test.session");
   EXPECT_NE(first, second);
-  EXPECT_EQ(::mqt::test::value(first.getStatus()), QDMI_DEVICE_STATUS_BUSY);
-  EXPECT_EQ(::mqt::test::value(second.getStatus()), QDMI_DEVICE_STATUS_OFFLINE);
-  EXPECT_EQ(::mqt::test::value(
-                ::mqt::test::value(builtin_driver::openDevice("test.unicode"))
-                    .getId()),
+  EXPECT_EQ(value(first.getStatus()), QDMI_DEVICE_STATUS_BUSY);
+  EXPECT_EQ(value(second.getStatus()), QDMI_DEVICE_STATUS_OFFLINE);
+  EXPECT_EQ(value(value(builtin_driver::openDevice("test.unicode")).getId()),
             "test.unicode");
-  EXPECT_EQ(::mqt::test::errorStatus([&] {
+  EXPECT_EQ(errorStatus([&] {
               return builtin_driver::addManifest(
                   manifest("new.qdmi.json", "test.new"));
             }),
@@ -330,13 +323,13 @@ TEST(BuiltinDriverExtensionTest, DiscoversThenOpensIndependentSessions) {
 
   const ScopedEnvironmentVariable config{"QDMI_CONF",
                                          MQT_CORE_QDMI_EXAMPLE_CONFIG};
-  auto replacement = ::mqt::test::value(
-      Session::create(SessionConfig{.token = "replacement"}));
-  EXPECT_EQ(::mqt::test::value(replacement.getDeviceIds()),
+  auto replacement =
+      value(Session::create(SessionConfig{.token = "replacement"}));
+  EXPECT_EQ(value(replacement.getDeviceIds()),
             std::vector<std::string>{"test.example"});
-  EXPECT_EQ(::mqt::test::value(first.getStatus()), QDMI_DEVICE_STATUS_BUSY);
+  EXPECT_EQ(value(first.getStatus()), QDMI_DEVICE_STATUS_BUSY);
   EXPECT_THAT(
-      ::mqt::test::errorMessage([] {
+      errorMessage([] {
         return builtin_driver::openDevice(
             "unused", {},
             std::optional<std::filesystem::path>{MQT_CORE_QDMI_TEST_DRIVER});
