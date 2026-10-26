@@ -30,22 +30,23 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_socket_stream.h"
+#include "llvm/Support/thread.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
-#include <future>
 #include <map>
 #include <memory>
 #include <optional>
 #include <random>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+using llvm::raw_socket_stream;
+using llvm::raw_string_ostream;
 
 namespace {
 void appendShot(std::string& packed, std::string_view shot) {
@@ -73,7 +74,7 @@ void appendShot(std::string& packed, std::string_view shot) {
 }
 
 struct Execution {
-  llvm::raw_socket_stream* stream_;
+  raw_socket_stream* stream_;
   std::string_view program_;
   size_t numShots_;
   std::optional<uint64_t> seed_;
@@ -94,7 +95,8 @@ struct Execution {
             *stream_, qdmi::dd::encode(qdmi::dd::WorkerSlots{desired})) ||
         !qdmi::dd::readFrame(*stream_, bytes) ||
         !qdmi::dd::decode(bytes, slots) || slots.count > desired) {
-      throw std::runtime_error("DDSIM worker slot exchange failed");
+      qdmi::diagnostics::error("DDSIM worker slot exchange failed");
+      return 0;
     }
     return slots.count;
   }
@@ -140,7 +142,7 @@ struct Execution {
     const llvm::StringRef irBytes(program_.data(), program_.size());
     const bool sampling = numShots_ != 0;
     const bool capture = sampling && captureQIROutput_;
-    std::optional<llvm::raw_string_ostream> output;
+    std::optional<raw_string_ostream> output;
     auto created = qir::JitSession::create(
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
@@ -171,6 +173,9 @@ struct Execution {
           automaticWorkers_ ? std::min(maxWorkers_, automatic) : maxWorkers_;
       if (workers > 1) {
         workers = requestWorkers(workers);
+        if (workers == 0) {
+          return false;
+        }
       }
     }
     if (workers == 1) {
@@ -217,9 +222,10 @@ struct Execution {
       std::vector<std::string> parts(workers);
       std::vector<std::string> records(workers);
       std::vector<std::map<std::string, size_t>> counts(workers);
+      std::vector<int64_t> codes(workers);
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
-        llvm::raw_string_ostream localOutput(records[i]);
+        raw_string_ostream localOutput(records[i]);
         std::unique_ptr<qir::JitSession> peer;
         std::unique_ptr<qir::Runtime> workerRuntime;
         if (i != 0 && shareCode) {
@@ -275,15 +281,16 @@ struct Execution {
         }
         return *code;
       };
-      std::vector<std::future<int64_t>> tasks;
+      std::vector<llvm::thread> tasks;
       tasks.reserve(workers);
       for (size_t i = 0; i < workers; ++i) {
-        tasks.push_back(
-            std::async(std::launch::async, [&, i] { return run(i); }));
+        tasks.emplace_back([&, i] { codes[i] = run(i); });
+      }
+      for (auto& task : tasks) {
+        task.join();
       }
       int64_t firstError = 0;
-      for (auto& task : tasks) {
-        const auto code = task.get();
+      for (const auto code : codes) {
         if (firstError == 0 && code != 0) {
           firstError = code;
         }
@@ -327,7 +334,7 @@ struct Execution {
 };
 
 qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
-                                 llvm::raw_socket_stream& stream) {
+                                 raw_socket_stream& stream) {
   qdmi::dd::WorkerResponse response;
   Execution execution{
       .stream_ = &stream,
@@ -340,12 +347,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;
-  try {
-    response.succeeded =
-        qasm ? execution.qasmProgram() : execution.qirProgram();
-  } catch (const std::exception& error) {
-    qdmi::diagnostics::error("DDSIM program failed: {0}", error.what());
-  }
+  response.succeeded = qasm ? execution.qasmProgram() : execution.qirProgram();
   if (response.succeeded) {
     response.shotCount = execution.shotCount_;
     response.shots = std::move(execution.shots_);
@@ -356,7 +358,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
       const auto root = execution.stateVecDD_;
       response.qubits =
           root.isTerminal() ? 0 : static_cast<uint32_t>(root.p->v) + 1;
-      llvm::raw_string_ostream bytes(response.state.emplace());
+      raw_string_ostream bytes(response.state.emplace());
       dd::serialize(root, bytes, true);
     }
   }
@@ -371,7 +373,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   auto connection =
-      llvm::raw_socket_stream::createConnectedUnix(std::span(argv, 2)[1]);
+      raw_socket_stream::createConnectedUnix(std::span(argv, 2)[1]);
   if (!connection) {
     llvm::consumeError(connection.takeError());
     return 1;

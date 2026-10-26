@@ -54,7 +54,6 @@
 #include <ranges>
 #include <semaphore>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -858,13 +857,21 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
               auto package =
                   dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
               if (!package) {
-                throw std::runtime_error(llvm::toString(package.takeError()));
+                qdmi::diagnostics::error("DDSIM worker failed: {0}",
+                                         llvm::toString(package.takeError()));
+                result.reset();
+                reusable = false;
+                return;
               }
               result->dd_ = std::move(*package);
               auto state =
                   result->dd_->deserialize<dd::vNode>(*response.state, true);
               if (!state) {
-                throw std::runtime_error(llvm::toString(state.takeError()));
+                qdmi::diagnostics::error("DDSIM worker failed: {0}",
+                                         llvm::toString(state.takeError()));
+                result.reset();
+                reusable = false;
+                return;
               }
               result->stateVecDD_ = *state;
               const auto root = result->stateVecDD_;
@@ -1120,7 +1127,9 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
       }
       const auto right = low.p == high.p ? left : self(self, high.p);
       if (right > std::numeric_limits<size_t>::max() - left) {
-        throw std::bad_alloc{};
+        // Every result element needs multiple bytes; a saturated count cannot
+        // fit.
+        return std::numeric_limits<size_t>::max();
       }
       return left + right;
     };

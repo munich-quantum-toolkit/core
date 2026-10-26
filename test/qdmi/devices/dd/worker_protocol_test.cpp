@@ -9,6 +9,7 @@
  */
 
 #include "WorkerProtocol.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -39,12 +40,12 @@ TEST(WorkerProtocol, SocketRoundTripAndDisconnect) {
   WorkerStream server;
   {
     auto listener = llvm::ListeningSocket::createUnix(socketPath);
-    ASSERT_TRUE(!!listener) << llvm::toString(listener.takeError());
+    MQT_ASSERT_SUCCESS(listener);
     auto connection = llvm::raw_socket_stream::createConnectedUnix(socketPath);
-    ASSERT_TRUE(!!connection) << llvm::toString(connection.takeError());
+    MQT_ASSERT_SUCCESS(connection);
     client.reset(connection->release());
     auto accepted = listener->accept(std::chrono::seconds(5));
-    ASSERT_TRUE(!!accepted) << llvm::toString(accepted.takeError());
+    MQT_ASSERT_SUCCESS(accepted);
     server.reset(accepted->release());
   }
 
