@@ -31,13 +31,17 @@
 #include <utility>
 #include <vector>
 
+using llvm::createStringError;
+using llvm::Expected;
+using llvm::StringRef;
+
 namespace sc {
 namespace {
 using llvm::json::ObjectMapper;
 using llvm::json::Path;
 using llvm::json::Value;
 
-bool keys(const Value& value, std::initializer_list<llvm::StringRef> known,
+bool keys(const Value& value, std::initializer_list<StringRef> known,
           Path path) {
   const auto* object = value.getAsObject();
   if (object == nullptr) {
@@ -45,7 +49,7 @@ bool keys(const Value& value, std::initializer_list<llvm::StringRef> known,
     return false;
   }
   return std::ranges::all_of(*object, [&](const auto& field) {
-    const llvm::StringRef key = field.first;
+    const StringRef key = field.first;
     if (std::ranges::find(known, key) != known.end()) {
       return true;
     }
@@ -55,7 +59,7 @@ bool keys(const Value& value, std::initializer_list<llvm::StringRef> known,
 }
 
 template <class T>
-bool optional(const Value& value, llvm::StringRef key, std::optional<T>& out,
+bool optional(const Value& value, StringRef key, std::optional<T>& out,
               Path path) {
   if (const auto* field = value.getAsObject()->get(key)) {
     T parsed{};
@@ -137,9 +141,8 @@ static bool fromJSON(const Value& value, Device::Operation& out, Path path) {
 namespace {
 llvm::Error fail(std::string_view source, std::string_view pointer,
                  std::string_view message) {
-  return llvm::createStringError(llvm::StringRef(source) + ":" +
-                                 llvm::StringRef(pointer) + " " +
-                                 llvm::StringRef(message));
+  return createStringError(StringRef(source) + ":" + StringRef(pointer) + " " +
+                           StringRef(message));
 }
 
 bool positiveCalibration(const Device::QubitCalibration& value) {
@@ -150,7 +153,7 @@ bool validFidelity(const std::optional<double>& value) {
   return !value || (std::isfinite(*value) && *value >= 0. && *value <= 1.);
 }
 
-llvm::Expected<Device> parse(const Value& root, std::string_view source) {
+Expected<Device> parse(const Value& root, std::string_view source) {
   Path::Root diagnostic(source);
   ObjectMapper object(root, diagnostic);
   Device result;
@@ -296,21 +299,20 @@ llvm::Expected<Device> parse(const Value& root, std::string_view source) {
 }
 } // namespace
 
-llvm::Expected<Device> readJSON(std::string_view json,
-                                std::string_view source) {
+Expected<Device> readJSON(std::string_view json, std::string_view source) {
   auto value = llvm::json::parse(json);
   if (!value) {
-    return llvm::createStringError(llvm::StringRef(source) + ": " +
-                                   llvm::toString(value.takeError()));
+    return createStringError(StringRef(source) + ": " +
+                             llvm::toString(value.takeError()));
   }
   return parse(*value, source);
 }
 
-llvm::Expected<Device> readJSON(const std::string& path) {
+Expected<Device> readJSON(const std::string& path) {
   auto buffer = llvm::MemoryBuffer::getFile(path);
   if (!buffer) {
-    return llvm::createStringError(buffer.getError(), "failed to read '%s'",
-                                   path.c_str());
+    return createStringError(buffer.getError(), "failed to read '%s'",
+                             path.c_str());
   }
   return readJSON((*buffer)->getBuffer(), path);
 }
