@@ -1,6 +1,6 @@
 # HRES Slurm playground and hybrid workflow
 
-Status: implemented; final provider run and draft publication are in progress.
+Status: implemented and locally validated; draft review remains pending.
 
 ## Goal and scope
 
@@ -44,35 +44,44 @@ validated integration without publishing private presentation assets in Core.
 - [x] Build pinned Slurm with Lua and preserve the playground topology.
 - [x] Verify initial closed admission, successful probes, failure/timeouts,
       recovery, per-device capacity, node eligibility, and accounting.
-- [ ] Exercise both actual provider libraries and compiled payloads against
+- [x] Exercise both actual provider libraries and compiled payloads against
       local services, including asymmetric result ordering.
-- [ ] Run the staged QC-AFQMC example and retain scientific and scheduler
+- [x] Run the staged QC-AFQMC example and retain scientific and scheduler
       checks.
 - [x] Update documentation and visually inspect the rendered changes.
-- [ ] Submit signed Core and presentations draft PRs with accurate validation.
+- [x] Submit signed Core and presentations draft PRs with accurate validation.
 
 ## Validation
 
-Pinned Slurm and the Core/provider images build with Python 3.14. The 15
-host-side tests, Lua callback self-check (including a real process deadline),
-complete executable documentation build, and repository lint pass. The initial
-real-cluster integration passed admission capacity, outage/recovery, isolation,
-MPI environment, and persistent accounting. The final patched cluster passed in
-277 seconds including image build/startup; its 84-second execution checks
-additionally verify node eligibility, reconfiguration with running allocations,
-and preservation of administrator membership changes on QAN re-registration.
+The final native image uses Core `b7d852be5800965ba3a762f3bdbc5e7c578b7835`,
+rebased onto `865060b29a9be6a5896b9b6658f532c65e21e370`. Python 3.14, 15
+host-side tests, Lua callback self-check with a real deadline, executable
+documentation, and repository lint pass. The fresh cluster regression passed in
+361 seconds including its build/startup (87 seconds for execution checks):
+capacity, node eligibility, probe outage/recovery, running jobs across
+reconfiguration, administrator membership changes across QAN restart,
+environment isolation, and persistent accounting.
 
-Full 4,096 x 1,024 runs completed through DDSIM (jobs 41/42/43) and IQM
-(44/45/46), including four-node classical propagation and retained artifact
-checks. All 16 basis states with reversed classical destinations pass both
-providers. Braket exposed a native classical-output ordering bug; the fix is
-separate draft provider PR #288, pinned by this example. Its native C++ tests,
-Python tests, and independent Qiskit/Braket simulator comparison pass. The final
-Braket full run remains to be recorded.
+Full 4,096 x 1,024 chains completed through DDSIM (jobs 1/2/3), IQM (4/5/6), and
+Braket (15/16/17), including four-node classical propagation. Every
+source/payload hash and scientific/allocation check passes. All 16 basis states
+with reversed classical destinations pass on all three devices. Braket also
+passes the reopened-ProgramSet shots/counts check. Its final fixture metadata
+correction is revision `6276527df65ac4472a911d5ca951178660390d82`. Retained IQM
+and Braket wire requests contain all 4,096 programs; each Braket embedded source
+contract matches the original QDMI input.
 
-Fresh-cluster retries hit host inotify exhaustion before scheduling; the unused
-task-owned base cluster was stopped to release watchers. This was a host
-resource failure, not an AFQMC or Slurm job failure.
+The native Braket correction is separate draft provider PR #288. Its 167 offline
+C++ tests, 66 Python tests (one live test skipped), independent simulator
+parity, lint, and full-file clang-tidy checks pass apart from existing AWS SDK
+warnings. Provider documentation builds with notebook execution disabled and
+five lexer warnings suppressed. No live notebook execution was attempted.
+
+The initial unpatched controller lost dynamic HRES membership on reconfigure;
+the source patch and regression resolve this. An earlier full Braket job also
+survived a controller restart. Fresh-cluster retries initially hit host inotify
+exhaustion; stopping unused task-owned clusters released watchers. No host
+settings or unrelated containers were changed.
 
 The separate five-slide presentations teaser uses retained run evidence. No
 cloud or hardware jobs were submitted; remote reservations and site-specific
