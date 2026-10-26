@@ -22,7 +22,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/IntegerExpressions.h"
 
-#include "../JeffToQCO/CapnpDiagnostics.h"
+#include "../JeffDiagnostics.h"
 
 #include "capnp/any.h"
 #include "capnp/blob.h"
@@ -115,7 +115,7 @@ static std::optional<int64_t> arraySize(MemRefType type) {
 }
 
 /// Encode input names as jeff text metadata.
-static LogicalResult encodeInputNames(func::FuncOp function) {
+static LogicalResult serializeInputNames(func::FuncOp function) {
   auto* context = function.getContext();
   const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
   for (auto argument : function.getArguments()) {
@@ -2367,7 +2367,7 @@ protected:
       }
       function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
       // Input identities and parameter groups still need the MQT name.
-      if (failed(encodeInputNames(function))) {
+      if (failed(serializeInputNames(function))) {
         signalPassFailure();
         return;
       }

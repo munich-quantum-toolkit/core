@@ -19,7 +19,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include "CapnpDiagnostics.h"
+#include "../JeffDiagnostics.h"
 
 #include "capnp/any.h"
 #include "capnp/blob.h"
@@ -70,7 +70,7 @@ using namespace qco;
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
 /// Restore input names from jeff text metadata.
-static LogicalResult decodeInputNames(func::FuncOp function) {
+static LogicalResult deserializeInputNames(func::FuncOp function) {
   auto* context = function.getContext();
   const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
   for (auto argument : function.getArguments()) {
@@ -1520,7 +1520,7 @@ protected:
     RewritePatternSet patterns(context);
 
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
-      if (failed(decodeInputNames(function))) {
+      if (failed(deserializeInputNames(function))) {
         signalPassFailure();
         return;
       }
