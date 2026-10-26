@@ -170,7 +170,7 @@ public:
   /// Whether sampling can use one retained terminal state.
   [[nodiscard]] bool canSampleTerminal() const;
 
-  [[nodiscard]] auto runtime() -> Runtime&;
+  [[nodiscard]] Runtime& runtime();
 
 private:
   JitSession(Execution execution, std::optional<uint64_t> randomSeed,
