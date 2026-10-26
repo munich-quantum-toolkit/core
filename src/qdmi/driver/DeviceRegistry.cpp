@@ -74,13 +74,13 @@ struct DeviceManifestState {
   bool frozen = false;
 };
 
-[[nodiscard]] auto deviceManifestState() -> DeviceManifestState& {
+[[nodiscard]] DeviceManifestState& deviceManifestState() {
   static DeviceManifestState state;
   return state;
 }
 
-[[nodiscard]] auto sourceLabel(const std::string_view source,
-                               const std::string_view path) -> std::string {
+[[nodiscard]] std::string sourceLabel(const std::string_view source,
+                                      const std::string_view path) {
   return std::string(source) + ":" + std::string(path);
 }
 
@@ -110,10 +110,9 @@ rejectUnknownKeys(const Json& value,
   return llvm::Error::success();
 }
 
-[[nodiscard]] auto optionalString(const Json& value, const std::string& key,
-                                  const std::string_view source,
-                                  const std::string& path)
-    -> llvm::Expected<std::optional<std::string>> {
+[[nodiscard]] llvm::Expected<std::optional<std::string>>
+optionalString(const Json& value, const std::string& key,
+               const std::string_view source, const std::string& path) {
   const auto* const it = value.getAsObject()->get(key);
   if (it == nullptr) {
     return std::optional<std::string>{};
@@ -126,19 +125,17 @@ rejectUnknownKeys(const Json& value,
   return std::optional<std::string>{it->getAsString()->str()};
 }
 
-[[nodiscard]] auto resolvePath(std::filesystem::path path,
-                               const std::filesystem::path& base)
-    -> std::filesystem::path {
+[[nodiscard]] std::filesystem::path
+resolvePath(std::filesystem::path path, const std::filesystem::path& base) {
   if (path.is_relative()) {
     path = base / path;
   }
   return path.lexically_normal();
 }
 
-[[nodiscard]] auto
+[[nodiscard]] llvm::Expected<DeviceSessionConfig>
 parseSessionPatch(const Json& value, const std::string_view source,
-                  const std::string& path, const std::filesystem::path& base)
-    -> llvm::Expected<DeviceSessionConfig> {
+                  const std::string& path, const std::filesystem::path& base) {
   if (auto error = requireObject(value, source, path)) {
     return error;
   }
@@ -252,10 +249,9 @@ parseSessionPatch(const Json& value, const std::string_view source,
   return patch;
 }
 
-[[nodiscard]] auto
+[[nodiscard]] llvm::Expected<DefinitionPatch>
 parseDevicePatch(const Json& value, const std::string_view source,
-                 const std::string& path, const std::filesystem::path& base)
-    -> llvm::Expected<DefinitionPatch> {
+                 const std::string& path, const std::filesystem::path& base) {
   if (auto error = requireObject(value, source, path)) {
     return error;
   }
@@ -327,10 +323,9 @@ parseDevicePatch(const Json& value, const std::string_view source,
   return patch;
 }
 
-[[nodiscard]] auto parseConfiguration(const Json& root,
-                                      const std::string_view source,
-                                      const std::filesystem::path& base)
-    -> llvm::Expected<std::vector<DefinitionPatch>> {
+[[nodiscard]] llvm::Expected<std::vector<DefinitionPatch>>
+parseConfiguration(const Json& root, const std::string_view source,
+                   const std::filesystem::path& base) {
   if (auto error = requireObject(root, source, "$")) {
     return error;
   }
@@ -473,8 +468,8 @@ llvm::Error appendFragments(std::vector<std::filesystem::path>& files,
   return llvm::Error::success();
 }
 
-[[nodiscard]] auto nearestProjectConfiguration(std::filesystem::path directory)
-    -> llvm::Expected<std::optional<std::filesystem::path>> {
+[[nodiscard]] llvm::Expected<std::optional<std::filesystem::path>>
+nearestProjectConfiguration(std::filesystem::path directory) {
   while (!directory.empty()) {
     auto dedicated = directory / "qdmi.json";
     auto filename = pathToString(dedicated);
@@ -500,8 +495,8 @@ llvm::Error appendFragments(std::vector<std::filesystem::path>& files,
   return std::optional<std::filesystem::path>{};
 }
 
-[[nodiscard]] auto discoverFiles(const std::filesystem::path& cwd)
-    -> llvm::Expected<std::vector<std::filesystem::path>> {
+[[nodiscard]] llvm::Expected<std::vector<std::filesystem::path>>
+discoverFiles(const std::filesystem::path& cwd) {
   std::vector<std::filesystem::path> files;
   auto module = moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
   if (!module) {
@@ -588,8 +583,8 @@ llvm::Error appendFragments(std::vector<std::filesystem::path>& files,
   return files;
 }
 
-[[nodiscard]] auto materialize(const DefinitionPatch& patch)
-    -> llvm::Expected<qdmi::DeviceDefinition> {
+[[nodiscard]] llvm::Expected<qdmi::DeviceDefinition>
+materialize(const DefinitionPatch& patch) {
   if (!patch.library || patch.library->empty()) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            patch.source + ": enabled device '" + patch.id +
@@ -610,7 +605,7 @@ llvm::Error appendFragments(std::vector<std::filesystem::path>& files,
 
 } // namespace
 
-auto stageDeviceManifest(const std::filesystem::path& path) -> int {
+int stageDeviceManifest(const std::filesystem::path& path) {
   if (path.empty()) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -689,8 +684,8 @@ auto stageDeviceManifest(const std::filesystem::path& path) -> int {
   return QDMI_SUCCESS;
 }
 
-auto parseDeviceSessionJson(const char* const data, const size_t size,
-                            DeviceSessionConfig& config) -> int {
+int parseDeviceSessionJson(const char* const data, const size_t size,
+                           DeviceSessionConfig& config) {
   config = {};
   if (data == nullptr && size == 0) {
     return QDMI_SUCCESS;
@@ -717,7 +712,7 @@ auto parseDeviceSessionJson(const char* const data, const size_t size,
   return QDMI_SUCCESS;
 }
 
-auto freezeDeviceManifests() -> std::vector<std::filesystem::path> {
+std::vector<std::filesystem::path> freezeDeviceManifests() {
   auto& state = deviceManifestState();
   const std::scoped_lock lock(state.mutex);
   state.frozen = true;

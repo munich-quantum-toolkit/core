@@ -26,18 +26,17 @@ namespace qdmi::detail {
 llvm::Error validateDeviceId(std::string_view id);
 
 /// Stages one low-precedence device manifest before the driver is frozen.
-auto stageDeviceManifest(const std::filesystem::path& path) -> int;
+int stageDeviceManifest(const std::filesystem::path& path);
 
 /// Freezes and returns the staged device manifests.
-[[nodiscard]] auto freezeDeviceManifests()
-    -> std::vector<std::filesystem::path>;
+[[nodiscard]] std::vector<std::filesystem::path> freezeDeviceManifests();
 
 /// Reopens device-manifest staging after driver construction fails.
 void rollbackDeviceManifestFreeze();
 
 /// Parses one strict JSON object with the manifest session grammar.
-auto parseDeviceSessionJson(const char* data, size_t size,
-                            DeviceSessionConfig& config) -> int;
+int parseDeviceSessionJson(const char* data, size_t size,
+                           DeviceSessionConfig& config);
 
 /// Discovers configured QDMI devices without loading their libraries.
 class DeviceRegistry {

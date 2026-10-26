@@ -58,8 +58,8 @@ namespace qdmi {
 namespace {
 /// Loads the device library with the given name, searching in the driver
 /// directory if no path is specified.
-[[nodiscard]] auto loadDeviceLibrary(const std::string& libName)
-    -> llvm::Expected<HMODULE> {
+[[nodiscard]] llvm::Expected<HMODULE>
+loadDeviceLibrary(const std::string& libName) {
   auto requested = detail::pathFromString(libName);
   if (!requested) {
     return requested.takeError();
@@ -175,7 +175,7 @@ struct DeviceAPICache {
   llvm::DenseMap<void*, std::unique_ptr<Module>> libraries;
 };
 
-[[nodiscard]] auto deviceAPICache() -> DeviceAPICache& {
+[[nodiscard]] DeviceAPICache& deviceAPICache() {
   // Match Driver::get(): APIs must outlive sessions in global destructors.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   static auto* cache = new DeviceAPICache();
@@ -183,9 +183,8 @@ struct DeviceAPICache {
 }
 } // namespace
 
-[[nodiscard]] auto loadDeviceAPI(const std::string& libName,
-                                 const std::string& prefix)
-    -> llvm::Expected<LoadedDeviceAPI*> {
+[[nodiscard]] llvm::Expected<LoadedDeviceAPI*>
+loadDeviceAPI(const std::string& libName, const std::string& prefix) {
   auto& cache = deviceAPICache();
   const auto closeLibrary = [](void* handle) { DL_CLOSE(handle); };
 #ifdef _WIN32
@@ -429,9 +428,9 @@ QDMI_Device_impl_d::~QDMI_Device_impl_d() {
   }
 }
 
-auto QDMI_Device_impl_d::adoptJob(const int status, QDMI_Device_Job deviceJob,
-                                  std::unique_ptr<QDMI_Job_impl_d> wrapper,
-                                  QDMI_Job* job) -> int {
+int QDMI_Device_impl_d::adoptJob(const int status, QDMI_Device_Job deviceJob,
+                                 std::unique_ptr<QDMI_Job_impl_d> wrapper,
+                                 QDMI_Job* job) {
   if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
     return status;
   }
@@ -448,7 +447,7 @@ auto QDMI_Device_impl_d::adoptJob(const int status, QDMI_Device_Job deviceJob,
   return status;
 }
 
-auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
+int QDMI_Device_impl_d::createJob(QDMI_Job* job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -464,8 +463,8 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
   return adoptJob(status, deviceJob, std::move(wrapper), job);
 }
 
-auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
-                                         QDMI_Job* const job) -> int {
+int QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
+                                        QDMI_Job* const job) {
   if (jobId == nullptr || *jobId == '\0' || job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -484,7 +483,7 @@ auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
   return adoptJob(status, deviceJob, std::move(wrapper), job);
 }
 
-auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
+void QDMI_Device_impl_d::freeJob(QDMI_Job job) {
   std::unique_ptr<QDMI_Job_impl_d> ownedJob;
   {
     const auto lock = std::scoped_lock(jobsMutex_);
@@ -492,9 +491,9 @@ auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
   }
 }
 
-auto QDMI_Device_impl_d::queryDeviceProperty(QDMI_Device_Property prop,
-                                             const size_t size, void* value,
-                                             size_t* sizeRet) const -> int {
+int QDMI_Device_impl_d::queryDeviceProperty(QDMI_Device_Property prop,
+                                            const size_t size, void* value,
+                                            size_t* sizeRet) const {
   if (!id_.empty()) {
     ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_ID, id_.c_str(), prop, size, value,
                         sizeRet)
@@ -522,26 +521,26 @@ auto QDMI_Device_impl_d::queryDeviceProperty(QDMI_Device_Property prop,
                                                     value, sizeRet);
 }
 
-auto QDMI_Device_impl_d::querySiteProperty(QDMI_Site site,
-                                           QDMI_Site_Property prop,
-                                           const size_t size, void* value,
-                                           size_t* sizeRet) const -> int {
+int QDMI_Device_impl_d::querySiteProperty(QDMI_Site site,
+                                          QDMI_Site_Property prop,
+                                          const size_t size, void* value,
+                                          size_t* sizeRet) const {
   return api_->device_session_query_site_property(deviceSession_, site, prop,
                                                   size, value, sizeRet);
 }
 
-auto QDMI_Device_impl_d::queryOperationProperty(
+int QDMI_Device_impl_d::queryOperationProperty(
     QDMI_Operation operation, const size_t numSites, const QDMI_Site* sites,
     const size_t numParams, const double* params, QDMI_Operation_Property prop,
-    const size_t size, void* value, size_t* sizeRet) const -> int {
+    const size_t size, void* value, size_t* sizeRet) const {
   return api_->device_session_query_operation_property(
       deviceSession_, operation, numSites, sites, numParams, params, prop, size,
       value, sizeRet);
 }
 
 namespace {
-[[nodiscard]] auto toDeviceJobParameter(const QDMI_Job_Parameter& param)
-    -> QDMI_Device_Job_Parameter {
+[[nodiscard]] QDMI_Device_Job_Parameter
+toDeviceJobParameter(const QDMI_Job_Parameter& param) {
   switch (param) {
   case QDMI_JOB_PARAMETER_SHOTSNUM:
     return QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM;
@@ -578,8 +577,8 @@ QDMI_Job_impl_d::~QDMI_Job_impl_d() {
     device_->api().device_job_free(deviceJob_);
   }
 }
-auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
-                                   const void* value) const -> int {
+int QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
+                                  const void* value) const {
   if ((value != nullptr && size == 0) ||
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -588,29 +587,28 @@ auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
       deviceJob_, toDeviceJobParameter(param), size, value);
 }
 
-auto QDMI_Job_impl_d::setPrograms(const QDMI_Program_Format format,
-                                  const size_t count, const size_t* const sizes,
-                                  const void* const* const programs) const
-    -> int {
+int QDMI_Job_impl_d::setPrograms(const QDMI_Program_Format format,
+                                 const size_t count, const size_t* const sizes,
+                                 const void* const* const programs) const {
   return device_->api().device_job_set_programs(deviceJob_, format, count,
                                                 sizes, programs);
 }
 
-auto QDMI_Job_impl_d::getProgram(const size_t programIndex, const size_t size,
-                                 void* data, size_t* sizeRet) const -> int {
+int QDMI_Job_impl_d::getProgram(const size_t programIndex, const size_t size,
+                                void* data, size_t* sizeRet) const {
   return device_->api().device_job_get_program(deviceJob_, programIndex, size,
                                                data, sizeRet);
 }
 
-auto QDMI_Job_impl_d::getProgramStatus(const size_t programIndex,
-                                       QDMI_Job_Status* status) const -> int {
+int QDMI_Job_impl_d::getProgramStatus(const size_t programIndex,
+                                      QDMI_Job_Status* status) const {
   return device_->api().device_job_get_program_status(deviceJob_, programIndex,
                                                       status);
 }
 
 namespace {
-[[nodiscard]] auto toDeviceJobProperty(const QDMI_Job_Property& prop)
-    -> QDMI_Device_Job_Property {
+[[nodiscard]] QDMI_Device_Job_Property
+toDeviceJobProperty(const QDMI_Job_Property& prop) {
   switch (prop) {
   case QDMI_JOB_PROPERTY_ID:
     return QDMI_DEVICE_JOB_PROPERTY_ID;
@@ -638,38 +636,38 @@ namespace {
 }
 } // namespace
 
-auto QDMI_Job_impl_d::queryProperty(QDMI_Job_Property prop, const size_t size,
-                                    void* value, size_t* sizeRet) const -> int {
+int QDMI_Job_impl_d::queryProperty(QDMI_Job_Property prop, const size_t size,
+                                   void* value, size_t* sizeRet) const {
   return device_->api().device_job_query_property(
       deviceJob_, toDeviceJobProperty(prop), size, value, sizeRet);
 }
 
-auto QDMI_Job_impl_d::submit() const -> int {
+int QDMI_Job_impl_d::submit() const {
   return device_->api().device_job_submit(deviceJob_);
 }
 
-auto QDMI_Job_impl_d::cancel() const -> int {
+int QDMI_Job_impl_d::cancel() const {
   return device_->api().device_job_cancel(deviceJob_);
 }
 
-auto QDMI_Job_impl_d::check(QDMI_Job_Status* status) const -> int {
+int QDMI_Job_impl_d::check(QDMI_Job_Status* status) const {
   return device_->api().device_job_check(deviceJob_, status);
 }
 
-auto QDMI_Job_impl_d::wait(size_t timeout) const -> int {
+int QDMI_Job_impl_d::wait(size_t timeout) const {
   return device_->api().device_job_wait(deviceJob_, timeout);
 }
 
-auto QDMI_Job_impl_d::getResults(const size_t programIndex,
-                                 QDMI_Job_Result result, const size_t size,
-                                 void* data, size_t* sizeRet) const -> int {
+int QDMI_Job_impl_d::getResults(const size_t programIndex,
+                                QDMI_Job_Result result, const size_t size,
+                                void* data, size_t* sizeRet) const {
   return device_->api().device_job_get_results(deviceJob_, programIndex, result,
                                                size, data, sizeRet);
 }
 
-auto QDMI_Job_impl_d::free() -> void { device_->freeJob(this); }
+void QDMI_Job_impl_d::free() { device_->freeJob(this); }
 
-auto QDMI_Session_impl_d::init() -> int {
+int QDMI_Session_impl_d::init() {
   if (status_ != qdmi::SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
@@ -677,9 +675,9 @@ auto QDMI_Session_impl_d::init() -> int {
   return QDMI_SUCCESS;
 }
 
-auto QDMI_Session_impl_d::setParameter(QDMI_Session_Parameter param,
-                                       const size_t size,
-                                       const void* value) const -> int {
+int QDMI_Session_impl_d::setParameter(QDMI_Session_Parameter param,
+                                      const size_t size,
+                                      const void* value) const {
   if ((value != nullptr && size == 0) ||
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -690,9 +688,9 @@ auto QDMI_Session_impl_d::setParameter(QDMI_Session_Parameter param,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-auto QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
-                                               size_t size, void* value,
-                                               size_t* sizeRet) const -> int {
+int QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
+                                              size_t size, void* value,
+                                              size_t* sizeRet) const {
   if ((value != nullptr && size == 0) ||
       QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_SESSION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -779,7 +777,7 @@ llvm::Error validateDefinition(const DeviceDefinition& definition) {
 }
 } // namespace
 
-auto Driver::get() -> Driver& {
+Driver& Driver::get() {
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   static auto* instance = new Driver();
   return *instance;
@@ -856,8 +854,8 @@ llvm::Error Driver::registerDevice(DeviceDefinition definition,
   return llvm::Error::success();
 }
 
-auto Driver::registerDeviceIfAbsent(DeviceDefinition definition)
-    -> llvm::Expected<bool> {
+llvm::Expected<bool>
+Driver::registerDeviceIfAbsent(DeviceDefinition definition) {
   if (auto error = validateDefinition(definition)) {
     return error;
   }
@@ -876,7 +874,7 @@ auto Driver::registerDeviceIfAbsent(DeviceDefinition definition)
   return inserted;
 }
 
-auto Driver::registeredDeviceIds() -> llvm::Expected<std::vector<std::string>> {
+llvm::Expected<std::vector<std::string>> Driver::registeredDeviceIds() {
   const auto lock = std::scoped_lock(stateMutex_);
   if (auto error = initialize()) {
     return error;
@@ -889,7 +887,7 @@ auto Driver::registeredDeviceIds() -> llvm::Expected<std::vector<std::string>> {
   return ids;
 }
 
-auto Driver::open(const std::string_view id) -> llvm::Expected<QDMI_Device> {
+llvm::Expected<QDMI_Device> Driver::open(const std::string_view id) {
   RegistryEntry* record = nullptr;
   {
     std::unique_lock lock(stateMutex_);
@@ -940,9 +938,9 @@ auto Driver::open(const std::string_view id) -> llvm::Expected<QDMI_Device> {
   return record->device.get();
 }
 
-auto Driver::openFresh(const std::string_view id,
-                       const DeviceSessionConfig& overrides, const bool strict)
-    -> llvm::Expected<std::unique_ptr<QDMI_Device_impl_d>> {
+llvm::Expected<std::unique_ptr<QDMI_Device_impl_d>>
+Driver::openFresh(const std::string_view id,
+                  const DeviceSessionConfig& overrides, const bool strict) {
   DeviceDefinition definition;
   {
     const std::scoped_lock lock(stateMutex_);
@@ -999,7 +997,7 @@ void Driver::materializeClientCatalog() {
   });
 }
 
-auto Driver::sessionAlloc(QDMI_Session* session) -> int {
+int Driver::sessionAlloc(QDMI_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -1018,9 +1016,9 @@ auto Driver::sessionAlloc(QDMI_Session* session) -> int {
   return *session != nullptr ? QDMI_SUCCESS : QDMI_ERROR_OUTOFMEM;
 }
 
-auto Driver::sessionAllocForDevice(const std::string_view id,
-                                   const DeviceSessionConfig& config,
-                                   QDMI_Session* const session) -> int {
+int Driver::sessionAllocForDevice(const std::string_view id,
+                                  const DeviceSessionConfig& config,
+                                  QDMI_Session* const session) {
   if (id.empty() || session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
