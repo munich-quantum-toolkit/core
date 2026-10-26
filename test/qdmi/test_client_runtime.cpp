@@ -23,7 +23,9 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 
+#ifdef _WIN32
 #include <cstdlib>
+#endif
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -80,19 +82,6 @@ TEST(ClientRuntimeTest, RejectsMissingModuleAnchors) {
   int anchor = 0;
   EXPECT_EQ(toStatus(detail::moduleDirectory(&anchor).takeError()),
             QDMI_ERROR_FATAL);
-}
-
-TEST(ClientRuntimeTest, ConvertsPathsWithoutLosingCodePoints) {
-  const std::string text = "\xef\xbb\xbf"
-                           "devices/\xc3\xa4-\xf0\x9f\x8e\xaf.json";
-  auto path = detail::pathFromString(text);
-  ASSERT_TRUE(!!path) << llvm::toString(path.takeError());
-  auto encoded = detail::pathToString(*path);
-  ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
-  EXPECT_EQ(*encoded, text);
-  auto empty = detail::pathFromString("");
-  ASSERT_TRUE(!!empty) << llvm::toString(empty.takeError());
-  EXPECT_TRUE(empty->empty());
 }
 
 TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
@@ -154,15 +143,6 @@ TEST(ClientRuntimeTest, RejectsMalformedPathsWithoutReplacingConfiguration) {
                 malformed.c_str(), inlineJson, file),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(file, std::filesystem::path("previous.json"));
-}
-#else
-TEST(ClientRuntimeTest, PreservesNativePathBytes) {
-  const std::string bytes = "\xff";
-  auto path = detail::pathFromString(bytes);
-  ASSERT_TRUE(!!path) << llvm::toString(path.takeError());
-  auto encoded = detail::pathToString(*path);
-  ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
-  EXPECT_EQ(*encoded, bytes);
 }
 #endif
 

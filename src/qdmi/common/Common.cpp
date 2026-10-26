@@ -20,6 +20,11 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
+#ifdef _WIN32
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ConvertUTF.h"
+#endif
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -31,6 +36,42 @@
 #include <utility>
 
 namespace qdmi {
+namespace detail {
+llvm::Expected<std::string> pathToString(const std::filesystem::path& path) {
+#ifdef _WIN32
+  std::string utf8(path.native().size() * 3, '\0');
+  const auto* source = reinterpret_cast<const llvm::UTF16*>(path.c_str());
+  const auto* end = source + path.native().size();
+  auto* output = reinterpret_cast<llvm::UTF8*>(utf8.data());
+  // LLVM's Windows wrapper replaces invalid surrogates; the text wrapper strips
+  // BOMs.
+  if (llvm::ConvertUTF16toUTF8(&source, end, &output, output + utf8.size(),
+                               llvm::strictConversion) != llvm::conversionOK) {
+    return makeError(QDMI_ERROR_INVALIDARGUMENT,
+                     "Invalid native filesystem path");
+  }
+  utf8.resize(
+      static_cast<size_t>(reinterpret_cast<char*>(output) - utf8.data()));
+  return utf8;
+#else
+  return path.native();
+#endif
+}
+
+llvm::Expected<std::filesystem::path> pathFromString(std::string_view value) {
+#ifdef _WIN32
+  llvm::SmallVector<wchar_t, 256> native;
+  if (auto error = llvm::sys::windows::UTF8ToUTF16(value, native)) {
+    return makeError(QDMI_ERROR_INVALIDARGUMENT,
+                     "Invalid UTF-8 filesystem path: " + error.message());
+  }
+  return std::filesystem::path(native.begin(), native.end());
+#else
+  return std::filesystem::path(value);
+#endif
+}
+} // namespace detail
+
 auto throwIfError(const int result, const std::string& msg) -> void {
   switch (const auto res = static_cast<QDMI_STATUS>(result)) {
   case QDMI_SUCCESS:

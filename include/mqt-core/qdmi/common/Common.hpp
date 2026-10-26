@@ -16,11 +16,6 @@
 #include "qdmi/client.h"
 
 #include "llvm/ADT/Twine.h"
-#ifdef _WIN32
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/ConvertUTF.h"
-#endif
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -50,43 +45,12 @@ void throwIfError(int result, const std::string& message);
 
 namespace detail {
 /// Encode a native path for LLVM's UTF-8 Windows filesystem APIs.
-[[nodiscard]] inline auto pathToString(const std::filesystem::path& path)
-    -> llvm::Expected<std::string> {
-#ifdef _WIN32
-  std::string utf8(path.native().size() * 3, '\0');
-  const auto* source =
-      reinterpret_cast<const llvm::UTF16*>(path.native().data());
-  const auto* sourceEnd = source + path.native().size();
-  auto* output = reinterpret_cast<llvm::UTF8*>(utf8.data());
-  auto* const outputEnd = output + utf8.size();
-  if (llvm::ConvertUTF16toUTF8(&source, sourceEnd, &output, outputEnd,
-                               llvm::strictConversion) != llvm::conversionOK) {
-    return makeError(QDMI_ERROR_INVALIDARGUMENT,
-                     "Invalid native filesystem path");
-  }
-  utf8.resize(
-      static_cast<size_t>(reinterpret_cast<char*>(output) - utf8.data()));
-  return utf8;
-#else
-  return path.native();
-#endif
-}
+[[nodiscard]] llvm::Expected<std::string>
+pathToString(const std::filesystem::path& path);
 
 /// Decode a path from LLVM's UTF-8 Windows filesystem representation.
-[[nodiscard]] inline auto pathFromString(const std::string_view value)
-    -> llvm::Expected<std::filesystem::path> {
-#ifdef _WIN32
-  llvm::SmallVector<wchar_t, 256> native;
-  if (const auto error =
-          llvm::sys::windows::UTF8ToUTF16(llvm::StringRef(value), native)) {
-    return makeError(QDMI_ERROR_INVALIDARGUMENT,
-                     "Invalid UTF-8 filesystem path: " + error.message());
-  }
-  return std::filesystem::path(std::wstring(native.begin(), native.end()));
-#else
-  return std::filesystem::path(value);
-#endif
-}
+[[nodiscard]] llvm::Expected<std::filesystem::path>
+pathFromString(std::string_view value);
 } // namespace detail
 
 /// Return an error for failures and log provider warnings.
