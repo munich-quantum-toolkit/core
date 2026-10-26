@@ -15,7 +15,6 @@ from __future__ import annotations
 
 __lazy_modules__ = {
     "inspect",
-    "io",
     "math",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
@@ -23,7 +22,6 @@ __lazy_modules__ = {
     "mqt.core.qdmi",
     "mqt.core.qdmi.builtin_driver",
     "numbers",
-    "qiskit",
     "qiskit.circuit",
     "qiskit.circuit.library",
     "qiskit.primitives",
@@ -34,12 +32,10 @@ __lazy_modules__ = {
 import inspect
 import warnings
 from functools import cached_property
-from io import BytesIO
 from math import isfinite
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from qiskit import qasm2, qasm3, qpy
 from qiskit.circuit import ControlFlowOp, IfElseOp, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
@@ -123,108 +119,6 @@ def _build_gate_mappings_for_backend(
             operation_to_gate[name] = gate
 
     return qiskit_to_qdmi, operation_to_gate
-
-
-def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
-    """Serialize a circuit into an OpenQASM 3 program.
-
-    Args:
-        circuit: The circuit to serialize.
-        backend: The backend that runs the circuit. Its Target supplies the
-            basis gates.
-
-    Returns:
-        The OpenQASM 3 program.
-    """
-    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
-    # Qiskit classical bits start at zero, while OpenQASM 3 bits are
-    # uninitialized. Preserve Qiskit's semantics and make every output valid
-    # even when the circuit measures only part of a register.
-    if circuit.num_clbits:
-        initialization = circuit.copy_empty_like(vars_mode="drop")
-        initialization.global_phase = 0
-        for creg in initialization.cregs:
-            if creg.size:
-                initialization.store(creg, 0)
-        for clbit in initialization.clbits:
-            if not initialization.find_bit(clbit).registers:
-                initialization.store(
-                    clbit,
-                    False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
-                )
-        circuit = circuit.compose(initialization, front=True, inplace=False)
-
-    # Keywords and standard-library gates need no opaque declarations.
-    exclusion_list = {
-        "measure",
-        "reset",
-        "barrier",
-        "if_else",
-        "p",
-        "x",
-        "y",
-        "z",
-        "h",
-        "s",
-        "sdg",
-        "t",
-        "tdg",
-        "sx",
-        "rx",
-        "ry",
-        "rz",
-        "cx",
-        "cy",
-        "cz",
-        "cp",
-        "crx",
-        "cry",
-        "crz",
-        "ch",
-        "swap",
-        "ccx",
-        "cswap",
-        "cu",
-        "CX",
-        "phase",
-        "cphase",
-        "id",
-        "u1",
-        "u2",
-        "u3",
-    }
-
-    # Emit device-supported gates outside the standard library as opaque gates.
-    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["mcx_gray", "U"]
-
-    return qasm3.dumps(circuit, basis_gates=basis_gates, disable_constants=True)
-
-
-def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
-    """Serialize a circuit into an OpenQASM 2 program.
-
-    Args:
-        circuit: The circuit to serialize.
-        backend: The backend whose native placements constrain the circuit.
-
-    Returns:
-        The OpenQASM 2 program.
-    """
-    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
-    return qasm2.dumps(circuit)
-
-
-def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
-    """Serialize a circuit after validating native placements.
-
-    Returns:
-        One circuit encoded as QPY bytes, using at most version 17.
-    """
-    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
-    with BytesIO() as buffer:
-        # QPY 17 enables native writing and remains readable by Qiskit 2.5.
-        qpy.dump(circuit, buffer, version=min(qpy.QPY_VERSION, 17))
-        return buffer.getvalue()
 
 
 def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
@@ -669,12 +563,14 @@ class QDMIBackend(BackendV2):
             loci[operation.name().lower()] = operation.qubits_num(), qargs
         return loci
 
-    def _validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
+    def validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
         """Check supported operations, including operations inside control flow.
 
-        Built-in serializers also check native width and placements after
-        preprocessing. Custom serializers can perform further compilation and
-        therefore retain responsibility for validating their output placements.
+        Args:
+            circuit: The circuit to validate, including nested control-flow blocks.
+            native: Also check device width and ordered operation placements using
+                circuit qubit indices as device sites. Serializers should enable
+                this after any preprocessing.
 
         Raises:
             CircuitValidationError: If the circuit exceeds the native device width.
@@ -894,7 +790,7 @@ class QDMIBackend(BackendV2):
                 msg = "Classical registers must partition circuit.clbits in register order."
                 raise CircuitValidationError(msg)
 
-            self._validate_circuit(bound_circuit)
+            self.validate_circuit(bound_circuit)
 
             prepared_circuits.append(bound_circuit)
 

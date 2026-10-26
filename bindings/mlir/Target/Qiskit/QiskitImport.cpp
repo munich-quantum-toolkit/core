@@ -46,15 +46,19 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/MathExtras.h"
@@ -67,7 +71,6 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
-#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -90,9 +93,22 @@ using ValidationParameters = llvm::StringMap<Parameter>;
 namespace {
 struct GateImportState {
   llvm::DenseMap<uintptr_t, mlir::func::FuncOp> gates;
-  std::map<std::vector<uint32_t>, mlir::func::FuncOp> permutations;
+  llvm::DenseMap<llvm::SmallVector<uint32_t, 0>, mlir::func::FuncOp,
+                 llvm::DenseMapInfo<llvm::ArrayRef<uint32_t>>>
+      permutations;
   llvm::StringSet<> functionNames;
   llvm::StringMap<size_t> nextFunctionSuffix;
+
+  std::string uniqueName(llvm::StringRef name) {
+    auto symbol = name.str();
+    if (!functionNames.insert(symbol).second) {
+      auto& suffix = nextFunctionSuffix[name];
+      do {
+        symbol = (name + "_" + llvm::Twine(suffix++)).str();
+      } while (!functionNames.insert(symbol).second);
+    }
+    return symbol;
+  }
 };
 } // namespace
 
@@ -705,7 +721,7 @@ struct ImportedVariables {
     mlir::Value value;
     bool initialized = false;
   };
-  using Environment = std::map<std::string, Entry>;
+  using Environment = llvm::StringMap<Entry>;
   Environment variables;
   mlir::qc::QCProgramBuilder::LoopBuilder* loop = nullptr;
   std::vector<std::string> loopSlots;
@@ -718,21 +734,22 @@ struct ImportedVariables {
   [[nodiscard]] std::vector<std::string> slots() const {
     std::vector<std::string> result;
     for (const auto& [identity, entry] : variables) {
-      result.push_back(identity);
+      result.push_back(identity.str());
     }
+    llvm::sort(result);
     return result;
   }
   [[nodiscard]] llvm::SmallVector<mlir::Value>
   values(const std::vector<std::string>& keys) const {
     llvm::SmallVector<mlir::Value> result;
     for (const auto& key : keys) {
-      result.push_back(variables.at(key).value);
+      result.push_back(variables.find(key)->second.value);
     }
     return result;
   }
   void assign(const std::vector<std::string>& keys, mlir::ValueRange values) {
     for (auto [key, value] : llvm::zip_equal(keys, values)) {
-      variables.at(key).value = value;
+      variables.find(key)->second.value = value;
     }
   }
   void jumpLoop(bool continuing) {
@@ -821,8 +838,9 @@ struct ImportedVariables {
     variables = saved;
     assign(keys, results);
     for (auto& [key, entry] : variables) {
-      entry.initialized = (!thenReachable || thenValues.at(key).initialized) &&
-                          (!elseReachable || elseValues.at(key).initialized);
+      entry.initialized =
+          (!thenReachable || thenValues.find(key)->second.initialized) &&
+          (!elseReachable || elseValues.find(key)->second.initialized);
     }
     reachable = thenReachable || elseReachable;
   }
@@ -1443,11 +1461,12 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                                    : mlir::ValueRange(*results));
         if (guaranteedFirst && (!exits.empty() || initialCounter)) {
           for (auto& [key, entry] : variables.variables) {
-            entry.initialized = (!initialCounter || !variables.reachable ||
-                                 finalVariables.at(key).initialized) &&
-                                llvm::all_of(exits, [&](const auto& exit) {
-                                  return exit.at(key).initialized;
-                                });
+            entry.initialized =
+                (!initialCounter || !variables.reachable ||
+                 finalVariables.find(key)->second.initialized) &&
+                llvm::all_of(exits, [&](const auto& exit) {
+                  return exit.find(key)->second.initialized;
+                });
           }
         }
         variables.reachable = true;
@@ -1817,7 +1836,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       }
       // Definite initialization rejects reads until a store. The initial loop
       // state still needs a representable, unobservable scalar placeholder.
-      variables.variables.emplace(
+      variables.variables.try_emplace(
           variable.identity, ImportedVariables::Entry{
                                  .value = mlir::arith::ConstantOp::create(
                                      builder, type, builder.getZeroAttr(type)),
@@ -1857,7 +1876,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
           "Qiskit instruction definitions exceed the nesting limit of 64");
     }
     auto definition = circuit.definition(index);
-    std::vector<uint32_t> definitionQubits;
+    llvm::SmallVector<uint32_t> definitionQubits;
     definitionQubits.reserve(instruction.qubits.size());
     for (const auto qubit : instruction.qubits) {
       if (qubit >= qubitMap.size()) {
@@ -1866,7 +1885,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       }
       definitionQubits.push_back(qubitMap[qubit]);
     }
-    std::vector<uint32_t> definitionClbits;
+    llvm::SmallVector<uint32_t> definitionClbits;
     definitionClbits.reserve(instruction.clbits.size());
     for (const auto clbit : instruction.clbits) {
       definitionClbits.push_back(getClbit(clbit));
@@ -1889,13 +1908,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                                                   builder.getF64Type());
       argumentTypes.append(definition->numQubits(),
                            mlir::qc::QubitType::get(builder.getContext()));
-      std::string symbol = instruction.name;
-      if (!gateState.functionNames.insert(symbol).second) {
-        auto& suffix = gateState.nextFunctionSuffix[instruction.name];
-        do {
-          symbol = instruction.name + "_" + std::to_string(suffix++);
-        } while (!gateState.functionNames.insert(symbol).second);
-      }
+      const auto symbol = gateState.uniqueName(instruction.name);
       function = builder.createUnitaryFunction(
           symbol, argumentTypes, [&](mlir::ValueRange arguments) {
             LocalParameters formalParameters;
@@ -1910,7 +1923,8 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
             }
             llvm::SmallVector<mlir::Value> definitionQubits(
                 arguments.drop_front(definitionParameters.size()));
-            std::vector<uint32_t> definitionQubitMap(definitionQubits.size());
+            llvm::SmallVector<uint32_t> definitionQubitMap(
+                definitionQubits.size());
             std::iota(definitionQubitMap.begin(), definitionQubitMap.end(), 0U);
             ImportedVariables gateVariables;
             translateCircuit(builder, *definition, definitionQubitMap, {},
@@ -1959,20 +1973,23 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     case OperationKind::Gate:
       if (instruction.permutation) {
         const auto& pattern = *instruction.permutation;
-        auto& function = gateState.permutations[pattern];
+        auto cached = gateState.permutations.find_as(llvm::ArrayRef(pattern));
+        if (cached == gateState.permutations.end()) {
+          cached = gateState.permutations
+                       .try_emplace(llvm::SmallVector<uint32_t, 0>(
+                           pattern.begin(), pattern.end()))
+                       .first;
+        }
+        auto& function = cached->second;
         if (!function) {
-          std::string name = "permutation";
-          auto& suffix = gateState.nextFunctionSuffix[name];
-          while (!gateState.functionNames.insert(name).second) {
-            name = "permutation_" + std::to_string(suffix++);
-          }
+          const auto name = gateState.uniqueName("permutation");
           llvm::SmallVector<mlir::Type> types(
               pattern.size(), mlir::qc::QubitType::get(builder.getContext()));
           function = builder.createUnitaryFunction(
               name, types, [&](mlir::ValueRange targets) {
                 // Place each requested input at its output position. Track
                 // inverse positions so a cycle takes linear time to lower.
-                std::vector<uint32_t> inputs(pattern.size());
+                llvm::SmallVector<uint32_t> inputs(pattern.size());
                 std::iota(inputs.begin(), inputs.end(), 0U);
                 auto positions = inputs;
                 for (size_t output = 0; output < pattern.size(); ++output) {
@@ -2665,7 +2682,7 @@ void validateCircuit(const CircuitReader& circuit,
         if (!instruction.clbits.empty() || !instruction.parameters.empty()) {
           throw std::runtime_error("Qiskit permutation has an invalid arity");
         }
-        std::vector<bool> seen(pattern.size(), false);
+        llvm::SmallBitVector seen(pattern.size());
         for (const auto input : pattern) {
           if (input >= pattern.size() || seen[input]) {
             throw std::runtime_error("Qiskit permutation must be a bijection");
