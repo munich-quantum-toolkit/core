@@ -12,7 +12,7 @@
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
 
-#include "TestUtils.hpp"
+#include "support/TestSupport.hpp"
 
 /// Required for JSON construction inside GoogleTest macro expansions.
 
@@ -25,9 +25,6 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 
-#ifdef _WIN32
-#include <cstdlib>
-#endif
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -123,13 +120,7 @@ TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
   const ScopedEnvironmentVariable noInline{"MQT_CORE_TEST_INLINE_CONFIG",
                                            std::nullopt};
   const ScopedEnvironmentVariable environment{"MQT_CORE_TEST_FILE_CONFIG",
-                                              std::nullopt};
-#ifdef _WIN32
-  ASSERT_EQ(_wputenv_s(L"MQT_CORE_TEST_FILE_CONFIG", path.c_str()), 0);
-#else
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  ASSERT_EQ(setenv("MQT_CORE_TEST_FILE_CONFIG", encoded->c_str(), 1), 0);
-#endif
+                                              *encoded};
   auto environmentConfig = detail::loadDeviceConfiguration(
       std::nullopt, std::nullopt, "MQT_CORE_TEST_INLINE_CONFIG",
       "MQT_CORE_TEST_FILE_CONFIG", "unused", nullptr);

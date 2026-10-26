@@ -12,7 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
-#include "Result.hpp"
+#include "../Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"

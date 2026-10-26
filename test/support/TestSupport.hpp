@@ -12,40 +12,69 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
+
+#ifdef _WIN32
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ConvertUTF.h"
+#endif
 
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <optional>
-#include <random>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
 
 namespace mqt::test {
+template <class T>
+::testing::AssertionResult succeeded(llvm::Expected<T>& result) {
+  if (result) {
+    return ::testing::AssertionSuccess();
+  }
+  return ::testing::AssertionFailure() << llvm::toString(result.takeError());
+}
+
+inline ::testing::AssertionResult succeeded(llvm::Error error) {
+  if (error) {
+    return ::testing::AssertionFailure() << llvm::toString(std::move(error));
+  }
+  return ::testing::AssertionSuccess();
+}
+
+template <class T>
+::testing::AssertionResult succeeded(const llvm::FailureOr<T>& result) {
+  return llvm::succeeded(result)
+             ? ::testing::AssertionSuccess()
+             : ::testing::AssertionFailure() << "Expected a successful result";
+}
+
+/// Extract a test value; GoogleTest reports exceptions without ending the
+/// suite.
 template <class T> T value(llvm::Expected<T> result) {
   if (!result) {
-    ADD_FAILURE() << llvm::toString(result.takeError());
-    std::abort();
+    throw std::runtime_error(llvm::toString(result.takeError()));
   }
   return std::move(*result);
 }
 
 inline void value(llvm::Error error) {
   if (error) {
-    ADD_FAILURE() << llvm::toString(std::move(error));
-    std::abort();
+    throw std::runtime_error(llvm::toString(std::move(error)));
   }
 }
 
 template <class T> T value(llvm::FailureOr<T> result) {
   if (llvm::failed(result)) {
-    ADD_FAILURE() << "Expected a successful result";
-    std::abort();
+    throw std::runtime_error("Expected a successful result");
   }
   return std::move(*result);
 }
@@ -79,18 +108,13 @@ class ScopedEnvironmentVariable {
 public:
   ScopedEnvironmentVariable(std::string name,
                             const std::optional<std::string>& value)
-      : name_(std::move(name)) {
-    if (const auto* previous = std::getenv(name_.c_str());
-        previous != nullptr) {
-      previous_ = previous;
-    }
+      : name_(std::move(name)), previous_(llvm::sys::Process::GetEnv(name_)) {
     set(value);
   }
 
   ~ScopedEnvironmentVariable() {
-    if (!setWithoutChecking(previous_)) {
-      std::abort();
-    }
+    EXPECT_TRUE(setWithoutChecking(previous_))
+        << "Failed to restore environment variable " << name_;
   }
 
   ScopedEnvironmentVariable(const ScopedEnvironmentVariable&) = delete;
@@ -102,15 +126,20 @@ public:
 private:
   void set(const std::optional<std::string>& value) const {
     if (!setWithoutChecking(value)) {
-      ADD_FAILURE() << "Failed to set environment variable " << name_;
-      std::abort();
+      throw std::runtime_error("Failed to set environment variable " + name_);
     }
   }
 
   [[nodiscard]] bool
   setWithoutChecking(const std::optional<std::string>& value) const {
 #ifdef _WIN32
-    return _putenv_s(name_.c_str(), value.value_or("").c_str()) == 0;
+    llvm::SmallVector<wchar_t, 128> name;
+    llvm::SmallVector<wchar_t, 128> contents;
+    if (llvm::sys::windows::UTF8ToUTF16(name_, name) ||
+        llvm::sys::windows::UTF8ToUTF16(value.value_or(""), contents)) {
+      return false;
+    }
+    return _wputenv_s(name.data(), contents.data()) == 0;
 #else
     const auto* const name = name_.c_str();
     // NOLINTNEXTLINE(misc-include-cleaner): POSIX environment functions.
@@ -125,14 +154,25 @@ private:
 class TemporaryDirectory {
 public:
   TemporaryDirectory() {
-    path_ = std::filesystem::temp_directory_path() /
-            ("mqt-core-qdmi-registry-test-" +
-             std::to_string(std::random_device{}()));
-    std::filesystem::remove_all(path_);
-    std::filesystem::create_directories(path_);
+    llvm::SmallString<128> path;
+    if (const auto error =
+            llvm::sys::fs::createUniqueDirectory("mqt-core-test", path)) {
+      throw std::system_error(error);
+    }
+    path_ = std::u8string(path.begin(), path.end());
   }
 
-  ~TemporaryDirectory() { std::filesystem::remove_all(path_); }
+  ~TemporaryDirectory() {
+    std::error_code error;
+    std::filesystem::remove_all(path_, error);
+    EXPECT_FALSE(error) << "Failed to remove temporary directory: "
+                        << error.message();
+  }
+
+  TemporaryDirectory(const TemporaryDirectory&) = delete;
+  TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
+  TemporaryDirectory(TemporaryDirectory&&) = delete;
+  TemporaryDirectory& operator=(TemporaryDirectory&&) = delete;
 
   [[nodiscard]] const std::filesystem::path& path() const { return path_; }
 
@@ -145,12 +185,17 @@ public:
     std::error_code error;
     const auto utf8 = path.u8string();
     llvm::raw_fd_ostream output(std::string(utf8.begin(), utf8.end()), error);
-    llvm::cantFail(llvm::errorCodeToError(error));
+    if (error) {
+      output.clear_error();
+      throw std::system_error(error);
+    }
     output << contents;
     output.close();
     error = output.error();
     output.clear_error();
-    llvm::cantFail(llvm::errorCodeToError(error));
+    if (error) {
+      throw std::system_error(error);
+    }
     return path;
   }
 

@@ -9,8 +9,9 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/TestUtils.hpp"
 #include "qdmi/devices/sc/Device.hpp"
+
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
