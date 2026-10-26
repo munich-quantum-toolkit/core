@@ -19,9 +19,11 @@
 namespace dd {
 
 VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd) {
+  auto next = in;
+  next.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
+  dd.incRef(next);
   dd.decRef(in);
-  in.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
-  dd.incRef(in);
+  in = next;
   return in;
 }
 
