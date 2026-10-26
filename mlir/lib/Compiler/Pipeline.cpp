@@ -61,6 +61,9 @@
 #include <variant>
 #include <vector>
 
+using llvm::createStringError;
+using llvm::Expected;
+
 namespace mlir {
 
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
@@ -282,8 +285,7 @@ FailureOr<JeffProgram> QCOProgram::intoJeff() && {
 // JeffProgram
 //===----------------------------------------------------------------------===//
 
-llvm::Expected<JeffProgram>
-JeffProgram::fromMessage(::jeff::Module::Reader module) {
+Expected<JeffProgram> JeffProgram::fromMessage(::jeff::Module::Reader module) {
   auto context = createCompilerContext();
   CompilerDiagnostics diagnostics(context.get());
   auto mod = deserialize(context.get(), module);
@@ -293,10 +295,9 @@ JeffProgram::fromMessage(::jeff::Module::Reader module) {
   return JeffProgram({.context = context, .mod = std::move(mod)});
 }
 
-llvm::Expected<JeffProgram>
-JeffProgram::fromBytes(std::span<const std::byte> bytes) {
+Expected<JeffProgram> JeffProgram::fromBytes(std::span<const std::byte> bytes) {
   if (bytes.size() % sizeof(capnp::word) != 0U) {
-    return llvm::createStringError(
+    return createStringError(
         llvm::inconvertibleErrorCode(),
         "jeff data size must be a multiple of the Cap'n Proto word size");
   }
@@ -315,8 +316,7 @@ JeffProgram::fromBytes(std::span<const std::byte> bytes) {
   return JeffProgram({.context = context, .mod = std::move(mod)});
 }
 
-llvm::Expected<JeffProgram>
-JeffProgram::fromFile(const std::filesystem::path& path) {
+Expected<JeffProgram> JeffProgram::fromFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
   CompilerDiagnostics diagnostics(context.get());
   auto mod = deserializeFromFile(context.get(), path.string());
@@ -562,7 +562,7 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   return CompilerProgram(std::move(*qir));
 }
 
-static llvm::Expected<CompilerProgram>
+static Expected<CompilerProgram>
 runNativePipeline(CompilerInput program, ProgramFormat output,
                   const TargetEnvironment* environment,
                   std::string_view qcoPipeline,
@@ -571,13 +571,13 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
       (environment == nullptr ||
        environment->target().nativeOperationsKind() ==
            CompilerTarget::NativeOperations::Kind::Unrestricted)) {
-    return llvm::createStringError(std::errc::invalid_argument,
-                                   "IQM JSON requires a physical target with "
-                                   "explicit native IQM operations");
+    return createStringError(std::errc::invalid_argument,
+                             "IQM JSON requires a physical target with "
+                             "explicit native IQM operations");
   }
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
-    return llvm::createStringError(
+    return createStringError(
         std::errc::invalid_argument,
         "a custom QCO pass pipeline cannot be used with an output that stops "
         "before QCO optimization");
@@ -609,7 +609,7 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
   return std::move(*result);
 }
 
-llvm::Expected<CompilerProgram>
+Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    std::string_view qcoPipeline,
                    const CompilationOptions& options) {
@@ -617,12 +617,12 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
                            options);
 }
 
-llvm::Expected<CompilerProgram>
+Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options) {
   if (output == ProgramFormat::QCImport || output == ProgramFormat::QCO) {
-    return llvm::createStringError(
+    return createStringError(
         std::errc::invalid_argument,
         "QCImport and raw QCO output stop before target compilation");
   }
@@ -630,7 +630,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
                            "mqt-qco-default", options);
 }
 
-llvm::Expected<CompilerProgram>
+Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, const TargetEnvironment& environment,
                    const CompilationOptions& options) {
   auto output = environment.payloadSpecification().compilerOutput();

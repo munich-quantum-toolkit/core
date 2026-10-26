@@ -65,6 +65,9 @@
 #include <system_error>
 #include <utility>
 
+using llvm::Error;
+using llvm::Expected;
+
 namespace mlir {
 
 static void ensureInlinerExtensions(MLIRContext* context) {
@@ -146,8 +149,7 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
 }
 
 template <class ProgramType, class Parse>
-[[nodiscard]] static llvm::Expected<ProgramType>
-parseTypedProgram(Parse&& parse) {
+[[nodiscard]] static Expected<ProgramType> parseTypedProgram(Parse&& parse) {
   auto context = createCompilerContext();
   CompilerDiagnostics diagnostics(context.get());
   auto mod = std::forward<Parse>(parse)(context.get());
@@ -215,9 +217,9 @@ Program::Storage Program::releaseStorage() && {
   };
 }
 
-static llvm::Error writeTextProgram(StringRef source,
-                                    const std::filesystem::path& path,
-                                    StringRef format) {
+static Error writeTextProgram(StringRef source,
+                              const std::filesystem::path& path,
+                              StringRef format) {
   std::error_code error;
   llvm::raw_fd_ostream stream(path.string(), error, llvm::sys::fs::OF_Text);
   if (error) {
@@ -234,7 +236,7 @@ static llvm::Error writeTextProgram(StringRef source,
         writeError, "failed to write " + format + " file '" + path.string() +
                         "': " + writeError.message());
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -247,7 +249,7 @@ std::string OpenQASMProgram::intoSource() && { return std::move(source_); }
 
 const std::string& OpenQASMProgram::str() const noexcept { return source_; }
 
-llvm::Error OpenQASMProgram::write(const std::filesystem::path& path) const {
+Error OpenQASMProgram::write(const std::filesystem::path& path) const {
   return writeTextProgram(source_, path, "OpenQASM");
 }
 
@@ -255,7 +257,7 @@ llvm::Error OpenQASMProgram::write(const std::filesystem::path& path) const {
 // IQMJSONProgram
 //===----------------------------------------------------------------------===//
 
-llvm::Error IQMJSONProgram::write(const std::filesystem::path& path) const {
+Error IQMJSONProgram::write(const std::filesystem::path& path) const {
   return writeTextProgram(source_, path, "IQM JSON");
 }
 
@@ -263,20 +265,18 @@ llvm::Error IQMJSONProgram::write(const std::filesystem::path& path) const {
 // QCProgram
 //===----------------------------------------------------------------------===//
 
-llvm::Expected<QCProgram>
-QCProgram::fromMLIRString(const std::string_view source) {
+Expected<QCProgram> QCProgram::fromMLIRString(const std::string_view source) {
   return parseTypedProgram<QCProgram>([source](MLIRContext* context) {
     return parseMLIRString(context, source);
   });
 }
 
-llvm::Expected<QCProgram>
-QCProgram::fromMLIRFile(const std::filesystem::path& path) {
+Expected<QCProgram> QCProgram::fromMLIRFile(const std::filesystem::path& path) {
   return parseTypedProgram<QCProgram>(
       [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
 }
 
-llvm::Expected<QCProgram>
+Expected<QCProgram>
 QCProgram::fromOpenQASMString(const std::string_view source) {
   auto context = createCompilerContext();
   CompilerDiagnostics diagnostics(context.get());
@@ -289,7 +289,7 @@ QCProgram::fromOpenQASMString(const std::string_view source) {
   return QCProgram({.context = context, .mod = std::move(mod)});
 }
 
-llvm::Expected<QCProgram>
+Expected<QCProgram>
 QCProgram::fromOpenQASMFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
   CompilerDiagnostics diagnostics(context.get());
@@ -362,14 +362,13 @@ FailureOr<QCOProgram> QCProgram::intoQCO() && {
 // QCOProgram
 //===----------------------------------------------------------------------===//
 
-llvm::Expected<QCOProgram>
-QCOProgram::fromMLIRString(const std::string_view source) {
+Expected<QCOProgram> QCOProgram::fromMLIRString(const std::string_view source) {
   return parseTypedProgram<QCOProgram>([source](MLIRContext* context) {
     return parseMLIRString(context, source);
   });
 }
 
-llvm::Expected<QCOProgram>
+Expected<QCOProgram>
 QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
   return parseTypedProgram<QCOProgram>(
       [&path](MLIRContext* context) { return parseMLIRFile(context, path); });

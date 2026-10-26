@@ -36,6 +36,9 @@
 #include <utility>
 #include <variant>
 
+using llvm::createStringError;
+using llvm::Expected;
+
 static llvm::cl::OptionCategory benchmarkOptions("Benchmark options");
 static llvm::cl::SubCommand listCommand("list",
                                         "List the available benchmarks");
@@ -80,18 +83,17 @@ static llvm::cl::opt<std::string> countsInputPath(
     llvm::cl::value_desc("file|-"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
 
-[[nodiscard]] static llvm::Expected<std::string>
-readText(const std::string& path) {
+[[nodiscard]] static Expected<std::string> readText(const std::string& path) {
   auto buffer = path == "-" ? llvm::MemoryBuffer::getSTDIN()
                             : llvm::MemoryBuffer::getFile(path);
   if (!buffer) {
-    return llvm::createStringError(llvm::formatv(
-        "failed to read '{0}': {1}", path, buffer.getError().message()));
+    return createStringError(llvm::formatv("failed to read '{0}': {1}", path,
+                                           buffer.getError().message()));
   }
   return (*buffer)->getBuffer().str();
 }
 
-[[nodiscard]] static llvm::Expected<bool>
+[[nodiscard]] static Expected<bool>
 pathExists(const std::filesystem::path& path) {
   std::error_code error;
   const auto status = std::filesystem::symlink_status(path, error);
@@ -99,8 +101,8 @@ pathExists(const std::filesystem::path& path) {
     return false;
   }
   if (error) {
-    return llvm::createStringError(llvm::formatv(
-        "failed to inspect '{0}': {1}", path.string(), error.message()));
+    return createStringError(llvm::formatv("failed to inspect '{0}': {1}",
+                                           path.string(), error.message()));
   }
   return status.type() != std::filesystem::file_type::not_found;
 }
@@ -111,7 +113,7 @@ static llvm::Error validateOutputTarget(const std::filesystem::path& path) {
     return exists.takeError();
   }
   if (*exists) {
-    return llvm::createStringError(llvm::formatv(
+    return createStringError(llvm::formatv(
         "refusing to overwrite existing file '{0}'", path.string()));
   }
   return llvm::Error::success();
@@ -135,7 +137,7 @@ siblingPath(const std::filesystem::path& finalPath,
   return finalPath.parent_path() / name;
 }
 
-[[nodiscard]] static llvm::Expected<OpenSibling>
+[[nodiscard]] static Expected<OpenSibling>
 createSibling(const std::filesystem::path& finalPath,
               const std::string_view purpose) {
   for (size_t attempt = 0; attempt < 32; ++attempt) {
@@ -147,17 +149,17 @@ createSibling(const std::filesystem::path& finalPath,
       return OpenSibling{.path = std::move(path), .descriptor = descriptor};
     }
     if (error != std::errc::file_exists) {
-      return llvm::createStringError(
+      return createStringError(
           llvm::formatv("failed to create a {0} file next to '{1}': {2}",
                         purpose, finalPath.string(), error.message()));
     }
   }
-  return llvm::createStringError(
+  return createStringError(
       llvm::formatv("failed to choose a unique {0} file next to '{1}'", purpose,
                     finalPath.string()));
 }
 
-[[nodiscard]] static llvm::Expected<std::filesystem::path>
+[[nodiscard]] static Expected<std::filesystem::path>
 stageFile(const std::filesystem::path& finalPath,
           const std::string_view contents) {
   auto temporary = createSibling(finalPath, "tmp");
@@ -176,7 +178,7 @@ stageFile(const std::filesystem::path& finalPath,
                    << temporary->path.string()
                    << "': " << cleanupError.message() << '\n';
     }
-    return llvm::createStringError(
+    return createStringError(
         llvm::formatv("failed to write temporary output for '{0}': {1}",
                       finalPath.string(), error.message()));
   }
@@ -193,7 +195,7 @@ static void removeIfPresent(const std::optional<std::filesystem::path>& path) {
   }
 }
 
-[[nodiscard]] static llvm::Expected<const char*>
+[[nodiscard]] static Expected<const char*>
 programExtension(const std::string_view format) {
   if (format == "qc") {
     return ".qc.mlir";
@@ -201,11 +203,11 @@ programExtension(const std::string_view format) {
   if (format == "jeff") {
     return ".jeff";
   }
-  return llvm::createStringError(
+  return createStringError(
       llvm::formatv("unsupported output format '{0}'", format));
 }
 
-[[nodiscard]] static llvm::Expected<int>
+[[nodiscard]] static Expected<int>
 publish(mqt::bench::GeneratedBenchmark generated, const std::string_view format,
         const std::filesystem::path& directory) {
   auto extension = programExtension(format);
@@ -215,18 +217,18 @@ publish(mqt::bench::GeneratedBenchmark generated, const std::string_view format,
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error) {
-    return llvm::createStringError(
+    return createStringError(
         llvm::formatv("failed to create output directory '{0}': {1}",
                       directory.string(), error.message()));
   }
   const auto directoryExists = std::filesystem::is_directory(directory, error);
   if (error) {
-    return llvm::createStringError(
+    return createStringError(
         llvm::formatv("failed to inspect output directory '{0}': {1}",
                       directory.string(), error.message()));
   }
   if (!directoryExists) {
-    return llvm::createStringError(llvm::formatv(
+    return createStringError(llvm::formatv(
         "output path is not a directory: '{0}'", directory.string()));
   }
 
@@ -311,7 +313,7 @@ publish(mqt::bench::GeneratedBenchmark generated, const std::string_view format,
   return 0;
 }
 
-[[nodiscard]] static llvm::Expected<int>
+[[nodiscard]] static Expected<int>
 generateFromInstanceSpecification(const std::string& instanceSpecification,
                                   const std::string& source) {
   auto generated = mqt::bench::generate(instanceSpecification, source);
@@ -322,7 +324,7 @@ generateFromInstanceSpecification(const std::string& instanceSpecification,
                  std::filesystem::path(outputDirectory.getValue()));
 }
 
-static llvm::Expected<int> run() {
+static Expected<int> run() {
   if (listCommand) {
     llvm::outs() << mqt::bench::listBenchmarksJSON() << '\n';
     return 0;
@@ -347,7 +349,7 @@ static llvm::Expected<int> run() {
   }
   if (evaluateCommand) {
     if (manifestInputPath == "-") {
-      return llvm::createStringError("--manifest requires a file path");
+      return createStringError("--manifest requires a file path");
     }
     auto manifest = readText(manifestInputPath);
     if (!manifest) {
