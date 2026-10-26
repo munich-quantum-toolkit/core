@@ -46,6 +46,13 @@ x-compute: &compute
         "systemctl is-active --quiet munge.service && systemctl is-active --quiet slurmd.service",
       ]
 
+x-qan: &qan
+  <<: *compute
+  command: [/usr/local/sbin/mqt-slurm-start, qan]
+  networks:
+    - cluster
+    - egress
+
 services:
   database:
     image: mariadb:12.3
@@ -147,13 +154,13 @@ services:
     scale: 2
     command: [/usr/local/sbin/mqt-slurm-start, node]
 
-  qan:
-    <<: *compute
-    scale: 2
-    command: [/usr/local/sbin/mqt-slurm-start, qan]
-    networks:
-      - cluster
-      - egress
+  qan1:
+    <<: *qan
+    hostname: qan1
+
+  qan2:
+    <<: *qan
+    hostname: qan2
 
 networks:
   cluster:

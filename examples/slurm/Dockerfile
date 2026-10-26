@@ -12,18 +12,16 @@ FROM ubuntu:26.04 AS slurm-build
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
-        build-essential ca-certificates curl patch pkg-config libdbus-1-dev libhwloc-dev \
+        build-essential ca-certificates curl pkg-config libdbus-1-dev libhwloc-dev \
         libjson-c-dev liblua5.4-dev libmariadb-dev libmunge-dev libpam0g-dev \
         libpmix-dev libreadline-dev libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
-# HRES Lua and dynamic-node registration are still development interfaces.
+# HRES Lua is still a development interface.
 RUN curl -fLsS https://github.com/SchedMD/slurm/archive/ba178ef837c4ba799fb3de72bcdaf30bc2b1616d.tar.gz -o /tmp/slurm.tar.gz \
     && echo '7a355fb32825af3b3b84761c3e113aafe52482c8b729fffb398fc7a041703bf5  /tmp/slurm.tar.gz' | sha256sum -c - \
     && mkdir /src \
     && tar -xzf /tmp/slurm.tar.gz -C /src --strip-components=1
 WORKDIR /src
-COPY slurm-hres-reconfigure.patch /tmp/
-RUN patch -p1 < /tmp/slurm-hres-reconfigure.patch
 RUN ./configure --prefix=/opt/slurm --sysconfdir=/etc/slurm \
         --with-systemdsystemunitdir=/etc/systemd/system --with-pmix \
     && make -j4 \
@@ -112,12 +110,11 @@ COPY --from=slurm-build /install/ /
 COPY --from=environment /opt/venv /opt/venv
 COPY --chmod=755 start.sh /usr/local/sbin/mqt-slurm-start
 COPY --chmod=755 probe.py /usr/local/libexec/mqt-qdmi-probe
-COPY --chmod=755 qan.py /usr/local/libexec/mqt-slurm-qan
 COPY hres_qdmi.lua /etc/slurm/hres_qdmi.lua
 COPY slurmctld.conf /etc/systemd/system/slurmctld.service.d/qdmi.conf
 COPY slurm-accounting.service /etc/systemd/system/
 COPY --chmod=755 accounting.sh /usr/local/sbin/mqt-slurm-accounting
-COPY node.conf qan.conf slurmdbd.conf /usr/local/share/mqt-slurm/
+COPY node.conf slurmdbd.conf /usr/local/share/mqt-slurm/
 COPY profile.sh /etc/profile.d/mqt-qdmi.sh
 RUN useradd --uid 10000 --user-group --create-home mqt-dev \
     && useradd --system --user-group --home-dir /var/lib/slurm slurm \

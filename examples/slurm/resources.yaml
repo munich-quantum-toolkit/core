@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-# Dynamic QANs join these layers when slurmd registers with the controller.
+# Both QANs can access each device; counts limit concurrent allocations.
 - resource: mqt.ddsim.default
   mode: MODE_1
   plugin:
@@ -14,12 +14,11 @@
     config:
       - name: path
         value: /etc/slurm/hres_qdmi.lua
-      - name: probe_timeout
-        value: "10"
     maintenance_cycle: 30
     maintenance_timeout: 15
   layers:
     - layer_name: quantum
+      nodes: ["qan[1-2]"]
       count: 2
 - resource: mqt.sc.default
   mode: MODE_1
@@ -28,10 +27,9 @@
     config:
       - name: path
         value: /etc/slurm/hres_qdmi.lua
-      - name: probe_timeout
-        value: "10"
     maintenance_cycle: 30
     maintenance_timeout: 15
   layers:
     - layer_name: quantum
+      nodes: ["qan[1-2]"]
       count: 1

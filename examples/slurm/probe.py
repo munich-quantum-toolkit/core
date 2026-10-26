@@ -15,7 +15,11 @@ import sys
 
 
 def probe(device_id: str) -> int:
-    """Return zero for IDLE or BUSY, or one when initialization or status fails."""
+    """Check whether the device accepts work.
+
+    Returns:
+        Zero for IDLE or BUSY, or one when initialization or status fails.
+    """
     try:
         from mqt.core.qdmi import Device
         from mqt.core.qdmi import builtin_driver as qdmi_driver

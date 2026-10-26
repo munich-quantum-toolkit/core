@@ -68,6 +68,12 @@ jobs:
           enable-cache: true
           python-version: "3.14"
 
+      - name: Check the HRES callbacks
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y lua5.4
+          lua5.4 test/slurm/check_hres.lua examples/slurm/hres_qdmi.lua
+
       - name: Check the Slurm test runner
         run: >-
           uv run --no-project --with 'pytest>=9.0.1' --python 3.14

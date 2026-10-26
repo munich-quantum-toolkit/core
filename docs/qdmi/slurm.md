@@ -28,11 +28,8 @@ existing `--licenses` submission syntax and `license/ID` accounting apply.
 :::{important}
 This prototype builds Slurm 26.11.0rc1 development revision
 `ba178ef837c4ba799fb3de72bcdaf30bc2b1616d` with `hres/lua`. Its callbacks and
-configuration may change before release. The included
-`slurm-hres-reconfigure.patch` restores dynamic QAN membership after controller
-reconfiguration or state recovery. Registration restores each node once per
-controller process, preserving later administrator membership changes. The
-unpatched revision loses that membership on `scontrol reconfigure`. See the
+configuration may change before release. The two QANs have explicit node records
+and HRES membership; no Slurm source patches are needed. See the
 [pinned HRES documentation](https://github.com/SchedMD/slurm/blob/ba178ef837c4ba799fb3de72bcdaf30bc2b1616d/doc/html/hres.shtml).
 :::
 
@@ -46,7 +43,7 @@ provide a cluster to experiment with:
 | `login`                  | User shell, Slurm clients, and shared software environment       |
 | `controller`             | Scheduling and HRES availability callbacks                       |
 | `node` (two by default)  | Classical computation in the `compute` partition                 |
-| `qan` (two by default)   | Compilation and access to all devices in the `quantum` partition |
+| `qan1`, `qan2`           | Compilation and access to all devices in the `quantum` partition |
 | `accounting`, `database` | Persistent job and resource accounting with SlurmDBD and MariaDB |
 
 ## Start the cluster and log in
@@ -173,25 +170,24 @@ Configure each device in `build/slurm/resources.yaml`. For example:
 
 ```yaml
 - resource: iqm.emerald.mock
-  mode: 1
-  count: 1
-  plugin: lua
-  maintenance_cycle: 30
-  maintenance_timeout: 15
-  config:
-    lua_script: /etc/slurm/hres_qdmi.lua
-    probe_timeout: 10
+  mode: MODE_1
+  plugin:
+    type: hres/lua
+    config:
+      - name: path
+        value: /etc/slurm/hres_qdmi.lua
+    maintenance_cycle: 30
+    maintenance_timeout: 15
   layers:
-    - name: quantum
+    - layer_name: quantum
+      nodes: ["qan[1-2]"]
+      count: 1
 ```
 
 Use one explicit block per device; the pinned Slurm YAML parser does not support
-anchors. Each dynamic QAN registers membership in every `quantum` layer by
-reading `scontrol --json show licenses`. Classical nodes join none. For a site
-with distinct access paths, configure eligible node membership per layer
-instead. After adding resources, restart QANs when idle so they register new
-membership. Also extend the existing accounting list in
-`build/slurm/slurm.conf`:
+anchors. List only the nodes that can access the device in its layer. Both
+playground QANs can access every configured device; classical nodes belong to
+none of these layers. Extend the accounting list in `build/slurm/slurm.conf`:
 
 ```ini
 AccountingStorageTRES=license/mqt.ddsim.default,license/mqt.sc.default,license/iqm.emerald.mock,license/amazon.braket.sv1
@@ -278,33 +274,25 @@ QDMI catalogue, then restore it; the integration test exercises this path.
 
 ## Chain quantum and classical stages
 
-The
-[complete QC-AFQMC example](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm/afqmc)
-submits three dependent jobs: prepare shadow circuits on classical nodes,
-compile for and sample the allocated device on a QAN, then propagate walkers
-with MPI on classical nodes. Each stage releases its allocation before the next
-starts. Only the quantum stage requests an HRES unit.
+Submit separate jobs for classical preparation, quantum sampling, and classical
+analysis. Each stage releases its allocation before the next starts; only the
+quantum stage requests an HRES unit. For example, with application scripts
+`prepare.sh`, `measure.sh`, and `analyze.sh`:
 
 ```bash
 preparation=$(sbatch --parsable --partition=compute prepare.sh)
 measurement=$(sbatch --parsable --partition=quantum --licenses=iqm.emerald.mock \
   --dependency=afterok:"$preparation" measure.sh)
-sbatch --partition=compute --dependency=afterok:"$measurement" propagate.sh
+sbatch --partition=compute --dependency=afterok:"$measurement" analyze.sh
 ```
 
 Stages exchange files through `/jobs`; `afterok` requires the predecessor to
-succeed. The example uses actual QDMI-on-IQM and Amazon Braket QDMI libraries
-against local services that simulate submitted circuits, plus DDSIM. It retains
-all inputs, compiled payloads, shots, allocation identities, and scientific
-checks. It does not submit cloud or hardware jobs.
-
-The quantum application constructs its compiler target from the same open QDMI
-device used for submission. Compilation remains above QDMI. For this workload,
-separate jobs avoid holding classical resources during compilation or remote
-queuing. A
+succeed. The quantum application compiles for the same open QDMI device used for
+submission. Separate jobs avoid holding classical resources during compilation
+or remote queuing. A
 [heterogeneous allocation](https://slurm.schedmd.com/heterogeneous_jobs.html)
 acquires its components together and can suit tightly coupled applications, but
-would retain idle stage resources here. An `srun` step cannot move an ordinary
+retains resources across these stages. An `srun` step cannot move an ordinary
 compute job into the quantum partition.
 
 ## Inspect and operate the cluster
@@ -320,15 +308,20 @@ controller state persist in named volumes. Job scripts and environments are not
 archived; applications should save software versions, input digests, and remote
 job IDs alongside results, without credentials.
 
-Scale nodes from the host:
+Scale classical nodes from the host:
 
 ```bash
-docker compose -f examples/slurm/compose.yml up -d --wait --scale node=4 --scale qan=3
+docker compose -f examples/slurm/compose.yml up -d --wait --scale node=4
 ```
 
-The cluster accepts up to 128 registered nodes. Drain nodes and wait for their
+The two QANs are fixed. To add a QAN, define its Compose service and hostname,
+then add it to `slurm.conf` and the applicable resource layers. This keeps HRES
+membership declarative across controller restarts and reconfiguration.
+
+The cluster accepts up to 128 nodes. Drain classical nodes and wait for their
 jobs before scaling down. Remove stopped dynamic nodes with
-`scontrol delete NodeName=...` when retaining controller state.
+`scontrol delete NodeName=...` when retaining controller state. Run
+`scontrol reconfigure` after changing the shared Slurm configuration.
 
 `docker compose -f examples/slurm/compose.yml down` stops the cluster and keeps
 accounting. To discard it, including accounting history:
@@ -355,10 +348,9 @@ before `sbatch` or load it in their batch script; see the
 Use the pinned Slurm build on every host. Login nodes need its clients; compute
 nodes need `slurmd`; the controller needs Lua, the QDMI libraries, and probe
 credentials. Install the Lua script and probe at their configured paths. Replace
-the playground's dynamic membership with the site's eligible nodes. Review
-authentication, callback behavior, reconfiguration, and recovery against the
-chosen Slurm revision before deployment. This development build is not a
-production deployment recommendation.
+the playground node names with the site's eligible nodes. Review the chosen
+Slurm revision before deployment; this development build is not a production
+deployment recommendation.
 
 SlurmDBD records resource allocations; it does not measure remote device time or
 billing. A QAN allocation may still wait in a provider queue. Remote reservation
@@ -398,8 +390,6 @@ and [cgroup configuration](https://slurm.schedmd.com/cgroup.conf.html).
 HRES capacity and node eligibility, unavailable-device admission and recovery,
 environment export, and accounting with DDSIM and SC.
 
-`test/slurm/check_afqmc.py` checks all 16 computational-basis inputs with
-reversed classical destinations through each actual provider, and validates
-completed scientific artifacts. The example README gives the local commands.
-Live provider tests are separate, require explicit credentials and
-authorization, and may incur service charges.
+`test/slurm/check_hres.lua` checks callback state transitions and the bounded
+probe command with Lua 5.4. CI runs both checks. Live provider tests are
+separate and require explicit credentials and authorization.

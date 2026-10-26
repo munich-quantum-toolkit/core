@@ -16,17 +16,11 @@ function hres_create_context(ctx, layers)
 end
 
 function hres_maintenance(ctx, layers)
-    for _, layer in ipairs(layers) do layer.disable_layer = true end
-    local deadline = tonumber(ctx.config.probe_timeout)
-    if not deadline or deadline < 1 or deadline > 3600 or deadline % 1 ~= 0 then
-        return slurm.ERROR
-    end
     -- Slurm's maintenance_timeout only logs slow calls; timeout enforces the bound.
     local command = string.format(
-        "/usr/bin/timeout --kill-after=2s %ds /usr/local/libexec/mqt-qdmi-probe %s </dev/null >/dev/null 2>&1",
-        deadline, quote(ctx.name))
-    local rc = os.execute(command)
-    local available = (rc == true or rc == 0)
+        "/usr/bin/timeout --kill-after=2s 10s /usr/local/libexec/mqt-qdmi-probe %s </dev/null >/dev/null 2>&1",
+        quote(ctx.name))
+    local available = os.execute(command) == true
     for _, layer in ipairs(layers) do layer.disable_layer = not available end
     return slurm.SUCCESS
 end

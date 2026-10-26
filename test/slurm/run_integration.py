@@ -34,7 +34,7 @@ FIXTURE = ROOT / "test" / "slurm"
 CLUSTER = ROOT / "examples" / "slurm"
 RUNTIME = ROOT / "build" / "slurm-tests" / uuid.uuid4().hex
 NODES: list[str] = []
-QANS: list[str] = []
+QANS = ["qan1", "qan2"]
 COMPOSE = (
     "docker",
     "compose",
@@ -303,7 +303,7 @@ def print_diagnostics() -> None:
     for service, index, units in [
         ("controller", 1, ("munge.service", "slurmctld.service")),
         ("accounting", 1, ("slurmdbd.service", "slurm-accounting.service")),
-        *(("qan", index, ("slurmd.service",)) for index in range(1, len(QANS) + 1)),
+        *((qan, 1, ("slurmd.service",)) for qan in QANS),
         *(("node", index, ("munge.service", "slurmd.service")) for index in range(1, len(NODES) + 1)),
     ]:
         prefix = ("exec", "-T", "--index", str(index), service)
@@ -365,7 +365,7 @@ def test_core() -> None:
     )
     for license_name in ("mqt.ddsim.default", "mqt.sc.default"):
         wait_for(
-            f"{license_name} to recover its QAN membership after reconfiguration",
+            f"{license_name} to retain its QAN membership after reconfiguration",
             lambda license_name=license_name: (
                 set(controller("scontrol", "show", "hostnames", license_record(license_name)["Nodes"]).stdout.split())
                 == set(QANS)
@@ -394,15 +394,6 @@ def test_core() -> None:
     assert_allocation(first, QANS[0])
     assert_allocation(second, QANS[1])
     assert_allocation(third)
-    controller("scontrol", "update", "HRESName=mqt.sc.default", "LayerName=quantum", f"Nodes=-{QANS[0]}")
-    started_before = re.findall(r"SlurmdStartTime=(\S+)", node_record(QANS[0]))[0]
-    compose("exec", "-T", "--index", "1", "qan", "systemctl", "restart", "slurmd")
-    wait_for(
-        "the QAN to register again without undoing administrator HRES changes",
-        lambda: re.findall(r"SlurmdStartTime=(\S+)", node_record(QANS[0]))[0] != started_before,
-    )
-    assert license_record("mqt.sc.default")["Nodes"] == QANS[1]
-    controller("scontrol", "update", "HRESName=mqt.sc.default", "LayerName=quantum", f"Nodes=+{QANS[0]}")
     compose("up", "--detach", "--no-deps", "--force-recreate", "--wait", "accounting", timeout=120)
     accounting = job(
         "sacct",
@@ -572,11 +563,10 @@ def main(arguments: Sequence[str] = ()) -> None:
             timeout=1800,
             capture_output=False,
         )
-        for service, nodes, count in (("node", NODES, options.nodes), ("qan", QANS, 2)):
-            nodes[:] = [
-                compose("exec", "-T", "--index", str(index), service, "hostname").stdout.strip()
-                for index in range(1, count + 1)
-            ]
+        NODES[:] = [
+            compose("exec", "-T", "--index", str(index), "node", "hostname").stdout.strip()
+            for index in range(1, options.nodes + 1)
+        ]
         LOGGER.info("Slurm image build and startup: %.2fs", time.monotonic() - started_at)
         testing_at = time.monotonic()
 

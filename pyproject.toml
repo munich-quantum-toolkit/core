@@ -336,8 +336,8 @@ docstring-code-format = true
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = [ "INP001", "T20", "TID252" ]
 "test/slurm/**" = [ "DOC201", "DOC501", "INP001" ]
-# Executable examples use stage-local optional imports and are not importable APIs.
-"examples/slurm/**" = [ "DOC201", "DOC501", "INP001", "PLC0415" ]
+# The standalone probe must also catch failures while importing a device library.
+"examples/slurm/probe.py" = [ "INP001", "PLC0415" ]
 "docs/**" = [ "INP001", "T20" ]
 "noxfile.py" = [ "PLC0415", "T20", "TID251" ]
 "mlir/unittests/**/*.py" = [ "INP001", "T201" ]
@@ -412,9 +412,6 @@ extend-ignore-re = [
 ]
 
 [tool.typos.default.extend-identifiers]
-# Names in the pinned AWS scientific implementation.
-cqa_imag_time_propogator = "cqa_imag_time_propogator"
-imag_time_propogator = "imag_time_propogator"
 MemCpyOptPass = "MemCpyOptPass"
 
 [tool.typos.default.extend-words]
@@ -437,13 +434,6 @@ exclude = [
 [tool.ty.terminal]
 # Error if ty emits any warning-level diagnostics.
 error-on-warning = true
-
-# These standalone scripts use the pinned scientific/provider environment in Docker.
-[[tool.ty.overrides]]
-include = [ "examples/slurm/afqmc/**", "test/slurm/check_afqmc.py" ]
-
-[tool.ty.overrides.rules]
-unresolved-import = "ignore"
 
 
 [tool.pytest]

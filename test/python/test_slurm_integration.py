@@ -52,44 +52,6 @@ def runner() -> ModuleType:
     return load_script(Path(__file__).parents[1] / "slurm" / "run_integration.py")
 
 
-def test_qan_joins_only_quantum_layers(runner: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A dynamic QAN uses the configured controller layers without copying IDs."""
-    qan = load_script(runner.CLUSTER / "qan.py")
-    records = (
-        '{"licenses":[{"LicenseName":"device.a","LayerName":"quantum"},'
-        '{"LicenseName":"software"},{"LicenseName":"device.b","LayerName":"another-site"}]}'
-    )
-    monkeypatch.setattr(
-        qan.subprocess, "run", lambda *args, **_kwargs: subprocess.CompletedProcess(args, 0, records, "")
-    )
-    calls = []
-    monkeypatch.setattr(qan.os, "execv", lambda *args: calls.append(args))
-    qan.main("CPUs=4 Feature=quantum")
-    assert calls == [
-        (
-            "/opt/slurm/sbin/slurmd",
-            (
-                "slurmd",
-                "--systemd",
-                "-Z",
-                "--conf",
-                'CPUs=4 Feature=quantum HRES=[{"hres_name":"device.a","layer_name":"quantum"}]',
-            ),
-        )
-    ]
-
-
-def test_qan_rejects_missing_layers(runner: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Do not register a QAN that cannot reach any of the configured resources."""
-    qan = load_script(runner.CLUSTER / "qan.py")
-    monkeypatch.setattr(
-        qan.subprocess, "run", lambda *args, **_kwargs: subprocess.CompletedProcess(args, 0, '{"licenses":[]}', "")
-    )
-    monkeypatch.setattr(qan.os, "execv", lambda *_args: pytest.fail("slurmd started without membership"))
-    with pytest.raises(RuntimeError, match="No quantum HRES"):
-        qan.main("CPUs=4 Feature=quantum")
-
-
 def test_prepare_keeps_private_key_and_preserves_existing_cluster(runner: ModuleType, tmp_path: Path) -> None:
     """Create usable shared files without overwriting a cluster's authentication."""
     runtime = tmp_path / "cluster"
