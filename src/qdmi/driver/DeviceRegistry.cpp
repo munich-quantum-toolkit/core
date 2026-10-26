@@ -42,8 +42,11 @@
 #include <utility>
 #include <vector>
 
+using llvm::Error;
+using llvm::Expected;
+
 namespace qdmi::detail {
-llvm::Error validateDeviceId(const std::string_view id) {
+Error validateDeviceId(const std::string_view id) {
   if (id.empty()) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            "Device definition ID must not be empty");
@@ -52,7 +55,7 @@ llvm::Error validateDeviceId(const std::string_view id) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            "Device definition ID must not contain NUL");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
 namespace {
@@ -84,19 +87,19 @@ struct DeviceManifestState {
   return std::string(source) + ":" + std::string(path);
 }
 
-llvm::Error requireObject(const Json& value, const std::string_view source,
-                          const std::string_view path) {
+Error requireObject(const Json& value, const std::string_view source,
+                    const std::string_view path) {
   if (value.getAsObject() == nullptr) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            sourceLabel(source, path) + " must be an object");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Error
-rejectUnknownKeys(const Json& value,
-                  const std::initializer_list<std::string_view> allowed,
-                  const std::string_view source, const std::string_view path) {
+Error rejectUnknownKeys(const Json& value,
+                        const std::initializer_list<std::string_view> allowed,
+                        const std::string_view source,
+                        const std::string_view path) {
   for (const auto& [key, unused] : *value.getAsObject()) {
     static_cast<void>(unused);
     if (std::ranges::find(allowed, llvm::StringRef(key).str()) ==
@@ -107,10 +110,10 @@ rejectUnknownKeys(const Json& value,
                                  llvm::StringRef(key).str() + "'");
     }
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
-[[nodiscard]] llvm::Expected<std::optional<std::string>>
+[[nodiscard]] Expected<std::optional<std::string>>
 optionalString(const Json& value, const std::string& key,
                const std::string_view source, const std::string& path) {
   const auto* const it = value.getAsObject()->get(key);
@@ -133,7 +136,7 @@ resolvePath(std::filesystem::path path, const std::filesystem::path& base) {
   return path.lexically_normal();
 }
 
-[[nodiscard]] llvm::Expected<DeviceSessionConfig>
+[[nodiscard]] Expected<DeviceSessionConfig>
 parseSessionPatch(const Json& value, const std::string_view source,
                   const std::string& path, const std::filesystem::path& base) {
   if (auto error = requireObject(value, source, path)) {
@@ -249,7 +252,7 @@ parseSessionPatch(const Json& value, const std::string_view source,
   return patch;
 }
 
-[[nodiscard]] llvm::Expected<DefinitionPatch>
+[[nodiscard]] Expected<DefinitionPatch>
 parseDevicePatch(const Json& value, const std::string_view source,
                  const std::string& path, const std::filesystem::path& base) {
   if (auto error = requireObject(value, source, path)) {
@@ -323,7 +326,7 @@ parseDevicePatch(const Json& value, const std::string_view source,
   return patch;
 }
 
-[[nodiscard]] llvm::Expected<std::vector<DefinitionPatch>>
+[[nodiscard]] Expected<std::vector<DefinitionPatch>>
 parseConfiguration(const Json& root, const std::string_view source,
                    const std::filesystem::path& base) {
   if (auto error = requireObject(root, source, "$")) {
@@ -380,8 +383,8 @@ parseConfiguration(const Json& root, const std::string_view source,
   return patches;
 }
 
-[[nodiscard]] llvm::Expected<Json> parseJson(std::string_view text,
-                                             const std::string_view source) {
+[[nodiscard]] Expected<Json> parseJson(std::string_view text,
+                                       const std::string_view source) {
   auto value = llvm::json::parse(text);
   if (!value) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
@@ -391,7 +394,7 @@ parseConfiguration(const Json& root, const std::string_view source,
   return std::move(*value);
 }
 
-[[nodiscard]] llvm::Expected<Json> readJson(const std::filesystem::path& path) {
+[[nodiscard]] Expected<Json> readJson(const std::filesystem::path& path) {
   auto source = pathToString(path);
   if (!source) {
     return source.takeError();
@@ -412,11 +415,11 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
   target.source = source.source;
 }
 
-llvm::Error appendIfFile(std::vector<std::filesystem::path>& files,
-                         const std::filesystem::path& path) {
+Error appendIfFile(std::vector<std::filesystem::path>& files,
+                   const std::filesystem::path& path) {
   const auto& absolute = path;
   if (absolute.empty()) {
-    return llvm::Error::success();
+    return Error::success();
   }
   auto filename = pathToString(absolute);
   if (!filename) {
@@ -425,21 +428,21 @@ llvm::Error appendIfFile(std::vector<std::filesystem::path>& files,
   if (llvm::sys::fs::is_regular_file(*filename)) {
     files.emplace_back(absolute);
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
-llvm::Error appendFragments(std::vector<std::filesystem::path>& files,
-                            const std::filesystem::path& directory) {
+Error appendFragments(std::vector<std::filesystem::path>& files,
+                      const std::filesystem::path& directory) {
   const auto& absolute = directory;
   if (absolute.empty()) {
-    return llvm::Error::success();
+    return Error::success();
   }
   auto filename = pathToString(absolute);
   if (!filename) {
     return filename.takeError();
   }
   if (!llvm::sys::fs::is_directory(*filename)) {
-    return llvm::Error::success();
+    return Error::success();
   }
   std::vector<std::filesystem::path> found;
   std::error_code error;
@@ -465,10 +468,10 @@ llvm::Error appendFragments(std::vector<std::filesystem::path>& files,
   }
   std::ranges::sort(found);
   files.insert(files.end(), found.begin(), found.end());
-  return llvm::Error::success();
+  return Error::success();
 }
 
-[[nodiscard]] llvm::Expected<std::optional<std::filesystem::path>>
+[[nodiscard]] Expected<std::optional<std::filesystem::path>>
 nearestProjectConfiguration(std::filesystem::path directory) {
   while (!directory.empty()) {
     auto dedicated = directory / "qdmi.json";
@@ -495,7 +498,7 @@ nearestProjectConfiguration(std::filesystem::path directory) {
   return std::optional<std::filesystem::path>{};
 }
 
-[[nodiscard]] llvm::Expected<std::vector<std::filesystem::path>>
+[[nodiscard]] Expected<std::vector<std::filesystem::path>>
 discoverFiles(const std::filesystem::path& cwd) {
   std::vector<std::filesystem::path> files;
   auto module = moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
@@ -583,7 +586,7 @@ discoverFiles(const std::filesystem::path& cwd) {
   return files;
 }
 
-[[nodiscard]] llvm::Expected<qdmi::DeviceDefinition>
+[[nodiscard]] Expected<qdmi::DeviceDefinition>
 materialize(const DefinitionPatch& patch) {
   if (!patch.library || patch.library->empty()) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
@@ -725,7 +728,7 @@ void rollbackDeviceManifestFreeze() {
   state.frozen = false;
 }
 
-llvm::Expected<DeviceRegistry> DeviceRegistry::discover() {
+Expected<DeviceRegistry> DeviceRegistry::discover() {
   llvm::SmallString<256> directory;
   if (const auto filesystemError = llvm::sys::fs::current_path(directory)) {
     return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot read current directory: " +
@@ -742,7 +745,7 @@ llvm::Expected<DeviceRegistry> DeviceRegistry::discover() {
   std::map<std::string, DefinitionPatch> merged;
   const auto mergePatches =
       [&merged](const Json& root, const std::string_view source,
-                const std::filesystem::path& base) -> llvm::Error {
+                const std::filesystem::path& base) -> Error {
     auto result = parseConfiguration(root, source, base);
     if (!result) {
       return result.takeError();
@@ -754,7 +757,7 @@ llvm::Expected<DeviceRegistry> DeviceRegistry::discover() {
         merged.emplace(patch.id, std::move(patch));
       }
     }
-    return llvm::Error::success();
+    return Error::success();
   };
   auto staged = freezeDeviceManifests();
   files->insert(files->begin(), staged.begin(), staged.end());
