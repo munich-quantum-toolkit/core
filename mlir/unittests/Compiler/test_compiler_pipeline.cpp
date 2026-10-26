@@ -2313,7 +2313,7 @@ bit[2] c = measure q;
   auto direct = std::move(*directQC).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(direct));
   EXPECT_FALSE(directQC->isValid());
-  EXPECT_TRUE(direct->source().starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(direct->source().starts_with("OPENQASM 3;\n"));
   EXPECT_EQ(direct->str(), direct->source());
   EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
   EXPECT_TRUE(llvm::errorToBool(
@@ -2346,7 +2346,7 @@ bit[2] c = measure q;
   MQT_ASSERT_SUCCESS(result);
   ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*result));
   const auto& optimized = std::get<OpenQASMProgram>(*result);
-  EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3;\n"));
   auto reparsed = QCProgram::fromOpenQASMString(optimized.source());
   MQT_ASSERT_SUCCESS(reparsed);
   auto adaptiveQIR = std::move(*reparsed).intoQIR(QIRProfile::Adaptive);

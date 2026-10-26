@@ -70,6 +70,12 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Classical arrays           | Global, fixed-size arrays of `bool`, `int`, `uint`, `float`, and `angle`, with up to seven dimensions and the scalar widths above.                                                                                                                                 |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and other array forms are diagnosed.                                                                                                                                                                     |
 
+OpenQASM 2 `opaque` declarations become private external functions with scalar
+parameters followed by qubit operands. OpenQASM 3 export preserves calls to
+these gates; the receiver must supply their definitions. External gate names
+must be unique, match any language or included standard-library signature, and
+not conflict with generated gate definitions.
+
 The importer recognizes custom gates containing unitary gate calls and
 constant-range `for` loops as unitary, including nested loops and their callers.
 This classification is conservative: an unclassified gate may have a unitary
@@ -484,16 +490,17 @@ Resources must be allocated outside loops and conditionals. Unsupported scalar
 types, operations, captures, or runtime gate parameters produce a
 target-specific diagnostic without writing partial output.
 
-The exporter writes an OpenQASM 3.1 version declaration and includes
-`stdgates.inc`. Controlled gates use compact standard-library names such as
-`cx`, `cz`, and `ccx` when available, and `ctrl` modifiers otherwise. Gates in
-MQT Core's compatibility catalog, such as `r`, `rzz`, and `ecr`, receive
-definitions under their catalog names. Strict consumers use those definitions.
-MQT Core's default compatibility mode recognizes a definition with the catalog
-name and signature and imports calls directly as the corresponding native QC
-operation; the definition body is deliberately ignored. A same-name definition
-with a mismatched signature is rejected. Strict mode always analyzes the custom
-definition normally.
+The exporter emits `OPENQASM 3;` for its OpenQASM 3.0 subset and `OPENQASM 3.1;`
+when it emits a `switch`, including switches generated from indexed tables. It
+includes `stdgates.inc`. Controlled gates use compact standard-library names
+such as `cx`, `cz`, and `ccx` when available, and `ctrl` modifiers otherwise.
+Gates in MQT Core's compatibility catalog, such as `r`, `rzz`, and `ecr`,
+receive definitions under their catalog names. Strict consumers use those
+definitions. MQT Core's default compatibility mode recognizes a definition with
+the catalog name and signature and imports calls directly as the corresponding
+native QC operation; the definition body is deliberately ignored. A same-name
+definition with a mismatched signature is rejected. Strict mode always analyzes
+the custom definition normally.
 
 The compatibility spelling `u(theta, phi, lambda)` has the exact QC and Qiskit
 U-gate matrix. The standardized `U`, `u2`, `u3`, and `cu3` spellings retain
@@ -542,16 +549,16 @@ expressions emitted by the exporter, including Boolean/integer conversions.
 ### Export limitations
 
 Export requires one defined entry function whose arguments are named `f64`
-inputs. Functions that remain after helper inlining must be private, defined
-gate functions with leading `f64` parameters followed by scalar qubit arguments
-and no results. Gate functions may contain supported scalar expressions, quantum
-operations, calls, and loops. Measurement, reset, barrier, allocation, classical
-storage, conditionals, switches, and `arith.select` are rejected in gate
-functions. For-loop bounds in gate functions must remain constant. Gate while
-loops require a pure condition region and no loop-carried values.
+inputs. Functions that remain after helper inlining must be private gate
+functions with leading `f64` parameters followed by scalar qubit arguments and
+no results. Defined gate functions may contain supported scalar expressions,
+quantum operations, calls, and loops. Measurement, reset, barrier, allocation,
+classical storage, conditionals, switches, and `arith.select` are rejected in
+gate functions. For-loop bounds in gate functions must remain constant. Gate
+while loops require a pure condition region and no loop-carried values.
 
 The exporter rejects arbitrary CFGs, multi-block SCF regions, recursive or
-unresolved calls, dynamic for-loop steps, unsigned `scf.for` comparisons,
+undeclared calls, dynamic for-loop steps, unsigned `scf.for` comparisons,
 general memrefs, unsupported integer widths, unknown operations, and non-unitary
 content inside modifier regions. CBit loads, stores, whole-register reads and
 writes, fixed-width bitwise operations, dynamic bit indices, SCF results, and

@@ -216,7 +216,11 @@ public:
     }
     bodyOutput.flush();
 
-    sourceStream << "OPENQASM 3.1;\n";
+    sourceStream << "OPENQASM 3";
+    if (requiredMinorVersion != 0) {
+      sourceStream << '.' << requiredMinorVersion;
+    }
+    sourceStream << ";\n";
     if (!nativeTarget_) {
       sourceStream << "include \"stdgates.inc\";\n";
     }
@@ -243,6 +247,7 @@ private:
   DenseMap<Operation*, std::string> gateNames_;
   SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
+  llvm::StringSet<> externalGateNames_;
   llvm::StringSet<> declaredRegisterNames;
   llvm::StringSet<> fixedHelpers;
   std::string uHelperName_;
@@ -259,6 +264,7 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
   bool supportsDispatch = true;
+  unsigned requiredMinorVersion = 0;
   int64_t numArrayElements_ = 0;
   DenseMap<Operation*, ArrayAssignment> arrayAssignments_;
   DenseSet<Operation*> elidedArrayOps_;
@@ -636,6 +642,47 @@ private:
     if (function.isExternal() || function.getBody().getBlocks().size() != 1) {
       return fail(function,
                   "expected one defined function with one entry block");
+    }
+    // External QC gate signatures denote operations supplied by the receiver.
+    for (auto declaration : functions) {
+      if (!declaration.isExternal()) {
+        continue;
+      }
+      if (!declaration.isPrivate() || !hasGateSignature(declaration)) {
+        return fail(declaration,
+                    "external OpenQASM gates require a private gate signature");
+      }
+      const auto sourceName = declaration->getAttrOfType<StringAttr>(
+          mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+      const auto name =
+          sourceName ? sourceName.getValue() : declaration.getName();
+      if (!openqasm::frontend::isValidIdentifier(name)) {
+        return fail(declaration,
+                    "external gate name must be an OpenQASM identifier");
+      }
+      if (!externalGateNames_.insert(name).second) {
+        return fail(declaration, "external gate names must be unique");
+      }
+      using openqasm::frontend::GateAvailability;
+      if (const auto* gate = openqasm::frontend::lookupGate(name);
+          gate != nullptr &&
+          (gate->availability == GateAvailability::Language ||
+           (!nativeTarget_ &&
+            (gate->availability == GateAvailability::StandardLibrary ||
+             gate->availability ==
+                 GateAvailability::StandardLibraryAndQELib1)))) {
+        const auto parameterCount =
+            llvm::count_if(declaration.getArgumentTypes(),
+                           [](Type type) { return type.isF64(); });
+        if (!std::cmp_equal(parameterCount, gate->parameterCount) ||
+            declaration.getNumArguments() !=
+                gate->parameterCount + gate->qubitCount()) {
+          return fail(declaration,
+                      "external gate conflicts with its OpenQASM signature");
+        }
+      }
+      gateNames_.try_emplace(declaration, name.str());
+      usedNames.insert(name);
     }
     if (failed(prepareFunctions())) {
       return failure();
@@ -1333,6 +1380,7 @@ private:
     if (failed(argument)) {
       return failure();
     }
+    requiredMinorVersion = std::max(requiredMinorVersion, 1U);
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto& [attribute, slots] : cases) {
@@ -2381,6 +2429,7 @@ private:
     if (cases.empty()) {
       return emitResultBlock(switchOp.getDefaultBlock(), switchOp.getResults());
     }
+    requiredMinorVersion = std::max(requiredMinorVersion, 1U);
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto [index, caseValue] : llvm::enumerate(cases)) {
@@ -2869,6 +2918,12 @@ private:
     }
     if (gate->availability ==
         openqasm::frontend::GateAvailability::Compatibility) {
+      if (externalGateNames_.contains(symbol)) {
+        emitError(function.getLoc())
+            << "OpenQASM emission error: external gate '" << symbol
+            << "' conflicts with a generated gate definition";
+        return failure();
+      }
       fixedHelpers.insert(symbol);
     }
     return symbol.str();
