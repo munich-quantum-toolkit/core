@@ -51,10 +51,10 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#endif // _WIN32
 
 using llvm::Error;
 using llvm::Expected;
-#endif // _WIN32
 
 namespace qdmi {
 #ifdef _WIN32
