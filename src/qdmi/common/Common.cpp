@@ -28,7 +28,11 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
+#ifdef _WIN32
+#include <cstddef>
+#endif
 #include <cstdio>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <string_view>
