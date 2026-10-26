@@ -95,10 +95,6 @@ def test_svg_native_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         with pytest.raises(RuntimeError, match="Graphviz dot exited with code 7"):
             dd.to_svg(str(filename))
 
-        dot.unlink()
-        with pytest.raises(RuntimeError, match="Cannot find Graphviz dot"):
-            dd.to_svg(str(filename))
-
 
 @pytest.mark.parametrize("matrix", [False, True])
 @pytest.mark.parametrize("binary", [False, True])

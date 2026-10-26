@@ -715,76 +715,38 @@ TEST(DDPackageTest, MatrixSerializationTest) {
 }
 
 TEST(DDPackageTest, SerializationErrors) {
-  auto dd = value(Package::create(2));
-
-  auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
-  auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  auto const zeroState = value(makeZeroState(2, *dd));
-  auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
-
-  // test non-existing file
-  EXPECT_EQ(::mqt::test::errorCode([&] {
-              return serialize(bellState,
-                               "./path/that/does/not/exist/filename.dd");
-            }),
-            std::errc::io_error);
-  EXPECT_EQ(::mqt::test::errorCode([&] {
-              return dd->deserializeFile<vNode>(
-                  "./path/that/does/not/exist/filename.dd", true);
-            }),
+  auto package = ::mqt::test::value(Package::create(1));
+  const mqt::test::TemporaryDirectory temp;
+  const auto missing = (temp.path() / "missing" / "state.dd").string();
+  EXPECT_EQ(
+      ::mqt::test::errorCode([&] { return serialize(vEdge::one(), missing); }),
+      std::errc::io_error);
+  EXPECT_EQ(::mqt::test::errorCode(
+                [&] { return package->deserializeFile<vNode>(missing, true); }),
             std::errc::io_error);
 
-  // test wrong version number
-  std::string ssStorage;
-  llvm::raw_string_ostream ss(ssStorage);
-  ss << 2 << "\n";
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return dd->deserialize<vNode>(ss.str(), false); }),
-            std::errc::state_not_recoverable);
-  ss << 2 << "\n";
-  EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return dd->deserialize<mNode>(ss.str(), false); }),
-            std::errc::state_not_recoverable);
+  for (const auto* input :
+       {"2\n1\n", "1\nnot_complex\n", "1\n1\nno_node_here\n"}) {
+    SCOPED_TRACE(input);
+    EXPECT_EQ(::mqt::test::errorCode(
+                  [&] { return package->deserialize<vNode>(input); }),
+              std::errc::state_not_recoverable);
+    EXPECT_EQ(::mqt::test::errorCode(
+                  [&] { return package->deserialize<mNode>(input); }),
+              std::errc::state_not_recoverable);
+  }
 
-  ss.str().clear();
-  std::remove_const_t<decltype(SERIALIZATION_VERSION)> version = 2;
-  ss.write(reinterpret_cast<const char*>(&version),
-           sizeof(decltype(SERIALIZATION_VERSION)));
+  std::string binary;
+  llvm::raw_string_ostream stream(binary);
+  const uint64_t version = SERIALIZATION_VERSION + 1;
+  stream.write(reinterpret_cast<const char*>(&version), sizeof(version));
+  ComplexValue{1., 0.}.writeBinary(stream);
   EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return dd->deserialize<vNode>(ss.str(), true); }),
+                [&] { return package->deserialize<vNode>(binary, true); }),
             std::errc::state_not_recoverable);
-  ss.write(reinterpret_cast<const char*>(&version),
-           sizeof(decltype(SERIALIZATION_VERSION)));
   EXPECT_EQ(::mqt::test::errorCode(
-                [&] { return dd->deserialize<mNode>(ss.str(), true); }),
+                [&] { return package->deserialize<mNode>(binary, true); }),
             std::errc::state_not_recoverable);
-
-  // test wrong format
-  ss.str().clear();
-  ss << "1\n";
-  ss << "not_complex\n";
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return dd->deserialize<vNode>(ss.str()); }),
-      std::errc::state_not_recoverable);
-  ss << "1\n";
-  ss << "not_complex\n";
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return dd->deserialize<mNode>(ss.str()); }),
-      std::errc::state_not_recoverable);
-
-  ss.str().clear();
-  ss << "1\n";
-  ss << "1.0\n";
-  ss << "no_node_here\n";
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return dd->deserialize<vNode>(ss.str()); }),
-      std::errc::state_not_recoverable);
-  ss << "1\n";
-  ss << "1.0\n";
-  ss << "no_node_here\n";
-  EXPECT_EQ(
-      ::mqt::test::errorCode([&] { return dd->deserialize<mNode>(ss.str()); }),
-      std::errc::state_not_recoverable);
 }
 
 TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
