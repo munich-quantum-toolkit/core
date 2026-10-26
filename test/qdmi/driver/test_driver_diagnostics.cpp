@@ -9,6 +9,7 @@
  */
 
 #include "Driver.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -22,14 +23,8 @@ namespace {
 TEST(DriverDiagnosticDeathTest,
      InvalidConfigurationDoesNotEscapeSessionAllocation) {
   const auto probe = [] {
-#ifdef _WIN32
-    if (_putenv_s("MQT_CORE_QDMI_CONFIG_JSON", "invalid-json") != 0) {
-#else
-    // NOLINTNEXTLINE(misc-include-cleaner)
-    if (setenv("MQT_CORE_QDMI_CONFIG_JSON", "invalid-json", 1) != 0) {
-#endif
-      std::_Exit(1);
-    }
+    const mqt::test::ScopedEnvironmentVariable config(
+        "MQT_CORE_QDMI_CONFIG_JSON", "invalid-json");
     if (QDMI_session_alloc(nullptr) != QDMI_ERROR_INVALIDARGUMENT) {
       std::_Exit(2);
     }
@@ -43,16 +38,8 @@ TEST(DriverDiagnosticDeathTest,
 }
 
 TEST(DriverDiagnosticTest, ReportsSkippedConfiguredDevice) {
-#ifdef _WIN32
-  ASSERT_EQ(_putenv_s("MQT_CORE_QDMI_CONFIG_FILE",
-                      MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE),
-            0);
-#else
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  ASSERT_EQ(setenv("MQT_CORE_QDMI_CONFIG_FILE",
-                   MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE, 1),
-            0);
-#endif
+  const mqt::test::ScopedEnvironmentVariable config(
+      "MQT_CORE_QDMI_CONFIG_FILE", MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE);
 
   testing::internal::CaptureStderr();
   QDMI_Session session = nullptr;
