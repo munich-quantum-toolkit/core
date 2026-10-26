@@ -67,7 +67,7 @@ struct QuantumProgramInfo {
   /// All operations in the module, as in Program::operationCounts().
   std::map<std::string, size_t> operationCounts;
   /// Depth of the program
-  size_t depth = 0;
+  std::optional<size_t> depth;
 };
 
 /// The QIR profile represented by a QIR program.
@@ -257,7 +257,7 @@ public:
   [[nodiscard]] size_t numTwoQubitGates() const;
 
   /// Calculate the depth
-  [[nodiscard]] size_t depth() const;
+  [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.
   ///
@@ -390,7 +390,7 @@ public:
   [[nodiscard]] size_t numTwoQubitGates() const;
 
   /// Calculate the depth
-  [[nodiscard]] size_t depth() const;
+  [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.
   ///

@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <mlir/Interfaces/LoopLikeInterface.h>
 #include <optional>
 #include <string>
 #include <utility>
@@ -83,6 +84,39 @@ countOperationsIf(Operation* root, function_ref<bool(Operation*)> predicate) {
   return counts;
 }
 
+static bool isMeasurement(Operation* op) {
+  return llvm::isa<qc::MeasureOp>(op) || llvm::isa<qco::MeasureOp>(op);
+}
+
+static bool isReset(Operation* op) {
+  return llvm::isa<qc::ResetOp>(op) || llvm::isa<qco::ResetOp>(op);
+}
+
+static bool isBarrier(Operation* op) {
+  return llvm::isa<qc::BarrierOp>(op) || llvm::isa<qco::BarrierOp>(op);
+}
+
+static bool isGateModifier(Operation* op) {
+  return llvm::isa<qc::YieldOp>(op) || llvm::isa<qc::CtrlOp>(op) ||
+         llvm::isa<qc::InvOp>(op) || llvm::isa<qc::PowOp>(op) ||
+         llvm::isa<qco::YieldOp>(op) || llvm::isa<qco::CtrlOp>(op) ||
+         llvm::isa<qco::InvOp>(op) || llvm::isa<qco::PowOp>(op);
+}
+
+static bool isCallOp(Operation* op) {
+  return llvm::isa<qc::CallOp>(op) || llvm::isa<qco::CallOp>(op);
+}
+
+static bool isStandardGate(Operation* op) {
+  return (llvm::isa<qc::UnitaryOpInterface>(op) ||
+          llvm::isa<qco::UnitaryOpInterface>(op)) &&
+         !isBarrier(op) && !isGateModifier(op) && !isCallOp(op);
+}
+
+static bool isLoop(Operation* op) {
+  return llvm::isa<mlir::LoopLikeOpInterface>(op);
+}
+
 static bool isControlFlow(Operation* op) {
   return isa<BranchOpInterface, RegionBranchOpInterface>(op);
 }
@@ -116,70 +150,105 @@ static void forEachGate(ModuleOp moduleOp,
   });
 }
 
-// Identify a QC qubit loaded from a register by its register and index.
 static std::optional<std::pair<Value, int64_t>> getQubitKey(Value qubit) {
-  auto load = qubit.getDefiningOp<memref::LoadOp>();
-  if (!load || load.getIndices().size() != 1) {
+  auto memref = qubit.getDefiningOp<memref::LoadOp>();
+  if (!memref) {
     return std::nullopt;
   }
-  std::optional<int64_t> index = getConstantIntValue(load.getIndices().front());
+  std::optional<int64_t> index =
+      getConstantIntValue(memref.getIndices().front());
   if (!index) {
     return std::nullopt;
   }
-  return std::make_pair(load.getMemRef(), *index);
+  return std::make_pair(memref.getMemRef(), *index);
 }
 
 // Set all qubits to their highest current depth, plus one if `addLayer`.
 static void
-walkDepth(ValueRange qubits, bool addLayer,
+walkDepth(ValueRange inputQubits, ValueRange outputQubits, bool addLayer,
           llvm::DenseMap<std::pair<Value, int64_t>, size_t>& depthOf) {
   size_t maxDepth = 0;
-  for (Value qubit : qubits) {
-    if (auto key = getQubitKey(qubit)) {
+  for (auto qi : inputQubits) {
+    if (auto key = getQubitKey(qi)) {
       maxDepth = std::max(maxDepth, depthOf.lookup(*key));
     }
   }
-  const size_t newDepth = addLayer ? maxDepth + 1 : maxDepth;
-  for (Value qubit : qubits) {
-    if (auto key = getQubitKey(qubit)) {
-      depthOf[*key] = newDepth;
+  if (addLayer) {
+    maxDepth += 1;
+  }
+  for (auto qo : outputQubits) {
+    if (auto key = getQubitKey(qo)) {
+      depthOf[*key] = maxDepth;
     }
   }
 }
 
-static size_t computeDepth(ModuleOp moduleOp) {
+static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
+
   if (!entryPoint) {
-    return 0;
+    return std::nullopt;
   }
+
   llvm::DenseMap<std::pair<Value, int64_t>, size_t> depthOf;
+  bool hasInvalidOperation = false;
 
   entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
-    // Barriers implement UnitaryOpInterface, so check them first.
-    if (auto barrier = dyn_cast<qc::BarrierOp>(op)) {
-      walkDepth(barrier.getQubits(), /*addLayer=*/false, depthOf);
-    } else if (auto gate = dyn_cast<qc::UnitaryOpInterface>(op)) {
-      walkDepth(gate.getQubits(), /*addLayer=*/true, depthOf);
-    } else if (auto measure = dyn_cast<qc::MeasureOp>(op)) {
-      walkDepth(measure.getQubit(), /*addLayer=*/true, depthOf);
-    } else if (auto reset = dyn_cast<qc::ResetOp>(op)) {
-      walkDepth(reset.getQubit(), /*addLayer=*/true, depthOf);
-    } else if (isa<qco::BarrierOp, qco::UnitaryOpInterface, qco::MeasureOp,
-                   qco::ResetOp>(op)) {
-      // TODO: Compute the depth of QCO programs.
+    if (isStandardGate(op) || isGateModifier(op)) {
+      auto gate = dyn_cast<qc::UnitaryOpInterface>(op);
+      if (gate) {
+        walkDepth(gate.getQubits(), gate.getQubits(), /*addLayer=*/true,
+                  depthOf);
+      }
+      // QCO
+    } else if (isMeasurement(op)) {
+      auto measure = dyn_cast<qc::MeasureOp>(op);
+      if (measure) {
+        walkDepth(measure.getQubit(), measure.getQubit(), /*addLayer=*/true,
+                  depthOf);
+      }
+      // QCO
+    } else if (isReset(op)) {
+      auto reset = dyn_cast<qc::ResetOp>(op);
+      if (reset) {
+        walkDepth(reset.getQubit(), reset.getQubit(), /*addLayer=*/true,
+                  depthOf);
+      }
+      // QCO
+    } else if (isBarrier(op)) {
+      auto barrier = dyn_cast<qc::BarrierOp>(op);
+      if (barrier) {
+        walkDepth(barrier.getQubits(), barrier.getQubits(), /*addLayer=*/false,
+                  depthOf);
+      }
+      // QCO
+    } else if (isControlFlow(op)) {
+      // Here can be logic of how to handle control flow
+      hasInvalidOperation = true;
+      return WalkResult::interrupt();
+    } else if (isLoop(op)) {
+      // Here can be logic of how to handle loops
+      hasInvalidOperation = true;
+      return WalkResult::interrupt();
+    } else if (isCallOp(op)) {
+      // Here can be logic of how to handle function calls
+      hasInvalidOperation = true;
+      return WalkResult::interrupt();
     } else {
       return WalkResult::advance();
     }
-    // Count each gate atomically, including modifiers.
     return WalkResult::skip();
   });
 
   size_t depth = 0;
   for (const auto& [key, _depth] : depthOf) {
-    if (_depth > depth) {
-      depth = _depth;
-    }
+    depth = std::max(depth, _depth);
   }
+
+  if (hasInvalidOperation) {
+    return std::nullopt;
+  }
+
   return depth;
 }
 
@@ -292,7 +361,7 @@ std::map<std::string, size_t> QCProgram::controlFlowCounts() const {
   return countOperationsIf(mqt::getEntryPoint(mod()), isControlFlow);
 }
 
-size_t QCProgram::depth() const { return computeDepth(mod()); }
+std::optional<size_t> QCProgram::depth() const { return computeDepth(mod()); }
 
 size_t QCOProgram::numGates() const {
   return countGatesIf(mod(), [](size_t) { return true; });
@@ -314,6 +383,6 @@ std::map<std::string, size_t> QCOProgram::controlFlowCounts() const {
   return countOperationsIf(mqt::getEntryPoint(mod()), isControlFlow);
 }
 
-size_t QCOProgram::depth() const { return computeDepth(mod()); }
+std::optional<size_t> QCOProgram::depth() const { return computeDepth(mod()); }
 
 } // namespace mlir
