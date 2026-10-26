@@ -74,9 +74,13 @@ QIR 2.1 and whether dynamic resource management is used.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions
-consume that program unless `copy=True` is set. The `compile_program` function
-also consumes typed MLIR programs unless `copy=True` is set, and runs the
-coordinated optimization pipeline.
+consume that program unless `copy=True` is set. They lower prepared QC without
+inlining calls, expanding modifiers, or optimizing the resulting QIR. Calls with
+quantum-register arguments must already be inlined. Base conversion requires
+straight-line quantum operations; Adaptive conversion retains loops. Use
+`compile_program` for coordinated optimization, inlining, modifier expansion,
+and bounded Base loop unrolling. It also consumes typed MLIR programs unless
+`copy=True` is set.
 
 ## Execute LLVM text or bitcode
 

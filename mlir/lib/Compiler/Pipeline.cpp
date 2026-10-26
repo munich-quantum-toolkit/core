@@ -21,6 +21,7 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
@@ -95,8 +96,13 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
 
 FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
   auto storage = std::move(*this).releaseStorage();
-  if (failed(runWithPassManager(*storage.mod, populateQCExportPipeline,
-                                "failed to prepare QC for OpenQASM export"))) {
+  if (failed(runWithPassManager(
+          *storage.mod,
+          [](OpPassManager& pm) {
+            pm.addPass(mqt::createSimplifyClassicalControl());
+            pm.addPass(mqt::createPromoteClassicalMemory());
+          },
+          "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
   auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
@@ -115,14 +121,14 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   if (failed(runWithPassManager(
           moduleOp,
           [&](OpPassManager& pm) {
-            populateQIRPreparationPipeline(
-                pm, payload.materialize(*moduleOp.getContext()));
             if (profile == QIRProfile::Adaptive) {
+              pm.addPass(mqt::createPromoteClassicalMemory());
               pm.addPass(createQCToQIRAdaptive());
             } else {
               pm.addPass(createQCToQIRBase());
             }
-            populateQIRCleanupPipeline(pm, profile == QIRProfile::Adaptive);
+            pm.addPass(qir::createQIRSetAttributesAndMetadata(
+                {profile == QIRProfile::Adaptive}));
           },
           "failed to convert QC to QIR"))) {
     return failure();
@@ -529,6 +535,10 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
     return CompilerProgram(std::move(*qc));
   }
   if (output == ProgramFormat::OpenQASM3) {
+    if (failed(runWithPassManager(qc->module(), populateQCExportPipeline,
+                                  "failed to clean up compiled QC"))) {
+      return failure();
+    }
     auto source = std::move(*qc).intoOpenQASM3();
     if (failed(source)) {
       return failure();
@@ -542,8 +552,21 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   const auto profile = output == ProgramFormat::QIRAdaptive
                            ? QIRProfile::Adaptive
                            : QIRProfile::Base;
+  if (failed(runWithPassManager(
+          qc->module(),
+          [&](OpPassManager& pm) {
+            const auto payload =
+                llvm::cantFail(PayloadSpecification::forProgramFormat(
+                    profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
+                                                    : ProgramFormat::QIRBase));
+            populateQIRPreparationPipeline(
+                pm, payload.materialize(*qc->module().getContext()));
+          },
+          "failed to prepare compiled QC for QIR", options))) {
+    return failure();
+  }
   auto qir = std::move(*qc).intoQIR(profile);
-  if (failed(qir)) {
+  if (failed(qir) || failed(qir->cleanup())) {
     return failure();
   }
   if (output == ProgramFormat::IQMJSON) {

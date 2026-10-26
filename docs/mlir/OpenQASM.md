@@ -361,8 +361,9 @@ mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
 The compiler-pipeline path performs target compilation when requested, runs the
 QCO optimization pipeline, converts back to QC, and then exports. Calling
 {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` or
-{code}`mlir::QCProgram::intoOpenQASM3` applies the QC cleanup pipeline but
-bypasses that QCO optimization round trip. Both consume the input, including on
+{code}`mlir::QCProgram::intoOpenQASM3` legalizes classical memory and control
+flow for export, preserving quantum operations and register sizes. Use the
+compiler pipeline to optimize the program. Both consume the input, including on
 failure. In Python, set `copy=True` to preserve it. The low-level translation
 API also consumes its module; only the output stream is unchanged on failure.
 

@@ -520,7 +520,7 @@ def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
 
     assert round_tripped.num_clbits == 0
     assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
-    assert program.to_qir(QIRProfile.BASE).is_valid
+    assert compile_program(program, output=OutputFormat.QIR_BASE).is_valid
 
 
 def test_compile_program_convert_to_qir() -> None:

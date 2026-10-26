@@ -773,9 +773,11 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   ASSERT_TRUE(mlir::succeeded(qco));
   auto restored = std::move(*qco).intoQC();
   ASSERT_TRUE(mlir::succeeded(restored));
-  auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(mlir::succeeded(qir));
-  auto ir = std::move(*qir).intoLLVMIR();
+  auto compiled =
+      mlir::runDefaultPipeline(mlir::CompilerInput{std::move(*restored)},
+                               mlir::ProgramFormat::QIRAdaptive);
+  MQT_ASSERT_SUCCESS(compiled);
+  auto ir = std::get<mlir::QIRProgram>(std::move(*compiled)).intoLLVMIR();
   ASSERT_TRUE(mlir::succeeded(ir));
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
