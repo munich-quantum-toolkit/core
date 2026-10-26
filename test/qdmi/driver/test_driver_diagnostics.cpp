@@ -18,13 +18,15 @@
 #include <cstdlib>
 #include <vector>
 
+using mqt::test::ScopedEnvironmentVariable;
+
 namespace {
 
 TEST(DriverDiagnosticDeathTest,
      InvalidConfigurationDoesNotEscapeSessionAllocation) {
   const auto probe = [] {
-    const mqt::test::ScopedEnvironmentVariable config(
-        "MQT_CORE_QDMI_CONFIG_JSON", "invalid-json");
+    const ScopedEnvironmentVariable config("MQT_CORE_QDMI_CONFIG_JSON",
+                                           "invalid-json");
     if (QDMI_session_alloc(nullptr) != QDMI_ERROR_INVALIDARGUMENT) {
       std::_Exit(2);
     }
@@ -38,8 +40,8 @@ TEST(DriverDiagnosticDeathTest,
 }
 
 TEST(DriverDiagnosticTest, ReportsSkippedConfiguredDevice) {
-  const mqt::test::ScopedEnvironmentVariable config(
-      "MQT_CORE_QDMI_CONFIG_FILE", MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE);
+  const ScopedEnvironmentVariable config("MQT_CORE_QDMI_CONFIG_FILE",
+                                         MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE);
 
   testing::internal::CaptureStderr();
   QDMI_Session session = nullptr;
