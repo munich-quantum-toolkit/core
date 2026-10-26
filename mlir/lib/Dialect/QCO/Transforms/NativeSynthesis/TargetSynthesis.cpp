@@ -12,6 +12,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -487,25 +488,14 @@ static LogicalResult verifyTopology(Operation* root,
 static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
                                          const CompilerTarget& target,
                                          RewriterBase* rewriter = nullptr) {
-  if (failed(rewriter != nullptr
-                 ? mqt::normalizeGlobalPhases(moduleOp, *rewriter)
-                 : mqt::normalizeGlobalPhases(moduleOp))) {
+  IRRewriter defaultRewriter(moduleOp.getContext());
+  auto& activeRewriter = rewriter != nullptr ? *rewriter : defaultRewriter;
+  if (failed(mqt::normalizeGlobalPhases(moduleOp, activeRewriter))) {
     return failure();
   }
-  if (target.supportsOperation("gphase", 0, 1)) {
-    return success();
+  if (!target.supportsOperation("gphase", 0, 1)) {
+    mqt::dropGlobalPhases(moduleOp, activeRewriter);
   }
-  auto entryPoint = mqt::getEntryPoint(moduleOp);
-  if (!entryPoint) {
-    return success();
-  }
-  entryPoint.walk([](GPhaseOp phase) {
-    // Each classical execution path has its own unobservable global phase.
-    // QCO modifiers must retain phases that normalization cannot extract.
-    if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
-      phase.erase();
-    }
-  });
   return success();
 }
 

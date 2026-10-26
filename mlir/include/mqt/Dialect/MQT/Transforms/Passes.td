@@ -44,7 +44,7 @@ def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
   let summary = "Normalize scoped QC and QCO global phases";
   let description = [{
     Combines direct `qc.gphase` and `qco.gphase` operations into at most one
-    operation per basic block, placed immediately before the block terminator.
+    operation per basic block, placed at the last phase contribution.
     Nested regions are normalized independently, except power subtrees, which
     remain unchanged: phase rounding can be amplified by a large exponent.
 
@@ -59,6 +59,23 @@ def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
     Function, CFG, structured-control-flow, and unknown region boundaries are
     preserved. The pass does not scan an enclosing module from individual
     rewrite patterns.
+  }];
+}
+
+def DropGlobalPhases : Pass<"drop-global-phases", "mlir::ModuleOp"> {
+  let summary = "Discard final-program QC and QCO global phases";
+  let description = [{
+    Erases direct global phases in the function marked `mqt.entry_point`,
+    including its classical execution paths. Phases in helper functions and
+    quantum modifier bodies are retained: they can become observable relative
+    phases under coherent control or non-integer powers. Modules without an
+    entry point are unchanged.
+
+    This pass preserves measurement probabilities, not exact statevectors or
+    unitaries. Run it only when the final program's global phase is irrelevant.
+    It does not remove angle producers; subsequent dead-code elimination may
+    remove unused pure computations. Normalize modifiers separately to expose
+    further disposable phases while retaining relative phases.
   }];
 }
 

@@ -8,6 +8,7 @@
 
 add_mlir_library(
   MLIRMQTTransforms
+  DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
   PromoteClassicalMemory.cpp
   SimplifyClassicalControl.cpp
