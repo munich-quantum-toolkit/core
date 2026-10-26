@@ -46,9 +46,17 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   const std::filesystem::path fixture{MQT_CORE_QDMI_INCOMPLETE_DRIVER};
   const auto libraryPath = directory.path() / fixture.filename();
   std::filesystem::copy_file(fixture, libraryPath);
+  // The temporary directory can be on a different Windows drive.
+  const auto previous = std::filesystem::current_path();
+  const auto restore = llvm::make_scope_exit([&] {
+    std::error_code error;
+    std::filesystem::current_path(previous, error);
+    EXPECT_FALSE(error) << error.message();
+  });
+  std::filesystem::current_path(directory.path());
   // Load relative first; the loader may retain the image after dlclose.
   for (const auto& path :
-       {std::filesystem::relative(libraryPath), libraryPath}) {
+       {std::filesystem::path(".") / fixture.filename(), libraryPath}) {
     SCOPED_TRACE(path);
     auto encoded = detail::pathToString(path);
     ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
