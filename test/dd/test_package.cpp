@@ -63,13 +63,17 @@
 #include <vector>
 
 using mqt::test::errorCode;
+using mqt::test::errorMessage;
+using mqt::test::ScopedEnvironmentVariable;
+using mqt::test::TemporaryDirectory;
 using mqt::test::value;
 
 namespace dd {
 namespace {
 template <class Node>
 void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
-  exportToDot(edge, filename, true, true, false, false, false);
+  MQT_ASSERT_SUCCESS(
+      exportToDot(edge, filename, true, true, false, false, false));
   auto input = llvm::MemoryBuffer::getFile(filename);
   ASSERT_TRUE(input);
   EXPECT_FALSE((*input)->getBuffer().empty());
@@ -134,36 +138,34 @@ TEST(DDPackageTest, MatrixDotIdsAreUniqueAndIndependentOfAddresses) {
 
 #ifndef _WIN32
 TEST(DDPackageTest, SvgExportUsesLiteralPathsAndReportsDotFailures) {
-  const mqt::test::TemporaryDirectory temp;
-  const mqt::test::ScopedEnvironmentVariable path("PATH", temp.path().string());
+  const TemporaryDirectory temp;
+  const ScopedEnvironmentVariable path("PATH", temp.path().string());
   const auto executable =
       temp.write("dot", "#!/bin/sh\nprintf 'native dot\\n' > \"$4\"\n");
   std::filesystem::permissions(executable, std::filesystem::perms::owner_exec,
                                std::filesystem::perm_options::add);
   const auto dotDirectory = temp.path() / "folder.with.dot";
   std::filesystem::create_directory(dotDirectory);
-  const auto dotFile = dotDirectory / "測定 with spaces;literal.dot";
+  const auto dotFile = dotDirectory / u8"測定 with spaces;literal.dot";
   auto svgFile = dotFile;
   svgFile.replace_extension(".svg");
 
-  auto packageOwner = value(Package::create(1));
+  auto packageOwner = value(dd::Package::create(1));
   auto& package = *packageOwner;
-  exportToDot(value(makeZeroState(1, package)), dotFile.string());
+  MQT_ASSERT_SUCCESS(
+      exportToDot(value(makeZeroState(1, package)), dotFile.string()));
   auto svg = llvm::MemoryBuffer::getFile(svgFile.string());
   ASSERT_TRUE(svg);
   EXPECT_EQ((*svg)->getBuffer().trim(), "native dot");
   EXPECT_TRUE(std::filesystem::exists(dotFile));
 
   temp.write("dot", "#!/bin/sh\nexit 7\n");
-  try {
-    renderDotToSvg(dotFile.string());
-    FAIL() << "Graphviz failure should throw";
-  } catch (const std::runtime_error& error) {
-    EXPECT_STREQ(error.what(), "Graphviz dot exited with code 7");
-  }
+  EXPECT_EQ(errorMessage([&] { return renderDotToSvg(dotFile.string()); }),
+            "Graphviz dot exited with code 7");
 
   std::filesystem::remove(executable);
-  EXPECT_THROW(renderDotToSvg(dotFile.string()), std::system_error);
+  EXPECT_EQ(errorCode([&] { return renderDotToSvg(dotFile.string()); }),
+            std::errc::no_such_file_or_directory);
 }
 #endif
 
@@ -324,7 +326,7 @@ TEST(DDPackageTest, BellState) {
   auto const zeroState = value(makeZeroState(2, *dd));
 
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
-  value(dd::printVector(bellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(bellState));
 
   // repeated calculation is practically for free
   auto const bellState2 = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
@@ -373,7 +375,7 @@ TEST(DDPackageTest, QFTState) {
   qftOp = dd->multiply(swapGate, qftOp);
   auto const qftState = dd->multiply(qftOp, value(makeZeroState(3, *dd)));
 
-  value(dd::printVector(qftState));
+  MQT_ASSERT_SUCCESS(dd::printVector(qftState));
 
   for (size_t qubit = 0; qubit < 7; ++qubit) {
     ASSERT_NEAR(value(dd::getValueByIndex(qftState, qubit)).real(),
@@ -622,11 +624,17 @@ TEST(DDPackageTest, PartialTraceComplexity) {
 TEST(DDPackageTest, VectorSerializationTest) {
   auto dd = value(Package::create(2));
 
-  for (const bool binary : {false, true}) {
-    std::string serializedStorage;
-    llvm::raw_string_ostream serialized(serializedStorage);
-    serialize(vEdge::one(), serialized, binary);
-    EXPECT_EQ(dd->deserialize<vNode>(serializedStorage, binary), vEdge::one());
+  for (const auto state : {
+           vEdge::one(),
+           value(
+               makeBasisState(2, {BasisStates::right, BasisStates::left}, *dd)),
+       }) {
+    for (const bool binary : {false, true}) {
+      std::string serializedStorage;
+      llvm::raw_string_ostream serialized(serializedStorage);
+      serialize(state, serialized, binary);
+      EXPECT_EQ(value(dd->deserialize<vNode>(serialized.str(), binary)), state);
+    }
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -635,15 +643,15 @@ TEST(DDPackageTest, VectorSerializationTest) {
 
   auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
-  serialize(bellState, "bell_state.dd", false);
+  MQT_ASSERT_SUCCESS(serialize(bellState, "bell_state.dd", false));
   auto deserializedBellState =
-      dd->deserializeFile<vNode>("bell_state.dd", false);
+      value(dd->deserializeFile<vNode>("bell_state.dd", false));
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state.dd");
 
-  serialize(bellState, "bell_state_binary.dd", true);
+  MQT_ASSERT_SUCCESS(serialize(bellState, "bell_state_binary.dd", true));
   deserializedBellState =
-      dd->deserializeFile<vNode>("bell_state_binary.dd", true);
+      value(dd->deserializeFile<vNode>("bell_state_binary.dd", true));
   EXPECT_EQ(bellState, deserializedBellState);
   std::filesystem::remove("bell_state_binary.dd");
 }
@@ -656,7 +664,7 @@ TEST(DDPackageTest, BellMatrix) {
 
   auto const bellMatrix = dd->multiply(cxGate, hGate);
 
-  value(dd::printMatrix(bellMatrix, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(bellMatrix, dd->qubits()));
 
   ASSERT_EQ(value(bellMatrix.getValueByPath(dd->qubits(), "00")), SQRT2_2);
   ASSERT_EQ(value(bellMatrix.getValueByPath(dd->qubits(), "02")), 0.);
@@ -682,7 +690,8 @@ TEST(DDPackageTest, MatrixSerializationTest) {
     std::string serializedStorage;
     llvm::raw_string_ostream serialized(serializedStorage);
     serialize(mEdge::one(), serialized, binary);
-    EXPECT_EQ(dd->deserialize<mNode>(serializedStorage, binary), mEdge::one());
+    EXPECT_EQ(value(dd->deserialize<mNode>(serialized.str(), binary)),
+              mEdge::one());
   }
 
   auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
@@ -690,75 +699,54 @@ TEST(DDPackageTest, MatrixSerializationTest) {
 
   auto const bellMatrix = dd->multiply(cxGate, hGate);
 
-  serialize(bellMatrix, "bell_matrix.dd", false);
+  MQT_ASSERT_SUCCESS(serialize(bellMatrix, "bell_matrix.dd", false));
   auto deserializedBellMatrix =
-      dd->deserializeFile<mNode>("bell_matrix.dd", false);
+      value(dd->deserializeFile<mNode>("bell_matrix.dd", false));
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix.dd");
 
-  serialize(bellMatrix, "bell_matrix_binary.dd", true);
+  MQT_ASSERT_SUCCESS(serialize(bellMatrix, "bell_matrix_binary.dd", true));
   deserializedBellMatrix =
-      dd->deserializeFile<mNode>("bell_matrix_binary.dd", true);
+      value(dd->deserializeFile<mNode>("bell_matrix_binary.dd", true));
   EXPECT_EQ(bellMatrix, deserializedBellMatrix);
   std::filesystem::remove("bell_matrix_binary.dd");
 }
 
 TEST(DDPackageTest, SerializationErrors) {
-  auto dd = value(Package::create(2));
+  auto package = value(Package::create(1));
+  const TemporaryDirectory temp;
+  const auto missing = (temp.path() / "missing" / "state.dd").string();
+  EXPECT_EQ(errorCode([&] { return serialize(vEdge::one(), missing); }),
+            std::errc::io_error);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserializeFile<vNode>(missing, true); }),
+      std::errc::io_error);
 
-  auto const hGate = getDD(TestGate(1, Fixture::H), *dd);
-  auto const cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
-  auto const zeroState = value(makeZeroState(2, *dd));
-  auto const bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
+  for (const auto* input :
+       {"2\n1\n", "1\nnot_complex\n", "1\n1\nno_node_here\n"}) {
+    SCOPED_TRACE(input);
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
+              std::errc::state_not_recoverable);
+    EXPECT_EQ(errorCode([&] { return package->deserialize<mNode>(input); }),
+              std::errc::state_not_recoverable);
+  }
 
-  // test non-existing file
-  EXPECT_THROW(serialize(bellState, "./path/that/does/not/exist/filename.dd"),
-               std::invalid_argument);
-  EXPECT_THROW(dd->deserializeFile<vNode>(
-                   "./path/that/does/not/exist/filename.dd", true),
-               std::invalid_argument);
-
-  // test wrong version number
-  std::string ssStorage;
-  llvm::raw_string_ostream ss(ssStorage);
-  ss << 2 << "\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ssStorage, false), std::runtime_error);
-  ss << 2 << "\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ssStorage, false), std::runtime_error);
-
-  ssStorage.clear();
-  std::remove_const_t<decltype(SERIALIZATION_VERSION)> version = 2;
-  ss.write(reinterpret_cast<const char*>(&version),
-           sizeof(decltype(SERIALIZATION_VERSION)));
-  EXPECT_THROW(dd->deserialize<vNode>(ssStorage, true), std::runtime_error);
-  ss.write(reinterpret_cast<const char*>(&version),
-           sizeof(decltype(SERIALIZATION_VERSION)));
-  EXPECT_THROW(dd->deserialize<mNode>(ssStorage, true), std::runtime_error);
-
-  // test wrong format
-  ssStorage.clear();
-  ss << "1\n";
-  ss << "not_complex\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ssStorage), std::runtime_error);
-  ss << "1\n";
-  ss << "not_complex\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ssStorage), std::runtime_error);
-
-  ssStorage.clear();
-  ss << "1\n";
-  ss << "1.0\n";
-  ss << "no_node_here\n";
-  EXPECT_THROW(dd->deserialize<vNode>(ssStorage), std::runtime_error);
-  ss << "1\n";
-  ss << "1.0\n";
-  ss << "no_node_here\n";
-  EXPECT_THROW(dd->deserialize<mNode>(ssStorage), std::runtime_error);
+  std::string binary;
+  llvm::raw_string_ostream stream(binary);
+  const uint64_t version = SERIALIZATION_VERSION + 1;
+  stream.write(reinterpret_cast<const char*>(&version), sizeof(version));
+  ComplexValue{1., 0.}.writeBinary(stream);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserialize<vNode>(binary, true); }),
+      std::errc::state_not_recoverable);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserialize<mNode>(binary, true); }),
+      std::errc::state_not_recoverable);
 }
 
 TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
-  auto packageOwner = value(Package::create(2));
-  auto& package = *packageOwner;
-  const auto state = value(makeZeroState(2, package));
+  auto package = value(Package::create(2));
+  const auto state = value(makeZeroState(2, *package));
   std::string binaryStorage;
   llvm::raw_string_ostream binary(binaryStorage);
   serialize(state, binary, true);
@@ -775,12 +763,17 @@ TEST(DDPackageTest, DeserializationRejectsTruncatedInput) {
        }) {
     SCOPED_TRACE(length);
     const std::string input(bytes.substr(0, length));
-    EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
+    EXPECT_EQ(
+        errorCode([&] { return package->deserialize<vNode>(input, true); }),
+        std::errc::state_not_recoverable);
   }
-  for (const auto* text : {"", "\n", "1\n"}) {
+  for (const auto* text : {"", "1\n"}) {
     const std::string input(text);
-    EXPECT_ANY_THROW(package.deserialize<vNode>(input));
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
+              std::errc::state_not_recoverable);
   }
+  EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>("\n"); }),
+            std::errc::invalid_argument);
 }
 
 TEST(DDPackageTest, SerializationReportsWriteFailures) {
@@ -788,78 +781,113 @@ TEST(DDPackageTest, SerializationReportsWriteFailures) {
     GTEST_SKIP() << "Requires /dev/full to reject writes after opening";
   }
   for (const bool binary : {false, true}) {
-    EXPECT_THROW(serialize(vEdge::one(), "/dev/full", binary),
-                 std::runtime_error);
-    EXPECT_THROW(serialize(mEdge::one(), "/dev/full", binary),
-                 std::runtime_error);
+    EXPECT_EQ(
+        errorCode([&] { return serialize(vEdge::one(), "/dev/full", binary); }),
+        std::errc::io_error);
+    EXPECT_EQ(
+        errorCode([&] { return serialize(mEdge::one(), "/dev/full", binary); }),
+        std::errc::io_error);
   }
 }
 
 TEST(DDPackageTest, OutputFilesCanReuseClosedStandardDescriptors) {
-  const mqt::test::TemporaryDirectory temp;
+  const TemporaryDirectory temp;
   const auto filename = (temp.path() / "output.dd").string();
   EXPECT_EXIT(
       {
         if (llvm::sys::Process::SafelyCloseFileDescriptor(0)) {
-          std::_Exit(1);
+          std::exit(2);
         }
-        serialize(vEdge::one(), filename, true);
-        exportToDot(vEdge::one(), filename, true, false, false, false, false);
-        std::_Exit(0);
+        if (auto error = serialize(vEdge::one(), filename, true)) {
+          llvm::logAllUnhandledErrors(std::move(error), llvm::errs());
+          std::exit(3);
+        }
+        if (auto error = exportToDot(vEdge::one(), filename, true, false, false,
+                                     false, false)) {
+          llvm::logAllUnhandledErrors(std::move(error), llvm::errs());
+          std::exit(4);
+        }
+        std::exit(0);
       },
       testing::ExitedWithCode(0), "");
 }
 
 TEST(DDPackageTest, DeserializationPreservesImaginaryUnits) {
-  auto packageOwner = value(Package::create(1));
-  auto& package = *packageOwner;
+  auto package = value(Package::create(1));
   for (const auto* unit : {"i", "I", "+i", "+I", "-i", "-I"}) {
     SCOPED_TRACE(unit);
     const std::complex<fp> phase{0., *unit == '-' ? -1. : 1.};
     const std::string root(std::string("1\n") + unit + "\n");
-    EXPECT_EQ(value(dd::getValueByIndex(package.deserialize<vNode>(root), 0)),
-              phase);
+    EXPECT_EQ(
+        value(dd::getValueByIndex(value(package->deserialize<vNode>(root)), 0)),
+        phase);
     const std::string edge(std::string("1\n1\n0 0 (-1 ") + unit + ") ()\n");
-    EXPECT_EQ(value(dd::getValueByIndex(package.deserialize<vNode>(edge), 0)),
-              phase);
+    EXPECT_EQ(
+        value(dd::getValueByIndex(value(package->deserialize<vNode>(edge)), 0)),
+        phase);
+  }
+}
+
+TEST(DDPackageTest, DeserializationPreservesImaginaryExponents) {
+  auto package = value(Package::create(1));
+  for (const auto& [weight, expected] :
+       std::array<std::pair<const char*, std::complex<fp>>, 4>{
+           {
+               {"11e2i", {0., 1100.}},
+               {"-3.1e2I", {0., -310.}},
+               {".25e+2i", {0., 25.}},
+               {"1 - 11e-2i", {1., -0.11}},
+           },
+       }) {
+    SCOPED_TRACE(weight);
+    for (const auto& input : {
+             std::string("1\n") + weight + "\n",
+             std::string("1\n1\n0 0 (-1 ") + weight + ") ()\n",
+         }) {
+      EXPECT_EQ(
+          value(getValueByIndex(value(package->deserialize<vNode>(input)), 0)),
+          expected);
+    }
   }
 }
 
 TEST(DDPackageTest, TextDeserializationPreservesSpacingAndVersionGrammar) {
-  auto packageOwner = value(Package::create(1));
-  auto& package = *packageOwner;
+  auto package = value(Package::create(1));
+  for (const auto* weight :
+       {"1+2 3i", "1  + 2i", "1+  2i", "1+2i ", "1+2\ti", "1 2e3i"}) {
+    SCOPED_TRACE(weight);
+    const auto input = std::string("1\n") + weight + "\n";
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
+              std::errc::state_not_recoverable);
+  }
   for (const auto* version : {"1", "+1", " 1", "\t1"}) {
     for (const auto* weight : {"1+2i", "1 + 2i", "1 +2i", "1+ 2i"}) {
       SCOPED_TRACE(::testing::Message() << version << ": " << weight);
-      const auto state = package.deserialize<vNode>(std::string(version) +
-                                                    "\n" + weight + "\n");
-      EXPECT_EQ(value(getValueByIndex(state, 0)), (std::complex<fp>{1., 2.}));
+      auto state = package->deserialize<vNode>(std::string(version) + "\n" +
+                                               weight + "\n");
+      ASSERT_TRUE(static_cast<bool>(state))
+          << llvm::toString(state.takeError());
+      EXPECT_EQ(value(getValueByIndex(*state, 0)), (std::complex<fp>{1., 2.}));
     }
-  }
-  for (const auto* weight :
-       {"1+2 3i", "1  + 2i", "1+  2i", "1+2i ", "1+2\ti"}) {
-    SCOPED_TRACE(weight);
-    EXPECT_THROW(package.deserialize<vNode>(std::string("1\n") + weight + "\n"),
-                 std::runtime_error);
   }
 }
 
 TEST(DDPackageTest, DeserializationRespectsTextSliceBounds) {
-  auto packageOwner = value(Package::create(1));
-  auto& package = *packageOwner;
+  auto package = value(Package::create(1));
   const std::string storage = "1\n1\n0 0 (-1 1) ()suffix";
   const llvm::StringRef input(storage.data(), storage.size() - 6);
-  EXPECT_EQ(package.deserialize<vNode>(input),
-            value(makeZeroState(1, package)));
+  EXPECT_EQ(value(package->deserialize<vNode>(input)),
+            value(makeZeroState(1, *package)));
   std::string embeddedNull(input);
   embeddedNull += '\0';
   embeddedNull += "ignored";
-  EXPECT_THROW(package.deserialize<vNode>(embeddedNull), std::runtime_error);
+  EXPECT_EQ(
+      errorCode([&] { return package->deserialize<vNode>(embeddedNull); }),
+      std::errc::state_not_recoverable);
 }
 
 TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
-  auto packageOwner = value(Package::create(2));
-  auto& package = *packageOwner;
+  auto package = value(Package::create(2));
   for (const auto* text : {
            "1x\n1\n",
            "1\n\n",
@@ -877,23 +905,40 @@ TEST(DDPackageTest, DeserializationRejectsMalformedTextAndRecovers) {
            "1\n1\n0 0 (-1 1) ()\n1 0 (0 1) ()\n",
            "1\n1\n0 2 (-1 1) ()\n",
            "1\n1\n0 65536 (-1 1) ()\n",
-           "1\n1e9999\n",
-           "1\n1\n999999999999999999999999999 0 (-1 1) ()\n",
+           "1\nnan\n",
+           "1\ninf\n",
+           "1\n0x1p2\n",
+           "1\n1e+\n",
+           "1\n1+2\n",
+           "1\n1,5\n",
+           "1\n1+infi\n",
        }) {
     SCOPED_TRACE(text);
     const std::string input(text);
-    EXPECT_ANY_THROW(package.deserialize<vNode>(input));
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(input); }),
+              std::errc::state_not_recoverable);
+  }
+  for (const auto* text : {
+           "2147483648\n1\n",
+           "1\n1e9999\n",
+           "1\n1+1e400i\n",
+           "1\n1\n999999999999999999999999999 0 (-1 1) ()\n",
+           "1\n1\n0 999999999999999999999999999 (-1 1) ()\n",
+           "1\n1\n0 0 (999999999999999999999999999 1) ()\n",
+       }) {
+    SCOPED_TRACE(text);
+    EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(text); }),
+              std::errc::result_out_of_range);
   }
   const std::string valid("1\n1\n2147483648 0 (-1 1) ()\n9223372036854775807 "
                           "1 (2147483648 1) ()\n");
-  EXPECT_EQ(package.deserialize<vNode>(valid),
-            value(makeZeroState(2, package)));
+  EXPECT_EQ(value(package->deserialize<vNode>(valid)),
+            value(makeZeroState(2, *package)));
 }
 
 TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
-  auto packageOwner = value(Package::create(2));
-  auto& package = *packageOwner;
-  const auto state = value(makeZeroState(2, package));
+  auto package = value(Package::create(2));
+  const auto state = value(makeZeroState(2, *package));
   std::string binaryStorage;
   llvm::raw_string_ostream binary(binaryStorage);
   serialize(state, binary, true);
@@ -910,7 +955,9 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     auto invalid = bytes;
     std::memcpy(&invalid.at(offset), &value, sizeof(value));
     const std::string input(invalid);
-    EXPECT_THROW(package.deserialize<vNode>(input, true), std::runtime_error);
+    EXPECT_EQ(
+        errorCode([&] { return package->deserialize<vNode>(input, true); }),
+        std::errc::state_not_recoverable);
   };
   reject(nodeOffset, int64_t{-1});
   reject(nodeOffset, int64_t{-2});
@@ -937,40 +984,44 @@ TEST(DDPackageTest, DeserializationRejectsInvalidBinaryFieldsAndRecovers) {
     std::string streamStorage;
     llvm::raw_string_ostream stream(streamStorage);
     serialize(state, stream, isBinary);
-    EXPECT_EQ(package.deserialize<vNode>(streamStorage, isBinary), state);
+    EXPECT_EQ(value(package->deserialize<vNode>(stream.str(), isBinary)),
+              state);
   }
 }
 
 TEST(DDPackageTest, DeserializationRejectsSkippedVectorLevels) {
-  auto packageOwner = value(Package::create(3));
-  auto& package = *packageOwner;
-  const auto oneQubit = value(makeZeroState(1, package));
+  auto package = value(Package::create(3));
+  const auto oneQubit = value(makeZeroState(1, *package));
   for (const bool binary : {false, true}) {
     for (const auto& child : {vEdge::one(), oneQubit}) {
-      SCOPED_TRACE(::testing::Message() << binary << child.isTerminal());
+      SCOPED_TRACE(::testing::Message() << "binary=" << binary
+                                        << ", terminal=" << child.isTerminal());
       vNode node{};
       node.v = 2;
       node.e = {child, vEdge::zero()};
       std::string streamStorage;
       llvm::raw_string_ostream stream(streamStorage);
+
       serialize(vEdge{.p = &node, .w = Complex::one()}, stream, binary);
-      EXPECT_THROW(package.deserialize<vNode>(streamStorage, binary),
-                   std::runtime_error);
+      EXPECT_EQ(errorCode([&] {
+                  return package->deserialize<vNode>(stream.str(), binary);
+                }),
+                std::errc::state_not_recoverable);
     }
   }
 }
 
 TEST(DDPackageTest, DeserializationPreservesSkippedMatrixLevels) {
-  auto packageOwner = value(Package::create(3));
-  auto& package = *packageOwner;
-  const auto high = value(package.makeGateDD(X_MAT, 2));
-  const auto low = value(package.makeGateDD(X_MAT, 0));
-  for (const auto& matrix : {high, package.multiply(high, low)}) {
+  auto package = value(Package::create(3));
+  const auto high = value(package->makeGateDD(X_MAT, 2));
+  const auto low = value(package->makeGateDD(X_MAT, 0));
+  for (const auto& matrix : {high, package->multiply(high, low)}) {
     for (const bool binary : {false, true}) {
       std::string streamStorage;
       llvm::raw_string_ostream stream(streamStorage);
       serialize(matrix, stream, binary);
-      EXPECT_EQ(package.deserialize<mNode>(streamStorage, binary), matrix);
+      EXPECT_EQ(value(package->deserialize<mNode>(stream.str(), binary)),
+                matrix);
     }
   }
 }
@@ -1018,7 +1069,7 @@ TEST(DDPackageTest, GarbageVector) {
   auto const zeroState = value(makeZeroState(2, *dd));
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   llvm::outs() << "Bell State:\n";
-  value(dd::printVector(bellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(bellState));
 
   dd->incRef(bellState);
   auto reducedBellState =
@@ -1032,14 +1083,14 @@ TEST(DDPackageTest, GarbageVector) {
   reducedBellState = dd->reduceGarbage(bellState, {false, true, false, false});
   auto vec = value(dd::getVector(reducedBellState));
   llvm::outs() << "Reduced Bell State (q1 garbage):\n";
-  value(dd::printVector(reducedBellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedBellState));
   EXPECT_EQ(vec[2], 0.);
   EXPECT_EQ(vec[3], 0.);
 
   dd->incRef(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {true, false, false, false});
   llvm::outs() << "Reduced Bell State (q0 garbage):\n";
-  value(dd::printVector(reducedBellState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedBellState));
   vec = value(dd::getVector(reducedBellState));
   EXPECT_EQ(vec[1], 0.);
   EXPECT_EQ(vec[3], 0.);
@@ -1089,13 +1140,13 @@ TEST(DDPackageTest, ReduceGarbageVector) {
   auto const zeroState = value(makeZeroState(3, *dd));
   auto initialState = dd->multiply(dd->multiply(hGate, xGate), zeroState);
   llvm::outs() << "Initial State:\n";
-  value(dd::printVector(initialState));
+  MQT_ASSERT_SUCCESS(dd::printVector(initialState));
 
   dd->incRef(initialState);
   auto const reducedState =
       dd->reduceGarbage(initialState, {false, true, true});
   llvm::outs() << "After reduceGarbage():\n";
-  value(dd::printVector(reducedState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedState));
   EXPECT_EQ(reducedState, value(makeZeroState(3, *dd)));
 
   dd->incRef(initialState);
@@ -1116,13 +1167,13 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   auto initialState = dd->multiply(
       dd->multiply(tdgGate0, dd->multiply(xGate0, xGate1)), zeroState);
   llvm::outs() << "Initial State:\n";
-  value(dd::printVector(initialState));
+  MQT_ASSERT_SUCCESS(dd::printVector(initialState));
 
   dd->incRef(initialState);
   auto const reducedState =
       dd->reduceGarbage(initialState, {false, false}, true);
   llvm::outs() << "After reduceGarbage():\n";
-  value(dd::printVector(reducedState));
+  MQT_ASSERT_SUCCESS(dd::printVector(reducedState));
   EXPECT_EQ(reducedState,
             dd->multiply(dd->multiply(xGate0, xGate1), zeroState));
 }
@@ -1135,13 +1186,13 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   auto const initialState = dd->multiply(hGate, cNotGate);
 
   llvm::outs() << "Initial State:\n";
-  value(dd::printMatrix(initialState, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(initialState, dd->qubits()));
 
   dd->incRef(initialState);
   auto const reducedState1 =
       dd->reduceGarbage(initialState, {false, true, true}, true, true);
   llvm::outs() << "After reduceGarbage(q1 and q2 are garbage):\n";
-  value(dd::printMatrix(reducedState1, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(reducedState1, dd->qubits()));
 
   auto const expectedMatrix1 = CMat{
       {SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2, SQRT2_2},
@@ -1159,7 +1210,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   auto const reducedState2 =
       dd->reduceGarbage(initialState, {true, false, false}, true, true);
   llvm::outs() << "After reduceGarbage(q0 is garbage):\n";
-  value(dd::printMatrix(reducedState2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(reducedState2, dd->qubits()));
 
   auto const expectedMatrix2 = CMat{
       {1, 0, 0, 1, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
@@ -1186,18 +1237,18 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
   auto const c2 = dd->multiply(controlledHGate, xGate);
 
   llvm::outs() << "c1:\n";
-  value(dd::printMatrix(c1, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c1);
   auto const c1Reduced = dd->reduceGarbage(c1, {false, true, true}, true, true);
-  value(dd::printMatrix(c1Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1Reduced, dd->qubits()));
 
   llvm::outs() << "c2:\n";
-  value(dd::printMatrix(c2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, true, true}, true, true);
-  value(dd::printMatrix(c2Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2Reduced, dd->qubits()));
 
   EXPECT_EQ(c1Reduced, c2Reduced);
 }
@@ -1212,11 +1263,11 @@ TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
   auto const c2 = dd->multiply(tdgGate0, tdgGate1);
 
   llvm::outs() << "c2:\n";
-  value(dd::printMatrix(c2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, false}, true, true);
-  value(dd::printMatrix(c2Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2Reduced, dd->qubits()));
 
   EXPECT_EQ(c1, c2Reduced);
 }
@@ -1231,18 +1282,18 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
   auto const c2 = dd->multiply(tdgGate0, tdgGate1);
 
   llvm::outs() << "c1:\n";
-  value(dd::printMatrix(c1, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c1);
   auto const c1Reduced = dd->reduceGarbage(c1, {false, true}, true, true);
-  value(dd::printMatrix(c1Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c1Reduced, dd->qubits()));
 
   llvm::outs() << "c2:\n";
-  value(dd::printMatrix(c2, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2, dd->qubits()));
   llvm::outs() << "reduceGarbage:\n";
   dd->incRef(c2);
   auto const c2Reduced = dd->reduceGarbage(c2, {false, true}, true, true);
-  value(dd::printMatrix(c2Reduced, dd->qubits()));
+  MQT_ASSERT_SUCCESS(dd::printMatrix(c2Reduced, dd->qubits()));
 
   EXPECT_EQ(c1Reduced, c2Reduced);
 }
@@ -3142,10 +3193,10 @@ TEST(DDPackageTest, VectorConjugate) {
 
   const auto vecDD = value(makeStateFromVector(vec, *dd));
   llvm::outs() << "Vector:\n";
-  value(dd::printVector(vecDD));
+  MQT_ASSERT_SUCCESS(dd::printVector(vecDD));
   const auto conjVecDD = dd->conjugate(vecDD);
   llvm::outs() << "Conjugated vector:\n";
-  value(dd::printVector(conjVecDD));
+  MQT_ASSERT_SUCCESS(dd::printVector(conjVecDD));
 
   const auto conjVec = value(dd::getVector(conjVecDD));
   for (auto i = 0U; i < vec.size(); ++i) {
@@ -3311,13 +3362,12 @@ TEST(DDPackageTest, MagnitudeAdditionAvoidsSquaredWeightOverflow) {
 }
 TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
   constexpr size_t width = 128;
-  auto packageOwner = value(Package::create(width + 1));
-  auto& package = *packageOwner;
+  auto package = value(Package::create(width + 1));
   auto matrix = mEdge::one();
-  package.incRef(matrix);
+  package->incRef(matrix);
   for (size_t q = 0; q < width; ++q) {
-    matrix = package.applyOperation(
-        value(package.makeGateDD(H_MAT, static_cast<Qubit>(q))), matrix);
+    matrix = package->applyOperation(
+        value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))), matrix);
   }
   const auto expected = std::ldexp(1., -static_cast<int>(width / 2));
   const auto check = [&](const mEdge& value, size_t n, fp amplitude) {
@@ -3328,32 +3378,32 @@ TEST(DDPackageTest, WideHadamardMatricesPreserveRootScale) {
     EXPECT_EQ(actual.imag(), 0.);
   };
   check(matrix, width, expected);
-  check(package.conjugateTranspose(matrix), width, expected);
-  check(package.partialTrace(matrix, std::vector<bool>(width, false)), width,
+  check(package->conjugateTranspose(matrix), width, expected);
+  check(package->partialTrace(matrix, std::vector<bool>(width, false)), width,
         expected);
-  auto otherOwner = value(Package::create(width));
-  auto& other = *otherOwner;
-  check(other.transfer(matrix), width, expected);
+  auto other = value(Package::create(width));
+  check(other->transfer(matrix), width, expected);
   for (const bool binary : {false, true}) {
     std::string streamStorage;
     llvm::raw_string_ostream stream(streamStorage);
     serialize(matrix, stream, binary);
-    check(other.deserialize<mNode>(streamStorage, binary), width, expected);
+    check(value(other->deserialize<mNode>(stream.str(), binary)), width,
+          expected);
   }
-  const auto h = value(package.makeGateDD(H_MAT, 0));
+  const auto h = value(package->makeGateDD(H_MAT, 0));
   for (size_t repetition = 0; repetition < 2; ++repetition) {
-    check(package.kronecker(matrix, h, 1), width + 1, expected * SQRT2_2);
-    check(package.kronecker(h, matrix, width), width + 1, expected * SQRT2_2);
-    EXPECT_TRUE(dd::isIdentity(package.multiply(matrix, matrix), false));
+    check(package->kronecker(matrix, h, 1), width + 1, expected * SQRT2_2);
+    check(package->kronecker(h, matrix, width), width + 1, expected * SQRT2_2);
+    EXPECT_TRUE(dd::isIdentity(package->multiply(matrix, matrix), false));
   }
-  package.garbageCollect(true);
+  package->garbageCollect(true);
   check(matrix, width, expected);
   for (size_t q = width; q-- > 0;) {
-    matrix = package.applyOperation(
-        value(package.makeGateDD(H_MAT, static_cast<Qubit>(q))), matrix);
+    matrix = package->applyOperation(
+        value(package->makeGateDD(H_MAT, static_cast<Qubit>(q))), matrix);
   }
   EXPECT_TRUE(dd::isIdentity(matrix, false));
-  package.decRef(matrix);
+  package->decRef(matrix);
 }
 
 TEST(DDPackageTest, MatrixRootsRemainDistinctAndSurviveCollection) {
@@ -3385,17 +3435,17 @@ TEST(DDPackageTest, MatrixRootsRemainDistinctAndSurviveCollection) {
 }
 
 TEST(DDPackageTest, MatrixRootSerializationPreservesSubnormals) {
-  auto packageOwner = value(Package::create(1));
-  auto& package = *packageOwner;
+  auto package = value(Package::create(1));
   for (const fp value :
        {1e-100, 1e-310, std::numeric_limits<fp>::denorm_min()}) {
     SCOPED_TRACE(value);
-    const auto root = mEdge::terminal(package.cn.lookupRoot({value, -value}));
+    const auto root = mEdge::terminal(package->cn.lookupRoot({value, -value}));
     for (const bool binary : {false, true}) {
       std::string streamStorage;
       llvm::raw_string_ostream stream(streamStorage);
       serialize(root, stream, binary);
-      const auto restored = package.deserialize<mNode>(streamStorage, binary);
+      const auto restored =
+          mqt::test::value(package->deserialize<mNode>(stream.str(), binary));
       EXPECT_EQ(RealNumber::val(restored.w.r), value);
       EXPECT_EQ(RealNumber::val(restored.w.i), -value);
     }
@@ -3511,24 +3561,24 @@ TEST(DDPackageTest, RejectsInvalidConfigurationBeforeAllocation) {
 }
 
 TEST(DDPackageTest, BinarySerializationPreservesNulsAndRejectsTrailingBytes) {
+  auto package = value(Package::create(0));
   std::string bytes;
   llvm::raw_string_ostream output(bytes);
   serialize(vEdge::one(), output, true);
   ASSERT_EQ(bytes.size(), sizeof(SERIALIZATION_VERSION) + (2 * sizeof(fp)));
-  EXPECT_NE(bytes.find('\0'), std::string::npos);
-  EXPECT_EQ(bytes.back(), '\0');
+  ASSERT_NE(bytes.find('\0'), std::string::npos);
+  ASSERT_EQ(bytes.back(), '\0');
   std::string expected(bytes.size(), '\0');
-  const auto version = SERIALIZATION_VERSION;
+  std::memcpy(expected.data(), &SERIALIZATION_VERSION,
+              sizeof(SERIALIZATION_VERSION));
   const fp real = 1.;
-  std::memcpy(expected.data(), &version, sizeof(version));
-  std::memcpy(std::addressof(expected.at(sizeof(version))), &real,
+  std::memcpy(std::addressof(expected.at(sizeof(SERIALIZATION_VERSION))), &real,
               sizeof(real));
   EXPECT_EQ(bytes, expected);
-  auto packageOwner = value(Package::create(1));
-  auto& package = *packageOwner;
-  EXPECT_EQ(package.deserialize<vNode>(bytes, true), vEdge::one());
+  EXPECT_EQ(value(package->deserialize<vNode>(bytes, true)), vEdge::one());
   bytes.push_back('\0');
-  EXPECT_THROW(package.deserialize<vNode>(bytes, true), std::runtime_error);
+  EXPECT_EQ(errorCode([&] { return package->deserialize<vNode>(bytes, true); }),
+            std::errc::state_not_recoverable);
 }
 
 } // namespace dd

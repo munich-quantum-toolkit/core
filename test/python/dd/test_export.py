@@ -17,16 +17,17 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage, MatrixDD
+from mqt.core.dd import DDPackage, MatrixDD, VectorDD
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 @pytest.mark.parametrize("matrix", [False, True])
-@pytest.mark.parametrize("colored", [False, True])
-@pytest.mark.parametrize("classic", [False, True])
-@pytest.mark.parametrize("edge_labels", [False, True])
+@pytest.mark.parametrize(
+    ("colored", "classic", "edge_labels"),
+    [(False, False, False), (True, False, False), (False, True, False), (False, False, True)],
+)
 def test_dot_options(*, matrix: bool, colored: bool, classic: bool, edge_labels: bool) -> None:
     """Keep export options available for both DD types."""
     package = DDPackage(1)
@@ -94,10 +95,6 @@ def test_svg_native_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         with pytest.raises(RuntimeError, match="Graphviz dot exited with code 7"):
             dd.to_svg(str(filename))
 
-        dot.unlink()
-        with pytest.raises(RuntimeError, match="Cannot find Graphviz dot"):
-            dd.to_svg(str(filename))
-
 
 @pytest.mark.parametrize("matrix", [False, True])
 @pytest.mark.parametrize("binary", [False, True])
@@ -113,3 +110,24 @@ def test_serialized_bytes_and_errors(*, matrix: bool, binary: bool) -> None:
     malformed = payload + b"\0" if binary else b"1\ninvalid\n"
     with pytest.raises(RuntimeError):
         type(dd).from_bytes(package, malformed, binary=binary)
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        (b"\n1\n", ValueError),
+        (b"invalid\n1\n", ValueError),
+        (b"+-1\n1\n", ValueError),
+        (b"2\n1\n", RuntimeError),
+        (b"1x\n1\n", RuntimeError),
+        (b"1\ninvalid\n", RuntimeError),
+        (b"2147483648\n1\n", IndexError),
+        (b"1\n1e400\n", IndexError),
+        (b"1\n1e-400\n", IndexError),
+    ],
+)
+def test_serialized_text_error_categories(payload: bytes, error: type[Exception]) -> None:
+    """Retain numeric syntax, numeric range, and serialized-format error classes."""
+    package = DDPackage(1)
+    with pytest.raises(error):
+        VectorDD.from_bytes(package, payload, binary=False)

@@ -15,6 +15,8 @@
 
 #include "dd/DDDefinitions.hpp"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cmath>
@@ -83,8 +85,11 @@ struct ComplexValue {
   /// @param os The output stream to write to.
   void writeBinary(llvm::raw_ostream& os) const;
 
-  /// Parse the real and imaginary parts of a serialized complex value.
-  void fromString(const std::string& realStr, std::string imagStr);
+  /// Parse the real and imaginary components of a serialized DD weight.
+  ///
+  /// The caller validates the complex-number syntax.
+  [[nodiscard]] llvm::Error fromString(llvm::StringRef realStr,
+                                       llvm::StringRef imagStr);
 
   /// Get the closest fraction to the given number.
   ///

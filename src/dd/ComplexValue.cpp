@@ -25,9 +25,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
+
+using llvm::createStringError;
+using llvm::Error;
+using llvm::StringRef;
 
 namespace dd {
 bool ComplexValue::operator==(const ComplexValue& other) const noexcept {
@@ -52,33 +56,56 @@ void ComplexValue::writeBinary(llvm::raw_ostream& os) const {
   RealNumber::writeBinary(r, os);
   RealNumber::writeBinary(i, os);
 }
-
-void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
-  const auto parse = [](const std::string& text) {
+Error ComplexValue::fromString(StringRef realStr, StringRef imagStr) {
+  const auto parse = [](StringRef text) -> llvm::Expected<fp> {
+    if (text.empty()) {
+      return 0.;
+    }
     llvm::APFloat value(0.);
     auto status =
         value.convertFromString(text, llvm::APFloat::rmNearestTiesToEven);
     if (!status) {
-      throw std::invalid_argument(llvm::toString(status.takeError()));
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          llvm::toString(status.takeError()));
     }
     if ((*status & llvm::APFloat::opOverflow) != 0 ||
         ((*status & llvm::APFloat::opUnderflow) != 0 && value.isZero())) {
-      throw std::out_of_range(
-          "Serialized number is outside the floating-point range.");
+      return createStringError(
+          std::errc::result_out_of_range,
+          "Serialized number is outside the finite floating-point range.");
+    }
+    if (!value.isFinite()) {
+      return createStringError(std::errc::invalid_argument,
+                               "Serialized number must be finite.");
     }
     return value.convertToDouble();
   };
-  r = realStr.empty() ? 0. : parse(realStr);
-
-  std::erase(imagStr, ' ');
-  const auto hasImaginaryPart = !imagStr.empty();
-  std::erase(imagStr, 'i');
-  std::erase(imagStr, 'I');
-  if ((hasImaginaryPart && imagStr.empty()) || imagStr == "+" ||
-      imagStr == "-") {
-    imagStr += '1';
+  auto real = parse(realStr);
+  if (!real) {
+    return real.takeError();
   }
-  i = imagStr.empty() ? 0. : parse(imagStr);
+
+  imagStr = imagStr.trim(" ");
+  const auto hasImaginaryPart = !imagStr.empty();
+  if (hasImaginaryPart) {
+    imagStr = imagStr.drop_back();
+  }
+  const bool negative = imagStr.consume_front("-");
+  if (!negative) {
+    imagStr.consume_front("+");
+  }
+  imagStr = imagStr.ltrim(" ");
+  if (hasImaginaryPart && imagStr.empty()) {
+    imagStr = "1";
+  }
+  auto imaginary = parse(imagStr);
+  if (!imaginary) {
+    return imaginary.takeError();
+  }
+  r = *real;
+  i = negative ? -*imaginary : *imaginary;
+  return Error::success();
 }
 
 std::pair<std::uint64_t, std::uint64_t>
@@ -195,7 +222,6 @@ void ComplexValue::printFormatted(llvm::raw_ostream& os, fp num, bool imaginary,
     os << toString(num, 0., false, precision);
   }
 }
-
 std::string ComplexValue::toString(const fp& real, const fp& imag,
                                    bool formatted, int precision) {
   std::string result;
@@ -273,7 +299,7 @@ ComplexValue operator*(fp r, const ComplexValue& c1) {
   return {c1.r * r, c1.i * r};
 }
 
-/// Computes an approximation of ac+bd
+// Computes an approximation of ac+bd
 namespace {
 fp kahan(const fp a, const fp b, const fp c, const fp d) {
   // w = RN(b * d)
@@ -323,6 +349,7 @@ ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
 llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const ComplexValue& c) {
   return os << ComplexValue::toString(c.r, c.i);
 }
+
 } // namespace dd
 
 std::size_t std::hash<dd::ComplexValue>::operator()(

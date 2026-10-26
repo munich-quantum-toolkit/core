@@ -163,11 +163,12 @@ part of the installed public-header reference above. See
 
 DD serializers, DOT exporters, statistics and number printers write to
 `llvm::raw_ostream`. The caller owns the stream and checks any sink errors;
-file-writing overloads report failures with exceptions. Use
+file-writing overloads report failures with `llvm::Error`. Use
 `llvm::raw_string_ostream` to collect output in a `std::string`.
 
 `Package::deserialize` reads borrowed `llvm::StringRef` bytes, including
 embedded NUL bytes. Use `Package::deserializeFile` for a filename. Binary
 serialization retains its native representation and is not portable between
 architectures. Serialized decimal weights are locale-independent; finite
-subnormal values are preserved.
+subnormal values are preserved. Complex weights use an explicit `+` or `-`
+between real and imaginary components, such as `1 - 2e3i`.

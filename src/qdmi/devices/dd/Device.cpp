@@ -861,8 +861,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
                 throw std::runtime_error(llvm::toString(package.takeError()));
               }
               result->dd_ = std::move(*package);
-              result->stateVecDD_ =
+              auto state =
                   result->dd_->deserialize<dd::vNode>(*response.state, true);
+              if (!state) {
+                throw std::runtime_error(llvm::toString(state.takeError()));
+              }
+              result->stateVecDD_ = *state;
               const auto root = result->stateVecDD_;
               const auto qubits =
                   root.isTerminal() ? 0U : static_cast<uint32_t>(root.p->v) + 1;
