@@ -62,13 +62,8 @@ template <class Function> std::string errorMessage(Function&& function) {
 }
 
 template <class Function> std::error_code errorCode(Function&& function) {
-  auto error = takeError(std::invoke(std::forward<Function>(function)));
-  std::error_code code;
-  llvm::visitErrors(error, [&](const llvm::ErrorInfoBase& info) {
-    code = info.convertToErrorCode();
-  });
-  static_cast<void>(llvm::toString(std::move(error)));
-  return code;
+  return llvm::errorToErrorCode(
+      takeError(std::invoke(std::forward<Function>(function))));
 }
 
 template <class Function> std::optional<int> errorStatus(Function&& function) {

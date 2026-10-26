@@ -146,8 +146,8 @@ private:
 /// @param cn a reference to the complex number manager (for adding new
 /// complex numbers)
 /// @return the normalized vector DD
-auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode>;
+Edge<vNode> normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
+                      MemoryManager& mm, ComplexNumbers& cn);
 
 /// Get a single element of the vector represented by the DD
 ///
@@ -211,8 +211,8 @@ getSparseVector(const Edge<vNode>& edge, fp threshold = 0.);
 /// @param cn a reference to the complex number manager (for adding new
 /// complex numbers)
 /// @return the normalized matrix DD
-auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode>;
+Edge<mNode> normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
+                      MemoryManager& mm, ComplexNumbers& cn);
 
 /// Check whether the matrix represented by the DD is the identity
 ///

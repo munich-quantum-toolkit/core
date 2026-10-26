@@ -114,9 +114,9 @@ void traverseMatrixImpl(const mEdge& edge, const std::complex<fp>& amp,
 //-----------------------------------------------------------------------------
 
 template <class Node>
-auto Edge<Node>::getValueByPath(const std::size_t numQubits,
-                                const std::string& decisions) const
-    -> llvm::Expected<std::complex<fp>> {
+llvm::Expected<std::complex<fp>>
+Edge<Node>::getValueByPath(const std::size_t numQubits,
+                           const std::string& decisions) const {
   if (!isTerminal() && numQubits <= static_cast<size_t>(p->v)) {
     return llvm::createStringError(
         std::make_error_code(std::errc::result_out_of_range),
@@ -163,7 +163,7 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
   return c;
 }
 
-template <class Node> auto Edge<Node>::size() const -> std::size_t {
+template <class Node> std::size_t Edge<Node>::size() const {
   if (isTerminal()) {
     return 1U;
   }
@@ -177,8 +177,7 @@ template <class Node> auto Edge<Node>::size() const -> std::size_t {
 }
 
 template <class Node>
-auto Edge<Node>::size(std::unordered_set<const Node*>& visited) const
-    -> std::size_t {
+std::size_t Edge<Node>::size(std::unordered_set<const Node*>& visited) const {
   visited.emplace(p);
   std::size_t sum = 1U;
   if (!isTerminal()) {
@@ -217,8 +216,8 @@ template <class Node> void Edge<Node>::unmark() const noexcept {
 //                      \n Methods for vector DDs \n
 //-----------------------------------------------------------------------------
 
-auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode> {
+Edge<vNode> normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
+                      MemoryManager& mm, ComplexNumbers& cn) {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero()};
 
@@ -281,8 +280,8 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
   return r;
 }
 
-auto getValueByIndex(const vEdge& edge, const size_t i)
-    -> llvm::Expected<std::complex<fp>> {
+llvm::Expected<std::complex<fp>> getValueByIndex(const vEdge& edge,
+                                                 const size_t i) {
   const auto numQubits =
       edge.isTerminal() ? 0U : static_cast<size_t>(edge.p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
@@ -303,7 +302,7 @@ auto getValueByIndex(const vEdge& edge, const size_t i)
   return amplitude;
 }
 
-auto getVector(const vEdge& edge, const fp threshold) -> llvm::Expected<CVec> {
+llvm::Expected<CVec> getVector(const vEdge& edge, const fp threshold) {
   if (edge.isTerminal()) {
     return CVec{static_cast<std::complex<fp>>(edge.w)};
   }
@@ -322,8 +321,8 @@ auto getVector(const vEdge& edge, const fp threshold) -> llvm::Expected<CVec> {
   return vec;
 }
 
-auto getSparseVector(const vEdge& edge, const fp threshold)
-    -> llvm::Expected<SparseCVec> {
+llvm::Expected<SparseCVec> getSparseVector(const vEdge& edge,
+                                           const fp threshold) {
   if (edge.isTerminal()) {
     return SparseCVec{{0, static_cast<std::complex<fp>>(edge.w)}};
   }
@@ -338,8 +337,8 @@ auto getSparseVector(const vEdge& edge, const fp threshold)
   return vec;
 }
 
-auto traverseVector(const vEdge& edge, const AmplitudeFunc& f,
-                    const fp threshold) -> llvm::Error {
+llvm::Error traverseVector(const vEdge& edge, const AmplitudeFunc& f,
+                           const fp threshold) {
   if (!edge.isTerminal() && edge.p->v >= std::numeric_limits<size_t>::digits) {
     return llvm::createStringError(
         std::make_error_code(std::errc::result_out_of_range),
@@ -381,7 +380,7 @@ llvm::Error printVector(const vEdge& edge) {
   return llvm::Error::success();
 }
 
-auto addToVector(const vEdge& edge, CVec& amplitudes) -> llvm::Error {
+llvm::Error addToVector(const vEdge& edge, CVec& amplitudes) {
   if (edge.isTerminal()) {
     if (amplitudes.empty()) {
       return llvm::createStringError(
@@ -414,8 +413,8 @@ auto addToVector(const vEdge& edge, CVec& amplitudes) -> llvm::Error {
 //-----------------------------------------------------------------------------
 //                      \n Methods for matrix DDs \n
 //-----------------------------------------------------------------------------
-auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode> {
+Edge<mNode> normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
+                      MemoryManager& mm, ComplexNumbers& cn) {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{
       e[0].w.exactlyZero(),
@@ -492,8 +491,10 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
   return mEdge{.p = p, .w = maxVal};
 }
 
-auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
-                     const size_t j) -> llvm::Expected<std::complex<fp>> {
+llvm::Expected<std::complex<fp>> getValueByIndex(const mEdge& edge,
+                                                 const size_t numQubits,
+                                                 const size_t i,
+                                                 const size_t j) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
@@ -527,8 +528,8 @@ auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
   return amplitude;
 }
 
-auto getMatrix(const mEdge& edge, const size_t numQubits, const fp threshold)
-    -> llvm::Expected<CMat> {
+llvm::Expected<CMat> getMatrix(const mEdge& edge, const size_t numQubits,
+                               const fp threshold) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
@@ -554,8 +555,8 @@ auto getMatrix(const mEdge& edge, const size_t numQubits, const fp threshold)
   return mat;
 }
 
-auto getSparseMatrix(const mEdge& edge, const size_t numQubits,
-                     const fp threshold) -> llvm::Expected<SparseCMat> {
+llvm::Expected<SparseCMat>
+getSparseMatrix(const mEdge& edge, const size_t numQubits, const fp threshold) {
   if (auto error = checkMatrixWidth(edge, numQubits)) {
     return error;
   }
@@ -640,8 +641,8 @@ template struct Edge<mNode>;
 //-----------------------------------------------------------------------------
 
 template <class Node>
-auto std::hash<dd::Edge<Node>>::operator()(
-    const dd::Edge<Node>& e) const noexcept -> std::size_t {
+std::size_t
+std::hash<dd::Edge<Node>>::operator()(const dd::Edge<Node>& e) const noexcept {
   const auto h1 = dd::murmur64(e.p == nullptr ? 0U : e.p->id);
   const auto h2 = std::hash<dd::Complex>{}(e.w);
   return dd::combineHash(h1, h2);

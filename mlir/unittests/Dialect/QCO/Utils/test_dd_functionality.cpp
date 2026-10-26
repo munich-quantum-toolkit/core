@@ -774,6 +774,24 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
       mainFunc(*mod), llvm::cantFail(dd::makeZeroState(1, *dd)), *dd, rng)));
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsOverlappingPhysicalGateQubits) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto [control, target] = b.cx(b.staticQubit(0), b.staticQubit(0));
+    b.sink(control);
+    b.sink(target);
+    return SmallVector<Value>{};
+  });
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("overlapping control/target qubits") !=
+                 std::string::npos;
+    return success();
+  });
+  auto dd = llvm::cantFail(dd::Package::create(1));
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(diagnosed);
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsStaticQubitBeyondDDRange) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     b.sink(b.staticQubit(dd::Package::MAX_POSSIBLE_QUBITS));

@@ -1974,11 +1974,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return op.emitError(llvm::toString(bit.takeError()));
           }
           if (*bit == '1') {
-            auto matrix = makeGateDD(*walk.dd, XOp::getUnitaryMatrix(), {*q});
-            if (!matrix) {
-              return resetOp.emitError(llvm::toString(matrix.takeError()));
-            }
-            state = walk.dd->applyOperation(*matrix, state);
+            const auto matrix = llvm::cantFail(
+                makeGateDD(*walk.dd, XOp::getUnitaryMatrix(), {*q}));
+            state = walk.dd->applyOperation(matrix, state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
           return success();
@@ -2848,11 +2846,9 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           branch.qubits.bind(measure.getQubitOut(), *q);
         } else {
           if (!measuredZero) {
-            auto matrix = makeGateDD(dd, XOp::getUnitaryMatrix(), {*q});
-            if (!matrix) {
-              return reset.emitError(llvm::toString(matrix.takeError()));
-            }
-            branch.state = dd.applyOperation(*matrix, branch.state);
+            const auto matrix =
+                llvm::cantFail(makeGateDD(dd, XOp::getUnitaryMatrix(), {*q}));
+            branch.state = dd.applyOperation(matrix, branch.state);
           }
           branch.qubits.bind(reset.getQubitOut(), *q);
         }
