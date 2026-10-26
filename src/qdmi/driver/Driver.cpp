@@ -107,12 +107,6 @@ llvm::Error LoadedDeviceAPI::initialize(const std::string& prefix) {
     }                                                                          \
   }
 
-#define LOAD_OPTIONAL_DYNAMIC_SYMBOL(symbol)                                   \
-  {                                                                            \
-    const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
-    (symbol) = reinterpret_cast<decltype(symbol)>(                             \
-        DL_SYM(libHandle_, symbolName.c_str()));                               \
-  }
   //===----------------------------------------------------------------------===//
 
   // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -126,7 +120,7 @@ llvm::Error LoadedDeviceAPI::initialize(const std::string& prefix) {
   LOAD_DYNAMIC_SYMBOL(device_session_set_parameter)
   // device job interface
   LOAD_DYNAMIC_SYMBOL(device_session_create_device_job)
-  LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
+  LOAD_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
   LOAD_DYNAMIC_SYMBOL(device_job_free)
   LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
   LOAD_DYNAMIC_SYMBOL(device_job_set_programs)
@@ -153,7 +147,6 @@ llvm::Error LoadedDeviceAPI::initialize(const std::string& prefix) {
   return llvm::Error::success();
 }
 
-#undef LOAD_OPTIONAL_DYNAMIC_SYMBOL
 #undef LOAD_DYNAMIC_SYMBOL
 
 LoadedDeviceAPI::~LoadedDeviceAPI() {
@@ -469,9 +462,6 @@ int QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   *job = nullptr;
-  if (api_->device_session_retrieve_device_job_by_id == nullptr) {
-    return QDMI_ERROR_NOTSUPPORTED;
-  }
   auto wrapper = std::unique_ptr<QDMI_Job_impl_d>(
       new (std::nothrow) QDMI_Job_impl_d(nullptr, this));
   if (!wrapper) {
