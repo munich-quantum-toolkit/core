@@ -96,6 +96,7 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
+using bindings::bindResult;
 using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
@@ -127,7 +128,7 @@ toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
 
 template <class T>
 static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
-  std::construct_at(&self, ::mqt::bindings::unwrap(std::move(result)));
+  std::construct_at(&self, unwrap(std::move(result)));
 }
 
 static void requireValid(const mlir::Program& program) {
@@ -538,20 +539,19 @@ programFromPath(const std::filesystem::path& path) {
   const auto extension = path.extension().string();
   if (extension == ".jeff") {
     return {
-        .program = ::mqt::bindings::unwrap(mlir::JeffProgram::fromFile(path)),
+        .program = unwrap(mlir::JeffProgram::fromFile(path)),
         .format = OutputFormat::Jeff,
     };
   }
   if (extension == ".mlir") {
     return {
-        .program = ::mqt::bindings::unwrap(mlir::QCProgram::fromMLIRFile(path)),
+        .program = unwrap(mlir::QCProgram::fromMLIRFile(path)),
         .format = OutputFormat::QC,
     };
   }
   if (extension == ".qasm") {
     return {
-        .program =
-            ::mqt::bindings::unwrap(mlir::QCProgram::fromOpenQASMFile(path)),
+        .program = unwrap(mlir::QCProgram::fromOpenQASMFile(path)),
         .format = OutputFormat::OpenQASM3,
     };
   }
@@ -569,14 +569,12 @@ programFromString(const std::string_view input) {
   if (isSourceString(input)) {
     if (input.find("OPENQASM") != std::string_view::npos) {
       return {
-          .program = ::mqt::bindings::unwrap(
-              mlir::QCProgram::fromOpenQASMString(input)),
+          .program = unwrap(mlir::QCProgram::fromOpenQASMString(input)),
           .format = OutputFormat::OpenQASM3,
       };
     }
     return {
-        .program =
-            ::mqt::bindings::unwrap(mlir::QCProgram::fromMLIRString(input)),
+        .program = unwrap(mlir::QCProgram::fromMLIRString(input)),
         .format = OutputFormat::QC,
     };
   }
@@ -625,8 +623,7 @@ programFromString(const std::string_view input) {
     const auto& value = nb::cast<const mlir::OpenQASMProgram&>(program);
     const nb::gil_scoped_release release;
     return {
-        .program = ::mqt::bindings::unwrap(
-            mlir::QCProgram::fromOpenQASMString(value.source())),
+        .program = unwrap(mlir::QCProgram::fromOpenQASMString(value.source())),
         .format = OutputFormat::OpenQASM3,
     };
   }
@@ -667,13 +664,13 @@ payloadForOutput(OutputFormat output) {
   case OutputFormat::IQMJSON:
   case OutputFormat::QIRBase:
   case OutputFormat::QIRAdaptive:
-    return ::mqt::bindings::unwrap(mlir::PayloadSpecification::forProgramFormat(
+    return unwrap(mlir::PayloadSpecification::forProgramFormat(
         static_cast<mlir::ProgramFormat>(output)));
   case OutputFormat::Qiskit:
     return bindings::qiskit::payloadSpecification();
   default:
     // Intermediate representations have no execution transport constraints.
-    return ::mqt::bindings::unwrap(mlir::PayloadSpecification::create(
+    return unwrap(mlir::PayloadSpecification::create(
         {.id = "mqt", .version = "1.0", .profile = ""},
         {
             {.id = mlir::ProgramCapability::FORWARD_BRANCHING.str()},
@@ -694,7 +691,7 @@ payloadForOutput(OutputFormat output) {
   if (targetEnvironment && !output) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
-      return ::mqt::bindings::unwrap(mlir::CompiledProgram::compile(
+      return unwrap(mlir::CompiledProgram::compile(
           std::move(input.program), *targetEnvironment, options));
     }();
     return nb::cast(std::move(compiled));
@@ -811,8 +808,7 @@ payloadForOutput(OutputFormat output) {
   if (deviceTarget) {
     const auto device = resolveDevice(target);
     const nb::gil_scoped_release release;
-    environment =
-        ::mqt::bindings::unwrap(mlir::targetEnvironmentFromDevice(device));
+    environment = unwrap(mlir::targetEnvironmentFromDevice(device));
   } else if (!target.is_none() && !compilerTarget) {
     environment.emplace(
         bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
@@ -862,13 +858,13 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
           "program_format conflicts with the compiled payload");
     }
     const nb::gil_scoped_release release;
-    return ::mqt::bindings::unwrap(
-        mlir::submitProgram(device, compiled, numShots, params[0], params[1],
-                            params[2], params[3], params[4]));
+    return unwrap(mlir::submitProgram(device, compiled, numShots, params[0],
+                                      params[1], params[2], params[3],
+                                      params[4]));
   }
   auto input = programFromInput(types, program, true).program;
   const nb::gil_scoped_release release;
-  return ::mqt::bindings::unwrap(
+  return unwrap(
       mlir::submitProgram(device, std::move(input), numShots, programFormat,
                           params[0], params[1], params[2], params[3], params[4],
                           options.value_or(mlir::CompilationOptions{})));
@@ -885,7 +881,7 @@ template <class Function>
   auto compiled = [&] {
     auto input = programFromInput(types, program, true).program;
     const nb::gil_scoped_release release;
-    return ::mqt::bindings::unwrap(
+    return unwrap(
         mlir::runDefaultPipeline(std::move(input), mlir::ProgramFormat::QCO));
   }();
   return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
@@ -1554,7 +1550,7 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
               const nb::gil_scoped_release release;
               return mlir::compilerTargetFromDevice(device);
             }();
-            return ::mqt::bindings::unwrap(std::move(target));
+            return unwrap(std::move(target));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_static("from_qiskit", &bindings::qiskit::importTarget, "source"_a,
@@ -1607,7 +1603,7 @@ Raises:
                   std::move(custom5));
               return mlir::compilerTargetFromDevice(device);
             }();
-            return ::mqt::bindings::unwrap(std::move(target));
+            return unwrap(std::move(target));
           },
           "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -1814,24 +1810,18 @@ excludes nested modules.)pb")
 QC programs use reference semantics and represent frontend quantum programs
 before conversion to QCO.)pb");
   qcProgram
-      .def_static("from_mlir_str",
-                  ::mqt::bindings::bindResult(&mlir::QCProgram::fromMLIRString),
+      .def_static("from_mlir_str", bindResult(&mlir::QCProgram::fromMLIRString),
                   "source"_a, "Parse a QC MLIR source string.")
-      .def_static("from_mlir_file",
-                  ::mqt::bindings::bindResult(&mlir::QCProgram::fromMLIRFile),
+      .def_static("from_mlir_file", bindResult(&mlir::QCProgram::fromMLIRFile),
                   "path"_a, "Parse QC MLIR from a file.")
-      .def_static(
-          "from_openqasm_str",
-          ::mqt::bindings::bindResult(&mlir::QCProgram::fromOpenQASMString),
-          "source"_a,
-          R"pb(Translate supported OpenQASM to QC MLIR.
+      .def_static("from_openqasm_str",
+                  bindResult(&mlir::QCProgram::fromOpenQASMString), "source"_a,
+                  R"pb(Translate supported OpenQASM to QC MLIR.
 
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
-      .def_static(
-          "from_openqasm_file",
-          ::mqt::bindings::bindResult(&mlir::QCProgram::fromOpenQASMFile),
-          "path"_a,
-          R"pb(Translate a supported OpenQASM file to QC MLIR.
+      .def_static("from_openqasm_file",
+                  bindResult(&mlir::QCProgram::fromOpenQASMFile), "path"_a,
+                  R"pb(Translate a supported OpenQASM file to QC MLIR.
 
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
@@ -1927,12 +1917,10 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 QCO programs use value semantics and expose optimization and transformation
 operations.)pb");
   qcoProgram
-      .def_static(
-          "from_mlir_str",
-          ::mqt::bindings::bindResult(&mlir::QCOProgram::fromMLIRString),
-          "source"_a, "Parse a QCO MLIR source string.")
-      .def_static("from_mlir_file",
-                  ::mqt::bindings::bindResult(&mlir::QCOProgram::fromMLIRFile),
+      .def_static("from_mlir_str",
+                  bindResult(&mlir::QCOProgram::fromMLIRString), "source"_a,
+                  "Parse a QCO MLIR source string.")
+      .def_static("from_mlir_file", bindResult(&mlir::QCOProgram::fromMLIRFile),
                   "path"_a, "Parse QCO MLIR from a file.")
       .def("copy", &copyProgram<mlir::QCOProgram>,
            "Return an independent copy of this program.")
@@ -2124,7 +2112,7 @@ further compilation.)pb");
               throw nb::builtin_exception(nb::exception_type::runtime_error,
                                           error->getDescription().cStr());
             }
-            return ::mqt::bindings::unwrap(std::move(*program));
+            return unwrap(std::move(*program));
           },
           "segments"_a.noconvert(),
           R"pb(Deserialize a ``jeff`` program from Cap'n Proto segments.
@@ -2139,11 +2127,10 @@ returned program does not retain the buffers.)pb")
             const auto view =
                 std::span(reinterpret_cast<const std::byte*>(bytes.c_str()),
                           bytes.size());
-            return ::mqt::bindings::unwrap(mlir::JeffProgram::fromBytes(view));
+            return unwrap(mlir::JeffProgram::fromBytes(view));
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
-      .def_static("from_file",
-                  ::mqt::bindings::bindResult(&mlir::JeffProgram::fromFile),
+      .def_static("from_file", bindResult(&mlir::JeffProgram::fromFile),
                   "path"_a, "Read a ``jeff`` program from a file.")
       .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")

@@ -101,11 +101,11 @@ TEST(GenerateProgramTest, BoundsQPEPayloadAtMaximumPrecision) {
     EXPECT_LT(program->str().size(), 4096U);
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::Jeff);
-    ASSERT_TRUE(::mqt::test::succeeded(compiled));
+    MQT_ASSERT_SUCCESS(compiled);
     const auto bytes = std::get<JeffProgram>(*compiled).toBytes();
     EXPECT_LT(bytes.size(), 16'384U);
     auto restored = JeffProgram::fromBytes(bytes);
-    ASSERT_TRUE(::mqt::test::succeeded(restored));
+    MQT_ASSERT_SUCCESS(restored);
     EXPECT_EQ(restored->toBytes(), bytes);
   }
 }

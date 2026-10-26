@@ -17,8 +17,8 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
-#include "../../../Result.hpp"
 #include "QiskitTranslation.h"
+#include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
@@ -3155,24 +3155,22 @@ public:
         }
         std::ranges::sort(sites);
         for (auto& tuple : sites) {
-          siteTuples.push_back(::mqt::bindings::unwrap(
-              Target::SiteTuple::create(std::move(tuple))));
+          siteTuples.push_back(
+              unwrap(Target::SiteTuple::create(std::move(tuple))));
         }
       }
-      auto capability =
-          ::mqt::bindings::unwrap(Target::OperationCapability::create(
-              operationName, arity, numParameters, std::move(siteTuples),
-              std::nullopt, std::nullopt, std::move(fixedParameters),
-              nativeName, std::move(parameterBounds)));
+      auto capability = unwrap(Target::OperationCapability::create(
+          operationName, arity, numParameters, std::move(siteTuples),
+          std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
+          std::move(parameterBounds)));
       operations.push_back(std::move(capability));
     }
     if (operations.empty()) {
       throw nb::value_error(
           "Qiskit target has no representable native operations");
     }
-    operations.push_back(
-        ::mqt::bindings::unwrap(Target::OperationCapability::create(
-            "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    operations.push_back(unwrap(Target::OperationCapability::create(
+        "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
     return Target::NativeOperations::fromOperations(operations);
   }
 
@@ -3201,7 +3199,7 @@ public:
         capabilities.push_back({.id = controlFlowCapability(kind).str()});
       }
     }
-    return ::mqt::bindings::unwrap(mlir::PayloadSpecification::create(
+    return unwrap(mlir::PayloadSpecification::create(
         {
             .id = "qiskit",
             .version = std::to_string(QISKIT_VERSION_MAJOR) + "." +
@@ -3251,7 +3249,7 @@ public:
             ? Target::Connectivity::allToAll()
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
-    return ::mqt::bindings::unwrap(
+    return unwrap(
         targetName ? Target::create(*targetName, numQubits, connectivity,
                                     nativeOperations)
                    : Target::create(numQubits, connectivity, nativeOperations));

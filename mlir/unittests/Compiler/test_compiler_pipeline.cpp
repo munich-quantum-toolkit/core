@@ -383,7 +383,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
       CompilerInput{std::move(*input)},
       testCase.convertToQIR ? ProgramFormat::QIRAdaptive : ProgramFormat::QC,
       testCase.qcoPipeline);
-  ASSERT_TRUE(::mqt::test::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
 
   if (auto* qc = std::get_if<QCProgram>(&*compiled)) {
     ASSERT_TRUE(succeeded(verify(qc->module())));
@@ -594,15 +594,15 @@ rx(1.0) q;
 )";
   auto rawInput = QCProgram::fromOpenQASMString(qasm);
   auto optimizedInput = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(rawInput));
-  ASSERT_TRUE(::mqt::test::succeeded(optimizedInput));
+  MQT_ASSERT_SUCCESS(rawInput);
+  MQT_ASSERT_SUCCESS(optimizedInput);
 
   auto raw = runDefaultPipeline(CompilerInput{std::move(*rawInput)},
                                 ProgramFormat::QCO);
   auto optimized = runDefaultPipeline(CompilerInput{std::move(*optimizedInput)},
                                       ProgramFormat::QCOOptimized);
-  ASSERT_TRUE(::mqt::test::succeeded(raw));
-  ASSERT_TRUE(::mqt::test::succeeded(optimized));
+  MQT_ASSERT_SUCCESS(raw);
+  MQT_ASSERT_SUCCESS(optimized);
   EXPECT_NE(std::get<QCOProgram>(*raw).str(),
             std::get<QCOProgram>(*optimized).str());
 }
@@ -615,19 +615,19 @@ x q;
 h q;
 )";
   auto input = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   auto result =
       runDefaultPipeline(CompilerInput{std::move(*input)},
                          ProgramFormat::QCOOptimized, "hadamard-lifting");
-  ASSERT_TRUE(::mqt::test::succeeded(result));
+  MQT_ASSERT_SUCCESS(result);
   EXPECT_FALSE(std::get<QCOProgram>(*result).str().empty());
 }
 
 TEST_F(CompilerPipelineTest, MoveAssignmentKeepsModuleContextAlive) {
   auto first = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; h q;");
   auto second = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; x q;");
-  ASSERT_TRUE(::mqt::test::succeeded(first));
-  ASSERT_TRUE(::mqt::test::succeeded(second));
+  MQT_ASSERT_SUCCESS(first);
+  MQT_ASSERT_SUCCESS(second);
   ASSERT_NE(first->module().getContext(), second->module().getContext());
   auto expected = second->module();
 
@@ -655,7 +655,7 @@ h q;
 )";
 
   auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   EXPECT_FALSE(qc->isValid());
@@ -676,7 +676,7 @@ x $0;
 )";
 
   auto qcProgram = QCProgram::fromOpenQASMString(qasm.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qcProgram));
+  MQT_ASSERT_SUCCESS(qcProgram);
 
   size_t qcStaticOps = 0;
   qcProgram->module().walk([&](Operation* op) {
@@ -914,7 +914,7 @@ output bit ok;
 ok = measure q;
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   ASSERT_TRUE(mlir::succeeded(qc->cleanup()));
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
@@ -946,7 +946,7 @@ c = measure q;
 )qasm";
 
   auto qc = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   const auto imported = qc->str();
   EXPECT_EQ(imported.find("i128"), std::string::npos);
   EXPECT_EQ(imported.find("arith.select"), std::string::npos);
@@ -1017,7 +1017,7 @@ if (flag) {
 )qasm";
 
   auto qc = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   ASSERT_TRUE(mlir::succeeded(qc->cleanup()));
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
@@ -1050,7 +1050,7 @@ TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
       return %result : i1
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(qco));
+  MQT_ASSERT_SUCCESS(qco);
   auto qc = std::move(*qco).intoQC();
   ASSERT_TRUE(mlir::succeeded(qc));
   auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
@@ -1070,7 +1070,7 @@ if (feedback) { x q; }
 output bit result;
 result = measure q;
 )qasm");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
   ASSERT_TRUE(succeeded(qir));
   bool hasRuntimeStorage = false;
@@ -1105,7 +1105,7 @@ TEST_F(CompilerPipelineTest, BaseUnrollsBoundArrayLoops) {
       return %result : i1
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   ASSERT_TRUE(succeeded(
       qc->bindParameters({{"angles", std::vector<double>{0.25, -0.5}}})));
   for (bool replay : {false, true}) {
@@ -1152,7 +1152,7 @@ TEST_F(CompilerPipelineTest, BasePromotesUnrolledClassicalArrays) {
       "OPENQASM 3.1; array[float[64], 2] angles = {0.25, -0.5}; qubit q; "
       "for int i in [0:1] { ry(angles[i]) q; } "
       "output bit result; result = measure q;");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
   ASSERT_TRUE(succeeded(qir));
   EXPECT_TRUE(succeeded(std::move(*qir).intoLLVMIR()));
@@ -1182,7 +1182,7 @@ TEST_F(CompilerPipelineTest, BaseRejectsDynamicAndExcessiveLoopExpansion) {
         "}\n"
         "qc.dealloc %q : !qc.qubit\n"
         "return }}");
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     EXPECT_TRUE(failed(std::move(*qc).intoQIR(QIRProfile::Base)));
     EXPECT_FALSE(qc->isValid());
   }
@@ -1190,7 +1190,7 @@ TEST_F(CompilerPipelineTest, BaseRejectsDynamicAndExcessiveLoopExpansion) {
 
 TEST_F(CompilerPipelineTest, PayloadControlRequiresValidSpecification) {
   auto qc = QCProgram::fromMLIRString("module {}");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   for (const auto* pass :
        {"unroll-loops-for-payload", "legalize-control-flow"}) {
     for (const auto* option : {"", "{payload-spec=unit}"}) {
@@ -1209,10 +1209,10 @@ output bit result;
 result = temporary;
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto optimized = runDefaultPipeline(CompilerInput{qc->copy()},
                                       ProgramFormat::QCOOptimized);
-  ASSERT_TRUE(::mqt::test::succeeded(optimized));
+  MQT_ASSERT_SUCCESS(optimized);
   auto& program = std::get<QCOProgram>(*optimized);
   const auto outcomes =
       qco::sample(mlir::mqt::getEntryPoint(program.module()), 1, 42);
@@ -1223,7 +1223,7 @@ result = temporary;
   for (const auto format :
        {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
     auto compiled = runDefaultPipeline(CompilerInput{qc->copy()}, format);
-    ASSERT_TRUE(::mqt::test::succeeded(compiled));
+    MQT_ASSERT_SUCCESS(compiled);
     auto ir = std::get<QIRProgram>(std::move(*compiled)).intoLLVMIR();
     ASSERT_TRUE(succeeded(ir));
     EXPECT_NE(ir->find("call void @__quantum__qis__mz__body"),
@@ -1249,7 +1249,7 @@ TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
       return %bit : i1
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   auto qc = std::move(*program).intoQC();
   ASSERT_TRUE(mlir::succeeded(qc));
   auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
@@ -1658,11 +1658,11 @@ TEST_F(CompilerPipelineTest, ClassicalArraysSurviveQCQCOAndQIR) {
   for (auto source : programs) {
     SCOPED_TRACE(source.str());
     auto qc = QCProgram::fromOpenQASMString(source.str());
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto exported = qc->copy().intoOpenQASM3();
     ASSERT_TRUE(succeeded(exported));
     auto reimported = QCProgram::fromOpenQASMString(exported->source());
-    ASSERT_TRUE(::mqt::test::succeeded(reimported));
+    MQT_ASSERT_SUCCESS(reimported);
     auto roundTripped = std::move(*reimported).intoQCO();
     ASSERT_TRUE(succeeded(roundTripped));
     const auto exportedOutcomes =
@@ -1725,14 +1725,14 @@ TEST_F(CompilerPipelineTest, ConstantArrayInitializationPreservesValues) {
   for (const bool throughJeff : {false, true}) {
     SCOPED_TRACE(throughJeff);
     auto qc = QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(succeeded(qco));
     if (throughJeff) {
       auto jeff = std::move(*qco).intoJeff();
       ASSERT_TRUE(succeeded(jeff));
       auto restored = JeffProgram::fromBytes(jeff->toBytes());
-      ASSERT_TRUE(::mqt::test::succeeded(restored));
+      MQT_ASSERT_SUCCESS(restored);
       qco = std::move(*restored).intoQCO();
       ASSERT_TRUE(succeeded(qco));
     }
@@ -1745,7 +1745,7 @@ TEST_F(CompilerPipelineTest, ConstantArrayInitializationPreservesValues) {
     auto exported = restoredQC->copy().intoOpenQASM3();
     ASSERT_TRUE(succeeded(exported));
     auto reimported = QCProgram::fromOpenQASMString(exported->source());
-    ASSERT_TRUE(::mqt::test::succeeded(reimported));
+    MQT_ASSERT_SUCCESS(reimported);
     auto roundTrip = std::move(*reimported).intoQCO();
     ASSERT_TRUE(succeeded(roundTrip));
     const auto roundTripSamples =
@@ -1776,7 +1776,7 @@ TEST_F(CompilerPipelineTest, BaseRejectsResidualClassicalArrayStorage) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   EXPECT_TRUE(mlir::failed(std::move(*qc).intoQIR(QIRProfile::Base)));
 }
 
@@ -1796,7 +1796,7 @@ TEST_F(CompilerPipelineTest, ArrayRangesCheckMemrefBoundsAndShapesInDD) {
         "OPENQASM 3.0; output bit result; result = 0; "
         "array[int, 4] a = {0, 1, 2, 3}; array[int, 2] b; " +
         body.str());
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
     std::string diagnostic;
@@ -1821,7 +1821,7 @@ result = measure q;
 )qasm";
 
   auto input = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto qir = input->copy().intoQIR(profile);
     ASSERT_TRUE(mlir::succeeded(qir));
@@ -2003,10 +2003,10 @@ h q;
   auto qcFromQASM = QCProgram::fromOpenQASMString(qasm);
   auto qcFromQASMFile = QCProgram::fromOpenQASMFile(qasmPath);
 
-  ASSERT_TRUE(::mqt::test::succeeded(qcFromMLIR));
-  ASSERT_TRUE(::mqt::test::succeeded(qcFromMLIRFile));
-  ASSERT_TRUE(::mqt::test::succeeded(qcFromQASM));
-  ASSERT_TRUE(::mqt::test::succeeded(qcFromQASMFile));
+  MQT_ASSERT_SUCCESS(qcFromMLIR);
+  MQT_ASSERT_SUCCESS(qcFromMLIRFile);
+  MQT_ASSERT_SUCCESS(qcFromQASM);
+  MQT_ASSERT_SUCCESS(qcFromQASMFile);
   EXPECT_EQ(qcFromMLIR->str(), qcFromMLIRFile->str());
   EXPECT_EQ(qcFromQASM->str(), qcFromQASMFile->str());
   EXPECT_EQ(qcFromMLIR->str(), qcFromMLIR->copy().str());
@@ -2044,7 +2044,7 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
       return
     }
   })mlir");
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
     ASSERT_TRUE(mlir::succeeded(qco->compileForTarget(TargetEnvironment(
@@ -2068,8 +2068,8 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
         }));
     auto qcoFromString = QCOProgram::fromMLIRString(qco->str());
     auto qcoFromFile = QCOProgram::fromMLIRFile(path);
-    ASSERT_TRUE(::mqt::test::succeeded(qcoFromString));
-    ASSERT_TRUE(::mqt::test::succeeded(qcoFromFile));
+    MQT_ASSERT_SUCCESS(qcoFromString);
+    MQT_ASSERT_SUCCESS(qcoFromFile);
     EXPECT_EQ(qcoFromString->str(), qco->str());
     EXPECT_EQ(qcoFromFile->str(), qco->str());
 
@@ -2083,8 +2083,8 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
         }));
     auto qcFromString = QCProgram::fromMLIRString(restoredQC->str());
     auto qcFromFile = QCProgram::fromMLIRFile(path);
-    ASSERT_TRUE(::mqt::test::succeeded(qcFromString));
-    ASSERT_TRUE(::mqt::test::succeeded(qcFromFile));
+    MQT_ASSERT_SUCCESS(qcFromString);
+    MQT_ASSERT_SUCCESS(qcFromFile);
     EXPECT_EQ(qcFromString->str(), restoredQC->str());
     EXPECT_EQ(qcFromFile->str(), restoredQC->str());
   }
@@ -2277,7 +2277,7 @@ TEST_F(CompilerPipelineTest, BitcodeWriteReportsDeviceFailure) {
     GTEST_SKIP() << "requires /dev/full";
   }
   auto input = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; h q;");
-  ASSERT_TRUE(::mqt::test::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   auto program = std::move(*input).intoQIR(QIRProfile::Base);
   ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_TRUE(mlir::failed(std::move(*program).writeBitcode("/dev/full")));
@@ -2286,7 +2286,7 @@ TEST_F(CompilerPipelineTest, BitcodeWriteReportsDeviceFailure) {
 
 TEST_F(CompilerPipelineTest, InvalidPipelineIncludesParserDiagnostic) {
   auto program = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q;");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   std::string message;
   ScopedDiagnosticHandler handler(program->module().getContext(),
                                   [&](Diagnostic& diagnostic) {
@@ -2309,7 +2309,7 @@ ctrl @ x q[0], q[1];
 bit[2] c = measure q;
 )";
   auto directQC = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(directQC));
+  MQT_ASSERT_SUCCESS(directQC);
   auto direct = std::move(*directQC).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(direct));
   EXPECT_FALSE(directQC->isValid());
@@ -2330,25 +2330,25 @@ bit[2] c = measure q;
 
   auto imported =
       runDefaultPipeline(CompilerInput(*direct), ProgramFormat::QCImport);
-  ASSERT_TRUE(::mqt::test::succeeded(imported));
+  MQT_ASSERT_SUCCESS(imported);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*imported));
 
   auto compiled =
       runDefaultPipeline(CompilerInput(OpenQASMProgram(direct->source())),
                          ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(::mqt::test::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
   EXPECT_TRUE(std::holds_alternative<QIRProgram>(*compiled));
 
   auto pipelineQC = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(pipelineQC));
+  MQT_ASSERT_SUCCESS(pipelineQC);
   auto result = runDefaultPipeline(CompilerInput(std::move(*pipelineQC)),
                                    ProgramFormat::OpenQASM3);
-  ASSERT_TRUE(::mqt::test::succeeded(result));
+  MQT_ASSERT_SUCCESS(result);
   ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*result));
   const auto& optimized = std::get<OpenQASMProgram>(*result);
   EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3.1;\n"));
   auto reparsed = QCProgram::fromOpenQASMString(optimized.source());
-  ASSERT_TRUE(::mqt::test::succeeded(reparsed));
+  MQT_ASSERT_SUCCESS(reparsed);
   auto adaptiveQIR = std::move(*reparsed).intoQIR(QIRProfile::Adaptive);
   EXPECT_TRUE(mlir::succeeded(adaptiveQIR));
 }
@@ -2362,7 +2362,7 @@ TEST_F(CompilerPipelineTest, TypedOpenQASMExportDropsUnusedGates) {
     func.func @main() attributes {mqt.entry_point} { return }
   })mlir";
   auto program = QCProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
 
   auto exported = std::move(*program).intoOpenQASM3();
 
@@ -2381,11 +2381,11 @@ TEST_F(CompilerPipelineTest, OpenQASMExportPreservesConditionalArrayAngles) {
     output bit result;
     result = measure q;
   )qasm");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   auto exported = std::move(*program).intoOpenQASM3();
   ASSERT_TRUE(succeeded(exported));
   auto restored = QCProgram::fromOpenQASMString(exported->source());
-  ASSERT_TRUE(::mqt::test::succeeded(restored));
+  MQT_ASSERT_SUCCESS(restored);
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(succeeded(qco));
   auto counts = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42);
@@ -2406,15 +2406,15 @@ c[0] = measure q[1];
 c[1] = measure q[3];
 )";
   auto program = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   auto prepared =
       runDefaultPipeline(CompilerInput(program->copy()), ProgramFormat::QC);
-  ASSERT_TRUE(::mqt::test::succeeded(prepared));
+  MQT_ASSERT_SUCCESS(prepared);
   auto reference = std::get<QCProgram>(std::move(*prepared)).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(reference));
   auto output = runDefaultPipeline(CompilerInput(std::move(*program)),
                                    ProgramFormat::OpenQASM3);
-  ASSERT_TRUE(::mqt::test::succeeded(output));
+  MQT_ASSERT_SUCCESS(output);
   const auto& exported = std::get<OpenQASMProgram>(*output);
   EXPECT_EQ(exported.source(), reference->source());
   EXPECT_EQ(exported.source().find("gate unused"), std::string::npos);
@@ -2431,7 +2431,7 @@ TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
     }
   })mlir";
   auto program = QCProgram::fromMLIRString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   EXPECT_TRUE(mlir::failed(std::move(*program).intoOpenQASM3()));
   EXPECT_FALSE(program->isValid());
 }
@@ -2461,8 +2461,8 @@ TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
 
   auto qc = QCProgram::fromMLIRString(qcSource);
   auto qco = QCOProgram::fromMLIRString(qcoSource);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
-  ASSERT_TRUE(::mqt::test::succeeded(qco));
+  MQT_ASSERT_SUCCESS(qc);
+  MQT_ASSERT_SUCCESS(qco);
   ASSERT_TRUE(mlir::succeeded(qc->normalizeGlobalPhases()));
   ASSERT_TRUE(mlir::succeeded(qco->normalizeGlobalPhases()));
   EXPECT_EQ(StringRef(qc->str()).count("qc.gphase"), 1);
@@ -2473,7 +2473,7 @@ TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
   EXPECT_EQ(qco->str(), once);
 
   auto textual = QCOProgram::fromMLIRString(qcoSource);
-  ASSERT_TRUE(::mqt::test::succeeded(textual));
+  MQT_ASSERT_SUCCESS(textual);
   ASSERT_TRUE(
       mlir::succeeded(textual->runPassPipeline("normalize-global-phases")));
   EXPECT_EQ(StringRef(textual->str()).count("qco.gphase"), 1);
@@ -2589,10 +2589,10 @@ TEST_F(CompilerPipelineTest, DefaultQIRPipelineInlinesBeforeQCOOptimization) {
   })mlir";
 
   auto input = QCProgram::fromMLIRString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   auto output = runDefaultPipeline(CompilerInput{std::move(*input)},
                                    ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(::mqt::test::succeeded(output));
+  MQT_ASSERT_SUCCESS(output);
   EXPECT_TRUE(std::holds_alternative<QIRProgram>(*output));
 }
 
@@ -2664,7 +2664,7 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
     }
   })mlir";
   auto qco = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qco));
+  MQT_ASSERT_SUCCESS(qco);
   auto jeffProgram = std::move(*qco).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeffProgram));
   EXPECT_TRUE(succeeded(verify(jeffProgram->module())));
@@ -2684,7 +2684,7 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
             1);
 
   auto restoredJeff = JeffProgram::fromBytes(jeffProgram->toBytes());
-  ASSERT_TRUE(::mqt::test::succeeded(restoredJeff));
+  MQT_ASSERT_SUCCESS(restoredJeff);
   auto restored = std::move(*restoredJeff).intoQCO();
   ASSERT_TRUE(mlir::succeeded(restored));
   EXPECT_TRUE(succeeded(verify(restored->module())));
@@ -2704,7 +2704,7 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
   for (const auto format :
        {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
     auto output = runDefaultPipeline(CompilerInput{restored->copy()}, format);
-    ASSERT_TRUE(::mqt::test::succeeded(output));
+    MQT_ASSERT_SUCCESS(output);
     EXPECT_TRUE(
         mlir::succeeded(std::get<QIRProgram>(std::move(*output)).intoLLVMIR()));
   }
@@ -2738,7 +2738,7 @@ TEST_F(CompilerPipelineTest, QIRCountsPackedStaticQubits) {
         return
       }
     })mlir");
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     ASSERT_TRUE(succeeded(verify(qc->module())));
     for (const auto format :
          {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
@@ -2747,7 +2747,7 @@ TEST_F(CompilerPipelineTest, QIRCountsPackedStaticQubits) {
         EXPECT_TRUE(llvm::errorToBool(output.takeError()));
         continue;
       }
-      ASSERT_TRUE(::mqt::test::succeeded(output));
+      MQT_ASSERT_SUCCESS(output);
       auto& qir = std::get<QIRProgram>(*output);
       ASSERT_TRUE(succeeded(verify(qir.module())));
       OpBuilder builder(qir.module().getContext());
@@ -2767,13 +2767,13 @@ TEST_F(CompilerPipelineTest, QIRPreservesSparseStaticQubitIdsAndCapacity) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   ASSERT_TRUE(succeeded(verify(qc->module())));
 
   for (const auto format :
        {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
     auto output = runDefaultPipeline(CompilerInput{qc->copy()}, format);
-    ASSERT_TRUE(::mqt::test::succeeded(output));
+    MQT_ASSERT_SUCCESS(output);
     auto moduleOp = std::get<QIRProgram>(*output).module();
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     auto main = getMainFunction(moduleOp);
@@ -2809,7 +2809,7 @@ TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(qco));
+  MQT_ASSERT_SUCCESS(qco);
   EXPECT_TRUE(mlir::failed(std::move(*qco).intoJeff()));
   EXPECT_FALSE(qco->isValid());
 }
@@ -2837,7 +2837,7 @@ x q;
                     "typed_program_round_trip.jeff";
 
   auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto jeffResult = std::move(*qco).intoJeff();
@@ -2849,8 +2849,8 @@ x q;
 
   auto fromBytes = JeffProgram::fromBytes(bytes);
   auto fromFile = JeffProgram::fromFile(path);
-  ASSERT_TRUE(::mqt::test::succeeded(fromBytes));
-  ASSERT_TRUE(::mqt::test::succeeded(fromFile));
+  MQT_ASSERT_SUCCESS(fromBytes);
+  MQT_ASSERT_SUCCESS(fromFile);
   EXPECT_EQ(fromBytes->str(), fromFile->str());
   EXPECT_EQ(fromBytes->toBytes(), bytes);
   EXPECT_EQ(jeff.copy().toBytes(), bytes);
@@ -2878,7 +2878,7 @@ TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughSegmentedMessages) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(qco));
+  MQT_ASSERT_SUCCESS(qco);
   auto program = std::move(*qco).intoJeff();
   ASSERT_TRUE(mlir::succeeded(program));
   const auto bytes = program->toBytes();
@@ -2916,7 +2916,7 @@ h q;
                        "typed_program_input.qco.mlir";
 
   auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   const auto qcoIR = qco->str();
@@ -2927,8 +2927,8 @@ h q;
       }));
   auto qcoFromString = QCOProgram::fromMLIRString(qcoIR);
   auto qcoFromFile = QCOProgram::fromMLIRFile(qcoPath);
-  ASSERT_TRUE(::mqt::test::succeeded(qcoFromString));
-  ASSERT_TRUE(::mqt::test::succeeded(qcoFromFile));
+  MQT_ASSERT_SUCCESS(qcoFromString);
+  MQT_ASSERT_SUCCESS(qcoFromFile);
   EXPECT_EQ(qcoFromString->str(), qcoFromFile->str());
   EXPECT_EQ(qcoFromString->str(), qcoFromString->copy().str());
   EXPECT_TRUE(mlir::succeeded(qcoFromString->liftHadamards()));
@@ -2941,8 +2941,8 @@ h q;
 
   auto baseInput = QCProgram::fromOpenQASMString(qasm);
   auto adaptiveInput = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(baseInput));
-  ASSERT_TRUE(::mqt::test::succeeded(adaptiveInput));
+  MQT_ASSERT_SUCCESS(baseInput);
+  MQT_ASSERT_SUCCESS(adaptiveInput);
   auto base = std::move(*baseInput).intoQIR(QIRProfile::Base);
   auto adaptive = std::move(*adaptiveInput).intoQIR(QIRProfile::Adaptive);
   ASSERT_TRUE(succeeded(base));
@@ -2980,7 +2980,7 @@ x q[0];
 cx q[0], q[2];
 )";
   auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qcoResult = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qcoResult));
   auto qco = std::move(*qcoResult);
@@ -2998,7 +2998,7 @@ cx q[0], q[2];
   llvm::raw_string_ostream stream(loopIR);
   loopModule->print(stream);
   auto loopProgram = QCOProgram::fromMLIRString(loopIR);
-  ASSERT_TRUE(::mqt::test::succeeded(loopProgram));
+  MQT_ASSERT_SUCCESS(loopProgram);
   EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
   EXPECT_TRUE(mlir::succeeded(loopProgram->unrollQuantumLoops()));
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
@@ -3007,7 +3007,7 @@ cx q[0], q[2];
 TEST_F(CompilerPipelineTest,
        CompilationSeedSurvivesReproducerAndRestoresInput) {
   auto source = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
-  ASSERT_TRUE(::mqt::test::succeeded(source));
+  MQT_ASSERT_SUCCESS(source);
   auto moduleOp = source->module();
   const auto previousSeed =
       Builder(moduleOp.getContext()).getI64IntegerAttr(12);
@@ -3123,7 +3123,7 @@ cx q[2], q[1];
 cx q[1], q[5];
 c = measure q;
 )");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto input = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(input));
   const auto target = llvm::cantFail(
@@ -3178,7 +3178,7 @@ TEST_F(CompilerPipelineTest, ElidesTensorBackedSwapsBeforeFusionAndRouting) {
         std::string(R"qasm(OPENQASM 3.0; include "stdgates.inc";
           qubit[3] q; bit[3] c;)qasm") +
         gates + "c = measure q;");
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto program = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(program));
     ASSERT_TRUE(mlir::succeeded(program->compileForTarget(TargetEnvironment(
@@ -3232,7 +3232,7 @@ TEST_F(CompilerPipelineTest, TerminalSwapElisionLeavesStructuredPackingIntact) {
             return
           }
         })mlir");
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     const auto before = program->str();
     PassManager pm(program->module().getContext());
     pm.addPass(qco::createElideTerminalSwapsPass());
@@ -3264,7 +3264,7 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
                            : CompilerTarget::Connectivity::allToAll(),
           CompilerTarget::NativeOperations::unrestricted()));
       auto qc = QCProgram::fromOpenQASMString(source);
-      ASSERT_TRUE(::mqt::test::succeeded(qc));
+      MQT_ASSERT_SUCCESS(qc);
       auto program = std::move(*qc).intoQCO();
       ASSERT_TRUE(mlir::succeeded(program));
       auto package = llvm::cantFail(dd::Package::create(4));
@@ -3342,7 +3342,7 @@ TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
         std::string(
             "module { func.func @main() attributes {mqt.entry_point} {") +
         body + "return } }");
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     std::string diagnostics;
     EXPECT_FALSE(compileForTargetWithDiagnostics(
         *program, makePayloadSpecification(), diagnostics));
@@ -3353,7 +3353,7 @@ TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
 
 TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q;");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   program->module()->setAttr("mqt.layout",
@@ -3373,7 +3373,7 @@ TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
 
 TEST_F(CompilerPipelineTest, TargetSynthesisRecordsInitialLayout) {
   auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q; x q;");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   const auto target = llvm::cantFail(
@@ -3392,7 +3392,7 @@ TEST_F(CompilerPipelineTest, TargetSynthesisRecordsInitialLayout) {
 // Test: target compilation decomposes, maps, synthesizes, and verifies.
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto qc = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
 
@@ -3436,7 +3436,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   EXPECT_EQ(numHigherArity, 0);
 
   auto unsupportedQC = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
-  ASSERT_TRUE(::mqt::test::succeeded(unsupportedQC));
+  MQT_ASSERT_SUCCESS(unsupportedQC);
   auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
   ASSERT_TRUE(mlir::succeeded(unsupportedQCO));
   EXPECT_TRUE(mlir::failed(unsupportedQCO->compileForTarget(
@@ -3507,7 +3507,7 @@ TEST_F(CompilerPipelineTest,
   for (const auto& [source, operation] : cases) {
     SCOPED_TRACE(operation.str());
     auto program = QCOProgram::fromMLIRString(source.str());
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     std::string diagnostics;
     EXPECT_FALSE(
         compileForTargetWithDiagnostics(*program, payload, diagnostics));
@@ -3528,7 +3528,7 @@ TEST_F(CompilerPipelineTest,
   for (const auto& capability : invalid) {
     SCOPED_TRACE(capability.id);
     auto program = QCOProgram::fromMLIRString(forwardBranch.str());
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     std::string diagnostics;
     EXPECT_FALSE(compileForTargetWithDiagnostics(
         *program, makeControlPayloadSpecification({capability}), diagnostics));
@@ -3545,7 +3545,7 @@ qubit q;
 for int i in [0:2] { x q; }
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto input = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(input));
   ASSERT_TRUE(StringRef(input->str()).contains("scf.for"));
@@ -3584,7 +3584,7 @@ for int outer in [0:2] {
 )qasm";
 
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   ASSERT_EQ(StringRef(program->str()).count("scf.for"), 2U);
@@ -3613,7 +3613,7 @@ bit c;
 c = measure q;
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   ASSERT_TRUE(mlir::succeeded(program->compileForTarget(TargetEnvironment(
@@ -3648,7 +3648,7 @@ TEST_F(CompilerPipelineTest,
     }
   )mlir";
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(),
       TargetEnvironment(makeUnrestrictedTarget(),
@@ -3695,7 +3695,7 @@ TEST_F(CompilerPipelineTest, PayloadControlPromotesNestedSingleIterationState) {
     }
   )mlir";
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(),
       TargetEnvironment(makeUnrestrictedTarget(),
@@ -3746,7 +3746,7 @@ TEST_F(CompilerPipelineTest,
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(),
       TargetEnvironment(
@@ -3794,7 +3794,7 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesInnerTensorSweepWithinBudget) {
         return
       }
     })mlir");
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     attachTargetEnvironment(
         program->module(),
         TargetEnvironment(
@@ -3848,7 +3848,7 @@ TEST_F(CompilerPipelineTest, PayloadSpecializationRemovesIdentityRepetition) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(),
       TargetEnvironment(
@@ -3886,7 +3886,7 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesDependentOuterLoops) {
     const std::string source =
         "OPENQASM 3.1; include \"stdgates.inc\"; qubit[3] q; " + body.str();
     auto qc = QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto program = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(program));
     ASSERT_TRUE(StringRef(program->str()).contains("scf.for"));
@@ -3945,7 +3945,7 @@ c[1] = measure q[3];
   for (const bool routing : {false, true}) {
     SCOPED_TRACE(routing);
     auto qc = QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto program = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(program));
     const auto target = llvm::cantFail(CompilerTarget::create(
@@ -3981,7 +3981,7 @@ TEST_F(CompilerPipelineTest, OverCapacityInputsCompileWithoutLayout) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   const auto target = llvm::cantFail(
       CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -4002,7 +4002,7 @@ TEST_F(CompilerPipelineTest, PreplacedQubitWithoutIndexedPlacementHasNoLayout) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   const auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
@@ -4029,7 +4029,7 @@ TEST_F(CompilerPipelineTest, StaticQubitsKeepTheirSitesOnExplicitTopology) {
           "%x, %y = qco.swap %a, %b : !qco.qubit, !qco.qubit "
           "qco.sink %x : !qco.qubit "
           "qco.sink %y : !qco.qubit return } }");
-      ASSERT_TRUE(::mqt::test::succeeded(program));
+      MQT_ASSERT_SUCCESS(program);
       const TargetEnvironment environment(target, makePayloadSpecification());
       EXPECT_EQ(succeeded(synthesisOnly
                               ? program->synthesizeForTarget(environment)
@@ -4069,7 +4069,7 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
       TargetEnvironment(target, makePayloadSpecification()))));
   EXPECT_TRUE(program->str().find("qco.rccx") != std::string::npos);
@@ -4099,7 +4099,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
       return %bit : i1
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   const auto target = llvm::cantFail(CompilerTarget::create(
       {
           llvm::cantFail(CompilerTarget::Site::create(7)),
@@ -4178,7 +4178,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
            std::pair{targetWith(2, {u}), "target does not support operation"},
        }) {
     auto qc = QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto program = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(program));
     std::string diagnostics;
@@ -4199,7 +4199,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
         TargetEnvironment(
             target,
             llvm::cantFail(PayloadSpecification::forProgramFormat(format))));
-    ASSERT_TRUE(::mqt::test::succeeded(result));
+    MQT_ASSERT_SUCCESS(result);
     if (format == ProgramFormat::OpenQASM3) {
       EXPECT_TRUE(static_cast<bool>(QCProgram::fromOpenQASMString(
           std::get<OpenQASMProgram>(*result).source())));
@@ -4229,7 +4229,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
     }
   )mlir";
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   std::string diagnostics;
   EXPECT_FALSE(compileForTargetWithDiagnostics(
       *program, makeControlPayloadSpecification({}, true), diagnostics));
@@ -4255,7 +4255,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
     }
   )mlir";
   auto unsafe = QCOProgram::fromMLIRString(nonconstantBounds.str());
-  ASSERT_TRUE(::mqt::test::succeeded(unsafe));
+  MQT_ASSERT_SUCCESS(unsafe);
   EXPECT_FALSE(compileForTargetWithDiagnostics(
       *unsafe, makeControlPayloadSpecification({}, true), diagnostics));
   EXPECT_TRUE(StringRef(diagnostics).contains("scf.for")) << diagnostics;
@@ -4278,7 +4278,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
     }
   )mlir";
   auto overflowing = QCOProgram::fromMLIRString(overflowingRange.str());
-  ASSERT_TRUE(::mqt::test::succeeded(overflowing));
+  MQT_ASSERT_SUCCESS(overflowing);
   diagnostics.clear();
   ASSERT_TRUE(compileForTargetWithDiagnostics(
       *overflowing,
@@ -4366,7 +4366,7 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
            << "    }\n    qco.sink %result : !qco.qubit\n    return\n  }\n}\n";
     SCOPED_TRACE(source);
     auto program = QCOProgram::fromMLIRString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     attachTargetEnvironment(
         program->module(),
         TargetEnvironment(makeUnrestrictedTarget(),
@@ -4421,7 +4421,7 @@ TEST_F(CompilerPipelineTest, PayloadControlUnrollsBeyondTheOldBudget) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(),
       TargetEnvironment(makeUnrestrictedTarget(),
@@ -4463,7 +4463,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
     }
     stream << "    qco.sink %out1 : !qco.qubit\n    return\n  }\n}\n";
     auto program = QCOProgram::fromMLIRString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     attachTargetEnvironment(
         program->module(),
         TargetEnvironment(makeUnrestrictedTarget(),
@@ -4507,7 +4507,7 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsUnrepresentableTripCount) {
       return
     }
   })mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(),
       TargetEnvironment(makeUnrestrictedTarget(),
@@ -4543,7 +4543,7 @@ switch (selector) {
 }
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto input = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(input));
   ASSERT_TRUE(StringRef(input->str()).contains("qco.index_switch"));
@@ -4610,7 +4610,7 @@ TEST_F(CompilerPipelineTest, PayloadControlLowersClassicalSCFIndexSwitch) {
     }
   )mlir";
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   attachTargetEnvironment(
       program->module(), TargetEnvironment(makeUnrestrictedTarget(),
                                            makeControlPayloadSpecification(
@@ -4668,7 +4668,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
       SCOPED_TRACE(depth);
       auto program =
           QCOProgram::fromMLIRString(makePayloadSwitchSource(cases, quantum));
-      ASSERT_TRUE(::mqt::test::succeeded(program));
+      MQT_ASSERT_SUCCESS(program);
       ProgramCapability capability{
           .id = native ? "multiway-branching" : "forward-branching",
       };
@@ -4716,7 +4716,7 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksMovedCaseDepthByCapability) {
       SCOPED_TRACE(loop);
       auto program = QCOProgram::fromMLIRString(makePayloadSwitchSource(
           2, quantum, loop ? nestedLoop : nestedBranch));
-      ASSERT_TRUE(::mqt::test::succeeded(program));
+      MQT_ASSERT_SUCCESS(program);
       attachTargetEnvironment(
           program->module(),
           TargetEnvironment(
@@ -4764,7 +4764,7 @@ TEST_F(CompilerPipelineTest, PayloadControlPreservesSwitchSelectionAndState) {
       SCOPED_TRACE(selector);
       auto program =
           QCOProgram::fromMLIRString(makePayloadSwitchSource(3, quantum));
-      ASSERT_TRUE(::mqt::test::succeeded(program));
+      MQT_ASSERT_SUCCESS(program);
       attachTargetEnvironment(
           program->module(),
           TargetEnvironment(
@@ -4804,7 +4804,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsMovedCaseDepth) {
               func.call @effect() : () -> ()
             }
           )mlir"));
-      ASSERT_TRUE(::mqt::test::succeeded(program));
+      MQT_ASSERT_SUCCESS(program);
       attachTargetEnvironment(
           program->module(),
           TargetEnvironment(
@@ -4938,7 +4938,7 @@ TEST_F(CompilerPipelineTest,
   for (const auto& [source, expected] : cases) {
     SCOPED_TRACE(expected.str());
     auto program = QCOProgram::fromMLIRString(source.str());
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     std::string diagnostics;
     EXPECT_FALSE(
         compileForTargetWithDiagnostics(*program, payload, diagnostics));
@@ -4956,7 +4956,7 @@ TEST_F(CompilerPipelineTest,
          {"unroll-loops-for-payload", "legalize-control-flow"}) {
       SCOPED_TRACE(pass);
       auto program = QCOProgram::fromMLIRString(source.str());
-      ASSERT_TRUE(::mqt::test::succeeded(program));
+      MQT_ASSERT_SUCCESS(program);
       attachTargetEnvironment(
           program->module(),
           TargetEnvironment(makeUnrestrictedTarget(),
@@ -4995,7 +4995,7 @@ TEST_F(CompilerPipelineTest,
     }
   )mlir";
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   std::string diagnostics;
   EXPECT_FALSE(compileForTargetWithDiagnostics(
       *program,
@@ -5034,7 +5034,7 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsUnstructuredCFG) {
   });
   std::string diagnostics;
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   EXPECT_FALSE(compileForTargetWithDiagnostics(*program, payload, diagnostics));
   EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
       << diagnostics;
@@ -5050,7 +5050,7 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsConstantCFGBeforeCleanup) {
       }
     }
   )mlir");
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   std::string diagnostics;
   EXPECT_FALSE(compileForTargetWithDiagnostics(
       *program, makeControlPayloadSpecification({}), diagnostics));
@@ -5095,7 +5095,7 @@ TEST_F(CompilerPipelineTest, PayloadControlPreservesSingleCaseNativeSwitches) {
   )mlir";
   for (auto source : {quantum, classical}) {
     auto program = QCOProgram::fromMLIRString(source.str());
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     ASSERT_TRUE(mlir::succeeded(program->compileForTarget(TargetEnvironment(
         makeUnrestrictedTarget(),
         makeControlPayloadSpecification(
@@ -5124,14 +5124,14 @@ TEST_F(CompilerPipelineTest,
     }
   )mlir";
   auto unconstrained = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(unconstrained));
+  MQT_ASSERT_SUCCESS(unconstrained);
   ASSERT_TRUE(mlir::succeeded(unconstrained->compileForTarget(TargetEnvironment(
       makeUnrestrictedTarget(),
       makeControlPayloadSpecification({{.id = "conditional-loop"}})))));
   EXPECT_TRUE(StringRef(unconstrained->str()).contains("scf.while"));
 
   auto constrained = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(constrained));
+  MQT_ASSERT_SUCCESS(constrained);
   std::string diagnostics;
   EXPECT_FALSE(compileForTargetWithDiagnostics(
       *constrained,
@@ -5150,7 +5150,7 @@ qubit q;
 x q;
 )";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
 
@@ -5190,7 +5190,7 @@ ry(0.61) b; rz(-0.29) a; }
 qubit[4] q;
 ctrl @ )" + modifier + "composite q[0], q[1], q[2], q[3];";
     auto qc = QCProgram::fromOpenQASMString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(qc));
+    MQT_ASSERT_SUCCESS(qc);
     auto input = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(input));
     auto reference = input->copy();
@@ -5221,7 +5221,7 @@ ctrl @ ry(phi) q[0], q[1];
   auto optimized =
       runDefaultPipeline(CompilerInput(OpenQASMProgram(source.str())),
                          ProgramFormat::QCOOptimized);
-  ASSERT_TRUE(::mqt::test::succeeded(optimized));
+  MQT_ASSERT_SUCCESS(optimized);
   auto& grouped = std::get<QCOProgram>(*optimized);
   size_t controls = 0;
   grouped.module().walk([&](qco::CtrlOp op) {
@@ -5231,16 +5231,16 @@ ctrl @ ry(phi) q[0], q[1];
   EXPECT_EQ(controls, 1U);
   auto emitted = runDefaultPipeline(
       CompilerInput(OpenQASMProgram(source.str())), ProgramFormat::OpenQASM3);
-  ASSERT_TRUE(::mqt::test::succeeded(emitted));
+  MQT_ASSERT_SUCCESS(emitted);
   auto reparsed = QCProgram::fromOpenQASMString(
       std::get<OpenQASMProgram>(*emitted).source());
-  ASSERT_TRUE(::mqt::test::succeeded(reparsed));
+  MQT_ASSERT_SUCCESS(reparsed);
   auto restored = std::move(*reparsed).intoQCO();
   ASSERT_TRUE(succeeded(restored));
   ASSERT_TRUE(succeeded(restored->runPassPipeline("inline")));
   ASSERT_TRUE(succeeded(restored->cleanup()));
   auto referenceQC = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(referenceQC));
+  MQT_ASSERT_SUCCESS(referenceQC);
   auto reference = std::move(*referenceQC).intoQCO();
   ASSERT_TRUE(succeeded(reference));
   for (const double angle : {0.0, 0.73, -2.9}) {
@@ -5279,7 +5279,7 @@ TEST_F(CompilerPipelineTest, TargetPipelinesSimplifyCombinedControls) {
           std::string("OPENQASM 3.1; include \"stdgates.inc\"; qubit[3] q; "
                       "input float[64] theta; input float[64] phi; ") +
           gates);
-      ASSERT_TRUE(::mqt::test::succeeded(qc));
+      MQT_ASSERT_SUCCESS(qc);
       auto original = std::move(*qc).intoQCO();
       ASSERT_TRUE(succeeded(original));
       ASSERT_TRUE(succeeded(original->cleanup()));
@@ -5319,7 +5319,7 @@ qubit[3] q;
 ctrl(2) @ rz(0.2) q[0], q[1], q[2];
 ctrl(2) @ rz(0.2) q[0], q[1], q[2];
 )");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto original = std::move(*qc).intoQCO();
   ASSERT_TRUE(succeeded(original));
   for (const bool synthesisOnly : {false, true}) {
@@ -5359,7 +5359,7 @@ qubit[2] q;
 ctrl @ rx(theta) q[0], q[1];
 ctrl @ ry(phi) q[0], q[1];
 )");
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto original = std::move(*qc).intoQCO();
   ASSERT_TRUE(succeeded(original));
   for (const bool synthesisOnly : {false, true}) {
@@ -5372,7 +5372,7 @@ ctrl @ ry(phi) q[0], q[1];
     auto exported = std::move(*loweredQC).intoOpenQASM3();
     ASSERT_TRUE(succeeded(exported));
     auto reparsed = QCProgram::fromOpenQASMString(exported->source());
-    ASSERT_TRUE(::mqt::test::succeeded(reparsed));
+    MQT_ASSERT_SUCCESS(reparsed);
     auto restored = std::move(*reparsed).intoQCO();
     ASSERT_TRUE(succeeded(restored));
     ASSERT_TRUE(succeeded(restored->runPassPipeline("inline")));
@@ -5444,7 +5444,7 @@ TEST_F(CompilerPipelineTest, TargetPipelinesRequireSynthesisBasis) {
     for (const bool synthesisOnly : {false, true}) {
       auto input = QCProgram::fromOpenQASMString(
           "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; s q;");
-      ASSERT_TRUE(::mqt::test::succeeded(input));
+      MQT_ASSERT_SUCCESS(input);
       auto program = std::move(*input).intoQCO();
       ASSERT_TRUE(mlir::succeeded(program));
       const auto before = program->str();
@@ -5708,7 +5708,7 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
     }
   })mlir";
   auto qcProgram = QCProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qcProgram));
+  MQT_ASSERT_SUCCESS(qcProgram);
   auto program = std::move(*qcProgram).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   ASSERT_TRUE(program->module().lookupSymbol<func::FuncOp>("flip"));
@@ -5793,7 +5793,7 @@ TEST_F(CompilerPipelineTest,
   )mlir";
 
   auto program = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(program));
+  MQT_ASSERT_SUCCESS(program);
   using OperationCapability = CompilerTarget::OperationCapability;
   std::vector operations{
       llvm::cantFail(OperationCapability::create("u", 1, 3)),
@@ -5836,7 +5836,7 @@ measure q[1] -> c1[0];
 if(c0==1) u1(pi/4) q[2];
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   using Capability = CompilerTarget::OperationCapability;
@@ -5876,7 +5876,7 @@ rccx q[0], q[1], q[2];
 gphase(0.5);
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
 
@@ -5916,7 +5916,7 @@ cx q[0], q[1];
 cx q[1], q[0];
 )qasm";
   auto qc = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
 
@@ -6027,7 +6027,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
         1, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations(operations)));
     auto program = QCOProgram::fromMLIRString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     ASSERT_TRUE(target.synthesisBasis());
     ASSERT_EQ(target.synthesisBasis()->singleQubit, testCase.resolvedBasis);
     ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
@@ -6111,7 +6111,7 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
               CompilerTarget::SingleQubitBasis::U);
 
     auto program = QCOProgram::fromMLIRString(source);
-    ASSERT_TRUE(::mqt::test::succeeded(program));
+    MQT_ASSERT_SUCCESS(program);
     ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
         TargetEnvironment(target, makePayloadSpecification()))));
 
@@ -6178,7 +6178,7 @@ cx q[0], q[1];
 c = measure q;
 )";
   auto qc = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
 
@@ -6225,7 +6225,7 @@ h q[1];
                              CompilerTarget::NativeOperations::unrestricted()));
 
   auto qc = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(program));
   ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
@@ -6249,13 +6249,13 @@ h q[1];
 // Test: the payload specification selects the targeted output.
 TEST_F(CompilerPipelineTest, DefaultPipelineDerivesTargetOutput) {
   auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
-  ASSERT_TRUE(::mqt::test::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   const auto target = makeSparseUCZTarget(true);
   const TargetEnvironment environment(target, makePayloadSpecification());
 
   auto result =
       runDefaultPipeline(CompilerInput{std::move(*input)}, environment);
-  ASSERT_TRUE(::mqt::test::succeeded(result));
+  MQT_ASSERT_SUCCESS(result);
   ASSERT_TRUE(std::holds_alternative<QIRProgram>(*result));
   auto& qir = std::get<QIRProgram>(*result);
   EXPECT_EQ(qir.profile(), QIRProfile::Base);
@@ -6323,25 +6323,25 @@ h q;
   auto qcoOutput = compile(ProgramFormat::QCO);
   auto optimizedQCOOutput = compile(ProgramFormat::QCOOptimized);
   auto jeffOutput = compile(ProgramFormat::Jeff);
-  ASSERT_TRUE(::mqt::test::succeeded(qcOutput));
-  ASSERT_TRUE(::mqt::test::succeeded(qcoOutput));
-  ASSERT_TRUE(::mqt::test::succeeded(optimizedQCOOutput));
-  ASSERT_TRUE(::mqt::test::succeeded(jeffOutput));
+  MQT_ASSERT_SUCCESS(qcOutput);
+  MQT_ASSERT_SUCCESS(qcoOutput);
+  MQT_ASSERT_SUCCESS(optimizedQCOOutput);
+  MQT_ASSERT_SUCCESS(jeffOutput);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*qcOutput));
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*qcoOutput));
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*optimizedQCOOutput));
   EXPECT_TRUE(std::holds_alternative<JeffProgram>(*jeffOutput));
 
   auto profiledInput = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(profiledInput));
+  MQT_ASSERT_SUCCESS(profiledInput);
   auto profiled = runDefaultPipeline(
       CompilerInput{std::move(*profiledInput)}, ProgramFormat::QCOOptimized,
       "mqt-qco-default", {.enableTiming = true, .enableStatistics = true});
-  ASSERT_TRUE(::mqt::test::succeeded(profiled));
+  MQT_ASSERT_SUCCESS(profiled);
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
 
   auto customPipelineInput = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(customPipelineInput));
+  MQT_ASSERT_SUCCESS(customPipelineInput);
   EXPECT_TRUE(llvm::errorToBool(
       (runDefaultPipeline(CompilerInput{std::move(*customPipelineInput)},
                           ProgramFormat::QCO,
@@ -6349,26 +6349,26 @@ h q;
           .takeError()));
 
   auto base = compile(ProgramFormat::QIRBase);
-  ASSERT_TRUE(::mqt::test::succeeded(base));
+  MQT_ASSERT_SUCCESS(base);
   ASSERT_TRUE(std::holds_alternative<QIRProgram>(*base));
   EXPECT_EQ(std::get<QIRProgram>(*base).profile(), QIRProfile::Base);
   EXPECT_TRUE(
       mlir::succeeded(std::get<QIRProgram>(std::move(*base)).intoLLVMIR()));
 
   auto adaptive = compile(ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(::mqt::test::succeeded(adaptive));
+  MQT_ASSERT_SUCCESS(adaptive);
   ASSERT_TRUE(std::holds_alternative<QIRProgram>(*adaptive));
   EXPECT_EQ(std::get<QIRProgram>(*adaptive).profile(), QIRProfile::Adaptive);
 
   auto imported = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(imported));
+  MQT_ASSERT_SUCCESS(imported);
   auto importedResult = runDefaultPipeline(CompilerInput{std::move(*imported)},
                                            ProgramFormat::QCImport);
-  ASSERT_TRUE(::mqt::test::succeeded(importedResult));
+  MQT_ASSERT_SUCCESS(importedResult);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*importedResult));
 
   auto qcoInput = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(qcoInput));
+  MQT_ASSERT_SUCCESS(qcoInput);
   auto qco = std::move(*qcoInput).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   EXPECT_TRUE(llvm::errorToBool(
@@ -6380,18 +6380,18 @@ h q;
           .takeError()));
   auto fromQCO =
       runDefaultPipeline(CompilerInput{std::move(*qco)}, ProgramFormat::QC);
-  ASSERT_TRUE(::mqt::test::succeeded(fromQCO));
+  MQT_ASSERT_SUCCESS(fromQCO);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromQCO));
 
   auto jeffInput = QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(::mqt::test::succeeded(jeffInput));
+  MQT_ASSERT_SUCCESS(jeffInput);
   auto jeffQCO = std::move(*jeffInput).intoQCO();
   ASSERT_TRUE(mlir::succeeded(jeffQCO));
   auto jeff = std::move(*jeffQCO).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
   auto fromJeff =
       runDefaultPipeline(CompilerInput{std::move(*jeff)}, ProgramFormat::QC);
-  ASSERT_TRUE(::mqt::test::succeeded(fromJeff));
+  MQT_ASSERT_SUCCESS(fromJeff);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromJeff));
 }
 
@@ -6402,7 +6402,7 @@ qubit q;
 h q;
 )";
   auto input = QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(::mqt::test::succeeded(input));
+  MQT_ASSERT_SUCCESS(input);
   CompilerInput program{std::move(*input)};
   auto& sourceProgram = std::get<QCProgram>(program);
   const auto payload = llvm::cantFail(

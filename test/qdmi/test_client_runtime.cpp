@@ -58,7 +58,7 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
        {std::filesystem::path(".") / libraryPath.filename(), libraryPath}) {
     SCOPED_TRACE(path);
     auto encoded = detail::pathToString(path);
-    ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
+    MQT_ASSERT_SUCCESS(encoded);
     std::string error;
     auto library =
         llvm::sys::DynamicLibrary::getLibrary(encoded->c_str(), &error);
@@ -69,7 +69,7 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
         library.getAddressOfSymbol("QDMI_driver_get_client_abi_version");
     ASSERT_NE(anchor, nullptr);
     auto located = detail::moduleDirectory(anchor);
-    ASSERT_TRUE(!!located) << llvm::toString(located.takeError());
+    MQT_ASSERT_SUCCESS(located);
     // GetModuleFileNameW can preserve the temporary path's short 8.3 spelling.
     EXPECT_TRUE(std::filesystem::equivalent(*located, directory.path()));
   }
@@ -95,10 +95,10 @@ TEST(ClientRuntimeTest, RejectsMissingModuleAnchors) {
 TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
   const mqt::test::TemporaryDirectory directory;
   auto filename = detail::pathFromString("\xc3\xa4-\xf0\x9f\x8e\xaf.json");
-  ASSERT_TRUE(!!filename) << llvm::toString(filename.takeError());
+  MQT_ASSERT_SUCCESS(filename);
   const auto path = directory.path() / *filename;
   auto encoded = detail::pathToString(path);
-  ASSERT_TRUE(!!encoded) << llvm::toString(encoded.takeError());
+  MQT_ASSERT_SUCCESS(encoded);
   std::error_code error;
   {
     llvm::raw_fd_ostream output(*encoded, error);
@@ -115,7 +115,7 @@ TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
   auto explicitConfig = detail::loadDeviceConfiguration(
       inlineJson, file, "MQT_CORE_TEST_INLINE_CONFIG",
       "MQT_CORE_TEST_FILE_CONFIG", "unused", nullptr);
-  ASSERT_TRUE(!!explicitConfig) << llvm::toString(explicitConfig.takeError());
+  MQT_ASSERT_SUCCESS(explicitConfig);
   EXPECT_EQ(explicitConfig->json, "{}");
   const ScopedEnvironmentVariable noInline{"MQT_CORE_TEST_INLINE_CONFIG",
                                            std::nullopt};
@@ -124,8 +124,7 @@ TEST(ClientRuntimeTest, LoadsUnicodeConfigurationPaths) {
   auto environmentConfig = detail::loadDeviceConfiguration(
       std::nullopt, std::nullopt, "MQT_CORE_TEST_INLINE_CONFIG",
       "MQT_CORE_TEST_FILE_CONFIG", "unused", nullptr);
-  ASSERT_TRUE(!!environmentConfig)
-      << llvm::toString(environmentConfig.takeError());
+  MQT_ASSERT_SUCCESS(environmentConfig);
   EXPECT_EQ(environmentConfig->json, "{}");
 }
 

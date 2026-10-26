@@ -176,12 +176,12 @@ static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
   ASSERT_TRUE(mlir::succeeded(qc));
   auto compiled =
       runDefaultPipeline(CompilerInput{qc->copy()}, ProgramFormat::Jeff);
-  ASSERT_TRUE(::mqt::test::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
   auto& jeff = std::get<JeffProgram>(*compiled);
   const auto bytes = jeff.toBytes();
   ASSERT_FALSE(bytes.empty());
   auto restored = JeffProgram::fromBytes(bytes);
-  ASSERT_TRUE(::mqt::test::succeeded(restored));
+  MQT_ASSERT_SUCCESS(restored);
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto counts = qco::sample(mlir::mqt::getEntryPoint(qco->module()), shots, 17);
@@ -190,7 +190,7 @@ static void expectPortableExecution(const Benchmark& benchmark, size_t shots) {
 
   compiled = runDefaultPipeline(CompilerInput{std::move(*qc)},
                                 ProgramFormat::QIRAdaptive);
-  ASSERT_TRUE(::mqt::test::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
   expectQIRSampling(benchmark, std::get<QIRProgram>(std::move(*compiled)),
                     shots);
 }
@@ -239,14 +239,14 @@ static void expectOpenQASMRoundTrip(const Benchmark& benchmark, size_t shots) {
     if (optimize) {
       auto compiled = runDefaultPipeline(CompilerInput{qc->copy()},
                                          ProgramFormat::OpenQASM3);
-      ASSERT_TRUE(::mqt::test::succeeded(compiled));
+      MQT_ASSERT_SUCCESS(compiled);
       qasm = std::get<OpenQASMProgram>(std::move(*compiled));
     } else {
       qasm = qc->copy().intoOpenQASM3();
     }
     ASSERT_TRUE(mlir::succeeded(qasm));
     auto restored = QCProgram::fromOpenQASMString(qasm->source());
-    ASSERT_TRUE(::mqt::test::succeeded(restored));
+    MQT_ASSERT_SUCCESS(restored);
     if (hasLoop) {
       EXPECT_GT(test::countOps<scf::ForOp>(restored->module()), 0);
     }
@@ -290,26 +290,26 @@ static void expectStaticTargetExecution(const Benchmark& benchmark) {
   auto target =
       CompilerTarget::create(16, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted());
-  ASSERT_TRUE(::mqt::test::succeeded(target));
+  MQT_ASSERT_SUCCESS(target);
   auto basePayload = PayloadSpecification::create(
       {.id = "qir", .version = "2.1", .profile = "base"});
-  ASSERT_TRUE(::mqt::test::succeeded(basePayload));
+  MQT_ASSERT_SUCCESS(basePayload);
   const TargetEnvironment baseTarget(*target, std::move(*basePayload));
   auto compiled = runDefaultPipeline(CompilerInput{qc->copy()}, baseTarget);
-  ASSERT_TRUE(::mqt::test::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
   auto& qirProgram = std::get<QIRProgram>(*compiled);
   EXPECT_EQ(qirProgram.profile(), QIRProfile::Base);
   expectQIRSampling(benchmark, std::move(qirProgram), 2048);
 
   auto qasmPayload =
       PayloadSpecification::create({.id = "openqasm", .version = "3.1"});
-  ASSERT_TRUE(::mqt::test::succeeded(qasmPayload));
+  MQT_ASSERT_SUCCESS(qasmPayload);
   const TargetEnvironment qasmTarget(*target, std::move(*qasmPayload));
   compiled = runDefaultPipeline(CompilerInput{std::move(*qc)}, qasmTarget);
-  ASSERT_TRUE(::mqt::test::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
   auto restored = QCProgram::fromOpenQASMString(
       std::get<OpenQASMProgram>(*compiled).source());
-  ASSERT_TRUE(::mqt::test::succeeded(restored));
+  MQT_ASSERT_SUCCESS(restored);
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto sampled = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 2048, 17);
@@ -341,7 +341,7 @@ TEST(GenerateProgramTest, RoundTripsWStateThroughOpenQASM) {
   auto qasm = std::move(*qc).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(qasm));
   auto restored = QCProgram::fromOpenQASMString(qasm->source());
-  ASSERT_TRUE(::mqt::test::succeeded(restored));
+  MQT_ASSERT_SUCCESS(restored);
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto counts = qco::sample(mlir::mqt::getEntryPoint(qco->module()), 2048, 17);
