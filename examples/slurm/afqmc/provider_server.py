@@ -28,7 +28,7 @@ from urllib.parse import unquote, urlsplit
 
 CALIBRATION = "00000000-0000-0000-0000-000000000017"
 QUBITS = [f"QB{i + 1}" for i in range(4)]
-ARN = "arn:aws:braket:us-east-1::device/quantum-simulator/amazon/sv1"
+ARN = "arn:aws:braket:::device/quantum-simulator/amazon/sv1"
 
 
 def iqm_architecture() -> dict:
@@ -218,7 +218,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply({
                 "quantumTaskArn": f"arn:aws:braket:us-east-1:000000000000:quantum-task/{identifier}",
                 "status": job["status"],
-                "deviceArn": ARN,
+                "deviceArn": job["request"]["deviceArn"],
+                "actionMetadata": job["action_metadata"],
                 "shots": job["request"]["shots"],
                 "outputS3Bucket": "local-results",
                 "outputS3Directory": identifier,
@@ -301,11 +302,21 @@ class Handler(BaseHTTPRequestHandler):
         if not self.fixture.available:
             self.reply({"message": "Local simulated device unavailable"}, 503)
             return
+        metadata = {}
+        if self.fixture.provider == "braket":
+            action = json.loads(request["action"])
+            count = len(action.get("programs", [action]))
+            metadata = {
+                "actionType": action["braketSchemaHeader"]["name"],
+                "programCount": count,
+                "executableCount": count,
+            }
         identifier = str(uuid.uuid4())
         with self.fixture.lock:
             self.fixture.jobs[identifier] = {
                 "status": "running" if self.fixture.provider == "iqm" else "RUNNING",
                 "request": request,
+                "action_metadata": metadata,
             }
         self.fixture.worker.submit(self.fixture.execute, identifier, request)
         self.reply(

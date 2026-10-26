@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from mqt.core.qdmi import builtin_driver
+
 
 def readout(device: str) -> None:
     """Exercise all basis states with reversed classical destinations through QDMI."""
@@ -42,6 +44,14 @@ def readout(device: str) -> None:
     samples = np.load(directory / "shots.npz")["logical"]
     for value, shots in enumerate(samples):
         assert set(shots) == {f"{value:04b}"[::-1]}, (device, value, set(shots))
+    if device.startswith("amazon.braket."):
+        identifiers = json.loads((directory / "submission.json").read_text())["job_ids"]
+        assert len(identifiers) == 1
+        reopened = builtin_driver.open_device(device).retrieve_job_by_id(identifiers[0])
+        assert reopened.wait(30)
+        for index in range(16):
+            assert set(reopened.get_shots(index)) == {f"{index:04b}"[::-1]}
+            assert reopened.get_counts(index) == {f"{index:04b}"[::-1]: 32}
     sys.stdout.write(f"All 16 reversed-output basis states passed on {device}\n")
 
 
