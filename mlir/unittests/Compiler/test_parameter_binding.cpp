@@ -22,6 +22,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -93,40 +94,41 @@ qubit q;
 rx(theta) q;
 rz(phi) q;
 )");
-  ASSERT_TRUE(qc);
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   auto entry = mlir::mqt::getEntryPoint(qc->module());
   entry.setArgAttr(
       0, "mqt.input_id",
       mlir::IntegerAttr::get(
           mlir::IntegerType::get(qc->module().getContext(), 128), 7));
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(mlir::succeeded(qco));
   auto jeff = std::move(*qco).intoJeff();
-  ASSERT_TRUE(jeff);
+  ASSERT_TRUE(mlir::succeeded(jeff));
   auto decoded = mlir::JeffProgram::fromBytes(jeff->toBytes());
-  ASSERT_TRUE(decoded);
+  ASSERT_TRUE(static_cast<bool>(decoded))
+      << llvm::toString(decoded.takeError());
   auto restoredQCO = std::move(*decoded).intoQCO();
-  ASSERT_TRUE(restoredQCO);
+  ASSERT_TRUE(mlir::succeeded(restoredQCO));
   auto restoredQC = restoredQCO->copy().intoQC();
-  ASSERT_TRUE(restoredQC);
+  ASSERT_TRUE(mlir::succeeded(restoredQC));
   EXPECT_EQ(restoredQCO->parameters(),
             (std::vector<std::string>{"theta", "phi"}));
   EXPECT_EQ(restoredQC->parameters(),
             (std::vector<std::string>{"theta", "phi"}));
-  auto exported = restoredQC->toOpenQASM3();
-  ASSERT_TRUE(exported);
+  auto exported = restoredQC->copy().intoOpenQASM3();
+  ASSERT_TRUE(mlir::succeeded(exported));
   EXPECT_NE(exported->source().find("input float[64] theta;"),
             std::string::npos);
   EXPECT_NE(exported->source().find("input float[64] phi;"), std::string::npos);
 
-  ASSERT_TRUE(restoredQCO->bindParameters({{"theta", 0.25}}));
-  ASSERT_TRUE(restoredQC->bindParameters({{"theta", 0.25}}));
+  ASSERT_TRUE(mlir::succeeded(restoredQCO->bindParameters({{"theta", 0.25}})));
+  ASSERT_TRUE(mlir::succeeded(restoredQC->bindParameters({{"theta", 0.25}})));
   EXPECT_EQ(restoredQCO->parameters(), (std::vector<std::string>{"phi"}));
   EXPECT_EQ(restoredQC->parameters(), (std::vector<std::string>{"phi"}));
   EXPECT_TRUE(mlir::succeeded(mlir::verify(restoredQCO->module())));
   EXPECT_TRUE(mlir::succeeded(mlir::verify(restoredQC->module())));
-  exported = restoredQC->toOpenQASM3();
-  ASSERT_TRUE(exported);
+  exported = restoredQC->copy().intoOpenQASM3();
+  ASSERT_TRUE(mlir::succeeded(exported));
   EXPECT_EQ(exported->source().find("input float[64] theta;"),
             std::string::npos);
   EXPECT_NE(exported->source().find("input float[64] phi;"), std::string::npos);
@@ -142,11 +144,12 @@ TEST(ParameterBinding, RejectsMalformedJeffInputNameMetadata) {
       }
     }
   )");
-  ASSERT_TRUE(qco);
+  ASSERT_TRUE(static_cast<bool>(qco)) << llvm::toString(qco.takeError());
   auto jeff = std::move(*qco).intoJeff();
-  ASSERT_TRUE(jeff);
+  ASSERT_TRUE(mlir::succeeded(jeff));
   std::string diagnostic;
-  mlir::ScopedDiagnosticHandler handler(jeff->module().getContext(),
+  auto context = jeff->context();
+  mlir::ScopedDiagnosticHandler handler(context.get(),
                                         [&](mlir::Diagnostic& error) {
                                           diagnostic += error.str();
                                           return mlir::success();
@@ -165,7 +168,7 @@ TEST(ParameterBinding, RejectsNonTextJeffInputNameMetadata) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(qco));
+  ASSERT_TRUE(static_cast<bool>(qco)) << llvm::toString(qco.takeError());
   auto jeff = std::move(*qco).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
   capnp::MallocMessageBuilder message;
@@ -174,30 +177,24 @@ TEST(ParameterBinding, RejectsNonTextJeffInputNameMetadata) {
   list.set(0, 42);
   auto words = capnp::messageToFlatArray(message);
   auto bytes = words.asBytes();
-  auto* context = jeff->module().getContext();
-  auto metadata = mlir::DictionaryAttr::get(
-      context,
-      {
-          {
-              mlir::StringAttr::get(context, "name"),
-              mlir::StringAttr::get(context, "mqt.input_name"),
-          },
-          {
-              mlir::StringAttr::get(context, "value"),
-              mlir::DenseI8ArrayAttr::get(
-                  context,
-                  llvm::ArrayRef(reinterpret_cast<const int8_t*>(bytes.begin()),
-                                 bytes.size())),
-          },
-      });
+  auto context = jeff->context();
+  mlir::Builder builder(context.get());
+  auto metadata = builder.getDictionaryAttr({
+      builder.getNamedAttr("name", builder.getStringAttr("mqt.input_name")),
+      builder.getNamedAttr(
+          "value",
+          builder.getDenseI8ArrayAttr(llvm::ArrayRef(
+              reinterpret_cast<const int8_t*>(bytes.begin()), bytes.size()))),
+  });
   auto function = jeff->module().lookupSymbol<mlir::func::FuncOp>("main");
   ASSERT_TRUE(mlir::succeeded(mlir::jeff::setMetadata(
-      function.getArgument(0), mlir::ArrayAttr::get(context, {metadata}))));
+      function.getArgument(0), builder.getArrayAttr({metadata}))));
   std::string diagnostic;
-  mlir::ScopedDiagnosticHandler handler(context, [&](mlir::Diagnostic& error) {
-    diagnostic += error.str();
-    return mlir::success();
-  });
+  mlir::ScopedDiagnosticHandler handler(context.get(),
+                                        [&](mlir::Diagnostic& error) {
+                                          diagnostic += error.str();
+                                          return mlir::success();
+                                        });
   EXPECT_TRUE(mlir::failed(std::move(*jeff).intoQCO()));
   EXPECT_NE(diagnostic.find("failed to decode input name metadata"),
             std::string::npos)

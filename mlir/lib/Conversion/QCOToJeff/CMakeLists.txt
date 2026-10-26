@@ -32,8 +32,6 @@ add_mlir_conversion_library(
   MLIRQCODialect
   MLIRTransforms)
 
-mqt_mlir_target_use_project_options(MLIRQCOToJeff)
-
 if(TARGET MLIRQCOToJeff)
   target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 endif()
