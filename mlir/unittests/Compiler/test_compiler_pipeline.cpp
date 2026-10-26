@@ -116,8 +116,6 @@
 #include <variant>
 #include <vector>
 
-using mqt::test::value;
-
 namespace mqt::test::compiler {
 
 using namespace mlir;
