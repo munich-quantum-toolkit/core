@@ -32,11 +32,14 @@
 #include <vector>
 
 namespace qdmi_test {
+using mqt::test::TemporaryDirectory;
+using mqt::test::value;
+
 /// A file barrier works across the DDSIM process boundary and proves execution
 /// reached the entry point before lifecycle assertions begin.
 struct ControlledJob {
 private:
-  mqt::test::TemporaryDirectory directory_;
+  TemporaryDirectory directory_;
   MQT_DDSIM_QDMI_Device_Job job_;
   bool released_ = false;
   size_t count_ = 1;
@@ -137,11 +140,11 @@ public:
 
   void release() {
     if (!released_) {
-      llvm::cantFail(llvm::writeToOutput(
-          (directory_.path() / "release").string(), [](llvm::raw_ostream& os) {
-            os << '1';
-            return llvm::Error::success();
-          }));
+      value(llvm::writeToOutput((directory_.path() / "release").string(),
+                                [](llvm::raw_ostream& os) {
+                                  os << '1';
+                                  return llvm::Error::success();
+                                }));
       for (size_t i = 0; i < count_; ++i) {
         awaitFile("finished" + std::to_string(i));
       }
