@@ -1735,7 +1735,7 @@ test-base = [
 requires-dist = [
     { name = "nanobind-backend", specifier = ">=1" },
     { name = "pennylane", marker = "extra == 'pennylane'", specifier = ">=0.45.1,<0.46" },
-    { name = "qiskit", marker = "extra == 'qiskit'", specifier = ">=2.5,<2.7" },
+    { name = "qiskit", marker = "extra == 'qiskit'", specifier = ">=2.5,<3" },
 ]
 provides-extras = ["pennylane", "qiskit"]
 
@@ -1765,7 +1765,7 @@ dev = [
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8" },
     { name = "qirrunner", specifier = "~=0.9.6" },
-    { name = "qiskit", specifier = ">=2.5,<2.7" },
+    { name = "qiskit", specifier = ">=2.5,<3" },
     { name = "scikit-build-core", specifier = ">=1.1" },
     { name = "vcs-versioning", specifier = ">=2.3" },
 ]
@@ -1777,7 +1777,7 @@ docs = [
     { name = "openqasm-pygments", specifier = ">=0.2" },
     { name = "pennylane", specifier = ">=0.45.1,<0.46" },
     { name = "pygraphviz", specifier = ">=2" },
-    { name = "qiskit", extras = ["visualization"], specifier = ">=2.5,<2.7" },
+    { name = "qiskit", extras = ["visualization"], specifier = ">=2.5,<3" },
     { name = "sphinx", specifier = ">=9" },
     { name = "sphinx-autoapi", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
@@ -1798,7 +1798,7 @@ test = [
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8" },
     { name = "qirrunner", specifier = "~=0.9.6" },
-    { name = "qiskit", specifier = ">=2.5,<2.7" },
+    { name = "qiskit", specifier = ">=2.5,<3" },
 ]
 test-base = [
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
@@ -1811,7 +1811,7 @@ test-base = [
     { name = "pytest-cov", specifier = ">=7.1" },
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8" },
-    { name = "qiskit", specifier = ">=2.5,<2.7" },
+    { name = "qiskit", specifier = ">=2.5,<3" },
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 # Qiskit compatibility
 
-Install `mqt-core[qiskit]` for Qiskit `>=2.5,<2.7`. The
+Install `mqt-core[qiskit]` for Qiskit `>=2.5,<3`. The
 {doc}`QDMI backend <../qdmi/qdmi_backend>` executes circuits through
 device-specific serializers. The
 {doc}`MQT Compiler Collection <mqt_compiler_collection>` imports and exports
@@ -286,8 +286,16 @@ Loop lists with jumps and switch cases with variables are supported within the
 without exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
-accepts versions in the registered {code}`>=2.5.0,<2.7.0` range and verifies the
-native API version before reading a circuit.
+accepts Qiskit {code}`>=2.5,<3` and selects the newest bundled C API adapter
+whose minimum version is satisfied by the installed native API. Qiskit 2.5 uses
+its own adapter; later minors use the 2.6 adapter until another is needed. The
+upstream test runs the shipping adapters against Qiskit main.
+
+Qiskit's
+[C API is experimental](https://quantum.cloud.ibm.com/docs/en/api/qiskit-c/index)
+and may change between minor releases. Forward minor compatibility is
+optimistic: an incompatible native ABI can crash the process. Use a tested
+Qiskit minor in environments that require a fixed compatibility baseline.
 
 Qiskit 2.6 uses borrowed C API instruction views and reads numeric gate
 parameters and global phases natively. Both adapters construct circuits,

@@ -467,9 +467,4 @@ public:
 #include "SupportedVersions.inc"
 #undef MQT_QISKIT_VERSION
 
-#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
-[[nodiscard]] std::unique_ptr<VersionedTranslation>
-createCandidateTranslation();
-#endif
-
 } // namespace mqt::bindings::qiskit

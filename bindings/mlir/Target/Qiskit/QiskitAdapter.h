@@ -3343,16 +3343,13 @@ createTranslation() {
     return qk_api_version();
   }();
   const auto major = (VERSION >> 24U) & 0xffU;
-  const auto minor = (VERSION >> 16U) & 0xffU;
   if (major != 2U ||
-      minor != QISKIT_VERSION_MINOR
-#if QISKIT_RELEASE_LEVEL != QISKIT_RELEASE_LEVEL_FINAL
-      // Development snapshots do not promise compatibility across patches.
-      // QISKIT_VERSION_HEX uses signed bitwise operations in Qiskit's header.
+      VERSION !=
+          nb::cast<uint32_t>(nb::module_::import_("qiskit._accelerate.capi")
+                                 .attr("API_VERSION")) ||
+      // Qiskit's version macro uses signed shifts.
       // NOLINTNEXTLINE(bugprone-signed-bitwise)
-      || VERSION != QISKIT_VERSION_HEX
-#endif
-  ) {
+      VERSION < static_cast<uint32_t>(QISKIT_VERSION_HEX)) {
     throw std::runtime_error("Qiskit C API capsule version does not match the "
                              "selected " QISKIT_VERSION " translation");
   }
