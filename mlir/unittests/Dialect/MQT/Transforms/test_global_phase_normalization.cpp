@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Edge.hpp"
+#include "dd/Package.hpp"
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
@@ -20,6 +22,7 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include "ExactUnitaryTest.h"
 
@@ -49,10 +52,12 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -1063,4 +1068,132 @@ TEST_F(GlobalPhaseNormalizationTest,
       EXPECT_NEAR(std::sin(*actual), std::sin(expected), 1e-10);
     }
   }
+}
+
+TEST_F(GlobalPhaseNormalizationTest, KeepsLastContributionBeforeMeasurements) {
+  for (bool convertToQCO : {false, true}) {
+    SCOPED_TRACE(convertToQCO);
+    auto moduleOp = parse(R"mlir(
+      func.func @main(%angle: f64) attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %half = arith.constant 0.5 : f64
+        qc.gphase(%half)
+        qc.inv (%a = %q) {
+          qc.gphase(%angle)
+          qc.yield
+        } : !qc.qubit
+        qc.ctrl(%q) targets () {
+          qc.gphase(%half)
+          qc.yield
+        } : {!qc.qubit}
+        %m = qc.measure %q : !qc.qubit -> i1
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    )mlir");
+    ASSERT_TRUE(moduleOp);
+    if (convertToQCO) {
+      PassManager pm(context.get());
+      pm.addPass(createQCToQCO());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    }
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    Operation* phase = nullptr;
+    moduleOp->walk([&](Operation* op) {
+      if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
+        ASSERT_EQ(phase, nullptr);
+        phase = op;
+      }
+    });
+    ASSERT_NE(phase, nullptr);
+    EXPECT_TRUE((isa<qc::MeasureOp, qco::MeasureOp>(phase->getNextNode())));
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    EXPECT_TRUE((isa<qc::MeasureOp, qco::MeasureOp>(phase->getNextNode())));
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest, DropsOnlyFinalProgramPhases) {
+  for (bool convertToQCO : {false, true}) {
+    SCOPED_TRACE(convertToQCO);
+    auto moduleOp = parse(R"mlir(
+      func.func @helper(%theta: f64) {
+        qc.gphase(%theta)
+        return
+      }
+      func.func @main(%theta: f64, %cond: i1) attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        qc.gphase(%theta)
+        scf.if %cond {
+          qc.gphase(%theta)
+        }
+        qc.ctrl(%q) targets () {
+          qc.gphase(%theta)
+          qc.yield
+        } : {!qc.qubit}
+        qc.inv () {
+          qc.gphase(%theta)
+          qc.yield
+        }
+        qc.pow(%theta) () {
+          qc.gphase(%theta)
+          qc.yield
+        }
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    )mlir");
+    ASSERT_TRUE(moduleOp);
+    PassManager pm(context.get());
+    if (convertToQCO) {
+      pm.addPass(createQCToQCO());
+    }
+    pm.addPass(mlir::mqt::createDropGlobalPhases());
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    unsigned remaining = 0;
+    moduleOp->walk([&](Operation* op) {
+      remaining += isa<qc::GPhaseOp, qco::GPhaseOp>(op);
+    });
+    EXPECT_EQ(remaining, 4);
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest, DropPreservesObservableControlledPhase) {
+  auto moduleOp = parse(R"mlir(
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 0 : !qc.qubit
+      %global = arith.constant 0.4 : f64
+      %relative = arith.constant 0.6 : f64
+      qc.gphase(%global)
+      qc.h %q : !qc.qubit
+      qc.ctrl(%q) targets () {
+        qc.gphase(%relative)
+        qc.yield
+      } : {!qc.qubit}
+      qc.h %q : !qc.qubit
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  PassManager pm(context.get());
+  pm.addPass(createQCToQCO());
+  pm.addPass(mlir::mqt::createDropGlobalPhases());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+  auto package = llvm::cantFail(dd::Package::create(1));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto result = qco::buildFunctionality(function, *package);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = llvm::cantFail(dd::getMatrix(*result, 1));
+  // H diag(1, exp(0.6i)) H retains the relative phase exactly.
+  const auto phase = std::polar(1.0, 0.6);
+  for (size_t row = 0; row < 2; ++row) {
+    for (size_t column = 0; column < 2; ++column) {
+      const auto expected = (1.0 + (row == column ? phase : -phase)) / 2.0;
+      EXPECT_NEAR(std::abs(matrix[row][column] - expected), 0.0, 1e-12);
+    }
+  }
+  package->decRef(*result);
 }

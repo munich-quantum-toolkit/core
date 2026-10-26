@@ -2012,6 +2012,7 @@ def test_qco_program_runs_textual_pipeline(capfd: pytest.CaptureFixture[str]) ->
     assert isinstance(qco, QCOProgram)
 
     qco.run_pass_pipeline("mqt-qco-default")
+    qco.run_pass_pipeline("drop-global-phases")
     qco.lift_hadamards()
 
     before = qco.ir

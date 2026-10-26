@@ -385,8 +385,17 @@ costs.
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point, including its classical branches
-and loops. Global phases in helper functions and those that remain inside QCO
-modifiers are retained.
+and loops. The reusable `drop-global-phases` pass applies this policy to QC or
+QCO programs marked with `mqt.entry_point`. It preserves measurement
+probabilities, not exact statevectors or unitaries. Helper functions and quantum
+modifier bodies retain their phases because coherent control and non-integer
+powers can make them observable.
+
+Target synthesis normalizes modifiers before dropping phases, so controlled
+phases become observable relative-phase operations. Exact normalization combines
+phases at the last contribution in each block, preserving the dominance of
+dynamic angle computations. Unused pure angle computations are left to dead-code
+elimination.
 
 Non-native two-qubit operations outside these rotation decompositions require a
 compile-time unitary matrix.
