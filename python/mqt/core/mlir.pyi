@@ -841,7 +841,10 @@ class QCProgram(Program):
         """Normalize scoped global phases in place."""
 
     def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
-        """Clean up and emit this QC program as OpenQASM 3 without QCO optimization.
+        """Emit this QC program as OpenQASM 3.
+
+        Classical memory and control flow are legalized for the source format. Use
+        ``compile_program`` for optimization before export.
 
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
@@ -876,7 +879,9 @@ class QCProgram(Program):
         Entry results may be direct measurements or CBit registers. Adaptive Profile
         also supports computed Boolean (``i1``) results. Other scalar outputs are
         unsupported. The generated QIR returns a zero execution status.
-        Base conversion unrolls static counted loops; Adaptive conversion retains them.
+        Base conversion requires straight-line quantum operations; Adaptive retains loops.
+        Calls with quantum-register arguments must be inlined before conversion.
+        Use ``compile_program`` for inlining, modifier expansion, and Base loop unrolling.
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
 

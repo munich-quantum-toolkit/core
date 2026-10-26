@@ -300,7 +300,8 @@ public:
 
   /// Consume this program and translate it to portable OpenQASM 3.1.
   ///
-  /// Run QC cleanup before export. The program is consumed even when export
+  /// Legalize classical memory and control flow for the source format without
+  /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
   [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
 
@@ -309,11 +310,12 @@ public:
 
   /// Consume this program and lower it to QIR.
   ///
-  /// Entry results must be direct measurements or CBit registers. Other scalar
-  /// outputs are unsupported. The generated QIR returns a zero execution
-  /// status. Base conversion unrolls static counted loops, allowing at most
-  /// one billion cloned body operations, and rejects runtime-dependent loops.
-  /// Adaptive conversion retains loops.
+  /// Entry results may be direct measurements or CBit registers. Adaptive
+  /// Profile also supports computed Boolean results. Other scalar outputs are
+  /// unsupported. The generated QIR returns a zero execution status.
+  /// Base conversion requires straight-line quantum operations;
+  /// Adaptive conversion retains loops. Calls with quantum-register arguments
+  /// must be inlined. Use runDefaultPipeline for compilation before export.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
 
   /// Return the static gate count of the entry-point IR.
