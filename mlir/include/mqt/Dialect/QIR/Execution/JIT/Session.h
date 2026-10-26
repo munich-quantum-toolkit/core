@@ -50,7 +50,7 @@ struct SampledOutput {
 /// measurements, preserves released wires, and rejects measurement-dependent
 /// computation, resets and operations on measured wires. Classical control flow
 /// and direct helpers are supported; recorded outputs are suppressed.
-enum class Execution { Sampling, StateExtraction };
+enum class Execution : uint8_t { Sampling, StateExtraction };
 
 /// In-process JIT executor for QIR programs.
 ///
@@ -216,7 +216,7 @@ private:
   /// - Resolves the selected QIR entry point.
   ///
   /// Returns an owned error if validation or JIT initialization fails.
-  llvm::Error initialize(llvm::orc::ThreadSafeModule llvmModule,
+  llvm::Error initialize(llvm::orc::ThreadSafeModule loadedModule,
                          Execution execution);
 
   /// Tears down the @c LLJIT.

@@ -50,7 +50,7 @@ struct ResultStruct {
 };
 struct ArrayImpl {
   int32_t refcount{};
-  std::vector<int8_t> data{};
+  std::vector<int8_t> data;
   int64_t elementSize{};
 };
 
@@ -84,11 +84,10 @@ public:
   struct QState {
     std::unique_ptr<dd::Package> dd;
     dd::vEdge edge;
-    size_t numQubits;
+    size_t numQubits = 0;
 
     QState()
-        : dd(llvm::cantFail(dd::Package::create(0))), edge(dd::vEdge::one()),
-          numQubits(0) {}
+        : dd(llvm::cantFail(dd::Package::create(0))), edge(dd::vEdge::one()) {}
 
     /// Reset to a fresh empty state.
     ///
@@ -158,7 +157,7 @@ private:
   llvm::Error configureStaticResources(std::optional<size_t> qubits,
                                        std::optional<size_t> results);
   llvm::Error
-  sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
+  sampleMeasurements(std::span<const uintptr_t> qubits, size_t shots,
                      llvm::function_ref<void(std::string&&)> emitOwned,
                      llvm::function_ref<void(std::string_view)> emitBorrowed);
   static llvm::Expected<dd::Qubit> staticQubitId(const Qubit* qubit) {
