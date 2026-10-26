@@ -39,28 +39,6 @@ foreach(registration IN LISTS qiskit_version_registrations)
     PROPERTIES COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES "${version_include}")
 endforeach()
 
-set(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE ""
-    CACHE PATH "CI-only include directory for an exact non-shipping Qiskit version")
-set(MQT_QISKIT_CAPI_CANDIDATE_VERSION "" CACHE STRING "CI-only exact Qiskit development version")
-if(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE OR MQT_QISKIT_CAPI_CANDIDATE_VERSION)
-  if(NOT IS_DIRECTORY "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE}")
-    message(FATAL_ERROR "MQT_QISKIT_CAPI_CANDIDATE_INCLUDE must be a directory")
-  endif()
-  if(NOT MQT_QISKIT_CAPI_CANDIDATE_VERSION MATCHES "^2\\.[0-9]+\\.[0-9]+[^;\"]*$")
-    message(FATAL_ERROR "MQT_QISKIT_CAPI_CANDIDATE_VERSION must be one exact Qiskit 2 version")
-  endif()
-  set(QISKIT_FACTORY createCandidateTranslation)
-  set(candidate_source "${CMAKE_CURRENT_BINARY_DIR}/QiskitCandidate.cpp")
-  configure_file(Target/Qiskit/QiskitMinor.cpp.in ${candidate_source} @ONLY)
-  list(APPEND SOURCES ${candidate_source})
-  set_source_files_properties(
-    ${candidate_source}
-    TARGET_DIRECTORY ${TARGET_NAME}
-    PROPERTIES
-      COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES
-      "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE};${CMAKE_CURRENT_SOURCE_DIR}/Target/Qiskit")
-endif()
-
 target_sources(${TARGET_NAME} PRIVATE ${SOURCES})
 target_link_libraries(
   ${TARGET_NAME}
@@ -73,12 +51,6 @@ target_link_libraries(
     MLIRMQTUtils
     MLIRQCTranslationSupport
     MLIRQCODDFunctionality)
-
-if(MQT_QISKIT_CAPI_CANDIDATE_VERSION)
-  target_compile_definitions(
-    ${TARGET_NAME}
-    PRIVATE MQT_QISKIT_CAPI_CANDIDATE_VERSION="${MQT_QISKIT_CAPI_CANDIDATE_VERSION}")
-endif()
 
 # install the Python stub file in editable mode for better IDE support
 if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")

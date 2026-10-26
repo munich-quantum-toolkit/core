@@ -99,7 +99,7 @@ pennylane = [
   "pennylane>=0.45.1,<0.46",
 ]
 qiskit = [
-  "qiskit>=2.5,<2.7",
+  "qiskit>=2.5,<3",
 ]
 
 [project.urls]
@@ -137,7 +137,7 @@ docs = [
   "openqasm-pygments>=0.2",
   "pennylane>=0.45.1,<0.46",
   "pygraphviz>=2",
-  "qiskit[visualization]>=2.5,<2.7",
+  "qiskit[visualization]>=2.5,<3",
   "sphinx>=9",
   "sphinx-autoapi>=3.6.1",
   "sphinx-copybutton>=0.5.2",
@@ -167,7 +167,7 @@ test-base = [
   "pytest-cov>=7.1",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8",
-  "qiskit>=2.5,<2.7",
+  "qiskit>=2.5,<3",
 ]
 
 

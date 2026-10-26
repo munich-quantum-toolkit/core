@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import importlib
 import re
 import subprocess
 import sys
@@ -4395,23 +4396,46 @@ def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> N
         program.to_qiskit(target=target)
 
 
-def test_unknown_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reject unsupported Qiskit versions."""
-    monkeypatch.setattr(qiskit, "__version__", "3.0.0")
-    with pytest.raises(RuntimeError, match=r"installed version '3\.0\.0'.*>=2\.5\.0,<2\.6\.0"):
+@pytest.mark.parametrize("version", [0x020400F0, 0x020500C1, 0x030000F0])
+def test_unknown_version_is_rejected(monkeypatch: pytest.MonkeyPatch, version: int) -> None:
+    """Reject unsupported native API versions before accessing their tables."""
+    capi = importlib.import_module("qiskit._accelerate.capi")
+
+    monkeypatch.setattr(capi, "API_VERSION", version)
+    with pytest.raises(RuntimeError, match=r"supported versions: >=2\.5\.0,<3\.0\.0"):
         QCProgram.from_qiskit(QuantumCircuit(1))
 
 
-def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reject another minor's capsule before reading it, then reuse the right one."""
-    other = "2.6.0" if qiskit.__version__.startswith("2.5.") else "2.5.0"
+@pytest.mark.parametrize("version", [-1, 2**32, None, "2.6.0", True])
+def test_invalid_native_version_is_rejected(monkeypatch: pytest.MonkeyPatch, version: object) -> None:
+    """Require a supported unsigned native version before capsule access."""
+    capi = importlib.import_module("qiskit._accelerate.capi")
+
+    monkeypatch.setattr(capi, "API_VERSION", version)
+    with pytest.raises(RuntimeError):
+        QCProgram.from_qiskit(QuantumCircuit(1))
+
+
+def test_mismatched_native_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Check the advertised API against the loaded capsule, then recover."""
+    capi = importlib.import_module("qiskit._accelerate.capi")
+
     circuit = QuantumCircuit(1)
     circuit.rx(0.25, 0)
     with monkeypatch.context() as patched:
-        patched.setattr(qiskit, "__version__", other)
+        patched.setattr(capi, "API_VERSION", capi.API_VERSION + 0x100)
         with pytest.raises(RuntimeError, match="C API capsule version does not match"):
             QCProgram.from_qiskit(circuit)
 
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_native_version_controls_adapter_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Python display version does not override the native ABI identity."""
+    monkeypatch.setattr(qiskit, "__version__", "2.99.0.dev0+downstream")
+    circuit = QuantumCircuit(1)
+    circuit.rx(0.25, 0)
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 

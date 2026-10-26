@@ -18,123 +18,42 @@
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h"
 
-#include <charconv>
-#include <cstddef>
-#include <exception>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
-#include <system_error>
 
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
 
-namespace {
-struct InstalledVersion {
-  unsigned int major = 0;
-  unsigned int minor = 0;
-  unsigned int patch = 0;
-  std::string text;
-};
-} // namespace
-
-[[nodiscard]] static unsigned int parseComponent(std::string_view text,
-                                                 size_t& offset) {
-  unsigned int value = 0;
-  const auto [end, error] =
-      std::from_chars(text.data() + offset, text.data() + text.size(), value);
-  if (error != std::errc{}) {
-    throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
-                             "'");
-  }
-  offset = static_cast<size_t>(end - text.data());
-  return value;
-}
-
-static void requireSeparator(const std::string_view text, size_t& offset) {
-  if (offset >= text.size() || text[offset] != '.') {
-    throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
-                             "'");
-  }
-  ++offset;
-}
-
-[[nodiscard]] static std::string supportedVersionRanges() {
-  std::string ranges;
-#define MQT_QISKIT_VERSION(minor, minimumPatch, minimum, range)                \
-  ranges += ranges.empty() ? (range) : ", " range;
-#include "SupportedVersions.inc"
-#undef MQT_QISKIT_VERSION
-  return ranges;
-}
-
-using TranslationFactory = std::unique_ptr<VersionedTranslation> (*)();
-
-[[nodiscard]] static TranslationFactory
-translationFactory(const InstalledVersion& version) {
-  if (version.major != 2U) {
-    return nullptr;
-  }
-#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
-  if (version.text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
-    return createCandidateTranslation;
-  }
-#endif
-#define MQT_QISKIT_VERSION(expectedMinor, minimumPatch, minimum, range)        \
-  if (version.minor == expectedMinor##U && version.patch >= minimumPatch##U) { \
-    return createQiskit2_##expectedMinor;                                      \
-  }
-#include "SupportedVersions.inc"
-#undef MQT_QISKIT_VERSION
-  return nullptr;
-}
-
-[[nodiscard]] static InstalledVersion inspectInstalledVersion() {
-  std::string text;
-  try {
-    text = nb::cast<std::string>(
-        nb::module_::import_("qiskit").attr("__version__"));
-  } catch (const std::exception& error) {
-    throw std::runtime_error(
-        "Qiskit circuit translation requires an installed Qiskit package: " +
-        std::string(error.what()));
-  }
-
-  size_t offset = 0;
-  const auto major = parseComponent(text, offset);
-  requireSeparator(text, offset);
-  const auto minor = parseComponent(text, offset);
-  requireSeparator(text, offset);
-  const auto patch = parseComponent(text, offset);
-  if (offset != text.size()) {
-#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
-    if (text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
-      return {.major = major, .minor = minor, .patch = patch, .text = text};
-    }
-#endif
-    throw std::runtime_error(
-        "Qiskit circuit translation does not support version '" + text +
-        "'; supported versions: " + supportedVersionRanges());
-  }
-  const InstalledVersion result{
-      .major = major,
-      .minor = minor,
-      .patch = patch,
-      .text = text,
-  };
-  return result;
-}
-
 std::unique_ptr<VersionedTranslation> selectTranslation() {
-  const auto version = inspectInstalledVersion();
-  if (const auto factory = translationFactory(version); factory != nullptr) {
+  const auto qiskit = nb::module_::import_("qiskit");
+  const auto version = nb::cast<uint32_t>(
+      nb::module_::import_("qiskit._accelerate.capi").attr("API_VERSION"));
+  using Factory = std::unique_ptr<VersionedTranslation> (*)();
+  Factory factory = nullptr;
+  uint32_t selectedMinimum = 0;
+  if ((version >> 24U) == 2U) {
+#define MQT_QISKIT_VERSION(minor, patch, minimum, range)                       \
+  {                                                                            \
+    constexpr auto min =                                                       \
+        (2U << 24U) | (minor##U << 16U) | (patch##U << 8U) | 0xf0U;            \
+    if (version >= min && min > selectedMinimum) {                             \
+      factory = createQiskit2_##minor;                                         \
+      selectedMinimum = min;                                                   \
+    }                                                                          \
+  }
+#include "SupportedVersions.inc"
+#undef MQT_QISKIT_VERSION
+  }
+  if (factory != nullptr) {
     return factory();
   }
   throw std::runtime_error(
       "Qiskit circuit translation does not support installed version '" +
-      version.text + "'; supported versions: " + supportedVersionRanges());
+      nb::cast<std::string>(qiskit.attr("__version__")) +
+      "'; supported versions: >=2.5.0,<3.0.0");
 }
 
 mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,

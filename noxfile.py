@@ -218,7 +218,7 @@ def qiskit_compat(session: nox.Session, qiskit_minor: str) -> None:
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
 def qiskit(session: nox.Session) -> None:
-    """Test against Qiskit main with its exact extension headers."""
+    """Test shipping C API adapters against Qiskit main."""
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
     if shutil.which("cmake") is None:
         session.install("cmake")
@@ -237,52 +237,20 @@ def qiskit(session: nox.Session) -> None:
     )
     session.run(
         "uv",
-        "pip",
-        "install",
-        "--reinstall",
-        "qiskit @ git+https://github.com/Qiskit/qiskit.git",
-        env=env,
-    )
-    details = session.run(
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "-c",
-        ("import qiskit; from qiskit import capi; print(qiskit.__version__); print(capi.get_include())"),
-        env=env,
-        silent=True,
-    )
-    if details is None:
-        session.error("failed to inspect the installed Qiskit build")
-    detail_lines = details.strip().splitlines()
-    if len(detail_lines) < 2:
-        session.error("installed Qiskit did not report its version and C API include directory")
-    version, include = detail_lines[-2:]
-    include_path = Path(include).resolve(strict=True)
-    cmake_args = [
-        argument
-        for argument in os.environ.get("SKBUILD_CMAKE_ARGS", "").split(";")
-        if argument
-        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
-        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
-    ]
-    cmake_args.extend([
-        f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include_path}",
-        f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
-    ])
-    env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
-    env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
-    session.run(
-        "uv",
         "sync",
         "--locked",
         "--inexact",
         "--no-dev",
         "--no-build-isolation-package",
         "mqt-core",
-        "--no-install-package",
-        "qiskit",
+        env=env,
+    )
+    session.run(
+        "uv",
+        "pip",
+        "install",
+        "--reinstall",
+        "qiskit @ git+https://github.com/Qiskit/qiskit.git",
         env=env,
     )
     session.run(
