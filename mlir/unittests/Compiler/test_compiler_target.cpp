@@ -314,9 +314,16 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
   const auto qir = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2.1", .profile = "base"}));
   EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);
-  const auto qasm = valid(
-      mlir::PayloadSpecification::create({.id = "openqasm", .version = "3.1"}));
-  EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+  for (const auto* version : {"3", "3.0", "3.0.0", "3.1"}) {
+    const auto qasm = valid(mlir::PayloadSpecification::create(
+        {.id = "openqasm", .version = version}));
+    EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+  }
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "openqasm", .version = "3"},
+                                         {{.id = "multiway-branching"}}),
+      "Invalid payload specification: OpenQASM 3.0 does not support "
+      "multiway branching");
   const auto exactMajor = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2", .profile = "base"}));
   expectInvalid(exactMajor.compilerOutput(),

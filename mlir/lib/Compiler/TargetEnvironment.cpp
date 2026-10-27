@@ -64,6 +64,21 @@ llvm::Expected<PayloadSpecification>
 PayloadSpecification::forProgramFormat(ProgramFormat format,
                                        PayloadEncoding encoding) {
   switch (format) {
+  case ProgramFormat::OpenQASM2:
+    return PayloadSpecification::create(
+        {.id = "openqasm", .version = "2.0.0", .encoding = encoding},
+        {
+            {
+                .id = ProgramCapability::FORWARD_BRANCHING.str(),
+                .constraints =
+                    {
+                        {
+                            .id = ProgramConstraint::MAX_NESTING_DEPTH.str(),
+                            .value = 1,
+                        },
+                    },
+            },
+        });
   case ProgramFormat::OpenQASM3:
     return PayloadSpecification::create(
         {
@@ -149,6 +164,10 @@ PayloadSpecification::create(PayloadFormat format,
     if (containsNull(capability.id)) {
       return invalidPayload(
           "Program capability ID must not contain a null character");
+    }
+    if (format.id == "openqasm" && format.version == "3.0.0" &&
+        capability.id == ProgramCapability::MULTIWAY_BRANCHING) {
+      return invalidPayload("OpenQASM 3.0 does not support multiway branching");
     }
     const auto capabilityKey =
         std::pair(llvm::StringRef(capability.id), capability.value);
@@ -238,7 +257,12 @@ llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::IQMJSON;
   }
-  if (format_.id == "openqasm" && format_.version == "3.1.0" &&
+  if (format_.id == "openqasm" && format_.version == "2.0.0" &&
+      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
+    return ProgramFormat::OpenQASM2;
+  }
+  if (format_.id == "openqasm" &&
+      (format_.version == "3.0.0" || format_.version == "3.1.0") &&
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;
   }

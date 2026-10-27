@@ -412,6 +412,10 @@ public:
   [[nodiscard]] LogicalResult
   switchDefault(SMLoc location, function_ref<LogicalResult()> continuation);
 
+  [[nodiscard]] bool isOpenQASM2() const {
+    return program.version && program.version->major == 2;
+  }
+
   [[nodiscard]] SyntaxProgram takeProgram() { return std::move(program); }
   [[nodiscard]] const std::vector<SyntaxDiagnostic>& getDiagnostics() const {
     return diagnostics;

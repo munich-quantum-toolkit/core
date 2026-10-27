@@ -487,6 +487,16 @@ safety limit of 256 total control-flow levels, including enclosing control flow.
 This compiler limit is not a QDMI requirement and does not apply to switches
 retained under multiway branching.
 
+The OpenQASM 2 baseline permits one level of forward branching. Its exporter
+requires whole-register equality conditions and statements allowed by the
+OpenQASM 2 grammar; it rejects residual loops and nested branches.
+
+OpenQASM payload versions `3` and `3.0` select OpenQASM 3.0, which supports
+forward branches and loops but not switches. Declare `forward-branching` to
+lower switches to nested `if` statements. A `multiway-branching` capability
+requires OpenQASM 3.1. The exporter writes `OPENQASM 3;` unless the emitted
+program needs `switch`, in which case it writes `OPENQASM 3.1;`.
+
 Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
 the corresponding QCO branch operation for linear quantum state. SCF loops must
 carry linear quantum state through their iteration arguments instead of
@@ -720,9 +730,11 @@ for native payload export.
 
 QDMI's supported-format list does not provide per-format capability
 restrictions. The adapter therefore uses the compiler-supported baseline for the
-selected format (OpenQASM 3.1, IQM JSON, or QIR 2.1), with optional capability
-metadata marked as unknown. Use `TargetEnvironment` and `PayloadSpecification`
-for staged compilation with explicit restrictions.
+selected format (OpenQASM 2.0 or 3.1, IQM JSON, or QIR 2.1), with optional
+capability metadata marked as unknown. These versions bound the available
+features; an emitted program may require a lower version. Use
+`TargetEnvironment` and `PayloadSpecification` for staged compilation with
+explicit restrictions.
 
 QIR submission requires a parameterless entry point. QC-to-QIR conversion
 records direct measurements and CBit-register results, then emits runtime status

@@ -41,7 +41,7 @@ reports.
 
 from __future__ import annotations
 
-__lazy_modules__ = {"importlib.metadata", "io", "mqt.core.mlir", "qiskit", "warnings"}
+__lazy_modules__ = {"importlib.metadata", "io", "mqt.core.mlir", "warnings"}
 
 import warnings
 from collections.abc import Callable
@@ -49,8 +49,6 @@ from functools import partial
 from importlib.metadata import entry_points
 from io import BytesIO
 from typing import TYPE_CHECKING, Protocol
-
-from qiskit import qasm2, qpy
 
 from mqt.core.mlir import CompilerTarget, QCProgram, QIRProfile
 from mqt.core.qdmi import ProgramFormat
@@ -174,7 +172,7 @@ def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
         The OpenQASM 2 program.
     """
     backend.validate_circuit(circuit, native=True)
-    return qasm2.dumps(circuit)
+    return QCProgram.from_qiskit(circuit, native=True).to_openqasm2().source
 
 
 def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
@@ -183,6 +181,8 @@ def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
     Returns:
         One circuit encoded as QPY bytes, using at most version 17.
     """
+    from qiskit import qpy  # ruff: ignore[import-outside-top-level] - Load QPY only when this serializer is used.
+
     backend.validate_circuit(circuit, native=True)
     with BytesIO() as buffer:
         # QPY 17 enables native writing and remains readable by Qiskit 2.5.

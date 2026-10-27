@@ -4613,6 +4613,95 @@ switch (selector) {
       << diagnostics;
 }
 
+TEST_F(CompilerPipelineTest, OpenQASM2TargetPreservesSimpleFeedback) {
+  const auto payload = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM2));
+  auto input = QCProgram::fromOpenQASMString(R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[1];
+x q[0];
+measure q[0] -> c[0];
+if (c == 1) x q[0];
+measure q[0] -> c[0];
+)qasm");
+  MQT_ASSERT_SUCCESS(input);
+  auto output =
+      runDefaultPipeline(CompilerInput{std::move(*input)},
+                         TargetEnvironment(makeUnrestrictedTarget(), payload));
+  MQT_ASSERT_SUCCESS(output);
+  ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*output));
+  const StringRef text = std::get<OpenQASMProgram>(*output).source();
+  EXPECT_TRUE(text.contains("if (")) << text.str();
+  auto reparsed = QCProgram::fromOpenQASMString(text);
+  MQT_ASSERT_SUCCESS(reparsed);
+  auto restored = std::move(*reparsed).intoQCO();
+  ASSERT_TRUE(succeeded(restored));
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(restored->module()), 1, 42);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1U);
+  EXPECT_EQ(counts->begin()->first, "0");
+}
+
+TEST_F(CompilerPipelineTest, OpenQASMPayloadVersionControlsSwitchEmission) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+output bit c;
+h q;
+c = measure q;
+switch (int(c)) {
+  case 0 { x q; }
+  default { z q; }
+}
+c = measure q;
+)qasm";
+  for (const bool supportsSwitch : {false, true}) {
+    auto input = QCProgram::fromOpenQASMString(source);
+    MQT_ASSERT_SUCCESS(input);
+    std::vector<ProgramCapability> capabilities{{.id = "forward-branching"}};
+    if (supportsSwitch) {
+      capabilities.push_back({
+          .id = "multiway-branching",
+          .constraints = {{.id = "max-case-count", .value = 1}},
+      });
+    }
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "openqasm", .version = supportsSwitch ? "3.1" : "3"},
+        std::move(capabilities)));
+    if (!supportsSwitch) {
+      auto direct = input->copy();
+      attachTargetEnvironment(
+          direct.module(),
+          TargetEnvironment(makeUnrestrictedTarget(), payload));
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(direct.module().getContext(),
+                                      [&](Diagnostic& diagnostic) {
+                                        diagnostics += diagnostic.str();
+                                        return success();
+                                      });
+      EXPECT_TRUE(failed(std::move(direct).intoOpenQASM3()));
+      EXPECT_TRUE(StringRef(diagnostics).contains("requires OpenQASM 3.0"))
+          << diagnostics;
+    }
+    auto output = runDefaultPipeline(
+        CompilerInput{std::move(*input)},
+        TargetEnvironment(makeUnrestrictedTarget(), payload));
+    MQT_ASSERT_SUCCESS(output);
+    ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*output));
+    const StringRef text = std::get<OpenQASMProgram>(*output).source();
+    EXPECT_EQ(text.contains("switch ("), supportsSwitch) << text.str();
+    EXPECT_TRUE(
+        text.starts_with(supportsSwitch ? "OPENQASM 3.1;" : "OPENQASM 3;"))
+        << text.str();
+    auto reparsed = QCProgram::fromOpenQASMString(text);
+    MQT_ASSERT_SUCCESS(reparsed);
+  }
+}
+
 TEST_F(CompilerPipelineTest, PayloadControlLowersClassicalSCFIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
     module {

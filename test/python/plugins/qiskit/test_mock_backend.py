@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, ClassVar, NoReturn
 from unittest.mock import Mock
 
 import pytest
-from qiskit import qasm2, qpy
+from qiskit import qpy
 from qiskit.circuit import (
     BreakLoopOp,
     ClassicalRegister,
@@ -484,13 +484,14 @@ def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: Prog
 
 
 @pytest.mark.parametrize("angle", [pi + 1e-9, 1e-12])
-def test_qasm3_preserves_float_parameters(angle: float) -> None:
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_qasm_preserves_float_parameters(angle: float, program_format: ProgramFormat) -> None:
     """Executable serialization must not replace nearby values by constants."""
     device = MockQDMIDevice(operations=["rx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     circuit = QuantumCircuit(1)
     circuit.rx(angle, 0)
-    serializer = program_serializer(ProgramFormat.QASM3)
+    serializer = program_serializer(program_format)
     assert serializer is not None
     program = serializer(circuit, backend)
     assert isinstance(program, str)
@@ -738,7 +739,7 @@ def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytes
     assert "cx $0, $2;" in program
 
 
-@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.QPY])
 def test_builtin_preflight_maps_control_flow_operands(
     monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
 ) -> None:
@@ -793,14 +794,13 @@ def test_backend_qasm_serialization_failure(
     program_format: ProgramFormat,
 ) -> None:
     """Backend should raise TranslationError when OpenQASM serialization fails."""
-    qasm_module = QCProgram if qasm_module_name == "qasm3" else qasm2
 
-    # Monkeypatch qasm dumps to raise an exception
+    # Exercise the shared compiler import error boundary.
     def failing_dumps(circuit: object, **_kwargs: object) -> NoReturn:  # ruff:ignore[unused-function-argument]
         msg = f"Simulated {qasm_module_name.upper()} conversion failure"
         raise ValueError(msg)
 
-    monkeypatch.setattr(qasm_module, "from_qiskit" if qasm_module_name == "qasm3" else "dumps", failing_dumps)
+    monkeypatch.setattr(QCProgram, "from_qiskit", failing_dumps)
 
     qc = QuantumCircuit(2)
     qc.cz(0, 1)

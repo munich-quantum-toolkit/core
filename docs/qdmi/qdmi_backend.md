@@ -475,16 +475,18 @@ Backend extensions must use distinct Target names for unequal instructions,
 including gates with different fixed parameters; conflicting aliases are
 rejected.
 
-OpenQASM 3 serialization uses MQT Core's Qiskit importer and OpenQASM exporter.
+OpenQASM serialization uses MQT Core's Qiskit importer and OpenQASM exporters.
 Circuit indices denote device qubits; gate names and ordered operands are
-preserved without compiling their definitions. Classical registers become
-zero-initialized outputs, and temporary values are excluded from results. The
-exporter selects the lowest required OpenQASM 3 version and preserves
-floating-point gate parameters without rounding them to nearby constants. The
+preserved without compiling their definitions. Floating-point gate parameters
+are preserved without rounding them to nearby constants. The
 [compiler circuit translation limits](../mlir/qiskit.md#circuit-translation-contract)
-apply. Qiskit's OpenQASM 2 exporter can round values near zero or multiples of
-pi and offers no option to disable this behavior. Use OpenQASM 3 when these
-differences matter.
+apply. OpenQASM 3 represents classical registers as zero-initialized outputs,
+excludes temporary values from results, and uses the lowest required language
+version. OpenQASM 2 supports register-equality conditions, measurements, and
+resets, declares receiver-defined gates as `opaque`, and discards program-wide
+global phase. See the
+[OpenQASM output contract](../mlir/OpenQASM.md#export-openqasm) for its
+supported subset.
 
 Control-flow instructions require explicit support in the backend's Target;
 their bodies are checked recursively using the enclosing circuit's qubits.

@@ -74,6 +74,9 @@ class OutputFormat(enum.Enum):
     QC = 3
     """QC after the optimized QCO round trip."""
 
+    OPENQASM2 = 9
+    """OpenQASM 2 with bound parameters."""
+
     OPENQASM3 = 4
     """OpenQASM 3 after the optimized QCO round trip."""
 
@@ -89,7 +92,7 @@ class OutputFormat(enum.Enum):
     QIR_ADAPTIVE = 7
     """QIR for the Adaptive Profile."""
 
-    QISKIT = 9
+    QISKIT = 10
     """A Qiskit QuantumCircuit."""
 
 class PayloadEncoding(enum.Enum):
@@ -843,6 +846,21 @@ class QCProgram(Program):
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
+    def to_openqasm2(self, *, copy: bool = False) -> OpenQASMProgram:
+        """Emit OpenQASM 2, discarding program-wide global phase.
+
+        Parameters must be bound, indices static, and classical storage limited to
+        output registers written by measurements. Register-equality conditions can guard
+        gates, resets, and measurements. Other runtime control flow and unsupported
+        modifiers raise an error. Use ``compile_program`` to lower static loops before
+        export.
+
+        The source is consumed, including on failure. Set ``copy=True`` to preserve it.
+
+        Args:
+            copy: Export a copy of the program.
+        """
+
     def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
         """Emit this QC program as OpenQASM 3.
 
@@ -1431,7 +1449,7 @@ def compile_program(
     program: _CompilerInput,
     *,
     target: _CompilerTarget | None = None,
-    output: Literal[OutputFormat.OPENQASM3],
+    output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
     **kwargs: Unpack[_CompileOptions],
 ) -> OpenQASMProgram: ...
 @overload
@@ -1543,7 +1561,7 @@ def compile_program(
     program: Sequence[_CompilerInputT],
     *,
     target: _CompilerTarget | None = None,
-    output: Literal[OutputFormat.OPENQASM3],
+    output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
     **kwargs: Unpack[_CompileOptions],
 ) -> list[OpenQASMProgram]: ...
 @overload

@@ -1,7 +1,7 @@
 # OpenQASM input and output
 
 MQT Core accepts OpenQASM as a compiler input and can export structured programs
-from the QC dialect.
+from the QC dialect as OpenQASM 2 or 3.
 
 The [OpenQASM specification](https://openqasm.com/index.html) defines the
 language. This page describes the subset supported by MQT Core.
@@ -71,10 +71,10 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and other array forms are diagnosed.                                                                                                                                                                     |
 
 OpenQASM 2 `opaque` declarations become private external functions with scalar
-parameters followed by qubit operands. OpenQASM 3 export preserves calls to
-these gates; the receiver must supply their definitions. External gate names
-must be unique, match any language or included standard-library signature, and
-not conflict with generated gate definitions.
+parameters followed by qubit operands. They cannot redeclare language primitives
+or gates from an included library. OpenQASM export preserves calls to these
+gates; the receiver must supply their definitions. External gate names must be
+unique and must not conflict with generated gate definitions.
 
 The importer recognizes custom gates containing unitary gate calls and
 constant-range `for` loops as unitary, including nested loops and their callers.
@@ -315,7 +315,7 @@ stream only after preparing the complete source.
 Use the translation API with an owned MLIR module:
 
 ```cpp
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
+#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 
 auto source = mlir::qc::translateQCToOpenQASM3(std::move(moduleOp));
 if (mlir::failed(source)) {
@@ -366,6 +366,33 @@ flow for export, preserving quantum operations and register sizes. Use the
 compiler pipeline to optimize the program. Both consume the input, including on
 failure. In Python, set `copy=True` to preserve it. The low-level translation
 API also consumes its module; only the output stream is unchanged on failure.
+
+Use `to_openqasm2()`, `OutputFormat.OPENQASM2`, or `--emit=openqasm2` for
+OpenQASM 2 output. Defined gates are inlined; receiver-defined gates use
+`opaque` declarations. Parameters must be bound and indices static. Every
+classical register must be an output, in allocation order, and can only be
+written by measurement. Mid-circuit and repeated measurements, resets, and
+barriers are supported. Conditions compare a complete classical register to an
+integer: `if (c == 1) x q[0];`. Whole-register measurements remain one statement
+when they overwrite the condition register, preserving one condition evaluation.
+Register and opaque gate names must start with a lowercase letter. The output
+includes `qelib1.inc`; opaque names from that library must match its gate
+signatures. Device qubit indices become one `qreg` whose width includes unused
+lower indices. A conditional measurement that overwrites its selector must fit a
+single output statement, including a complete emitted `qreg` for a
+whole-register measurement.
+
+Explicit compilation lowers bounded constant loops and quantum modifiers using
+the existing compiler passes. Export diagnoses unsupported remaining gates and
+modifiers. Other runtime control flow and classical assignments cannot be
+represented. A conditional block can contain multiple statements only while the
+condition register remains unchanged; its final statement may overwrite that
+register. OpenQASM 2 export discards program-wide global phase after
+normalization while preserving relative phase under controls. The exported U
+decomposition uses `u1`, `ry`, and `u1` to avoid differing `U` phase conventions
+across consumers.
+
+The remaining output details below describe OpenQASM 3.
 
 ### Export and round-trip support
 

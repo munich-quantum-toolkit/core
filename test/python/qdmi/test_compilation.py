@@ -404,8 +404,8 @@ def test_rejects_invalid_submission_options() -> None:
     source = compile_program(BELL, output=OutputFormat.QCO)
     with pytest.raises(ValueError, match="nonnegative"):
         submit_program(source, target=device, num_shots=-1)
-    with pytest.raises(ValueError, match="cannot emit"):
-        submit_program(source, target=device, program_format=ProgramFormat.QASM2)
+    with pytest.raises(ValueError, match="does not support"):
+        submit_program(source, target=device, program_format=ProgramFormat.QPY)
     assert source.is_valid
     compiled = compile_program(source, target=device, copy=True)
     assert source.is_valid
@@ -413,13 +413,19 @@ def test_rejects_invalid_submission_options() -> None:
         submit_program(compiled, target=device, program_format=ProgramFormat.QASM3)
 
 
-def test_explicit_target_preserves_input_format() -> None:
-    """Hardware snapshots produce directly executable OpenQASM by default."""
+@pytest.mark.parametrize(
+    ("output_format", "program_format"),
+    [(OutputFormat.OPENQASM2, ProgramFormat.QASM2), (None, ProgramFormat.QASM3)],
+)
+def test_explicit_target_preserves_input_format(
+    output_format: OutputFormat | None, program_format: ProgramFormat
+) -> None:
+    """Hardware snapshots produce directly executable OpenQASM."""
     device = open_device("mqt.ddsim.default")
     target = CompilerTarget.from_device(device)
-    output = compile_program(BELL, target=target)
+    output = compile_program(BELL, target=target, output=output_format)
     assert isinstance(output, OpenQASMProgram)
-    raw = device.submit_job(output.source, ProgramFormat.QASM3, num_shots=0)
+    raw = device.submit_job(output.source, program_format, num_shots=0)
     raw.wait()
     assert raw.get_dense_statevector() == pytest.approx([2**-0.5, 0, 0, 2**-0.5])
 

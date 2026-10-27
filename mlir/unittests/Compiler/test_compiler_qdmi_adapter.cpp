@@ -336,6 +336,7 @@ TEST(CompilerQDMIAdapterTest,
     return QDMI_SUCCESS;
   };
   formats = {
+      QDMI_PROGRAM_FORMAT_QASM2,
       QDMI_PROGRAM_FORMAT_QIRBASESTRING,
       QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
       QDMI_PROGRAM_FORMAT_IQMJSON,
@@ -361,7 +362,7 @@ TEST(CompilerQDMIAdapterTest,
                             device, QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
                             .takeError()));
   EXPECT_TRUE(llvm::errorToBool(
-      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM2)
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QPY)
           .takeError()));
 
   const auto adaptive =
