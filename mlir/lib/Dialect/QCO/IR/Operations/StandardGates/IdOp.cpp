@@ -16,8 +16,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-OpFoldResult IdOp::fold(FoldAdaptor /*adaptor*/) { return getQubitIn(); }
-
 Matrix2x2 IdOp::getUnitaryMatrix() {
   return Matrix2x2::fromElements(1, 0,  // row 0
                                  0, 1); // row 1

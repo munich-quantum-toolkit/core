@@ -25,10 +25,23 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <cmath>
 #include <cstddef>
 #include <optional>
 
 namespace mlir::qco {
+
+/// Eliminate a rotation within the explicit optimization tolerance.
+template <typename Op>
+LogicalResult removeZeroRotation(Op op, PatternRewriter& rewriter) {
+  const auto theta = mqt::valueToDouble(op.getTheta());
+  if (!theta || !(std::abs(*theta) <= mqt::PARAMETER_COMPARISON_TOLERANCE)) {
+    return failure();
+  }
+  rewriter.replaceOp(
+      op, cast<UnitaryOpInterface>(op.getOperation()).getInputQubits());
+  return success();
+}
 
 /// Fold QCO if operations with literal conditions, without changing signatures.
 void populateFoldStaticIfPatterns(RewritePatternSet& patterns);

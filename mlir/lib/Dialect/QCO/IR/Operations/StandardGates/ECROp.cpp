@@ -23,8 +23,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void ECROp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* /*context*/) {
+void ECROp::getOptimizationPatterns(RewritePatternSet& results,
+                                    MLIRContext* /*context*/) {
   results.add(+[](ECROp op, PatternRewriter& rewriter) {
     return removeInversePairTwoTargetZeroParameter<ECROp>(op, rewriter);
   });

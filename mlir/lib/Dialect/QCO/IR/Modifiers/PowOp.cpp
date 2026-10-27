@@ -695,8 +695,8 @@ LogicalResult PowOp::verifyRegions() {
   return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
-void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
+void PowOp::getLoweringPatterns(RewritePatternSet& results,
+                                MLIRContext* context) {
   results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
               MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow,
               DropUnusedPowQubits, FoldFixedGatePow>(context);
@@ -777,4 +777,9 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix(double p) {
   }
 
   return std::nullopt;
+}
+
+void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+  results.add<EraseEmptyPow, DropUnusedPowQubits>(context);
 }

@@ -136,6 +136,8 @@ static void assertCanonicalizedPowMatrixMatches(MLIRContext* context,
 
   const auto expected = firstPowOp(*moduleOp).getUnitaryMatrix();
   ASSERT_TRUE(expected);
+  ASSERT_TRUE(succeeded(
+      runPassPipeline(*moduleOp, "simplify-quantum,normalize-global-phases")));
   ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
 
   auto funcOp = cast<func::FuncOp>(moduleOp->getBody()->front());
@@ -223,6 +225,9 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
                 unitaries.front().getQubitsIn().front()),
             unitaries.front().getQubitsOut().front());
 
+  ASSERT_TRUE(succeeded(
+      runPassPipeline(*module, "simplify-quantum,normalize-global-phases")));
+
   ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
   unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
   ASSERT_EQ(unitaries.size(), 1U);
@@ -242,6 +247,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
       "matrix",
       DenseElementsAttr::get(
           matrixType, llvm::ArrayRef<std::complex<double>>(identityValues)));
+  ASSERT_TRUE(succeeded(
+      runPassPipeline(*module, "simplify-quantum,normalize-global-phases")));
   ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
   EXPECT_TRUE(function.getBody().getOps<UnitaryOp>().empty());
 }
@@ -824,6 +831,9 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
     ASSERT_TRUE(moduleOp);
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
+    ASSERT_TRUE(succeeded(runPassPipeline(
+        *moduleOp, "simplify-quantum,normalize-global-phases")));
+
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
@@ -857,6 +867,9 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
     });
     ASSERT_TRUE(moduleOp);
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
+
+    ASSERT_TRUE(succeeded(runPassPipeline(
+        *moduleOp, "simplify-quantum,normalize-global-phases")));
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -895,6 +908,9 @@ TEST_F(QCOMatrixTest, RejectedPowURemainsUnchanged) {
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
+    ASSERT_TRUE(succeeded(runPassPipeline(
+        *moduleOp, "simplify-quantum,normalize-global-phases")));
+
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -931,6 +947,9 @@ TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
+    ASSERT_TRUE(succeeded(runPassPipeline(
+        *moduleOp, "simplify-quantum,normalize-global-phases")));
+
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -945,6 +964,9 @@ TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
     return SmallVector<Value>{q};
   });
   ASSERT_TRUE(moduleOp);
+
+  ASSERT_TRUE(succeeded(
+      runPassPipeline(*moduleOp, "simplify-quantum,normalize-global-phases")));
 
   ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
   EXPECT_EQ(llvm::range_size(cast<func::FuncOp>(moduleOp->getBody()->front())
@@ -968,6 +990,9 @@ TEST_F(QCOMatrixTest, FractionalParameterizedPowDoesNotFold) {
     ASSERT_TRUE(moduleOp);
     const auto expected = firstPowOp(*moduleOp).getUnitaryMatrix();
     ASSERT_TRUE(expected);
+
+    ASSERT_TRUE(succeeded(runPassPipeline(
+        *moduleOp, "simplify-quantum,normalize-global-phases")));
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     auto powOps =
@@ -1137,6 +1162,8 @@ TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
     });
     ASSERT_TRUE(program);
     OwningOpRef<ModuleOp> expected = program->clone();
+    ASSERT_TRUE(succeeded(
+        runPassPipeline(*program, "simplify-quantum,normalize-global-phases")));
     ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
     ASSERT_TRUE(succeeded(verifyLinearity(*program)));
     ::mqt::test::expectFullUnitaryEqual(*expected, *program, 2);
@@ -1159,6 +1186,8 @@ TEST_F(QCOMatrixTest, ControlledSwapRemainsConditional) {
     return SmallVector<Value>{controls[0], targets[0], targets[1]};
   });
   ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(
+      runPassPipeline(*program, "simplify-quantum,normalize-global-phases")));
   ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
   ASSERT_TRUE(succeeded(verifyLinearity(*program)));
   auto function = *program->getOps<func::FuncOp>().begin();

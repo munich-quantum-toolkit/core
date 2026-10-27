@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
@@ -85,6 +86,7 @@ protected:
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
     PassManager manager(&context_);
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     manager.addPass(createCanonicalizerPass());
     ASSERT_TRUE(succeeded(manager.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
@@ -105,7 +107,7 @@ protected:
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
     RewritePatternSet patterns(&context_);
-    GateOp::getCanonicalizationPatterns(patterns, &context_);
+    GateOp::getOptimizationPatterns(patterns, &context_);
     FrozenRewritePatternSet frozen(std::move(patterns));
     PatternApplicator applicator(frozen);
     applicator.applyDefaultCostModel();
@@ -148,7 +150,7 @@ TEST_F(QCOCanonicalizationTest, PairCancellationPreservesDifferentGates) {
   EXPECT_EQ(second.getQubitIn(), first.getResult());
 }
 
-TEST_F(QCOCanonicalizationTest, IdentityFoldsToItsInput) {
+TEST_F(QCOCanonicalizationTest, IdentitySimplificationRequiresOptimization) {
   auto moduleOp = singleQubitFunction();
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -161,14 +163,13 @@ TEST_F(QCOCanonicalizationTest, IdentityFoldsToItsInput) {
   ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   SmallVector<OpFoldResult> results;
-  ASSERT_TRUE(succeeded(identity->fold({Attribute{}}, results)));
-  ASSERT_EQ(results.size(), 1U);
-  EXPECT_EQ(cast<Value>(results.front()), function.getArgument(0));
+  EXPECT_TRUE(failed(identity->fold({Attribute{}}, results)));
   ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
   EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
 }
 
-TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesOperandOrder) {
+TEST_F(QCOCanonicalizationTest,
+       DenseIdentitySimplificationPreservesOperandOrder) {
   auto moduleOp = twoQubitFunction();
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -191,10 +192,7 @@ TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesOperandOrder) {
   ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   SmallVector<OpFoldResult> results;
-  ASSERT_TRUE(succeeded(identity->fold({Attribute{}, Attribute{}}, results)));
-  ASSERT_EQ(results.size(), 2U);
-  EXPECT_EQ(cast<Value>(results[0]), function.getArgument(1));
-  EXPECT_EQ(cast<Value>(results[1]), function.getArgument(0));
+  EXPECT_TRUE(failed(identity->fold({Attribute{}, Attribute{}}, results)));
   ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
   EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
   EXPECT_EQ(returned.getOperand(1), function.getArgument(1));

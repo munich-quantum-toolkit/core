@@ -36,19 +36,9 @@ void RZXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
-LogicalResult RZXOp::fold(FoldAdaptor /*adaptor*/,
-                          SmallVectorImpl<OpFoldResult>& results) {
-  if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
-    results.emplace_back(getInputQubit(0));
-    results.emplace_back(getInputQubit(1));
-    return success();
-  }
-  return failure();
-}
-
-void RZXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* /*context*/) {
+void RZXOp::getOptimizationPatterns(RewritePatternSet& results,
+                                    MLIRContext* /*context*/) {
+  results.add(removeZeroRotation<RZXOp>);
   results.add(+[](RZXOp op, PatternRewriter& rewriter) {
     return mergeTwoTargetOneParameter(op, rewriter);
   });

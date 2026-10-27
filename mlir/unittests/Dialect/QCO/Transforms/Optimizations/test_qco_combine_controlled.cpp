@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -61,6 +62,7 @@ protected:
     PassManager pm(&context);
     pm.addPass(createCombineControlledGates());
     if (cleanup) {
+      pm.addPass(mlir::mqt::createSimplifyQuantum());
       pm.addPass(createCanonicalizerPass());
     }
     ASSERT_TRUE(succeeded(pm.run(moduleOp)));
@@ -192,6 +194,7 @@ TEST_F(CombineControlledGatesTest, PreservesPhaseWiresAndParameterDominance) {
                                              builder.getF64FloatAttr(theta));
       func.getArgument(0).replaceAllUsesWith(value);
       PassManager fold(&context);
+      fold.addPass(mlir::mqt::createSimplifyQuantum());
       fold.addPass(createCanonicalizerPass());
       ASSERT_TRUE(succeeded(fold.run(mod)));
     }

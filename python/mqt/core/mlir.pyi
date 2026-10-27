@@ -841,7 +841,11 @@ class QCProgram(Program):
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard QC cleanup pipeline in place."""
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates. Redundant resets may be folded.
+        """
 
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
@@ -899,6 +903,7 @@ class QCProgram(Program):
 
         Qubits must be static target sites. Each output bit must have one terminal
         measurement. Entry-point global phases are normalized and discarded.
+        Nonempty barriers are rejected because the format cannot preserve them.
         This performs no routing, gate synthesis, or optimization.
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
@@ -911,6 +916,8 @@ class QCProgram(Program):
         unsupported. The generated QIR returns a zero execution status.
         Base conversion requires straight-line quantum operations; Adaptive retains loops.
         Calls with quantum-register arguments must be inlined before conversion.
+        Barriers are omitted; callers requiring their ordering constraints must reject
+        them before conversion.
         Use ``compile_program`` for inlining, modifier expansion, and Base loop unrolling.
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
@@ -1006,7 +1013,11 @@ class QCOProgram(Program):
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard QCO cleanup pipeline in place."""
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates. Redundant resets may be folded.
+        """
 
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""

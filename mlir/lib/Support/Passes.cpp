@@ -85,7 +85,8 @@ void registerMQTCompilerPasses() {
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
-    mqt::registerFoldClassicalValues();
+    mqt::registerSimplifyQuantum();
+    mqt::registerLowerQuantumModifiers();
     mqt::registerDropGlobalPhases();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerPromoteClassicalMemory();
@@ -107,8 +108,10 @@ void registerMQTCompilerPasses() {
 }
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(qco::createMergeSingleQubitRotationGates());
   pm.addPass(qco::createCombineControlledGates());
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
 }
 
@@ -119,6 +122,7 @@ void populateOpenQASM2PreparationPipeline(OpPassManager& pm,
   stream << payload;
   pm.addPass(qco::createUnrollLoopsForPayload(options));
   pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(mqt::createLowerQuantumModifiers());
   pm.addPass(createCanonicalizerPass());
 }
 
@@ -206,7 +210,6 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(
       createCanonicalizerPass(GreedyRewriteConfig{}.setUseTopDownTraversal()));
-  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
@@ -223,7 +226,6 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
           GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createSymbolDCEPass());

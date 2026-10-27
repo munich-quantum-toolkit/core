@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -60,6 +61,7 @@ protected:
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     PassManager manager(&context_);
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     manager.addPass(createCanonicalizerPass());
     EXPECT_TRUE(succeeded(manager.run(*moduleOp)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));

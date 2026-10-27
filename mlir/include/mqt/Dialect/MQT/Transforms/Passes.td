@@ -11,21 +11,31 @@
 
 include "mlir/Pass/PassBase.td"
 
-def FoldClassicalValues : Pass<"fold-classical-values"> {
-  let dependentDialects = ["mlir::arith::ArithDialect"];
-  let summary = "Fold classical values without rewriting quantum operations";
+def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
+                           "mlir::qco::QCODialect"];
+  let summary = "Lower quantum modifiers to supported gate forms";
   let description = [{
-    Applies upstream folds and dead-code elimination only to regionless arith
-    and math operations with numeric operands and results, and f64 tensor
-    extracts. Quantum-handle selection is excluded even in the arith dialect.
-    Quantum operations, control flow, memory effects and region structure are
-    unchanged. Unresolved symbolic values remain symbolic. This is not a
-    complete classical canonicalization pipeline or an interpreter.
+    Normalizes nested controls, inverses and supported constant gate powers.
+    Preserves controlled relative phase and existing power accuracy guards.
+    Does not cancel or combine adjacent gates. Run after inlining and modifier
+    unrolling when a target representation cannot express these modifiers.
+    Unsupported powers remain for the consuming conversion to diagnose.
+  }];
+}
 
-    Verification still rejects invalid folded gate parameters. In particular,
-    this pass does not remove unreachable branches before folding their bodies;
-    it cannot replace branch-aware preparation during parameter binding.
-    No production pipeline runs this pass implicitly.
+def SimplifyQuantum : Pass<"simplify-quantum"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
+                           "mlir::qco::QCODialect"];
+  let summary = "Explicitly simplify QC and QCO quantum operations";
+  let description = [{
+    Eliminates identity gates, cancels inverse pairs, combines rotations and
+    specializes gates and modifiers. Rotation elimination retains the existing
+    absolute parameter tolerance of 1e-15; this is not a circuit error bound.
+    This pass changes the supplied unitary gate sequence. Use canonicalization
+    for classical and structural cleanup without these quantum optimizations.
   }];
 }
 

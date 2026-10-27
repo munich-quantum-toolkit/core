@@ -8,7 +8,7 @@
 
 add_mlir_library(
   MLIRMQTTransforms
-  FoldClassicalValues.cpp
+  SimplifyQuantum.cpp
   DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
   PromoteClassicalMemory.cpp
@@ -29,7 +29,6 @@ add_mlir_library(
   MLIRPass
   MLIRQCDialect
   MLIRQCODialect
-  MLIRTensorDialect
   MLIRSideEffectInterfaces
   MLIRTransforms
   MLIRTransformUtils

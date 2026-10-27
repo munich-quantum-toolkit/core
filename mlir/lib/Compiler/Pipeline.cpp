@@ -19,6 +19,7 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
@@ -130,6 +131,18 @@ static FailureOr<IQMJSONProgram> exportIQMJSON(QIRProgram& qir,
 FailureOr<IQMJSONProgram>
 QCProgram::intoIQMJSON(const CompilerTarget& target) && {
   auto source = std::move(*this);
+  if (source.module()
+          .walk([](qc::BarrierOp barrier) {
+            if (barrier.getQubits().empty()) {
+              return WalkResult::advance();
+            }
+            barrier.emitError(
+                "IQM JSON cannot preserve native barrier constraints");
+            return WalkResult::interrupt();
+          })
+          .wasInterrupted()) {
+    return failure();
+  }
   if (failed(source.normalizeGlobalPhases()) ||
       failed(runWithPassManager(
           source.module(),
@@ -159,6 +172,7 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   if (failed(runWithPassManager(
           moduleOp,
           [&](OpPassManager& pm) {
+            pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
               pm.addPass(createQCToQIRAdaptive());

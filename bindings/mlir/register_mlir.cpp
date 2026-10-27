@@ -1873,8 +1873,12 @@ Args:
         importing definitions. The caller validates device support and placements.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
-           "Run the standard QC cleanup pipeline in place.")
+      .def(
+          "cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
+          R"pb(Fold classical values and remove structural scaffolding in place.
+
+Preserve supplied unitary gates. Use explicit quantum optimization passes to
+cancel, fuse, or specialize gates. Redundant resets may be folded.)pb")
       .def(
           "normalize_global_phases",
           &FallibleMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
@@ -1970,6 +1974,7 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
 
 Qubits must be static target sites. Each output bit must have one terminal
 measurement. Entry-point global phases are normalized and discarded.
+Nonempty barriers are rejected because the format cannot preserve them.
 This performs no routing, gate synthesis, or optimization.
 The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
       .def(
@@ -1990,6 +1995,8 @@ also supports computed Boolean (``i1``) results. Other scalar outputs are
 unsupported. The generated QIR returns a zero execution status.
 Base conversion requires straight-line quantum operations; Adaptive retains loops.
 Calls with quantum-register arguments must be inlined before conversion.
+Barriers are omitted; callers requiring their ordering constraints must reject
+them before conversion.
 Use ``compile_program`` for inlining, modifier expansion, and Base loop unrolling.
 The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 
@@ -2006,8 +2013,12 @@ operations.)pb");
                   "path"_a, "Parse QCO MLIR from a file.")
       .def("copy", &copyProgram<mlir::QCOProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &FallibleMemberAdapter<&mlir::QCOProgram::cleanup>::call,
-           "Run the standard QCO cleanup pipeline in place.")
+      .def(
+          "cleanup", &FallibleMemberAdapter<&mlir::QCOProgram::cleanup>::call,
+          R"pb(Fold classical values and remove structural scaffolding in place.
+
+Preserve supplied unitary gates. Use explicit quantum optimization passes to
+cancel, fuse, or specialize gates. Redundant resets may be folded.)pb")
       .def("normalize_global_phases",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::normalizeGlobalPhases>::call,

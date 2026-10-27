@@ -1474,6 +1474,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1504,6 +1505,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1517,6 +1519,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

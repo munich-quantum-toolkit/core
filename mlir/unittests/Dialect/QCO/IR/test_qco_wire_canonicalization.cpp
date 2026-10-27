@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
@@ -61,6 +62,7 @@ protected:
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
     PassManager manager(&context_);
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     manager.addPass(createCanonicalizerPass());
     ASSERT_TRUE(succeeded(manager.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));

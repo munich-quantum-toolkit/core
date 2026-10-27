@@ -9,7 +9,6 @@
  */
 
 #include "mqt/Compiler/Programs.h"
-#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
@@ -20,6 +19,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Error.h"
@@ -30,7 +30,7 @@
 #include <vector>
 
 namespace {
-TEST(ClassicalValueFolding, PreservesSuppliedQuantumSequence) {
+TEST(Cleanup, PreservesSuppliedQuantumSequence) {
   auto qc = mlir::QCProgram::fromOpenQASMString(R"(OPENQASM 3;
 include "stdgates.inc";
 input float theta;
@@ -40,7 +40,8 @@ barrier $0; h $0; barrier $0; h $0;
   ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
-  ASSERT_TRUE(mlir::succeeded(qco->runPassPipeline("fold-classical-values")));
+  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"theta", 0.5}})));
+  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
   ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(qco->module())));
   std::vector<std::string> gates;
   qco->module().walk([&](mlir::Operation* op) {
@@ -60,19 +61,39 @@ barrier $0; h $0; barrier $0; h $0;
   EXPECT_EQ(hadamards, 2U);
 }
 
-TEST(ClassicalValueFolding, LeavesGateOnlyProgramUnchanged) {
+TEST(Cleanup, PreservesOverlappingBarrierDependencies) {
+  auto qco = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @test(%a: !qco.qubit, %b: !qco.qubit, %c: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %x, %y = qco.barrier %a, %b : !qco.qubit, !qco.qubit
+        %z, %w = qco.barrier %y, %c : !qco.qubit, !qco.qubit
+        return %x, %z, %w : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+    }
+  )");
+  ASSERT_TRUE(static_cast<bool>(qco)) << llvm::toString(qco.takeError());
+  ASSERT_TRUE(mlir::succeeded(qco->runPassPipeline("canonicalize")));
+  std::vector<mlir::qco::BarrierOp> barriers;
+  qco->module().walk([&](mlir::qco::BarrierOp op) { barriers.push_back(op); });
+  ASSERT_EQ(barriers.size(), 2U);
+  EXPECT_EQ(barriers[0].getQubitsIn().size(), 2U);
+  EXPECT_EQ(barriers[1].getQubitsIn()[0], barriers[0].getQubitsOut()[1]);
+}
+
+TEST(Cleanup, LeavesGateOnlyProgramUnchanged) {
   auto qc = mlir::QCProgram::fromOpenQASMString(
       "OPENQASM 3; include \"stdgates.inc\"; h $0; h $0;");
   ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   const auto before = qc->str();
   mlir::PassManager manager(qc->module().getContext());
-  manager.addPass(mlir::mqt::createFoldClassicalValues());
+  manager.addPass(mlir::createCanonicalizerPass());
   ASSERT_TRUE(mlir::succeeded(manager.run(qc->module())));
   ASSERT_TRUE(mlir::succeeded(manager.run(qc->module())));
   EXPECT_EQ(qc->str(), before);
 }
 
-TEST(ClassicalValueFolding, PreservesRuntimeBranchAndGateOrder) {
+TEST(Cleanup, PreservesRuntimeBranchAndGateOrder) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @test(%condition: i1) {
@@ -94,7 +115,7 @@ TEST(ClassicalValueFolding, PreservesRuntimeBranchAndGateOrder) {
   )");
   ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   mlir::PassManager manager(qc->module().getContext());
-  manager.addPass(mlir::mqt::createFoldClassicalValues());
+  manager.addPass(mlir::createCanonicalizerPass());
   ASSERT_TRUE(mlir::succeeded(manager.run(qc->module())));
   std::vector<std::string> operations;
   qc->module().walk([&](mlir::Operation* op) {
@@ -109,7 +130,7 @@ TEST(ClassicalValueFolding, PreservesRuntimeBranchAndGateOrder) {
   EXPECT_EQ(qc->str().find("arith.addf"), std::string::npos);
 }
 
-TEST(ClassicalValueFolding, DoesNotFoldQuantumHandleSelection) {
+TEST(Cleanup, FoldsConstantQuantumHandleSelection) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @main() attributes {mqt.entry_point} {
@@ -124,12 +145,12 @@ TEST(ClassicalValueFolding, DoesNotFoldQuantumHandleSelection) {
   )");
   ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   mlir::PassManager manager(qc->module().getContext());
-  manager.addPass(mlir::mqt::createFoldClassicalValues());
+  manager.addPass(mlir::createCanonicalizerPass());
   ASSERT_TRUE(mlir::succeeded(manager.run(qc->module())));
-  EXPECT_NE(qc->str().find("arith.select"), std::string::npos);
+  EXPECT_EQ(qc->str().find("arith.select"), std::string::npos);
 }
 
-TEST(ClassicalValueFolding, FoldsArraysAndCastsWhileRetainingRuntimeValues) {
+TEST(Cleanup, FoldsArraysAndCastsWhileRetainingRuntimeValues) {
   auto qc = mlir::QCProgram::fromMLIRString(R"(
     module {
       func.func @test(%runtime: f64) -> (f64, f64) {
@@ -149,7 +170,7 @@ TEST(ClassicalValueFolding, FoldsArraysAndCastsWhileRetainingRuntimeValues) {
   )");
   ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   mlir::PassManager manager(qc->module().getContext());
-  manager.addPass(mlir::mqt::createFoldClassicalValues());
+  manager.addPass(mlir::createCanonicalizerPass());
   ASSERT_TRUE(mlir::succeeded(manager.run(qc->module())));
   auto function = qc->module().lookupSymbol<mlir::func::FuncOp>("test");
   auto returned =

@@ -298,6 +298,7 @@ TEST_F(GlobalPhaseNormalizationTest,
       if (convertToQCO) {
         pm.addPass(createQCToQCO());
       }
+      pm.addPass(mlir::mqt::createLowerQuantumModifiers());
       pm.addPass(createCanonicalizerPass());
       ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
       ASSERT_TRUE(succeeded(verify(*moduleOp)));

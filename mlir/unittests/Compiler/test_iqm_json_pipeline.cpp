@@ -228,3 +228,20 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
     EXPECT_NE(instructions[index].getAsObject()->getString("name"), "measure");
   }
 }
+
+TEST(IQMJSONPipelineTest, NativeExportRejectsBarrierConstraints) {
+  auto qc = QCProgram::fromOpenQASMString(R"qasm(
+    OPENQASM 3.0;
+    barrier $5, $17;
+  )qasm");
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  std::string diagnostic;
+  const auto context = qc->context();
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diag) {
+    diagnostic += diag.str();
+    return success();
+  });
+  const auto environment = makeIQMEnvironment();
+  EXPECT_TRUE(failed(std::move(*qc).intoIQMJSON(environment.target())));
+  EXPECT_NE(diagnostic.find("barrier constraints"), std::string::npos);
+}

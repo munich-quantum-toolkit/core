@@ -35,16 +35,9 @@ void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
-OpFoldResult POp::fold(FoldAdaptor /*adaptor*/) {
-  if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
-    return getInputQubit(0);
-  }
-  return {};
-}
-
-void POp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* /*context*/) {
+void POp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* /*context*/) {
+  results.add(removeZeroRotation<POp>);
   results.add(&mergeOneTargetOneParameter<POp>);
 }
 

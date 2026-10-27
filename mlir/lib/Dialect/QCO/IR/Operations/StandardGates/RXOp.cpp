@@ -35,16 +35,9 @@ void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
-OpFoldResult RXOp::fold(FoldAdaptor /*adaptor*/) {
-  if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
-    return getInputQubit(0);
-  }
-  return {};
-}
-
-void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* /*context*/) {
+void RXOp::getOptimizationPatterns(RewritePatternSet& results,
+                                   MLIRContext* /*context*/) {
+  results.add(removeZeroRotation<RXOp>);
   results.add(&mergeOneTargetOneParameter<RXOp>);
 }
 

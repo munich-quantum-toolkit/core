@@ -436,8 +436,8 @@ LogicalResult InvOp::verifyRegions() {
   return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
-void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
+void InvOp::getLoweringPatterns(RewritePatternSet& results,
+                                MLIRContext* context) {
   results.add<MoveCtrlOutsideInv, InvPowToNegPow, InlineSelfAdjoint,
               ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv,
               DropUnusedInvQubits>(context);
@@ -455,4 +455,9 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
     return composed->adjoint();
   }
   return std::nullopt;
+}
+
+void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+  results.add<EraseEmptyInv, DropUnusedInvQubits>(context);
 }

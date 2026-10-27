@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 
 #include "gtest/gtest.h"
 
@@ -117,7 +118,7 @@ TEST(ProgramInspection, AnalysisRefreshesAfterTransformation) {
   std::vector<mlir::QuantumProgramInfo> snapshots;
   mlir::PassManager manager(qco->module().getContext());
   manager.addPass(std::make_unique<InspectQuantumProgramPass>(snapshots));
-  manager.addPass(mlir::createCanonicalizerPass());
+  manager.addPass(mlir::mqt::createSimplifyQuantum());
   manager.addPass(std::make_unique<InspectQuantumProgramPass>(snapshots));
   ASSERT_TRUE(mlir::succeeded(manager.run(qco->module())));
   ASSERT_EQ(snapshots.size(), 2);

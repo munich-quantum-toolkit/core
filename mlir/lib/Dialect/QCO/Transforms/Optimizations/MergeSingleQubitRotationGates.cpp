@@ -931,13 +931,13 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     const CompilerTarget* target) {
   populateRotationCompositionPatterns(patterns, target);
-  RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  RZOp::getOptimizationPatterns(patterns, patterns.getContext());
   if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
     return;
   }
-  RXOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  POp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  RXOp::getOptimizationPatterns(patterns, patterns.getContext());
+  RYOp::getOptimizationPatterns(patterns, patterns.getContext());
+  POp::getOptimizationPatterns(patterns, patterns.getContext());
   patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
                                                      basis, target);
 }

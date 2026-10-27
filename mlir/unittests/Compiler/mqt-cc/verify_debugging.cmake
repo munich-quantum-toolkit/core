@@ -68,9 +68,9 @@ endif()
 
 foreach(option IN ITEMS pass-pipeline passes)
   run_compiler(0 "${reduced}" --run-pipeline
-               "--${option}=builtin.module(func.func(canonicalize,cse))")
+               "--${option}=builtin.module(func.func(simplify-quantum,canonicalize,cse))")
   if(output MATCHES "qco.h")
-    message(FATAL_ERROR "${option} did not run the registered cleanup passes: ${output}")
+    message(FATAL_ERROR "${option} did not run the registered optimization passes: ${output}")
   endif()
 endforeach()
 

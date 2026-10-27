@@ -183,11 +183,11 @@ def test_parameterized_controlled_body_folds_without_quantum_optimization() -> N
         "gate custom(a,b,c) q,r { cu3(a,b,c) q,r; } "
         "h $0; h $0; custom(-0.7,0.2,0.3) $1,$0;"
     ).to_qco()
-    program.run_pass_pipeline("fold-classical-values")
+    program.run_pass_pipeline("canonicalize")
     assert "arith.addf" in program.ir
     with pytest.raises(ValueError, match="compile-time constant matrix"):
         build_functionality(program)
-    program.run_pass_pipeline("inline{default-pipeline=fold-classical-values},fold-classical-values")
+    program.run_pass_pipeline("inline,canonicalize")
     assert program.ir.count("qco.h") == 2
     assert "arith.addf" not in program.ir
     assert "arith.mulf" not in program.ir
@@ -217,4 +217,4 @@ def test_classical_folding_rejects_nonfinite_gate_parameter() -> None:
     """)
     qco = program.to_qco()
     with pytest.raises(RuntimeError, match="must be finite"):
-        qco.run_pass_pipeline("fold-classical-values")
+        qco.run_pass_pipeline("canonicalize")
