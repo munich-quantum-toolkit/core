@@ -16,7 +16,7 @@ def QIRSetAttributesAndMetadata
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
   let summary = "Sets the required attributes to the entry point function and "
                 "adds the required module flags, selecting the minimum "
-                "required QIR 2.x version";
+                "required QIR version";
   let description = [{
     Input must already conform to the selected profile. Base uses QIR 2.0;
     Adaptive requires 2.1 for dynamic resources or runtime arrays.

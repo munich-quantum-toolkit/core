@@ -1859,10 +1859,32 @@ TEST_F(CompilerPipelineTest, QIRTargetVersionBoundsEmittedRequirements) {
           profile == QIRProfile::Adaptive && StringRef(version) == "2.0";
       EXPECT_EQ(failed(output), requiresNewer);
       if (requiresNewer) {
-        EXPECT_TRUE(StringRef(diagnostics).contains("requires version 2.1"))
+        EXPECT_TRUE(StringRef(diagnostics).contains("no known QIR version"))
             << diagnostics;
       }
     }
+  }
+}
+
+TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
+  for (const auto* version : {">=2,<3", ">=2.1,<3", ">=2.2,<3", "2.99"}) {
+    auto input = QCProgram::fromOpenQASMString("OPENQASM 3; qubit q; h q;");
+    MQT_ASSERT_SUCCESS(input);
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "qir", .version = version, .profile = "base"}));
+    attachTargetEnvironment(
+        input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
+    auto result = std::move(*input).intoQIR(QIRProfile::Base);
+    if (StringRef(version) == ">=2.2,<3") {
+      EXPECT_TRUE(failed(result));
+      continue;
+    }
+    MQT_ASSERT_SUCCESS(result);
+    auto ir = std::move(*result).intoLLVMIR();
+    MQT_ASSERT_SUCCESS(ir);
+    EXPECT_TRUE(StringRef(*ir).contains(StringRef(version) == ">=2.1,<3"
+                                            ? "!\"qir_minor_version\", i32 1"
+                                            : "!\"qir_minor_version\", i32 0"));
   }
 }
 

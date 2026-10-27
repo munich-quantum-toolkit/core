@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
@@ -44,12 +46,14 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Support/VersionTuple.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -128,14 +132,40 @@ protected:
       return;
     }
     IRRewriter rewriter(&getContext());
-    setMetadata(main, metadata, rewriter);
+    if (failed(setMetadata(main, metadata, rewriter))) {
+      signalPassFailure();
+    }
   }
 
 private:
   /// Replace QIR profile metadata while preserving unrelated attributes.
-  void setMetadata(LLVM::LLVMFuncOp& main, const Metadata& metadata,
-                   IRRewriter& rewriter) {
+  LogicalResult setMetadata(LLVM::LLVMFuncOp& main, const Metadata& metadata,
+                            IRRewriter& rewriter) {
     auto m = getOperation();
+    unsigned minorVersion = metadata.useArrays || metadata.useDynamicQubit ||
+                                    metadata.useDynamicResult
+                                ? 1
+                                : 0;
+    if (auto target =
+            m->getAttrOfType<mqt::TargetEnvAttr>(mqt::TargetEnvAttr::name)) {
+      const auto format = target.getPayloadSpecification().getFormat();
+      if (format.getId().getValue() == "qir") {
+        const auto accepted =
+            mqt::PayloadVersionRange::parse(format.getVersion().getValue());
+        const auto selected =
+            accepted && accepted->withinMajor(2)
+                ? accepted->select(
+                      {llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
+                      llvm::VersionTuple(2, minorVersion))
+                : std::nullopt;
+        if (!selected) {
+          return m.emitError(
+              "no known QIR version satisfies the program and target payload");
+        }
+        minorVersion = selected->getMinor().value_or(0);
+      }
+    }
+
     const auto createFlag = [&](LLVM::ModFlagBehavior behavior, StringRef name,
                                 Attribute value) {
       return LLVM::ModuleFlagAttr::get(m->getContext(), behavior,
@@ -186,10 +216,7 @@ private:
     flags.append({
         createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
         createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version",
-                      metadata.useArrays || metadata.useDynamicQubit ||
-                              metadata.useDynamicResult
-                          ? 1
-                          : 0),
+                      static_cast<int32_t>(minorVersion)),
         createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
                        metadata.useDynamicQubit),
         createBoolFlag(LLVM::ModFlagBehavior::Error,
@@ -232,6 +259,7 @@ private:
     setTypes("float_computations", metadata.floatingTypes);
     LLVM::ModuleFlagsOp::create(rewriter, m.getLoc(),
                                 rewriter.getArrayAttr(flags));
+    return success();
   }
 
   static bool isQIRModuleFlag(StringRef key) {

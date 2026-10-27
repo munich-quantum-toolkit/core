@@ -365,6 +365,49 @@ define i64 @bell_entry() #0 { ret i64 7 }
   EXPECT_EQ(value(session.run()), 7);
 }
 
+TEST_F(JitSessionTest, AcceptsFutureMinorVersionsAndRejectsOtherMajors) {
+  const std::string program = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+!llvm.module.flags = !{!0, !1}
+!0 = !{i32 1, !"qir_major_version", )";
+  for (const auto& [major, minor] : {
+           std::pair{"i32 2", "i32 99"},
+           std::pair{"i32 3", "i32 0"},
+           std::pair{"i32 -1", "i32 0"},
+           std::pair{"!\"2\"", "i32 0"},
+           std::pair{"i32 2", "i32 -1"},
+           std::pair{"i32 2", "!\"1\""},
+       }) {
+    const std::string ir = program + major + R"(}
+!1 = !{i32 1, !"qir_minor_version", )" +
+                           minor + "}\n";
+    auto session = qir::JitSession::create(ir, "versions.ll");
+    if (llvm::StringRef(major) == "i32 2" &&
+        llvm::StringRef(minor) == "i32 99") {
+      ASSERT_TRUE(static_cast<bool>(session));
+      EXPECT_EQ(value((*session)->run()), 0);
+    } else {
+      ASSERT_FALSE(static_cast<bool>(session));
+      EXPECT_NE(llvm::toString(session.takeError()).find("major version 2"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST_F(JitSessionTest, RejectsMalformedModuleFlagsBeforeReadingVersions) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" }
+!llvm.module.flags = !{!0}
+!0 = !{i32 1}
+)";
+  auto session = qir::JitSession::create(ir, "malformed-version.ll");
+  ASSERT_FALSE(static_cast<bool>(session));
+  EXPECT_NE(llvm::toString(session.takeError()).find("Invalid QIR module"),
+            std::string::npos);
+}
+
 TEST_F(JitSessionTest, SupportsQir21DynamicResources) {
   constexpr std::string_view ir = R"(
 define i64 @adaptive() #0 {

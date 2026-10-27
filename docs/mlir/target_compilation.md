@@ -740,11 +740,10 @@ for native payload export.
 
 QDMI's supported-format list does not provide per-format capability
 restrictions. The adapter therefore uses the compiler-supported baseline for the
-selected format (OpenQASM 2.0 or 3.1, IQM JSON, or QIR 2.1), with optional
-capability metadata marked as unknown. These versions bound the available
-features; an emitted program may require a lower version. Use
-`TargetEnvironment` and `PayloadSpecification` for staged compilation with
-explicit restrictions.
+selected format (OpenQASM, IQM JSON, or QIR), with optional capability metadata
+marked as unknown. The compiler selects the emitted version from the features
+used by the program. Use `TargetEnvironment` and `PayloadSpecification` for
+staged compilation with explicit restrictions.
 
 QIR submission requires a parameterless entry point. QC-to-QIR conversion
 records direct measurements and CBit-register results, then emits runtime status

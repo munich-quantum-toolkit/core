@@ -21,6 +21,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/VersionTuple.h"
 
 namespace mlir::qir {
 
@@ -51,11 +52,12 @@ LogicalResult validateCapabilities(ModuleOp moduleOp,
       const auto flag = cast<LLVM::ModuleFlagAttr>(attribute);
       const auto key = flag.getKey().getValue();
       if (key == "qir_minor_version" &&
-          cast<IntegerAttr>(flag.getValue()).getInt() > 0 &&
-          payload.format().version == "2.0.0") {
+          (!payload.versionRange() ||
+           !payload.versionRange()->contains(llvm::VersionTuple(
+               2, static_cast<unsigned>(
+                      cast<IntegerAttr>(flag.getValue()).getInt()))))) {
         return moduleOp.emitError(
-            "Selected QIR payload requires version 2.1, but the target "
-            "accepts version 2.0");
+            "QIR version is outside the target payload range");
       }
       if (const auto value = dyn_cast<IntegerAttr>(flag.getValue());
           value && value.getValue().isZero()) {

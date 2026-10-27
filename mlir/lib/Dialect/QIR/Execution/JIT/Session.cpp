@@ -859,6 +859,21 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
           std::make_error_code(std::errc::invalid_argument),
           "Invalid QIR module: " + verification);
     }
+    // Missing version flags remain valid for existing authored programs.
+    for (const auto* key : {"qir_major_version", "qir_minor_version"}) {
+      if (auto* metadata = module.getModuleFlag(key)) {
+        const auto* value =
+            llvm::mdconst::dyn_extract<llvm::ConstantInt>(metadata);
+        if (value == nullptr || value->getValue().isNegative() ||
+            (llvm::StringRef(key) == "qir_major_version" &&
+             value->getValue() != 2)) {
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
+              "QIR requires nonnegative numeric version flags and major "
+              "version 2");
+        }
+      }
+    }
     for (const auto& function : module) {
       for (const auto& block : function) {
         for (const auto& instruction : block) {
