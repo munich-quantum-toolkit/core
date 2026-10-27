@@ -211,6 +211,7 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(
       createCanonicalizerPass(GreedyRewriteConfig{}.setUseTopDownTraversal()));
+  pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
@@ -227,6 +228,7 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
           GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(createSymbolDCEPass());

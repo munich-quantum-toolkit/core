@@ -579,7 +579,7 @@ class QDMIBackend(BackendV2):
             loci[operation.name().lower()] = operation.qubits_num(), qargs
         return loci
 
-    def validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False, allow_barriers: bool = True) -> None:
+    def validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
         """Check supported operations, including operations inside control flow.
 
         This checks operation names and control-flow support without modifying
@@ -589,7 +589,6 @@ class QDMIBackend(BackendV2):
             circuit: Circuit to check, including nested control-flow bodies.
             native: Also check circuit width and ordered qubit placements against
                 the device. Circuit indices denote device qubits in this case.
-            allow_barriers: Whether the selected output format can preserve nonempty barriers.
 
         Raises:
             CircuitValidationError: If the circuit exceeds the native device width.
@@ -606,9 +605,6 @@ class QDMIBackend(BackendV2):
             for instruction in block.data:
                 operation = instruction.operation
                 if operation.name == "barrier":
-                    if instruction.qubits and not allow_barriers:
-                        msg = "Selected program format cannot preserve native barrier constraints."
-                        raise UnsupportedOperationError(msg)
                     continue
                 qargs = tuple(indices[block.find_bit(bit).index] for bit in instruction.qubits) if native else ()
                 if isinstance(operation, ControlFlowOp):

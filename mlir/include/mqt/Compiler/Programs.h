@@ -298,7 +298,7 @@ public:
   /// Fold classical values and remove structural scaffolding in place.
   ///
   /// Preserve supplied unitary gates. Use explicit quantum optimization passes
-  /// to cancel, fuse, or specialize gates. Redundant resets may be folded.
+  /// to cancel, fuse, or specialize gates.
   [[nodiscard]] LogicalResult cleanup();
 
   /// Normalize scoped global phases in place.
@@ -327,8 +327,7 @@ public:
   /// unsupported. The generated QIR returns a zero execution status.
   /// Base conversion requires straight-line quantum operations;
   /// Adaptive conversion retains loops. Calls with quantum-register arguments
-  /// must be inlined. Barriers are omitted; callers requiring their ordering
-  /// constraints must reject them before conversion.
+  /// must be inlined.
   /// Use runDefaultPipeline for compilation before export.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
 
@@ -336,7 +335,6 @@ public:
   ///
   /// Qubits must be static target sites and every output bit must have one
   /// terminal measurement. Normalize and discard entry-point global phases.
-  /// Reject nonempty barriers, which this format cannot preserve.
   /// No routing, gate synthesis, or optimization is performed.
   [[nodiscard]] FailureOr<IQMJSONProgram>
   intoIQMJSON(const CompilerTarget& target) &&;
@@ -428,7 +426,7 @@ public:
   /// Fold classical values and remove structural scaffolding in place.
   ///
   /// Preserve supplied unitary gates. Use explicit quantum optimization passes
-  /// to cancel, fuse, or specialize gates. Redundant resets may be folded.
+  /// to cancel, fuse, or specialize gates.
   [[nodiscard]] LogicalResult cleanup();
 
   /// Normalize scoped global phases in place.

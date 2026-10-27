@@ -131,18 +131,6 @@ static FailureOr<IQMJSONProgram> exportIQMJSON(QIRProgram& qir,
 FailureOr<IQMJSONProgram>
 QCProgram::intoIQMJSON(const CompilerTarget& target) && {
   auto source = std::move(*this);
-  if (source.module()
-          .walk([](qc::BarrierOp barrier) {
-            if (barrier.getQubits().empty()) {
-              return WalkResult::advance();
-            }
-            barrier.emitError(
-                "IQM JSON cannot preserve native barrier constraints");
-            return WalkResult::interrupt();
-          })
-          .wasInterrupted()) {
-    return failure();
-  }
   if (failed(source.normalizeGlobalPhases()) ||
       failed(runWithPassManager(
           source.module(),

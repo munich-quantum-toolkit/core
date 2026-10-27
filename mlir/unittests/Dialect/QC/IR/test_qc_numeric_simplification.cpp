@@ -25,7 +25,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -53,7 +52,6 @@ protected:
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     PassManager manager(&context_);
     manager.addPass(mlir::mqt::createSimplifyQuantum());
-    manager.addPass(createCanonicalizerPass());
     EXPECT_TRUE(succeeded(manager.run(*moduleOp)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     return moduleOp;

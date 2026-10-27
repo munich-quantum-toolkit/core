@@ -1053,8 +1053,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  ASSERT_TRUE(succeeded(runPassPipeline(
-      program.get(), "simplify-quantum,normalize-global-phases")));
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1063,8 +1062,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  ASSERT_TRUE(succeeded(runPassPipeline(
-      program.get(), "simplify-quantum,normalize-global-phases")));
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1075,8 +1073,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  ASSERT_TRUE(succeeded(runPassPipeline(
-      reference.get(), "simplify-quantum,normalize-global-phases")));
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

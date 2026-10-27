@@ -30,7 +30,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -62,7 +61,6 @@ protected:
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     PassManager manager(&context_);
     manager.addPass(mlir::mqt::createSimplifyQuantum());
-    manager.addPass(createCanonicalizerPass());
     EXPECT_TRUE(succeeded(manager.run(*moduleOp)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -115,7 +113,6 @@ TEST_F(QCONumericSimplificationTest, RMergePreservesLargeAxisAngles) {
     OwningOpRef<ModuleOp> rewritten(original->clone());
     PassManager manager(&context_);
     manager.addPass(mlir::mqt::createSimplifyQuantum());
-    manager.addPass(createCanonicalizerPass());
     ASSERT_TRUE(succeeded(manager.run(*rewritten)));
     ASSERT_TRUE(succeeded(verify(*rewritten)));
     ASSERT_TRUE(succeeded(verifyLinearity(*rewritten)));
@@ -167,7 +164,6 @@ TEST_F(QCONumericSimplificationTest, RPowerPreservesLargeAxisAngles) {
     OwningOpRef<ModuleOp> rewritten(original->clone());
     PassManager manager(&context_);
     manager.addPass(mlir::mqt::createSimplifyQuantum());
-    manager.addPass(createCanonicalizerPass());
     ASSERT_TRUE(succeeded(manager.run(*rewritten)));
     ASSERT_TRUE(succeeded(verify(*rewritten)));
     ASSERT_TRUE(succeeded(verifyLinearity(*rewritten)));

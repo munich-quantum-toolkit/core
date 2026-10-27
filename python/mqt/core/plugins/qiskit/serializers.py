@@ -198,7 +198,7 @@ def _serialize_to_qir(
     Returns:
         The selected QIR encoding, with circuit indices as device qubits.
     """
-    backend.validate_circuit(circuit, native=True, allow_barriers=False)
+    backend.validate_circuit(circuit, native=True)
     program = QCProgram.from_qiskit(circuit, native=True).to_qir(QIRProfile.ADAPTIVE if adaptive else QIRProfile.BASE)
     return program.to_bitcode() if binary else program.to_llvm_ir()
 
@@ -209,7 +209,7 @@ def _serialize_to_iqm_json(circuit: QuantumCircuit, backend: QDMIBackend) -> str
     Returns:
         An IQM circuit object in JSON.
     """
-    backend.validate_circuit(circuit, native=True, allow_barriers=False)
+    backend.validate_circuit(circuit, native=True)
     return QCProgram.from_qiskit(circuit, native=True).to_iqm_json(CompilerTarget.from_device(backend.device)).source
 
 

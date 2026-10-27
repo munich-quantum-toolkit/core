@@ -17,14 +17,13 @@ def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
                            "mlir::qco::QCODialect"];
   let summary = "Lower quantum modifiers to supported gate forms";
   let description = [{
-    Normalizes nested controls, inverses and supported gate powers. QCO powers
-    of fixed single-qubit gates may have runtime exponents. Other gate powers
-    retain their existing constant-parameter and numerical accuracy guards.
-    Preserves controlled relative phase.
-    Does not cancel or combine adjacent gates. Run after inlining and modifier
-    unrolling when a target representation cannot express these modifiers.
+    Lowers nested controls, inverses and supported powers, preserving controlled
+    relative phase and folding generated arithmetic. Fixed single-qubit QCO
+    gates support runtime powers; other powers require constant parameters.
     Unsupported powers remain for the consuming conversion to diagnose.
-    Folds generated arithmetic; leaves CFG simplification to structural cleanup.
+
+    Run after inlining and modifier unrolling to prepare gates for conversion.
+    Adjacent-gate optimization and CFG cleanup are separate passes.
   }];
 }
 
@@ -32,14 +31,15 @@ def SimplifyQuantum : Pass<"simplify-quantum"> {
   let dependentDialects = ["mlir::arith::ArithDialect",
                            "mlir::math::MathDialect", "mlir::qc::QCDialect",
                            "mlir::qco::QCODialect"];
-  let summary = "Explicitly simplify QC and QCO quantum operations";
+  let summary = "Simplify quantum gates and modifiers";
   let description = [{
     Eliminates identity gates, cancels inverse pairs, combines rotations and
-    specializes gates and modifiers. Rotation elimination retains the existing
-    absolute parameter tolerance of 1e-15; this is not a circuit error bound.
-    This pass changes the supplied unitary gate sequence. Use canonicalization
-    for classical and structural cleanup without these quantum optimizations.
-    Folds generated arithmetic; leaves CFG simplification to structural cleanup.
+    specializes gates and modifiers in QC or QCO programs. Generated arithmetic
+    is folded. Rotation elimination uses an absolute parameter tolerance of
+    1e-15, not a circuit error bound.
+
+    Use this pass when the gate sequence may change. Use canonicalization for
+    classical and structural cleanup. CFG simplification is separate.
   }];
 }
 

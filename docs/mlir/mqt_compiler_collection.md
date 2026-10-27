@@ -319,6 +319,11 @@ potentially large module. Pass {code}`copy=True` when the source must remain
 available. {code}`OpenQASMProgram` instead owns immutable source text and
 remains reusable when passed to {code}`compile_program`.
 
+`cleanup()` folds classical expressions, removes structural scaffolding and
+normalizes global phases. To cancel, combine or specialize quantum gates, use
+`simplify-quantum` or an optimization method such as
+`merge_single_qubit_rotation_gates()`.
+
 The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:
 

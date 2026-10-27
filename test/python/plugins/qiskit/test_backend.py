@@ -603,6 +603,7 @@ def test_qir_serializer_profile_controls_feedback(
     circuit.measure(0, 0)
     with circuit.if_test((circuit.clbits[0], True)):
         circuit.x(0)
+        circuit.barrier(0)
     circuit.measure(0, 1)
     if fmt == ProgramFormat.QIR_BASE_STRING:
         with pytest.raises(TranslationError, match="QIR_BASE_STRING"):
@@ -616,6 +617,7 @@ def test_iqm_serializer_uses_device_site_names() -> None:
     backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
     circuit = QuantumCircuit(1, 1, global_phase=0.7)
     circuit.r(0.731, -0.419, 0)
+    circuit.barrier(0)
     circuit.measure(0, 0)
     serializer = program_serializer(ProgramFormat.IQM_JSON)
     assert serializer is not None
@@ -651,6 +653,7 @@ def test_native_submission_preserves_folded_unitary_sequence(
     circuit.h(0)
     circuit.rx(0.0, 0)
     circuit.rx(1e-16, 0)
+    circuit.barrier(0, 1)
     circuit.x(1)
     circuit.measure([1, 0], [0, 1])
     assert ddsim_backend.run(circuit, shots=16).result().get_counts() == {"01": 16}
@@ -672,30 +675,3 @@ def test_native_submission_preserves_folded_unitary_sequence(
         ]
         assert angles == [0.0, 1e-16]
         assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]
-
-
-@pytest.mark.parametrize(
-    "fmt",
-    [
-        ProgramFormat.QIR_BASE_STRING,
-        ProgramFormat.QIR_BASE_MODULE,
-        ProgramFormat.QIR_ADAPTIVE_STRING,
-        ProgramFormat.QIR_ADAPTIVE_MODULE,
-        ProgramFormat.IQM_JSON,
-    ],
-)
-@pytest.mark.parametrize("nested", [False, True])
-def test_native_formats_reject_unrepresentable_barriers(
-    ddsim_backend: QDMIBackend, fmt: ProgramFormat, *, nested: bool
-) -> None:
-    """Native serializers cannot silently erase ordering constraints, including nested ones."""
-    circuit = QuantumCircuit(1, 1)
-    if nested:
-        with circuit.if_test((circuit.clbits[0], True)):
-            circuit.barrier(0)
-    else:
-        circuit.barrier(0)
-    serializer = program_serializer(fmt)
-    assert serializer is not None
-    with pytest.raises(UnsupportedOperationError, match="cannot preserve native barrier"):
-        serializer(circuit, ddsim_backend)

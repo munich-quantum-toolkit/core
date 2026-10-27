@@ -36,7 +36,6 @@
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -87,7 +86,6 @@ protected:
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
     PassManager manager(&context_);
     manager.addPass(mlir::mqt::createSimplifyQuantum());
-    manager.addPass(createCanonicalizerPass());
     ASSERT_TRUE(succeeded(manager.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));

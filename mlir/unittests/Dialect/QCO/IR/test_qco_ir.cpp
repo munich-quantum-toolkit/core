@@ -2875,8 +2875,7 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
                                                MQT_NAMED_BUILDER(ctrlPowSx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  ASSERT_TRUE(succeeded(runPassPipeline(
-      program.get(), "simplify-quantum,normalize-global-phases")));
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 

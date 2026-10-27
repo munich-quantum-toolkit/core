@@ -1878,7 +1878,7 @@ Args:
           R"pb(Fold classical values and remove structural scaffolding in place.
 
 Preserve supplied unitary gates. Use explicit quantum optimization passes to
-cancel, fuse, or specialize gates. Redundant resets may be folded.)pb")
+cancel, fuse, or specialize gates.)pb")
       .def(
           "normalize_global_phases",
           &FallibleMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
@@ -1974,7 +1974,6 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
 
 Qubits must be static target sites. Each output bit must have one terminal
 measurement. Entry-point global phases are normalized and discarded.
-Nonempty barriers are rejected because the format cannot preserve them.
 This performs no routing, gate synthesis, or optimization.
 The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
       .def(
@@ -1995,8 +1994,6 @@ also supports computed Boolean (``i1``) results. Other scalar outputs are
 unsupported. The generated QIR returns a zero execution status.
 Base conversion requires straight-line quantum operations; Adaptive retains loops.
 Calls with quantum-register arguments must be inlined before conversion.
-Barriers are omitted; callers requiring their ordering constraints must reject
-them before conversion.
 Use ``compile_program`` for inlining, modifier expansion, and Base loop unrolling.
 The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 
@@ -2018,7 +2015,7 @@ operations.)pb");
           R"pb(Fold classical values and remove structural scaffolding in place.
 
 Preserve supplied unitary gates. Use explicit quantum optimization passes to
-cancel, fuse, or specialize gates. Redundant resets may be folded.)pb")
+cancel, fuse, or specialize gates.)pb")
       .def("normalize_global_phases",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::normalizeGlobalPhases>::call,
