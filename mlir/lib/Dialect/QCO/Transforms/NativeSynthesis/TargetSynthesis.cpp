@@ -1504,10 +1504,14 @@ protected:
       emissionBasis->singleQubit = CompilerTarget::SingleQubitBasis::ZYZ;
     }
     // Preserve native operations outside the explicit composition patterns.
-    const auto compositionConfig = GreedyRewriteConfig{}
-                                       .setUseTopDownTraversal()
-                                       .enableFolding(false)
-                                       .enableConstantCSE(false);
+    // Gate composition does not change control flow; avoid repeated CFG
+    // cleanup.
+    const auto compositionConfig =
+        GreedyRewriteConfig{}
+            .setUseTopDownTraversal()
+            .setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled)
+            .enableFolding(false)
+            .enableConstantCSE(false);
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
