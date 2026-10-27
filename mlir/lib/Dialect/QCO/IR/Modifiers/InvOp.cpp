@@ -439,8 +439,8 @@ LogicalResult InvOp::verifyRegions() {
 void InvOp::getLoweringPatterns(RewritePatternSet& results,
                                 MLIRContext* context) {
   results.add<MoveCtrlOutsideInv, InvPowToNegPow, InlineSelfAdjoint,
-              ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv,
-              DropUnusedInvQubits>(context);
+              ReplaceWithKnownGates, CancelNestedInv>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {

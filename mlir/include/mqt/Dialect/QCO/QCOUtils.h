@@ -38,8 +38,7 @@ LogicalResult removeZeroRotation(Op op, PatternRewriter& rewriter) {
   if (!theta || !(std::abs(*theta) <= mqt::PARAMETER_COMPARISON_TOLERANCE)) {
     return failure();
   }
-  rewriter.replaceOp(
-      op, cast<UnitaryOpInterface>(op.getOperation()).getInputQubits());
+  rewriter.replaceOp(op, op.getInputQubits());
   return success();
 }
 

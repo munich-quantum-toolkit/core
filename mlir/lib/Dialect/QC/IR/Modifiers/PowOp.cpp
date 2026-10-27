@@ -594,8 +594,8 @@ LogicalResult PowOp::verify() {
 void PowOp::getLoweringPatterns(RewritePatternSet& results,
                                 MLIRContext* context) {
   results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-              MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow,
-              DropUnusedPowQubits>(context);
+              MoveCtrlOutsidePow, NegPowToInvPow>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,

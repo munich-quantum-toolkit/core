@@ -108,6 +108,7 @@ void registerMQTCompilerPasses() {
 }
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
+  // Expose modifier bodies before fusion; simplify generated gates afterwards.
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(qco::createMergeSingleQubitRotationGates());
   pm.addPass(qco::createCombineControlledGates());

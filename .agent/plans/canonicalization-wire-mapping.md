@@ -38,7 +38,7 @@ XXMinusYY retains its symmetric-wire merge.
 
 Regression tests are in the QC and QCO `IR/test_*_modifier_canonicalization.cpp`
 files, QCO `IR/test_qco_modifier_yield_canonicalization.cpp`, and QCO
-`IR/test_qco_wire_canonicalization.cpp`. They verify input and output IR, check
+`IR/test_qco_wire_simplification.cpp`. They verify input and output IR, check
 QCO linearity, retain unsupported yield permutations, and check safe inlining
 and ordered gate outputs. XXPlusYY tests compare the full unitary against the
 uncanonicalized input.

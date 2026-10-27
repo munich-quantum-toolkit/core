@@ -45,7 +45,7 @@ using namespace mlir::qco;
 
 namespace {
 
-/// Expose adjacent controlled inverse or rotation pairs to gate canonicalizers.
+/// Expose adjacent controlled inverse or rotation pairs to gate simplification.
 struct SimplifyAdjacentControls final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -356,8 +356,8 @@ LogicalResult CtrlOp::verifyRegions() {
 
 void CtrlOp::getLoweringPatterns(RewritePatternSet& results,
                                  MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl, DropUnusedTargets>(
-      context);
+  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {

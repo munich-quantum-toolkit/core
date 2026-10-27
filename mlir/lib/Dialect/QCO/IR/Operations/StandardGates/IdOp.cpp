@@ -11,8 +11,6 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include "mlir/IR/OperationSupport.h"
-
 using namespace mlir;
 using namespace mlir::qco;
 

@@ -17,8 +17,10 @@ def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
                            "mlir::qco::QCODialect"];
   let summary = "Lower quantum modifiers to supported gate forms";
   let description = [{
-    Normalizes nested controls, inverses and supported constant gate powers.
-    Preserves controlled relative phase and existing power accuracy guards.
+    Normalizes nested controls, inverses and supported gate powers. QCO powers
+    of fixed single-qubit gates may have runtime exponents. Other gate powers
+    retain their existing constant-parameter and numerical accuracy guards.
+    Preserves controlled relative phase.
     Does not cancel or combine adjacent gates. Run after inlining and modifier
     unrolling when a target representation cannot express these modifiers.
     Unsupported powers remain for the consuming conversion to diagnose.

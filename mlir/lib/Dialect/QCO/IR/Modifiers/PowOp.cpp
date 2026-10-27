@@ -698,8 +698,8 @@ LogicalResult PowOp::verifyRegions() {
 void PowOp::getLoweringPatterns(RewritePatternSet& results,
                                 MLIRContext* context) {
   results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-              MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow,
-              DropUnusedPowQubits, FoldFixedGatePow>(context);
+              MoveCtrlOutsidePow, NegPowToInvPow, FoldFixedGatePow>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 // This structural query deliberately avoids constructing the body matrix or

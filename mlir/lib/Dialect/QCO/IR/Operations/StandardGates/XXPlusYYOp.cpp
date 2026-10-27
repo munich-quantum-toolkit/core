@@ -9,7 +9,6 @@
  */
 
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"

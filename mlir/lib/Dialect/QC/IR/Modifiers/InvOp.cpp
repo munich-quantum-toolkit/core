@@ -385,8 +385,8 @@ LogicalResult InvOp::verify() {
 void InvOp::getLoweringPatterns(RewritePatternSet& results,
                                 MLIRContext* context) {
   results.add<CancelNestedInv, MoveCtrlOutsideInv, InvPowToNegPow,
-              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv,
-              DropUnusedInvQubits>(context);
+              InlineSelfAdjoint, ReplaceWithKnownGates>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,

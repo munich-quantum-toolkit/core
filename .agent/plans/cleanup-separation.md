@@ -47,9 +47,10 @@ These limits belong to existing boundaries; they are not additional semantics:
 - OpenQASM retains barriers and native device indices. Other formats retain
   their existing supported-operation checks; unsupported timing, assertions or
   custom operations do not acquire support through cleanup.
-- Lowering supports the existing modifier shapes and guarded constant powers.
-  Unsupported powers remain for conversion diagnostics. It does not introduce
-  runtime parameter support on backends requiring constant parameters.
+- Lowering supports existing modifier shapes, runtime powers of fixed QCO
+  single-qubit gates, and guarded constant powers of other gates. Unsupported
+  powers remain for conversion diagnostics. It does not introduce runtime
+  parameter support on backends requiring constant parameters.
 
 ## Transformation ownership
 
@@ -90,10 +91,11 @@ Paths are relative to `mlir/` unless otherwise stated.
 - Parameter binding, classical-memory promotion and inliner cleanup retain
   ordinary canonicalization. Import-time folding cannot replace these calls.
   `valueToDouble` recognition remains unchanged for its optimization consumers.
-- Qiskit's existing circuit validator owns native format checks, and serializers
-  pass their selected format to it. Direct IQM export rejects barriers before
-  QIR lowering could erase them. Stored `CompiledProgram` submission stays
-  direct.
+- Qiskit's existing circuit validator owns native checks. Serializers explicitly
+  declare whether barriers are representable through `allow_barriers`; the
+  validator does not need a format-to-capability mapping. Direct IQM export
+  rejects barriers before QIR lowering could erase them. Stored
+  `CompiledProgram` submission stays direct.
 - Tests comparing optimized representations request optimization explicitly. Raw
   conversion tests still exercise raw converters and retain their negative
   diagnostics. Public preparation tests cover modifier lowering separately.
@@ -116,6 +118,21 @@ Paths are relative to `mlir/` unless otherwise stated.
    binding/inlining and required phase normalization at representation
    boundaries; do not remove it merely because the importer already folded
    constants.
+
+The leading quantum simplifier exposes modifier bodies to single-qubit fusion;
+the trailing simplifier reduces gates created by fusion and control combination.
+Deleting the leading pass leaves 512 gates for 256 repetitions of `inv { s }; h`
+instead of one gate plus phase, and increases the measured median from 0.73 ms
+to 1.42 ms. The corresponding power case increases from 0.89 ms to 1.62 ms. Full
+matrices agree, but equal semantics do not make these equally useful
+optimization results. Keep both stages and test their consumer contract.
+
+Modifier lowering reuses each operation's structural canonicalization patterns
+instead of repeating their registration lists. Keep lowering distinct from
+unrolling: unrolling also performs selective call inlining and phase
+normalization, which direct lowering does not require. Existing numerical and
+branch-cut guards remain part of supported power semantics, not optional edge
+case machinery.
 
 Pattern packaging and worklist order are implementation choices. Quantum
 linearity, classical dependencies, side effects and region boundaries are
@@ -176,7 +193,7 @@ without running them. No further traversal or compiler redesign is included.
 
 ## Local acceptance results
 
-- Optimized Clang 23/ThinLTO build and all 4,157 CTest entries pass.
+- Optimized Clang 23/ThinLTO build and all 4,158 CTest entries pass.
 - The installed wheel passes 1,546 selected MLIR, Qiskit and PennyLane tests.
   Stubs are regenerated, and whole-file C++ lint passes.
 - The independent controlled-U matrix differs by at most `2.8e-17`; deleting its
@@ -191,4 +208,6 @@ without running them. No further traversal or compiler redesign is included.
 Raw profiles, emitted IR and QIR, mutation results, installed wheel identity and
 check logs are retained outside the repository in
 `/home/nvidia/.codex/experiments/cleanup-separation-550d/full-pr/`. Windows,
-hosted CI and an expensive MLIR rewrite-check build were not run.
+hosted CI and an expensive MLIR rewrite-check build were not run. The modifier
+scheduling comparison and specialist conclusions are in the adjacent
+`design-review/` directory.

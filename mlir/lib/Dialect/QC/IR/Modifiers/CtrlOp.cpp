@@ -234,8 +234,8 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getLoweringPatterns(RewritePatternSet& results,
                                  MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl, DropUnusedTargets>(
-      context);
+  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
