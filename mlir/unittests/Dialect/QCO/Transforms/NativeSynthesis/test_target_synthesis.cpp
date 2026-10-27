@@ -1897,6 +1897,49 @@ TEST_F(TargetSynthesisTest,
   }
 }
 
+TEST_F(TargetSynthesisTest, OverlappingControlledPhasesReachNativeBasis) {
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    std::array qubits{
+        builder.staticQubit(0),
+        builder.staticQubit(1),
+        builder.staticQubit(2),
+        builder.staticQubit(3),
+    };
+    std::tie(qubits[0], qubits[2]) =
+        builder.cp(std::numbers::pi, qubits[0], qubits[2]);
+    std::tie(qubits[2], qubits[3]) =
+        builder.cp(-std::numbers::pi / 2., qubits[2], qubits[3]);
+    auto [measured, firstBit] = builder.measure(qubits[0]);
+    builder.sink(measured);
+    std::tie(qubits[2], qubits[3]) = builder.swap(qubits[2], qubits[3]);
+    std::tie(qubits[2], qubits[1]) =
+        builder.cp(-std::numbers::pi / 2., qubits[2], qubits[1]);
+    std::tie(qubits[1], qubits[2]) = builder.swap(qubits[1], qubits[2]);
+    std::tie(qubits[3], qubits[2]) =
+        builder.cp(-std::numbers::pi / 4., qubits[3], qubits[2]);
+    llvm::SmallVector<Value> bits{firstBit};
+    for (auto qubit : llvm::ArrayRef(qubits).drop_front()) {
+      auto [output, bit] = builder.measure(qubit);
+      builder.sink(output);
+      bits.push_back(bit);
+    }
+    return bits;
+  });
+  const auto target = valid(
+      Target::create(4, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("measure", 1, 0)),
+                     })));
+  attachTestEnvironment(*moduleOp, target);
+  mlir::PassManager manager(context.get());
+  mlir::qco::populateTargetNativeSynthesisPipeline(manager);
+  ASSERT_TRUE(mlir::succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+}
+
 TEST_F(TargetSynthesisTest, NativeSynthesisSharesRepeatedParameterConstants) {
   const auto hadamards = [](QCOProgramBuilder& builder) {
     for (int64_t wire = 0; wire < 2; ++wire) {
