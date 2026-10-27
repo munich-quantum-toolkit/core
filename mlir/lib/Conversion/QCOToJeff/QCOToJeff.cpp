@@ -22,12 +22,6 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/IntegerExpressions.h"
 
-#include "../JeffDiagnostics.h"
-
-#include "capnp/any.h"
-#include "capnp/blob.h"
-#include "capnp/message.h"
-#include "capnp/serialize.h"
 #include "jeff/Conversion/NativeToJeff/NativeToJeff.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
@@ -128,20 +122,9 @@ static LogicalResult serializeInputNames(func::FuncOp function) {
     if (failed(existing)) {
       return failure();
     }
-    mqt::CapnpDiagnosticHandler handler(argument.getLoc(),
-                                        "encode input name metadata");
-    DenseI8ArrayAttr payload;
-    {
-      capnp::MallocMessageBuilder message;
-      message.getRoot<capnp::AnyPointer>().setAs<capnp::Text>(
-          name.getValue().str());
-      auto words = capnp::messageToFlatArray(message);
-      auto bytes = words.asBytes();
-      payload = DenseI8ArrayAttr::get(
-          context, ArrayRef(reinterpret_cast<const int8_t*>(bytes.begin()),
-                            bytes.size()));
-    }
-    if (failed(handler.result())) {
+    auto payload =
+        jeff::serializeTextMetadata(argument.getLoc(), name.getValue());
+    if (failed(payload)) {
       return failure();
     }
     SmallVector<Attribute> metadata;
@@ -157,7 +140,7 @@ static LogicalResult serializeInputNames(func::FuncOp function) {
         context,
         {
             {StringAttr::get(context, "name"), StringAttr::get(context, key)},
-            {StringAttr::get(context, "value"), payload},
+            {StringAttr::get(context, "value"), *payload},
         }));
     if (failed(
             jeff::setMetadata(argument, ArrayAttr::get(context, metadata)))) {

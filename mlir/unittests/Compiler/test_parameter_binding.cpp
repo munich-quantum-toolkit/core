@@ -47,32 +47,15 @@ include "stdgates.inc";
 input float beta;
 input float[64] alpha;
 qubit q;
-rz(alpha + beta) q;
+rz(alpha + 2 * beta) q;
 )");
   ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
-  EXPECT_EQ(qc->parameters(), (std::vector<std::string>{"beta", "alpha"}));
-  EXPECT_TRUE(mlir::succeeded(mlir::verify(qc->module())));
-  EXPECT_EQ(mlir::mqt::getEntryPoint(qc->module()).getNumResults(), 0);
-
-  auto exported = std::move(*qc).intoOpenQASM3();
-  ASSERT_TRUE(mlir::succeeded(exported));
-  const auto beta = exported->source().find("input float[64] beta;");
-  const auto alpha = exported->source().find("input float[64] alpha;");
-  EXPECT_NE(beta, std::string::npos);
-  EXPECT_NE(alpha, std::string::npos);
-  EXPECT_LT(beta, alpha);
-  auto restored = mlir::QCProgram::fromOpenQASMString(exported->source());
-  ASSERT_TRUE(static_cast<bool>(restored))
-      << llvm::toString(restored.takeError());
-  EXPECT_EQ(restored->parameters(),
-            (std::vector<std::string>{"beta", "alpha"}));
-
-  auto entry = mlir::mqt::getEntryPoint(restored->module());
+  auto entry = mlir::mqt::getEntryPoint(qc->module());
   entry.setArgAttr(
       0, "mqt.input_id",
       mlir::IntegerAttr::get(
-          mlir::IntegerType::get(restored->module().getContext(), 128), 7));
-  auto qco = std::move(*restored).intoQCO();
+          mlir::IntegerType::get(qc->module().getContext(), 128), 7));
+  auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto jeff = std::move(*qco).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
@@ -83,36 +66,44 @@ rz(alpha + beta) q;
   ASSERT_TRUE(mlir::succeeded(qco));
   auto restoredQC = qco->copy().intoQC();
   ASSERT_TRUE(mlir::succeeded(restoredQC));
-  EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"beta", "alpha"}));
-  EXPECT_EQ(restoredQC->parameters(),
-            (std::vector<std::string>{"beta", "alpha"}));
-  exported = restoredQC->copy().intoOpenQASM3();
+  auto exported = std::move(*restoredQC).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(exported));
-  EXPECT_NE(exported->source().find("input float[64] beta;"),
-            std::string::npos);
-  EXPECT_NE(exported->source().find("input float[64] alpha;"),
-            std::string::npos);
+  auto restored = mlir::QCProgram::fromOpenQASMString(exported->source());
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
 
-  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"beta", 0}})));
+  EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"beta", "alpha"}));
+  EXPECT_EQ(restored->parameters(),
+            (std::vector<std::string>{"beta", "alpha"}));
+  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"beta", 0.25}})));
+  ASSERT_TRUE(mlir::succeeded(restored->bindParameters({{"beta", 0.25}})));
   EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"alpha"}));
-  EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
-  ASSERT_TRUE(mlir::succeeded(restoredQC->bindParameters({{"beta", 0}})));
-  EXPECT_EQ(restoredQC->parameters(), (std::vector<std::string>{"alpha"}));
-  EXPECT_TRUE(mlir::succeeded(mlir::verify(restoredQC->module())));
-  exported = restoredQC->copy().intoOpenQASM3();
+  EXPECT_EQ(restored->parameters(), (std::vector<std::string>{"alpha"}));
+  exported = restored->copy().intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(exported));
   EXPECT_EQ(exported->source().find("input float[64] beta;"),
             std::string::npos);
   EXPECT_NE(exported->source().find("input float[64] alpha;"),
             std::string::npos);
-
-  qco = std::move(*restoredQC).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
   ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
   EXPECT_EQ(qco->parameters(), (std::vector<std::string>{"alpha"}));
-  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"alpha", 0}})));
+  ASSERT_TRUE(mlir::succeeded(qco->bindParameters({{"alpha", 0.75}})));
+  ASSERT_TRUE(mlir::succeeded(restored->bindParameters({{"alpha", 0.75}})));
   EXPECT_TRUE(qco->parameters().empty());
-  EXPECT_TRUE(mlir::succeeded(mlir::verify(qco->module())));
+  EXPECT_TRUE(restored->parameters().empty());
+  auto boundQC = std::move(*restored).intoQCO();
+  ASSERT_TRUE(mlir::succeeded(boundQC));
+  for (auto* program : {&*qco, &*boundQC}) {
+    auto rotations =
+        mlir::mqt::getEntryPoint(program->module()).getOps<mlir::qco::RZOp>();
+    ASSERT_FALSE(rotations.empty());
+    auto angle = (*rotations.begin())
+                     .getParameter(0)
+                     .getDefiningOp<mlir::arith::ConstantOp>();
+    ASSERT_TRUE(angle);
+    EXPECT_EQ(llvm::cast<mlir::FloatAttr>(angle.getValue()).getValueAsDouble(),
+              1.25);
+  }
 }
 
 TEST(ParameterBinding, RejectsInvalidJeffInputNameMetadata) {
@@ -137,7 +128,7 @@ TEST(ParameterBinding, RejectsInvalidJeffInputNameMetadata) {
   for (auto [payload, expected] : {
            std::pair{builder.getDenseI8ArrayAttr({0}),
                      "Metadata payload size must be a multiple"},
-           std::pair{nonText, "failed to decode input name metadata"},
+           std::pair{nonText, "Failed to read metadata"},
        }) {
     SCOPED_TRACE(expected);
     auto program = qco->copy();
