@@ -21,11 +21,13 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/VersionTuple.h"
 
 namespace mlir::qir {
 
 LogicalResult validateCapabilities(ModuleOp moduleOp,
-                                   ArrayRef<ProgramCapability> capabilities) {
+                                   const PayloadSpecification& payload) {
+  const auto capabilities = payload.capabilities();
   const auto requireCapability =
       [&](llvm::StringRef id, bool allowConstraints = false) -> LogicalResult {
     const auto* const capability =
@@ -49,6 +51,14 @@ LogicalResult validateCapabilities(ModuleOp moduleOp,
     for (auto attribute : flags.getFlags()) {
       const auto flag = cast<LLVM::ModuleFlagAttr>(attribute);
       const auto key = flag.getKey().getValue();
+      if (key == "qir_minor_version" &&
+          (!payload.versionRange() ||
+           !payload.versionRange()->contains(llvm::VersionTuple(
+               2, static_cast<unsigned>(
+                      cast<IntegerAttr>(flag.getValue()).getInt()))))) {
+        return moduleOp.emitError(
+            "QIR version is outside the target payload range");
+      }
       if (const auto value = dyn_cast<IntegerAttr>(flag.getValue());
           value && value.getValue().isZero()) {
         continue;

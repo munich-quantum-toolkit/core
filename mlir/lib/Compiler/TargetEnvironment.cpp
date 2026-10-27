@@ -86,7 +86,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
   case ProgramFormat::QIRBase:
     return PayloadSpecification::create({
         .id = "qir",
-        .version = "2.1.0",
+        .version = ">=2,<3",
         .profile = "base",
         .encoding = encoding,
     });
@@ -102,7 +102,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
     return PayloadSpecification::create(
         {
             .id = "qir",
-            .version = "2.1.0",
+            .version = ">=2,<3",
             .profile = "adaptive",
             .encoding = encoding,
         },
@@ -275,7 +275,10 @@ llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;
   }
-  if (format_.id == "qir" && format_.version == "2.1.0") {
+  if (format_.id == "qir" && versionRange_ && versionRange_->withinMajor(2) &&
+      versionRange_->select(
+          {llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
+          llvm::VersionTuple(2))) {
     if (format_.profile == "base") {
       return ProgramFormat::QIRBase;
     }

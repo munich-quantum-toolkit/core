@@ -11,8 +11,8 @@ mystnb:
 The [Quantum Intermediate Representation (QIR)](https://www.qir-alliance.org)
 expresses quantum programs in [LLVM IR](https://llvm.org/). The MQT Compiler
 Collection compiles OpenQASM, Qiskit circuits, and its own program objects to
-QIR 2.1. The bundled DDSIM device executes the result through QDMI, with the
-same job and result API used for OpenQASM.
+QIR. The bundled DDSIM device executes the result through QDMI, with the same
+job and result API used for OpenQASM.
 
 This notebook follows that complete path: compile a program, inspect its profile
 and capability flags, choose LLVM text or bitcode, and retrieve counts or QIR
@@ -70,7 +70,14 @@ Its {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir` method consumes it and
 returns LLVM assembly. Here, `copy=True` keeps the program for bitcode export
 below. The entry-point attributes identify `base_profile`, the output schema,
 and the required static qubit and result capacities. The module flags identify
-QIR 2.1 and whether dynamic resource management is used.
+the minimum required QIR version and whether dynamic resource management is
+used. By default, Base Profile programs use QIR 2.0. Adaptive programs use 2.1
+when they require dynamic qubit or result allocation, or runtime arrays; other
+Adaptive programs use 2.0. Output labels and ordinary output-array records do
+not require 2.1. A target payload can constrain accepted versions, for example
+`>=2,<3`. Compilation selects the lowest known version that satisfies the
+program and target; a range of `>=2.1,<3` therefore emits 2.1 even for a static
+program. A bare numeric target version remains a same-major upper bound.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions
@@ -303,16 +310,20 @@ Authored QIR can return explicit exit codes and use scalar output-recording
 APIs. These runtime features do not extend the supported QC-to-QIR entry
 results.
 
-MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT
+MQT Core implements the QIR Base and Adaptive Profile runtime APIs. The JIT
 accepts one exact LLVM type for each runtime declaration, so unsupported or
-outdated overloads fail before execution.
+outdated overloads fail before execution. Present version flags must be
+nonnegative integers with major version 2. Future minor versions are accepted
+assuming existing constructs and runtime ABIs remain compatible; unsupported
+runtime calls still fail. Authored programs without version flags retain their
+existing behavior.
 
 Classical array copies require ranked memrefs. Fixed contiguous copies use
 [LLVM array loads and stores](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#supported-llvm-array-operations);
 other layouts use loops and require the corresponding backwards-branching
 capability. Math operations such as `sqrt` lower to LLVM intrinsics. DDSIM
 executes these intrinsics, but they are outside the
-[floating-point instructions required by QIR 2.1](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/profiles/Adaptive_Profile.md#classical-instructions).
+[floating-point instructions required by QIR](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/profiles/Adaptive_Profile.md#classical-instructions).
 Check the backend's extensions when using these operations.
 
 MQT Core provides dedicated QIS functions for variants with one or two control

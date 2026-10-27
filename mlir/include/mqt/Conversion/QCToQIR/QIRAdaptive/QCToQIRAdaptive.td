@@ -10,7 +10,7 @@ include "mlir/Pass/PassBase.td"
 
 def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
   let summary = "Lower the QC dialect to the LLVM dialect compliant with the "
-                "QIR Adaptive Profile 2.1";
+                "QIR Adaptive Profile";
 
   let description = [{
     Lower supported QC operations to QIR Adaptive Profile runtime calls and

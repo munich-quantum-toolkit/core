@@ -692,11 +692,6 @@ TEST(CompilerQDMIAdapterTest,
                .version = "2.1",
                .profile = "base",
            },
-           mlir::PayloadFormat{
-               .id = "qir",
-               .version = "2.0",
-               .profile = "adaptive",
-           },
        }) {
     mlir::attachTargetEnvironment(
         qc->module(),

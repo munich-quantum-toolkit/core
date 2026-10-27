@@ -1867,6 +1867,8 @@ def test_payload_specification_preserves_python_api() -> None:
     ("format_id", "version", "profile", "expected_version", "expected_type"),
     [
         ("qir", "2.1", "base", "2.1.0", QIRProgram),
+        ("qir", ">=2,<3", "base", ">=2.0.0,<3.0.0", QIRProgram),
+        ("qir", ">=2.1,<3", "base", ">=2.1.0,<3.0.0", QIRProgram),
         ("openqasm", "3.1", "", "3.1.0", OpenQASMProgram),
         ("openqasm", ">=3,<4", "", ">=3.0.0,<4.0.0", OpenQASMProgram),
         ("openqasm", ">=3.1,<4", "", ">=3.1.0,<4.0.0", OpenQASMProgram),

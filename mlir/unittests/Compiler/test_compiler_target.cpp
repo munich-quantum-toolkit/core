@@ -328,9 +328,7 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
       "multiway branching");
   const auto exactMajor = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2", .profile = "base"}));
-  expectInvalid(exactMajor.compilerOutput(),
-                "Invalid payload specification: MQT Compiler cannot emit the "
-                "selected payload format");
+  EXPECT_EQ(valid(exactMajor.compilerOutput()), mlir::ProgramFormat::QIRBase);
 }
 
 TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
