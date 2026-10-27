@@ -10,6 +10,8 @@
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
+
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -24,7 +26,6 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/VersionTuple.h"
 
 #include <cmath>
 #include <cstdint>
@@ -33,12 +34,6 @@
 
 using namespace mlir;
 using namespace mlir::mqt;
-
-[[nodiscard]] static bool isCanonicalPayloadVersion(const StringRef version) {
-  llvm::VersionTuple parsed;
-  return !parsed.tryParse(version) && !parsed.getBuild() &&
-         parsed.getAsString() == version;
-}
 
 LogicalResult
 PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
@@ -54,9 +49,9 @@ PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
            << "payload format fields must not contain null characters";
   }
   if (!version.getValue().empty() &&
-      !isCanonicalPayloadVersion(version.getValue())) {
-    return emitError()
-           << "payload format version must use major[.minor[.patch]]";
+      !PayloadVersionRange::parse(version.getValue())) {
+    return emitError() << "payload version requires a numeric ceiling or >=, "
+                          "<, <= constraints";
   }
   return success();
 }

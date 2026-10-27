@@ -1051,11 +1051,11 @@ private:
       return success();
     }
     const auto version = *syntax.version;
-    if (version.major == 2 && version.minor == 0) {
+    if (version.major == 2) {
       program.openQASM2 = true;
       return success();
     }
-    if (version.major == 3 && (version.minor == 0 || version.minor == 1)) {
+    if (version.major == 3) {
       return success();
     }
     return fail(syntax.versionLocation, "Unsupported OpenQASM version " +

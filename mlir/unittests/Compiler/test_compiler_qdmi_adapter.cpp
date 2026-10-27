@@ -372,7 +372,7 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(adaptive.capabilities().front().id, "forward-branching");
   const auto qasm = llvm::cantFail(
       mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
-  EXPECT_EQ(qasm.format().version, "3.1.0");
+  EXPECT_EQ(qasm.format().version, ">=3.0.0,<4.0.0");
   ASSERT_EQ(qasm.capabilities().size(), 4);
   EXPECT_EQ(qasm.capabilities()[1].id, "counted-iteration");
   EXPECT_EQ(qasm.capabilities()[2].id, "conditional-loop");
@@ -437,6 +437,23 @@ TEST(CompilerQDMIAdapterTest,
       }));
   EXPECT_TRUE(llvm::errorToBool(mlir::validateTargetCompatibility(
       original, mlir::TargetEnvironment(original.target(), constrained))));
+}
+
+TEST(CompilerQDMIAdapterTest, CompatibilityRequiresVersionRangeInclusion) {
+  const auto target = llvm::cantFail(mlir::CompilerTarget::create(
+      1, mlir::CompilerTarget::Connectivity::allToAll(),
+      mlir::CompilerTarget::NativeOperations::unrestricted()));
+  const auto environment = [&](const char* versions) {
+    return mlir::TargetEnvironment(
+        target, llvm::cantFail(mlir::PayloadSpecification::create(
+                    {.id = "openqasm", .version = versions})));
+  };
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      environment(">=3,<3.1"), environment(">=3,<4"))));
+  EXPECT_TRUE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      environment(">=3,<4"), environment(">=3,<3.1"))));
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      environment("<4,>=3"), environment(">=3.0,<4"))));
 }
 
 TEST(CompilerQDMIAdapterTest, CompatibilityPreservesFixedParameters) {

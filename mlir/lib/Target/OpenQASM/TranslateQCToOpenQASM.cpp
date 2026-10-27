@@ -234,9 +234,17 @@ public:
     }
     bodyOutput.flush();
 
-    if (requiredMinorVersion > maximumMinorVersion_) {
-      return fail(function, "target payload requires OpenQASM 3.0 but program "
-                            "uses 3.1 constructs");
+    if (acceptedVersions_) {
+      const auto selected = acceptedVersions_->select(
+          version2_
+              ? ArrayRef{llvm::VersionTuple(2, 0)}
+              : ArrayRef{llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
+          llvm::VersionTuple(version2_ ? 2 : 3, requiredMinorVersion));
+      if (!selected) {
+        return fail(function, "no known OpenQASM version satisfies the program "
+                              "and target payload");
+      }
+      requiredMinorVersion = selected->getMinor().value_or(0);
     }
 
     sourceStream << (version2_ ? "OPENQASM 2.0" : "OPENQASM 3");
@@ -295,7 +303,7 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
   bool supportsDispatch = true;
-  unsigned maximumMinorVersion_ = 1;
+  std::optional<mqt::PayloadVersionRange> acceptedVersions_;
   unsigned requiredMinorVersion = 0;
   int64_t numArrayElements_ = 0;
   DenseMap<Operation*, ArrayAssignment> arrayAssignments_;
@@ -772,8 +780,9 @@ private:
       }
       const auto& format =
           environment.environment().payloadSpecification().format();
-      if (format.id == "openqasm" && format.version == "3.0.0") {
-        maximumMinorVersion_ = 0;
+      if (format.id == "openqasm") {
+        acceptedVersions_ =
+            environment.environment().payloadSpecification().versionRange();
       }
       supportsDispatch = environment.environment()
                              .payloadSpecification()

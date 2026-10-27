@@ -1843,18 +1843,23 @@ def test_payload_specification_preserves_python_api() -> None:
     assert environment.format.version == "2.1.0"
     assert environment.capabilities[0].value == 0
 
-    with pytest.raises(ValueError, match=r"major\[\.minor\[\.patch\]\]"):
+    with pytest.raises(ValueError, match="numeric ceiling"):
         PayloadSpecification(PayloadFormat("qir", "2.1.0.1", "base"))
 
 
 @pytest.mark.parametrize(
     ("format_id", "version", "profile", "expected_version", "expected_type"),
-    [("qir", "2.1", "base", "2.1.0", QIRProgram), ("openqasm", "3.1", "", "3.1.0", OpenQASMProgram)],
+    [
+        ("qir", "2.1", "base", "2.1.0", QIRProgram),
+        ("openqasm", "3.1", "", "3.1.0", OpenQASMProgram),
+        ("openqasm", ">=3,<4", "", ">=3.0.0,<4.0.0", OpenQASMProgram),
+        ("openqasm", ">=3.1,<4", "", ">=3.1.0,<4.0.0", OpenQASMProgram),
+    ],
 )
-def test_target_compilation_accepts_exact_version_shorthand(
+def test_target_compilation_accepts_version_constraints(
     format_id: str, version: str, profile: str, expected_version: str, expected_type: type
 ) -> None:
-    """Normalize a shortened version before selecting the compiler output."""
+    """Preserve version constraints through Python, MLIR, and target compilation."""
     payload = PayloadSpecification(PayloadFormat(format_id, version, profile))
     assert payload.format.version == expected_version
     target = CompilerTarget(

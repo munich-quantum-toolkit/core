@@ -4684,7 +4684,7 @@ c = measure q;
                                         return success();
                                       });
       EXPECT_TRUE(failed(std::move(direct).intoOpenQASM3()));
-      EXPECT_TRUE(StringRef(diagnostics).contains("requires OpenQASM 3.0"))
+      EXPECT_TRUE(StringRef(diagnostics).contains("no known OpenQASM version"))
           << diagnostics;
     }
     auto output = runDefaultPipeline(
@@ -6826,6 +6826,29 @@ TEST_F(CompilerPipelineTest,
     EXPECT_EQ(StringRef(*text).count("call void @__quantum__qis__x__body"), 1U);
     EXPECT_TRUE(failed(collision->copy().intoQIR(profile)));
   }
+}
+
+TEST_F(CompilerPipelineTest, OpenQASMReceiverVersionFloorAndFutureMinorInput) {
+  for (const auto* version : {">=3,<4", ">=3.1,<4"}) {
+    auto input = QCProgram::fromOpenQASMString(
+        "OPENQASM 3.99; include \"stdgates.inc\"; qubit q; h q;");
+    MQT_ASSERT_SUCCESS(input);
+    const auto payload = llvm::cantFail(
+        PayloadSpecification::create({.id = "openqasm", .version = version}));
+    attachTargetEnvironment(
+        input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
+    auto output = std::move(*input).intoOpenQASM3();
+    MQT_ASSERT_SUCCESS(output);
+    EXPECT_TRUE(output->source().starts_with(
+        StringRef(version) == ">=3,<4" ? "OPENQASM 3;" : "OPENQASM 3.1;"));
+  }
+  auto qasm2 = QCProgram::fromOpenQASMString(
+      "OPENQASM 2.99; include \"qelib1.inc\"; qreg q[1]; h q[0];");
+  MQT_ASSERT_SUCCESS(qasm2);
+  EXPECT_TRUE(succeeded(std::move(*qasm2).intoOpenQASM2()));
+  auto unsupported = QCProgram::fromOpenQASMString("OPENQASM 4; qubit q;");
+  EXPECT_FALSE(unsupported);
+  llvm::consumeError(unsupported.takeError());
 }
 
 } // namespace mqt::test::compiler

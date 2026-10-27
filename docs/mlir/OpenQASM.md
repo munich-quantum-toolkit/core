@@ -56,6 +56,12 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 
 ### Input support
 
+The frontend accepts OpenQASM 2 and 3 minor versions optimistically, assuming
+that later minor releases preserve existing constructs. Unsupported syntax still
+fails. Export uses known versions only: 2.0, 3.0, or 3.1. The OpenQASM 3 header
+uses `OPENQASM 3;` unless program features or the target's minimum accepted
+version require 3.1.
+
 | OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                          |

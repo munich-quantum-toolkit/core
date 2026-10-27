@@ -103,7 +103,7 @@ class PayloadEncoding(enum.Enum):
     BINARY = 1
 
 class PayloadFormat:
-    """Exact payload identity."""
+    """Selected payload format and receiver-version constraint."""
 
     def __init__(
         self, format_id: str, version: str, profile: str = "", encoding: PayloadEncoding = PayloadEncoding.TEXT
@@ -180,7 +180,7 @@ class PayloadSpecification:
     ) -> None: ...
     @property
     def format(self) -> PayloadFormat:
-        """The exact selected payload format."""
+        """The selected payload format and receiver-version constraint."""
 
     @property
     def capabilities(self) -> list[ProgramCapability]:

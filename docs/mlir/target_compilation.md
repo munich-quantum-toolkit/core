@@ -713,6 +713,16 @@ snapshots for staged compilation with a `TargetEnvironment`.
 
 ### Payload support
 
+Payload version constraints use numeric `>=`, `<`, and `<=` comparisons joined
+by commas. For example, `PayloadFormat("openqasm", ">=3,<4")` accepts OpenQASM 3
+minor releases. A bare version retains the same-major ceiling convention: `3.1`
+means `>=3,<=3.1`. The compiler emits the lowest known version accepted by the
+receiver that supports the resulting program. A range requiring an unknown
+output version fails. QASM2 and QASM3 remain separate output formats; selected
+OpenQASM ranges must stay within one major version. Optional capabilities remain
+independent restrictions. Version ranges are compiler contracts, not metadata
+reported by QDMI devices.
+
 Targeted payloads use the device's advertised operation names and ordered
 placements. OpenQASM emits native calls without portable gate definitions;
 untargeted export retains its portable helpers. Native measurement and reset

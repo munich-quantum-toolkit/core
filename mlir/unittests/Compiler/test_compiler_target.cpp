@@ -13,6 +13,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -37,6 +38,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/VersionTuple.h"
 
 #include <algorithm>
 #include <array>
@@ -148,8 +150,8 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
       "not be null");
   expectInvalid(mlir::PayloadSpecification::create(
                     {.id = "qir", .version = "2.1.0.1", .profile = "base"}),
-                "Invalid payload specification: Payload format version must "
-                "use major[.minor[.patch]]");
+                "Invalid payload specification: Payload version requires a "
+                "numeric ceiling or >=, <, <= constraints");
   expectInvalid(
       mlir::PayloadSpecification::create({.id = "", .version = "2.1.0"}),
       "Invalid payload specification: Payload format requires an ID");
@@ -1679,4 +1681,65 @@ TEST(CompilerTargetTest, SharesLazyTopologyCacheAcrossConcurrentCopies) {
 }
 
 } // namespace
+
+TEST(PayloadSpecificationTest, NumericReceiverVersionRanges) {
+  using llvm::VersionTuple;
+  using mlir::mqt::PayloadVersionRange;
+  const auto range = PayloadVersionRange::parse(">=2, <3");
+  ASSERT_TRUE(range);
+  EXPECT_TRUE(range->contains(VersionTuple(2, 99)));
+  EXPECT_FALSE(range->contains(VersionTuple(3)));
+  EXPECT_EQ(range, PayloadVersionRange::parse("<3,>=2.0.0"));
+  EXPECT_TRUE(PayloadVersionRange::parse(">=2,<=2")->contains(VersionTuple(2)));
+  EXPECT_TRUE(PayloadVersionRange::parse(">=2,<2.1")->isSubsetOf(*range));
+  EXPECT_FALSE(range->isSubsetOf(*PayloadVersionRange::parse(">=2,<2.1")));
+  EXPECT_FALSE(PayloadVersionRange::parse(">=2,<=2.1")
+                   ->isSubsetOf(*PayloadVersionRange::parse(">=2,<2.1")));
+  for (const auto* malformed : {
+           "",
+           ">=2,",
+           ">=2,,<3",
+           ">=3,<2",
+           ">=2,<2",
+           "~=2",
+           "!=2.1",
+           ">=2rc1",
+           ">=2.0.0.1",
+           ">=4294967296",
+           ">=2.2147483648",
+       }) {
+    EXPECT_FALSE(PayloadVersionRange::parse(malformed)) << malformed;
+  }
+  const auto ceiling = PayloadVersionRange::parse("2.1");
+  ASSERT_TRUE(ceiling);
+  EXPECT_TRUE(ceiling->contains(VersionTuple(2, 0)));
+  EXPECT_FALSE(ceiling->contains(VersionTuple(2, 1, 1)));
+  const std::array known{VersionTuple(2, 0), VersionTuple(2, 1)};
+  EXPECT_EQ(range->select(known, VersionTuple(2)), VersionTuple(2, 0));
+  EXPECT_EQ(
+      PayloadVersionRange::parse(">=2.1,<3")->select(known, VersionTuple(2)),
+      VersionTuple(2, 1));
+  EXPECT_FALSE(
+      PayloadVersionRange::parse(">=2.2,<3")->select(known, VersionTuple(2)));
+
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  for (const auto* version : {">=3,<4", "<4,>=3.0", "3.99"}) {
+    const auto payload = valid(mlir::PayloadSpecification::create(
+        {.id = "openqasm", .version = version}));
+    EXPECT_EQ(valid(payload.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+    EXPECT_EQ(
+        valid(mlir::PayloadSpecification::create(payload.materialize(context)))
+            .versionRange(),
+        payload.versionRange());
+  }
+  for (const auto* version : {">=2,<4", ">=3.2,<4", ">=4,<5"}) {
+    const auto payload = valid(mlir::PayloadSpecification::create(
+        {.id = "openqasm", .version = version}));
+    auto output = payload.compilerOutput();
+    EXPECT_FALSE(output) << version;
+    llvm::consumeError(output.takeError());
+  }
+}
+
 } // namespace mqt::test::compiler

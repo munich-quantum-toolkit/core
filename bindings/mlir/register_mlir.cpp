@@ -1049,7 +1049,9 @@ void registerMLIR(nb::module_& m) {
       .value("TEXT", mlir::PayloadEncoding::Text)
       .value("BINARY", mlir::PayloadEncoding::Binary);
 
-  nb::class_<mlir::PayloadFormat>(m, "PayloadFormat", "Exact payload identity.")
+  nb::class_<mlir::PayloadFormat>(
+      m, "PayloadFormat",
+      "Selected payload format and receiver-version constraint.")
       .def(nb::init<std::string, std::string, std::string,
                     mlir::PayloadEncoding>(),
            "format_id"_a, "version"_a, "profile"_a = "",
@@ -1111,7 +1113,7 @@ void registerMLIR(nb::module_& m) {
           [](const mlir::PayloadSpecification& environment) {
             return environment.format();
           },
-          "The exact selected payload format.")
+          "The selected payload format and receiver-version constraint.")
       .def_prop_ro(
           "capabilities",
           [](const mlir::PayloadSpecification& environment) {

@@ -831,7 +831,13 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
   }
   const auto& a = compiled.payloadSpecification();
   const auto& b = destination.payloadSpecification();
-  if (a.format() != b.format() ||
+  const bool versionsCompatible =
+      a.versionRange() && b.versionRange()
+          ? a.versionRange()->isSubsetOf(*b.versionRange())
+          : a.versionRange() == b.versionRange();
+  if (a.format().id != b.format().id ||
+      a.format().profile != b.format().profile ||
+      a.format().encoding != b.format().encoding || !versionsCompatible ||
       !std::ranges::is_permutation(a.capabilities(), b.capabilities(),
                                    sameCapability)) {
     return incompatible("payload format or capabilities differ");
