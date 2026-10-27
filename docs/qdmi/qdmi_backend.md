@@ -495,9 +495,23 @@ produce.
 ### Program Serializers
 
 A _program serializer_ turns one circuit into one program in one program format.
-MQT Core provides the serializers for OpenQASM 2, OpenQASM 3, and QPY. Every
-other format belongs to the package that owns the device, which registers its
-serializer through the same registry.
+MQT Core provides OpenQASM 2/3, QPY, IQM JSON, and Base/Adaptive QIR
+serializers. The compiler-backed serializers import device qubits and gate calls
+without routing, synthesis, or quantum optimization. Compile the circuit for the
+device before submission.
+
+QIR is available as LLVM text (`*_STRING`) and bitcode (`*_MODULE`). Base
+Profile requires straight-line gates followed by terminal measurements of every
+output bit. Adaptive Profile supports classical control, resets, and initialized
+or computed outputs. Opaque gates become consumer-defined QIS functions with
+`f64` parameters followed by qubit pointers and no return values. Built-in
+aliases use Core's QIS signatures; the receiving device must implement the
+emitted functions, including Core's `gphase` extension for nonzero global phase.
+
+IQM JSON accepts PRX/CZ gates on named target sites and one terminal measurement
+per output bit. It discards program-wide global phase and preserves output
+register names and order. Unsupported instructions and readout layouts fail
+serialization before submission.
 
 The QPY serializer sends one Qiskit circuit, including serializable metadata. It
 writes QPY version 17 using Qiskit’s native writer. The receiver must support
@@ -557,15 +571,15 @@ not the order the device reports:
 
 ```text
 IQM_JSON, CUSTOM1 ... CUSTOM5,
-QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
 QPY, QASM3,
+QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
 QIR_BASE_MODULE, QIR_BASE_STRING,
 QASM2
 ```
 
-Device-native formats take precedence. Among standard formats, those with
-classical control precede restricted profiles; binary encoding wins ties within
-a QIR profile.
+Device-native formats take precedence. QPY and OpenQASM 3 preserve device gate
+names and precede QIR, whose QIS functions require receiver support. Adaptive
+precedes Base Profile; binary encoding wins ties within a QIR profile.
 
 ### Device-specific execution options
 

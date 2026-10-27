@@ -28,6 +28,7 @@ from mqt.core.mlir import sample
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
+    TranslationError,
     UnsupportedOperationError,
     program_serializer,
 )
@@ -565,3 +566,63 @@ def test_backend_classical_assignments(ddsim_backend: QDMIBackend, *, compile_fi
     result = ddsim_backend.run(circuit, shots=8, memory=True).result()
     assert result.get_counts() == {"011 1": 8}
     assert result.get_memory() == ["011 1"] * 8
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+def test_qir_serializers_execute_register_order(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """Both QIR encodings retain asymmetric output registers and bound angles."""
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    circuit = QuantumCircuit(QuantumRegister(3, "q"), ClassicalRegister(1, "a"), ClassicalRegister(2, "b"))
+    angle = Parameter("theta")
+    circuit.rx(angle, 2)
+    circuit.cx(2, 1)
+    circuit.measure([2, 1, 0], [0, 1, 2])
+    result = ddsim_backend.run(circuit, parameter_values=[[np.pi]], shots=16).result()
+    assert result.get_counts() == {"01 1": 16}
+
+
+@pytest.mark.parametrize("fmt", [ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_ADAPTIVE_STRING])
+def test_qir_serializer_profile_controls_feedback(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """Adaptive executes feedback; Base reports its restricted profile."""
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    circuit = QuantumCircuit(1, 2)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.x(0)
+    circuit.measure(0, 1)
+    if fmt == ProgramFormat.QIR_BASE_STRING:
+        with pytest.raises(TranslationError, match="QIR_BASE_STRING"):
+            ddsim_backend.run(circuit, shots=8)
+    else:
+        assert ddsim_backend.run(circuit, shots=8).result().get_counts() == {"01": 8}
+
+
+def test_iqm_serializer_uses_device_site_names() -> None:
+    """The fallback resolves device names and preserves the native PRX angles."""
+    backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
+    circuit = QuantumCircuit(1, 1, global_phase=0.7)
+    circuit.r(0.731, -0.419, 0)
+    circuit.measure(0, 0)
+    serializer = program_serializer(ProgramFormat.IQM_JSON)
+    assert serializer is not None
+    payload = serializer(circuit, backend)
+    assert isinstance(payload, str)
+    instructions = json.loads(payload)["instructions"]
+    site = backend.device.sites()[0].name()
+    assert instructions == [
+        {"name": "prx", "locus": [site], "args": {"angle": 0.731, "phase": -0.419}},
+        {"name": "measure", "locus": [site], "args": {"key": "c_1_0_0"}},
+    ]

@@ -6652,4 +6652,91 @@ TEST(ProgramSerialization, BaseRequiresAlreadyLoweredControlFlow) {
   EXPECT_TRUE(succeeded(program->copy().intoQIR(QIRProfile::Adaptive)));
 }
 
+TEST_F(CompilerPipelineTest, OpaqueQIRCallsPreserveSignatureAndCapacity) {
+  auto input = QCProgram::fromMLIRString(R"mlir(
+module {
+  func.func private @gate(f64, !qc.qubit, !qc.qubit) attributes {mqt.source_name = "hop"}
+  func.func private @adj(!qc.qubit) attributes {mqt.source_name = "sdg"}
+  func.func private @u(f64, f64, f64, !qc.qubit) attributes {mqt.source_name = "u"}
+  func.func private @u3(f64, f64, f64, !qc.qubit) attributes {mqt.source_name = "u3"}
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.static 7 : !qc.qubit
+    %r = qc.static 2 : !qc.qubit
+    %angle = arith.constant 0.25 : f64
+    func.call @gate(%angle, %q, %r) : (f64, !qc.qubit, !qc.qubit) -> ()
+    func.call @adj(%q) : (!qc.qubit) -> ()
+    func.call @u(%angle, %angle, %angle, %q) : (f64, f64, f64, !qc.qubit) -> ()
+    func.call @u3(%angle, %angle, %angle, %q) : (f64, f64, f64, !qc.qubit) -> ()
+    return
+  }
+})mlir");
+  MQT_ASSERT_SUCCESS(input);
+  for (auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto qir = input->copy().intoQIR(profile);
+    ASSERT_TRUE(succeeded(qir));
+    auto text = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(succeeded(text));
+    EXPECT_NE(text->find("@__quantum__qis__hop__body(double"),
+              std::string::npos);
+    EXPECT_NE(text->find("@__quantum__qis__s__adj(ptr"), std::string::npos);
+    EXPECT_NE(text->find("i64 7 to ptr"), std::string::npos);
+    EXPECT_NE(text->find("\"required_num_qubits\"=\"8\""), std::string::npos);
+  }
+}
+
+TEST_F(CompilerPipelineTest, OpaqueQIRRejectsInvalidOrConflictingSignatures) {
+  for (const auto* declaration : {
+           "func.func private @gate(i64, !qc.qubit) attributes "
+           "{mqt.source_name = "
+           "\"hop\"}",
+           "func.func private @gate(!qc.qubit) attributes {mqt.source_name = "
+           "\"rx\"}",
+           "func.func private @gate(!qc.qubit) attributes {mqt.source_name = "
+           "\"prx\"}",
+           "func.func private @gate(!qc.qubit) attributes {mqt.source_name = "
+           "\"mz\"}",
+           "func.func private @gate(!qc.qubit) attributes {mqt.source_name = "
+           "\"x\"} "
+           "func.func private @__quantum__qis__x__body(i64)",
+       }) {
+    auto input = QCProgram::fromMLIRString(
+        std::string("module { ") + declaration +
+        " func.func @main() attributes {mqt.entry_point} { return } }");
+    MQT_ASSERT_SUCCESS(input);
+    for (auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+      EXPECT_TRUE(failed(input->copy().intoQIR(profile)));
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       OpaqueQIRPreservesSelfNamesAndRejectsForwardCollisions) {
+  const std::string body = R"mlir(
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.static 7 : !qc.qubit
+    func.call @__quantum__qis__x__body(%q) : (!qc.qubit) -> ()
+    return
+  }
+})mlir";
+  auto self = QCProgram::fromMLIRString(
+      "module { func.func private @__quantum__qis__x__body(!qc.qubit) "
+      "attributes {mqt.source_name = \"x\"}" +
+      body);
+  MQT_ASSERT_SUCCESS(self);
+  auto collision = QCProgram::fromMLIRString(
+      "module { func.func private @gate(!qc.qubit) attributes {mqt.source_name "
+      "= \"x\"} "
+      "func.func private @__quantum__qis__x__body(!qc.qubit)" +
+      body);
+  MQT_ASSERT_SUCCESS(collision);
+  for (auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto qir = self->copy().intoQIR(profile);
+    ASSERT_TRUE(succeeded(qir));
+    auto text = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(succeeded(text));
+    EXPECT_EQ(StringRef(*text).count("call void @__quantum__qis__x__body"), 1U);
+    EXPECT_TRUE(failed(collision->copy().intoQIR(profile)));
+  }
+}
+
 } // namespace mqt::test::compiler

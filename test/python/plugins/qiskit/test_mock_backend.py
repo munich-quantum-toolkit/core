@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import secrets
 import string
+import struct
 from io import BytesIO
 from math import pi
 from typing import TYPE_CHECKING, ClassVar, NoReturn
@@ -499,9 +500,14 @@ def test_qasm3_preserves_float_parameters(angle: float) -> None:
 
 
 @pytest.mark.parametrize("gate", [CU3Gate(0.1, 0.2, 0.3), CUGate(0.1, 0.2, 0.3, 0.7)])
-def test_controlled_u_signatures_are_distinct(gate: CU3Gate | CUGate) -> None:
+@pytest.mark.parametrize("fmt", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_STRING])
+def test_controlled_u_signatures_are_distinct(
+    gate: CU3Gate | CUGate, fmt: ProgramFormat, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Advertising one controlled-U signature must not enable the other."""
     device = MockQDMIDevice(num_qubits=2, operations=[gate.name, "measure"])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [fmt])
+    submissions = _record_submissions(device)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     advertised = backend.target.operation_from_name(gate.name)
     assert isinstance(advertised, type(gate))
@@ -509,6 +515,16 @@ def test_controlled_u_signatures_are_distinct(gate: CU3Gate | CUGate) -> None:
     circuit = QuantumCircuit(2)
     circuit.append(gate, [0, 1])
     backend.run(circuit, shots=1)
+    if fmt == ProgramFormat.QIR_BASE_STRING:
+        payload, _ = submissions[0]
+        assert isinstance(payload, str)
+        call = next(line for line in payload.splitlines() if f"call void @__quantum__qis__{gate.name}__body" in line)
+        values = re.findall(r"double ([^,)]+)", call)
+        angles = [
+            struct.unpack(">d", bytes.fromhex(value[3:]))[0] if value.startswith("f0x") else float(value)
+            for value in values
+        ]
+        assert angles == gate.params
     other = CUGate(0.1, 0.2, 0.3, 0.7) if gate.name == "cu3" else CU3Gate(0.1, 0.2, 0.3)
     circuit.clear()
     circuit.append(other, [0, 1])

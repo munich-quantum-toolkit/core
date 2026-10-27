@@ -46,6 +46,9 @@ namespace mlir::qir {
 /// Records the selected native QIS name until executable serialization.
 inline constexpr auto QIR_NATIVE_NAME_ATTR = "qir.native_name";
 
+/// Marks qubit arguments of opaque QIS declarations for resource counting.
+inline constexpr auto QIR_QUBIT_ARG_ATTR = "qir.qubit";
+
 /// Marks stores of qubit pointers into compiler-emitted control arrays/tuples.
 inline constexpr auto QIR_QUBIT_STORE_ATTR = "qir.qubit_store";
 

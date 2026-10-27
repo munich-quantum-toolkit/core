@@ -50,6 +50,7 @@ class OpenQASMProgram;
 class IQMJSONProgram;
 class QIRProgram;
 class TargetEnvironment;
+class CompilerTarget;
 
 /// A value for a scalar or statically sized one-dimensional f64 input.
 using ParameterValue = std::variant<std::vector<double>, double>;
@@ -317,6 +318,14 @@ public:
   /// Adaptive conversion retains loops. Calls with quantum-register arguments
   /// must be inlined. Use runDefaultPipeline for compilation before export.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
+
+  /// Consume this program and serialize PRX/CZ gates and readout as IQM JSON.
+  ///
+  /// Qubits must be static target sites and every output bit must have one
+  /// terminal measurement. Normalize and discard entry-point global phases.
+  /// No routing, gate synthesis, or optimization is performed.
+  [[nodiscard]] FailureOr<IQMJSONProgram>
+  intoIQMJSON(const CompilerTarget& target) &&;
 
   /// Return the static gate count of the entry-point IR.
   ///

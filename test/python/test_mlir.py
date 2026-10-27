@@ -436,7 +436,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert compiled.operation_counts()["llvm.func"] >= 1
 
 
-@pytest.mark.parametrize("frontend", ["openqasm", "qiskit"])
+@pytest.mark.parametrize("frontend", ["openqasm", "qiskit", "native"])
 def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
     """Preserve the PRX/CZ unitary and permuted readout across both frontends."""
     circuit = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(1, "a"), ClassicalRegister(1, "a_0"))
@@ -447,14 +447,18 @@ def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
     circuit.r(-0.461, -0.937, 1)
     expected = Operator(circuit)
     circuit.measure([0, 1], [1, 0])
-    if frontend == "qiskit":
+    if frontend in {"qiskit", "native"}:
         if not supports_qiskit_translation():
             pytest.skip("Qiskit version has no compiler translation adapter")
         source = circuit
     else:
         source = qasm3.dumps(circuit)
     target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
-    direct = compile_program(source, target=target, output=OutputFormat.IQM_JSON)
+    if frontend == "native":
+        circuit.global_phase = 0.137
+        direct = QCProgram.from_qiskit(circuit, native=True).to_iqm_json(target)
+    else:
+        direct = compile_program(source, target=target, output=OutputFormat.IQM_JSON)
     assert_type(direct, IQMJSONProgram)
     assert isinstance(direct, IQMJSONProgram)
     assert str(direct) == direct.source
@@ -486,6 +490,8 @@ def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
             gate = np.diag([1, 1, 1, -1])
         unitary = gate @ unitary
     assert Operator(unitary).equiv(expected)
+    if frontend == "native":
+        np.testing.assert_allclose(unitary, expected.data, atol=1e-12)
 
 
 @pytest.mark.parametrize(
@@ -2370,3 +2376,19 @@ def test_compiled_native_r_jeff_round_trip(name: str) -> None:
         serialized = program.to_jeff().to_bytes()
         result = JeffProgram.from_bytes(serialized).to_qco().to_qiskit()
         assert np.allclose(Operator(result).data, Operator(bound).data)
+
+
+@pytest.mark.parametrize("profile", [QIRProfile.BASE, QIRProfile.ADAPTIVE])
+def test_native_qir_preserves_gate_signatures(profile: QIRProfile) -> None:
+    """Canonical aliases share declarations; controlled U retains its phase."""
+    circuit = QuantumCircuit(8)
+    circuit.u(0.1, 0.2, 0.3, 7)
+    circuit.append(library.U3Gate(0.1, 0.2, 0.3), [2])
+    circuit.append(library.CUGate(0.1, 0.2, 0.3, 0.7), [7, 2])
+    circuit.append(Gate("hop", 2, [0.25]), [7, 2])
+    text = QCProgram.from_qiskit(circuit, native=True).to_qir(profile).to_llvm_ir()
+    assert text.count("declare void @__quantum__qis__u3__body") == 1
+    assert text.count("call void @__quantum__qis__u3__body") == 2
+    assert "declare void @__quantum__qis__cu__body(double, double, double, double, ptr, ptr)" in text
+    assert "declare void @__quantum__qis__hop__body(double, ptr, ptr)" in text
+    assert '"required_num_qubits"="8"' in text

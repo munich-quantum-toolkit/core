@@ -451,6 +451,12 @@ with TemporaryDirectory() as directory:
 assert restored.is_valid
 ```
 
+For an already compiled QC program, use
+{py:meth}`~mqt.core.mlir.QCProgram.to_iqm_json` with its target to serialize
+PRX/CZ gates and terminal readout without routing or synthesis. The exporter
+normalizes and discards entry-point global phase, uses target site names, and
+requires one terminal measurement for each output bit.
+
 To generate QIR, select a target profile. {py:class}`~mqt.core.mlir.QIRProgram`
 provides the QIR MLIR through {py:attr}`~mqt.core.mlir.Program.ir` and the
 translated LLVM IR through {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir`.

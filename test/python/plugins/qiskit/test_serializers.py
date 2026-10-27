@@ -164,7 +164,19 @@ def test_serializer_is_discovered_from_entry_point(fmt: ProgramFormat) -> None:
     assert registry.get(fmt) is _serializer
 
 
-@pytest.mark.parametrize("fmt", [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.QPY])
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        ProgramFormat.QASM2,
+        ProgramFormat.QASM3,
+        ProgramFormat.QPY,
+        ProgramFormat.IQM_JSON,
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
 def test_provider_overrides_and_removal_of_builtin_fallbacks(fmt: ProgramFormat) -> None:
     """Provider serializers win; explicit removal cannot resurrect a fallback."""
     registry = _registry()

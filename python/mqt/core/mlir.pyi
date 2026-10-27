@@ -876,6 +876,15 @@ class QCProgram(Program):
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
 
+    def to_iqm_json(self, target: CompilerTarget, *, copy: bool = False) -> IQMJSONProgram:
+        """Serialize PRX/CZ gates and terminal readout as IQM JSON.
+
+        Qubits must be static target sites. Each output bit must have one terminal
+        measurement. Entry-point global phases are normalized and discarded.
+        This performs no routing, gate synthesis, or optimization.
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
     def to_qir(self, profile: QIRProfile, *, copy: bool = False) -> QIRProgram:
         """Lower this program to QIR for the requested profile.
 

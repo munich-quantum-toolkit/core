@@ -1900,6 +1900,23 @@ Args:
 
 The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
       .def(
+          "to_iqm_json",
+          [](mlir::QCProgram& value, const mlir::CompilerTarget& target,
+             const bool copy) {
+            auto source = copiedOrConsumed(value, copy);
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "Compiler action failed",
+                [&] { return std::move(source).intoIQMJSON(target); });
+          },
+          "target"_a, nb::kw_only(), "copy"_a = false,
+          R"pb(Serialize PRX/CZ gates and terminal readout as IQM JSON.
+
+Qubits must be static target sites. Each output bit must have one terminal
+measurement. Entry-point global phases are normalized and discarded.
+This performs no routing, gate synthesis, or optimization.
+The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb")
+      .def(
           "to_qir",
           [](mlir::QCProgram& value, const mlir::QIRProfile profile,
              const bool copy) {
