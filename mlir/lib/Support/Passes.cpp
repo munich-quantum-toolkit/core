@@ -85,6 +85,7 @@ void registerMQTCompilerPasses() {
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
+    mqt::registerFoldClassicalValues();
     mqt::registerDropGlobalPhases();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerPromoteClassicalMemory();

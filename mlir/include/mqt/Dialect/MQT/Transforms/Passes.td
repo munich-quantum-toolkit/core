@@ -11,6 +11,24 @@
 
 include "mlir/Pass/PassBase.td"
 
+def FoldClassicalValues : Pass<"fold-classical-values"> {
+  let dependentDialects = ["mlir::arith::ArithDialect"];
+  let summary = "Fold classical values without rewriting quantum operations";
+  let description = [{
+    Applies upstream folds and dead-code elimination only to regionless arith
+    and math operations with numeric operands and results, and f64 tensor
+    extracts. Quantum-handle selection is excluded even in the arith dialect.
+    Quantum operations, control flow, memory effects and region structure are
+    unchanged. Unresolved symbolic values remain symbolic. This is not a
+    complete classical canonicalization pipeline or an interpreter.
+
+    Verification still rejects invalid folded gate parameters. In particular,
+    this pass does not remove unreachable branches before folding their bodies;
+    it cannot replace branch-aware preparation during parameter binding.
+    No production pipeline runs this pass implicitly.
+  }];
+}
+
 def PromoteClassicalMemory
     : Pass<"promote-classical-memory", "mlir::ModuleOp"> {
   let summary = "Promote local classical memory to SSA values";
