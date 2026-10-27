@@ -116,7 +116,8 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
         item.indices_.emplace_back(i);
 
         if (item.ready()) {
-          frontier.try_emplace(op, item.indices_);
+          frontier.try_emplace(op, std::move(item.indices_));
+          pending.erase(mapIt);
         }
       } else {
         const auto nqubits = static_cast<size_t>(
@@ -133,7 +134,18 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
         // Single-qubit operations and sources are immediately ready.
         if (nqubits <= 1) {
-          frontier.try_emplace(op, SmallVector{i});
+          frontier.try_emplace(op).first->second.emplace_back(i);
+          continue;
+        }
+
+        if constexpr (Direction == WireDirection::Backward) {
+          // Calls may return owned qubits before their positional results.
+          if (op->getNumResults() > nqubits) {
+            if (const auto mapIt = frontier.find(op); mapIt != frontier.end()) {
+              mapIt->second.emplace_back(i);
+              continue;
+            }
+          }
         }
 
         PendingItem item(nqubits);
@@ -149,15 +161,14 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
     }
 
     for (Operation* op : released) {
-      const auto mapIt = pending.find(op);
-      assert(mapIt != pending.end());
+      const auto mapIt = frontier.find(op);
+      assert(mapIt != frontier.end());
 
-      for (size_t i : mapIt->second.indices_) {
+      for (size_t i : mapIt->second) {
         std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
 
-      pending.erase(mapIt);
       frontier.erase(op);
     }
 

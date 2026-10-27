@@ -84,6 +84,54 @@ TEST(QCOModifierVerificationTest, RequiresUniqueInputsAndPositionalYields) {
   EXPECT_TRUE(succeeded(qco::verifyLinearity(*module)));
 }
 
+TEST(QCOModifierVerificationTest, ChecksLinearityInsideOwnedModifierBodies) {
+  MLIRContext context;
+  context
+      .loadDialect<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() attributes {mqt.entry_point} {
+      %two = arith.constant 2.0 : f64
+      %q0 = qco.static 0 : !qco.qubit
+      %q1 = qco.static 1 : !qco.qubit
+      %control, %target = qco.ctrl(%q0) targets(%a = %q1) {
+        %inverse = qco.inv(%b = %a) {
+          %power = qco.pow(%two) (%c = %b) {
+            %x = qco.x %c : !qco.qubit
+            qco.yield %x : !qco.qubit
+          } : {!qco.qubit} -> {!qco.qubit}
+          qco.yield %power : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.yield %inverse : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit})
+      qco.sink %control : !qco.qubit
+      qco.sink %target : !qco.qubit
+      return
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  qco::XOp gate;
+  moduleOp->walk([&](qco::XOp op) { gate = op; });
+  ASSERT_TRUE(gate);
+  auto yield = cast<qco::YieldOp>(*gate.getQubitOut().user_begin());
+  // Reusing the input leaves the gate result unused inside nested modifiers.
+  yield->setOperand(0, gate.getQubitIn());
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& message) {
+    diagnostic += message.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(qco::verifyLinearity(*moduleOp)));
+  EXPECT_NE(diagnostic.find("exactly one use"), std::string::npos);
+
+  yield->setOperand(0, gate.getQubitOut());
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
 TEST(QCOModifierVerificationTest, RequiresMatchingControlResults) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, func::FuncDialect>();
