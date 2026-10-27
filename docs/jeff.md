@@ -118,14 +118,16 @@ existing Cap'n Proto message without flattening it into bytes:
 
 ```cpp
 capnp::MallocMessageBuilder message;
-program.toMessage(message);
+if (mlir::failed(program.toMessage(message))) {
+  return mlir::failure();
+}
 capnp::SegmentArrayMessageReader reader(message.getSegmentsForOutput());
 auto received = mlir::JeffProgram::fromMessage(reader.getRoot<::jeff::Module>());
 ```
 
 The caller owns the message and must keep its storage alive and unchanged until
-`fromMessage` returns. The returned program can then enter the compiler
-pipeline.
+`fromMessage` returns. Discard the message if serialization fails. The returned
+program can then enter the compiler pipeline.
 
 ## Continue to a device or another output format
 
@@ -171,13 +173,12 @@ possible extension. The conversion currently supports:
   result tuples. Straight-line array snapshots are preserved.
 - Defined single-block functions and calls. Imported helper functions become
   private, while the designated entry point remains public.
+- Source-level function input names. Restored programs can list and bind named
+  `f64` parameters. Binary interchange preserves names, but not Qiskit parameter
+  identities or parameter-vector grouping.
 
 The following limits affect interchange:
 
-- The current jeff-mlir bridge does not preserve named program inputs. Bind
-  parameters before serializing if their names or values are needed after
-  exchange; [#2664](https://github.com/munich-quantum-toolkit/core/issues/2664)
-  tracks name preservation.
 - Import rejects live old array values across mutating control flow and shared
   array updates inside switch or while regions.
 - Quantum allocations and deallocations inside conditional regions, and mutable
