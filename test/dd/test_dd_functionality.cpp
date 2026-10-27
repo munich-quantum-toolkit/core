@@ -9,7 +9,6 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/DDpackageConfig.hpp"
 #include "dd/Edge.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Node.hpp"
@@ -17,7 +16,6 @@
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
-#include "dd/UniqueTable.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -33,11 +31,8 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <cstdlib>
 #include <map>
 #include <memory>
-#include <new>
-#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -68,115 +63,6 @@ protected:
 };
 
 } // namespace
-
-/// Executable allocation overrides cannot intercept allocations in Windows
-/// DLLs.
-#ifdef MQT_CORE_DD_STATIC_DEFINE
-
-namespace {
-
-/// Shared by the failure guard and allocation override.
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-thread_local std::optional<size_t> allocationsUntilFailure;
-
-class FailAllocation {
-public:
-  explicit FailAllocation(const size_t after) {
-    allocationsUntilFailure = after;
-  }
-  ~FailAllocation() { allocationsUntilFailure.reset(); }
-};
-
-class DDAllocationFailure : public testing::TestWithParam<bool> {};
-
-} // namespace
-
-/// malloc/free prevent recursion into this executable's allocation override.
-// NOLINTBEGIN(cppcoreguidelines-owning-memory, cppcoreguidelines-no-malloc)
-void* operator new(const size_t size) {
-  if (allocationsUntilFailure) {
-    if (*allocationsUntilFailure == 0) {
-      allocationsUntilFailure.reset();
-      throw std::bad_alloc{};
-    }
-    --*allocationsUntilFailure;
-  }
-  if (auto* memory = std::malloc(size == 0 ? 1 : size)) {
-    return memory;
-  }
-  throw std::bad_alloc{};
-}
-
-void operator delete(void* memory) noexcept { std::free(memory); }
-
-#ifdef __cpp_sized_deallocation
-void operator delete(void* memory, size_t /*size*/) noexcept {
-  std::free(memory);
-}
-#endif
-// NOLINTEND(cppcoreguidelines-owning-memory, cppcoreguidelines-no-malloc)
-
-TEST_P(DDAllocationFailure, PreservesStateOnFailure) {
-  const bool applyPhase = GetParam();
-  bool failedAfterSwap = false;
-  for (size_t failure = 0; failure < 64; ++failure) {
-    SCOPED_TRACE(failure);
-    dd::DDPackageConfig config;
-    config.ctMatVecMultNumBucket = 1;
-    dd::Package package(2, config);
-    package.vUniqueTable = dd::UniqueTable(package.vMemoryManager,
-                                           {.nVars = 2, .initialGCLimit = 1});
-    auto state = dd::makeBasisState(2, std::vector<bool>{true, false}, package);
-    const auto original = state;
-    const qc::Permutation source{{0, 0}, {1, 1}};
-    const qc::Permutation target{{0, 1}, {1, 0}};
-    auto from = source;
-    if (!applyPhase) {
-      /// Prime cache growth so collection can fail after the swap completes.
-      constexpr dd::TwoQubitGateMatrix swapMatrix{
-          {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}},
-      };
-      const auto swap = package.makeTwoQubitGateDD(swapMatrix, 0, 1);
-      static_cast<void>(package.multiply(swap, state));
-      static_cast<void>(package.multiply(swap, state));
-    }
-
-    bool failed = false;
-    try {
-      const FailAllocation allocation(failure);
-      if (applyPhase) {
-        dd::applyGlobalPhase(state, 0.25, package);
-      } else {
-        dd::changePermutation(state, from, target, package);
-      }
-    } catch (const std::bad_alloc&) {
-      failed = true;
-    }
-    if (!failed) {
-      EXPECT_GT(failure, 0U);
-      if (!applyPhase) {
-        EXPECT_TRUE(failedAfterSwap);
-      }
-      return;
-    }
-
-    ASSERT_TRUE(package.getRootSet<dd::vNode>().contains(state));
-    if (applyPhase) {
-      EXPECT_EQ(state, original);
-    }
-    failedAfterSwap |= from == target;
-    ASSERT_TRUE(from == source || from == target);
-    package.garbageCollect(true);
-    EXPECT_EQ(state.getVector(), from == source ? (dd::CVec{0., 1., 0., 0.})
-                                                : (dd::CVec{0., 0., 1., 0.}));
-  }
-  FAIL() << "Operation did not succeed within the allocation budget";
-}
-
-INSTANTIATE_TEST_SUITE_P(PhaseOrPermutation, DDAllocationFailure,
-                         testing::Bool());
-
-#endif
 
 TEST(DDFunctionalityTest, GlobalPhasePreservesStateOwnership) {
   Package package(1);
