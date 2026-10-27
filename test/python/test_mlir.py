@@ -45,6 +45,7 @@ from mqt.core.mlir import (
     QIRProfile,
     QIRProgram,
     TargetEnvironment,
+    build_functionality,
     compile_program,
     sample,
     simulate,
@@ -2415,3 +2416,33 @@ def test_native_qir_preserves_gate_signatures(profile: QIRProfile) -> None:
     assert "declare void @__quantum__qis__cu__body(double, double, double, double, ptr, ptr)" in text
     assert "declare void @__quantum__qis__hop__body(double, ptr, ptr)" in text
     assert '"required_num_qubits"="8"' in text
+
+
+@pytest.mark.parametrize(("gate", "phase"), [("cu3", -0.25), ("ctrl @ U", -0.35), ("cu", 0.05)])
+@pytest.mark.parametrize("device_qubits", [False, True])
+def test_imported_u_phase_folds_without_gate_optimization(gate: str, phase: float, *, device_qubits: bool) -> None:
+    """Generated constant phase arithmetic needs no quantum simplification."""
+    declarations, control, target = ("", "$1", "$0") if device_qubits else ("qubit[2] q;", "q[1]", "q[0]")
+    parameters = "-1.4/2,0.1+0.1,0.6/2" + (",0.4" if gate == "cu" else "")
+    program = QCProgram.from_openqasm_str(
+        f'OPENQASM 3; include "stdgates.inc"; {declarations} '
+        f"h {target}; h {target}; {gate}({parameters}) {control},{target};"
+    )
+    assert program.ir.count("qc.h") == 2
+    assert "arith.addf" not in program.ir
+    assert "arith.mulf" not in program.ir
+    theta, phi, lam = -0.7, 0.2, 0.3
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    expected = np.eye(4, dtype=complex)
+    expected[2:, 2:] = np.exp(1j * phase) * np.array([
+        [c, -np.exp(1j * lam) * s],
+        [np.exp(1j * phi) * s, np.exp(1j * (phi + lam)) * c],
+    ])
+    np.testing.assert_allclose(build_functionality(program), expected, rtol=0, atol=1e-12)
+
+
+def test_sample_imported_native_cu3() -> None:
+    """A native controlled-U circuit executes without a cleanup pass."""
+    source = 'OPENQASM 3; include "stdgates.inc"; const uint[8] zero=0; x $1; cu3(pi,0,zero) $1,$0; bit[2] c;'
+    source += " c[0]=measure $0; c[1]=measure $1;"
+    assert sample(source, shots=16, seed=71) == {"11": 16}
