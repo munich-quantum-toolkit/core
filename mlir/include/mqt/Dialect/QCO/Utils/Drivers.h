@@ -55,7 +55,8 @@ struct PendingItem {
 ///
 /// Requires verified linear QCO IR. Supported operations preserve scalar
 /// qubit arity, introduce one scalar qubit, or consume qubits at wire
-/// boundaries. Tensor handles do not participate in the traversal.
+/// boundaries. Calls carrying qubits must be inlined before traversal. Tensor
+/// handles do not participate in the traversal.
 ///
 /// Depending on the template parameter, the function walks the IR in
 /// topological order in forward or backward direction, respectively. Towards
@@ -136,16 +137,6 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
         if (nqubits <= 1) {
           frontier.try_emplace(op).first->second.emplace_back(i);
           continue;
-        }
-
-        if constexpr (Direction == WireDirection::Backward) {
-          // Calls may return owned qubits before their positional results.
-          if (op->getNumResults() > nqubits) {
-            if (const auto mapIt = frontier.find(op); mapIt != frontier.end()) {
-              mapIt->second.emplace_back(i);
-              continue;
-            }
-          }
         }
 
         PendingItem item(nqubits);

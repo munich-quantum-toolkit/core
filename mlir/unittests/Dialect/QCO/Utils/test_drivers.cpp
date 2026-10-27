@@ -31,7 +31,6 @@
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
-#include "mlir/Parser/Parser.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 
@@ -200,64 +199,6 @@ TEST_F(DriversFixture, ProgramWalkWaitsForAllYieldInputs) {
     EXPECT_EQ(yieldVisits, 1U);
     EXPECT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
       return it == std::default_sentinel;
-    }));
-  }
-}
-
-TEST_F(DriversFixture, BackwardWalkReleasesAllResultsAtCallBoundary) {
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func private @owned() -> (!qco.qubit, !qco.qubit)
-      func.func private @borrow_one(!qco.qubit) -> (!qco.qubit, !qco.qubit)
-      func.func private @borrow_two(!qco.qubit, !qco.qubit)
-          -> (!qco.qubit, !qco.qubit, !qco.qubit)
-      func.func @main() {
-        %q0, %q1 = func.call @owned() : () -> (!qco.qubit, !qco.qubit)
-        qco.sink %q0 : !qco.qubit
-        qco.sink %q1 : !qco.qubit
-        %a = qco.alloc : !qco.qubit
-        %q2, %q3 = func.call @borrow_one(%a)
-            : (!qco.qubit) -> (!qco.qubit, !qco.qubit)
-        qco.sink %q2 : !qco.qubit
-        qco.sink %q3 : !qco.qubit
-        %b = qco.alloc : !qco.qubit
-        %c = qco.alloc : !qco.qubit
-        %q4, %q5, %q6 = func.call @borrow_two(%b, %c)
-            : (!qco.qubit, !qco.qubit)
-            -> (!qco.qubit, !qco.qubit, !qco.qubit)
-        qco.sink %q4 : !qco.qubit
-        qco.sink %q5 : !qco.qubit
-        qco.sink %q6 : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                              context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  for (auto call : main.getOps<func::CallOp>()) {
-    SCOPED_TRACE(call.getNumOperands());
-    SmallVector<WireIterator> wires;
-    for (auto result : call.getResults()) {
-      wires.emplace_back(result);
-    }
-    size_t visits = 0;
-    walkProgramGraph<WireDirection::Backward>(
-        wires,
-        [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
-          for (const auto& [op, indices] : frontier) {
-            EXPECT_EQ(op, call.getOperation());
-            EXPECT_EQ(indices.size(), wires.size());
-            ++visits;
-            released.emplace_back(op);
-          }
-          return WalkResult::advance();
-        });
-    EXPECT_EQ(visits, 1U);
-    EXPECT_TRUE(llvm::all_of(wires, [](const WireIterator& wire) {
-      return wire == std::default_sentinel;
     }));
   }
 }

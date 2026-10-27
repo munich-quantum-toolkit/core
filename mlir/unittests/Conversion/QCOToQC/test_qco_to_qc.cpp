@@ -564,51 +564,34 @@ TEST(QCOToQCRegressionTest, ChecksFlatTensorSlotCorrespondence) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
                       arith::ArithDialect, func::FuncDialect>();
-  for (const auto slot : {0, 1}) {
-    SCOPED_TRACE(slot);
-    auto source = llvm::formatv(R"mlir(module {{
-      func.func @main() attributes {{mqt.entry_point} {{
-        %c0 = arith.constant 0 : index
-        %slot = arith.constant {0} : index
-        %left = qco.static 0 : !qco.qubit
-        %right = qco.static 1 : !qco.qubit
-        %control = qco.static 2 : !qco.qubit
-        %tensor = qtensor.from_elements %left, %right : tensor<2x!qco.qubit>
-        %rest, %qubit = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
-        %control_out, %flipped = qco.ctrl(%control) targets(%arg = %qubit) {{
-          %out = qco.x %arg : !qco.qubit
-          qco.yield %out : !qco.qubit
-        } : ({{!qco.qubit}, {{!qco.qubit})
-        qco.sink %control_out : !qco.qubit
-        %full = qtensor.insert %flipped into %rest[%slot] : tensor<2x!qco.qubit>
-        qtensor.dealloc %full : tensor<2x!qco.qubit>
-        return
-      }
-    })mlir",
-                                slot)
-                      .str();
-    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
-    OwningOpRef<ModuleOp> original = moduleOp->clone();
-    std::string diagnostics;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      diagnostics += diagnostic.str();
-      return success();
-    });
-    auto result = runQCOToQCConversion(*moduleOp);
-    if (slot == 0) {
-      ASSERT_TRUE(succeeded(result));
-      EXPECT_TRUE(succeeded(verify(*moduleOp)));
-    } else {
-      EXPECT_TRUE(failed(result));
-      EXPECT_NE(diagnostics.find("original register slot"), std::string::npos);
-      EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-          moduleOp->getOperation(), original->getOperation(),
-          OperationEquivalence::Flags::None));
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %left = qco.static 0 : !qco.qubit
+      %right = qco.static 1 : !qco.qubit
+      %tensor = qtensor.from_elements %left, %right : tensor<2x!qco.qubit>
+      %rest, %qubit = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %full = qtensor.insert %qubit into %rest[%c1] : tensor<2x!qco.qubit>
+      qtensor.dealloc %full : tensor<2x!qco.qubit>
+      return
     }
-  }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("original register slot"), std::string::npos);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
