@@ -24,6 +24,7 @@ def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
     Does not cancel or combine adjacent gates. Run after inlining and modifier
     unrolling when a target representation cannot express these modifiers.
     Unsupported powers remain for the consuming conversion to diagnose.
+    Folds generated arithmetic; leaves CFG simplification to structural cleanup.
   }];
 }
 
@@ -38,6 +39,7 @@ def SimplifyQuantum : Pass<"simplify-quantum"> {
     absolute parameter tolerance of 1e-15; this is not a circuit error bound.
     This pass changes the supplied unitary gate sequence. Use canonicalization
     for classical and structural cleanup without these quantum optimizations.
+    Folds generated arithmetic; leaves CFG simplification to structural cleanup.
   }];
 }
 

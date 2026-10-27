@@ -186,4 +186,63 @@ TEST(Cleanup, FoldsArraysAndCastsWhileRetainingRuntimeValues) {
   EXPECT_EQ(qc->str().find("math.sin"), std::string::npos);
 }
 
+TEST(Cleanup, QuantumPassesLowerModifiersInsideRuntimeBranches) {
+  for (const auto* pipeline : {"lower-quantum-modifiers", "simplify-quantum"}) {
+    SCOPED_TRACE(pipeline);
+    auto program = mlir::QCOProgram::fromMLIRString(R"(
+      module {
+        func.func @test(%condition: i1, %q: !qco.qubit) -> !qco.qubit {
+          %a = arith.constant 0.25 : f64
+          %b = arith.constant 0.5 : f64
+          %r = qco.if %condition args(%t = %q) -> (!qco.qubit) {
+            %v = qco.inv(%u = %t) {
+              %sum = arith.addf %a, %b : f64
+              %rotated = qco.rx(%sum) %u : !qco.qubit
+              qco.yield %rotated : !qco.qubit
+            } : {!qco.qubit} -> {!qco.qubit}
+            qco.yield %v : !qco.qubit
+          } else args(%t = %q) {
+            %v = qco.x %t : !qco.qubit
+            qco.yield %v : !qco.qubit
+          }
+          return %r : !qco.qubit
+        }
+      }
+    )");
+    ASSERT_TRUE(static_cast<bool>(program))
+        << llvm::toString(program.takeError());
+    ASSERT_TRUE(mlir::succeeded(program->runPassPipeline(pipeline)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(program->module())));
+    unsigned branches = 0;
+    unsigned rotations = 0;
+    unsigned flips = 0;
+    program->module().walk([&](mlir::Operation* op) {
+      EXPECT_FALSE((mlir::isa<mlir::qco::InvOp, mlir::arith::AddFOp>(op)));
+      if (auto branch = mlir::dyn_cast<mlir::qco::IfOp>(op)) {
+        ++branches;
+        EXPECT_TRUE(mlir::isa<mlir::BlockArgument>(branch.getCondition()));
+      }
+      if (auto rotation = mlir::dyn_cast<mlir::qco::RXOp>(op)) {
+        ++rotations;
+        EXPECT_TRUE(mlir::isa<mlir::qco::IfOp>(op->getParentOp()));
+        EXPECT_EQ(op->getParentRegion()->getRegionNumber(), 0U);
+        auto angle =
+            rotation.getTheta().getDefiningOp<mlir::arith::ConstantOp>();
+        ASSERT_TRUE(angle);
+        EXPECT_DOUBLE_EQ(
+            mlir::cast<mlir::FloatAttr>(angle.getValue()).getValueAsDouble(),
+            -0.75);
+      }
+      if (mlir::isa<mlir::qco::XOp>(op)) {
+        ++flips;
+        EXPECT_TRUE(mlir::isa<mlir::qco::IfOp>(op->getParentOp()));
+        EXPECT_EQ(op->getParentRegion()->getRegionNumber(), 1U);
+      }
+    });
+    EXPECT_EQ(branches, 1U);
+    EXPECT_EQ(rotations, 1U);
+    EXPECT_EQ(flips, 1U);
+  }
+}
+
 } // namespace

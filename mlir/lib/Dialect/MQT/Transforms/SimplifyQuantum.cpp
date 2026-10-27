@@ -38,7 +38,11 @@ protected:
     qco::CtrlOp::getLoweringPatterns(patterns, &getContext());
     qco::InvOp::getLoweringPatterns(patterns, &getContext());
     qco::PowOp::getLoweringPatterns(patterns, &getContext());
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+    // Structural cleanup owns CFG simplification.
+    GreedyRewriteConfig config;
+    config.setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled);
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns),
+                                     config))) {
       signalPassFailure();
     }
   }
@@ -96,7 +100,11 @@ protected:
       rewriter.replaceOp(op, op.getQubitsIn());
       return success();
     });
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+    // Structural cleanup owns CFG simplification.
+    GreedyRewriteConfig config;
+    config.setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled);
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns),
+                                     config))) {
       signalPassFailure();
     }
   }

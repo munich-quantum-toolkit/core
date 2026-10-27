@@ -134,6 +134,20 @@ normalization, which direct lowering does not require. Existing numerical and
 branch-cut guards remain part of supported power semantics, not optional edge
 case machinery.
 
+The dedicated quantum passes disable greedy region simplification and retain
+folding, constant CSE and the existing traversal. Canonicalization owns CFG
+cleanup. Modifier-body verification restricts those bodies to unitaries and
+regionless pure classical operations; generic block merging is not needed to
+lower them. Runtime branches are still traversed. Standalone quantum passes do
+not promise a CFG normal form or exact CFG preservation.
+
+Three alternating measurement rounds on 2,048 repetitions reduce full
+compilation to QC from 33.98 to 31.53 ms for inverse bodies, 38.56 to 35.40 ms
+for powers, and 39.75 to 37.48 ms for arithmetic/barriers. Gate counts and full
+matrices agree. These shared-host diagnostics justify the small configuration
+change, not a general speedup claim. Top-down traversal adds little and is not
+adopted.
+
 Pattern packaging and worklist order are implementation choices. Quantum
 linearity, classical dependencies, side effects and region boundaries are
 requirements. `QCO/Utils/Drivers.h` requires nonmutating callbacks and tracks
@@ -187,27 +201,48 @@ Implementation slices are parts of this one PR: pattern ownership and shared
 consumers; pipeline and serialization integration; semantic regression
 migration; installed-artifact validation and profiling. Acceptance requires
 native tests, Python integration tests, regenerated stubs, repository lint and
-whole-file C++ lint on the complete change. Expensive MLIR rewrite-check builds,
+whole-file C++ lint on the complete change. Full expensive-check LLVM builds,
 Windows and hosted CI are separate validation modes and must not be claimed
 without running them. No further traversal or compiler redesign is included.
 
 ## Local acceptance results
 
-- Optimized Clang 23/ThinLTO build and all 4,158 CTest entries pass.
+- Optimized Clang 23/ThinLTO build and all 4,159 CTest entries pass.
 - The installed wheel passes 1,546 selected MLIR, Qiskit and PennyLane tests.
   Stubs are regenerated, and whole-file C++ lint passes.
 - The independent controlled-U matrix differs by at most `2.8e-17`; deleting its
   controlled phase produces maximum error `0.234`, detected by the oracle.
-- Nine-sample diagnostic medians on the 4,096-gate arithmetic/barrier corpus are
-  13.89 ms for baseline canonicalization, 13.76 ms for separated cleanup and
-  15.10 ms for the dedicated quantum pass. Each retains one shared constant,
-  4,096 rotations and 4,096 barriers. Adding canonicalization after the quantum
-  pass costs 18.25 ms total on this corpus and provides no further reduction.
-  These shared-host measurements do not establish a general speedup.
+- The isolated expensive greedy driver passes 1,288 selected tests, including
+  runtime-branch modifier lowering and arithmetic folding. The known upstream
+  SCF failure and large-loop timeouts are reported separately below.
 
 Raw profiles, emitted IR and QIR, mutation results, installed wheel identity and
 check logs are retained outside the repository in
 `/home/nvidia/.codex/experiments/cleanup-separation-550d/full-pr/`. Windows,
-hosted CI and an expensive MLIR rewrite-check build were not run. The modifier
+hosted CI and a full expensive-check LLVM/ASAN build were not run. The modifier
 scheduling comparison and specialist conclusions are in the adjacent
 `design-review/` directory.
+
+## Rewrite validation
+
+An isolated LLVM 23.1.0 greedy driver with expensive pattern API checks verifies
+selected QC, QCO, optimization, synthesis, binding and serialization cases. It
+exposed one obsolete test with nonpositional modifier yields; the repaired test
+reverses gate operands while preserving valid positional modifier outputs.
+
+The checks also expose an upstream SCF rewrite-notification defect in
+ReplaceIfYieldWithConditionOrValue. A func/arith/scf-only reproducer fails;
+three rewriter-notified replacements fix it in an isolated dependency build. The
+defect remains in inspected LLVM 23.1.4 and main. No Core workaround or
+installed dependency patch is included. Large-loop expensive cases exceeded a
+90-second budget; this is bounded driver validation, not a full expensive LLVM
+build. Reproducer, source hashes, checks and performance samples are in the
+adjacent experiment directory `mlir23-checks/`.
+
+The full-flow review retains cleanup after binding, inlining, unrolling and
+synthesis because these expose different work. Possible duplicate
+canonicalization at composed pipeline boundaries should be evaluated at their
+owner; deleting it from standalone public pipelines changes their contract.
+Frozen-pattern initialization offers little for module passes run once per fresh
+pass manager. A walk driver cannot replace folding/fixpoint rewriting that
+mutates adjacent operations.
