@@ -392,8 +392,11 @@ private:
         return;
       }
       if (!metadata.useDynamicQubit) {
+        auto declaration = helpers.lookup(call);
         for (auto [index, operand] : llvm::enumerate(call.getArgOperands())) {
-          if (isQubitOperand(*call.getCallee(), index)) {
+          if (isQubitOperand(*call.getCallee(), index) ||
+              (declaration && index < declaration.getNumArguments() &&
+               declaration.getArgAttr(index, QIR_QUBIT_ARG_ATTR))) {
             qubits.insert(operand);
           }
         }

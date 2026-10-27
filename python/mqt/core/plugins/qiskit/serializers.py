@@ -18,7 +18,7 @@ A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
 kind a format carries.
 
-MQT Core provides OpenQASM 2, OpenQASM 3, and QPY serializers.
+MQT Core provides OpenQASM 2/3, QPY, IQM JSON, and Base/Adaptive QIR serializers.
 Device packages can advertise their serializers through the ``mqt.core.qiskit.program_serializers``
 entry point group. The entry point name is the
 :class:`~mqt.core.qdmi.ProgramFormat` member name, and the value points to the
@@ -45,13 +45,14 @@ __lazy_modules__ = {"importlib.metadata", "io", "mqt.core.mlir", "qiskit", "warn
 
 import warnings
 from collections.abc import Callable
+from functools import partial
 from importlib.metadata import entry_points
 from io import BytesIO
 from typing import TYPE_CHECKING, Protocol
 
 from qiskit import qasm2, qpy
 
-from mqt.core.mlir import QCProgram
+from mqt.core.mlir import CompilerTarget, QCProgram, QIRProfile
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
@@ -133,8 +134,8 @@ class BinaryProgramSerializer(Protocol):
 ProgramSerializer = Callable[["QuantumCircuit", "QDMIBackend"], str | bytes]
 
 #: Preferred formats, in descending order: device-native formats first, then
-#: standard formats with classical control before restricted profiles. Binary
-#: encoding wins ties within a QIR profile.
+#: QPY and OpenQASM 3 preserve device gate names. Adaptive QIR precedes
+#: Base QIR; binary encoding wins ties within each profile.
 PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.IQM_JSON,
     ProgramFormat.CUSTOM1,
@@ -142,10 +143,10 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.CUSTOM3,
     ProgramFormat.CUSTOM4,
     ProgramFormat.CUSTOM5,
-    ProgramFormat.QIR_ADAPTIVE_MODULE,
-    ProgramFormat.QIR_ADAPTIVE_STRING,
     ProgramFormat.QPY,
     ProgramFormat.QASM3,
+    ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ProgramFormat.QIR_ADAPTIVE_STRING,
     ProgramFormat.QIR_BASE_MODULE,
     ProgramFormat.QIR_BASE_STRING,
     ProgramFormat.QASM2,
@@ -189,10 +190,38 @@ def _serialize_to_qpy(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:
         return buffer.getvalue()
 
 
+def _serialize_to_qir(
+    circuit: QuantumCircuit, backend: QDMIBackend, *, adaptive: bool = False, binary: bool = False
+) -> str | bytes:
+    """Export device gate calls as QIR text or bitcode.
+
+    Returns:
+        The selected QIR encoding, with circuit indices as device qubits.
+    """
+    backend.validate_circuit(circuit, native=True)
+    program = QCProgram.from_qiskit(circuit, native=True).to_qir(QIRProfile.ADAPTIVE if adaptive else QIRProfile.BASE)
+    return program.to_bitcode() if binary else program.to_llvm_ir()
+
+
+def _serialize_to_iqm_json(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+    """Export PRX/CZ gates and terminal measurements using device site names.
+
+    Returns:
+        An IQM circuit object in JSON.
+    """
+    backend.validate_circuit(circuit, native=True)
+    return QCProgram.from_qiskit(circuit, native=True).to_iqm_json(CompilerTarget.from_device(backend.device)).source
+
+
 _FALLBACKS: dict[ProgramFormat, ProgramSerializer] = {
     ProgramFormat.QASM2: _serialize_to_qasm2,
     ProgramFormat.QASM3: _serialize_to_qasm3,
     ProgramFormat.QPY: _serialize_to_qpy,
+    ProgramFormat.IQM_JSON: _serialize_to_iqm_json,
+    ProgramFormat.QIR_BASE_STRING: _serialize_to_qir,
+    ProgramFormat.QIR_BASE_MODULE: partial(_serialize_to_qir, binary=True),
+    ProgramFormat.QIR_ADAPTIVE_STRING: partial(_serialize_to_qir, adaptive=True),
+    ProgramFormat.QIR_ADAPTIVE_MODULE: partial(_serialize_to_qir, adaptive=True, binary=True),
 }
 
 

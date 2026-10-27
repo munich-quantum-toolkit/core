@@ -112,6 +112,38 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
   return OpenQASMProgram(std::move(*source));
 }
 
+static FailureOr<IQMJSONProgram> exportIQMJSON(QIRProgram& qir,
+                                               const CompilerTarget& target) {
+  llvm::LLVMContext context;
+  auto llvmModule = qir::translateQIRToLLVM(qir.module(), context);
+  if (!llvmModule) {
+    return failure();
+  }
+  auto source = qir::exportIQMJSON(*llvmModule, target);
+  if (!source) {
+    qir.module().emitError() << llvm::toString(source.takeError());
+    return failure();
+  }
+  return IQMJSONProgram(std::move(*source));
+}
+
+FailureOr<IQMJSONProgram>
+QCProgram::intoIQMJSON(const CompilerTarget& target) && {
+  auto source = std::move(*this);
+  if (failed(source.normalizeGlobalPhases()) ||
+      failed(runWithPassManager(
+          source.module(),
+          [](OpPassManager& pm) { pm.addPass(mqt::createDropGlobalPhases()); },
+          "failed to drop global phases for IQM JSON"))) {
+    return failure();
+  }
+  auto qir = std::move(source).intoQIR(QIRProfile::Base);
+  if (failed(qir)) {
+    return failure();
+  }
+  return exportIQMJSON(*qir, target);
+}
+
 FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
@@ -570,17 +602,11 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
     return failure();
   }
   if (output == ProgramFormat::IQMJSON) {
-    llvm::LLVMContext context;
-    auto llvmModule = qir::translateQIRToLLVM(qir->module(), context);
-    if (!llvmModule) {
+    auto source = exportIQMJSON(*qir, environment->target());
+    if (failed(source)) {
       return failure();
     }
-    auto source = qir::exportIQMJSON(*llvmModule, environment->target());
-    if (!source) {
-      qir->module().emitError() << llvm::toString(source.takeError());
-      return failure();
-    }
-    return CompilerProgram(IQMJSONProgram(std::move(*source)));
+    return CompilerProgram(std::move(*source));
   }
   return CompilerProgram(std::move(*qir));
 }
