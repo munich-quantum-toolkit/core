@@ -111,6 +111,16 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
 }
 
+void populateOpenQASM2PreparationPipeline(OpPassManager& pm,
+                                          mqt::PayloadSpecAttr payload) {
+  qco::UnrollLoopsForPayloadOptions options;
+  llvm::raw_string_ostream stream(options.payloadSpec);
+  stream << payload;
+  pm.addPass(qco::createUnrollLoopsForPayload(options));
+  pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
+}
+
 void populateQIRPreparationPipeline(OpPassManager& pm,
                                     mqt::PayloadSpecAttr payload) {
   pm.addPass(createInlinerPass());

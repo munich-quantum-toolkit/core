@@ -124,6 +124,8 @@ enum class ProgramFormat : uint8_t {
   QIRAdaptive,
   /// An IQM circuit with physical PRX/CZ gates and terminal readout.
   IQMJSON,
+  /// OpenQASM 2 with bound parameters.
+  OpenQASM2,
 };
 
 /// A move-aware MLIR program with a shared dialect context.
@@ -305,6 +307,12 @@ public:
   /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
   [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
+
+  /// Consume this program and emit OpenQASM 2.
+  ///
+  /// Normalize and discard program-wide phase. Keep device indices and gate
+  /// calls; reject unsupported control flow, assignments, and modifiers.
+  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM2() &&;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] FailureOr<QCOProgram> intoQCO() &&;

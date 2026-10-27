@@ -652,6 +652,7 @@ constexpr std::array PROGRAM_FORMAT_PREFERENCE{
     QDMI_PROGRAM_FORMAT_IQMJSON,
     QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
     QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+    QDMI_PROGRAM_FORMAT_QASM2,
 };
 
 static Error incompatible(const llvm::Twine& detail) {
@@ -705,6 +706,8 @@ qdmiFormatForPayload(const PayloadSpecification& payload) {
   }
   const bool binary = payload.format().encoding == PayloadEncoding::Binary;
   switch (*output) {
+  case ProgramFormat::OpenQASM2:
+    return QDMI_PROGRAM_FORMAT_QASM2;
   case ProgramFormat::OpenQASM3:
     return QDMI_PROGRAM_FORMAT_QASM3;
   case ProgramFormat::IQMJSON:
@@ -728,6 +731,9 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
   switch (format) {
   case QDMI_PROGRAM_FORMAT_IQMJSON:
     return PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON,
+                                                  encoding);
+  case QDMI_PROGRAM_FORMAT_QASM2:
+    return PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM2,
                                                   encoding);
   case QDMI_PROGRAM_FORMAT_QASM3:
     return PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3,
@@ -825,7 +831,13 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
   }
   const auto& a = compiled.payloadSpecification();
   const auto& b = destination.payloadSpecification();
-  if (a.format() != b.format() ||
+  const bool versionsCompatible =
+      a.versionRange() && b.versionRange()
+          ? a.versionRange()->isSubsetOf(*b.versionRange())
+          : a.versionRange() == b.versionRange();
+  if (a.format().id != b.format().id ||
+      a.format().profile != b.format().profile ||
+      a.format().encoding != b.format().encoding || !versionsCompatible ||
       !std::ranges::is_permutation(a.capabilities(), b.capabilities(),
                                    sameCapability)) {
     return incompatible("payload format or capabilities differ");

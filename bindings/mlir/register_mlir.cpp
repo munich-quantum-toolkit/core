@@ -433,6 +433,7 @@ enum class OutputFormat : uint8_t {
   QIRBase = static_cast<uint8_t>(mlir::ProgramFormat::QIRBase),
   QIRAdaptive = static_cast<uint8_t>(mlir::ProgramFormat::QIRAdaptive),
   IQMJSON = static_cast<uint8_t>(mlir::ProgramFormat::IQMJSON),
+  OpenQASM2 = static_cast<uint8_t>(mlir::ProgramFormat::OpenQASM2),
   Qiskit,
 };
 struct ImportedProgram {
@@ -660,6 +661,7 @@ programFromString(const std::string_view input) {
 [[nodiscard]] static mlir::PayloadSpecification
 payloadForOutput(OutputFormat output) {
   switch (output) {
+  case OutputFormat::OpenQASM2:
   case OutputFormat::OpenQASM3:
   case OutputFormat::IQMJSON:
   case OutputFormat::QIRBase:
@@ -1030,6 +1032,8 @@ void registerMLIR(nb::module_& m) {
       .value("QCO_OPTIMIZED", OutputFormat::QCOOptimized,
              "QCO after the configured optimization pipeline.")
       .value("QC", OutputFormat::QC, "QC after the optimized QCO round trip.")
+      .value("OPENQASM2", OutputFormat::OpenQASM2,
+             "OpenQASM 2 with bound parameters.")
       .value("OPENQASM3", OutputFormat::OpenQASM3,
              "OpenQASM 3 after the optimized QCO round trip.")
       .value("IQM_JSON", OutputFormat::IQMJSON,
@@ -1045,7 +1049,9 @@ void registerMLIR(nb::module_& m) {
       .value("TEXT", mlir::PayloadEncoding::Text)
       .value("BINARY", mlir::PayloadEncoding::Binary);
 
-  nb::class_<mlir::PayloadFormat>(m, "PayloadFormat", "Exact payload identity.")
+  nb::class_<mlir::PayloadFormat>(
+      m, "PayloadFormat",
+      "Selected payload format and receiver-version constraint.")
       .def(nb::init<std::string, std::string, std::string,
                     mlir::PayloadEncoding>(),
            "format_id"_a, "version"_a, "profile"_a = "",
@@ -1107,7 +1113,7 @@ void registerMLIR(nb::module_& m) {
           [](const mlir::PayloadSpecification& environment) {
             return environment.format();
           },
-          "The exact selected payload format.")
+          "The selected payload format and receiver-version constraint.")
       .def_prop_ro(
           "capabilities",
           [](const mlir::PayloadSpecification& environment) {
@@ -1845,6 +1851,28 @@ Args:
           "normalize_global_phases",
           &FallibleMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
           "Normalize scoped global phases in place.")
+      .def(
+          "to_openqasm2",
+          [](mlir::QCProgram& program, const bool copy) {
+            auto source = copiedOrConsumed(program, copy);
+            const auto context = source.context();
+            return withDiagnostics<nb::exception_type::runtime_error>(
+                context.get(), "cannot export QC program to OpenQASM 2",
+                [&] { return std::move(source).intoOpenQASM2(); });
+          },
+          nb::kw_only(), "copy"_a = false,
+          R"pb(Emit OpenQASM 2, discarding program-wide global phase.
+
+Parameters must be bound, indices static, and classical storage limited to
+output registers written by measurements. Register-equality conditions can guard
+gates, resets, and measurements. Other runtime control flow and unsupported
+modifiers raise an error. Use ``compile_program`` to lower static loops before
+export.
+
+The source is consumed, including on failure. Set ``copy=True`` to preserve it.
+
+Args:
+    copy: Export a copy of the program.)pb")
       .def(
           "to_openqasm3",
           [](mlir::QCProgram& program, const bool copy) {

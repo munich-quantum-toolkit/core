@@ -24,7 +24,7 @@
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
+#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Capabilities.h"
 #include "mqt/Target/QIR/Export.h"
 
@@ -142,6 +142,15 @@ QCProgram::intoIQMJSON(const CompilerTarget& target) && {
     return failure();
   }
   return exportIQMJSON(*qir, target);
+}
+
+FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
+  auto storage = std::move(*this).releaseStorage();
+  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod));
+  if (failed(source)) {
+    return failure();
+  }
+  return OpenQASMProgram(std::move(*source));
 }
 
 FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
@@ -566,12 +575,28 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
     // Export cleanup can change resources and invalidate routing metadata.
     return CompilerProgram(std::move(*qc));
   }
-  if (output == ProgramFormat::OpenQASM3) {
+  if (output == ProgramFormat::OpenQASM3 ||
+      output == ProgramFormat::OpenQASM2) {
     if (failed(runWithPassManager(qc->module(), populateQCExportPipeline,
                                   "failed to clean up compiled QC"))) {
       return failure();
     }
-    auto source = std::move(*qc).intoOpenQASM3();
+    if (output == ProgramFormat::OpenQASM2 &&
+        failed(runWithPassManager(
+            qc->module(),
+            [&](OpPassManager& pm) {
+              const auto payload =
+                  llvm::cantFail(PayloadSpecification::forProgramFormat(
+                      ProgramFormat::OpenQASM2));
+              populateOpenQASM2PreparationPipeline(
+                  pm, payload.materialize(*qc->module().getContext()));
+            },
+            "failed to lower compiled QC for OpenQASM 2", options))) {
+      return failure();
+    }
+    auto source = output == ProgramFormat::OpenQASM2
+                      ? std::move(*qc).intoOpenQASM2()
+                      : std::move(*qc).intoOpenQASM3();
     if (failed(source)) {
       return failure();
     }
