@@ -823,12 +823,15 @@ class QCProgram(Program):
         """
 
     @staticmethod
-    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
+    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, native: bool = False) -> QCProgram:
         """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
 
         Args:
             circuit: Circuit to import. A complete transpiler layout is retained as
                 metadata.
+            native: Whether the circuit is already compiled for a device. Fixes circuit
+                indices to device qubits and preserves gate names and operands without
+                importing definitions. The caller validates device support and placements.
         """
 
     def copy(self) -> QCProgram:

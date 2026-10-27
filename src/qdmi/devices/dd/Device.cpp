@@ -199,6 +199,41 @@ constexpr std::array OPERATIONS{
         .numParams = 0,
         .isVariadic = true,
     },
+    OperationInfo{
+        .name = "for_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "while_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "switch_case",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "break_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+    OperationInfo{
+        .name = "store",
+        .numSites = 0,
+        .numParams = 0,
+    },
+    OperationInfo{
+        .name = "continue_loop",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
 };
 
 template <std::size_t N>

@@ -60,6 +60,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -92,6 +93,8 @@ using ValidationParameters = llvm::StringMap<Parameter>;
 
 namespace {
 struct GateImportState {
+  bool native = false;
+  llvm::StringMap<mlir::func::FuncOp> opaqueGates;
   llvm::DenseMap<uintptr_t, mlir::func::FuncOp> gates;
   llvm::DenseMap<llvm::SmallVector<uint32_t, 0>, mlir::func::FuncOp,
                  llvm::DenseMapInfo<llvm::ArrayRef<uint32_t>>>
@@ -108,6 +111,31 @@ struct GateImportState {
       } while (!functionNames.insert(symbol).second);
     }
     return symbol;
+  }
+
+  llvm::Expected<mlir::func::FuncOp>
+  opaqueGate(mlir::qc::QCProgramBuilder& builder, llvm::StringRef name,
+             mlir::ValueRange operands) {
+    auto& function = opaqueGates[name];
+    if (function) {
+      if (function.getArgumentTypes() != operands.getTypes()) {
+        return llvm::createStringError(llvm::Twine("opaque gate '") + name +
+                                       "' has conflicting signatures");
+      }
+      return function;
+    }
+    mlir::OpBuilder::InsertionGuard guard(builder);
+    auto moduleOp = builder.getInsertionBlock()
+                        ->getParentOp()
+                        ->getParentOfType<mlir::ModuleOp>();
+    builder.setInsertionPointToStart(moduleOp.getBody());
+    function = mlir::func::FuncOp::create(
+        builder, builder.getLoc(), uniqueName("opaque"),
+        builder.getFunctionType(operands.getTypes(), {}));
+    function.setPrivate();
+    function->setAttr(mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
+                      builder.getStringAttr(name));
+    return function;
   }
 };
 } // namespace
@@ -1968,7 +1996,27 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     if (!variables.reachable) {
       break;
     }
-    const auto instruction = circuit.instruction(index);
+    const auto instruction = circuit.instruction(index, gateState.native);
+    if (gateState.native && instruction.kind == OperationKind::Gate &&
+        !instruction.qubits.empty()) {
+      llvm::SmallVector<mlir::Value> operands;
+      for (const auto& parameter : instruction.parameters) {
+        operands.push_back(mlir::mqt::variantToValue(
+            builder, builder.getLoc(),
+            parameterValue(builder, parameter, localParameters,
+                           globalParameters)));
+      }
+      for (const auto qubit : instruction.qubits) {
+        operands.push_back(getQubit(qubit));
+      }
+      auto function = gateState.opaqueGate(builder, instruction.name, operands);
+      if (!function) {
+        throw std::runtime_error(llvm::toString(function.takeError()));
+      }
+      mlir::func::CallOp::create(builder, builder.getLoc(), *function,
+                                 operands);
+      continue;
+    }
     switch (instruction.kind) {
     case OperationKind::Gate:
       if (instruction.permutation) {
@@ -2093,6 +2141,7 @@ struct ExpansionSummary {
 };
 
 struct ExpansionCountState {
+  bool native = false;
   llvm::DenseMap<uintptr_t, ExpansionSummary> definitions;
   llvm::DenseSet<uintptr_t> activeDefinitions;
   llvm::DenseSet<uintptr_t> materializedGateDefinitions;
@@ -2128,7 +2177,15 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
     if (kind != OperationKind::Unknown && kind != OperationKind::ControlFlow) {
       continue;
     }
-    const auto instruction = circuit.instruction(index);
+    const auto instruction = circuit.instruction(index, state.native);
+    if (state.native && instruction.kind == OperationKind::Gate &&
+        !instruction.qubits.empty()) {
+      continue;
+    }
+    if (state.native && instruction.kind == OperationKind::Unknown) {
+      throw std::runtime_error("Native import requires concrete gates; lower "
+                               "annotated operations and instructions first");
+    }
     const bool customGate = instruction.kind == OperationKind::Gate &&
                             !instruction.standardGate &&
                             !instruction.permutation;
@@ -2253,7 +2310,7 @@ static void validateCircuit(const CircuitReader& circuit,
                             llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
                             uint32_t rootQubits, uint32_t rootClbits,
                             size_t definitionDepth, size_t controlFlowDepth,
-                            bool gateDefinition);
+                            bool gateDefinition, bool native = false);
 
 static void validateExpression(const Expression& expression,
                                const uint32_t rootClbits) {
@@ -2436,7 +2493,8 @@ static void validateControlFlow(
     const ValidationParameters& freeParameters,
     llvm::StringSet<>& parameterNames,
     llvm::DenseSet<uintptr_t>& validatedGateDefinitions, uint32_t rootQubits,
-    uint32_t rootClbits, size_t definitionDepth, size_t controlFlowDepth) {
+    uint32_t rootClbits, size_t definitionDepth, size_t controlFlowDepth,
+    bool native) {
   if (controlFlowDepth >= MAX_CONTROL_FLOW_DEPTH) {
     throw std::runtime_error(
         "Qiskit control flow exceeds the nesting limit of 64");
@@ -2568,7 +2626,7 @@ static void validateControlFlow(
     }
     validateCircuit(*block, localParameters, freeParameters, parameterNames,
                     validatedGateDefinitions, rootQubits, rootClbits,
-                    definitionDepth, controlFlowDepth + 1U, false);
+                    definitionDepth, controlFlowDepth + 1U, false, native);
   }
 }
 
@@ -2622,7 +2680,7 @@ void validateCircuit(const CircuitReader& circuit,
                      llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
                      const uint32_t rootQubits, const uint32_t rootClbits,
                      size_t definitionDepth, size_t controlFlowDepth,
-                     bool gateDefinition) {
+                     bool gateDefinition, bool native) {
   const auto variables = circuit.variables();
   if (gateDefinition && !variables.empty()) {
     throw std::runtime_error(
@@ -2635,14 +2693,17 @@ void validateCircuit(const CircuitReader& circuit,
           "initialized local variable");
     }
   }
-  static_cast<void>(validateRegisterLayout(circuitRegisters(circuit, true),
-                                           circuit.numQubits(), "quantum"));
-  static_cast<void>(validateRegisterLayout(circuitRegisters(circuit, false),
-                                           circuit.numClbits(), "classical"));
+  // Captured blocks use explicit operand maps, not register allocation order.
+  if (controlFlowDepth == 0U) {
+    static_cast<void>(validateRegisterLayout(circuitRegisters(circuit, true),
+                                             circuit.numQubits(), "quantum"));
+    static_cast<void>(validateRegisterLayout(circuitRegisters(circuit, false),
+                                             circuit.numClbits(), "classical"));
+  }
   validateParameter(circuit.globalPhase(), localParameters, freeParameters);
 
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
-    const auto instruction = circuit.instruction(index);
+    const auto instruction = circuit.instruction(index, native);
     for (const auto qubit : instruction.qubits) {
       if (qubit >= circuit.numQubits()) {
         throw std::runtime_error(
@@ -2674,6 +2735,18 @@ void validateCircuit(const CircuitReader& circuit,
           "operations");
     }
 
+    if (native && (!instruction.modifiers.empty() ||
+                   instruction.kind == OperationKind::Unknown)) {
+      throw std::runtime_error("Native import requires concrete gates; lower "
+                               "annotated operations and instructions first");
+    }
+    if (native && instruction.kind == OperationKind::Gate &&
+        !instruction.qubits.empty()) {
+      if (!instruction.clbits.empty()) {
+        throw std::runtime_error("Opaque gates cannot have classical operands");
+      }
+      continue;
+    }
     switch (instruction.kind) {
     case OperationKind::Gate:
       if (instruction.permutation) {
@@ -2798,7 +2871,8 @@ void validateCircuit(const CircuitReader& circuit,
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, freeParameters,
                           parameterNames, validatedGateDefinitions, rootQubits,
-                          rootClbits, definitionDepth, controlFlowDepth);
+                          rootClbits, definitionDepth, controlFlowDepth,
+                          native);
       break;
     }
     case OperationKind::Delay:
@@ -2825,7 +2899,7 @@ static void validateGeneratedControlFlow(mlir::Operation* operation,
   }
 }
 
-mlir::QCProgram importCircuit(const nb::handle circuit) {
+mlir::QCProgram importCircuit(const nb::handle circuit, const bool native) {
   auto translation = selectTranslation();
   auto view = translation->openCircuit(circuit);
   const auto freeParameters = view->parameters();
@@ -2855,13 +2929,14 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   }
 
   ExpansionCountState expansion;
+  expansion.native = native;
   auto expanded = expansionSummary(*view, expansion);
   addExpandedOperations(expanded.operations,
                         expansion.materializedDefinitionOperations);
   llvm::DenseSet<uintptr_t> validatedGateDefinitions;
   validateCircuit(*view, {}, freeParameterSymbols, parameterNames,
                   validatedGateDefinitions, view->numQubits(),
-                  view->numClbits(), 0U, 0U, false);
+                  view->numClbits(), 0U, 0U, false, native);
   const auto quantumRegisters = circuitRegisters(*view, true);
   const auto classicalRegisters = circuitRegisters(*view, false);
   for (const auto& reg :
@@ -2923,15 +2998,21 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
 
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(view->numQubits());
-  if (looseQubits != 0U) {
-    const auto loose =
-        builder.allocQubitRegister(static_cast<int64_t>(looseQubits));
-    llvm::append_range(qubits, loose.qubits);
-  }
-  for (const auto& reg : quantumRegisters) {
-    const auto allocated = builder.allocQubitRegister(
-        static_cast<int64_t>(reg.bits.size()), reg.name);
-    llvm::append_range(qubits, allocated.qubits);
+  if (native) {
+    for (uint32_t index = 0; index < view->numQubits(); ++index) {
+      qubits.push_back(builder.staticQubit(index));
+    }
+  } else {
+    if (looseQubits != 0U) {
+      const auto loose =
+          builder.allocQubitRegister(static_cast<int64_t>(looseQubits));
+      llvm::append_range(qubits, loose.qubits);
+    }
+    for (const auto& reg : quantumRegisters) {
+      const auto allocated = builder.allocQubitRegister(
+          static_cast<int64_t>(reg.bits.size()), reg.name);
+      llvm::append_range(qubits, allocated.qubits);
+    }
   }
 
   llvm::SmallVector<ClassicalBitRef> classicalBits;
@@ -2960,6 +3041,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   std::iota(clbitMap.begin(), clbitMap.end(), 0U);
   ImportedVariables variables;
   GateImportState gateState;
+  gateState.native = native;
   gateState.functionNames.insert(function.getName());
   translateCircuit(builder, *view, qubitMap, clbitMap, qubitMap, clbitMap,
                    qubits, classicalBits, {}, globalParameters, gateState, 0U,

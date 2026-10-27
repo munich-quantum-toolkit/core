@@ -36,7 +36,17 @@ from math import isfinite
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from qiskit.circuit import ControlFlowOp, IfElseOp, QuantumCircuit
+from qiskit.circuit import (
+    BreakLoopOp,
+    ContinueLoopOp,
+    ControlFlowOp,
+    ForLoopOp,
+    IfElseOp,
+    QuantumCircuit,
+    Store,
+    SwitchCaseOp,
+    WhileLoopOp,
+)
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -103,6 +113,12 @@ def _build_gate_mappings_for_backend(
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
         "if_else": IfElseOp,
+        "for_loop": ForLoopOp,
+        "while_loop": WhileLoopOp,
+        "switch_case": SwitchCaseOp,
+        "break_loop": BreakLoopOp,
+        "continue_loop": ContinueLoopOp,
+        "store": Store,
     })
     canonical_gates.update(extra_gates)
 
@@ -566,11 +582,13 @@ class QDMIBackend(BackendV2):
     def validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
         """Check supported operations, including operations inside control flow.
 
+        This checks operation names and control-flow support without modifying
+        the circuit. It does not bind parameters or compile the circuit.
+
         Args:
-            circuit: The circuit to validate, including nested control-flow blocks.
-            native: Also check device width and ordered operation placements using
-                circuit qubit indices as device sites. Serializers should enable
-                this after any preprocessing.
+            circuit: Circuit to check, including nested control-flow bodies.
+            native: Also check circuit width and ordered qubit placements against
+                the device. Circuit indices denote device qubits in this case.
 
         Raises:
             CircuitValidationError: If the circuit exceeds the native device width.

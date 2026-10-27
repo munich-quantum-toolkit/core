@@ -19,12 +19,24 @@ from typing import TYPE_CHECKING, ClassVar, NoReturn
 from unittest.mock import Mock
 
 import pytest
-from qiskit import qasm2, qasm3, qpy
-from qiskit.circuit import Gate, IfElseOp, QuantumCircuit
+from qiskit import qasm2, qpy
+from qiskit.circuit import (
+    BreakLoopOp,
+    ClassicalRegister,
+    ContinueLoopOp,
+    ForLoopOp,
+    Gate,
+    IfElseOp,
+    QuantumCircuit,
+    Store,
+    SwitchCaseOp,
+    WhileLoopOp,
+)
 from qiskit.circuit.library import CU3Gate, CUGate
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.transpiler import Target
 
+from mqt.core.mlir import QCProgram
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -318,7 +330,7 @@ class MockQDMIDevice:
         count_qasm2 = sum(int(m) for m in matches_qasm2)
 
         # Look for "bit[<size>] <name>;" pattern in QASM3
-        matches_qasm3_arrays = re.findall(r"\bbit\[(\d+)]\s+\w+\s*;", program)
+        matches_qasm3_arrays = re.findall(r"\bbit\[(\d+)]\s+\w+\s*(?:=\s*[^;]+)?;", program)
         count_qasm3_arrays = sum(int(m) for m in matches_qasm3_arrays)
 
         # Look for scalar-bit declarations in QASM3, including declarations with
@@ -465,8 +477,9 @@ def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: Prog
     assert fmt == expected
     assert isinstance(program, str)
     assert f"OPENQASM {2 if fmt == ProgramFormat.QASM2 else 3}" in program
-    assert "h q[0]" in program
-    assert "cx q[0],q[1]" in program.replace(", ", ",")
+    sites = ("q[0]", "q[1]") if fmt == ProgramFormat.QASM2 else ("$0", "$1")
+    assert f"h {sites[0]}" in program
+    assert f"cx {sites[0]},{sites[1]}" in program.replace(", ", ",")
 
 
 @pytest.mark.parametrize("angle", [pi + 1e-9, 1e-12])
@@ -480,7 +493,9 @@ def test_qasm3_preserves_float_parameters(angle: float) -> None:
     assert serializer is not None
     program = serializer(circuit, backend)
     assert isinstance(program, str)
-    assert f"rx({angle!r})" in program
+    match = re.search(r"rx\(([^)]+)\)", program)
+    assert match is not None
+    assert float(match[1]).hex() == float(angle).hex()
 
 
 @pytest.mark.parametrize("gate", [CU3Gate(0.1, 0.2, 0.3), CUGate(0.1, 0.2, 0.3, 0.7)])
@@ -704,7 +719,7 @@ def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytes
     assert len(submissions) == 1
     program, _ = submissions[0]
     assert isinstance(program, str)
-    assert "cx q[0], q[2];" in program
+    assert "cx $0, $2;" in program
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
@@ -762,14 +777,14 @@ def test_backend_qasm_serialization_failure(
     program_format: ProgramFormat,
 ) -> None:
     """Backend should raise TranslationError when OpenQASM serialization fails."""
-    qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
+    qasm_module = QCProgram if qasm_module_name == "qasm3" else qasm2
 
     # Monkeypatch qasm dumps to raise an exception
-    def failing_dumps(circuit: object) -> NoReturn:  # ruff:ignore[unused-function-argument]
+    def failing_dumps(circuit: object, **_kwargs: object) -> NoReturn:  # ruff:ignore[unused-function-argument]
         msg = f"Simulated {qasm_module_name.upper()} conversion failure"
         raise ValueError(msg)
 
-    monkeypatch.setattr(qasm_module, "dumps", failing_dumps)
+    monkeypatch.setattr(qasm_module, "from_qiskit" if qasm_module_name == "qasm3" else "dumps", failing_dumps)
 
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
@@ -778,8 +793,12 @@ def test_backend_qasm_serialization_failure(
     device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    with pytest.raises(TranslationError, match=f"Failed to serialize the circuit to {qasm_module_name.upper()}"):
+    with pytest.raises(
+        TranslationError, match=f"Failed to serialize the circuit to {qasm_module_name.upper()}"
+    ) as error:
         backend._serialize_circuit(qc, [program_format])  # ruff:ignore[private-member-access]
+    assert isinstance(error.value.__cause__, ValueError)
+    assert str(error.value.__cause__) == f"Simulated {qasm_module_name.upper()} conversion failure"
 
 
 def test_backend_submits_qpy_and_prefers_it_to_qasm(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1082,3 +1101,38 @@ def test_declared_options_without_encoding_are_rejected() -> None:
     backend.options.update_options(unmapped=True)
     with pytest.raises(CircuitValidationError, match="Unsupported execution options: unmapped"):
         backend.run(QuantumCircuit(1))
+
+
+@pytest.mark.parametrize(
+    ("name", "operation"),
+    [
+        ("if_else", IfElseOp),
+        ("for_loop", ForLoopOp),
+        ("while_loop", WhileLoopOp),
+        ("switch_case", SwitchCaseOp),
+        ("break_loop", BreakLoopOp),
+        ("continue_loop", ContinueLoopOp),
+        ("store", Store),
+    ],
+)
+def test_target_classical_instructions_require_device_advertising(name: str, operation: type[Instruction]) -> None:
+    """Classical instructions appear only when advertised."""
+    device = MockQDMIDevice(num_qubits=3, operations=["measure", name])
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    assert backend.target.operation_from_name(name) is operation
+    assert backend.target.instruction_supported(operation_name=name, qargs=() if name == "store" else (0, 2))
+    other = MockQDMIDevice(num_qubits=3, operations=["measure"])
+    restricted = QDMIBackend(other)  # ty: ignore[invalid-argument-type] Device boundary double.
+    assert name not in restricted.target.operation_names
+
+
+def test_qasm3_rejects_empty_register_before_submission() -> None:
+    """The compiler's root-register limits are enforced before creating a job."""
+    device = MockQDMIDevice(num_qubits=1, operations=["measure"])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(1)
+    circuit.add_register(ClassicalRegister(0, "empty"))
+    with pytest.raises(TranslationError, match="does not support empty classical registers"):
+        backend.run(circuit)
+    assert not submissions

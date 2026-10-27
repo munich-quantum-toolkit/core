@@ -41,7 +41,7 @@ reports.
 
 from __future__ import annotations
 
-__lazy_modules__ = {"importlib.metadata", "io", "qiskit", "warnings"}
+__lazy_modules__ = {"importlib.metadata", "io", "mqt.core.mlir", "qiskit", "warnings"}
 
 import warnings
 from collections.abc import Callable
@@ -49,8 +49,9 @@ from importlib.metadata import entry_points
 from io import BytesIO
 from typing import TYPE_CHECKING, Protocol
 
-from qiskit import qasm2, qasm3, qpy
+from qiskit import qasm2, qpy
 
+from mqt.core.mlir import QCProgram
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
@@ -152,78 +153,13 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
 
 
 def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
-    """Serialize a circuit into an OpenQASM 3 program.
-
-    Args:
-        circuit: The circuit to serialize.
-        backend: The backend that runs the circuit. Its Target supplies the
-            basis gates.
+    """Export validated native operations and device sites through MQT Core.
 
     Returns:
-        The OpenQASM 3 program.
+        OpenQASM 3 with explicit classical outputs.
     """
     backend.validate_circuit(circuit, native=True)
-    # Qiskit classical bits start at zero, while OpenQASM 3 bits are
-    # uninitialized. Preserve Qiskit's semantics and make every output valid
-    # even when the circuit measures only part of a register.
-    if circuit.num_clbits:
-        initialization = circuit.copy_empty_like(vars_mode="drop")
-        initialization.global_phase = 0
-        for creg in initialization.cregs:
-            if creg.size:
-                initialization.store(creg, 0)
-        for clbit in initialization.clbits:
-            if not initialization.find_bit(clbit).registers:
-                initialization.store(
-                    clbit,
-                    False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
-                )
-        circuit = circuit.compose(initialization, front=True, inplace=False)
-
-    # Keywords and standard-library gates need no opaque declarations.
-    exclusion_list = {
-        "measure",
-        "reset",
-        "barrier",
-        "if_else",
-        "p",
-        "x",
-        "y",
-        "z",
-        "h",
-        "s",
-        "sdg",
-        "t",
-        "tdg",
-        "sx",
-        "rx",
-        "ry",
-        "rz",
-        "cx",
-        "cy",
-        "cz",
-        "cp",
-        "crx",
-        "cry",
-        "crz",
-        "ch",
-        "swap",
-        "ccx",
-        "cswap",
-        "cu",
-        "CX",
-        "phase",
-        "cphase",
-        "id",
-        "u1",
-        "u2",
-        "u3",
-    }
-
-    # Emit device-supported gates outside the standard library as opaque gates.
-    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["mcx_gray", "U"]
-
-    return qasm3.dumps(circuit, basis_gates=basis_gates, disable_constants=True)
+    return QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
 
 
 def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:

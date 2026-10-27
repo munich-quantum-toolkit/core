@@ -40,7 +40,7 @@ failure, serialize to `io.BytesIO` before opening the destination.
 Pass a Qiskit `BackendV2` or `Target` to
 {py:func}`~mqt.core.mlir.compile_program` to compile for its gates, topology,
 and advertised standard control flow. The default result is a `QuantumCircuit`
-with device qubits; its layout records placement and routing of logical input
+with device qubits; its layout records placement and routing of program input
 qubits. An explicit `output` selects another compiler representation. Omit
 `target` for target-independent optimization, which preserves the input's
 program family and may remove idle qubits. See the
@@ -90,7 +90,17 @@ common entangler across routing edges. For explicit pipelines, export with
 
 ## Circuit translation contract
 
-The compiler imports circuit operations without changing the source circuit.
+The compiler imports circuit operations without changing the source circuit. By
+default, import allocates program qubits and translates gate definitions. For a
+circuit already compiled for a device, use
+`QCProgram.from_qiskit(circuit, native=True)`. Circuit indices then denote
+device qubits, and gate names, parameters, and ordered operands become opaque
+calls. Definitions are not inspected. The caller must validate device support
+and placements. Device gates must act on device qubits and have scalar
+parameters; lower annotated operations, matrix unitaries, and permutations
+before native import. Represent global phase with `circuit.global_phase`. Layout
+metadata does not remap circuit indices.
+
 Export creates a new circuit and preserves parameter identities across nested
 control flow. Both `QCProgram.to_qiskit()` and `QCOProgram.to_qiskit()` consume
 the source, including when export fails. Pass `copy=True` to preserve it.
@@ -116,7 +126,7 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | Free symbols and supported real parameter expressions                   | Supported            | Supported                          |
 | Parameter-vector elements                                               | Supported            | Supported                          |
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
-| Register aliases or interleaved membership                              | Rejected             | Rejected                           |
+| Empty registers, root aliases, or interleaved root membership           | Rejected             | Rejected                           |
 | Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the

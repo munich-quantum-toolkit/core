@@ -1057,13 +1057,34 @@ public:
     return normalizeKind(qk_circuit_instruction_kind(circuit_, index));
   }
 
-  [[nodiscard]] Instruction instruction(const size_t index) const override {
+  [[nodiscard]] Instruction
+  instruction(const size_t index, const bool opaque = false) const override {
     const auto kind = instructionKind(index);
     if (kind == OperationKind::Delay) {
       return {.kind = kind, .name = "delay"};
     }
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
+    }
+    if (opaque && kind == OperationKind::Unknown) {
+      const auto operation = pythonOperation(index);
+      if (nb::isinstance(operation,
+                         nb::module_::import_("qiskit.circuit").attr("Gate"))) {
+        if (nb::cast<size_t>(operation.attr("num_qubits")) == 0U) {
+          throw std::runtime_error("Opaque gates must act on device qubits; "
+                                   "use circuit.global_phase for global phase");
+        }
+        Instruction result;
+        result.kind = OperationKind::Gate;
+        result.name = pythonStringAttribute(operation, "name",
+                                            "Qiskit gate has an invalid name");
+        result.qubits = pythonInstructionBits(index, "qubits");
+        result.clbits = pythonInstructionBits(index, "clbits");
+        for (const nb::handle parameter : nb::iter(operation.attr("params"))) {
+          result.parameters.push_back(normalizePythonParameter(parameter));
+        }
+        return result;
+      }
     }
     Instruction result;
     result.kind = kind;
