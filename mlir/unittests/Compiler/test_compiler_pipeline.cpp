@@ -1828,7 +1828,45 @@ TEST_F(CompilerPipelineTest, ArrayRangesCheckMemrefBoundsAndShapesInDD) {
   }
 }
 
-TEST_F(CompilerPipelineTest, EmitsQIR21ProfileModuleFlags) {
+TEST_F(CompilerPipelineTest, QIRTargetVersionBoundsEmittedRequirements) {
+  const auto supported = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+  for (const auto* version : {"2.0", "2.1"}) {
+    for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+      auto input = QCProgram::fromOpenQASMString(
+          "OPENQASM 3; qubit q; h q; bit c = measure q;");
+      MQT_ASSERT_SUCCESS(input);
+      const auto payload = llvm::cantFail(PayloadSpecification::create(
+          {
+              .id = "qir",
+              .version = version,
+              .profile = profile == QIRProfile::Base ? "base" : "adaptive",
+          },
+          std::vector<ProgramCapability>(supported.capabilities().begin(),
+                                         supported.capabilities().end())));
+      EXPECT_TRUE(static_cast<bool>(payload.compilerOutput()));
+      attachTargetEnvironment(
+          input->module(),
+          TargetEnvironment(makeUnrestrictedTarget(), payload));
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(input->module().getContext(),
+                                      [&](Diagnostic& diagnostic) {
+                                        diagnostics += diagnostic.str();
+                                        return success();
+                                      });
+      auto output = input->copy().intoQIR(profile);
+      const bool requiresNewer =
+          profile == QIRProfile::Adaptive && StringRef(version) == "2.0";
+      EXPECT_EQ(failed(output), requiresNewer);
+      if (requiresNewer) {
+        EXPECT_TRUE(StringRef(diagnostics).contains("requires version 2.1"))
+            << diagnostics;
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, EmitsMinimumQIRVersion) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
 qubit q;
@@ -1846,7 +1884,10 @@ result = measure q;
     ASSERT_TRUE(mlir::succeeded(llvmIR));
     EXPECT_NE(llvmIR->find("define i64 @main()"), std::string::npos);
     EXPECT_NE(llvmIR->find("!\"qir_major_version\", i32 2"), std::string::npos);
-    EXPECT_NE(llvmIR->find("!\"qir_minor_version\", i32 1"), std::string::npos);
+    EXPECT_NE(llvmIR->find(profile == QIRProfile::Adaptive
+                               ? "!\"qir_minor_version\", i32 1"
+                               : "!\"qir_minor_version\", i32 0"),
+              std::string::npos);
     if (profile == QIRProfile::Adaptive) {
       EXPECT_NE(llvmIR->find("!\"dynamic_qubit_management\", i1 true"),
                 std::string::npos);

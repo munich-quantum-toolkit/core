@@ -17,7 +17,7 @@
 
 namespace mlir {
 class ModuleOp;
-struct ProgramCapability;
+class PayloadSpecification;
 
 namespace qir {
 
@@ -33,12 +33,13 @@ inline constexpr std::array OPTIONAL_CAPABILITIES{
     std::pair{"multiple_target_branching", "multiway-branching"},
 };
 
-/// Check emitted QIR requirements against the selected payload capabilities.
+/// Check emitted QIR requirements against the selected payload version and
+/// capabilities.
 ///
 /// Required loop capabilities must be unconstrained because lowered QIR does
 /// not retain a proof of their bounds.
 LogicalResult validateCapabilities(ModuleOp moduleOp,
-                                   ArrayRef<ProgramCapability> capabilities);
+                                   const PayloadSpecification& payload);
 
 } // namespace qir
 } // namespace mlir

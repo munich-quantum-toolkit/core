@@ -11,8 +11,8 @@ mystnb:
 The [Quantum Intermediate Representation (QIR)](https://www.qir-alliance.org)
 expresses quantum programs in [LLVM IR](https://llvm.org/). The MQT Compiler
 Collection compiles OpenQASM, Qiskit circuits, and its own program objects to
-QIR 2.1. The bundled DDSIM device executes the result through QDMI, with the
-same job and result API used for OpenQASM.
+QIR 2.0 or 2.1. The bundled DDSIM device executes the result through QDMI, with
+the same job and result API used for OpenQASM.
 
 This notebook follows that complete path: compile a program, inspect its profile
 and capability flags, choose LLVM text or bitcode, and retrieve counts or QIR
@@ -70,7 +70,12 @@ Its {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir` method consumes it and
 returns LLVM assembly. Here, `copy=True` keeps the program for bitcode export
 below. The entry-point attributes identify `base_profile`, the output schema,
 and the required static qubit and result capacities. The module flags identify
-QIR 2.1 and whether dynamic resource management is used.
+the minimum required QIR version and whether dynamic resource management is
+used. Base Profile programs use QIR 2.0. Adaptive programs use 2.1 when they
+require dynamic qubit or result allocation, or runtime arrays; other Adaptive
+programs use 2.0. Output labels and ordinary output-array records do not require
+2.1. An explicit target payload version is an upper bound: compilation fails if
+the result requires a newer version.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions

@@ -156,9 +156,6 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
 FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
-  const auto payload = llvm::cantFail(PayloadSpecification::forProgramFormat(
-      profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
-                                      : ProgramFormat::QIRBase));
   if (failed(runWithPassManager(
           moduleOp,
           [&](OpPassManager& pm) {
@@ -183,11 +180,10 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
     const auto& targetPayload =
         environment.environment().payloadSpecification();
     const auto& format = targetPayload.format();
-    if (format.id == payload.format().id &&
-        format.version == payload.format().version &&
-        format.profile == payload.format().profile &&
-        failed(qir::validateCapabilities(moduleOp,
-                                         targetPayload.capabilities()))) {
+    if (format.id == "qir" &&
+        format.profile ==
+            (profile == QIRProfile::Adaptive ? "adaptive" : "base") &&
+        failed(qir::validateCapabilities(moduleOp, targetPayload))) {
       return failure();
     }
   }

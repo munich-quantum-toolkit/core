@@ -185,7 +185,11 @@ private:
     SmallVector<Attribute> flags = collectUnrelatedModuleFlags(m, rewriter);
     flags.append({
         createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
-        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
+        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version",
+                      metadata.useArrays || metadata.useDynamicQubit ||
+                              metadata.useDynamicResult
+                          ? 1
+                          : 0),
         createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
                        metadata.useDynamicQubit),
         createBoolFlag(LLVM::ModFlagBehavior::Error,
@@ -196,8 +200,10 @@ private:
       flags.emplace_back(
           createI32Flag(LLVM::ModFlagBehavior::Error, "backwards_branching",
                         static_cast<int32_t>(metadata.backwardsBranching)));
-      flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays",
-                                        metadata.useArrays));
+      if (metadata.useArrays) {
+        flags.emplace_back(
+            createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays", true));
+      }
       if (metadata.usesIRFunctions) {
         flags.emplace_back(
             createBoolFlag(LLVM::ModFlagBehavior::Error, "ir_functions", true));
@@ -525,11 +531,17 @@ private:
         if (auto call = dyn_cast<LLVM::CallOp>(operation)) {
           const auto name = call.getCallee();
           metadata.useDynamicQubit |=
-              name == QIR_QUBIT_ALLOC || name == QIR_QUBIT_ARRAY_ALLOC;
-          metadata.useDynamicResult |=
-              name == QIR_RESULT_ALLOC || name == QIR_RESULT_ARRAY_ALLOC;
-          metadata.useArrays |=
-              name == QIR_QUBIT_ARRAY_ALLOC || name == QIR_RESULT_ARRAY_ALLOC;
+              name == QIR_QUBIT_ALLOC || name == QIR_QUBIT_RELEASE ||
+              name == QIR_QUBIT_ARRAY_ALLOC || name == QIR_QUBIT_ARRAY_RELEASE;
+          metadata.useDynamicResult |= name == QIR_RESULT_ALLOC ||
+                                       name == QIR_RESULT_RELEASE ||
+                                       name == QIR_RESULT_ARRAY_ALLOC ||
+                                       name == QIR_RESULT_ARRAY_RELEASE;
+          metadata.useArrays |= name == QIR_QUBIT_ARRAY_ALLOC ||
+                                name == QIR_RESULT_ARRAY_ALLOC ||
+                                name == QIR_QUBIT_ARRAY_RELEASE ||
+                                name == QIR_RESULT_ARRAY_RELEASE ||
+                                name == QIR_RESULT_ARRAY_RECORD_OUTPUT;
         }
         returnCount += isa<LLVM::ReturnOp>(operation);
         metadata.usesMultipleTargetBranching |= isa<LLVM::SwitchOp>(operation);

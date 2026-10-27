@@ -275,7 +275,8 @@ llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;
   }
-  if (format_.id == "qir" && format_.version == "2.1.0") {
+  if (format_.id == "qir" &&
+      (format_.version == "2.0.0" || format_.version == "2.1.0")) {
     if (format_.profile == "base") {
       return ProgramFormat::QIRBase;
     }
