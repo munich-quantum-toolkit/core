@@ -126,15 +126,17 @@ and results.
 
 ## Run one optimization and check its meaning
 
-A **pass** inspects or transforms IR. The `canonicalize` pass applies registered
-rules that simplify operations, including cancellation of adjacent Hadamards on
-the same qubit. It can apply several such rules; it is not a Hadamard-only pass.
+A **pass** inspects or transforms IR. The `simplify-quantum` pass applies
+quantum rewrite rules, including cancellation of adjacent Hadamards on the same
+qubit. It can apply several such rules; it is not a Hadamard-only pass.
+`canonicalize` folds classical values and removes structural scaffolding while
+preserving supplied unitary gates.
 
 Predict the gate count, then run it on a copy:
 
 ```{code-cell} ipython3
 optimized = qco.copy()
-optimized.run_pass_pipeline("canonicalize")
+optimized.run_pass_pipeline("simplify-quantum")
 final_qc = optimized.to_qc(copy=True)
 
 before = qc.num_gates()
@@ -214,8 +216,9 @@ display(Code(compiled.ir, language="mlir"))
 ```
 
 Use `qco_pipeline="canonicalize"` to replace the default QCO optimization
-pipeline in a target-independent compilation. It does not remove the compiler's
-required preparation and output stages. See the
+pipeline with classical and structural cleanup in a target-independent
+compilation. This preserves unitary gate events during cleanup. It does not
+remove the compiler's required preparation and output stages. See the
 [compiler guide](../mlir/mqt_compiler_collection.md#run-passes-explicitly) for
 composing passes; the tutorial's target compilation uses the coordinated target
 pipeline.
@@ -254,7 +257,7 @@ for hadamards in range(5):
     variant = source.replace("h a;\nh a;\nh a;", "h a;\n" * hadamards)
     original = QCProgram.from_openqasm_str(variant).to_qco()
     simplified = original.copy()
-    simplified.run_pass_pipeline("canonicalize")
+    simplified.run_pass_pipeline("simplify-quantum")
     np.testing.assert_allclose(
         build_functionality(simplified),
         build_functionality(original),
@@ -280,7 +283,7 @@ Hadamards across Z? Predict the final state before running:
 intervening = source.replace("h a;\nh a;\nh a;", "h a;\nz a;\nh a;")
 intervening_qco = QCProgram.from_openqasm_str(intervening).to_qco()
 simplified = intervening_qco.copy()
-simplified.run_pass_pipeline("canonicalize")
+simplified.run_pass_pipeline("simplify-quantum")
 np.testing.assert_allclose(
     build_functionality(simplified),
     build_functionality(intervening_qco),
