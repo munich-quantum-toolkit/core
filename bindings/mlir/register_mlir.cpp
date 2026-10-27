@@ -28,6 +28,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/Pauli.hpp"
 #include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
@@ -920,6 +921,25 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
                          [&] { return mlir::qco::sample(func, shots, seed); });
 }
 
+[[nodiscard]] static std::vector<dd::fp> expectationValuesQCO(
+    const mlir::QCOProgram& program,
+    const std::vector<std::map<std::string, dd::fp>>& observables) {
+  llvm::SmallVector<dd::PauliObservable> nativeObservables;
+  nativeObservables.reserve(observables.size());
+  for (const auto& observable : observables) {
+    auto& terms = nativeObservables.emplace_back();
+    terms.reserve(observable.size());
+    for (const auto& [paulis, coefficient] : observable) {
+      terms.push_back({.paulis = paulis, .coefficient = coefficient});
+    }
+  }
+  auto func = entryFunc(program);
+  const nb::gil_scoped_release release;
+  return withDiagnostics(
+      func.getContext(), "cannot evaluate expectations for this QCO program",
+      [&] { return mlir::qco::expectationValues(func, nativeObservables); });
+}
+
 [[nodiscard]] static DenseVector toDenseVector(const dd::VectorDD& state) {
   if (!state.isTerminal()) {
     const auto numQubits = static_cast<size_t>(state.p->v) + 1U;
@@ -992,6 +1012,14 @@ sample(PythonInputTypes& types, const nb::handle program, size_t shots,
        uint64_t seed) {
   return withQCOProgram(types, program, [&](const mlir::QCOProgram& qco) {
     return sampleQCO(qco, shots, seed);
+  });
+}
+
+[[nodiscard]] static std::vector<dd::fp> expectationValues(
+    PythonInputTypes& types, const nb::handle program,
+    const std::vector<std::map<std::string, dd::fp>>& observables) {
+  return withQCOProgram(types, program, [&](const mlir::QCOProgram& qco) {
+    return expectationValuesQCO(qco, observables);
   });
 }
 
@@ -2384,6 +2412,28 @@ Raises:
     ValueError: When ``initial_state`` has no live reference in ``dd_package``,
         has too few qubits, or the program is unsupported for simulation.)pb");
 
+  qcoProgram.def(
+      "expectation_values", &expectationValuesQCO, "observables"_a,
+      R"pb(Evaluate Pauli observables on one uncollapsed zero-state preparation.
+
+The program is preserved. The DD package and state stay inside this call;
+neither the state nor the observables are converted to dense arrays.
+Terminal measurements are deferred under the same conditions as
+``mqt.core.mlir.simulate``. Resets and measurement-dependent evolution are rejected.
+
+Args:
+    observables: Sequence of mappings from Pauli strings to finite real
+        coefficients. Each string spans every program wire and contains only
+        ``I``, ``X``, ``Y`` and ``Z``, with the rightmost character acting on
+        wire zero. An empty mapping represents the zero observable.
+
+Returns:
+    Numerical expectation values in observable order.
+
+Raises:
+    ValueError: When an observable is invalid or the program cannot prepare an
+        uncollapsed state, or an expectation is not finite.)pb");
+
   qcoProgram.def("sample", &sampleQCO, "shots"_a = 1024U, "seed"_a = 0U,
                  R"pb(Sample the declared outputs of a QCO program.
 
@@ -2456,6 +2506,20 @@ Raises:
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
 contracts.)pb");
+
+  m.def(
+      "expectation_values", PythonInputAdapter<&expectationValues>{inputTypes},
+      "program"_a, "observables"_a,
+      nb::sig("def expectation_values(program: str | os.PathLike[str] | "
+              "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+              "JeffProgram | OpenQASMProgram, observables: "
+              "collections.abc.Sequence[collections.abc.Mapping[str, float]]) "
+              "-> list[float]"),
+      R"pb(Evaluate Pauli observables after translating or converting an input to QCO.
+
+An existing QCO program is used without copying. See
+{py:meth}`QCOProgram.expectation_values` for observable, state preparation,
+and error contracts.)pb");
 
   nb::class_<mlir::CompiledProgram>(
       m, "CompiledProgram", "A compiled program ready for QDMI submission.")

@@ -20,12 +20,16 @@
 #include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
+#include "dd/Pauli.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
@@ -1214,6 +1218,83 @@ Expected<fp> Package::expectationValue(const mEdge& x, const vEdge& y) {
 
   assert(RealNumber::approximatelyZero(expValue.i));
   return expValue.r;
+}
+
+Expected<std::vector<fp>>
+Package::expectationValues(const vEdge& state,
+                           const std::span<const PauliObservable> observables) {
+  if (vEdge::trackingRequired(state) && !getRootSet<vNode>().contains(state)) {
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "State must have a live reference in this package.");
+  }
+  const auto numQubits =
+      state.isTerminal() ? size_t{0} : static_cast<size_t>(state.p->v) + 1U;
+  for (const auto& observable : observables) {
+    for (const auto& term : observable) {
+      if (term.paulis.size() != numQubits ||
+          term.paulis.find_first_not_of("IXYZ") != std::string::npos ||
+          !std::isfinite(term.coefficient)) {
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            "Pauli terms need matching IXYZ labels and "
+            "finite real coefficients.");
+      }
+    }
+  }
+  llvm::DenseMap<llvm::StringRef, fp> expectations;
+  std::vector<fp> values;
+  values.reserve(observables.size());
+  for (const auto& observable : observables) {
+    fp value = 0.;
+    for (const auto& term : observable) {
+      if (term.coefficient == 0.) {
+        continue;
+      }
+      auto [entry, inserted] = expectations.try_emplace(term.paulis, 1.);
+      if (inserted && term.paulis.find_first_not_of('I') != std::string::npos) {
+        auto matrix = mCachedEdge::one();
+        for (size_t index = 0; index < numQubits; ++index) {
+          const auto pauli = term.paulis[numQubits - index - 1];
+          if (pauli == 'I') {
+            continue;
+          }
+          std::array<mCachedEdge, NEDGE> edges{};
+          switch (pauli) {
+          case 'X':
+            edges[1] = matrix;
+            edges[2] = matrix;
+            break;
+          case 'Y':
+            edges[1] = {matrix.p, {matrix.w.i, -matrix.w.r}};
+            edges[2] = {matrix.p, {-matrix.w.i, matrix.w.r}};
+            break;
+          case 'Z':
+            edges[0] = matrix;
+            edges[3] = {matrix.p, {-matrix.w.r, -matrix.w.i}};
+            break;
+          default:
+            llvm_unreachable("Validated Pauli label");
+          }
+          matrix = makeDDNode(static_cast<Qubit>(index), edges);
+        }
+        auto expectation = expectationValue(cn.lookup(matrix), state);
+        if (!expectation) {
+          return expectation.takeError();
+        }
+        entry->second = *expectation;
+        garbageCollect();
+      }
+      value += term.coefficient * entry->second;
+    }
+    if (!std::isfinite(value)) {
+      return createStringError(
+          std::make_error_code(std::errc::result_out_of_range),
+          "Pauli expectation is not finite.");
+    }
+    values.push_back(value);
+  }
+  return values;
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
