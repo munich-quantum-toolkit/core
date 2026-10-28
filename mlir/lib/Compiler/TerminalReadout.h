@@ -22,7 +22,7 @@ namespace mlir {
 ///
 /// Requires static qubits and straight-line terminal CBit register outputs. Raw
 /// slots follow ascending site IDs. Unmeasured output bits must initialize to
-/// zero.
+/// zero. Gates may follow measurements of other qubits.
 [[nodiscard]] FailureOr<ResultLayout>
 normalizeTerminalReadout(ModuleOp moduleOp, TerminalReadout readout);
 

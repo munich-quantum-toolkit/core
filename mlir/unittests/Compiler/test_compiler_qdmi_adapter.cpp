@@ -1275,6 +1275,42 @@ TEST(CompilerQDMIAdapterTest, RejectsNonNativeOrNonterminalSerialization) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
+  const mlir::TargetEnvironment environment(
+      llvm::cantFail(CompilerTarget::create(
+          2, CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::unrestricted())),
+      llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+          QDMI_PROGRAM_FORMAT_QASM3)));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  for (const auto* operation : {"x", "reset", "flip"}) {
+    for (const auto site : {0, 1}) {
+      SCOPED_TRACE(llvm::formatv("{0} on site {1}", operation, site).str());
+      auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+          llvm::formatv("OPENQASM 3; include \"stdgates.inc\"; "
+                        "gate flip q {{ x q; } bit[2] c; x $0; x $1; "
+                        "c[0] = measure $0; {0} ${1}; c[1] = measure $1;",
+                        operation, site)
+              .str()));
+      auto compiled = mlir::CompiledProgram::serialize(
+          std::move(program), environment, mlir::TerminalReadout::Measured);
+      if (site == 0) {
+        ASSERT_FALSE(static_cast<bool>(compiled));
+        EXPECT_NE(llvm::toString(compiled.takeError()).find("unmeasured"),
+                  std::string::npos);
+        continue;
+      }
+      MQT_ASSERT_SUCCESS(compiled);
+      auto job = llvm::cantFail(
+          device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+      ASSERT_TRUE(llvm::cantFail(job.wait()));
+      EXPECT_EQ(llvm::cantFail(job.getShots()),
+                std::vector<std::string>(8, "01"));
+    }
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
   const auto context = mlir::createCompilerContext();
   auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
@@ -1307,6 +1343,76 @@ TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
   EXPECT_NE(
       llvm::toString(compiled.takeError()).find("only supports gate calls"),
       std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsGeneralCallsAfterMeasurement) {
+  const auto context = mlir::createCompilerContext();
+  auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
+    func.func private @flip() {
+      %q = qc.static 0 : !qc.qubit
+      qc.x %q : !qc.qubit
+      return
+    }
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %q = qc.static 0 : !qc.qubit
+      %bit = qc.measure %q : !qc.qubit -> i1
+      cbit.store %bit, %c[%zero] : !cbit.reg<1>
+      func.call @flip() : () -> ()
+      return %c : !cbit.reg<1>
+    }
+  })mlir",
+                                                          context.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(mlir::succeeded(program));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(*program), device, QDMI_PROGRAM_FORMAT_QASM3,
+      mlir::TerminalReadout::Measured);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(llvm::toString(compiled.takeError())
+                .find("gate calls before measurements"),
+            std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsCapturedMeasurementFeedback) {
+  const auto context = mlir::createCompilerContext();
+  auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %angle0 = arith.constant 0.0 : f64
+      %angle1 = arith.constant 3.141592653589793 : f64
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      %q0 = qc.static 0 : !qc.qubit
+      %q1 = qc.static 1 : !qc.qubit
+      %m = qc.measure %q0 : !qc.qubit -> i1
+      cbit.store %m, %c[%zero] : !cbit.reg<2>
+      qc.inv(%a = %q1) {
+        %theta = arith.select %m, %angle1, %angle0 : f64
+        qc.rz(%theta) %a : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+      %n = qc.measure %q1 : !qc.qubit -> i1
+      cbit.store %n, %c[%one] : !cbit.reg<2>
+      return %c : !cbit.reg<2>
+    }
+  })mlir",
+                                                          context.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(mlir::succeeded(program));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(*program), device, QDMI_PROGRAM_FORMAT_QASM3,
+      mlir::TerminalReadout::Measured);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(llvm::toString(compiled.takeError()).find("measurement results"),
+            std::string::npos);
 }
 
 TEST(CompilerQDMIAdapterTest, ValidatesResultLayoutSamples) {
