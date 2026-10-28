@@ -231,13 +231,45 @@ TEST(CompilerQDMIAdapterTest, ConvertsUnknownDeviceFailureToError) {
   EXPECT_NE(message.find("mqt.unknown.device"), std::string::npos);
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
+TEST(CompilerQDMIAdapterTest, PreservesNonhomogeneousOperationSupport) {
   const auto device = openScDevice("heterogeneous-sc.json");
-  auto target = mlir::compilerTargetFromDevice(device);
-  ASSERT_FALSE(target);
-  const auto message = llvm::toString(target.takeError());
-  EXPECT_NE(message.find("homogeneous"), std::string::npos);
-  EXPECT_NE(message.find("all topology edges"), std::string::npos);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  EXPECT_TRUE(target.supportsOperation("cz", 2, 0, {0, 1}));
+  EXPECT_FALSE(target.supportsOperation("cz", 2, 0, {1, 2}));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_FALSE(target.synthesisBasis()->entangler);
+
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
+  auto compiled = mlir::CompiledProgram::compile(
+      mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
+                            "qubit[3] q; cx q[0], q[2]; "
+                            "bit[3] c = measure q;"),
+      environment);
+  ASSERT_FALSE(compiled);
+  const auto message = llvm::toString(compiled.takeError());
+  EXPECT_NE(message.find("entangler"), std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, CompilesWithSiteRestrictedAdditionalOperations) {
+  const auto device = openScDevice("site-restricted-additional-sc.json");
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  ASSERT_EQ(target.operations().size(), 4U);
+  EXPECT_TRUE(target.supportsOperation("measure_012", 1, 0, {0}));
+  EXPECT_FALSE(target.supportsOperation("measure_012", 1, 0, {1}));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_TRUE(target.synthesisBasis()->entangler);
+
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
+  auto compiled = mlir::CompiledProgram::compile(
+      mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
+                            "qubit[2] q; h q[0]; cx q[0], q[1]; "
+                            "bit[2] c = measure q;"),
+      environment);
+  MQT_ASSERT_SUCCESS(compiled);
 }
 
 TEST(CompilerQDMIAdapterTest, SerializesExactHeterogeneousPlacements) {
@@ -267,11 +299,12 @@ TEST(CompilerQDMIAdapterTest, SerializesExactHeterogeneousPlacements) {
     }
     return QDMI_SUCCESS;
   };
-  for (const auto last : {1, 2}) {
+  for (const auto& [first, last] : {std::pair{0, 1}, std::pair{1, 2}}) {
     auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
-        llvm::formatv("OPENQASM 3; include \"stdgates.inc\"; bit[1] c; cz $0, "
-                      "${0}; c[0] = measure $0;",
-                      last)
+        llvm::formatv(
+            "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; cz ${0}, "
+            "${1}; c[0] = measure ${0};",
+            first, last)
             .str()));
     auto compiled = mlir::CompiledProgram::serialize(
         std::move(program), device, QDMI_PROGRAM_FORMAT_QASM3,
