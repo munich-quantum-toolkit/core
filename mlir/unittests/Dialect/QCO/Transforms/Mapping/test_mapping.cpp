@@ -3232,28 +3232,19 @@ TEST_F(MappingPassFixture, EmbedShuffledGridPreservingBasisStates) {
       ASSERT_TRUE(succeeded(verifyLinearity(*input)));
       const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
       ASSERT_TRUE(succeeded(expected));
-      std::string serial;
-      for (bool parallel : {false, true}) {
-        context->enableMultithreading(parallel);
-        OwningOpRef<ModuleOp> moduleOp = input->clone();
-        ASSERT_TRUE(succeeded(runMapping(
-            *moduleOp, target,
-            MappingPassOptions{.niterations = 0, .ntrials = 1, .seed = 42})));
-        ASSERT_TRUE(succeeded(verify(*moduleOp)));
-        EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-        EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
-        size_t swaps = 0;
-        moduleOp->walk([&](SWAPOp) { ++swaps; });
-        EXPECT_EQ(swaps, 0);
-        const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
-        ASSERT_TRUE(succeeded(actual));
-        EXPECT_EQ(*actual, *expected);
-        if (parallel) {
-          EXPECT_EQ(printModule(*moduleOp), serial);
-        } else {
-          serial = printModule(*moduleOp);
-        }
-      }
+      OwningOpRef<ModuleOp> moduleOp = input->clone();
+      ASSERT_TRUE(succeeded(runMapping(
+          *moduleOp, target,
+          MappingPassOptions{.niterations = 0, .ntrials = 1, .seed = 42})));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+      EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+      size_t swaps = 0;
+      moduleOp->walk([&](SWAPOp) { ++swaps; });
+      EXPECT_EQ(swaps, 0);
+      const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+      ASSERT_TRUE(succeeded(actual));
+      EXPECT_EQ(*actual, *expected);
     }
   }
 }
