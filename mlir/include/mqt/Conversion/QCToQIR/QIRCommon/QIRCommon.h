@@ -113,6 +113,9 @@ struct LoweringState {
                                                    Operation* op);
 };
 
+/// Bufferize classical tensors and expose strided-copy loops before lowering.
+[[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);
+
 /// Lower remaining classical dialects and reconcile casts for either profile.
 [[nodiscard]] LogicalResult
 finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,

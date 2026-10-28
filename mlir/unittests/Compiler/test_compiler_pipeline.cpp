@@ -1866,6 +1866,65 @@ TEST_F(CompilerPipelineTest, QIRTargetVersionBoundsEmittedRequirements) {
   }
 }
 
+TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
+  const auto supported = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+  std::vector<ProgramCapability> capabilities(supported.capabilities().begin(),
+                                              supported.capabilities().end());
+  for (auto& capability : capabilities) {
+    if (capability.id == ProgramCapability::COUNTED_ITERATION) {
+      capability.constraints = {
+          {.id = "max-iteration-count", .value = 3},
+          {.id = "max-control-flow-nesting-depth", .value = 1},
+      };
+    }
+  }
+  const TargetEnvironment environment(
+      makeUnrestrictedTarget(),
+      llvm::cantFail(PayloadSpecification::create(supported.format(),
+                                                  std::move(capabilities))));
+  for (const auto& [body, permitted] : {
+           std::pair{"for int i in [0:2] { h q; }", true},
+           std::pair{"for int i in [0:3] { h q; }", false},
+           std::pair{"int i = 0; while (i < 4) { h q; i += 1; }", false},
+           std::pair{"bit b = 0; while (!b) { h q; b = measure q; }", false},
+           std::pair{"array[int, 8] a = {0, 1, 2, 3, 4, 5, 6, 7}; "
+                     "array[int, 4] b = a[0:2:6]; rx(b[3]) q;",
+                     false},
+           std::pair{"for int i in [0:1] { for int j in [0:2] { h q; } }",
+                     false},
+           std::pair{"bit b = measure q; int n = 2; if (b) { n = 3; } "
+                     "for int i in [0:n] { h q; }",
+                     false},
+       }) {
+    SCOPED_TRACE(body);
+    auto input = QCProgram::fromOpenQASMString(
+        std::string("OPENQASM 3; include \"stdgates.inc\"; qubit q; ") + body +
+        " bit c = measure q;");
+    MQT_ASSERT_SUCCESS(input);
+    attachTargetEnvironment(input->module(), environment);
+    auto output = [&] {
+      ScopedDiagnosticHandler handler(input->module().getContext(),
+                                      [](Diagnostic&) { return success(); });
+      return input->copy().intoQIR(QIRProfile::Adaptive);
+    }();
+    ASSERT_EQ(succeeded(output), permitted);
+    if (!permitted) {
+      continue;
+    }
+    auto llvmIR = std::move(*output).intoLLVMIR();
+    ASSERT_TRUE(succeeded(llvmIR));
+    EXPECT_TRUE(StringRef(*llvmIR).contains("backwards_branching"));
+    auto qco = std::move(*input).intoQCO();
+    ASSERT_TRUE(succeeded(qco));
+    ASSERT_TRUE(succeeded(qco->compileForTarget(environment)));
+    EXPECT_TRUE(StringRef(qco->str()).contains("scf."));
+    auto qc = std::move(*qco).intoQC();
+    ASSERT_TRUE(succeeded(qc));
+    EXPECT_TRUE(succeeded(std::move(*qc).intoQIR(QIRProfile::Adaptive)));
+  }
+}
+
 TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
   for (const auto* version : {">=2,<3", ">=2.1,<3", ">=2.2,<3", "2.99"}) {
     auto input = QCProgram::fromOpenQASMString("OPENQASM 3; qubit q; h q;");
