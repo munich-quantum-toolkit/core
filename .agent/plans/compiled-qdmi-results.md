@@ -52,10 +52,10 @@ unsupported readout before any submission. Validate actual provider payload
 consumers; local simulator support alone does not establish cloud compatibility.
 
 Native compiler, OpenQASM emission/frontend, and Qiskit translation suites pass.
-Repository lint, generated stubs, and executable documentation pass. Whole-file
-native lint reports existing test-helper and nanobind macro diagnostics. Live
-integration passed SV1, Rigetti, and AQT (16 shots each), plus an IQM mock (8
-shots independently reconstructed from raw service measurement columns).
+Repository lint, generated stubs, whole-file native lint, and executable
+documentation pass. Live integration passed SV1, Rigetti, and AQT (16 shots
+each), plus an IQM mock (8 shots independently reconstructed from raw service
+measurement columns).
 
 The live Rigetti target exposed a disabled physical site. The Qiskit adapter now
 preserves sparse physical IDs rather than inventing an unavailable site. Local
