@@ -10,14 +10,16 @@
 
 #pragma once
 
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Error.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <variant>
 #include <vector>
+
+namespace llvm {
+class StringRef;
+template <typename T> class Expected;
+} // namespace llvm
 
 namespace mlir {
 
