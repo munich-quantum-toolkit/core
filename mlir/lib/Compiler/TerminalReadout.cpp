@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 
@@ -123,10 +124,17 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
       reg->second.sites[static_cast<size_t>(*index)] = static_cast<size_t>(
           measurement.getQubit().getDefiningOp<qc::StaticOp>().getIndex());
       oldReadout.push_back(&operation);
+    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+      if (terminal || call.getNumResults() != 0 ||
+          !llvm::all_of(call.getOperandTypes(), [](Type type) {
+            return type.isF64() || isa<qc::QubitType>(type);
+          })) {
+        return call.emitError(
+            "terminal readout only supports gate calls before measurements");
+      }
     } else if (isa<arith::ConstantOp, qc::BarrierOp>(operation) ||
                (!terminal &&
-                isa<qc::UnitaryOpInterface, qc::ResetOp, func::CallOp>(
-                    operation))) {
+                isa<qc::UnitaryOpInterface, qc::ResetOp>(operation))) {
       continue;
     } else {
       return operation.emitError("terminal readout requires gates before all "

@@ -260,7 +260,9 @@ class QDMIBackend(BackendV2):
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
         self._device_id = device_id
-        self._native_width = max((site.index() for site in device.sites()), default=-1) + 1
+        sites = device.sites()
+        self._native_width = max((site.index() for site in sites), default=-1) + 1
+        self._has_sparse_sites = self._native_width != len(sites)
         self._parameter_aliases: dict[str, str] = {}
         self._parameter_bounds: dict[str, list[tuple[float, float] | None]] = {}
         self.last_job: QDMIJob | None = None
@@ -550,29 +552,29 @@ class QDMIBackend(BackendV2):
 
         Raises:
             UnsupportedOperationError: If a site tuple is incomplete or a two-qubit
-                operation omits placements on a device with a coupling map.
+                operation omits placements on a device with a coupling map or sparse site IDs.
         """
         arity = op.qubits_num()
-        if arity is None or arity == 0:
+        if arity == 0:
             return None
         if arity == 2:
-            site_pairs = op.site_pairs()
-            if site_pairs is None and self._device.coupling_map() is not None:
-                msg = (
-                    f"Device provides a coupling map (stating connectivity constraints), "
-                    f"but operation '{op.name()}' does not expose site pairs. This indicates "
-                    f"a misconfigured device. Devices with connectivity constraints must expose "
-                    f"sites for their operations."
-                )
+            result = op.site_pairs()
+            if result is None and self._device.coupling_map() is not None:
+                msg = f"Operation '{op.name()}' omits site pairs on a device with a coupling map."
                 raise UnsupportedOperationError(msg)
-            return site_pairs
-        sites = op.sites()
-        if sites is None:
-            return None
-        if len(sites) % arity:
-            msg = f"Operation '{op.name()}' has an incomplete {arity}-qubit site tuple"
+        else:
+            sites = op.sites() if arity is not None else None
+            if sites is not None and arity is not None:
+                if len(sites) % arity:
+                    msg = f"Operation '{op.name()}' has an incomplete {arity}-qubit site tuple"
+                    raise UnsupportedOperationError(msg)
+                result = [tuple(sites[i : i + arity]) for i in range(0, len(sites), arity)]
+            else:
+                result = None
+        if result is None and self._has_sparse_sites:
+            msg = f"Operation '{op.name()}' must report explicit placements on a device with sparse site IDs."
             raise UnsupportedOperationError(msg)
-        return [tuple(sites[i : i + arity]) for i in range(0, len(sites), arity)]
+        return result
 
     @classmethod
     def _map_operation_to_gate(cls, op_name: str) -> Instruction | type[Instruction] | None:

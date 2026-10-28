@@ -768,11 +768,9 @@ payloadForOutput(OutputFormat output) {
   if (selected == OutputFormat::Qiskit) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     auto result =
-        environment && !nb::isinstance<mlir::CompilerTarget>(target)
+        environment
             ? bindings::qiskit::exportCircuit(std::move(qc), *environment)
-            : bindings::qiskit::exportCircuit(
-                  std::move(qc),
-                  environment ? &environment->target() : nullptr);
+            : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
