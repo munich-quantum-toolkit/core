@@ -146,9 +146,15 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
   tensor::registerBufferizableOpInterfaceExternalModels(registry);
 }
 
-LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
-                                    LLVMTypeConverter& typeConverter) {
-  auto* ctx = moduleOp.getContext();
+LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp) {
+  DialectRegistry registry;
+  registerQIRClassicalTensorDialects(registry);
+  auto* context = moduleOp.getContext();
+  context->appendDialectRegistry(registry);
+  context
+      ->loadDialect<affine::AffineDialect, bufferization::BufferizationDialect,
+                    linalg::LinalgDialect, memref::MemRefDialect,
+                    scf::SCFDialect, tensor::TensorDialect>();
   // Read-only tensors and explicit destinations need no alias analysis.
   bufferization::BufferizationOptions options;
   options.allowUnknownOps = true;
@@ -212,6 +218,15 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
     return failure();
   }
 
+  return success();
+}
+
+LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
+                                    LLVMTypeConverter& typeConverter) {
+  if (failed(prepareQIRClassicalMemory(moduleOp))) {
+    return failure();
+  }
+  auto* ctx = moduleOp.getContext();
   RewritePatternSet patterns(ctx);
   target.addIllegalDialect<affine::AffineDialect, arith::ArithDialect,
                            cf::ControlFlowDialect, math::MathDialect,
