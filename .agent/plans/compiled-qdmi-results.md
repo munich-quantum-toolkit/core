@@ -1,19 +1,21 @@
 # Native QDMI payloads and logical results
 
-Status: shared Core implementation complete; dependent provider and PennyLane PR integration remains.
+Status: shared Core implementation complete; dependent provider and PennyLane PR
+integration remains.
 
 ## Goal and scope
 
 Keep compilation explicit. A Qiskit circuit is compiled for a backend before
 submission. Native serialization produces a receiver-compatible payload and,
-when needed, a small mapping from raw samples to logical classical outputs.
-The shared job adapter restores output widths, order, repeated values, and
+when needed, a small mapping from raw samples to logical classical outputs. The
+shared job adapter restores output widths, order, repeated values, and
 constants. Quantum operations retain their compiled physical placement.
 
 The compiler owns terminal readout normalization in `mlir/lib/Compiler/`.
 Provider libraries retain service column/key decoding. The Qiskit adapter in
-`python/mqt/core/plugins/qiskit/` retains each map through batching and recovery.
-PennyLane consumes this interface in its separate compiler integration.
+`python/mqt/core/plugins/qiskit/` retains each map through batching and
+recovery. PennyLane consumes this interface in its separate compiler
+integration.
 
 ## Decisions
 
@@ -24,10 +26,10 @@ PennyLane consumes this interface in its separate compiler integration.
 - A result layout contains a raw width and one raw slot or constant per logical
   bit. Identity results need no map. Both raw validation and logical output
   validation remain mandatory.
-- Terminal normalization supports permutations, gaps, repeated measurements,
-  and final overwrites. It rejects unsupported dynamic readout before submission.
-- Ordinary circuit payloads omit explicit `output` declarations. General
-  exports retain explicit selection when removing it would change results.
+- Terminal normalization supports permutations, gaps, repeated measurements, and
+  final overwrites. It rejects unsupported dynamic readout before submission.
+- Ordinary circuit payloads omit explicit `output` declarations. General exports
+  retain explicit selection when removing it would change results.
 - Direct native submissions retain provider format semantics. Recovering
   frontend results requires the original result map and framework header.
 - No new QDMI ABI, typed-output container, automatic compilation layer, or
@@ -36,7 +38,8 @@ PennyLane consumes this interface in its separate compiler integration.
 ## Work remaining
 
 - [x] Native serialization and shared checked result mapping.
-- [x] Qiskit serialization, batching, result headers, and projection aggregation.
+- [x] Qiskit serialization, batching, result headers, and projection
+      aggregation.
 - [ ] Provider integration and PennyLane consumption in their owning PRs.
 - [x] Focused native/Python tests, repository lint, and rendered documentation.
 
@@ -44,15 +47,15 @@ PennyLane consumes this interface in its separate compiler integration.
 
 Use asymmetric deterministic circuits with permuted destinations, unused bits,
 repeated measurement, overwritten destinations, and nonalphabetical registers.
-Compare complete samples as well as counts. Exercise routing and reject unsupported
-readout before any submission. Validate actual provider payload consumers;
-local simulator support alone does not establish cloud compatibility.
+Compare complete samples as well as counts. Exercise routing and reject
+unsupported readout before any submission. Validate actual provider payload
+consumers; local simulator support alone does not establish cloud compatibility.
 
 Native compiler, OpenQASM emission/frontend, and Qiskit translation suites pass.
 Repository lint, generated stubs, and executable documentation pass. Whole-file
-native lint reports existing test-helper and nanobind macro diagnostics.
-Live integration passed SV1, Rigetti, and AQT (16 shots each), plus an IQM mock
-(8 shots independently reconstructed from raw service measurement columns).
+native lint reports existing test-helper and nanobind macro diagnostics. Live
+integration passed SV1, Rigetti, and AQT (16 shots each), plus an IQM mock (8
+shots independently reconstructed from raw service measurement columns).
 
 The live Rigetti target exposed a disabled physical site. The Qiskit adapter now
 preserves sparse physical IDs rather than inventing an unavailable site. Local
