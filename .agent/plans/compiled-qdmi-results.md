@@ -1,7 +1,7 @@
 # Native QDMI payloads and logical results
 
-Status: shared Core implementation complete; dependent provider and PennyLane PR
-integration remains.
+Status: shared Core, provider, and PennyLane integration implemented and
+published. Provider draft pins and final hosted CI validation remain.
 
 ## Goal and scope
 
@@ -40,7 +40,10 @@ integration.
 - [x] Native serialization and shared checked result mapping.
 - [x] Qiskit serialization, batching, result headers, and projection
       aggregation.
-- [ ] Provider integration and PennyLane consumption in their owning PRs.
+- [x] Provider integration and PennyLane consumption in their owning PRs:
+      Braket #288, IQM #321, IBM #94 (on #92 → #71 → #72), and Core #2767.
+- [ ] Refresh provider draft pins after final Core changes.
+- [ ] Validate the final published heads in hosted CI.
 - [x] Focused native/Python tests, repository lint, and rendered documentation.
 
 ## Validation

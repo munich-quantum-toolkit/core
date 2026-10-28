@@ -3039,9 +3039,9 @@ public:
     return target;
   }
 
-  static mlir::CompilerTarget::NativeOperations
-  readOperations(nb::handle source, nb::handle operationNames,
-                 bool placements) {
+  static mlir::CompilerTarget::NativeOperations readOperations(
+      nb::handle source, nb::handle operationNames, bool placements,
+      std::set<mlir::CompilerTarget::SiteId>* activeSites = nullptr) {
     using Target = mlir::CompilerTarget;
     auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
@@ -3056,6 +3056,13 @@ public:
                                                   ? nb::handle(available)
                                                   : operationNames)) {
       names.insert(nb::cast<std::string>(item));
+    }
+
+    const auto selectedNames = names;
+    if (activeSites != nullptr) {
+      for (auto item : nb::borrow<nb::iterable>(available)) {
+        names.insert(nb::cast<std::string>(item));
+      }
     }
 
     std::vector<Target::OperationCapability> operations;
@@ -3082,11 +3089,35 @@ public:
       if ((!qargs.is_none() && nb::len(qargs) == 0) ||
           nb::issubclass(instructionType, ignoredTypes) ||
           nativeName == "gphase") {
-        if (!operationNames.is_none()) {
+        if (!operationNames.is_none() &&
+            selectedNames.contains(operationName)) {
           throw nb::value_error(("Qiskit target operation " + quotedName +
                                  " has no native gate applicability")
                                     .c_str());
         }
+        continue;
+      }
+
+      // Unsupported gates still identify physical sites, but cannot supply
+      // routing edges. Directives were excluded above.
+      if (activeSites != nullptr &&
+          (instruction.is_type() ||
+           nb::cast<size_t>(instruction.attr("num_qubits")) > 0)) {
+        if (qargs.is_none()) {
+          const auto width = nb::cast<size_t>(target.attr("num_qubits"));
+          for (size_t site = 0; site < width; ++site) {
+            activeSites->insert(static_cast<Target::SiteId>(site));
+          }
+        } else {
+          for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
+            for (auto site : nb::borrow<nb::iterable>(tuple)) {
+              activeSites->insert(nb::cast<Target::SiteId>(site));
+            }
+          }
+        }
+      }
+
+      if (!selectedNames.contains(operationName)) {
         continue;
       }
 
@@ -3250,22 +3281,9 @@ public:
       throw nb::value_error(
           "Qiskit target must have a known positive qubit count");
     }
-    const auto nativeOperations = readOperations(target, operationNames, true);
     std::set<Target::SiteId> activeSites;
-    for (const auto& capability : nativeOperations.operations()) {
-      if (capability.arity().value() == 0) {
-        continue;
-      }
-      if (capability.siteTuples().empty()) {
-        for (size_t site = 0; site < numQubits; ++site) {
-          activeSites.insert(static_cast<Target::SiteId>(site));
-        }
-        break;
-      }
-      for (const auto& placement : capability.siteTuples()) {
-        activeSites.insert(placement.sites().begin(), placement.sites().end());
-      }
-    }
+    const auto nativeOperations =
+        readOperations(target, operationNames, true, &activeSites);
     std::vector<Target::Site> sites;
     sites.reserve(activeSites.size());
     for (const auto site : activeSites) {
