@@ -1146,7 +1146,7 @@ trySubmitPrograms(const qdmi::Device& device,
         "A program batch requires non-null programs and nonnegative num_shots");
   }
   const auto format = programs.front()->programFormat();
-  auto destination = snapshotTargetEnvironment(device, format, false, false);
+  auto destination = snapshotTargetEnvironment(device, format, false);
   if (!destination) {
     return destination.takeError();
   }
