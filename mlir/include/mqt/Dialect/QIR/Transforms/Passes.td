@@ -15,8 +15,11 @@ def QIRSetAttributesAndMetadata
     : Pass<"set-qir-attributes-and-metadata", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
   let summary = "Sets the required attributes to the entry point function and "
-                "adds the required module flags, compliant with QIR 2.1";
+                "adds the required module flags, selecting the minimum "
+                "required QIR version";
   let description = [{
+    Input must already conform to the selected profile. Base uses QIR 2.0;
+    Adaptive requires 2.1 for dynamic resources or runtime arrays.
     Static resource counts specify the capacity through the highest qubit ID
     used by a quantum instruction and the highest used result ID. Rejects
     IDs whose required capacity cannot fit in an unsigned 64-bit integer.

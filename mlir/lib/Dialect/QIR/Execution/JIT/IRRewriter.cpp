@@ -37,9 +37,12 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
+
+using llvm::createStringError;
+using llvm::Error;
 
 namespace qir {
 
@@ -53,12 +56,12 @@ static bool isIrreversible(const llvm::CallBase& call) {
   return callee != nullptr && callee->hasFnAttribute(IRREVERSIBLE_ATTR);
 }
 
-static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
+static Error requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
   llvm::SmallPtrSet<llvm::BasicBlock*, 8> visited;
   llvm::SmallVector<llvm::BasicBlock*> pending;
 
   auto inspect = [&](llvm::BasicBlock& block,
-                     llvm::BasicBlock::iterator begin) {
+                     llvm::BasicBlock::iterator begin) -> Error {
     for (auto it = begin; it != block.end(); ++it) {
       const auto* call = llvm::dyn_cast<llvm::CallBase>(&*it);
       const auto* callee =
@@ -68,32 +71,44 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
       if (callee != nullptr &&
           callee->getName().starts_with("__quantum__qis__") &&
           !isIrreversible(*call)) {
-        throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            TERMINAL_REGION_ERROR.str());
       }
     }
 
     auto* terminator = block.getTerminator();
     if (terminator->getNumSuccessors() > 1) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          TERMINAL_REGION_ERROR.str());
     }
     for (auto* successor : llvm::successors(&block)) {
       pending.emplace_back(successor);
     }
+    return Error::success();
   };
 
   auto* boundaryBlock = boundary.getParent();
   visited.insert(boundaryBlock);
-  inspect(*boundaryBlock, boundary.getIterator());
+  if (auto error = inspect(*boundaryBlock, boundary.getIterator())) {
+    return error;
+  }
   while (!pending.empty()) {
     auto* block = pending.pop_back_val();
     if (!visited.insert(block).second) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          TERMINAL_REGION_ERROR.str());
     }
-    inspect(*block, block->begin());
+    if (auto error = inspect(*block, block->begin())) {
+      return error;
+    }
   }
+  return Error::success();
 }
 
-static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
+static Error validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
   llvm::SmallPtrSet<llvm::Function*, 8> visited;
   llvm::SmallVector<llvm::Function*> pending{&entryPoint};
   while (!pending.empty()) {
@@ -111,7 +126,8 @@ static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
             call->getCalledOperand()->stripPointerCasts());
         if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
             callee == &entryPoint) {
-          throw std::invalid_argument(
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
               "Adaptive QIR state extraction requires direct calls without "
               "entry-point recursion");
         }
@@ -132,39 +148,48 @@ static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
         if ((name == "__quantum__rt__read_result" && !outputOnlyRead) ||
             name == "__quantum__qis__reset__body" ||
             (isIrreversible(*call) && name != "__quantum__qis__mz__body")) {
-          throw std::invalid_argument(
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
               "Adaptive QIR state extraction does not support "
               "measurement-dependent computation or resets");
         }
         if (!callee->isIntrinsic() && !name.starts_with("__quantum__")) {
-          throw std::invalid_argument("Adaptive QIR state extraction cannot "
-                                      "prove external call effects");
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
+              "Adaptive QIR state extraction cannot "
+              "prove external call effects");
         }
         if (name == "__quantum__rt__initialize" &&
             &instruction != &entryPoint.getEntryBlock().front()) {
-          throw std::invalid_argument(
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
               "Adaptive QIR state extraction requires initialization at entry");
         }
       }
     }
   }
+  return Error::success();
 }
 
-bool prepareForStateExtraction(llvm::Function& entryPoint) {
+llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint) {
   if (!entryPoint.getReturnType()->isIntegerTy(64) || !entryPoint.arg_empty()) {
-    throw std::invalid_argument(
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
         "QIR state extraction requires an i64() entry point");
   }
 
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (profile.isStringAttribute() &&
       profile.getValueAsString().compare(ADAPTIVE_PROFILE) == 0) {
-    validateAdaptiveStateExtraction(entryPoint);
+    if (auto error = validateAdaptiveStateExtraction(entryPoint)) {
+      return error;
+    }
     return false;
   }
   if (!profile.isStringAttribute() ||
       profile.getValueAsString().compare(BASE_PROFILE) != 0) {
-    throw std::invalid_argument(
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
         "QIR state extraction requires a Base or Adaptive Profile entry point");
   }
 
@@ -179,7 +204,8 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
           call->getCalledOperand()->stripPointerCasts());
       if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
           !callee->isDeclaration()) {
-        throw std::invalid_argument(
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
             "QIR state extraction requires direct calls to declared functions");
       }
       if (isIrreversible(*call)) {
@@ -201,11 +227,15 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
   }
   for (auto* call : irreversibleCalls) {
     if (boundary != call && !dominators.dominates(boundary, call)) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          TERMINAL_REGION_ERROR.str());
     }
   }
 
-  requireTerminalIrreversibleRegion(*boundary);
+  if (auto error = requireTerminalIrreversibleRegion(*boundary)) {
+    return error;
+  }
   auto* prefix = boundary->getParent();
   prefix->splitBasicBlock(boundary, "state-extraction.discarded");
   auto* oldTerminator = prefix->getTerminator();

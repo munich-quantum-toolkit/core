@@ -25,6 +25,7 @@ add_mlir_conversion_library(
   MLIRSupportMQT
   MLIRCBitDialect
   MLIRJeff
+  MLIRJeffTranslation
   MLIRNativeToJeff
   MLIRMQTDialect
   MLIRMQTTransforms

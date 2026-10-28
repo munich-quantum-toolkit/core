@@ -385,8 +385,17 @@ costs.
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point, including its classical branches
-and loops. Global phases in helper functions and those that remain inside QCO
-modifiers are retained.
+and loops. The reusable `drop-global-phases` pass applies this policy to QC or
+QCO programs marked with `mqt.entry_point`. It preserves measurement
+probabilities, not exact statevectors or unitaries. Helper functions and quantum
+modifier bodies retain their phases because coherent control and non-integer
+powers can make them observable.
+
+Target synthesis normalizes modifiers before dropping phases, so controlled
+phases become observable relative-phase operations. Exact normalization combines
+phases at the last contribution in each block, preserving the dominance of
+dynamic angle computations. Unused pure angle computations are left to dead-code
+elimination.
 
 Non-native two-qubit operations outside these rotation decompositions require a
 compile-time unitary matrix.
@@ -429,13 +438,12 @@ them natively. Explicit-topology routing handles only one- and two-qubit gates;
 static circuits may keep native wider gates at supported device sites.
 
 Before decomposition, the pipelines group adjacent non-native controlled gates
-with the same ordered controls and targets so existing canonicalization can
-simplify their bodies. Already-native groups remain unchanged, including gates
-with fixed supported angles. Runtime body fusion produces controlled U only when
-the target supports it. After this fusion opportunity, remaining composites are
-split before routing or placement and native synthesis. OpenQASM payloads keep
-runtime rotations separate when fusion would require unsupported quaternion
-extraction expressions.
+with the same ordered controls and targets to simplify their bodies together.
+Native groups remain unchanged, including gates with fixed supported angles.
+Runtime body fusion produces controlled U only when the target supports it. The
+pipelines split remaining composites before routing or placement and native
+synthesis. OpenQASM payloads keep runtime rotations separate when fusion would
+require unsupported quaternion extraction expressions.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when
@@ -477,6 +485,16 @@ the compiler checks the selected forward-branching nesting limit and a compiler
 safety limit of 256 total control-flow levels, including enclosing control flow.
 This compiler limit is not a QDMI requirement and does not apply to switches
 retained under multiway branching.
+
+The OpenQASM 2 baseline permits one level of forward branching. Its exporter
+requires whole-register equality conditions and statements allowed by the
+OpenQASM 2 grammar; it rejects residual loops and nested branches.
+
+OpenQASM payload versions `3` and `3.0` select OpenQASM 3.0, which supports
+forward branches and loops but not switches. Declare `forward-branching` to
+lower switches to nested `if` statements. A `multiway-branching` capability
+requires OpenQASM 3.1. The exporter writes `OPENQASM 3;` unless the emitted
+program needs `switch`, in which case it writes `OPENQASM 3.1;`.
 
 Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
 the corresponding QCO branch operation for linear quantum state. SCF loops must
@@ -641,44 +659,68 @@ because the target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
-Program factories and conversions return `mlir::FailureOr<T>`. Fallible in-place
-and file operations return `mlir::LogicalResult`. Check results with
-`mlir::failed` or `mlir::succeeded`; compiler diagnostics describe the errors.
+Program factories and the coordinated compiler pipeline return
+`llvm::Expected<T>`; text-program writes return `llvm::Error`. These results own
+their error details. MLIR transformations on an existing program retain
+`mlir::FailureOr<T>` or `mlir::LogicalResult` and report diagnostics through
+that program's context.
 
 Compile a file and submit it to DDSIM:
 
 ```cpp
+#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "qdmi/QDMI.hpp"
+
 #include "llvm/Support/Error.h"
-#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
-if (mlir::failed(input)) {
-  return 1;
-}
-auto compiled = mlir::compileProgram(std::move(*input), device);
-if (!compiled) {
-  llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
-  return 1;
-}
-auto job = mlir::submitProgram(device, *compiled);
-if (!job) {
-  llvm::errs() << llvm::toString(job.takeError()) << '\n';
-  return 1;
-}
-if (!job->wait()) {
-  return 1;
+#include <utility>
+
+int main() {
+  auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  if (!device) {
+    llvm::errs() << llvm::toString(device.takeError()) << '\n';
+    return 1;
+  }
+  auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
+  if (!input) {
+    llvm::errs() << llvm::toString(input.takeError()) << '\n';
+    return 1;
+  }
+  auto compiled = mlir::compileProgram(std::move(*input), *device);
+  if (!compiled) {
+    llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
+    return 1;
+  }
+  auto job = mlir::submitProgram(*device, *compiled);
+  if (!job) {
+    llvm::errs() << llvm::toString(job.takeError()) << '\n';
+    return 1;
+  }
+  auto completed = job->wait();
+  if (!completed) {
+    llvm::errs() << llvm::toString(completed.takeError()) << '\n';
+    return 1;
+  }
+  return *completed ? 0 : 1;
 }
 ```
 
-`compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
-available for hardware snapshots and staged compilation with a
-`TargetEnvironment`.
+`compilerTargetFromDevice` and `compilerTargetFromDeviceId` provide hardware
+snapshots for staged compilation with a `TargetEnvironment`.
 
 ### Payload support
+
+Payload version constraints use numeric `>=`, `<`, and `<=` comparisons joined
+by commas. For example, `PayloadFormat("openqasm", ">=3,<4")` accepts OpenQASM 3
+minor releases. A bare version retains the same-major ceiling convention: `3.1`
+means `>=3,<=3.1`. The compiler emits the lowest known version accepted by the
+receiver that supports the resulting program. A range requiring an unknown
+output version fails. QASM2 and QASM3 remain separate output formats; selected
+OpenQASM ranges must stay within one major version. Optional capabilities remain
+independent restrictions. Version ranges are compiler contracts, not metadata
+reported by QDMI devices.
 
 Targeted payloads use the device's advertised operation names and ordered
 placements. OpenQASM emits native calls without portable gate definitions;
@@ -697,9 +739,10 @@ for native payload export.
 
 QDMI's supported-format list does not provide per-format capability
 restrictions. The adapter therefore uses the compiler-supported baseline for the
-selected format (OpenQASM 3.1, IQM JSON, or QIR 2.1), with optional capability
-metadata marked as unknown. Use `TargetEnvironment` and `PayloadSpecification`
-for staged compilation with explicit restrictions.
+selected format (OpenQASM, IQM JSON, or QIR), with optional capability metadata
+marked as unknown. The compiler selects the emitted version from the features
+used by the program. Use `TargetEnvironment` and `PayloadSpecification` for
+staged compilation with explicit restrictions.
 
 QIR submission requires a parameterless entry point. QC-to-QIR conversion
 records direct measurements and CBit-register results, then emits runtime status

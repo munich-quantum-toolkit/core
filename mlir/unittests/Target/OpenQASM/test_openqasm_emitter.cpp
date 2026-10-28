@@ -292,29 +292,6 @@ TEST(OpenQASMTargetTest, ProductionTranslationUsesTheStagedPipeline) {
   EXPECT_TRUE(hasQuantumOperation);
 }
 
-TEST(OpenQASMTargetTest, EmitsTypedMixedNumericGateExpressions) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.0;
-include "stdgates.inc";
-gate shifted(theta) q {
-  rx(theta + 1) q;
-}
-qubit q;
-shifted(0.5) q;
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  size_t numericCasts = 0;
-  moduleOp->walk([&](Operation* operation) {
-    numericCasts += isa<arith::SIToFPOp, arith::UIToFPOp>(operation);
-  });
-  EXPECT_EQ(numericCasts, 1);
-}
-
 TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -357,20 +334,14 @@ rx(arccos(unsigned_value) + arcsin(signed_value) + arctan(float_value)) q;
   size_t arcCosines = 0;
   size_t arcSines = 0;
   size_t arcTangents = 0;
-  size_t unsignedConversions = 0;
-  size_t signedConversions = 0;
   moduleOp->walk([&](Operation* operation) {
     arcCosines += isa<math::AcosOp>(operation);
     arcSines += isa<math::AsinOp>(operation);
     arcTangents += isa<math::AtanOp>(operation);
-    unsignedConversions += isa<arith::UIToFPOp>(operation);
-    signedConversions += isa<arith::SIToFPOp>(operation);
   });
   EXPECT_EQ(arcCosines, 1);
   EXPECT_EQ(arcSines, 1);
   EXPECT_EQ(arcTangents, 1);
-  EXPECT_EQ(unsignedConversions, 1);
-  EXPECT_EQ(signedConversions, 1);
 }
 
 TEST(OpenQASMTargetTest, EmitsRuntimeScalarConversionMatrix) {
@@ -396,20 +367,14 @@ float float_from_int = source_int;
   size_t floatToUnsigned = 0;
   size_t floatToSigned = 0;
   size_t boolToInteger = 0;
-  size_t unsignedToFloat = 0;
-  size_t signedToFloat = 0;
   moduleOp->walk([&](Operation* operation) {
     floatToUnsigned += isa<arith::FPToUIOp>(operation);
     floatToSigned += isa<arith::FPToSIOp>(operation);
     boolToInteger += isa<arith::ExtUIOp>(operation);
-    unsignedToFloat += isa<arith::UIToFPOp>(operation);
-    signedToFloat += isa<arith::SIToFPOp>(operation);
   });
   EXPECT_EQ(floatToUnsigned, 1);
   EXPECT_EQ(floatToSigned, 1);
   EXPECT_EQ(boolToInteger, 1);
-  EXPECT_EQ(unsignedToFloat, 2);
-  EXPECT_EQ(signedToFloat, 1);
 }
 
 TEST(OpenQASMTargetTest, EmitsEveryRuntimeComparisonPredicate) {

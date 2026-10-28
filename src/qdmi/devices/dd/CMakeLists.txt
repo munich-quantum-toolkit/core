@@ -50,7 +50,7 @@ if(NOT TARGET ${TARGET_NAME})
       MQT::CoreQIRRuntime
       MQT::ProjectWarnings
       MQT::ProjectOptions)
-  mqt_llvm_target_disable_rtti(${WORKER_TARGET})
+  llvm_update_compile_flags(${WORKER_TARGET})
   if(WIN32)
     target_compile_definitions(${TARGET_NAME} PRIVATE NOMINMAX)
     set(WORKER_DIRECTORY ${CMAKE_INSTALL_BINDIR})

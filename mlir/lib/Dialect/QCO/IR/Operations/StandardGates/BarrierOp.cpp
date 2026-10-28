@@ -36,35 +36,14 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
   LogicalResult matchAndRewrite(BarrierOp op,
                                 PatternRewriter& rewriter) const override {
-    auto qubitsIn = op.getQubitsIn();
-
-    auto anythingToMerge = false;
-    SmallVector<Value> newQubitsOut(qubitsIn);
-
-    SmallVector<Value> newQubitsIn;
-    SmallVector<size_t> indicesToFill;
-
-    for (size_t i = 0; i < qubitsIn.size(); ++i) {
-      if (auto output = op.getQubitsOut()[i];
-          isa<BarrierOp>(*output.user_begin())) {
-        anythingToMerge = true;
-      } else {
-        newQubitsIn.push_back(qubitsIn[i]);
-        indicesToFill.push_back(i);
-      }
-    }
-
-    if (!anythingToMerge) {
+    if (op.getQubitsOut().empty()) {
       return failure();
     }
-
-    auto newBarrier = BarrierOp::create(rewriter, op.getLoc(), newQubitsIn);
-
-    for (size_t i = 0; i < indicesToFill.size(); ++i) {
-      newQubitsOut[indicesToFill[i]] = newBarrier.getQubitsOut()[i];
+    auto next = dyn_cast<BarrierOp>(*op.getQubitsOut().front().user_begin());
+    if (!next || next.getQubitsIn() != op.getQubitsOut()) {
+      return failure();
     }
-
-    rewriter.replaceOp(op, newQubitsOut);
+    rewriter.replaceOp(op, op.getQubitsIn());
     return success();
   }
 };

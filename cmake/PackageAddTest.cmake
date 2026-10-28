@@ -14,7 +14,9 @@ macro(PACKAGE_ADD_TEST testname linklibs)
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
     target_link_libraries(
       ${testname}
-      PRIVATE ${linklibs} GTest::gmock GTest::gtest_main MQT::ProjectOptions MQT::ProjectWarnings)
+      PRIVATE
+        ${linklibs} MQTCoreTestSupport GTest::gmock GTest::gtest_main MQT::ProjectOptions
+        MQT::ProjectWarnings)
     gtest_discover_tests(
       ${testname}
       DISCOVERY_MODE PRE_TEST
@@ -38,7 +40,9 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
     target_link_libraries(
       ${testname}
-      PRIVATE ${linklibs} GTest::gmock GTest::gtest_main MQT::ProjectOptions MQT::ProjectWarnings)
+      PRIVATE
+        ${linklibs} MQTCoreTestSupport GTest::gmock GTest::gtest_main MQT::ProjectOptions
+        MQT::ProjectWarnings)
     gtest_discover_tests(
       ${testname}
       DISCOVERY_MODE PRE_TEST

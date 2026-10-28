@@ -6,70 +6,43 @@
 #
 # Licensed under the MIT License
 
-set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-mlir-bindings")
+set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-bindings")
 
-if(NOT TARGET ${TARGET_NAME})
-  file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS *.cpp)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS *.cpp)
 
-  # Qiskit's extension C API tables are translation-unit local. Each supported minor therefore gets
-  # one source file with a private header snapshot.
-  file(
-    STRINGS Target/Qiskit/SupportedVersions.inc qiskit_version_registrations
-    REGEX "^MQT_QISKIT_VERSION\\(")
-  foreach(registration IN LISTS qiskit_version_registrations)
-    string(REGEX MATCH
-           "^MQT_QISKIT_VERSION\\(([0-9]+), *([0-9]+), *(2\\.[0-9]+\\.[0-9]+), *\"[^\"]+\"\\)$"
-           registration_match "${registration}")
-    if(NOT registration_match)
-      message(FATAL_ERROR "Invalid Qiskit version registration: ${registration}")
-    endif()
-    set(version_minor "${CMAKE_MATCH_1}")
-    set(version_release "${CMAKE_MATCH_3}")
-    set(translation_source "${CMAKE_CURRENT_SOURCE_DIR}/Target/Qiskit/Qiskit2_${version_minor}.cpp")
-    if(NOT EXISTS "${translation_source}")
-      message(
-        FATAL_ERROR "Missing Qiskit ${version_release} translation source: ${translation_source}")
-    endif()
-    set(version_include "${PROJECT_SOURCE_DIR}/vendor/qiskit-c-api/${version_release}/include")
-    if(NOT IS_DIRECTORY "${version_include}")
-      message(FATAL_ERROR "Missing Qiskit ${version_release} C API headers: ${version_include}")
-    endif()
-    set_source_files_properties(
-      ${translation_source}
-      PROPERTIES
-        COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES "${version_include}")
-  endforeach()
-
-  set(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE ""
-      CACHE PATH "CI-only include directory for an exact non-shipping Qiskit version")
-  set(MQT_QISKIT_CAPI_CANDIDATE_VERSION "" CACHE STRING "CI-only exact Qiskit development version")
-  if(MQT_QISKIT_CAPI_CANDIDATE_INCLUDE OR MQT_QISKIT_CAPI_CANDIDATE_VERSION)
-    if(NOT IS_DIRECTORY "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE}")
-      message(FATAL_ERROR "MQT_QISKIT_CAPI_CANDIDATE_INCLUDE must be a directory")
-    endif()
-    if(NOT MQT_QISKIT_CAPI_CANDIDATE_VERSION MATCHES "^2\\.[0-9]+\\.[0-9]+[^;\"]*$")
-      message(FATAL_ERROR "MQT_QISKIT_CAPI_CANDIDATE_VERSION must be one exact Qiskit 2 version")
-    endif()
-    set(QISKIT_FACTORY createCandidateTranslation)
-    set(candidate_source "${CMAKE_CURRENT_BINARY_DIR}/QiskitCandidate.cpp")
-    configure_file(Target/Qiskit/QiskitMinor.cpp.in ${candidate_source} @ONLY)
-    list(APPEND SOURCES ${candidate_source})
-    set_source_files_properties(
-      ${candidate_source}
-      PROPERTIES
-        COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES
-        "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE};${CMAKE_CURRENT_SOURCE_DIR}/Target/Qiskit")
+# Qiskit's extension C API tables are translation-unit local. Each supported minor therefore gets
+# one source file with a private header snapshot.
+file(
+  STRINGS Target/Qiskit/SupportedVersions.inc qiskit_version_registrations
+  REGEX "^MQT_QISKIT_VERSION\\(")
+foreach(registration IN LISTS qiskit_version_registrations)
+  string(REGEX MATCH
+         "^MQT_QISKIT_VERSION\\(([0-9]+), *([0-9]+), *(2\\.[0-9]+\\.[0-9]+), *\"[^\"]+\"\\)$"
+         registration_match "${registration}")
+  if(NOT registration_match)
+    message(FATAL_ERROR "Invalid Qiskit version registration: ${registration}")
   endif()
+  set(version_minor "${CMAKE_MATCH_1}")
+  set(version_release "${CMAKE_MATCH_3}")
+  set(translation_source "${CMAKE_CURRENT_SOURCE_DIR}/Target/Qiskit/Qiskit2_${version_minor}.cpp")
+  if(NOT EXISTS "${translation_source}")
+    message(
+      FATAL_ERROR "Missing Qiskit ${version_release} translation source: ${translation_source}")
+  endif()
+  set(version_include "${PROJECT_SOURCE_DIR}/vendor/qiskit-c-api/${version_release}/include")
+  if(NOT IS_DIRECTORY "${version_include}")
+    message(FATAL_ERROR "Missing Qiskit ${version_release} C API headers: ${version_include}")
+  endif()
+  set_source_files_properties(
+    ${translation_source}
+    TARGET_DIRECTORY ${TARGET_NAME}
+    PROPERTIES COMPILE_DEFINITIONS QISKIT_PYTHON_EXTENSION INCLUDE_DIRECTORIES "${version_include}")
+endforeach()
 
-  add_mqt_python_binding(
-    CORE
-    ${TARGET_NAME}
-    ${SOURCES}
-    MODULE_NAME
-    mlir
-    INSTALL_DIR
-    .
-    LINK_LIBS
+target_sources(${TARGET_NAME} PRIVATE ${SOURCES})
+target_link_libraries(
+  ${TARGET_NAME}
+  PRIVATE
     MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
@@ -77,19 +50,12 @@ if(NOT TARGET ${TARGET_NAME})
     MLIRMQTDialect
     MLIRMQTUtils
     MLIRQCTranslationSupport
-    MLIRQCODDFunctionalityPython)
+    MLIRQCODDFunctionality)
 
-  if(MQT_QISKIT_CAPI_CANDIDATE_VERSION)
-    target_compile_definitions(
-      ${TARGET_NAME}
-      PRIVATE MQT_QISKIT_CAPI_CANDIDATE_VERSION="${MQT_QISKIT_CAPI_CANDIDATE_VERSION}")
-  endif()
-
-  # install the Python stub file in editable mode for better IDE support
-  if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
-    install(
-      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi
-      DESTINATION .
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
-  endif()
+# install the Python stub file in editable mode for better IDE support
+if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
+  install(
+    FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi
+    DESTINATION .
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
 endif()

@@ -160,7 +160,8 @@ makeControlledGateDD(dd::Package& package, size_t numControls,
       controls.emplace(static_cast<dd::Qubit>(i));
     }
   }
-  return package.makeGateDD(matrix, controls, static_cast<dd::Qubit>(target));
+  return llvm::cantFail(
+      package.makeGateDD(matrix, controls, static_cast<dd::Qubit>(target)));
 }
 
 namespace {
@@ -336,7 +337,7 @@ static void expectImplementsControlledGate(
     func::FuncOp funcOp, size_t numControls, const dd::GateMatrix& matrix,
     size_t target, const DDArgumentBindings& bindings = DDArgumentBindings()) {
   ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
-  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto package = llvm::cantFail(dd::Package::create(numControls + 1));
   const auto actual = buildFunctionality(funcOp, *package, bindings);
   ASSERT_TRUE(succeeded(actual));
   const auto expected =
@@ -376,17 +377,19 @@ static void expectMatchesReferenceOnStates(
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = llvm::cantFail(dd::Package::create(numQubits));
   const auto referenceGate =
       makeControlledGateDD(*dd, numControls, matrix, numControls);
   dd->incRef(referenceGate);
   std::mt19937_64 rng(0);
   for (const auto& state : states) {
-    const auto actual =
-        simulate(funcOp, dd::makeBasisState(numQubits, state, *dd), *dd, rng);
+    const auto actual = simulate(
+        funcOp, llvm::cantFail(dd::makeBasisState(numQubits, state, *dd)), *dd,
+        rng);
     ASSERT_TRUE(succeeded(actual));
     const auto expected = dd->applyOperation(
-        referenceGate, dd::makeBasisState(numQubits, state, *dd));
+        referenceGate,
+        llvm::cantFail(dd::makeBasisState(numQubits, state, *dd)));
     expectStatesNear(*dd, *actual, expected);
     dd->decRef(*actual);
     dd->decRef(expected);
@@ -442,7 +445,8 @@ template <typename Gate>
 [[nodiscard]] static size_t countSingleControlledGates(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&count](CtrlOp op) {
-    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner =
+        mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (op.getNumControls() == 1 && op.getNumTargets() == 1 && inner &&
         isa<Gate>(inner.getOperation())) {
       ++count;
@@ -981,7 +985,7 @@ TEST_F(MultiControlledDecompositionTest, ControlledSwapRespectsMinQubits) {
         size_t controlledSwaps = 0;
         moduleOp->walk([&](CtrlOp op) {
           auto inner =
-              mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+              mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
           if (op.getNumControls() == numControls && op.getNumTargets() == 2 &&
               inner && isa<SWAPOp>(inner.getOperation())) {
             ++controlledSwaps;
@@ -993,16 +997,16 @@ TEST_F(MultiControlledDecompositionTest, ControlledSwapRespectsMinQubits) {
         expectFullyDecomposed(funcOp);
       }
 
-      auto package = std::make_unique<dd::Package>(numControls + 2);
+      auto package = llvm::cantFail(dd::Package::create(numControls + 2));
       const auto actual = buildFunctionality(funcOp, *package);
       ASSERT_TRUE(succeeded(actual));
-      const auto expected =
+      const auto expected = llvm::cantFail(
           makeGateDD(*package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
                      {
                          static_cast<dd::Qubit>(numControls),
                          static_cast<dd::Qubit>(numControls + 1),
                      },
-                     makeControls(numControls));
+                     makeControls(numControls)));
       EXPECT_EQ(*actual, expected);
       package->decRef(*actual);
     }

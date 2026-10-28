@@ -57,6 +57,8 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
@@ -666,9 +668,82 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
   return candidates;
 }
 
+/// Give opaque quantum functions QIS symbols without expanding their bodies.
+static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
+  DenseSet<Operation*> named;
+  for (auto function :
+       llvm::make_early_inc_range(moduleOp.getOps<func::FuncOp>())) {
+    if (!function.isExternal() ||
+        !llvm::any_of(function.getArgumentTypes(),
+                      [](Type type) { return isa<qc::QubitType>(type); })) {
+      continue;
+    }
+    auto source = function->getAttrOfType<StringAttr>(
+        mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+    StringRef name = source ? source.getValue() : function.getSymName();
+    auto baseName = name;
+    size_t controls = 0;
+    // Resolve standard scalar aliases; other names remain opaque.
+    while (controls < 2 && baseName.consume_front("c")) {
+      ++controls;
+    }
+    std::string symbol = (Twine("__quantum__qis__") + name + "__body").str();
+    auto types = function.getArgumentTypes();
+    const auto parameters = static_cast<size_t>(
+        llvm::count_if(types, [](Type type) { return type.isF64(); }));
+    const auto qubits = types.size() - parameters;
+    bool validSignature = name != "mz" && name != "reset" && name != "gphase";
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
+  if ((baseName == qc::KEY##Op::getBaseSymbol() &&                             \
+       !(baseName == "u" && controls != 0)) ||                                 \
+      (baseName == #NAME && StringRef(#SUFFIX) == "body")) {                   \
+    symbol = qir::getFnName##GETTER(controls);                                 \
+    validSignature = parameters == (PARAMS) && qubits == (TARGETS) + controls; \
+  }
+#include "mqt/Conversion/GateTable.def"
+    if (!validSignature || function.getNumResults() != 0 ||
+        !llvm::all_of(types.take_front(parameters),
+                      [](Type type) { return type.isF64(); }) ||
+        !llvm::all_of(types.drop_front(parameters),
+                      [](Type type) { return isa<qc::QubitType>(type); })) {
+      return function.emitError("unsupported opaque QIR gate signature: ")
+             << name;
+    }
+    auto* existing = moduleOp.lookupSymbol(symbol);
+    if (existing != nullptr && existing != function) {
+      auto declaration = dyn_cast<func::FuncOp>(existing);
+      if (!named.contains(existing) || !declaration ||
+          !declaration.isExternal() ||
+          declaration.getFunctionType() != function.getFunctionType()) {
+        return function.emitError("conflicting opaque QIR gate declaration: ")
+               << symbol;
+      }
+    }
+    if (failed(SymbolTable::replaceAllSymbolUses(
+            function, StringAttr::get(moduleOp.getContext(), symbol),
+            moduleOp))) {
+      return function.emitError("could not resolve opaque QIR gate uses");
+    }
+    if (existing != nullptr && existing != function) {
+      function.erase();
+      continue;
+    }
+    function.setSymName(symbol);
+    for (size_t index = parameters; index < types.size(); ++index) {
+      function.setArgAttr(index, qir::QIR_QUBIT_ARG_ATTR,
+                          UnitAttr::get(moduleOp.getContext()));
+    }
+    named.insert(function);
+  }
+  return success();
+}
+
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                       bool allowComputedOutputs,
                                       bool deferMeasurementStores) {
+  if (failed(nameOpaqueQIRGates(cast<ModuleOp>(moduleOp)))) {
+    return failure();
+  }
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
   const TargetEnvironmentAnalysis environment(moduleOp);
   if (environment &&
@@ -685,8 +760,40 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                            "allocations in the entry function");
       hasInvalidMemory = true;
     }
+    if (isa<func::FuncOp, func::CallOp, func::CallIndirectOp>(operation)) {
+      TypeRange inputs = operation->getOperandTypes();
+      TypeRange results = operation->getResultTypes();
+      if (auto function = dyn_cast<func::FuncOp>(operation)) {
+        inputs = function.getArgumentTypes();
+        // Entry results are checked below against the output ABI.
+        if (function != funcOp) {
+          results = function.getResultTypes();
+        }
+      }
+      const auto isClassicalArray = [](Type type) {
+        auto memref = dyn_cast<MemRefType>(type);
+        return memref && !isa<QubitType>(memref.getElementType());
+      };
+      if (llvm::any_of(inputs, isClassicalArray) ||
+          llvm::any_of(results, isClassicalArray)) {
+        operation->emitError(
+            "QIR conversion requires classical-array helpers "
+            "to be inlined; compile the program before export");
+        hasInvalidMemory = true;
+      }
+    }
     if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
       return;
+    }
+    const auto isQubitRegister = [](Type type) {
+      auto memref = dyn_cast<MemRefType>(type);
+      return memref && isa<QubitType>(memref.getElementType());
+    };
+    if (llvm::any_of(operation->getOperandTypes(), isQubitRegister) ||
+        llvm::any_of(operation->getResultTypes(), isQubitRegister)) {
+      operation->emitError("QIR conversion requires quantum-register calls to "
+                           "be inlined; compile the program before export");
+      hasInvalidMemory = true;
     }
     const auto isRegister = [](Type type) {
       return isa<cbit::RegisterType>(type);

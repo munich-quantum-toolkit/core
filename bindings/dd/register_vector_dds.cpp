@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
+#include "Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"
@@ -31,11 +32,14 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
+using bindings::unwrap;
+
 using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold) {
-  auto dataPtr = std::make_unique<dd::CVec>(dd::getVector(v, threshold));
+  auto dataPtr =
+      std::make_unique<dd::CVec>(unwrap(dd::getVector(v, threshold)));
   auto* const data = dataPtr->data();
   const auto size = dataPtr->size();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
@@ -83,9 +87,9 @@ void registerVectorDDs(const nb::module_& m) {
           for (auto bit = 0U; bit < digits; ++bit) {
             decisions[bit] = ((index >> bit) & 1U) != 0U ? '1' : '0';
           }
-          return v.getValueByPath(numQubits, decisions);
+          return unwrap(v.getValueByPath(numQubits, decisions));
         }
-        return dd::getValueByIndex(v, index);
+        return unwrap(dd::getValueByIndex(v, index));
       },
       "key"_a, "Get the amplitude of a basis state by index.");
 
@@ -93,7 +97,7 @@ void registerVectorDDs(const nb::module_& m) {
       "get_amplitude",
       [](const dd::vEdge& v, const size_t numQubits,
          const std::string& decisions) {
-        return v.getValueByPath(numQubits, decisions);
+        return unwrap(v.getValueByPath(numQubits, decisions));
       },
       "num_qubits"_a, "decisions"_a,
       R"pb(Get the amplitude of a basis state by decisions.

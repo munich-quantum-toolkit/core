@@ -27,21 +27,19 @@ using namespace mlir;
 
 namespace {
 
-TEST(OpenQASMFrontendTest, PreservesExactAndOptionalVersionSemantics) {
+TEST(OpenQASMFrontendTest, AcceptsOptionalAndFutureMinorVersions) {
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM("qubit q; x q;"));
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM("OPENQASM 3; qubit q; x q;"));
 
-  auto unsupported =
-      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.10; qubit q; x q;");
-  ASSERT_FALSE(unsupported);
-  ASSERT_FALSE(unsupported.diagnostics.empty());
-  EXPECT_NE(unsupported.diagnostics.front().message.find("3.10"),
-            std::string::npos);
+  EXPECT_TRUE(
+      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.10; qubit q; x q;"));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.10; qreg q[1]; U(0,0,0) q[0];"));
 }
 
-TEST(OpenQASMFrontendTest, RejectsUnsupportedOpenQASM3MinorVersions) {
+TEST(OpenQASMFrontendTest, RejectsUnsupportedOpenQASMMajorVersions) {
   constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.2;
+OPENQASM 4.0;
 qubit q;
 x q;
 )qasm";
@@ -87,7 +85,7 @@ TEST(OpenQASMFrontendTest, PreservesSourceNamesInSemanticDiagnostics) {
 TEST(OpenQASMFrontendTest, LocatesVersionAndOutputDiagnosticsPrecisely) {
   llvm::SourceMgr versionSources;
   versionSources.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBufferCopy("OPENQASM 3.2;\nqubit q;\n",
+      llvm::MemoryBuffer::getMemBufferCopy("OPENQASM 4.0;\nqubit q;\n",
                                            "unsupported-version.qasm"),
       llvm::SMLoc());
   auto version = openqasm::frontend::analyzeOpenQASM(versionSources);
@@ -557,8 +555,8 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
           .source = "OPENQASM 3.1; duration delay;",
       },
       {
-          .name = "unsupported-opaque",
-          .source = "OPENQASM 3.1; opaque custom q;",
+          .name = "opaque-with-body",
+          .source = "OPENQASM 2.0; opaque custom q {}",
       },
       {.name = "output-qubit", .source = "OPENQASM 3.1; output qubit q;"},
       {.name = "const-qubit", .source = "OPENQASM 3.1; const qubit q;"},

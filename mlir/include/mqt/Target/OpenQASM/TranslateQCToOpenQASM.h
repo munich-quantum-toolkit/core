@@ -24,7 +24,7 @@ class ModuleOp;
 
 namespace qc {
 
-/// Consume a QC module and translate it to portable OpenQASM.
+/// Consume a QC module and translate it to portable OpenQASM 3.
 ///
 /// Classical subroutines, gate definitions, and supported structured
 /// control flow are preserved. Other helpers are inlined and array views
@@ -36,6 +36,14 @@ LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
 FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
+
+/// Consume a QC module and emit OpenQASM 2 with bound parameters.
+///
+/// Measurements must write output registers. Register-equality conditions are
+/// supported; other control flow, classical assignments, and residual modifiers
+/// are rejected. Translation does not compile or change device qubit indices.
+FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp);
+FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
 LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;

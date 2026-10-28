@@ -16,7 +16,6 @@
 #include "gtest/gtest.h"
 
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -65,9 +64,10 @@ TEST(IQMJSONPipelineTest, CompilesInputFormatsForAnExplicitTarget) {
     result[0] = measure q[0];
   )qasm";
   auto qc = QCProgram::fromOpenQASMString(source.str());
-  ASSERT_TRUE(succeeded(qc));
-  EXPECT_TRUE(failed(
-      runDefaultPipeline(CompilerInput(qc->copy()), ProgramFormat::IQMJSON)));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  EXPECT_TRUE(llvm::errorToBool(
+      (runDefaultPipeline(CompilerInput(qc->copy()), ProgramFormat::IQMJSON))
+          .takeError()));
   auto qco = qc->copy().intoQCO();
   ASSERT_TRUE(succeeded(qco));
   auto jeff = qco->copy().intoJeff();
@@ -80,7 +80,8 @@ TEST(IQMJSONPipelineTest, CompilesInputFormatsForAnExplicitTarget) {
   for (auto& input : inputs) {
     SCOPED_TRACE(input.index());
     auto output = runDefaultPipeline(std::move(input), makeIQMEnvironment());
-    ASSERT_TRUE(succeeded(output));
+    ASSERT_TRUE(static_cast<bool>(output))
+        << llvm::toString(output.takeError());
     ASSERT_TRUE(std::holds_alternative<IQMJSONProgram>(*output));
     const auto& exported = std::get<IQMJSONProgram>(*output);
     const auto circuit = llvm::cantFail(llvm::json::parse(exported.source()));
@@ -109,7 +110,7 @@ TEST(IQMJSONPipelineTest, PreservesReversedStoresToDistinctOutputRegisters) {
   ASSERT_TRUE(succeeded(program));
   auto output = runDefaultPipeline(CompilerInput(std::move(*program)),
                                    makeIQMEnvironment());
-  ASSERT_TRUE(succeeded(output));
+  ASSERT_TRUE(static_cast<bool>(output)) << llvm::toString(output.takeError());
   const auto circuit = llvm::cantFail(
       llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
@@ -135,7 +136,7 @@ TEST(IQMJSONPipelineTest, UnrollsLoopsAndSynthesizesIQMBasis) {
     result = measure q;
   )qasm")),
                                    makeIQMEnvironment());
-  ASSERT_TRUE(succeeded(output));
+  ASSERT_TRUE(static_cast<bool>(output)) << llvm::toString(output.takeError());
   const auto circuit = llvm::cantFail(
       llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
@@ -168,11 +169,10 @@ TEST(IQMJSONPipelineTest, RejectsReconstructedOutputsAndNonterminalGates) {
     SCOPED_TRACE(source);
     auto input =
         QCProgram::fromOpenQASMString(std::string("OPENQASM 3.0; ") + source);
-    ASSERT_TRUE(succeeded(input));
-    ScopedDiagnosticHandler diagnostics(input->module().getContext(),
-                                        [](Diagnostic&) { return success(); });
-    EXPECT_TRUE(failed(runDefaultPipeline(CompilerInput(input->copy()),
-                                          makeIQMEnvironment())));
+    ASSERT_TRUE(static_cast<bool>(input)) << llvm::toString(input.takeError());
+    EXPECT_TRUE(llvm::errorToBool(
+        (runDefaultPipeline(CompilerInput(input->copy()), makeIQMEnvironment()))
+            .takeError()));
   }
 }
 
@@ -205,7 +205,7 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
     a[0] = measure q[2];
   )qasm")),
                                    environment);
-  ASSERT_TRUE(succeeded(output));
+  ASSERT_TRUE(static_cast<bool>(output)) << llvm::toString(output.takeError());
   const auto circuit = llvm::cantFail(
       llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
   const auto& instructions = *circuit.getAsObject()->getArray("instructions");
@@ -226,4 +226,33 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
   for (size_t index = 0; index + 3 < instructions.size(); ++index) {
     EXPECT_NE(instructions[index].getAsObject()->getString("name"), "measure");
   }
+}
+
+TEST(IQMJSONPipelineTest, NativeExportOmitsBarriers) {
+  auto qc = QCProgram::fromOpenQASMString(R"qasm(
+    OPENQASM 3.0;
+    bit[2] result;
+    r(0.25, 0.5) $5;
+    barrier $5, $17;
+    r(0.75, 1.0) $17;
+    result[0] = measure $5;
+    result[1] = measure $17;
+  )qasm");
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  const auto environment = makeIQMEnvironment();
+  auto output = std::move(*qc).intoIQMJSON(environment.target());
+  ASSERT_TRUE(succeeded(output));
+  const auto circuit = llvm::cantFail(llvm::json::parse(output->source()));
+  const auto& instructions = *circuit.getAsObject()->getArray("instructions");
+  ASSERT_EQ(instructions.size(), 4U);
+  EXPECT_EQ(instructions[0].getAsObject()->getString("name"), "prx");
+  EXPECT_EQ(instructions[1].getAsObject()->getString("name"), "prx");
+  EXPECT_EQ(instructions[2].getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions[3].getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(
+      instructions[0].getAsObject()->getObject("args")->getNumber("angle"),
+      0.25);
+  EXPECT_EQ(
+      instructions[1].getAsObject()->getObject("args")->getNumber("angle"),
+      0.75);
 }

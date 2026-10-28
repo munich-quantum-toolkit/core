@@ -11,6 +11,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-common)
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon FORCE_STATIC HIDDEN_VISIBILITY)
 
+  llvm_update_compile_flags(${TARGET_NAME})
+
   target_sources(${TARGET_NAME} PRIVATE Common.cpp DeviceConfiguration.cpp)
 
   target_sources(
@@ -26,8 +28,6 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi LLVMSupport
     PRIVATE $<BUILD_LOCAL_INTERFACE:qdmi::qdmi_project_warnings> ${CMAKE_DL_LIBS})
-
-  target_include_directories(${TARGET_NAME} SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>")
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()

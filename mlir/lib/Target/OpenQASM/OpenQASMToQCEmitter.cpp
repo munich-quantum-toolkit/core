@@ -1058,9 +1058,10 @@ private:
     assert(uParameters.size() == 3);
     auto half = arith::ConstantFloatOp::create(
         opBuilder, loc, opBuilder.getF64Type(), APFloat(0.5));
-    Value result = arith::MulFOp::create(opBuilder, loc, uParameters[0], half);
+    Value result =
+        opBuilder.createOrFold<arith::MulFOp>(loc, uParameters[0], half);
     if (extraPhase) {
-      result = arith::AddFOp::create(opBuilder, loc, result, *extraPhase);
+      result = opBuilder.createOrFold<arith::AddFOp>(loc, result, *extraPhase);
     }
     return result;
   }
@@ -1070,11 +1071,11 @@ private:
     assert(uParameters.size() >= 2);
     const auto phiIndex = uParameters.size() == 2 ? 0U : 1U;
     const auto lambdaIndex = uParameters.size() == 2 ? 1U : 2U;
-    auto sum = arith::AddFOp::create(opBuilder, loc, uParameters[phiIndex],
-                                     uParameters[lambdaIndex]);
+    auto sum = opBuilder.createOrFold<arith::AddFOp>(loc, uParameters[phiIndex],
+                                                     uParameters[lambdaIndex]);
     auto negativeHalf = arith::ConstantFloatOp::create(
         opBuilder, loc, opBuilder.getF64Type(), APFloat(-0.5));
-    return arith::MulFOp::create(opBuilder, loc, sum, negativeHalf);
+    return opBuilder.createOrFold<arith::MulFOp>(loc, sum, negativeHalf);
   }
 
   [[nodiscard]] Value
@@ -1204,7 +1205,17 @@ private:
 
     builder.setLoc(getLocation(gate.location));
     func::FuncOp function;
-    if (!statementsAreUnitary(gate.body)) {
+    if (gate.opaque) {
+      OpBuilder::InsertionGuard guard(builder);
+      auto moduleOp = builder.getInsertionBlock()
+                          ->getParentOp()
+                          ->getParentOfType<ModuleOp>();
+      builder.setInsertionPointToStart(moduleOp.getBody());
+      function =
+          func::FuncOp::create(builder, builder.getLoc(), gate.name,
+                               builder.getFunctionType(argumentTypes, {}));
+      function.setPrivate();
+    } else if (!statementsAreUnitary(gate.body)) {
       function = builder.createFunction(gate.name, argumentTypes,
                                         [&](ValueRange arguments) {
                                           emitBody(arguments);
@@ -1534,11 +1545,11 @@ private:
         target == frontend::ScalarType::Angle) {
       if (source == frontend::ScalarType::Bool ||
           source == frontend::ScalarType::Uint) {
-        return arith::UIToFPOp::create(opBuilder, loc, opBuilder.getF64Type(),
-                                       value);
+        return opBuilder.createOrFold<arith::UIToFPOp>(
+            loc, opBuilder.getF64Type(), value);
       }
-      return arith::SIToFPOp::create(opBuilder, loc, opBuilder.getF64Type(),
-                                     value);
+      return opBuilder.createOrFold<arith::SIToFPOp>(
+          loc, opBuilder.getF64Type(), value);
     }
     if (source == frontend::ScalarType::Bool) {
       return arith::ExtUIOp::create(opBuilder, loc, opBuilder.getI64Type(),

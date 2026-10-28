@@ -24,6 +24,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SMLoc.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -164,8 +165,7 @@ private:
       return sink.returnStmt(location, value);
     }
     case TokenKind::Opaque:
-      return sink.error(current().loc,
-                        "opaque gate declarations are not supported");
+      return parseGateStatement(/*opaque=*/true);
     case TokenKind::Barrier:
       return parseBarrier();
     case TokenKind::Reset:
@@ -924,9 +924,9 @@ private:
 
   //===--- Gate definitions and calls -----------------------------------===//
 
-  [[nodiscard]] LogicalResult parseGateStatement() {
+  [[nodiscard]] LogicalResult parseGateStatement(bool opaque = false) {
     const auto loc = current().loc;
-    advance(); // gate
+    advance(); // gate or opaque
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected gate name");
     }
@@ -951,11 +951,16 @@ private:
     if (failed(parseIdentifierList(targets))) {
       return failure();
     }
+    if (opaque) {
+      return sink.gateDefinition(
+          loc, id, parameters, targets,
+          [this] { return expect(TokenKind::Semicolon); },
+          /*opaque=*/true);
+    }
     if (current().kind != TokenKind::LBrace) {
       return sink.error(current().loc,
                         "expected '{' to begin gate definition body");
     }
-
     return sink.gateDefinition(loc, id, parameters, targets,
                                [this] { return parseBlock(); });
   }
@@ -1167,6 +1172,9 @@ private:
 
     // Parse parameters
     if (current().kind == TokenKind::LParen) {
+      // OpenQASM 2 gate parameters use real arithmetic for integer literals.
+      llvm::SaveAndRestore parameterGuard(realGateParameters,
+                                          sink.isOpenQASM2());
       advance();
       while (current().kind != TokenKind::RParen) {
         auto parameter = parseExpression();
@@ -1597,7 +1605,7 @@ private:
       return failure();
     }
     SyntaxExpressionId result = *lhs;
-    while (current().kind == TokenKind::Caret) {
+    while (!sink.isOpenQASM2() && current().kind == TokenKind::Caret) {
       const auto loc = current().loc;
       advance();
       auto rhs = parseBitwiseAnd();
@@ -1784,7 +1792,9 @@ private:
 
   [[nodiscard]] FailureOr<SyntaxExpressionId> parsePower() {
     auto lhs = parsePrimary();
-    if (failed(lhs) || current().kind != TokenKind::DoubleAsterisk) {
+    if (failed(lhs) ||
+        (current().kind != TokenKind::DoubleAsterisk &&
+         !(sink.isOpenQASM2() && current().kind == TokenKind::Caret))) {
       return lhs;
     }
     const auto loc = current().loc;
@@ -1830,6 +1840,14 @@ private:
         expr.wideInteger = current().stringValue;
       }
       advance();
+      if (realGateParameters) {
+        const auto integer = sink.addExpression(expr);
+        return sink.addExpression({
+            .kind = Expr::Kind::FloatCast,
+            .location = expr.location,
+            .rhs = integer,
+        });
+      }
       return sink.addExpression(expr);
     case TokenKind::Bool:
     case TokenKind::Bit:
@@ -1866,7 +1884,9 @@ private:
     }
     case TokenKind::Identifier: {
       if (peek().kind == TokenKind::LParen) {
-        const auto kind = getMathFunctionKind(current().identifier);
+        const auto name = current().identifier;
+        const auto kind = getMathFunctionKind(
+            sink.isOpenQASM2() && name == "ln" ? "log" : name);
         if (!kind) {
           expr.kind = Expr::Kind::Call;
           expr.identifier = current().identifier;
@@ -1975,6 +1995,7 @@ private:
   SyntaxBuilder& sink;
   Token currentToken;
   Token nextToken;
+  bool realGateParameters = false;
   size_t blockDepth = 0;
   size_t recursiveExpressionDepth = 0;
 };

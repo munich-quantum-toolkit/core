@@ -201,6 +201,38 @@ TEST(OpenQASMFrontendTest, ValidatesArrayReferenceArguments) {
   }
 }
 
+TEST(OpenQASMFrontendTest, OpaqueGateDeclarations) {
+  auto result = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.0; opaque hop(theta) a,b; qreg q[2]; hop(0.125) q[1],q[0];");
+  ASSERT_TRUE(result);
+  ASSERT_EQ(result.program->gates.size(), 1);
+  const auto& gate = result.program->gates.front();
+  EXPECT_TRUE(gate.opaque);
+  EXPECT_TRUE(gate.body.empty());
+  EXPECT_EQ(gate.parameterCount, 1);
+  EXPECT_EQ(gate.qubitCount, 2);
+  for (const auto* name : {"sx", "cx"}) {
+    auto custom = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 2.0; opaque ") + name + "(theta) q; qreg q[1]; " +
+        name + "(0.125) q[0];");
+    ASSERT_TRUE(custom);
+    ASSERT_EQ(custom.program->gates.size(), 1);
+    EXPECT_TRUE(custom.program->gates.front().opaque);
+    EXPECT_EQ(custom.program->gates.front().parameterCount, 1);
+  }
+  for (const auto* source : {
+           "OPENQASM 3.1; opaque hop a;",
+           "OPENQASM 2.0; include \"qelib1.inc\"; opaque cx a,b;",
+           "OPENQASM 2.0; opaque hop(a,a) q;",
+           "OPENQASM 2.0; opaque hop(a) a;",
+           "OPENQASM 2.0; opaque hop(a) q; qreg q[1]; hop q[0];",
+           "OPENQASM 2.0; opaque hop a,b; qreg q[1]; hop q[0];",
+       }) {
+    SCOPED_TRACE(source);
+    EXPECT_FALSE(openqasm::frontend::analyzeOpenQASM(source));
+  }
+}
+
 TEST(OpenQASMFrontendTest, ResolvesRegisterSlicesInSelectionOrder) {
   using namespace openqasm::frontend;
   const auto cases =
@@ -1194,6 +1226,10 @@ TEST(OpenQASMFrontendTest, AcceptsLogAndRejectsLnBuiltInSpelling) {
   auto log = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; const float value = log(2.0);");
   ASSERT_TRUE(log) << log.diagnostics.front().message;
+
+  auto qasm2Ln = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.0; qreg q[1]; U(ln(2.0),0,0) q[0];");
+  ASSERT_TRUE(qasm2Ln) << qasm2Ln.diagnostics.front().message;
 
   auto nonstandardLn = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; float value = ln(2.0);");

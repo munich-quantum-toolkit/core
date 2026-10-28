@@ -211,8 +211,10 @@ LogicalResult SyntaxBuilder::subroutineDefinition(
 
 LogicalResult SyntaxBuilder::gateDefinition(
     SMLoc location, StringRef identifier, ArrayRef<StringRef> parameters,
-    ArrayRef<StringRef> qubits, function_ref<LogicalResult()> continuation) {
+    ArrayRef<StringRef> qubits, function_ref<LogicalResult()> continuation,
+    bool opaque) {
   SyntaxGateDefinition definition{
+      .opaque = opaque,
       .identifier = identifier,
       .parameters = parameters.vec(),
       .qubits = qubits.vec(),

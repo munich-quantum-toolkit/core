@@ -6,21 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-qdmi-bindings")
-
-if(NOT TARGET ${TARGET_NAME})
-  file(GLOB_RECURSE SOURCES **.cpp)
-
-  add_mqt_python_binding(
-    CORE
-    ${TARGET_NAME}
-    ${SOURCES}
-    MODULE_NAME
-    qdmi
-    INSTALL_DIR
-    .
-    LINK_LIBS
-    MQT::CoreQDMI
-    LLVMSupport)
-
-endif()
+file(GLOB_RECURSE SOURCES **.cpp)
+target_sources(${MQT_CORE_TARGET_NAME}-bindings PRIVATE ${SOURCES})
+target_link_libraries(${MQT_CORE_TARGET_NAME}-bindings PRIVATE MQT::CoreQDMI)

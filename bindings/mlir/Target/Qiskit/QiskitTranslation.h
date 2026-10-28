@@ -362,7 +362,9 @@ public:
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual std::optional<mlir::mqt::QubitLayout>
   layout() const = 0;
-  [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
+  /// Opaque gates retain their spellings instead of normalizing modifiers.
+  [[nodiscard]] virtual Instruction instruction(size_t index,
+                                                bool opaque = false) const = 0;
   [[nodiscard]] virtual ClassicalAssignment store(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
   unitary(size_t index, const Instruction& instruction) const = 0;
@@ -466,10 +468,5 @@ public:
   [[nodiscard]] std::unique_ptr<VersionedTranslation> createQiskit2_##minor();
 #include "SupportedVersions.inc"
 #undef MQT_QISKIT_VERSION
-
-#ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
-[[nodiscard]] std::unique_ptr<VersionedTranslation>
-createCandidateTranslation();
-#endif
 
 } // namespace mqt::bindings::qiskit

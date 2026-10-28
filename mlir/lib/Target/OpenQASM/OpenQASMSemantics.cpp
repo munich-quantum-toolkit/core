@@ -1034,16 +1034,18 @@ private:
     return nullptr;
   }
 
+  [[nodiscard]] bool isGateDeclared(const GateCatalogEntry& gate) const {
+    return gate.availability == GateAvailability::Language ||
+           (belongsToStdGates(gate.availability) && program.stdGatesIncluded) ||
+           (belongsToQELib1(gate.availability) && program.qelib1Included) ||
+           (program.openQASM2 && gate.name == "CX");
+  }
+
   [[nodiscard]] LogicalResult declare(SMLoc location, StringRef name,
                                       Symbol symbol) {
     const auto* catalog = lookupGate(name);
     const bool catalogNameReserved =
-        catalog != nullptr &&
-        (catalog->availability == GateAvailability::Language ||
-         (belongsToStdGates(catalog->availability) &&
-          program.stdGatesIncluded) ||
-         (belongsToQELib1(catalog->availability) && program.qelib1Included) ||
-         (program.openQASM2 && catalog->name == "CX"));
+        catalog != nullptr && isGateDeclared(*catalog);
     if (builtinConstant(name) ||
         (scopes.size() == 1 &&
          (customGates.contains(name) || subroutines_.contains(name) ||
@@ -1057,15 +1059,7 @@ private:
   }
 
   [[nodiscard]] bool isGateAvailable(const GateCatalogEntry& gate) const {
-    if (gate.availability == GateAvailability::Language) {
-      return true;
-    }
-    if (gatePolicy == GatePolicy::MQTCompatibility) {
-      return true;
-    }
-    return (belongsToStdGates(gate.availability) && program.stdGatesIncluded) ||
-           (belongsToQELib1(gate.availability) && program.qelib1Included) ||
-           (program.openQASM2 && gate.name == "CX");
+    return gatePolicy == GatePolicy::MQTCompatibility || isGateDeclared(gate);
   }
 
   [[nodiscard]] LogicalResult analyzeVersion() {
@@ -1073,11 +1067,11 @@ private:
       return success();
     }
     const auto version = *syntax.version;
-    if (version.major == 2 && version.minor == 0) {
+    if (version.major == 2) {
       program.openQASM2 = true;
       return success();
     }
-    if (version.major == 3 && (version.minor == 0 || version.minor == 1)) {
+    if (version.major == 3) {
       return success();
     }
     return fail(syntax.versionLocation, "Unsupported OpenQASM version " +
@@ -2903,7 +2897,7 @@ private:
       if (symbol->kind == SymbolKind::GateParameter) {
         return addExpression({
             .kind = ExpressionKind::GateParameter,
-            .type = ScalarType::Angle,
+            .type = symbol->type,
             .parameter = symbol->id,
         });
       }
@@ -3516,7 +3510,8 @@ private:
           if constexpr (!std::is_same_v<T, SyntaxGateCall> &&
                         !std::is_same_v<T, SyntaxFor> &&
                         !std::is_same_v<T, SyntaxWhile>) {
-            if (!activeGate_.empty()) {
+            if (!activeGate_.empty() &&
+                !(program.openQASM2 && std::is_same_v<T, SyntaxBarrier>)) {
               return fail(
                   statement.location,
                   "gate bodies may contain only gate calls and loops over "
@@ -5043,6 +5038,9 @@ private:
   [[nodiscard]] LogicalResult
   analyzeGateDefinition(SMLoc location,
                         const SyntaxGateDefinition& declaration) {
+    if (declaration.opaque && !program.openQASM2) {
+      return fail(location, "opaque declarations require OpenQASM 2");
+    }
     if (customGates.contains(declaration.identifier) ||
         subroutines_.contains(declaration.identifier) ||
         lookup(declaration.identifier) != nullptr) {
@@ -5050,11 +5048,13 @@ private:
                   "gate '" + declaration.identifier + "' is already declared");
     }
     if (const auto* catalog = lookupGate(declaration.identifier);
-        catalog != nullptr && isGateAvailable(*catalog)) {
+        catalog != nullptr &&
+        (declaration.opaque ? isGateDeclared(*catalog)
+                            : isGateAvailable(*catalog))) {
       // OpenQASM 2 programs often repeat standard library gate definitions
       // (e.g. `gate sx`). Prefer the standard-library entry and skip the
       // duplicate body to avoid later inlining overhead.
-      if (program.openQASM2) {
+      if (program.openQASM2 && !declaration.opaque) {
         return success();
       }
       // MQT-compatible OpenQASM 3 may carry portable definitions for gates
@@ -5062,7 +5062,8 @@ private:
       // lowering when the declaration has the catalog signature. Strict mode
       // does not make compatibility entries available and analyzes the body as
       // an ordinary custom gate.
-      if (catalog->availability == GateAvailability::Compatibility) {
+      if (!declaration.opaque &&
+          catalog->availability == GateAvailability::Compatibility) {
         if (declaration.parameters.size() != catalog->parameterCount ||
             declaration.qubits.size() != catalog->qubitCount()) {
           return fail(location,
@@ -5071,7 +5072,7 @@ private:
         }
         return success();
       }
-      // OpenQASM 3 rejects shadowing language and standard-library gates.
+      // Reject shadowing of available language and standard-library gates.
       return fail(location,
                   "gate '" + declaration.identifier + "' is already declared");
     }
@@ -5080,6 +5081,7 @@ private:
         .qubitCount = declaration.qubits.size(),
     };
     GateDefinition definition{
+        .opaque = declaration.opaque,
         .name = declaration.identifier.str(),
         .parameterCount = declaration.parameters.size(),
         .qubitCount = declaration.qubits.size(),
@@ -5092,7 +5094,8 @@ private:
       if (failed(declare(location, parameter,
                          {
                              .kind = SymbolKind::GateParameter,
-                             .type = ScalarType::Angle,
+                             .type = program.openQASM2 ? ScalarType::Float
+                                                       : ScalarType::Angle,
                              .id = static_cast<uint32_t>(index),
                              .constant = std::nullopt,
                          }))) {
@@ -6237,7 +6240,9 @@ private:
       }
       MQT_OQ3_TRY_ASSIGN(
           convertedParameter,
-          castExpression(parameter, ScalarType::Angle,
+          castExpression(parameter,
+                         program.openQASM2 ? ScalarType::Float
+                                           : ScalarType::Angle,
                          syntax.expressions[expression].location));
       parameters.push_back(convertedParameter);
     }

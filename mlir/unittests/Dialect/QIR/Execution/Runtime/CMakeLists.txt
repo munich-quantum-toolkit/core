@@ -45,6 +45,7 @@ set(TARGET_NAME mqt-core-qir-runtime-test)
 
 # add test executable
 package_add_test(${TARGET_NAME} MQT::CoreQIRRuntime test_qir_runtime.cpp)
+mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
 # add tests for QIR files
 set(QIR_EXECUTABLES "")

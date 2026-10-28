@@ -263,6 +263,7 @@ struct SyntaxBarrier {
 };
 
 struct SyntaxGateDefinition {
+  bool opaque = false;
   StringRef identifier;
   std::vector<StringRef> parameters;
   std::vector<StringRef> qubits;
@@ -428,7 +429,8 @@ public:
   [[nodiscard]] LogicalResult
   gateDefinition(SMLoc location, StringRef identifier,
                  ArrayRef<StringRef> parameters, ArrayRef<StringRef> qubits,
-                 function_ref<LogicalResult()> continuation);
+                 function_ref<LogicalResult()> continuation,
+                 bool opaque = false);
   [[nodiscard]] LogicalResult
   ifStmt(SMLoc location, SyntaxExpressionId condition,
          function_ref<LogicalResult()> thenContinuation,
@@ -449,6 +451,10 @@ public:
              function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
   switchDefault(SMLoc location, function_ref<LogicalResult()> continuation);
+
+  [[nodiscard]] bool isOpenQASM2() const {
+    return program.version && program.version->major == 2;
+  }
 
   [[nodiscard]] SyntaxProgram takeProgram() { return std::move(program); }
   [[nodiscard]] const std::vector<SyntaxDiagnostic>& getDiagnostics() const {

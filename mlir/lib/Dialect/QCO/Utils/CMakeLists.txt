@@ -50,68 +50,59 @@ target_sources(
   FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${UTILS_HEADERS_SOURCE}
   FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR} FILES ${UTILS_HEADERS_BUILD})
 
-function(mqt_add_dd_adapter suffix dd_target)
-  set(LLVM_REQUIRES_EH ON)
-  set(LLVM_REQUIRES_RTTI ON)
-  add_mlir_library(
-    MLIRQCODDAdapter${suffix}
-    PARTIAL_SOURCES_INTENDED
-    DDAdapter.cpp
-    DEPENDS
-    MLIRQCOOpsIncGen
-    MLIRQCOInterfacesIncGen
-    LINK_LIBS
-    PUBLIC
-    MLIRQCODialect
-    MLIRQCOMatrix
-    ${dd_target})
+add_mlir_library(
+  MLIRQCODDAdapter
+  PARTIAL_SOURCES_INTENDED
+  DDAdapter.cpp
+  DEPENDS
+  MLIRQCOOpsIncGen
+  MLIRQCOInterfacesIncGen
+  LINK_LIBS
+  PUBLIC
+  MLIRQCODialect
+  MLIRQCOMatrix
+  MQT::CoreDD)
 
-  mqt_mlir_target_use_project_options(MLIRQCODDAdapter${suffix})
+mqt_mlir_target_use_project_options(MLIRQCODDAdapter)
 
-  target_sources(
-    MLIRQCODDAdapter${suffix}
-    PUBLIC
-    FILE_SET HEADERS
-      BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-      FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDAdapter.h)
+target_sources(
+  MLIRQCODDAdapter
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDAdapter.h)
 
-  add_mlir_library(
-    MLIRQCODDFunctionality${suffix}
-    PARTIAL_SOURCES_INTENDED
-    DDFunctionality.cpp
-    DEPENDS
-    MLIRQCOOpsIncGen
-    MLIRQCOInterfacesIncGen
-    LINK_LIBS
-    PUBLIC
-    MLIRQCODDAdapter${suffix}
-    MLIRQCODialect
-    MLIRQCOMatrix
-    MLIRArithDialect
-    MLIRFuncDialect
-    MLIRMathDialect
-    MLIRLLVMDialect
-    MLIRSCFDialect
-    PRIVATE
-    MLIRCBitDialect
-    MLIRBufferizationDialect
-    MLIRMemRefDialect
-    MLIRMQTUtils
-    MLIRTensorDialect
-    MLIRUBDialect
-    MLIRQTensorDialect)
+add_mlir_library(
+  MLIRQCODDFunctionality
+  PARTIAL_SOURCES_INTENDED
+  DDFunctionality.cpp
+  DEPENDS
+  MLIRQCOOpsIncGen
+  MLIRQCOInterfacesIncGen
+  LINK_LIBS
+  PUBLIC
+  MLIRQCODDAdapter
+  MLIRQCODialect
+  MLIRQCOMatrix
+  MLIRArithDialect
+  MLIRFuncDialect
+  MLIRMathDialect
+  MLIRLLVMDialect
+  MLIRSCFDialect
+  PRIVATE
+  MLIRCBitDialect
+  MLIRBufferizationDialect
+  MLIRMemRefDialect
+  MLIRMQTUtils
+  MLIRTensorDialect
+  MLIRUBDialect
+  MLIRQTensorDialect)
 
-  mqt_mlir_target_use_project_options(MLIRQCODDFunctionality${suffix})
+mqt_mlir_target_use_project_options(MLIRQCODDFunctionality)
 
-  target_sources(
-    MLIRQCODDFunctionality${suffix}
-    PUBLIC
-    FILE_SET HEADERS
-      BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-      FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDFunctionality.h)
-endfunction()
-
-mqt_add_dd_adapter("" MQT::CoreDD)
-if(BUILD_MQT_CORE_BINDINGS)
-  mqt_add_dd_adapter(Python MQT::CoreDDPython)
-endif()
+target_sources(
+  MLIRQCODDFunctionality
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Utils/DDFunctionality.h)

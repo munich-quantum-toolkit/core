@@ -10,6 +10,8 @@
 
 #include "qdmi/devices/sc/Configuration.hpp"
 
+#include "support/TestSupport.hpp"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
@@ -21,14 +23,15 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
-#include <ios>
-#include <istream>
 #include <limits>
-#include <streambuf>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+using mqt::test::TemporaryDirectory;
 
 namespace sc {
 namespace {
@@ -312,6 +315,24 @@ TEST(ScConfigurationTest, ValidatesOperationSupportAndCalibration) {
       "siteOverrides");
 }
 
+TEST(ScConfigurationTest, RejectsRepeatedSiteTuples) {
+  expectInvalid(
+      [](auto& root) {
+        (*(*root.getAsObject()->getArray("operations"))[0]
+              .getAsObject())["sites"] =
+            llvm::json::Array{llvm::json::Array{0}, llvm::json::Array{0}};
+      },
+      "unique tuple");
+  expectInvalid(
+      [](auto& root) {
+        auto& overrides = *(*root.getAsObject()->getArray("operations"))[1]
+                               .getAsObject()
+                               ->getArray("siteOverrides");
+        overrides.push_back(overrides.front());
+      },
+      "unique supported tuple");
+}
+
 TEST(ScConfigurationTest, AcceptsZeroDurationAndRejectsOverflowingJsonNumber) {
   auto root = bundledJson();
   (*(*root.getAsObject()->getArray("operations"))[0]
@@ -363,19 +384,16 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
             (std::vector<uint64_t>{2, 0, 1}));
 }
 
-TEST(ScConfigurationTest, ReportsStreamReadFailures) {
-  class FailingBuffer final : public std::streambuf {
-  protected:
-    int_type underflow() override {
-      throw std::ios_base::failure("injected read failure");
-    }
-  } buffer;
-  std::istream stream(&buffer);
-  auto parsed = readJSON(stream, "failing-stream");
+TEST(ScConfigurationTest, ReportsFileReadFailures) {
+  const TemporaryDirectory directory;
+  const auto path = (directory.path() / "missing.json").string();
+  auto parsed = readJSON(path);
   ASSERT_FALSE(static_cast<bool>(parsed));
-  const auto message = llvm::toString(parsed.takeError());
-  EXPECT_THAT(message, testing::HasSubstr("failing-stream"));
-  EXPECT_THAT(message, testing::HasSubstr("injected read failure"));
+  auto error = parsed.takeError();
+  llvm::visitErrors(error, [](const llvm::ErrorInfoBase& info) {
+    EXPECT_EQ(info.convertToErrorCode(), std::errc::no_such_file_or_directory);
+  });
+  EXPECT_THAT(llvm::toString(std::move(error)), testing::HasSubstr(path));
 }
 
 } // namespace sc

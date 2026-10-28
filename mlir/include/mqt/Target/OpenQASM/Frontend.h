@@ -298,6 +298,7 @@ struct GateApplication {
 };
 
 struct GateDefinition {
+  bool opaque = false;
   std::string name;
   size_t parameterCount = 0;
   size_t qubitCount = 0;

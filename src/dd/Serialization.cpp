@@ -9,35 +9,69 @@
  */
 
 #include "dd/CachedEdge.hpp"
+#include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Regex.h"
+
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <ios>
-#include <istream>
-#include <regex>
-#include <stdexcept>
+#include <cstring>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 
+using llvm::createStringError;
+using llvm::Expected;
+using llvm::StringRef;
+
 namespace dd {
 
-template <class Node, std::size_t N>
-CachedEdge<Node>
-Package::deserializeNode(const std::int64_t index, const Qubit v,
-                         std::array<std::int64_t, N>& edgeIdx,
+namespace {
+bool splitWeight(StringRef text, StringRef& real, StringRef& imaginary) {
+  static constexpr auto NUMBER =
+      R"(([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?)";
+  static const llvm::Regex IMAGINARY_ONLY("^ ?[+-]? ?(" + std::string(NUMBER) +
+                                          ")?[iI]$");
+  static const llvm::Regex COMPLEX("^([+-]?" + std::string(NUMBER) +
+                                   ")( ?[+-] ?(" + NUMBER + ")?[iI])?$");
+  if (IMAGINARY_ONLY.match(text)) {
+    real = {};
+    imaginary = text;
+    return true;
+  }
+  llvm::SmallVector<StringRef, 10> parts;
+  if (!COMPLEX.match(text, &parts)) {
+    return false;
+  }
+  real = parts[1];
+  imaginary = parts[5];
+  return true;
+}
+} // namespace
+
+template <class Node, size_t N>
+Expected<CachedEdge<Node>>
+Package::deserializeNode(const int64_t index, const Qubit v,
+                         const std::array<int64_t, N>& edgeIdx,
                          const std::array<ComplexValue, N>& edgeWeight,
-                         std::unordered_map<std::int64_t, Node*>& nodes) {
+                         std::unordered_map<int64_t, Node*>& nodes) {
   if (index < 0 || v >= qubits() || nodes.contains(index)) {
-    throw std::runtime_error("Invalid serialized DD node index or qubit.");
+    return createStringError(
+        std::make_error_code(std::errc::state_not_recoverable),
+        "Invalid serialized DD node index or qubit.");
   }
 
   std::array<CachedEdge<Node>, N> edges{};
@@ -51,187 +85,186 @@ Package::deserializeNode(const std::int64_t index, const Qubit v,
         const auto child = nodes.find(edgeIdx[i]);
         if (child == nodes.end() ||
             (!Node::isTerminal(child->second) && child->second->v >= v)) {
-          throw std::runtime_error(
-              "Serialized DD edges must refer to preceding nodes on lower "
-              "qubits.");
+          return createStringError(
+              std::make_error_code(std::errc::state_not_recoverable),
+              "Serialized DD edges must refer to preceding nodes on "
+              "lower qubits.");
         }
         edges[i].p = child->second;
       }
       if (!std::isfinite(edgeWeight[i].r) || !std::isfinite(edgeWeight[i].i)) {
-        throw std::runtime_error("Serialized DD weights must be finite.");
+        return createStringError(
+            std::make_error_code(std::errc::state_not_recoverable),
+            "Serialized DD weights must be finite.");
       }
       edges[i].w = edgeWeight[i];
     }
     if constexpr (IsVector<Node>) {
       if (!edges[i].w.exactlyZero() &&
           (edges[i].isTerminal() ? v != 0 : edges[i].p->v + 1 != v)) {
-        throw std::runtime_error(
+        return createStringError(
+            std::make_error_code(std::errc::state_not_recoverable),
             "Serialized vector DD edges must follow consecutive qubit "
             "levels.");
       }
     }
   }
-  // reset
-  edgeIdx.fill(-2);
-
   auto r = makeDDNode(v, edges);
   nodes[index] = r.p;
   return r;
 }
 
-template <class Node, class Edge, std::size_t N>
-Edge Package::deserialize(std::istream& is, const bool readBinary) {
+template <class Node, class Edge, size_t N>
+Expected<Edge> Package::deserialize(StringRef data, const bool readBinary) {
   auto result = CachedEdge<Node>::one();
   ComplexValue rootweight{};
-
-  std::unordered_map<std::int64_t, Node*> nodes{};
-  std::int64_t nodeIndex{};
-  Qubit v{};
-  std::array<ComplexValue, N> edgeWeights{};
-  std::array<std::int64_t, N> edgeIndices{};
-  edgeIndices.fill(-2);
-
+  std::unordered_map<int64_t, Node*> nodes;
+  const auto invalid = [] {
+    return createStringError(std::errc::state_not_recoverable,
+                             "Invalid or truncated serialized DD.");
+  };
+  const auto read = [&data]<class T>(T& value) {
+    if (data.size() < sizeof(T)) {
+      return false;
+    }
+    const auto bytes = data.take_front(sizeof(T));
+    std::memcpy(&value, bytes.data(), bytes.size());
+    data = data.drop_front(sizeof(T));
+    return true;
+  };
+  const auto readLine = [&data](StringRef& line) {
+    if (data.empty()) {
+      return false;
+    }
+    const auto parts = data.split('\n');
+    line = parts.first;
+    data = parts.second;
+    return true;
+  };
   if (readBinary) {
     std::remove_const_t<decltype(SERIALIZATION_VERSION)> version{};
-    is.read(reinterpret_cast<char*>(&version),
-            sizeof(decltype(SERIALIZATION_VERSION)));
-    if (!is) {
-      throw std::runtime_error("Truncated serialized DD version.");
+    if (!read(version) || version != SERIALIZATION_VERSION ||
+        !read(rootweight.r) || !read(rootweight.i) ||
+        !std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
+      return invalid();
     }
-    if (version != SERIALIZATION_VERSION) {
-      throw std::runtime_error(
-          "Wrong Version of serialization file version. version of file: " +
-          std::to_string(version) +
-          "; current version: " + std::to_string(SERIALIZATION_VERSION));
-    }
-
-    rootweight.readBinary(is);
-    if (!is) {
-      throw std::runtime_error("Truncated serialized DD root weight.");
-    }
-
-    while (is.read(reinterpret_cast<char*>(&nodeIndex),
-                   sizeof(decltype(nodeIndex)))) {
-      is.read(reinterpret_cast<char*>(&v), sizeof(decltype(v)));
-      for (std::size_t i = 0U; i < N; i++) {
-        is.read(reinterpret_cast<char*>(&edgeIndices[i]),
-                sizeof(decltype(edgeIndices[i])));
-        edgeWeights[i].readBinary(is);
+    while (!data.empty()) {
+      int64_t index{};
+      Qubit wire{};
+      std::array<int64_t, N> indices{};
+      std::array<ComplexValue, N> weights{};
+      if (!read(index) || !read(wire)) {
+        return invalid();
       }
-      if (!is) {
-        throw std::runtime_error("Truncated serialized DD node.");
+      for (size_t i = 0; i < N; ++i) {
+        if (!read(indices[i]) || !read(weights[i].r) || !read(weights[i].i)) {
+          return invalid();
+        }
       }
-      result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
-    }
-    if (!is.eof() || is.gcount() != 0) {
-      throw std::runtime_error("Truncated serialized DD node index.");
+      auto node = deserializeNode(index, wire, indices, weights, nodes);
+      if (!node) {
+        return node.takeError();
+      }
+      result = (*node);
     }
   } else {
-    std::string version;
-    if (!std::getline(is, version)) {
-      throw std::runtime_error("Missing serialized DD version.");
+    StringRef line;
+    if (!readLine(line)) {
+      return invalid();
     }
-    size_t versionEnd = 0;
-    if (std::cmp_not_equal(std::stoi(version, &versionEnd),
-                           SERIALIZATION_VERSION) ||
-        versionEnd != version.size()) {
-      throw std::runtime_error(
-          "Wrong Version of serialization file version. version of file: " +
-          version +
-          "; current version: " + std::to_string(SERIALIZATION_VERSION));
+    auto versionText = line.ltrim(" \t\n\v\f\r");
+    const bool hadPlus = versionText.consume_front("+");
+    if (versionText.empty() || (hadPlus && versionText.starts_with("-"))) {
+      return createStringError(std::errc::invalid_argument,
+                               "Invalid serialized DD version.");
+    }
+    int version{};
+    const auto parsed =
+        std::from_chars(versionText.begin(), versionText.end(), version);
+    if (parsed.ec != std::errc{}) {
+      return createStringError(parsed.ec, "Invalid serialized DD version.");
+    }
+    if (parsed.ptr != versionText.end() ||
+        std::cmp_not_equal(version, SERIALIZATION_VERSION)) {
+      return invalid();
     }
 
-    const std::string complexRealRegex =
-        R"(([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![ \d\.]*(?:[eE][+-])?\d*[iI]))?)";
-    const std::string complexImagRegex =
-        R"(( ?[+-]? ?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[iI])?)";
-    const std::string edgeRegex =
-        " \\(((-?\\d+) (" + complexRealRegex + complexImagRegex + "))?\\)";
-    static const std::regex COMPLEX_WEIGHT_REGEX(complexRealRegex +
-                                                 complexImagRegex);
-
-    std::string lineConstruct = "(\\d+) (\\d+)";
-    for (std::size_t i = 0U; i < N; ++i) {
-      lineConstruct += "(?:" + edgeRegex + ")";
+    static const llvm::Regex LINE_REGEX([] {
+      std::string pattern = "^([0-9]+) ([0-9]+)";
+      for (size_t i = 0; i < N; ++i) {
+        pattern += R"( \(((-?[0-9]+) ([^()]*))?\))";
+      }
+      return pattern + " *(#[^\r]*)?$";
+    }());
+    llvm::SmallVector<StringRef, 16> match;
+    StringRef real;
+    StringRef imaginary;
+    if (!readLine(line) || !splitWeight(line, real, imaginary)) {
+      return invalid();
     }
-    lineConstruct += " *(?:#.*)?";
-    static const std::regex LINE_REGEX(lineConstruct);
-    std::smatch m;
-
-    std::string line;
-    if (!std::getline(is, line) || line.empty()) {
-      throw std::runtime_error("Missing serialized DD root weight.");
+    if (auto error = rootweight.fromString(real, imaginary)) {
+      return error;
     }
-    if (!std::regex_match(line, m, COMPLEX_WEIGHT_REGEX)) {
-      throw std::runtime_error("Regex did not match second line: " + line);
-    }
-    rootweight.fromString(m.str(1), m.str(2));
-
-    while (std::getline(is, line)) {
+    while (readLine(line)) {
       if (line.empty()) {
         continue;
       }
-
-      if (!std::regex_match(line, m, LINE_REGEX)) {
-        throw std::runtime_error("Regex did not match line: " + line);
+      if (!LINE_REGEX.match(line, &match)) {
+        return invalid();
       }
-
-      // match 1: node_idx
-      // match 2: qubit_idx
-
-      // repeats for every edge
-      // match 3: edge content
-      // match 4: edge_target_idx
-      // match 5: real + imag (without i)
-      // match 6: real
-      // match 7: imag (without i)
-      nodeIndex = std::stoll(m.str(1));
-      const auto qubit = std::stoull(m.str(2));
-      if (qubit >= qubits()) {
-        throw std::runtime_error("Invalid serialized DD qubit.");
+      int64_t index{};
+      uint64_t wire{};
+      if (match[1].getAsInteger(10, index) || match[2].getAsInteger(10, wire)) {
+        return createStringError(std::errc::result_out_of_range,
+                                 "Serialized DD index is out of range.");
       }
-      v = static_cast<Qubit>(qubit);
-
-      for (auto edgeIdx = 3U, i = 0U; i < N; i++, edgeIdx += 5) {
-        if (m.str(edgeIdx).empty()) {
+      if (wire >= qubits()) {
+        return invalid();
+      }
+      std::array<int64_t, N> indices{};
+      indices.fill(-2);
+      std::array<ComplexValue, N> weights{};
+      for (size_t i = 0, group = 3; i < N; ++i, group += 3) {
+        if (match[group].empty()) {
           continue;
         }
-
-        if (m.str(edgeIdx + 2).empty()) {
-          throw std::runtime_error("Missing serialized DD edge weight.");
+        if (!splitWeight(match[group + 2], real, imaginary)) {
+          return invalid();
         }
-        edgeIndices[i] = std::stoll(m.str(edgeIdx + 1));
-        edgeWeights[i].fromString(m.str(edgeIdx + 3), m.str(edgeIdx + 4));
+        if (match[group + 1].getAsInteger(10, indices[i])) {
+          return createStringError(std::errc::result_out_of_range,
+                                   "Serialized DD edge index is out of range.");
+        }
+        if (auto error = weights[i].fromString(real, imaginary)) {
+          return error;
+        }
       }
-
-      result = deserializeNode(nodeIndex, v, edgeIndices, edgeWeights, nodes);
+      auto node = deserializeNode(index, static_cast<Qubit>(wire), indices,
+                                  weights, nodes);
+      if (!node) {
+        return node.takeError();
+      }
+      result = *node;
     }
-  }
-  if (is.bad()) {
-    throw std::runtime_error("Cannot read serialized DD.");
-  }
-  if (!std::isfinite(rootweight.r) || !std::isfinite(rootweight.i)) {
-    throw std::runtime_error("Serialized DD weights must be finite.");
   }
   return cn.lookup(CachedEdge<Node>{result.p, result.w * rootweight});
 }
 
 template <class Node, class Edge>
-Edge Package::deserialize(const std::string& inputFilename,
-                          const bool readBinary) {
-  auto ifs = std::ifstream(inputFilename, std::ios::binary);
-
-  if (!ifs.good()) {
-    throw std::invalid_argument("Cannot open serialized file: " +
-                                inputFilename);
+Expected<Edge> Package::deserializeFile(StringRef inputFilename,
+                                        const bool readBinary) {
+  auto input = llvm::MemoryBuffer::getFile(inputFilename);
+  if (!input) {
+    return createStringError(
+        std::errc::io_error, "Cannot open serialized file: %s: %s",
+        inputFilename.str().c_str(), input.getError().message().c_str());
   }
-
-  return deserialize<Node>(ifs, readBinary);
+  return deserialize<Node>((*input)->getBuffer(), readBinary);
 }
 
-template vEdge Package::deserialize<vNode>(std::istream&, bool);
-template mEdge Package::deserialize<mNode>(std::istream&, bool);
-template vEdge Package::deserialize<vNode>(const std::string&, bool);
-template mEdge Package::deserialize<mNode>(const std::string&, bool);
+template Expected<vEdge> Package::deserialize<vNode>(StringRef, bool);
+template Expected<mEdge> Package::deserialize<mNode>(StringRef, bool);
+template Expected<vEdge> Package::deserializeFile<vNode>(StringRef, bool);
+template Expected<mEdge> Package::deserializeFile<mNode>(StringRef, bool);
 
 } // namespace dd

@@ -45,12 +45,13 @@ from mqt.core.mlir import (
     QIRProfile,
     QIRProgram,
     TargetEnvironment,
+    build_functionality,
     compile_program,
     sample,
     simulate,
     submit_program,
 )
-from mqt.core.qdmi import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not supports_qiskit_translation(),
@@ -88,6 +89,29 @@ h q[0];
 cx q[0], q[1];
 bit[2] c = measure q;
 """
+
+
+def test_mlir_parser_details_reach_python(capfd: pytest.CaptureFixture[str]) -> None:
+    """Capture parser details before a program and its context exist."""
+    with pytest.raises(RuntimeError, match="custom op 'not'") as error:
+        QCProgram.from_mlir_str("not an MLIR module")
+    assert ":1:1" in str(error.value)
+    assert not capfd.readouterr().err
+
+
+def test_mlir_verifier_notes_reach_python(capfd: pytest.CaptureFixture[str]) -> None:
+    """Keep the operation note attached to a verifier error."""
+    with pytest.raises(RuntimeError, match="operand #0") as error:
+        QCProgram.from_mlir_str("""module {
+          func.func @main() {
+            %a = arith.constant 0.0 : f64
+            %b = arith.addi %a, %a : f64
+            return
+          }
+        }""")
+    assert "note:" in str(error.value)
+    assert "see current operation" in str(error.value)
+    assert not capfd.readouterr().err
 
 
 def _test_payload_specification() -> PayloadSpecification:
@@ -340,6 +364,22 @@ def test_jeff_rejects_invalid_segment_message(segment: bytes) -> None:
 
 
 @pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
+def test_jeff_serialization_rejects_invalid_metadata(method: str) -> None:
+    """Raise on malformed metadata instead of returning a partial message."""
+    program = QCOProgram.from_mlir_str("""
+        module {
+          func.func @main(%theta: f64 {jeff.metadata = [
+            {name = "mqt.input_name", value = array<i8: 0>}
+          ]}) attributes {mqt.entry_point} {
+            return
+          }
+        }
+    """).to_jeff()
+    with pytest.raises(RuntimeError, match="Metadata payload size must be a multiple"):
+        getattr(program, method)()
+
+
+@pytest.mark.parametrize("method", ["to_segment_views", "to_bytes"])
 def test_consumed_jeff_serialization_raises(method: str) -> None:
     """Reject serialization after consuming the program."""
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco().to_jeff()
@@ -388,12 +428,14 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert isinstance(direct, OpenQASMProgram)
     assert not source.is_valid
     assert direct.source == preserved.source
-    assert direct.source.startswith("OPENQASM 3.1;")
+    assert direct.source.startswith("OPENQASM 3;")
     assert str(direct) == direct.source
 
     path = tmp_path / "program.qasm"
     direct.write(path)
     assert path.read_text(encoding="utf-8") == direct.source
+    with pytest.raises(RuntimeError, match="failed to open OpenQASM output file"):
+        direct.write(tmp_path / "missing" / "output.qasm")
     assert set(sample(path, shots=32, seed=1)) == {"00", "11"}
 
     optimized = compile_program(direct)
@@ -411,7 +453,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     assert compiled.operation_counts()["llvm.func"] >= 1
 
 
-@pytest.mark.parametrize("frontend", ["openqasm", "qiskit"])
+@pytest.mark.parametrize("frontend", ["openqasm", "qiskit", "native"])
 def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
     """Preserve the PRX/CZ unitary and permuted readout across both frontends."""
     circuit = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(1, "a"), ClassicalRegister(1, "a_0"))
@@ -422,14 +464,18 @@ def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
     circuit.r(-0.461, -0.937, 1)
     expected = Operator(circuit)
     circuit.measure([0, 1], [1, 0])
-    if frontend == "qiskit":
+    if frontend in {"qiskit", "native"}:
         if not supports_qiskit_translation():
             pytest.skip("Qiskit version has no compiler translation adapter")
         source = circuit
     else:
         source = qasm3.dumps(circuit)
     target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
-    direct = compile_program(source, target=target, output=OutputFormat.IQM_JSON)
+    if frontend == "native":
+        circuit.global_phase = 0.137
+        direct = QCProgram.from_qiskit(circuit, native=True).to_iqm_json(target)
+    else:
+        direct = compile_program(source, target=target, output=OutputFormat.IQM_JSON)
     assert_type(direct, IQMJSONProgram)
     assert isinstance(direct, IQMJSONProgram)
     assert str(direct) == direct.source
@@ -461,6 +507,8 @@ def test_iqm_json_program(frontend: str, tmp_path: Path) -> None:
             gate = np.diag([1, 1, 1, -1])
         unitary = gate @ unitary
     assert Operator(unitary).equiv(expected)
+    if frontend == "native":
+        np.testing.assert_allclose(unitary, expected.data, atol=1e-12)
 
 
 @pytest.mark.parametrize(
@@ -495,7 +543,7 @@ def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
 
     assert round_tripped.num_clbits == 0
     assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
-    assert program.to_qir(QIRProfile.BASE).is_valid
+    assert compile_program(program, output=OutputFormat.QIR_BASE).is_valid
 
 
 def test_compile_program_convert_to_qir() -> None:
@@ -680,9 +728,52 @@ def test_compilation_entry_points_forward_mapping_options(output_kind: str, capf
         )
     else:
         compile_call = partial(compile_program, QASM_STRING, target=target, options=options)
-    with pytest.raises((RuntimeError, ValueError)) as exc_info:
+    error_type = RuntimeError if output_kind in {"typed", "default"} else ValueError
+    with pytest.raises(error_type, match="mapping trials must be greater than zero"):
         compile_call()
-    assert "mapping trials must be greater than zero" in str(exc_info.value) + capfd.readouterr().err
+    assert not capfd.readouterr().err
+
+
+def test_payload_compilation_preserves_error_category_and_details(capfd: pytest.CaptureFixture[str]) -> None:
+    """Reject unsupported payload input with its compiler diagnostic intact."""
+    source = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+bit result = measure q;
+while (result) {
+  x q;
+  result = measure q;
+}
+"""
+    program = QCProgram.from_openqasm_str(source)
+    with pytest.raises(ValueError, match=r"scf\.while") as error:
+        submit_program(program, target="mqt.ddsim.default", program_format=ProgramFormat.QIR_BASE_MODULE)
+    assert "see current operation" in str(error.value)
+    assert "<input>" in str(error.value)
+    assert not capfd.readouterr().err
+
+
+@pytest.mark.parametrize("shots", [1, 512])
+def test_qco_sampling_preserves_worker_diagnostics(shots: int, capfd: pytest.CaptureFixture[str]) -> None:
+    """Sampling failures retain their category and detail across workers."""
+    program = QCOProgram.from_mlir_str("""module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.static 0 : !qco.qubit
+        %r = func.call @helper(%q) : (!qco.qubit) -> !qco.qubit
+        qco.sink %r : !qco.qubit
+        return
+      }
+      func.func private @helper(%q: !qco.qubit) -> !qco.qubit {
+        %r = qco.reset %q : !qco.qubit
+        %zero = arith.constant 0 : i8
+        %invalid = arith.divui %zero, %zero : i8
+        return %r : !qco.qubit
+      }
+    }""")
+    with pytest.raises(ValueError, match="division by zero"):
+        program.sample(shots=shots, seed=1)
+    assert not capfd.readouterr().err
 
 
 @requires_qiskit_translation
@@ -1633,10 +1724,11 @@ if (c) { x q; }
         program.compile_for_target(TargetEnvironment(target, payload))
 
     # A copy shares the context, whose diagnostic handler must be restored.
-    capfd.readouterr()
-    with pytest.raises(RuntimeError):
+    assert not capfd.readouterr().err
+    with pytest.raises(RuntimeError, match="does not refer to a registered pass") as error:
         valid.run_pass_pipeline("not-a-pass")
-    assert "failed to parse pass pipeline" in capfd.readouterr().err
+    assert "Target compilation failed" not in str(error.value)
+    assert not capfd.readouterr().err
     valid.compile_for_target(_test_target_environment(target))
     valid.to_qc()
     with pytest.raises(RuntimeError, match="already been consumed"):
@@ -1768,18 +1860,25 @@ def test_payload_specification_preserves_python_api() -> None:
     assert environment.format.version == "2.1.0"
     assert environment.capabilities[0].value == 0
 
-    with pytest.raises(ValueError, match=r"major\[\.minor\[\.patch\]\]"):
+    with pytest.raises(ValueError, match="numeric ceiling"):
         PayloadSpecification(PayloadFormat("qir", "2.1.0.1", "base"))
 
 
 @pytest.mark.parametrize(
     ("format_id", "version", "profile", "expected_version", "expected_type"),
-    [("qir", "2.1", "base", "2.1.0", QIRProgram), ("openqasm", "3.1", "", "3.1.0", OpenQASMProgram)],
+    [
+        ("qir", "2.1", "base", "2.1.0", QIRProgram),
+        ("qir", ">=2,<3", "base", ">=2.0.0,<3.0.0", QIRProgram),
+        ("qir", ">=2.1,<3", "base", ">=2.1.0,<3.0.0", QIRProgram),
+        ("openqasm", "3.1", "", "3.1.0", OpenQASMProgram),
+        ("openqasm", ">=3,<4", "", ">=3.0.0,<4.0.0", OpenQASMProgram),
+        ("openqasm", ">=3.1,<4", "", ">=3.1.0,<4.0.0", OpenQASMProgram),
+    ],
 )
-def test_target_compilation_accepts_exact_version_shorthand(
+def test_target_compilation_accepts_version_constraints(
     format_id: str, version: str, profile: str, expected_version: str, expected_type: type
 ) -> None:
-    """Normalize a shortened version before selecting the compiler output."""
+    """Preserve version constraints through Python, MLIR, and target compilation."""
     payload = PayloadSpecification(PayloadFormat(format_id, version, profile))
     assert payload.format.version == expected_version
     target = CompilerTarget(
@@ -1937,16 +2036,21 @@ def test_compiler_target_from_device_id_preserves_open_errors() -> None:
         CompilerTarget.from_device_id("unknown.device")
 
 
-def test_qco_program_runs_textual_pipeline() -> None:
+def test_qco_program_runs_textual_pipeline(capfd: pytest.CaptureFixture[str]) -> None:
     """Run registered QCO passes through MLIR textual pipeline syntax."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
 
     qco.run_pass_pipeline("mqt-qco-default")
+    qco.run_pass_pipeline("drop-global-phases")
     qco.lift_hadamards()
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    before = qco.ir
+    with pytest.raises(RuntimeError, match="does not refer to a registered pass") as error:
         qco.run_pass_pipeline("not-a-pass")
+    assert "not-a-pass" in str(error.value)
+    assert qco.ir == before
+    assert not capfd.readouterr().err
 
 
 def test_qco_program_runs_pauli_twirling_pass() -> None:
@@ -2055,7 +2159,7 @@ def test_qco_program_decomposes_multi_controlled(gate: str) -> None:
     assert qco.ir != before
     assert "controls_out:2" not in qco.ir
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="requires min-qubits >= 3"):
         qco.decompose_multi_controlled(min_qubits=2)
 
 
@@ -2185,7 +2289,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
                 compile_program(program, target="mqt.ddsim.default", copy=True)
             else:
                 # Parsing fails before the compilation release scope can be reached.
-                with pytest.raises(RuntimeError, match="Compiler action failed"):
+                with pytest.raises(RuntimeError, match="No OpenQASM definition found for gate 'unknown_gate'"):
                     compile_program(path if mode == "path" else invalid_source, output=OutputFormat.QCO)
             if progress.is_set():
                 break
@@ -2300,3 +2404,49 @@ def test_compiled_native_r_jeff_round_trip(name: str) -> None:
         serialized = program.to_jeff().to_bytes()
         result = JeffProgram.from_bytes(serialized).to_qco().to_qiskit()
         assert np.allclose(Operator(result).data, Operator(bound).data)
+
+
+@pytest.mark.parametrize("profile", [QIRProfile.BASE, QIRProfile.ADAPTIVE])
+def test_native_qir_preserves_gate_signatures(profile: QIRProfile) -> None:
+    """Canonical aliases share declarations; controlled U retains its phase."""
+    circuit = QuantumCircuit(8)
+    circuit.u(0.1, 0.2, 0.3, 7)
+    circuit.append(library.U3Gate(0.1, 0.2, 0.3), [2])
+    circuit.append(library.CUGate(0.1, 0.2, 0.3, 0.7), [7, 2])
+    circuit.append(Gate("hop", 2, [0.25]), [7, 2])
+    text = QCProgram.from_qiskit(circuit, native=True).to_qir(profile).to_llvm_ir()
+    assert text.count("declare void @__quantum__qis__u3__body") == 1
+    assert text.count("call void @__quantum__qis__u3__body") == 2
+    assert "declare void @__quantum__qis__cu__body(double, double, double, double, ptr, ptr)" in text
+    assert "declare void @__quantum__qis__hop__body(double, ptr, ptr)" in text
+    assert '"required_num_qubits"="8"' in text
+
+
+@pytest.mark.parametrize(("gate", "phase"), [("cu3", -0.25), ("ctrl @ U", -0.35), ("cu", 0.05)])
+@pytest.mark.parametrize("device_qubits", [False, True])
+def test_imported_u_phase_folds_without_gate_optimization(gate: str, phase: float, *, device_qubits: bool) -> None:
+    """Generated constant phase arithmetic needs no quantum simplification."""
+    declarations, control, target = ("", "$1", "$0") if device_qubits else ("qubit[2] q;", "q[1]", "q[0]")
+    parameters = "-1.4/2,0.1+0.1,0.6/2" + (",0.4" if gate == "cu" else "")
+    program = QCProgram.from_openqasm_str(
+        f'OPENQASM 3; include "stdgates.inc"; {declarations} '
+        f"h {target}; h {target}; {gate}({parameters}) {control},{target};"
+    )
+    assert program.ir.count("qc.h") == 2
+    assert "arith.addf" not in program.ir
+    assert "arith.mulf" not in program.ir
+    theta, phi, lam = -0.7, 0.2, 0.3
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    expected = np.eye(4, dtype=complex)
+    expected[2:, 2:] = np.exp(1j * phase) * np.array([
+        [c, -np.exp(1j * lam) * s],
+        [np.exp(1j * phi) * s, np.exp(1j * (phi + lam)) * c],
+    ])
+    np.testing.assert_allclose(build_functionality(program), expected, rtol=0, atol=1e-12)
+
+
+def test_sample_imported_native_cu3() -> None:
+    """A native controlled-U circuit executes without a cleanup pass."""
+    source = 'OPENQASM 3; include "stdgates.inc"; const uint[8] zero=0; x $1; cu3(pi,0,zero) $1,$0; bit[2] c;'
+    source += " c[0]=measure $0; c[1]=measure $1;"
+    assert sample(source, shots=16, seed=71) == {"11": 16}

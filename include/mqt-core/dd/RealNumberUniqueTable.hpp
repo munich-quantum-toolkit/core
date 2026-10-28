@@ -17,8 +17,9 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <cstddef>
-#include <iostream>
 #include <unordered_map>
 #include <vector>
 
@@ -120,7 +121,8 @@ public:
   ///
   /// @param os The output stream to print to.
   /// @returns The output stream.
-  std::ostream& printBucketDistribution(std::ostream& os = std::cout);
+  llvm::raw_ostream&
+  printBucketDistribution(llvm::raw_ostream& os = llvm::outs());
 
   /// Count the marked entries in the table
   [[nodiscard]] std::size_t countMarkedEntries() const noexcept;

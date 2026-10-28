@@ -280,6 +280,41 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   }
 }
 
+TEST_F(ErrorHandling, ParallelQIRExitCodeFailsJob) {
+  if (llvm::heavyweight_hardware_concurrency().compute_thread_count() < 2) {
+    GTEST_SKIP() << "Parallel execution requires two worker slots";
+  }
+  constexpr std::string_view program = R"qir(
+define i64 @main() #0 { ret i64 7 }
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)qir";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 4), QDMI_SUCCESS);
+  const size_t workers = 2;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(workers),
+                &workers),
+            QDMI_SUCCESS);
+  const bool capture = true;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(capture),
+                &capture),
+            QDMI_SUCCESS);
+  ::testing::internal::CaptureStderr();
+  const auto result = qdmi_test::submitAndWait(job.job, 0);
+  const auto diagnostic = ::testing::internal::GetCapturedStderr();
+  ASSERT_EQ(result, QDMI_SUCCESS);
+  QDMI_Job_Status status{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+  EXPECT_NE(diagnostic.find("QIR program returned exit code 7"),
+            std::string::npos);
+}
+
 TEST_F(ErrorHandling, QASM3PartiallyInitializedOutputFails) {
   constexpr std::string_view program = R"qasm(OPENQASM 3.0;
 bit[2] c;

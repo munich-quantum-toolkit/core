@@ -9,7 +9,6 @@
  */
 
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -35,16 +34,9 @@ void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
-OpFoldResult POp::fold(FoldAdaptor /*adaptor*/) {
-  if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
-    return getInputQubit(0);
-  }
-  return {};
-}
-
-void POp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* /*context*/) {
+void POp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* /*context*/) {
+  results.add(removeZeroRotation<POp>);
   results.add(&mergeOneTargetOneParameter<POp>);
 }
 

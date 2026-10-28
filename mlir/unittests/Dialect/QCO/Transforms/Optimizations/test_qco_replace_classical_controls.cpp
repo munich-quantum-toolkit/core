@@ -765,7 +765,7 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
 }
 
 TEST_F(QCOReplaceClassicalControlsTest,
-       replaceMeasuredRZZTargetPreservesReversedYields) {
+       replaceMeasuredRZZTargetPreservesReversedGateInputs) {
   programBuilder.initialize();
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target0 = programBuilder.h(programBuilder.allocQubit());
@@ -777,7 +777,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
       programBuilder.ctrl({control}, {target0, target1},
                           [&](ValueRange args) -> SmallVector<Value> {
                             auto [output0, output1] =
-                                programBuilder.rzz(0.789, args[0], args[1]);
+                                programBuilder.rzz(0.789, args[1], args[0]);
                             return {output1, output0};
                           });
   Value output0Outcome;
@@ -792,10 +792,11 @@ TEST_F(QCOReplaceClassicalControlsTest,
   program = programBuilder.finalize(
       {measuredTargetOutcome, output0Outcome, output1Outcome});
 
+  ASSERT_TRUE(verify(*program).succeeded());
   ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_NE(output0Measurement.getQubitIn(), measuredTarget);
-  EXPECT_EQ(output1Measurement.getQubitIn(), measuredTarget);
+  EXPECT_EQ(output0Measurement.getQubitIn(), measuredTarget);
+  EXPECT_NE(output1Measurement.getQubitIn(), measuredTarget);
 }
 
 TEST_F(QCOReplaceClassicalControlsTest,

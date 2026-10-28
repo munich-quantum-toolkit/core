@@ -13,7 +13,8 @@
 
 #pragma once
 
-#include <ostream>
+#include "llvm/Support/raw_ostream.h"
+
 #include <string>
 
 namespace dd {
@@ -39,7 +40,8 @@ struct Statistics {
   /// @param os The output stream
   /// @param stats The statistics
   /// @return The output stream
-  friend std::ostream& operator<<(std::ostream& os, const Statistics& stats) {
+  friend llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
+                                       const Statistics& stats) {
     return os << stats.toString();
   }
 };
