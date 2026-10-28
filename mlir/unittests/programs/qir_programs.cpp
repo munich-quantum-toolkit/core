@@ -245,19 +245,21 @@ Value measurementWithoutRegistersBase(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-static Value measureStaticScalar(QIRProgramBuilder& b, Value qubit) {
-  auto result = b.staticResult(0);
+static Value measureStaticScalar(QIRProgramBuilder& b, Value qubit,
+                                 const int64_t index) {
+  auto result = b.staticResult(index);
   auto signature =
       LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(b.getContext()),
                                   {qubit.getType(), result.getType()});
   auto declaration = getOrCreateFunctionDeclaration(
       b, b.getInsertionBlock()->getParentOp(), QIR_MEASURE, signature);
   LLVM::CallOp::create(b, declaration, ValueRange{qubit, result});
-  return b.intConstant(0);
+  return result;
 }
 
 Value measurementWithoutRegisters(QIRProgramBuilder& b) {
-  return measureStaticScalar(b, b.allocQubit());
+  measureStaticScalar(b, b.allocQubit(), 0);
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister> Value resetQubitWithoutOp(QIRProgramBuilder& b) {
@@ -465,7 +467,8 @@ Value hWithoutRegisterBase(QIRProgramBuilder& b) {
 Value hWithoutRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
-  return measureStaticScalar(b, q);
+  measureStaticScalar(b, q, 0);
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister> Value s(QIRProgramBuilder& b) {
@@ -1087,16 +1090,16 @@ template <bool IntoRegister> Value ctrlTwo(QIRProgramBuilder& b) {
 Value hGatesAndResetsOnOneQubit(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
-  b.measure(q, 0);
+  measureStaticScalar(b, q, 0);
   b.reset(q);
   b.h(q);
-  b.measure(q, 1);
+  measureStaticScalar(b, q, 1);
   return b.intConstant(0);
 }
 
 Value reusedCX(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
-  auto c1 = b.measure(q, 0);
+  auto c1 = measureStaticScalar(b, q, 0);
   auto* branchBlock = b.getInsertionBlock();
   b.scfIf(c1, [&] { b.x(q); });
   {
@@ -1105,7 +1108,7 @@ Value reusedCX(QIRProgramBuilder& b) {
     b.setInsertionPoint(branchBlock->getTerminator());
     b.reset(q);
   }
-  b.measure(q, 1);
+  measureStaticScalar(b, q, 1);
   return b.intConstant(0);
 }
 
@@ -1113,7 +1116,9 @@ Value singleControlledXOnIndividualQubits(QIRProgramBuilder& b) {
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
   b.cx(q1, q2);
-  return measureAndRecord(b, {q1, q2}, false);
+  measureStaticScalar(b, q1, 0);
+  measureStaticScalar(b, q2, 1);
+  return b.intConstant(0);
 }
 
 // Instantiate the templates for IntoRegister = false
