@@ -20,6 +20,7 @@ add_mlir_library(
   MLIRQTensorUtils
   MLIRArithDialect
   MLIRAsmParser
+  MLIRBufferizationDialect
   MLIRCallInterfaces
   MLIRMathDialect
   MLIRMemRefDialect

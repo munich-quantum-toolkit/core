@@ -1757,6 +1757,18 @@ TEST_F(CompilerPipelineTest, ConstantArrayInitializationPreservesValues) {
         qco::sample(mlir::mqt::getEntryPoint(qco->module()), 16, 42);
     ASSERT_TRUE(succeeded(samples));
     EXPECT_EQ(*samples, (std::map<std::string, size_t>{{"1", 16}}));
+    auto routed = qco->copy();
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        3, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+        CompilerTarget::NativeOperations::unrestricted()));
+    const auto payload = llvm::cantFail(
+        PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+    ASSERT_TRUE(
+        succeeded(routed.compileForTarget(TargetEnvironment(target, payload))));
+    const auto routedSamples =
+        qco::sample(mlir::mqt::getEntryPoint(routed.module()), 16, 42);
+    ASSERT_TRUE(succeeded(routedSamples));
+    EXPECT_EQ(*routedSamples, (std::map<std::string, size_t>{{"1", 16}}));
     auto restoredQC = std::move(*qco).intoQC();
     ASSERT_TRUE(succeeded(restoredQC));
     auto exported = restoredQC->copy().intoOpenQASM3();
