@@ -37,9 +37,11 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/bench/Generate.h"
 #include "qdmi/QDMI.hpp"
 
+#include "Array.hpp"
 #include "Result.hpp"
 #include "Target/Qiskit/Qiskit.h"
 
@@ -64,9 +66,15 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -950,14 +958,7 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
           "dense statevector dimensions exceed addressable memory");
     }
   }
-  auto dataPtr = std::make_unique<dd::CVec>(unwrap(dd::getVector(state)));
-  auto* const data = dataPtr->data();
-  const auto size = dataPtr->size();
-  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
-    delete static_cast<dd::CVec*>(ptr);
-  });
-  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
-  return DenseVector(data, {size}, owner);
+  return bindings::ownedArray(unwrap(dd::getVector(state)));
 }
 
 [[nodiscard]] static DenseMatrix toDenseMatrix(const dd::MatrixDD& matrix,
@@ -995,8 +996,126 @@ buildDenseFunctionality(PythonInputTypes& types, const nb::handle program) {
   });
 }
 
+template <class Payload>
+[[nodiscard]] static qdmi::Job executeQIR(const Payload& payload,
+                                          QDMI_Program_Format format,
+                                          size_t shots, uint64_t seed) {
+  if (seed > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+    throw nb::value_error(
+        "QIR seed must fit a nonnegative signed 32-bit integer");
+  }
+  const nb::gil_scoped_release release;
+  auto device = unwrap(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  std::optional<qdmi::CustomJobParameter> randomSeed;
+  if (seed != 0) {
+    randomSeed = static_cast<int>(seed);
+  }
+  auto job = unwrap(device.submitJob(payload, format, shots, randomSeed));
+  unwrap(job.wait());
+  if (unwrap(job.check()) != QDMI_JOB_STATUS_DONE) {
+    throw std::runtime_error(
+        "QIR execution failed; check the profile and supported operations");
+  }
+  return job;
+}
+
+/// Read routing metadata without JIT compilation or bitcode body
+/// materialization.
+[[nodiscard]] static std::optional<QDMI_Program_Format>
+qirFormat(llvm::StringRef payload, bool binary) {
+  const nb::gil_scoped_release release;
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic diagnostic;
+  auto module = llvm::getLazyIRModule(
+      llvm::MemoryBuffer::getMemBuffer(payload, "<qir>", false), diagnostic,
+      context);
+  if (!module) {
+    if (!binary) {
+      return std::nullopt;
+    }
+    throw nb::value_error("Invalid QIR bitcode");
+  }
+  std::optional<QDMI_Program_Format> format;
+  for (const auto& function : *module) {
+    if (!function.hasFnAttribute(qir::ENTRY_POINT_ATTR)) {
+      continue;
+    }
+    if (format) {
+      throw nb::value_error("QIR requires exactly one entry point");
+    }
+    const auto attribute = function.getFnAttribute(qir::QIR_PROFILES_ATTR);
+    const auto profile = attribute.isStringAttribute()
+                             ? attribute.getValueAsString()
+                             : llvm::StringRef{};
+    if (profile.compare(qir::BASE_PROFILE) == 0) {
+      format = binary ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                      : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+    } else if (profile.compare(qir::ADAPTIVE_PROFILE) == 0) {
+      format = binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                      : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+    } else {
+      throw nb::value_error(
+          "QIR entry point requires a Base or Adaptive profile");
+    }
+  }
+  if (!format) {
+    throw nb::value_error("QIR requires exactly one entry point");
+  }
+  return format;
+}
+
+[[nodiscard]] static qdmi::Job
+executeQIRProgram(const mlir::QIRProgram& program, size_t shots,
+                  uint64_t seed) {
+  requireValid(program);
+  auto copy = program.copy();
+  const auto payload =
+      withDiagnostics(program.context().get(), "cannot export QIR",
+                      [&] { return std::move(copy).intoLLVMIR(); });
+  const auto format = program.profile() == mlir::QIRProfile::Base
+                          ? QDMI_PROGRAM_FORMAT_QIRBASESTRING
+                          : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  return executeQIR(payload, format, shots, seed);
+}
+
+[[nodiscard]] static std::optional<qdmi::Job>
+executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
+  if (nb::isinstance<mlir::QIRProgram>(program)) {
+    return executeQIRProgram(nb::cast<const mlir::QIRProgram&>(program), shots,
+                             seed);
+  }
+  if (nb::isinstance<nb::bytes>(program)) {
+    const auto bytes = nb::borrow<nb::bytes>(program);
+    const llvm::StringRef payload(static_cast<const char*>(bytes.data()),
+                                  bytes.size());
+    return executeQIR(std::as_bytes(std::span(payload.data(), payload.size())),
+                      *qirFormat(payload, true), shots, seed);
+  }
+  if (nb::isinstance<nb::str>(program)) {
+    const auto payload = nb::cast<std::string_view>(program);
+    if (auto format = qirFormat(payload, false)) {
+      // Python's UTF-8 storage includes the QDMI text terminator.
+      return executeQIR(
+          std::as_bytes(std::span(payload.data(), payload.size() + 1)), *format,
+          shots, seed);
+    }
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] static DenseVector qirState(const qdmi::Job& job) {
+  auto values = [&] {
+    const nb::gil_scoped_release release;
+    return unwrap(job.getDenseStateVector());
+  }();
+  return bindings::ownedArray(std::move(values));
+}
+
 [[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,
                                                const nb::handle program) {
+  if (auto job = executeQIRInput(program, 0, 0)) {
+    return qirState(*job);
+  }
   return withQCOProgram(types, program, [](const mlir::QCOProgram& qco) {
     auto ddPackage = unwrap(dd::Package::create(0));
     auto func = entryFunc(qco);
@@ -1010,6 +1129,10 @@ buildDenseFunctionality(PythonInputTypes& types, const nb::handle program) {
 [[nodiscard]] static std::map<std::string, size_t>
 sample(PythonInputTypes& types, const nb::handle program, size_t shots,
        uint64_t seed) {
+  if (auto job = executeQIRInput(program, shots, seed)) {
+    const nb::gil_scoped_release release;
+    return unwrap(job->getCounts());
+  }
   return withQCOProgram(types, program, [&](const mlir::QCOProgram& qco) {
     return sampleQCO(qco, shots, seed);
   });
@@ -2323,6 +2446,24 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 QIR programs retain their target profile and can be emitted as LLVM IR or
 LLVM bitcode.)pb");
   qirProgram
+      .def(
+          "simulate",
+          [](const mlir::QIRProgram& self) {
+            return qirState(executeQIRProgram(self, 0, 0));
+          },
+          "Return the uncollapsed statevector in QIR runtime qubit order; "
+          "reset and measurement-dependent "
+          "feedback are unsupported.")
+      .def(
+          "sample",
+          [](const mlir::QIRProgram& self, size_t shots, uint64_t seed) {
+            auto job = executeQIRProgram(self, shots, seed);
+            const nb::gil_scoped_release release;
+            return unwrap(job.getCounts());
+          },
+          "shots"_a = 1024U, "seed"_a = 0U,
+          "Sample recorded outputs. Zero selects random seeding; fixed seeds "
+          "must fit a positive signed 32-bit integer.")
       .def("copy", &copyProgram<mlir::QIRProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &FallibleMemberAdapter<&mlir::QIRProgram::cleanup>::call,
@@ -2481,7 +2622,7 @@ Raises:
   m.def("simulate", PythonInputAdapter<&simulateDense>{inputTypes}, "program"_a,
         nb::sig("def simulate(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-                "JeffProgram | OpenQASMProgram) -> "
+                "JeffProgram | OpenQASMProgram | QIRProgram | bytes) -> "
                 "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
                 "{'shape': (None,)}]"),
         R"pb(Simulate a closed compiler input from the all-zero state.
@@ -2493,27 +2634,35 @@ Mid-circuit measurement feedback and resets are unsupported; use
 or for a custom initial state.
 
 Args:
-    program: Compiler input to lower directly to QCO.
+    program: Compiler input, compiled QIR, or QIR text/bitcode.
+        QIR profile and version are read from module metadata. Other inputs
+        lower to QCO.
 
 Returns:
-    Full statevector, materialized directly into the returned NumPy array.
+    Full statevector in runtime qubit order, materialized into a NumPy array.
+    Compiled QIR may remove or reorder source qubits.
 
 Raises:
     MemoryError: When the dense statevector does not fit in memory.
     ValueError: When the program is not closed, is unsupported for statevector
-        simulation, or the statevector dimensions exceed addressable memory.)pb");
+        simulation, or the statevector dimensions exceed addressable memory.
+    RuntimeError: When QIR execution fails.)pb");
 
   m.def("sample", PythonInputAdapter<&sample>{inputTypes}, "program"_a,
         "shots"_a = 1024U, "seed"_a = 0U,
         nb::sig("def sample(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-                "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
+                "JeffProgram | OpenQASMProgram | QIRProgram | bytes, shots: "
+                "int = 1024, seed: int = "
                 "0) -> dict[str, int]"),
-        R"pb(Sample a supported input after translating or converting it to QCO.
+        R"pb(Sample a supported compiler input or QIR program.
 
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
-contracts.)pb");
+contracts. QIR text and bitcode run through the bundled DDSIM worker using
+the profile and version declared in the module metadata.
+QIR seeds use 0 for randomness or a positive signed 32-bit integer. Profile
+declarations do not validate arbitrary LLVM; executable QIR must be trusted.)pb");
 
   m.def(
       "expectation_values", PythonInputAdapter<&expectationValues>{inputTypes},

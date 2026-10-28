@@ -12,10 +12,10 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "Array.hpp"
 #include "Result.hpp"
 
 #include "nanobind/nanobind.h"
-#include "nanobind/ndarray.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/filesystem.h"  // NOLINT(misc-include-cleaner)
@@ -35,7 +35,6 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -52,18 +51,6 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace {
-template <class T>
-nb::ndarray<nb::numpy, T, nb::ndim<1>> ownedArray(std::vector<T> values) {
-  auto storage = std::make_unique<std::vector<T>>(std::move(values));
-  auto* const data = storage->data();
-  const auto size = storage->size();
-  const nb::capsule owner(storage.get(), [](void* ptr) noexcept {
-    delete static_cast<std::vector<T>*>(ptr);
-  });
-  [[maybe_unused]] const auto* const released = storage.release();
-  return {data, {size}, owner};
-}
-
 using PythonCustomJobParameter =
     std::variant<std::string, bool, int, double, nb::bytes>;
 using PythonProgram =
@@ -367,7 +354,7 @@ Returns:
           return bindings::invoke(&qdmi::Job::getDenseStateVector, self,
                                   programIndex);
         }();
-        return ownedArray(std::move(values));
+        return bindings::ownedArray(std::move(values));
       },
       "program_index"_a = 0,
       "Return a one-dimensional complex128 NumPy array owning the retrieved "
@@ -381,7 +368,7 @@ Returns:
           return bindings::invoke(&qdmi::Job::getDenseProbabilities, self,
                                   programIndex);
         }();
-        return ownedArray(std::move(values));
+        return bindings::ownedArray(std::move(values));
       },
       "program_index"_a = 0,
       "Return a one-dimensional float64 NumPy array owning the retrieved "

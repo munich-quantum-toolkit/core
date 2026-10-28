@@ -17,6 +17,7 @@ import numpy as np
 import qiskit.circuit
 import qiskit.providers
 import qiskit.transpiler
+from numpy.typing import NDArray
 
 import mqt.core.dd
 import mqt.core.qdmi
@@ -1316,6 +1317,12 @@ class QIRProgram(Program):
     LLVM bitcode.
     """
 
+    def simulate(self) -> Annotated[NDArray[np.complex128], {"shape": (None,), "order": "C", "device": "cpu"}]:
+        """Return the uncollapsed statevector in QIR runtime qubit order; reset and measurement-dependent feedback are unsupported."""
+
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+        """Sample recorded outputs. Zero selects random seeding; fixed seeds must fit a positive signed 32-bit integer."""
+
     def copy(self) -> QIRProgram:
         """Return an independent copy of this program."""
 
@@ -1383,7 +1390,9 @@ def simulate(
     | QCProgram
     | QCOProgram
     | JeffProgram
-    | OpenQASMProgram,
+    | OpenQASMProgram
+    | QIRProgram
+    | bytes,
 ) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None,)}]:
     """Simulate a closed compiler input from the all-zero state.
 
@@ -1394,15 +1403,19 @@ def simulate(
     or for a custom initial state.
 
     Args:
-        program: Compiler input to lower directly to QCO.
+        program: Compiler input, compiled QIR, or QIR text/bitcode.
+            QIR profile and version are read from module metadata. Other inputs
+            lower to QCO.
 
     Returns:
-        Full statevector, materialized directly into the returned NumPy array.
+        Full statevector in runtime qubit order, materialized into a NumPy array.
+        Compiled QIR may remove or reorder source qubits.
 
     Raises:
         MemoryError: When the dense statevector does not fit in memory.
         ValueError: When the program is not closed, is unsupported for statevector
             simulation, or the statevector dimensions exceed addressable memory.
+        RuntimeError: When QIR execution fails.
     """
 
 def sample(
@@ -1412,15 +1425,20 @@ def sample(
     | QCProgram
     | QCOProgram
     | JeffProgram
-    | OpenQASMProgram,
+    | OpenQASMProgram
+    | QIRProgram
+    | bytes,
     shots: int = 1024,
     seed: int = 0,
 ) -> dict[str, int]:
-    """Sample a supported input after translating or converting it to QCO.
+    """Sample a supported compiler input or QIR program.
 
     An existing QCO program is used without copying. See
     {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
-    contracts.
+    contracts. QIR text and bitcode run through the bundled DDSIM worker using
+    the profile and version declared in the module metadata.
+    QIR seeds use 0 for randomness or a positive signed 32-bit integer. Profile
+    declarations do not validate arbitrary LLVM; executable QIR must be trusted.
     """
 
 def expectation_values(
