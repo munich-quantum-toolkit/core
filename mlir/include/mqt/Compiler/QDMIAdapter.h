@@ -58,10 +58,9 @@ parseOperationParameterConstraints(llvm::StringRef metadata,
 ///
 /// The returned target owns all queried metadata and remains valid
 /// after the originating device and session have been destroyed. Neutral-atom
-/// zone models are not supported. Explicit QDMI site lists must cover every
-/// site for one-qubit operations, every undirected topology edge for two-qubit
-/// operations, and every ordered tuple of distinct sites for higher arities.
-/// Each supported ordered placement carries optional calibration data.
+/// zone models are not supported. Exact ordered operation placements and
+/// optional calibration are retained. Compilation separately checks its
+/// required synthesis basis and every emitted operation at its assigned sites.
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device);
 

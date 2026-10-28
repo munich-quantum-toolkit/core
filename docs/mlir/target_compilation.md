@@ -155,12 +155,13 @@ Use {py:class}`~mqt.core.mlir.TargetEnvironment` with a
 and control flow explicitly. A QDMI format list alone does not describe these
 restrictions; the adapter uses the compiler-supported format baseline.
 
-QDMI target compilation currently requires circuit-model connectivity and
-complete operation coverage: two-qubit operations must cover every topology edge
-in at least one orientation; wider operations must report every ordered tuple of
-distinct sites. Native serialization can retain partial calibrated loci because
-it does not route. The bundled SC snapshots are compilation models, not
-executing devices; see {doc}`../qdmi/sc_device`.
+QDMI target snapshots preserve the exact ordered operation placements and
+calibration reported by circuit-model devices. Additional operations may be
+available on only some sites. Native synthesis checks its required common basis
+separately, including entangler coverage across topology edges. Target
+conformance checks each emitted operation at its assigned sites. Neutral-atom
+zone models are not supported. The bundled SC snapshots are compilation models,
+not executing devices; see {doc}`../qdmi/sc_device`.
 
 ### Synthesis without routing
 
