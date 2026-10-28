@@ -12,10 +12,12 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/ResultLayout.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "qdmi/common/Common.hpp"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Error.h"
 
 #include <cstdint>
@@ -27,9 +29,25 @@
 namespace qdmi {
 class Device;
 class Job;
+class Operation;
 } // namespace qdmi
 
 namespace mlir {
+
+/// One alternative in the temporary operation-parameter metadata contract.
+struct OperationParameterConstraints {
+  std::vector<std::optional<double>> fixed;
+  std::vector<
+      std::optional<CompilerTarget::OperationCapability::ParameterBounds>>
+      bounds;
+};
+
+/// Read `mqt.operation-parameters.v1` JSON from operation CUSTOM2.
+///
+/// Empty means absent or foreign metadata. Recognized malformed metadata fails.
+/// Remove this compatibility contract when QDMI standardizes parameter domains.
+[[nodiscard]] llvm::Expected<std::vector<OperationParameterConstraints>>
+operationParameterConstraints(const qdmi::Operation& operation);
 
 /// Snapshot a circuit-model QDMI device as an MQT compiler target.
 ///
@@ -81,7 +99,33 @@ public:
   /// Compile and serialize for one selected hardware/payload contract.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   compile(CompilerInput program, const TargetEnvironment& environment,
-          const CompilationOptions& options = {});
+          const CompilationOptions& options = {},
+          SerializationProfile profile = SerializationProfile::Default);
+
+  /// Serialize an already native program without routing or gate synthesis.
+  ///
+  /// Receiver profiles normalize terminal measurements and retain the logical
+  /// output map. Unsupported feedback or nonterminal readout is rejected.
+  [[nodiscard]] static llvm::Expected<CompiledProgram>
+  serialize(QCProgram program, const TargetEnvironment& environment,
+            SerializationProfile profile = SerializationProfile::Default,
+            std::optional<llvm::ArrayRef<size_t>> siteIndices = std::nullopt);
+
+  /// Snapshot exact operation placements and serialize for a QDMI device.
+  ///
+  /// Optional site indices map positional input wires to ordered target sites.
+  /// Omit them when the QC program already contains target site IDs.
+  [[nodiscard]] static llvm::Expected<CompiledProgram>
+  serialize(QCProgram program, const qdmi::Device& device,
+            std::optional<QDMI_Program_Format> format = std::nullopt,
+            SerializationProfile profile = SerializationProfile::Default,
+            std::optional<llvm::ArrayRef<size_t>> siteIndices = std::nullopt);
+
+  /// Logical binary output reconstruction; absent for an identity layout.
+  [[nodiscard]] const std::optional<ResultLayout>&
+  resultLayout() const noexcept {
+    return resultLayout_;
+  }
 
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
     return environment_;
@@ -94,17 +138,20 @@ public:
 
 private:
   CompiledProgram(TargetEnvironment environment, std::string payload,
-                  QDMI_Program_Format format);
+                  QDMI_Program_Format format,
+                  std::optional<ResultLayout> resultLayout = std::nullopt);
   TargetEnvironment environment_;
   std::string payload_;
   QDMI_Program_Format format_;
+  std::optional<ResultLayout> resultLayout_;
 };
 
 /// Compile for a QDMI device.
 [[nodiscard]] llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
-               const CompilationOptions& options = {});
+               const CompilationOptions& options = {},
+               SerializationProfile profile = SerializationProfile::Default);
 
 /// Validate the destination contract before creating and submitting a QDMI job.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(

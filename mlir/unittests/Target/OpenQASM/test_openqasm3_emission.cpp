@@ -350,7 +350,8 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(source->starts_with("OPENQASM 3;\n"));
   EXPECT_NE(source->find("include \"stdgates.inc\";"), std::string::npos);
   EXPECT_NE(source->find("cx q[0], q[1];"), std::string::npos);
-  EXPECT_NE(source->find("output bit[2] c;"), std::string::npos);
+  EXPECT_NE(source->find("bit[2] c;"), std::string::npos);
+  EXPECT_EQ(source->find("output "), std::string::npos);
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
       *source, openqasm::frontend::GatePolicy::Strict));
   EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
@@ -769,7 +770,7 @@ TEST(OpenQASM3EmissionTest, PreservesGroupedMeasurementRegisterAndBitOrder) {
   auto emitted =
       qc::translateQCToOpenQASM3(OwningOpRef<ModuleOp>(moduleOp->clone()));
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_NE(emitted->find("output bit[2] result;"), std::string::npos);
+  EXPECT_NE(emitted->find("bit[2] result;"), std::string::npos);
   EXPECT_EQ(emitted->find("_mqt_b"), std::string::npos) << *emitted;
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
@@ -916,7 +917,7 @@ r = measure q;
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate r("), std::string::npos);
-  EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
+  EXPECT_NE(emitted->find("bit[1] _mqt_out0;"), std::string::npos);
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
       *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
@@ -3323,7 +3324,7 @@ TEST(OpenQASM3EmissionTest, UsesFrontendIdentifierRulesForOutputNames) {
         StringRef(name) == "valid_name" || StringRef(name) == "sin"
             ? name
             : "_mqt_out0";
-    EXPECT_NE(emitted->find(std::string("output bit[1] ") + expected + ";"),
+    EXPECT_NE(emitted->find(std::string("bit[1] ") + expected + ";"),
               std::string::npos);
     EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
         *emitted, openqasm::frontend::GatePolicy::Strict))

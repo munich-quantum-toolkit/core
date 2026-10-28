@@ -211,8 +211,9 @@ family and target:
 The raw `QC_IMPORT` and `QCO` checkpoints stop before target compilation and
 cannot be combined with `target`. A QDMI target with no explicit `output`
 returns a `CompiledProgram` in an automatically selected native format. To
-select an exact execution format, use `submit_program(..., program_format=...)`.
-See {doc}`target_compilation` for payload selection and submission.
+select an exact execution format, use
+`compile_program(..., program_format=...)`. See {doc}`target_compilation` for
+payload selection and submission.
 
 After rotation merging, the default pipeline groups controlled gates with the
 same ordered controls and targets. Canonicalization cancels named inverses and

@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/ResultLayout.h"
+
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
@@ -30,11 +32,14 @@ namespace qc {
 /// module. Gate definitions and supported structured control flow are
 /// preserved. The module is consumed even on failure. Translation is buffered:
 /// the output stream is unchanged if the module cannot be translated.
-LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output);
+LogicalResult translateQCToOpenQASM3(
+    OwningOpRef<ModuleOp> moduleOp, llvm::raw_ostream& output,
+    SerializationProfile profile = SerializationProfile::Default);
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
+FailureOr<std::string> translateQCToOpenQASM3(
+    OwningOpRef<ModuleOp> moduleOp,
+    SerializationProfile profile = SerializationProfile::Default);
 
 /// Consume a QC module and emit OpenQASM 2 with bound parameters.
 ///
@@ -45,8 +50,11 @@ FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp);
 FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
-LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp) = delete;
+LogicalResult translateQCToOpenQASM3(
+    ModuleOp, llvm::raw_ostream&,
+    SerializationProfile = SerializationProfile::Default) = delete;
+FailureOr<std::string> translateQCToOpenQASM3(
+    ModuleOp, SerializationProfile = SerializationProfile::Default) = delete;
 
 } // namespace qc
 } // namespace mlir
