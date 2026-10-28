@@ -594,7 +594,7 @@ TEST(QCOToQCRegressionTest, ChecksFlatTensorSlotCorrespondence) {
       OperationEquivalence::Flags::None));
 }
 
-TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
+TEST(QCOToQCRegressionTest, ProvesDynamicRestorationBeforeRewriting) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
@@ -602,7 +602,7 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+  constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main(%condition: i1) attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
@@ -622,19 +622,42 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
       qtensor.dealloc %t4 : tensor<2x!qco.qubit>
       return
     }
-  })mlir",
-                                              &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
-  ASSERT_EQ(loads.size(), 2U);
-  auto indices = *function.getOps<scf::IfOp>().begin();
-  EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
-  EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
-  EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
+  })mlir";
+  for (const bool swapSlots : {false, true}) {
+    SCOPED_TRACE(swapSlots);
+    auto text = source.str();
+    if (swapSlots) {
+      text.replace(text.find("%indices#0, %c0"),
+                   std::string("%indices#0, %c0").size(), "%indices#1, %c0");
+    }
+    auto moduleOp = parseSourceString<ModuleOp>(text, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    if (swapSlots) {
+      OwningOpRef<ModuleOp> original = moduleOp->clone();
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+        diagnostics += diagnostic.str();
+        return success();
+      });
+      EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+      EXPECT_NE(diagnostics.find("cannot prove restoration"),
+                std::string::npos);
+      EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+          moduleOp->getOperation(), original->getOperation(),
+          OperationEquivalence::Flags::None));
+      continue;
+    }
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
+    ASSERT_EQ(loads.size(), 2U);
+    auto indices = *function.getOps<scf::IfOp>().begin();
+    EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
+    EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
+    EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
+  }
 }
 
 TEST(QCOToQCRegressionTest, RejectsQTensorSlotMovesBeforeRewriting) {

@@ -22,12 +22,14 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/IR/ValueBoundsOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
@@ -35,6 +37,7 @@
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Interfaces/ValueBoundsOpInterface.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 
@@ -266,7 +269,7 @@ public:
 
 } // namespace
 
-/// Check statically known slot identity before lowering tensors to references.
+/// Prove slot identity before lowering tensors to references.
 [[nodiscard]] static LogicalResult
 verifyTensorSlots(ModuleOp moduleOp, const DenseMap<Value, Value>& origins) {
   const auto origin = [&](Value value) {
@@ -281,14 +284,16 @@ verifyTensorSlots(ModuleOp moduleOp, const DenseMap<Value, Value>& origins) {
           "must restore the extracted qubit to its original register slot");
       return WalkResult::interrupt();
     }
-    const auto source = getConstantIntValue(extract.getIndex());
-    const auto dest = getConstantIntValue(insert.getIndex());
-    if (source && dest && *source != *dest) {
+    auto source = extract.getIndex();
+    auto dest = insert.getIndex();
+    if (!isEqualConstantIntOrValue(source, dest) &&
+        !ValueBoundsConstraintSet::compare(source, ValueBoundsConstraintSet::EQ,
+                                           dest)) {
       insert.emitOpError(
-          "must restore the extracted qubit to its original register slot");
+          "cannot prove restoration to the original register slot; reuse the "
+          "extraction index or an equivalent affine expression");
       return WalkResult::interrupt();
     }
-    // Equality of dynamic slot indices is a program precondition.
     return WalkResult::advance();
   });
   return success(!result.wasInterrupted());
@@ -1270,6 +1275,11 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
 /// control-flow patterns.
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    QCOToQCBase::getDependentDialects(registry);
+    arith::registerValueBoundsOpInterfaceExternalModels(registry);
+  }
 
 protected:
   void runOnOperation() override {

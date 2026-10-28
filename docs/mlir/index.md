@@ -61,10 +61,12 @@ QC, QCO, and QTensor share these requirements for semantic round trips:
 
 Indices must be in bounds. Distinct runtime indices used together must select
 non-overlapping resources; extraction and reinsertion indices must select the
-same slot. These are program preconditions. Conversions diagnose known
-violations and unsupported IR shapes, but do not prove arbitrary index
-relationships or insert runtime checks. Type checking and linearity alone do not
-establish this contract.
+same slot. Bounds and non-overlap are program preconditions. QCO-to-QC proves
+restoration from identical SSA values, equal constants, or arithmetic equality
+supported by MLIR value-bounds analysis; unproved restoration fails before
+rewriting. Other conversions diagnose known violations and unsupported IR
+shapes, but do not prove arbitrary index relationships or insert runtime checks.
+Type checking and linearity alone do not establish this contract.
 
 Slot identity refers to the underlying register and index. A view or slice may
 renumber those indices; it does not change the qubits they denote. Overlapping
