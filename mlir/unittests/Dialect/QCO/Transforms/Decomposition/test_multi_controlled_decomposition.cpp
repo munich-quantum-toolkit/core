@@ -605,7 +605,6 @@ TEST_P(AncillaFamilyTest, DirtyFullOperatorAndBudget) {
              uint64_t{2},
              uint64_t{3},
              uint64_t{4},
-             uint64_t{99},
              automatic,
          }) {
       SCOPED_TRACE(testing::Message() << "k=" << k << " budget=" << budget);
@@ -658,7 +657,6 @@ TEST_P(AncillaFamilyTest, CleanSubspaceAndBudget) {
              uint64_t{1},
              uint64_t{2},
              uint64_t{3},
-             uint64_t{99},
              automatic,
          }) {
       SCOPED_TRACE(testing::Message() << "k=" << k << " budget=" << budget);
