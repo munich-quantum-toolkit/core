@@ -183,7 +183,7 @@ nitpick_ignore_regex = [
     ("py:class", r"qiskit\.result\.models\.ExperimentResult"),
     (
         "py:class",
-        r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)(?:, 'writable': False)?\}\]",
+        r"Annotated\[numpy\.typing\.NDArray\[numpy\.(?:complex128|float64)\], \{.*\}\]",
     ),
     ("py:class", r"Ellipsis"),
     ("py:class", r"ParametersType"),

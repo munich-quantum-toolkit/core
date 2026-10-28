@@ -17,6 +17,7 @@ import sys
 from collections import Counter
 from typing import TYPE_CHECKING, cast
 
+import numpy as np
 import pytest
 
 from mqt.core.mlir import (
@@ -746,13 +747,14 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     inv_sqrt2 = 1.0 / (2**0.5)
 
     state_vector = job.get_dense_statevector()
-    assert isinstance(state_vector, list)
-    assert all(isinstance(value, complex) for value in state_vector)
+    assert state_vector.dtype == np.complex128
+    assert state_vector.shape == (4,)
+    assert state_vector.flags.c_contiguous
     assert state_vector == pytest.approx([inv_sqrt2, 0, 0, inv_sqrt2])
 
     probabilities = job.get_dense_probabilities()
-    assert isinstance(probabilities, list)
-    assert all(isinstance(value, float) for value in probabilities)
+    assert probabilities.dtype == np.float64
+    assert probabilities.shape == (4,)
     assert probabilities == pytest.approx([0.5, 0, 0, 0.5])
 
     sparse_state_vector = job.get_sparse_statevector()
@@ -764,6 +766,11 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     assert isinstance(sparse_probabilities, dict)
     assert all(isinstance(value, float) for value in sparse_probabilities.values())
     assert sparse_probabilities == pytest.approx({"00": 0.5, "11": 0.5})
+
+    del job
+    state_vector[0] = 0
+    assert probabilities == pytest.approx([0.5, 0, 0, 0.5])
+    assert state_vector == pytest.approx([0, 0, 0, inv_sqrt2])
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX named pipes")

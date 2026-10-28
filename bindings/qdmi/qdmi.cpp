@@ -15,6 +15,7 @@
 #include "Result.hpp"
 
 #include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
 #include "nanobind/operators.h"
 #include "nanobind/stl/complex.h"     // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/filesystem.h"  // NOLINT(misc-include-cleaner)
@@ -34,6 +35,7 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -50,6 +52,18 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace {
+template <class T>
+nb::ndarray<nb::numpy, T, nb::ndim<1>> ownedArray(std::vector<T> values) {
+  auto storage = std::make_unique<std::vector<T>>(std::move(values));
+  auto* const data = storage->data();
+  const auto size = storage->size();
+  const nb::capsule owner(storage.get(), [](void* ptr) noexcept {
+    delete static_cast<std::vector<T>*>(ptr);
+  });
+  [[maybe_unused]] const auto* const released = storage.release();
+  return {data, {size}, owner};
+}
+
 using PythonCustomJobParameter =
     std::variant<std::string, bool, int, double, nb::bytes>;
 using PythonProgram =
@@ -345,16 +359,33 @@ Returns:
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
-  job.def("get_dense_statevector", bindResult(&qdmi::Job::getDenseStateVector),
-          "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
-          "Returns the dense statevector from the job (typically only "
-          "available from simulator devices).");
+  job.def(
+      "get_dense_statevector",
+      [](const qdmi::Job& self, size_t programIndex) {
+        auto values = [&] {
+          const nb::gil_scoped_release release;
+          return bindings::invoke(&qdmi::Job::getDenseStateVector, self,
+                                  programIndex);
+        }();
+        return ownedArray(std::move(values));
+      },
+      "program_index"_a = 0,
+      "Return a one-dimensional complex128 NumPy array owning the retrieved "
+      "statevector.");
 
-  job.def("get_dense_probabilities",
-          bindResult(&qdmi::Job::getDenseProbabilities), "program_index"_a = 0,
-          nb::call_guard<nb::gil_scoped_release>(),
-          "Returns the dense probabilities from the job (typically only "
-          "available from simulator devices).");
+  job.def(
+      "get_dense_probabilities",
+      [](const qdmi::Job& self, size_t programIndex) {
+        auto values = [&] {
+          const nb::gil_scoped_release release;
+          return bindings::invoke(&qdmi::Job::getDenseProbabilities, self,
+                                  programIndex);
+        }();
+        return ownedArray(std::move(values));
+      },
+      "program_index"_a = 0,
+      "Return a one-dimensional float64 NumPy array owning the retrieved "
+      "probabilities.");
 
   job.def("get_sparse_statevector",
           bindResult(&qdmi::Job::getSparseStateVector), "program_index"_a = 0,
