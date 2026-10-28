@@ -2,8 +2,8 @@
 
 Status: shared Core simplification implemented on refreshed main. Independent
 review converged after fixing sparse placements, terminal classical calls, and
-Qiskit physical-layout boundaries. Provider and PennyLane consumers use the
-same generic controls.
+Qiskit physical-layout boundaries. Provider and PennyLane consumers use the same
+generic controls.
 
 ## Contract
 
