@@ -43,8 +43,7 @@ def test_qaoa_binding_and_sampling() -> None:
     """Bind one template to distinct angles and score their cuts."""
     benchmark = qaoa.QAOA(qaoa.Options(qubits=4, depth=2))
     template = benchmark.generate()
-    program = template.copy()
-    program.bind_parameters({"gammas": [np.pi / 4, 0.0]})
+    program = template.bind_parameters({"gammas": [np.pi / 4, 0.0]}, copy=True)
     assert program.parameters == ["betas"]
     program.bind_parameters({"betas": [np.pi / 8, 0.0]})
     assert not program.parameters

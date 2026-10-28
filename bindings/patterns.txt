@@ -2,7 +2,7 @@ mqt\.core\.mlir\._generate_benchmark$:
 
 mqt\.core\.mlir\.(?:QC|QCO)Program\.bind_parameters$:
     \from collections.abc import Mapping, Sequence
-    \from typing import Any, SupportsFloat
+    \from typing import Any, Self, SupportsFloat
     \import numpy
     def bind_parameters(
         self,
@@ -12,7 +12,9 @@ mqt\.core\.mlir\.(?:QC|QCO)Program\.bind_parameters$:
             | Sequence[SupportsFloat]
             | numpy.ndarray[tuple[int], numpy.dtype[numpy.floating[Any] | numpy.integer[Any]]],
         ],
-    ) -> None:
+        *,
+        copy: bool = False,
+    ) -> Self:
         \doc
 
 mqt\.core\.mlir\.JeffProgram\.from_segments$:

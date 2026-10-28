@@ -156,8 +156,7 @@ bound, so a program can be inspected and transformed before choosing values:
 source = "OPENQASM 3.1; input float theta; qubit q; ry(theta) q;"
 program = QCProgram.from_openqasm_str(source)
 assert program.parameters == ["theta"]
-bound = program.copy()
-bound.bind_parameters({"theta": 0.5})
+bound = program.bind_parameters({"theta": 0.5}, copy=True)
 assert bound.parameters == []
 ```
 
