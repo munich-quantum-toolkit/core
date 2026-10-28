@@ -104,7 +104,7 @@ collectConversionRequirements(ModuleOp moduleOp) {
   ConversionRequirements requirements;
   auto result = moduleOp.walk([&](Operation* op) {
     if (!requirements.needsWireOrigins) {
-      if (isa<qtensor::InsertOp>(op)) {
+      if (isa<qtensor::ExtractOp, qtensor::InsertOp>(op)) {
         requirements.needsWireOrigins = true;
       } else if (op->getNumRegions() != 0 &&
                  !isa<ModuleOp, qco::UnitaryOpInterface>(op)) {
@@ -1282,7 +1282,7 @@ protected:
       return;
     }
     LoweringState state(requirements->allocationMode);
-    // Flat owned circuits without tensor inserts have no wire checks to make.
+    // Flat owned circuits without register accesses have no wire checks.
     if (requirements->needsWireOrigins) {
       DenseMap<Value, Value> origins;
       if (failed(collectWireOrigins(moduleOp, origins)) ||
