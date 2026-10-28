@@ -16,6 +16,7 @@ from __future__ import annotations
 __lazy_modules__ = {
     "inspect",
     "math",
+    "mqt.core.mlir",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
     "mqt.core.plugins.qiskit.serializers",
@@ -56,6 +57,7 @@ from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
+from mqt.core.mlir import CompiledProgram, _operation_parameter_constraints
 from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -137,7 +139,7 @@ def _build_gate_mappings_for_backend(
     return qiskit_to_qdmi, operation_to_gate
 
 
-def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
+def _check_payload_type(program: str | bytes | CompiledProgram, fmt: ProgramFormat) -> None:
     """Check that a serialized program has the payload type its format requires.
 
     Args:
@@ -147,6 +149,11 @@ def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
     Raises:
         TranslationError: If the payload type does not match the format.
     """
+    if isinstance(program, CompiledProgram):
+        if program.program_format != fmt:
+            msg = f"The serializer for {fmt.name} returned a {program.program_format.name} program."
+            raise TranslationError(msg)
+        program = program.payload
     expected = bytes if is_binary_program_format(fmt) else str
     if not isinstance(program, expected):
         msg = (
@@ -251,6 +258,9 @@ class QDMIBackend(BackendV2):
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
         self._device_id = device_id
+        self._native_width = max((site.index() for site in device.sites()), default=-1) + 1
+        self._parameter_aliases: dict[str, str] = {}
+        self._parameter_bounds: dict[str, list[tuple[float, float] | None]] = {}
         self.last_job: QDMIJob | None = None
 
         self._target = self._build_target()
@@ -369,7 +379,7 @@ class QDMIBackend(BackendV2):
         Returns:
             Number of qubits to expose in the Target.
         """
-        return self._device.qubits_num()
+        return self._native_width
 
     def _build_target(self) -> Target:
         """Construct a Qiskit Target from device capabilities.
@@ -388,7 +398,12 @@ class QDMIBackend(BackendV2):
 
         seen_gate_names: set[str] = set()
         instructions: dict[
-            str, tuple[Instruction | type[Instruction], dict[tuple[int, ...] | None, InstructionProperties | None]]
+            str,
+            tuple[
+                Instruction | type[Instruction],
+                dict[tuple[int, ...] | None, InstructionProperties | None],
+                list[tuple[float, float] | None] | None,
+            ],
         ] = {}
         for op in self._device.operations():
             # Preserve per-operation subclass filtering before merging aliases.
@@ -396,18 +411,21 @@ class QDMIBackend(BackendV2):
             self._add_operation_to_target(operation_target, op, seen_gate_names)
             for name in operation_target.operation_names:
                 gate = operation_target.operation_from_name(name)
-                previous, properties = instructions.setdefault(name, (gate, {}))
-                if gate != previous:
+                bounds = self._parameter_bounds.get(name)
+                previous, properties, previous_bounds = instructions.setdefault(name, (gate, {}, bounds))
+                if gate != previous or bounds != previous_bounds:
                     msg = f"Device aliases for '{name}' map to incompatible Qiskit instructions."
                     raise UnsupportedOperationError(msg)
                 for qargs, calibration in operation_target[name].items():
                     properties.setdefault(qargs, calibration)
 
-        for name, (gate, properties) in instructions.items():
+        for name, (gate, properties, bounds) in instructions.items():
             if inspect.isclass(gate):
                 target.add_instruction(gate, name=name)
             else:
-                target.add_instruction(gate, {None: properties[None]} if None in properties else properties, name=name)
+                target.add_instruction(
+                    gate, {None: properties[None]} if None in properties else properties, name=name, angle_bounds=bounds
+                )
 
         if "measure" not in seen_gate_names:
             warnings.warn(
@@ -473,7 +491,22 @@ class QDMIBackend(BackendV2):
                 properties[qarg] = InstructionProperties(
                     duration=duration, error=1.0 - fidelity if fidelity is not None else None
                 )
-        target.add_instruction(gate, properties)
+        alternatives = _operation_parameter_constraints(op)
+        if not alternatives:
+            target.add_instruction(gate, properties)
+            return
+        for index, (fixed, bounds) in enumerate(alternatives):
+            variant = gate.copy()
+            if fixed:
+                variant.params = [
+                    parameter if value is None else value
+                    for parameter, value in zip(variant.params, fixed, strict=True)
+                ]
+            name = gate.name if len(alternatives) == 1 else f"{op_name}_{index}"
+            self._parameter_aliases[name] = op.name().lower()
+            if bounds:
+                self._parameter_bounds[name] = bounds
+            target.add_instruction(variant, properties, name=name, angle_bounds=bounds or None)
 
     def _duration_seconds(self, duration: int | None) -> float | None:
         """Convert a raw QDMI duration to Qiskit's seconds.
@@ -594,8 +627,11 @@ class QDMIBackend(BackendV2):
             CircuitValidationError: If the circuit exceeds the native device width.
             UnsupportedOperationError: If an operation or placement is unsupported.
         """
-        if native and circuit.num_qubits > self._device.qubits_num():
-            msg = f"Circuit has {circuit.num_qubits} qubits, but the native device has {self._device.qubits_num()}."
+        if native and circuit.num_qubits > self._native_width:
+            msg = (
+                f"Circuit has {circuit.num_qubits} qubits, "
+                f"but the native device has {self._native_width} addressable positions."
+            )
             raise CircuitValidationError(msg)
         device_ops = {operation.name().lower() for operation in self._device.operations()}
 
@@ -613,7 +649,8 @@ class QDMIBackend(BackendV2):
                         raise UnsupportedOperationError(msg)
                     pending.extend((body, qargs) for body in reversed(operation.blocks))
                     continue
-                names = self._map_qiskit_gate_to_operation_names(operation.name) & device_ops
+                name = self._parameter_aliases.get(operation.name, operation.name)
+                names = self._map_qiskit_gate_to_operation_names(name) & device_ops
                 if not names:
                     msg = f"Unsupported operation: '{operation.name}'"
                     raise UnsupportedOperationError(msg)
@@ -644,7 +681,7 @@ class QDMIBackend(BackendV2):
 
     def _serialize_circuit(
         self, circuit: QuantumCircuit, supported_program_formats: Iterable[ProgramFormat]
-    ) -> tuple[str | bytes, ProgramFormat]:
+    ) -> tuple[str | bytes | CompiledProgram, ProgramFormat]:
         """Serialize a :class:`~qiskit.circuit.QuantumCircuit` into a program the device accepts.
 
         The method walks the formats the device supports in the order of
@@ -658,8 +695,8 @@ class QDMIBackend(BackendV2):
             supported_program_formats: The program formats the device accepts.
 
         Returns:
-            Tuple of (program, program format). The program is a string for a
-            text format and bytes for a binary format.
+            The program and its format. A program can retain its compiler result
+            layout, or be plain text or bytes when outputs already match.
 
         Raises:
             CircuitValidationError: If native circuit validation fails.
@@ -699,7 +736,12 @@ class QDMIBackend(BackendV2):
         parameter_values: Sequence[ParametersType] | None = None,
         **options: Any,  # ruff:ignore[any-type]
     ) -> QDMIJob:
-        """Execute one or more :class:`~qiskit.circuit.QuantumCircuit` instances on the backend.
+        """Submit native circuits without running compilation or routing.
+
+        Call :func:`~mqt.core.mlir.compile_program` with this backend as the
+        target before submission when a circuit needs compilation. Serialization
+        can normalize terminal measurements and retain their output mapping;
+        it does not change the compiled quantum operations or placement.
 
         Args:
             run_input: A single quantum circuit or a sequence of quantum circuits to execute.

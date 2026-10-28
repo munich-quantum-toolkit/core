@@ -4,6 +4,7 @@ kernelspec:
   name: python3
 mystnb:
   number_source_lines: true
+  output_stderr: remove
 ---
 
 # Qiskit Backend Integration
@@ -43,6 +44,7 @@ python -m pip install "mqt-core[qiskit]"
 ## Quickstart
 
 ```{code-cell} ipython3
+from mqt.core.mlir import compile_program
 from mqt.core.plugins.qiskit import QDMIBackend
 from qiskit import QuantumCircuit
 
@@ -55,8 +57,9 @@ qc.h(0)
 qc.cx(0, 1)
 qc.measure_all()
 
-# Execute the circuit
-job = backend.run(qc, shots=1024)
+# Compile for the backend before submission.
+native = compile_program(qc, target=backend)
+job = backend.run(native, shots=1024)
 result = job.result()
 counts = result.get_counts()
 
@@ -64,6 +67,11 @@ assert sum(counts.values()) == 1024
 assert set(counts) <= {"00", "11"}
 print(f"Results: {counts}")
 ```
+
+`run` submits native circuits; it does not synthesize or route them. Bind
+parameters before compilation when their values affect native gate legality.
+Provider backends select the receiver's payload dialect and retain any mapping
+needed to reconstruct the circuit's classical outputs.
 
 ## Provider and Device Discovery
 
@@ -489,6 +497,16 @@ When you run a circuit, the backend:
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
+A receiver can require a dense terminal readout even when the source circuit has
+unused classical bits, repeated measurements, or permuted destinations. Native
+serialization normalizes that readout and retains a
+{py:class}`~mqt.core.mlir.ResultLayout` with the payload. Quantum operations and
+their physical placement remain unchanged. The job applies this map to each
+sample or histogram key, preserves leading zeros and register boundaries, and
+combines counts when several raw outcomes have the same logical output. Prepared
+payloads and maps are retained through batch recovery; retries do not compile or
+serialize the circuit again.
+
 The built-in OpenQASM and QPY serializers validate circuit width and ordered
 operation placements against native QDMI metadata after preprocessing. They
 reject an invalid circuit before any job in its batch is submitted. This check
@@ -565,6 +583,18 @@ A binary format takes one that returns `bytes`:
 ```python
 def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes: ...
 ```
+
+When the receiver needs a result mapping, return a
+{py:class}`~mqt.core.mlir.CompiledProgram` from
+{py:func}`~mqt.core.mlir.serialize_program`. This validates and serializes an
+already-native circuit without compiler optimization, synthesis, or routing.
+Select the documented receiver profile explicitly; a QASM version alone does not
+describe its measurement convention or accepted syntax. Provider packages own
+that selection and any compact target-index mapping.
+
+The source circuit still supplies the Qiskit result header. Keep the serialized
+program and header when implementing persistence: a remote job ID alone cannot
+recover a frontend output mapping.
 
 {py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
 carries. The backend checks the returned type against the format and raises

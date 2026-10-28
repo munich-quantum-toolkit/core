@@ -156,8 +156,10 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
-      : moduleOp(moduleOp), version2_(version2) {}
+  explicit OpenQASMEmitter(
+      ModuleOp moduleOp, bool version2 = false,
+      SerializationProfile profile = SerializationProfile::Default)
+      : version2_(version2), profile_(profile), moduleOp(moduleOp) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -210,7 +212,31 @@ public:
       return failure();
     }
     measurementStores = findMeasurementStores(function, version2_);
+    implicitOutputs_ =
+        !outputs.empty() &&
+        llvm::all_of(outputs,
+                     [](const ProgramOutput& result) {
+                       return isa<cbit::RegisterType>(result.value.getType());
+                     }) &&
+        llvm::all_of(resourceOrder,
+                     [&](Value value) {
+                       const auto& resource = resources.at(value);
+                       return resource.kind == ResourceKind::Qubit ||
+                              (resource.kind == ResourceKind::Bit &&
+                               resource.output);
+                     }) &&
+        llvm::all_of(function.getBody().front(), [&](Operation& operation) {
+          return isa<UnitaryOpInterface, func::CallOp, qc::StaticOp,
+                     qc::AllocOp, qc::DeallocOp, cbit::AllocOp, cbit::StoreOp,
+                     memref::AllocOp, memref::LoadOp, memref::DeallocOp,
+                     arith::ConstantOp, func::ReturnOp>(operation) ||
+                 (isa<qc::MeasureOp>(operation) &&
+                  measurementStores.contains(&operation));
+        });
     if (version2_ && failed(prepareVersion2())) {
+      return failure();
+    }
+    if (virtualQubits() && failed(prepareVirtualQubits())) {
       return failure();
     }
     for (auto gate : gateFunctions_) {
@@ -228,6 +254,7 @@ public:
         failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
+    closeVerbatim();
     if (outputs.empty() && !version2_) {
       bodyOutput.unindent();
       bodyOutput << "}\n";
@@ -252,7 +279,7 @@ public:
       sourceStream << '.' << requiredMinorVersion;
     }
     sourceStream << ";\n";
-    if (version2_ || !nativeTarget_) {
+    if (version2_ || !nativeTarget_ || profile_ == SerializationProfile::IBM) {
       sourceStream << (version2_ ? "include \"qelib1.inc\";\n"
                                  : "include \"stdgates.inc\";\n");
     }
@@ -270,6 +297,22 @@ public:
 
 private:
   bool version2_ = false;
+  SerializationProfile profile_;
+  bool verbatimOpen_ = false;
+  bool implicitOutputs_ = false;
+
+  [[nodiscard]] bool virtualQubits() const {
+    return profile_ == SerializationProfile::BraketSimulator ||
+           profile_ == SerializationProfile::IBM;
+  }
+
+  void closeVerbatim() {
+    if (verbatimOpen_) {
+      output->unindent();
+      *output << "}\n";
+      verbatimOpen_ = false;
+    }
+  }
   std::string deviceRegister_;
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
@@ -345,11 +388,15 @@ private:
         valueNames[value] = resource.name + "[0]";
       }
     }
+    return prepareVirtualQubits();
+  }
+
+  [[nodiscard]] LogicalResult prepareVirtualQubits() {
     const auto invalidDeviceIndex = function.walk([&](StaticOp qubit) {
       if (qubit.getIndex() == std::numeric_limits<int64_t>::max()) {
         std::ignore = fail(
             qubit,
-            "device qubit index exceeds the OpenQASM 2 register width limit");
+            "device qubit index exceeds the OpenQASM register width limit");
         return WalkResult::interrupt();
       }
       deviceWidth_ = std::max(deviceWidth_, qubit.getIndex() + 1);
@@ -771,6 +818,17 @@ private:
       if (!environment) {
         return fail(moduleOp, environment.error());
       }
+      if (profile_ == SerializationProfile::IBM) {
+        for (const auto site : environment.environment().target().siteIds()) {
+          if (site == std::numeric_limits<int64_t>::max()) {
+            return fail(
+                moduleOp,
+                "device qubit index exceeds the OpenQASM register width limit");
+          }
+          deviceWidth_ =
+              std::max(deviceWidth_, static_cast<uint64_t>(site) + 1);
+        }
+      }
       if (environment.environment().target().nativeOperationsKind() ==
           CompilerTarget::NativeOperations::Kind::Explicit) {
         nativeTarget_ = environment.environment().target();
@@ -1188,7 +1246,13 @@ private:
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
     }
     for (const auto& result : outputs) {
-      *output << "output " << result.kind << ' ' << result.name << ";\n";
+      if (profile_ == SerializationProfile::Default && !implicitOutputs_) {
+        *output << "output ";
+      }
+      *output << result.kind << ' ' << result.name << ";\n";
+    }
+    if (virtualQubits() && deviceWidth_ != 0) {
+      *output << "qubit[" << deviceWidth_ << "] " << deviceRegister_ << ";\n";
     }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
@@ -1331,6 +1395,17 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
+    if ((profile_ == SerializationProfile::BraketNative ||
+         profile_ == SerializationProfile::BraketSimulator) &&
+        isa<BarrierOp>(operation)) {
+      return success();
+    }
+    if (profile_ == SerializationProfile::BraketNative &&
+        isa<UnitaryOpInterface, func::CallOp>(operation) && !verbatimOpen_) {
+      *output << "#pragma braket verbatim\nbox {\n";
+      output->indent();
+      verbatimOpen_ = true;
+    }
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
     if (version2_ && isa<scf::ForOp, scf::WhileOp, scf::IndexSwitchOp,
                          cbit::WriteOp, memref::StoreOp, memref::CopyOp,
@@ -1602,10 +1677,11 @@ private:
       return found->second;
     }
     if (auto staticOp = value.getDefiningOp<qc::StaticOp>()) {
-      return version2_ ? (Twine(deviceRegister_) + "[" +
-                          Twine(staticOp.getIndex()) + "]")
-                             .str()
-                       : (Twine('$') + Twine(staticOp.getIndex())).str();
+      return (version2_ || virtualQubits())
+                 ? (Twine(deviceRegister_) + "[" + Twine(staticOp.getIndex()) +
+                    "]")
+                       .str()
+                 : (Twine('$') + Twine(staticOp.getIndex())).str();
     }
     auto load = value.getDefiningOp<memref::LoadOp>();
     if (!load || load.getIndices().size() != 1) {
@@ -2296,6 +2372,7 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitMeasurement(qc::MeasureOp measurement) {
+    closeVerbatim();
     if (failed(checkNativeNonUnitary(measurement, "measure",
                                      measurement.getQubit()))) {
       return failure();
@@ -2855,6 +2932,32 @@ private:
 
     GateCall call;
     call.symbol = gateNames_.at(callee);
+    if (nativeTarget_ && callee.isExternal()) {
+      SmallVector<CompilerTarget::SiteId> sites;
+      SmallVector<std::optional<double>> parameters;
+      for (auto operand : operands) {
+        if (operand.getType().isF64()) {
+          parameters.push_back(mqt::valueToDouble(operand));
+        } else if (auto site = operand.getDefiningOp<StaticOp>()) {
+          sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
+        } else {
+          return fail(operation, "native gates require static target sites");
+        }
+      }
+      const auto selected = nativeTarget_->findOperation(
+          call.symbol, sites.size(), parameters, sites);
+      if (selected.capability == nullptr) {
+        return fail(operation, "external gate is not native for the target");
+      }
+      call.symbol = selected.capability->name().str();
+    }
+    if (profile_ == SerializationProfile::IBM && callee.isExternal()) {
+      auto portable = portableGateSymbol(call.symbol);
+      if (failed(portable)) {
+        return failure();
+      }
+      call.symbol = std::move(*portable);
+    }
     for (const auto [operand, type] :
          llvm::zip_equal(operands, callee.getArgumentTypes())) {
       if (type.isF64()) {
@@ -2952,6 +3055,13 @@ private:
     }
     GateCall call;
     call.symbol = capability->name().str();
+    if (profile_ == SerializationProfile::IBM) {
+      auto portable = portableGateSymbol(call.symbol);
+      if (failed(portable)) {
+        return failure();
+      }
+      call.symbol = std::move(*portable);
+    }
     if (genericControls) {
       call.modifiers = (Twine("ctrl(") + Twine(controlCount) + ") @ ").str();
     }
@@ -3296,7 +3406,8 @@ private:
           symbol == "r" || symbol == "iswap" || symbol == "dcx" ||
           symbol == "rxx" || symbol == "ryy" || symbol == "rzz" ||
           symbol == "rzx" || symbol == "rccx") {
-        if (externalGateNames_.contains(symbol)) {
+        if (externalGateNames_.contains(symbol) &&
+            profile_ != SerializationProfile::IBM) {
           emitError(function.getLoc())
               << "external gate conflicts with generated definition";
           return failure();
@@ -3329,7 +3440,8 @@ private:
     }
     if (gate->availability ==
         openqasm::frontend::GateAvailability::Compatibility) {
-      if (externalGateNames_.contains(symbol)) {
+      if (externalGateNames_.contains(symbol) &&
+          profile_ != SerializationProfile::IBM) {
         emitError(function.getLoc())
             << "OpenQASM emission error: external gate '" << symbol
             << "' conflicts with a generated gate definition";
@@ -3474,17 +3586,19 @@ private:
 } // namespace
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output) {
+                                     llvm::raw_ostream& output,
+                                     SerializationProfile profile) {
   if (failed(verify(*moduleOp))) {
     return failure();
   }
-  return OpenQASMEmitter(*moduleOp).emit(output);
+  return OpenQASMEmitter(*moduleOp, false, profile).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                                              SerializationProfile profile) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
+  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream, profile))) {
     return failure();
   }
   return source;

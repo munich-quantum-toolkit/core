@@ -50,6 +50,8 @@ class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
     options: CompilationOptions
+    program_format: mqt.core.qdmi.ProgramFormat | None
+    profile: SerializationProfile
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -1466,8 +1468,40 @@ def expectation_values(
     and error contracts.
     """
 
+def _operation_parameter_constraints(
+    operation: mqt.core.qdmi.Device.Operation,
+) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
+    """Read the temporary QDMI operation parameter constraints."""
+
+class SerializationProfile(enum.Enum):
+    DEFAULT = 0
+
+    BRAKET_SIMULATOR = 1
+
+    BRAKET_NATIVE = 2
+
+    IBM = 3
+
+class ResultLayout:
+    """Reconstruct logical bits from receiver samples."""
+
+    @property
+    def raw_width(self) -> int:
+        """The number of bits in each raw receiver sample."""
+
+    @property
+    def bits(self) -> list[int | bool]:
+        """Raw indices or Boolean constants in LSB-first order."""
+
+    def decode_bits(self, raw: str) -> str:
+        """Decode one MSB-first binary sample to logical output order."""
+
 class CompiledProgram:
     """A compiled program ready for QDMI submission."""
+
+    @property
+    def result_layout(self) -> ResultLayout | None:
+        """Logical output reconstruction, or None for an identity layout."""
 
     @property
     def program_format(self) -> mqt.core.qdmi.ProgramFormat:
@@ -1738,12 +1772,37 @@ def compile_program(
         qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
             Custom pipelines require no target.
         options: Shared compilation controls.
+        program_format: Exact executable format for a QDMI target without output.
+        profile: Explicit receiver dialect for a QDMI target without output.
 
     Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
     (binary, text). Select an exact execution format with
-    :func:`submit_program` and its ``program_format`` argument. An explicit output
+    the ``program_format`` argument. An explicit output
     need not be a device's execution format. Jeff output does not retain hardware
     placement.
+    """
+
+def serialize_program(
+    program: QCProgram | qiskit.circuit.QuantumCircuit,
+    *,
+    target: CompilerTarget | mqt.core.qdmi.Device | str,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    profile: SerializationProfile = SerializationProfile.DEFAULT,
+    site_indices: Sequence[int] | None = None,
+) -> CompiledProgram:
+    """Serialize an already native circuit without compiling or routing it.
+
+    The target validates operations, parameters, and placements. Receiver profiles
+    support terminal measurements and retain a logical result layout; feedback and
+    qubit operations after measurement are rejected. Inputs remain reusable.
+
+    Args:
+        program: A native Qiskit circuit or QC program with static target sites.
+        target: The destination device, registered device ID, or CompilerTarget.
+        program_format: Exact payload format; required for CompilerTarget.
+        profile: Explicit receiver dialect. Nondefault profiles require OpenQASM 3.
+        site_indices: Qiskit wire positions mapped to positions in target.sites.
+            By default, circuit wires and QC qubits already use physical site IDs.
     """
 
 def submit_program(

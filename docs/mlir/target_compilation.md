@@ -62,19 +62,11 @@ are checked before compilation. A compilation failure stops the sequence and
 returns no results; processed inputs may be consumed, while later inputs remain
 usable.
 
-`target` accepts an open device or a registered device ID. To compile and submit
-in one call:
+`target` accepts an open device or a registered device ID:
 
 ```{code-cell} ipython3
-job = submit_program(bell_qasm, target=device)
-job.wait()
-print(job.get_counts())
-```
-
-Or use a device ID directly:
-
-```{code-cell} ipython3
-job = submit_program(bell_qasm, target="mqt.ddsim.default")
+compiled = compile_program(bell_qasm, target="mqt.ddsim.default")
+job = submit_program(compiled, target="mqt.ddsim.default")
 job.wait()
 print(job.get_counts())
 ```
@@ -86,6 +78,46 @@ that the device still has matching sites, topology, operations, timing units,
 and program capabilities. IQM JSON also requires unchanged site names because
 the payload embeds them. Calibration-only changes do not require recompilation.
 Use `device.submit_job` to submit raw payloads.
+
+### Receiver serialization and results
+
+A program format does not fully describe a receiver's accepted syntax or raw
+result order. Select a {py:class}`~mqt.core.mlir.SerializationProfile` when
+compiling for a receiver with additional restrictions. Braket simulator and
+native hardware profiles use different wire addressing; the IBM profile emits
+its accepted OpenQASM subset. Provider backends select these profiles from their
+device contracts. IQM JSON uses emitted measurement-instruction/locus order.
+
+Receiver lowering can replace terminal readout with a dense register measured
+once per raw slot. The compiled program retains a
+{py:class}`~mqt.core.mlir.ResultLayout` that reconstructs logical outputs,
+including permutations, untouched constants, copies, and final overwrites.
+Unsupported dynamic readout fails before submission. The default profile
+preserves the broader output semantics supported by DDSIM and Adaptive QIR.
+
+QDMI jobs return raw provider results. For a direct compiled submission, keep
+the compiled program and apply its map before presenting results:
+
+```python
+from collections import Counter
+
+counts = Counter()
+layout = compiled.result_layout
+for bits, count in job.get_counts().items():
+    counts[layout.decode_bits(bits) if layout is not None else bits] += count
+```
+
+`None` denotes an identity mapping. `decode_bits` checks the raw width and
+binary digits before projection. Map samples individually to preserve shot
+correlations. The Qiskit adapter performs this conversion automatically and
+retains register names in its result header. A retrieved raw job requires the
+original compiled program to recover this mapping; the job ID alone is
+insufficient.
+
+For an already-native Qiskit circuit or `QCProgram`, use
+{py:func}`~mqt.core.mlir.serialize_program` to produce the payload and map
+without running compilation. Native serialization validates the device's gate
+and placement constraints. Compile first when synthesis or routing is needed.
 
 ### Compilation options
 
@@ -138,13 +170,13 @@ and fallback behavior.
 
 For a submission payload, the compiler selects the first supported format in
 this order: Adaptive QIR (binary, then text), OpenQASM 3.1, IQM JSON, then Base
-QIR (binary, then text). To select an exact execution format, compile and submit
-in one call:
+QIR (binary, then text). Select an exact execution format during compilation:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import ProgramFormat
 
-job = submit_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3, num_shots=64)
+compiled = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
+job = submit_program(compiled, target=device, num_shots=64)
 assert job.wait()
 ```
 
@@ -155,8 +187,7 @@ checkpoints stop before target compilation and cannot be combined with a target.
 
 Typed outputs support inspection and interchange. In particular, jeff output
 does not retain hardware placement. The default `CompiledProgram` retains the
-automatically selected native payload for repeated QDMI submissions; exact
-wire-format selection belongs to `submit_program`.
+selected native payload and result layout for repeated QDMI submissions.
 
 ### Define a target
 
@@ -777,6 +808,39 @@ for registry configuration.
 
 If the program should use fewer device qubits, run the {code}`mqt-qubit-reuse`
 pipeline before target compilation.
+
+### Temporary QDMI parameter contract
+
+Providers can report parameter constraints as a NUL-terminated UTF-8 JSON string
+in `QDMI_OPERATION_PROPERTY_CUSTOM2`, queried without sites or parameter values.
+This versioned contract is temporary and is **not part of the QDMI standard**.
+Core reads it for native compiler targets and the generic Qiskit backend.
+
+For example, an RX operation restricted to two angles reports:
+
+```json
+{
+  "schema": "mqt.operation-parameters.v1",
+  "alternatives": [
+    { "fixed": [1.5707963267948966] },
+    { "fixed": [-1.5707963267948966] }
+  ]
+}
+```
+
+A bounded RZZ operation instead uses
+`"alternatives": [{"bounds": [[0, 1.5707963267948966]]}]` with the same schema.
+Alternatives form a union; `fixed` and `bounds` within one alternative both
+apply. Each supplied array has exactly `PARAMETERSNUM` entries in the
+operation's parameter order. `null` leaves that parameter unconstrained, and an
+omitted array imposes no restriction. Numeric values must be finite and use the
+native operation's units (radians for RX and RZZ). Bounds are inclusive, ordered
+pairs; a fixed value must also satisfy its bounds. The constraints apply to
+every reported placement and do not express relations between parameters.
+
+Absent properties and unknown schemas are ignored. Malformed metadata with the
+recognized schema is rejected before compilation or submission. Replace this
+custom property when QDMI provides a standard parameter-domain contract.
 
 ## Qiskit export
 

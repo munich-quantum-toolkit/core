@@ -65,6 +65,7 @@ exportCircuit(mlir::QCProgram program,
 /// Export a compiled circuit, including layout and payload control-flow limits.
 [[nodiscard]] nb::object
 exportCircuit(mlir::QCProgram program,
-              const mlir::TargetEnvironment& environment);
+              const mlir::TargetEnvironment& environment,
+              bool preserveSiteIds = false);
 
 } // namespace mqt::bindings::qiskit

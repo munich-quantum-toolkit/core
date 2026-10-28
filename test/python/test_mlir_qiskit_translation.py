@@ -31,6 +31,7 @@ from qiskit.circuit import (
     Gate,
     Instruction,
     InverseModifier,
+    Measure,
     Parameter,
     ParameterExpression,
     ParameterVector,
@@ -43,7 +44,7 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, Statevector, random_unitary
-from qiskit.transpiler import Layout, TranspileLayout
+from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
@@ -54,11 +55,14 @@ from mqt.core.mlir import (
     PayloadSpecification,
     ProgramCapability,
     QCProgram,
+    SerializationProfile,
     TargetEnvironment,
     compile_program,
     sample,
+    serialize_program,
     simulate,
 )
+from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -362,6 +366,7 @@ from qiskit.circuit import (
     AnnotatedOperation,
     ControlModifier,
     InverseModifier,
+    Measure,
     PowerModifier,
 )
 from qiskit.circuit.library import UnitaryGate
@@ -4806,7 +4811,7 @@ result = measure flag;
         assert "syndrome" in [register.name for register in restored.cregs]
         assert "qubit flag;" in emitted
     assert emitted.index("for ") < emitted.index("\n  bit ")
-    assert "output bit[1] result;" in emitted
+    assert "bit[1] result;" in emitted
     assert sample(emitted, shots=8, seed=1) == {"0": 8}
 
 
@@ -4854,7 +4859,7 @@ result[2] = measure q[0];
     assert [parameter.name for parameter in circuit.parameters] == ["theta"]
     emitted = program.to_openqasm3().source
     assert "qubit[1] q;" in emitted
-    assert "output bit[3] result;" in emitted
+    assert "bit[3] result;" in emitted
     assert QCProgram.from_openqasm_str(emitted).to_qiskit().num_qubits == 3
 
 
@@ -4997,3 +5002,54 @@ def test_native_import_never_reads_gate_definitions(width: int) -> None:
             QCProgram.from_qiskit(circuit, native=True)
     else:
         assert "device_gate $0;" in QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
+
+
+def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
+    """Keep physical addresses and local metadata through explicit compilation."""
+    sites = (0, 1, 3, 4)
+    target = Target(num_qubits=5)
+    target.add_instruction(library.RZGate(Parameter("theta")), {(site,): None for site in sites})
+    target.add_instruction(library.SXGate(), {(site,): None for site in sites})
+    target.add_instruction(library.CZGate(), dict.fromkeys(((0, 1), (1, 0), (1, 3), (3, 1), (3, 4), (4, 3))))
+    target.add_instruction(Measure(), {(site,): None for site in sites})
+    compiler_target = CompilerTarget.from_qiskit(target)
+    assert [site.id for site in compiler_target.sites] == list(sites)
+    circuit = QuantumCircuit(4, 4, name="source-header", metadata={"nested": [1]})
+    circuit.x(3)
+    circuit.cx(3, 0)
+    circuit.measure(range(4), range(4))
+
+    compiled = compile_program(circuit, target=target)
+
+    assert isinstance(compiled, QuantumCircuit)
+    assert compiled.num_qubits == 5
+    assert all(compiled.find_bit(qubit).index in sites for item in compiled.data for qubit in item.qubits)
+    assert compiled.layout is not None
+    assert sorted(compiled.layout.initial_index_layout()) == list(range(5))
+    assert sample(compiled, shots=8) == {"1001": 8}
+    logical = circuit.copy()
+    logical.remove_final_measurements()
+    physical = compiled.copy()
+    physical.remove_final_measurements()
+    expected = QuantumCircuit(5)
+    expected.compose(logical, range(4), inplace=True)
+    np.testing.assert_allclose(
+        Operator.from_circuit(physical).data,
+        Operator(expected).data,
+        atol=1e-12,
+    )
+    assert compiled.name == circuit.name
+    assert compiled.metadata == circuit.metadata
+    compiled.metadata["nested"].append(2)
+    assert circuit.metadata == {"nested": [1]}
+    artifact = serialize_program(
+        compiled,
+        target=compiler_target,
+        program_format=ProgramFormat.QASM3,
+        profile=SerializationProfile.IBM,
+    )
+    payload = artifact.payload
+    assert isinstance(payload, str)
+    raw_counts = sample(payload, shots=8)
+    assert artifact.result_layout is None
+    assert raw_counts == {"1001": 8}

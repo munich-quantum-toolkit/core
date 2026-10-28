@@ -25,8 +25,11 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
+from mqt.core.mlir import SerializationProfile, serialize_program
 from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend, QDMIJob
-from mqt.core.qdmi import Job, ProgramFormat
+from mqt.core.qdmi import Job, ProgramFormat, open_device
+
+pytestmark = pytest.mark.usefixtures("mock_parameter_constraints")
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -150,6 +153,67 @@ def test_result_header_snapshot(recording_backend: RecordingBackend) -> None:
         "creg_sizes": [["c", 1]],
         "metadata": {"experiment": 1},
     }
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_native_result_layouts(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, *, memory: bool
+) -> None:
+    """Restore output gaps, copies and final writes without losing shot correlations."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(2, name="copies")
+    circuit.add_register(ClassicalRegister(2, "zebra"), ClassicalRegister(2, "alpha"))
+    circuit.measure(0, 0)
+    circuit.measure(0, 2)
+    circuit.measure(1, 3)
+    overwritten = QuantumCircuit(2, 2, name="overwrite")
+    overwritten.measure(0, 0)
+    overwritten.measure(1, 0)
+    device = open_device("mqt.ddsim.default")
+    prepared = [
+        serialize_program(
+            native,
+            target=device,
+            program_format=ProgramFormat.QASM3,
+            profile=SerializationProfile.BRAKET_SIMULATOR,
+        )
+        for native in (circuit, overwritten)
+    ]
+    serializer = MagicMock(side_effect=[(program, program.program_format) for program in prepared])
+    monkeypatch.setattr(backend, "_serialize_circuit", serializer)
+    job = backend.run([circuit, overwritten], shots=4, memory=memory)
+    raw = ["00", "01", "10", "11"]
+    for handle in jobs:
+        handle.get_shots.side_effect = lambda _program_index=0: raw
+        handle.get_counts.side_effect = lambda _program_index=0: dict(Counter(raw))
+    result = job.result()
+    assert result.get_counts("copies") == {"00 00": 1, "01 01": 1, "10 00": 1, "11 01": 1}
+    assert result.get_counts("overwrite") == {"00": 2, "01": 2}
+    if memory:
+        assert result.get_memory("copies") == ["00 00", "01 01", "10 00", "11 01"]
+        assert result.get_memory("overwrite") == ["00", "00", "01", "01"]
+    assert serializer.call_count == 2
+
+
+def test_result_layout_rejects_malformed_raw_samples(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Raw-width validation happens before projection can hide malformed data."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(2, 1)
+    circuit.measure(0, 0)
+    circuit.measure(1, 0)
+    program = serialize_program(
+        circuit,
+        target=open_device("mqt.ddsim.default"),
+        program_format=ProgramFormat.QASM3,
+        profile=SerializationProfile.BRAKET_SIMULATOR,
+    )
+    monkeypatch.setattr(backend, "_serialize_circuit", lambda *_args: (program, program.program_format))
+    job = backend.run(circuit, shots=1, memory=True)
+    jobs[0].get_shots.side_effect = lambda _program_index=0: ["0"]
+    with pytest.raises(JobExecutionError, match=r"(?i)(width|binary|bitstring)"):
+        job.result()
 
 
 @pytest.mark.parametrize("stage", ["wait", "check", "get_shots", "get_counts", "id"])
