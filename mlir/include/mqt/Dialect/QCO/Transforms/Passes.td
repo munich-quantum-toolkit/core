@@ -203,9 +203,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The entry function and supported structured-control-flow regions must each
     contain one block. Calls that carry qubits must be inlined before mapping.
-    Classical side effects must use CBit operations; opaque calls and other
-    memory effects must be lowered before mapping. Tensor allocations must
-    follow a flat extract/insert/deallocate chain without tensor control flow.
+    Classical side effects must use CBit operations or MemRef operations with
+    value-associated memory effects. The pass preserves their source order
+    across potentially aliased handles and includes their measurement feedback
+    in routing dependencies. Opaque calls and other memory effects must be
+    lowered before mapping. Tensor allocations must follow a flat
+    extract/insert/deallocate chain without tensor control flow.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the

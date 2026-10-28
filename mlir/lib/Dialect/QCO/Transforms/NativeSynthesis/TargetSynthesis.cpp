@@ -1579,10 +1579,11 @@ protected:
               indexed ? std::nullopt
                       : std::optional<ArrayRef<SiteId>>(operationSites),
               analysis);
-          listener.foldPending();
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });
+    // Fold after traversal so constant hoisting cannot skip unvisited gates.
+    listener.foldPending();
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;

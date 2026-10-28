@@ -22,6 +22,7 @@ add_mlir_library(
   MLIRAsmParser
   MLIRCallInterfaces
   MLIRMathDialect
+  MLIRMemRefDialect
   MLIRMQTDialect
   MLIRMQTTransforms
   MLIRMQTUtils
