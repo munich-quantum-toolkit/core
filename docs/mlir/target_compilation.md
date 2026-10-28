@@ -87,9 +87,10 @@ generic controls and handle their service syntax.
 Terminal normalization accepts flat circuits with direct measurement stores and
 untouched zero-filled slots. It supports measured subsets and destination
 permutations, coalesces repeated terminal measurements, and retains the final
-write to each classical slot. Feedback, gates after measurement, and classical
-computation are rejected. With `terminal_readout=None` (the default), the chosen
-format retains its ordinary classical and control-flow semantics.
+write to each classical slot. Feedback, gates on already measured qubits, and
+classical computation are rejected. General function calls must precede
+measurements. With `terminal_readout=None` (the default), the chosen format
+retains its ordinary classical and control-flow semantics.
 
 The compiled program retains a {py:class}`~mqt.core.mlir.ResultLayout` when raw
 measurement order differs from logical output order. QDMI jobs expose raw
