@@ -42,7 +42,9 @@ from qiskit.circuit import (
     ContinueLoopOp,
     ControlFlowOp,
     ForLoopOp,
+    Gate,
     IfElseOp,
+    Parameter,
     QuantumCircuit,
     Store,
     SwitchCaseOp,
@@ -67,15 +69,15 @@ from mqt.core.plugins.qiskit.exceptions import (
 )
 from mqt.core.plugins.qiskit.job import QDMIJob
 from mqt.core.plugins.qiskit.serializers import preferred_program_formats, program_serializer
+from mqt.core.qdmi import CustomProperty, ProgramFormat, is_binary_program_format
 from mqt.core.qdmi import Device as QDMIDevice
-from mqt.core.qdmi import ProgramFormat, is_binary_program_format
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
     from typing import Unpack
 
-    from qiskit.circuit import Instruction, Parameter
+    from qiskit.circuit import Instruction
     from qiskit.circuit.parameterexpression import ParameterValueType
 
     from mqt.core.plugins.qiskit.provider import QDMIProvider
@@ -437,7 +439,7 @@ class QDMIBackend(BackendV2):
         return target
 
     def _add_operation_to_target(
-        self, target: Target, op: QDMIDevice.Operation, seen_gate_names: MutableSet[str]
+        self, target: Target, op: QDMIDevice.Operation, seen_gate_names: MutableSet[str], *, native: bool = False
     ) -> None:
         """Represent one device operation before compatible aliases are merged.
 
@@ -450,6 +452,7 @@ class QDMIBackend(BackendV2):
             target: An empty Target for this operation's placements and properties.
             op: The device operation to add.
             seen_gate_names: Names represented by earlier operations (mutated in place).
+            native: Also represent opaque gates with a fixed advertised arity.
         """
         op_name = op.name().lower()
 
@@ -461,6 +464,8 @@ class QDMIBackend(BackendV2):
             op_name = self._QDMI_TO_QISKIT_GATE_MAP[op_name]
 
         gate = self._map_operation_to_gate(op_name)
+        if gate is None and native and (arity := op.qubits_num()) is not None:
+            gate = Gate(op_name, arity, [Parameter(f"p{i}") for i in range(op.parameters_num())])
         if gate is None:
             warnings.warn(
                 f"Device operation '{op_name}' cannot be mapped to a Qiskit gate and will be skipped",
@@ -491,7 +496,9 @@ class QDMIBackend(BackendV2):
                 properties[qarg] = InstructionProperties(
                     duration=duration, error=1.0 - fidelity if fidelity is not None else None
                 )
-        alternatives = _operation_parameter_constraints(op)
+        alternatives = _operation_parameter_constraints(
+            op.query_custom_property(CustomProperty.CUSTOM2, bytes), op.parameters_num()
+        )
         if not alternatives:
             target.add_instruction(gate, properties)
             return
@@ -595,22 +602,18 @@ class QDMIBackend(BackendV2):
         return cls._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
     @cached_property
-    def _native_operation_loci(self) -> dict[str, tuple[int | None, frozenset[tuple[int, ...] | None]]]:
-        """Normalize native placements once for the opened device session.
+    def _native_operations(self) -> dict[str, Target]:
+        """Keep native constraints separate from provider transpilation targets.
 
         Returns:
-            Native arity and placements by QDMI operation name.
+            One Qiskit target per native operation, including parameter variants.
         """
-        loci: dict[str, tuple[int | None, frozenset[tuple[int, ...] | None]]] = {}
+        targets = {}
         for operation in self._device.operations():
-            site_tuples = self._get_operation_site_tuples(operation)
-            qargs = (
-                frozenset({None})
-                if site_tuples is None
-                else frozenset(tuple(site.index() for site in sites) for sites in site_tuples)
-            )
-            loci[operation.name().lower()] = operation.qubits_num(), qargs
-        return loci
+            target = Target(num_qubits=self._native_width)
+            QDMIBackend._add_operation_to_target(self, target, operation, set(), native=True)
+            targets[operation.name().lower()] = target
+        return targets
 
     def validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
         """Check supported operations, including operations inside control flow.
@@ -620,12 +623,12 @@ class QDMIBackend(BackendV2):
 
         Args:
             circuit: Circuit to check, including nested control-flow bodies.
-            native: Also check circuit width and ordered qubit placements against
+            native: Also check circuit width, parameters, and ordered placements against
                 the device. Circuit indices denote device qubits in this case.
 
         Raises:
             CircuitValidationError: If the circuit exceeds the native device width.
-            UnsupportedOperationError: If an operation or placement is unsupported.
+            UnsupportedOperationError: If an operation, parameter, or placement is unsupported.
         """
         if native and circuit.num_qubits > self._native_width:
             msg = (
@@ -655,10 +658,14 @@ class QDMIBackend(BackendV2):
                     msg = f"Unsupported operation: '{operation.name}'"
                     raise UnsupportedOperationError(msg)
                 if native and not any(
-                    arity in {None, len(qargs)} and (None in loci or qargs in loci)
-                    for arity, loci in (self._native_operation_loci[name] for name in names)
+                    target.instruction_supported(variant, qargs=qargs, parameters=operation.params)
+                    for target in (self._native_operations[name] for name in names)
+                    for variant in target.operation_names
                 ):
-                    msg = f"Operation '{operation.name}' is not advertised on native device qubits {qargs}."
+                    msg = (
+                        f"Operation '{operation.name}' with parameters {operation.params} is not advertised "
+                        f"on native device qubits {qargs}."
+                    )
                     raise UnsupportedOperationError(msg)
 
     def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]

@@ -2995,11 +2995,9 @@ nb::object exportCircuit(mlir::QCProgram program,
 }
 
 nb::object exportCircuit(mlir::QCProgram program,
-                         const mlir::TargetEnvironment& environment,
-                         bool preserveSiteIds) {
+                         const mlir::TargetEnvironment& environment) {
   return exportCircuitImpl(std::move(program), &environment.target(),
-                           &environment.payloadSpecification(),
-                           preserveSiteIds);
+                           &environment.payloadSpecification(), true);
 }
 
 } // namespace mqt::bindings::qiskit

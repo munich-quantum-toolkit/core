@@ -18,8 +18,11 @@
 #include "qdmi/common/Common.hpp"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -42,12 +45,14 @@ struct OperationParameterConstraints {
       bounds;
 };
 
-/// Read `mqt.operation-parameters.v1` JSON from operation CUSTOM2.
+/// Parse the temporary operation CUSTOM2 metadata for the given arity.
 ///
 /// Empty means absent or foreign metadata. Recognized malformed metadata fails.
 /// Remove this compatibility contract when QDMI standardizes parameter domains.
-[[nodiscard]] llvm::Expected<std::vector<OperationParameterConstraints>>
-operationParameterConstraints(const qdmi::Operation& operation);
+[[nodiscard]] llvm::Expected<
+    llvm::SmallVector<OperationParameterConstraints, 1>>
+parseOperationParameterConstraints(llvm::StringRef metadata,
+                                   size_t numParameters);
 
 /// Snapshot a circuit-model QDMI device as an MQT compiler target.
 ///
@@ -100,26 +105,28 @@ public:
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   compile(CompilerInput program, const TargetEnvironment& environment,
           const CompilationOptions& options = {},
-          SerializationProfile profile = SerializationProfile::Default);
+          std::optional<TerminalReadout> terminalReadout = std::nullopt,
+          bool physicalQubits = true);
 
   /// Serialize an already native program without routing or gate synthesis.
   ///
-  /// Receiver profiles normalize terminal measurements and retain the logical
-  /// output map. Unsupported feedback or nonterminal readout is rejected.
+  /// The caller supplies valid native operations and placements.
+  /// Optional terminal readout retains the logical output map. Without it,
+  /// the selected format retains its supported classical and control-flow
+  /// behavior.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   serialize(QCProgram program, const TargetEnvironment& environment,
-            SerializationProfile profile = SerializationProfile::Default,
-            std::optional<llvm::ArrayRef<size_t>> siteIndices = std::nullopt);
+            std::optional<TerminalReadout> terminalReadout = std::nullopt,
+            bool physicalQubits = true);
 
   /// Snapshot exact operation placements and serialize for a QDMI device.
   ///
-  /// Optional site indices map positional input wires to ordered target sites.
-  /// Omit them when the QC program already contains target site IDs.
+  /// Input wires already denote target site IDs.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   serialize(QCProgram program, const qdmi::Device& device,
             std::optional<QDMI_Program_Format> format = std::nullopt,
-            SerializationProfile profile = SerializationProfile::Default,
-            std::optional<llvm::ArrayRef<size_t>> siteIndices = std::nullopt);
+            std::optional<TerminalReadout> terminalReadout = std::nullopt,
+            bool physicalQubits = true);
 
   /// Logical binary output reconstruction; absent for an identity layout.
   [[nodiscard]] const std::optional<ResultLayout>&
@@ -151,7 +158,8 @@ private:
 compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
                const CompilationOptions& options = {},
-               SerializationProfile profile = SerializationProfile::Default);
+               std::optional<TerminalReadout> terminalReadout = std::nullopt,
+               bool physicalQubits = true);
 
 /// Validate the destination contract before creating and submitting a QDMI job.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(

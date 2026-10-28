@@ -14,19 +14,13 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mqt/Dialect/MQT/Utils/Modifiers.h"
-#include "mqt/Dialect/QC/IR/QCInterfaces.h"
-#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/QDMI.hpp"
 
 #include "Diagnostics.h"
 #include "TerminalReadout.h"
 
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -100,22 +94,11 @@ hasArbitraryPositiveControlsMetadata(const qdmi::Operation& operation) {
   return matchesMetadata(*metadata, ARBITRARY_POSITIVE_CONTROLS_METADATA);
 }
 
-Expected<std::vector<OperationParameterConstraints>>
-operationParameterConstraints(const qdmi::Operation& operation) {
+Expected<SmallVector<OperationParameterConstraints, 1>>
+parseOperationParameterConstraints(StringRef text, size_t numParameters) {
   constexpr StringLiteral schema = "mqt.operation-parameters.v1";
-  auto metadata = operation.queryCustomProperty<std::vector<std::byte>>(
-      qdmi::CustomProperty::Custom2);
-  if (!metadata) {
-    return metadata.takeError();
-  }
-  if (!*metadata) {
-    return std::vector<OperationParameterConstraints>{};
-  }
-  const auto& bytes = **metadata;
-  const StringRef text(reinterpret_cast<const char*>(bytes.data()),
-                       bytes.size());
   if (!text.contains(schema)) {
-    return std::vector<OperationParameterConstraints>{};
+    return SmallVector<OperationParameterConstraints, 1>{};
   }
   const auto invalid = [] {
     return createStringError("Invalid mqt.operation-parameters.v1 metadata");
@@ -129,17 +112,13 @@ operationParameterConstraints(const qdmi::Operation& operation) {
   }
   const auto* object = parsed->getAsObject();
   if (object == nullptr || object->getString("schema") != schema) {
-    return std::vector<OperationParameterConstraints>{};
+    return SmallVector<OperationParameterConstraints, 1>{};
   }
   const auto* alternatives = object->getArray("alternatives");
   if (alternatives == nullptr || alternatives->empty()) {
     return invalid();
   }
-  auto numParameters = operation.getParametersNum();
-  if (!numParameters) {
-    return numParameters.takeError();
-  }
-  std::vector<OperationParameterConstraints> result;
+  SmallVector<OperationParameterConstraints, 1> result;
   result.reserve(alternatives->size());
   for (const auto& alternative : *alternatives) {
     const auto* fields = alternative.getAsObject();
@@ -153,7 +132,7 @@ operationParameterConstraints(const qdmi::Operation& operation) {
         continue;
       }
       const auto* values = value->getAsArray();
-      if (values == nullptr || values->size() != *numParameters) {
+      if (values == nullptr || values->size() != numParameters) {
         return invalid();
       }
       for (const auto& parameter : *values) {
@@ -177,7 +156,7 @@ operationParameterConstraints(const qdmi::Operation& operation) {
       }
     }
     auto validated = CompilerTarget::OperationCapability::create(
-        "parameters", 0, *numParameters, {}, std::nullopt, std::nullopt,
+        "parameters", 0, numParameters, {}, std::nullopt, std::nullopt,
         std::move(constraints.fixed), std::nullopt,
         std::move(constraints.bounds));
     if (!validated) {
@@ -590,7 +569,17 @@ snapshotOperations(
     if (!numParameters) {
       return numParameters.takeError();
     }
-    auto constraints = operationParameterConstraints(operation);
+    auto metadata = operation.queryCustomProperty<std::vector<std::byte>>(
+        qdmi::CustomProperty::Custom2);
+    if (!metadata) {
+      return metadata.takeError();
+    }
+    const auto text =
+        *metadata
+            ? StringRef(reinterpret_cast<const char*>((**metadata).data()),
+                        (**metadata).size())
+            : StringRef{};
+    auto constraints = parseOperationParameterConstraints(text, *numParameters);
     if (!constraints) {
       return constraints.takeError();
     }
@@ -993,16 +982,16 @@ static Expected<std::string> serializeQIR(QIRProgram program,
 
 Expected<CompiledProgram> CompiledProgram::compile(
     CompilerInput program, const TargetEnvironment& environment,
-    const CompilationOptions& options, SerializationProfile profile) {
-  if (profile != SerializationProfile::Default ||
-      environment.payloadSpecification().format().id == "iqm-json") {
+    const CompilationOptions& options,
+    std::optional<TerminalReadout> terminalReadout, bool physicalQubits) {
+  if (terminalReadout || !physicalQubits) {
     auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
                                      environment, options);
     if (!native) {
       return native.takeError();
     }
     return serialize(std::move(std::get<QCProgram>(*native)), environment,
-                     profile);
+                     terminalReadout, physicalQubits);
   }
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
@@ -1026,164 +1015,28 @@ Expected<CompiledProgram> CompiledProgram::compile(
   return CompiledProgram(environment, std::move(*payload), *format);
 }
 
-static LogicalResult validateNativeProgram(ModuleOp moduleOp,
-                                           const CompilerTarget& target) {
-  SymbolTableCollection symbols;
-  auto result = moduleOp.walk<WalkOrder::PreOrder>([&](Operation* operation) {
-    if (isa<qc::BarrierOp>(operation)) {
-      return WalkResult::skip();
-    }
-    SmallVector<Value> qubits;
-    SmallVector<std::optional<double>> parameters;
-    StringRef name;
-    size_t controls = 0;
-    if (auto site = dyn_cast<qc::StaticOp>(operation)) {
-      if (!site.getQubit().use_empty() &&
-          !target.vertexForSite(
-              static_cast<CompilerTarget::SiteId>(site.getIndex()))) {
-        site.emitError("native qubit is outside the target");
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    }
-    if (isa<qc::AllocOp>(operation)) {
-      operation->emitError("native serialization requires static target sites");
-      return WalkResult::interrupt();
-    }
-    if (auto call = dyn_cast<func::CallOp>(operation)) {
-      auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      if (!callee || !callee.isExternal() || callee.getNumResults() != 0) {
-        call.emitError("native serialization requires external gate calls");
-        return WalkResult::interrupt();
-      }
-      auto source = callee->getAttrOfType<StringAttr>(
-          mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
-      name = source ? source.getValue() : callee.getSymName();
-      for (auto operand : call.getOperands()) {
-        if (isa<qc::QubitType>(operand.getType())) {
-          qubits.push_back(operand);
-        } else if (operand.getType().isF64()) {
-          parameters.push_back(mqt::valueToDouble(operand));
-        } else {
-          call.emitError(
-              "native gate parameters must be floating-point values");
-          return WalkResult::interrupt();
-        }
-      }
-    } else if (auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation)) {
-      auto body = unitary;
-      if (auto controlled = dyn_cast<qc::CtrlOp>(operation)) {
-        body = mqt::getSoleBodyUnitary<qc::UnitaryOpInterface>(
-            *controlled.getBody());
-        if (!body) {
-          operation->emitError("native controls require one gate");
-          return WalkResult::interrupt();
-        }
-        controls = controlled.getNumControls();
-        llvm::append_range(qubits, controlled.getControls());
-      }
-      llvm::append_range(qubits, unitary.getTargets());
-      name = body.getBaseSymbol();
-      for (auto parameter : body.getParameters()) {
-        parameters.push_back(mqt::valueToDouble(parameter));
-      }
-    } else if (auto measure = dyn_cast<qc::MeasureOp>(operation)) {
-      name = "measure";
-      qubits.push_back(measure.getQubit());
-    } else if (auto reset = dyn_cast<qc::ResetOp>(operation)) {
-      name = "reset";
-      qubits.push_back(reset.getQubit());
-    } else {
-      return WalkResult::advance();
-    }
-    if (llvm::any_of(parameters, [](const auto& value) { return !value; })) {
-      operation->emitError(
-          "native serialization requires bound gate parameters");
-      return WalkResult::interrupt();
-    }
-    SmallVector<CompilerTarget::SiteId> sites;
-    for (auto qubit : qubits) {
-      auto site = qubit.getDefiningOp<qc::StaticOp>();
-      if (!site || !target.vertexForSite(
-                       static_cast<CompilerTarget::SiteId>(site.getIndex()))) {
-        operation->emitError("native gates require static target sites");
-        return WalkResult::interrupt();
-      }
-      sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
-    }
-    if (sites.size() == 2 &&
-        !target.areAdjacent(*target.vertexForSite(sites[0]),
-                            *target.vertexForSite(sites[1]))) {
-      operation->emitError("native operation does not fit target topology");
-      return WalkResult::interrupt();
-    }
-    const bool supported =
-        (controls == 0 ||
-         target.nativeOperationsKind() ==
-             CompilerTarget::NativeOperations::Kind::Unrestricted)
-            ? target.supportsOperation(name, sites.size(), parameters.size(),
-                                       sites, parameters)
-            : target.findOperation(name, sites.size(), parameters, sites,
-                                   controls)
-                      .capability != nullptr;
-    if (!supported) {
-      operation->emitError(
-          "operation, parameters, or placement is not native for the target: ")
-          << name;
-      return WalkResult::interrupt();
-    }
-    return WalkResult::skip();
-  });
-  return success(!result.wasInterrupted());
-}
-
 Expected<CompiledProgram> CompiledProgram::serialize(
     QCProgram program, const TargetEnvironment& environment,
-    SerializationProfile profile, std::optional<ArrayRef<size_t>> siteIndices) {
+    std::optional<TerminalReadout> terminalReadout, bool physicalQubits) {
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();
   }
-  if (siteIndices) {
-    const auto ids = environment.target().siteIds();
-    DenseSet<size_t> selected;
-    for (const auto position : *siteIndices) {
-      if (position >= ids.size() || !selected.insert(position).second) {
-        return createStringError(
-            std::errc::invalid_argument,
-            "site_indices must select distinct existing target sites");
-      }
-    }
-    auto mapped = program.module().walk([&](qc::StaticOp site) {
-      const auto wire = static_cast<size_t>(site.getIndex());
-      if (wire >= siteIndices->size()) {
-        return WalkResult::interrupt();
-      }
-      site.setIndex(ids[(*siteIndices)[wire]]);
-      return WalkResult::advance();
-    });
-    if (mapped.wasInterrupted()) {
-      return createStringError(
-          std::errc::invalid_argument,
-          "site_indices does not cover every circuit wire");
-    }
-  }
   const bool qasm = *format == QDMI_PROGRAM_FORMAT_QASM3;
-  if (profile != SerializationProfile::Default && !qasm) {
+  if (!physicalQubits && !qasm) {
     return createStringError(std::errc::invalid_argument,
-                             "serialization profiles require OpenQASM 3");
+                             "virtual qubit addressing requires OpenQASM 3");
   }
-  if (profile == SerializationProfile::BraketSimulator &&
+  if (terminalReadout == TerminalReadout::All &&
       llvm::any_of(llvm::enumerate(environment.target().siteIds()),
                    [](auto entry) { return entry.index() != entry.value(); })) {
     return createStringError(
         std::errc::invalid_argument,
-        "Braket simulator sites must be numbered contiguously from zero");
+        "all-qubit readout requires contiguous target site IDs from zero");
   }
   const auto context = program.context();
   CompilerDiagnostics diagnostics(context.get());
-  if (failed(program.normalizeGlobalPhases())) {
+  if (failed(program.cleanup())) {
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));
   }
@@ -1192,13 +1045,9 @@ Expected<CompiledProgram> CompiledProgram::serialize(
     mqt::dropGlobalPhases(program.module(), rewriter);
   }
   std::optional<ResultLayout> layout;
-  if (profile != SerializationProfile::Default ||
-      *format == QDMI_PROGRAM_FORMAT_IQMJSON) {
-    auto normalized = normalizeTerminalReadout(
-        program.module(),
-        profile == SerializationProfile::BraketNative ||
-            profile == SerializationProfile::BraketSimulator,
-        profile == SerializationProfile::BraketSimulator);
+  if (terminalReadout) {
+    auto normalized =
+        normalizeTerminalReadout(program.module(), *terminalReadout);
     if (failed(normalized)) {
       return diagnostics.takeError(
           std::make_error_code(std::errc::invalid_argument));
@@ -1208,12 +1057,8 @@ Expected<CompiledProgram> CompiledProgram::serialize(
     }
   }
   attachTargetEnvironment(program.module(), environment);
-  if (failed(validateNativeProgram(program.module(), environment.target()))) {
-    return diagnostics.takeError(
-        std::make_error_code(std::errc::invalid_argument));
-  }
   if (qasm || *format == QDMI_PROGRAM_FORMAT_QASM2) {
-    auto source = qasm ? std::move(program).intoOpenQASM3(profile)
+    auto source = qasm ? std::move(program).intoOpenQASM3(physicalQubits)
                        : std::move(program).intoOpenQASM2();
     if (succeeded(source)) {
       return CompiledProgram(environment, std::move(*source).intoSource(),
@@ -1236,7 +1081,8 @@ Expected<CompiledProgram> CompiledProgram::serialize(
       if (!payload) {
         return payload.takeError();
       }
-      return CompiledProgram(environment, std::move(*payload), *format);
+      return CompiledProgram(environment, std::move(*payload), *format,
+                             std::move(layout));
     }
   }
   return diagnostics.takeError(
@@ -1246,28 +1092,30 @@ Expected<CompiledProgram> CompiledProgram::serialize(
 Expected<CompiledProgram>
 CompiledProgram::serialize(QCProgram program, const qdmi::Device& device,
                            std::optional<QDMI_Program_Format> format,
-                           SerializationProfile profile,
-                           std::optional<ArrayRef<size_t>> siteIndices) {
+                           std::optional<TerminalReadout> terminalReadout,
+                           bool physicalQubits) {
   // Native submission only needs the reported operation tuples. Homogeneous
   // coverage is a compiler-routing limitation, not a device legality rule.
   auto environment = snapshotTargetEnvironment(device, format, false, false);
   if (!environment) {
     return environment.takeError();
   }
-  return serialize(std::move(program), *environment, profile, siteIndices);
+  return serialize(std::move(program), *environment, terminalReadout,
+                   physicalQubits);
 }
 
 Expected<CompiledProgram>
 compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format,
                const CompilationOptions& options,
-               SerializationProfile profile) {
+               std::optional<TerminalReadout> terminalReadout,
+               bool physicalQubits) {
   auto environment = targetEnvironmentFromDevice(device, format);
   if (!environment) {
     return environment.takeError();
   }
   return CompiledProgram::compile(std::move(program), *environment, options,
-                                  profile);
+                                  terminalReadout, physicalQubits);
 }
 
 static Expected<qdmi::Job>

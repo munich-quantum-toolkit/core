@@ -51,7 +51,8 @@ class _CompileOptions(TypedDict, total=False, closed=True):
     qco_pipeline: str
     options: CompilationOptions
     program_format: mqt.core.qdmi.ProgramFormat | None
-    profile: SerializationProfile
+    terminal_readout: TerminalReadout | None
+    physical_qubits: bool
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -868,7 +869,7 @@ class QCProgram(Program):
             copy: Export a copy of the program.
         """
 
-    def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
+    def to_openqasm3(self, *, physical_qubits: bool = True, copy: bool = False) -> OpenQASMProgram:
         """Emit this QC program as OpenQASM 3.
 
         Classical memory and control flow are legalized for the source format. Use
@@ -877,6 +878,7 @@ class QCProgram(Program):
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
         Args:
+            physical_qubits: Emit static sites as physical references rather than a virtual register.
             copy: Preserve the source program by exporting a copy.
         """
 
@@ -1469,18 +1471,14 @@ def expectation_values(
     """
 
 def _operation_parameter_constraints(
-    operation: mqt.core.qdmi.Device.Operation,
+    metadata: bytes | None, num_parameters: int
 ) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
-    """Read the temporary QDMI operation parameter constraints."""
+    """Parse the temporary QDMI operation parameter constraints."""
 
-class SerializationProfile(enum.Enum):
-    DEFAULT = 0
+class TerminalReadout(enum.Enum):
+    MEASURED = 0
 
-    BRAKET_SIMULATOR = 1
-
-    BRAKET_NATIVE = 2
-
-    IBM = 3
+    ALL = 1
 
 class ResultLayout:
     """Reconstruct logical bits from receiver samples."""
@@ -1490,8 +1488,8 @@ class ResultLayout:
         """The number of bits in each raw receiver sample."""
 
     @property
-    def bits(self) -> list[int | bool]:
-        """Raw indices or Boolean constants in LSB-first order."""
+    def bits(self) -> list[int | None]:
+        """Raw indices or None for zero in LSB-first order."""
 
     def decode_bits(self, raw: str) -> str:
         """Decode one MSB-first binary sample to logical output order."""
@@ -1773,7 +1771,8 @@ def compile_program(
             Custom pipelines require no target.
         options: Shared compilation controls.
         program_format: Exact executable format for a QDMI target without output.
-        profile: Explicit receiver dialect for a QDMI target without output.
+        terminal_readout: Canonical terminal measurements, or None to preserve outputs.
+        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 
     Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
     (binary, text). Select an exact execution format with
@@ -1787,22 +1786,22 @@ def serialize_program(
     *,
     target: CompilerTarget | mqt.core.qdmi.Device | str,
     program_format: mqt.core.qdmi.ProgramFormat | None = None,
-    profile: SerializationProfile = SerializationProfile.DEFAULT,
-    site_indices: Sequence[int] | None = None,
+    terminal_readout: TerminalReadout | None = None,
+    physical_qubits: bool = True,
 ) -> CompiledProgram:
     """Serialize an already native circuit without compiling or routing it.
 
-    The target validates operations, parameters, and placements. Receiver profiles
-    support terminal measurements and retain a logical result layout; feedback and
-    qubit operations after measurement are rejected. Inputs remain reusable.
+    The caller supplies validated native operations and placements. Optional
+    terminal readout retains a logical result layout and rejects feedback or gates
+    after measurement. Without it, the format retains its supported classical and
+    control-flow behavior. Inputs remain reusable.
 
     Args:
         program: A native Qiskit circuit or QC program with static target sites.
         target: The destination device, registered device ID, or CompilerTarget.
         program_format: Exact payload format; required for CompilerTarget.
-        profile: Explicit receiver dialect. Nondefault profiles require OpenQASM 3.
-        site_indices: Qiskit wire positions mapped to positions in target.sites.
-            By default, circuit wires and QC qubits already use physical site IDs.
+        terminal_readout: Measure only selected sites or all addressed sites.
+        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
     """
 
 def submit_program(

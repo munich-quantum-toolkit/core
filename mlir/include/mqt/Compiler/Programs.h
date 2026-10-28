@@ -11,7 +11,6 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
-#include "mqt/Compiler/ResultLayout.h"
 
 #include "capnp/message.h"
 #include "jeff.capnp.h"
@@ -310,8 +309,8 @@ public:
   /// Legalize classical memory and control flow for the source format without
   /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
-  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3(
-      SerializationProfile profile = SerializationProfile::Default) &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram>
+  intoOpenQASM3(bool physicalQubits = true) &&;
 
   /// Consume this program and emit OpenQASM 2.
   ///
