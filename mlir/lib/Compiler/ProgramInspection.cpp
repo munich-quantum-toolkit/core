@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
@@ -18,6 +19,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Visitors.h"
@@ -27,6 +29,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <algorithm>
@@ -97,9 +100,8 @@ static bool isBarrier(Operation* op) {
 }
 
 static bool isGateModifier(Operation* op) {
-  return llvm::isa<qc::YieldOp>(op) || llvm::isa<qc::CtrlOp>(op) ||
-         llvm::isa<qc::InvOp>(op) || llvm::isa<qc::PowOp>(op) ||
-         llvm::isa<qco::YieldOp>(op) || llvm::isa<qco::CtrlOp>(op) ||
+  return llvm::isa<qc::CtrlOp>(op) || llvm::isa<qc::InvOp>(op) ||
+         llvm::isa<qc::PowOp>(op) || llvm::isa<qco::CtrlOp>(op) ||
          llvm::isa<qco::InvOp>(op) || llvm::isa<qco::PowOp>(op);
 }
 
@@ -150,39 +152,68 @@ static void forEachGate(ModuleOp moduleOp,
   });
 }
 
-static std::optional<std::pair<Value, int64_t>> getQubitKey(Value qubit) {
-  auto memref = qubit.getDefiningOp<memref::LoadOp>();
-  if (!memref) {
-    return std::nullopt;
-  }
-  std::optional<int64_t> index =
-      getConstantIntValue(memref.getIndices().front());
-  if (!index) {
-    return std::nullopt;
-  }
-  return std::make_pair(memref.getMemRef(), *index);
-}
+// A key is the register value and the index within it.
+using Key = std::pair<Value, int64_t>;
 
-// Set all qubits to their highest current depth, plus one if `addLayer`.
-static void
-walkDepth(ValueRange inputQubits, ValueRange outputQubits, bool addLayer,
-          llvm::DenseMap<std::pair<Value, int64_t>, size_t>& depthOf) {
+// Set all wires/keys to their highest current depth, plus one if `addLayer`.
+static void bumpLayer(ArrayRef<Key> keys, bool addLayer,
+                      llvm::DenseMap<Key, size_t>& depthOf) {
   size_t maxDepth = 0;
-  for (auto qi : inputQubits) {
-    if (auto key = getQubitKey(qi)) {
-      maxDepth = std::max(maxDepth, depthOf.lookup(*key));
-    }
+  for (const Key& key : keys) {
+    maxDepth = std::max(maxDepth, depthOf.lookup(key));
   }
   if (addLayer) {
     maxDepth += 1;
   }
-  for (auto qo : outputQubits) {
-    if (auto key = getQubitKey(qo)) {
-      depthOf[*key] = maxDepth;
-    }
+  for (const Key& key : keys) {
+    depthOf[key] = maxDepth;
   }
 }
 
+// Add a layer over the keys behind `inputs`. Inputs and outputs correspond by
+// position: in QC they are the same values, in QCO each output continues the
+// register slot of its input.
+static void increaseDepth(ValueRange inputs, ValueRange outputs, bool addLayer,
+                          llvm::DenseMap<Key, size_t>& depthOf,
+                          llvm::DenseMap<Value, Key>& keyOf) {
+  SmallVector<Key> keys;
+  for (auto [in, out] : llvm::zip_equal(inputs, outputs)) {
+    if (auto it = keyOf.find(in); it != keyOf.end()) {
+      Key key = it->second;
+      keys.push_back(key);
+      keyOf[out] = key;
+    }
+  }
+  bumpLayer(keys, addLayer, depthOf);
+}
+
+// A measurement is one layer over its qubit and the bit it is stored to.
+// Classical Bits are only tracked through measurements, by following the result
+// to its `cbit.store`/`cbit::StoreOp`.
+static void increaseDepthMeasurement(Value qubitIn, Value qubitOut,
+                                     Value result,
+                                     llvm::DenseMap<Key, size_t>& depthOf,
+                                     llvm::DenseMap<Value, Key>& keyOf) {
+  SmallVector<Key> keys;
+  if (auto it = keyOf.find(qubitIn); it != keyOf.end()) {
+    Key qubit = it->second;
+    keys.push_back(qubit);
+    keyOf[qubitOut] = qubit;
+  }
+
+  for (Operation* user : result.getUsers()) {
+    if (auto store = dyn_cast<cbit::StoreOp>(user)) {
+      if (auto index = getConstantIntValue(store.getIndex())) {
+        Key bit = std::make_pair(Value(store.getReg()), *index);
+        keys.push_back(bit);
+        keyOf[result] = bit;
+      }
+    }
+  }
+  bumpLayer(keys, true, depthOf);
+}
+
+// Function to compute the depth of a QCProgram or QCOProgram.
 static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
 
@@ -190,51 +221,129 @@ static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
     return std::nullopt;
   }
 
-  llvm::DenseMap<std::pair<Value, int64_t>, size_t> depthOf;
-  bool hasInvalidOperation = false;
+  // Map to track the depth of wires/keys
+  llvm::DenseMap<Key, size_t> depthOf;
 
-  entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
+  // Map to track which key/wire a value is coming from
+  llvm::DenseMap<Value, Key> keyOf;
+
+  // QCO: Which register a register is coming from
+  llvm::DenseMap<Value, Value> registerOf;
+  const auto rootOf = [&](Value tensor) {
+    Value root = registerOf.lookup(tensor);
+    return root ? root : tensor;
+  };
+
+  WalkResult result = entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
     if (isStandardGate(op) || isGateModifier(op)) {
-      auto gate = dyn_cast<qc::UnitaryOpInterface>(op);
-      if (gate) {
-        walkDepth(gate.getQubits(), gate.getQubits(), /*addLayer=*/true,
-                  depthOf);
+      if (auto gate = dyn_cast<qc::UnitaryOpInterface>(op)) {
+        increaseDepth(gate.getQubits(), gate.getQubits(), true, depthOf, keyOf);
+      } else if (auto gate = dyn_cast<qco::UnitaryOpInterface>(op)) {
+        increaseDepth(gate.getInputQubits(), gate.getOutputQubits(), true,
+                      depthOf, keyOf);
       }
-      // QCO
     } else if (isMeasurement(op)) {
-      auto measure = dyn_cast<qc::MeasureOp>(op);
-      if (measure) {
-        walkDepth(measure.getQubit(), measure.getQubit(), /*addLayer=*/true,
-                  depthOf);
+      if (auto measure = dyn_cast<qc::MeasureOp>(op)) {
+        increaseDepthMeasurement(measure.getQubit(), measure.getQubit(),
+                                 measure.getResult(), depthOf, keyOf);
+      } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
+        increaseDepthMeasurement(measure.getQubitIn(), measure.getQubitOut(),
+                                 measure.getResult(), depthOf, keyOf);
       }
-      // QCO
     } else if (isReset(op)) {
-      auto reset = dyn_cast<qc::ResetOp>(op);
-      if (reset) {
-        walkDepth(reset.getQubit(), reset.getQubit(), /*addLayer=*/true,
-                  depthOf);
+      if (auto reset = dyn_cast<qc::ResetOp>(op)) {
+        increaseDepth(reset.getQubit(), reset.getQubit(), true, depthOf, keyOf);
+      } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
+        increaseDepth(reset.getQubitIn(), reset.getQubitOut(), true, depthOf,
+                      keyOf);
       }
-      // QCO
     } else if (isBarrier(op)) {
-      auto barrier = dyn_cast<qc::BarrierOp>(op);
-      if (barrier) {
-        walkDepth(barrier.getQubits(), barrier.getQubits(), /*addLayer=*/false,
-                  depthOf);
+      if (auto barrier = dyn_cast<qc::BarrierOp>(op)) {
+        increaseDepth(barrier.getQubits(), barrier.getQubits(), false, depthOf,
+                      keyOf);
+      } else if (auto barrier = dyn_cast<qco::BarrierOp>(op)) {
+        increaseDepth(barrier.getQubitsIn(), barrier.getQubitsOut(), false,
+                      depthOf, keyOf);
       }
-      // QCO
-    } else if (isControlFlow(op)) {
-      // Here can be logic of how to handle control flow
-      hasInvalidOperation = true;
-      return WalkResult::interrupt();
-    } else if (isLoop(op)) {
-      // Here can be logic of how to handle loops
-      hasInvalidOperation = true;
-      return WalkResult::interrupt();
-    } else if (isCallOp(op)) {
-      // Here can be logic of how to handle function calls
-      hasInvalidOperation = true;
+    }
+
+    // Operations that set keys to keep track
+    else if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      // QC qubits keep their value, so the load fixes the slot for all uses.
+      if (load.getIndices().size() == 1) {
+        if (auto index = getConstantIntValue(load.getIndices().front())) {
+          keyOf[load.getResult()] = std::make_pair(load.getMemRef(), *index);
+        }
+      }
+    } else if (auto load = dyn_cast<cbit::LoadOp>(op)) {
+      // A loaded bit stands for its register slot
+      if (auto index = getConstantIntValue(load.getIndex())) {
+        keyOf[load.getResult()] = std::make_pair(load.getReg(), *index);
+      }
+    } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+      // QCO: Extraction assigns new variables to a new tensor
+      Value reg = rootOf(extract.getTensor());
+      registerOf[extract.getOutTensor()] = reg;
+      if (auto index = getConstantIntValue(extract.getIndex())) {
+        keyOf[extract.getResult()] = std::make_pair(reg, *index);
+      }
+    } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      // QCO: Insertion changes the tensor, so we keep track.
+      registerOf[insert.getResult()] = rootOf(insert.getDest());
+    }
+
+    else if (isControlFlow(op)) {
+      if (auto ifop = dyn_cast<scf::IfOp>(op)) {
+        SmallVector<Key> keys;
+        Value cond = ifop.getCondition();
+        Key condKey = keyOf.lookup(cond);
+        keys.push_back(condKey);
+
+        ifop.getThenRegion().walk([&](Operation* inner) {
+          for (Value operand : inner->getOperands()) {
+            if (auto load = operand.getDefiningOp<memref::LoadOp>()) {
+              if (auto index = getConstantIntValue(load.getIndices().front())) {
+                keys.push_back(std::make_pair(load.getMemRef(), *index));
+              }
+            }
+          }
+        });
+
+        bumpLayer(keys, true, depthOf);
+      } else if (auto ifop = dyn_cast<qco::IfOp>(op)) {
+        SmallVector<Key> keys;
+        keys.push_back(keyOf.lookup(ifop.getCondition()));
+
+        // The block arguments and the results continue the registers passed in.
+        for (auto [in, arg, out] :
+             llvm::zip_equal(ifop.getQubits(), ifop.thenBlock()->getArguments(),
+                             ifop.getLinearResults())) {
+          registerOf[arg] = rootOf(in);
+          registerOf[out] = rootOf(in);
+        }
+
+        ifop.getThenRegion().walk([&](Operation* inner) {
+          if (auto extract = dyn_cast<qtensor::ExtractOp>(inner)) {
+            Value reg = rootOf(extract.getTensor());
+            registerOf[extract.getOutTensor()] = reg;
+            if (auto index = getConstantIntValue(extract.getIndex())) {
+              keys.push_back(std::make_pair(reg, *index));
+            }
+          } else if (auto insert = dyn_cast<qtensor::InsertOp>(inner)) {
+            registerOf[insert.getResult()] = rootOf(insert.getDest());
+          }
+        });
+
+        bumpLayer(keys, true, depthOf);
+      } else {
+        // Complex control flow
+        return WalkResult::interrupt();
+      }
+    } else if (isLoop(op) || isCallOp(op)) {
+      // Unsupported operations
       return WalkResult::interrupt();
     } else {
+      // Important to advance for operations not matching a branch
       return WalkResult::advance();
     }
     return WalkResult::skip();
@@ -245,7 +354,7 @@ static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
     depth = std::max(depth, _depth);
   }
 
-  if (hasInvalidOperation) {
+  if (result.wasInterrupted()) {
     return std::nullopt;
   }
 

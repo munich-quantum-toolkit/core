@@ -47,11 +47,9 @@ static void expectDepth(const Program& program,
 static void expectDepthInBothDialects(mlir::QCProgram qc,
                                       const std::optional<size_t> expected) {
   expectDepth(qc, expected);
-  std::printf("QC Program: %s", qc.str().c_str());
-  // auto qco = std::move(qc).intoQCO();
-  // std::printf("QCO Program: %s", qco->str().c_str());
-  // ASSERT_TRUE(mlir::succeeded(qco));
-  // expectDepth(*qco, expected);
+  auto qco = std::move(qc).intoQCO();
+  ASSERT_TRUE(mlir::succeeded(qco));
+  expectDepth(*qco, expected);
 }
 
 static void expectDepthInBothDialects(const std::string_view qasm,
@@ -451,7 +449,41 @@ TEST(ProgramInspection, DepthCountsMeasureResetAndIdentityButNotGlobalPhase) {
                             0);
 }
 
-TEST(ProgramInspection, DepthWithControlFlow) {
+TEST(ProgramInspection, DepthFollowsClassicalFeedForward) {
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    bit[2] c;
+    h q[0];              // q0: 1
+    c[0] = measure q[0]; // q0, c0: 2
+    if (c[0]) x q[1];    // c0, q1: 3 (waits for the measured bit)
+    c[1] = measure q[1]; // q1, c1: 4
+  )",
+                            4);
+}
+
+TEST(ProgramInspection, DepthOrdersMeasurementsIntoTheSameBit) {
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    bit c;
+    h q[0]; h q[0];   // q0: 2
+    c = measure q[0]; // q0, c: 3
+    c = measure q[1]; // q1, c: 4 (waits for c)
+  )",
+                            4);
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    bit[2] c;
+    h q[0]; h q[0];      // q0: 2
+    c[0] = measure q[0]; // q0, c0: 3
+    c[1] = measure q[1]; // q1, c1: 1
+  )",
+                            3);
+}
+
+TEST(ProgramInspection, DepthWithSimpleControlFlow) {
   expectDepthInBothDialects(R"(
     OPENQASM 3.0; include "stdgates.inc";
     qubit[2] q;
@@ -460,7 +492,32 @@ TEST(ProgramInspection, DepthWithControlFlow) {
       x q[1];
     }
   )",
-                            std::nullopt);
+                            2);
+}
+
+TEST(ProgramInspection, DepthWithBlockControlFlow) {
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    bit c = measure q[0];
+    if (c) {
+      x q[1];
+      y q[1];
+    }
+  )",
+                            2);
+
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    h q[0];
+    bit c = measure q[0];
+    if (c) {
+      x q[1];
+      y q[1];
+    }
+  )",
+                            3);
 }
 
 TEST(ProgramInspection, DepthWithSwitchControlFlow) {
@@ -507,7 +564,7 @@ TEST(ProgramInspection, DepthWithComplexControlFlow) {
                             std::nullopt);
 }
 
-TEST(ProgramInspection, DepthIsUnknownForDynamicLoops) {
+TEST(ProgramInspection, DepthForDynamicLoops) {
   expectDepthInBothDialects(R"(OPENQASM 3.0;
     include "stdgates.inc";
     qubit[3] q;

@@ -762,7 +762,7 @@ class QuantumProgramInfo:
         """
 
     @property
-    def depth(self) -> int:
+    def depth(self) -> int | None:
         """Depth.
 
         See :meth:``.
@@ -889,7 +889,7 @@ class QCProgram(Program):
         such as ``scf.yield`` are excluded.
         """
 
-    def depth(self) -> int:
+    def depth(self) -> int | None:
         """Depth.
 
         TBD
@@ -1048,7 +1048,7 @@ class QCOProgram(Program):
         such as ``scf.yield`` are excluded.
         """
 
-    def depth(self) -> int:
+    def depth(self) -> int | None:
         """Depth.
 
         TBD
