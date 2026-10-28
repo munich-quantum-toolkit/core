@@ -25,7 +25,7 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
+#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
 
 #include "jeff/Translation/Deserialize.hpp"
@@ -87,7 +87,7 @@ static llvm::cl::opt<std::string>
     outputFormat("emit",
                  llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
                                 "qco, qco-optimized, qir-base, "
-                                "qir-adaptive, openqasm3, or jeff"),
+                                "qir-adaptive, openqasm2, openqasm3, or jeff"),
                  llvm::cl::value_desc("format"), llvm::cl::init("qc"));
 
 static llvm::cl::opt<std::string> passPipeline(
@@ -168,6 +168,7 @@ enum class OutputFormat : std::uint8_t {
   QCO,
   QCOOptimized,
   OpenQASM3,
+  OpenQASM2,
   IQMJSON,
   QIRBase,
   QIRAdaptive,
@@ -227,6 +228,9 @@ parseOutputFormat(const StringRef format) {
   }
   if (format == "qco-optimized") {
     return OutputFormat::QCOOptimized;
+  }
+  if (format == "openqasm2") {
+    return OutputFormat::OpenQASM2;
   }
   if (format == "openqasm3") {
     return OutputFormat::OpenQASM3;
@@ -605,6 +609,9 @@ static int runCompiler(int argc, char** argv) {
     }
     if (outputFormat.getNumOccurrences() == 0) {
       switch (*compilerOutput) {
+      case ProgramFormat::OpenQASM2:
+        parsedOutputFormat = OutputFormat::OpenQASM2;
+        break;
       case ProgramFormat::OpenQASM3:
         parsedOutputFormat = OutputFormat::OpenQASM3;
         break;
@@ -790,6 +797,7 @@ static int runCompiler(int argc, char** argv) {
   }
 
   if ((*parsedOutputFormat == OutputFormat::QC ||
+       *parsedOutputFormat == OutputFormat::OpenQASM2 ||
        *parsedOutputFormat == OutputFormat::OpenQASM3 ||
        *parsedOutputFormat == OutputFormat::IQMJSON ||
        *parsedOutputFormat == OutputFormat::QIRBase ||
@@ -814,6 +822,16 @@ static int runCompiler(int argc, char** argv) {
         populateQIRPreparationPipeline(pm, payload.materialize(*context));
         pm.addPass(adaptive ? createQCToQIRAdaptive() : createQCToQIRBase());
         populateQIRCleanupPipeline(pm, adaptive);
+        return success();
+      }))) {
+    return 1;
+  }
+
+  if (*parsedOutputFormat == OutputFormat::OpenQASM2 &&
+      failed(runPasses([&](OpPassManager& pm) {
+        const auto payload = llvm::cantFail(
+            PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM2));
+        populateOpenQASM2PreparationPipeline(pm, payload.materialize(*context));
         return success();
       }))) {
     return 1;
@@ -844,7 +862,8 @@ static int runCompiler(int argc, char** argv) {
     }
     output->os() << *source;
     output->keep();
-  } else if (*parsedOutputFormat == OutputFormat::OpenQASM3) {
+  } else if (*parsedOutputFormat == OutputFormat::OpenQASM3 ||
+             *parsedOutputFormat == OutputFormat::OpenQASM2) {
     std::string errorMessage;
     auto output = openOutputFile(outputFilename, &errorMessage);
     if (!output) {
@@ -852,10 +871,13 @@ static int runCompiler(int argc, char** argv) {
                    << "': " << errorMessage << "\n";
       return 1;
     }
-    if (failed(
-            qc::translateQCToOpenQASM3(std::move(program.mod), output->os()))) {
+    auto source = *parsedOutputFormat == OutputFormat::OpenQASM2
+                      ? qc::translateQCToOpenQASM2(std::move(program.mod))
+                      : qc::translateQCToOpenQASM3(std::move(program.mod));
+    if (failed(source)) {
       return 1;
     }
+    output->os() << *source;
     output->keep();
   } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
              *parsedOutputFormat == OutputFormat::QIRAdaptive) {

@@ -350,7 +350,8 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
         needsPositionalChecks =
             !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
       } else {
-        needsPositionalChecks = op->getNumRegions() != 0 && !isa<ModuleOp>(op);
+        needsPositionalChecks =
+            op->getNumRegions() != 0 && !isa<ModuleOp, UnitaryOpInterface>(op);
       }
     }
     if (auto staticOp = dyn_cast<StaticOp>(op)) {

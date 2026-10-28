@@ -14,30 +14,32 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include "helpers/test_utils.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <chrono>
 #include <cstddef>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <thread>
 #include <vector>
 
 namespace qdmi_test {
+using mqt::test::TemporaryDirectory;
+using mqt::test::value;
+
 /// A file barrier works across the DDSIM process boundary and proves execution
 /// reached the entry point before lifecycle assertions begin.
 struct ControlledJob {
 private:
-  std::filesystem::path directory_;
+  TemporaryDirectory directory_;
   MQT_DDSIM_QDMI_Device_Job job_;
   bool released_ = false;
   size_t count_ = 1;
@@ -58,7 +60,7 @@ private:
   void awaitFile(const std::string& name) const {
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (!std::filesystem::exists(directory_ / name)) {
+    while (!std::filesystem::exists(directory_.path() / name)) {
       if (std::chrono::steady_clock::now() >= deadline) {
         throw std::runtime_error(
             "Controlled QIR job did not reach its file barrier");
@@ -71,18 +73,15 @@ public:
   explicit ControlledJob(MQT_DDSIM_QDMI_Device_Job job, size_t count = 1,
                          size_t started = 0)
       : job_(job), count_(count) {
-    llvm::SmallString<128> path;
-    if (llvm::sys::fs::createUniqueDirectory("mqt-barrier", path)) {
-      throw std::runtime_error("Could not create QIR barrier directory");
-    }
-    directory_ = path.str().str();
     std::vector<std::string> programs;
     for (size_t i = 0; i < count; ++i) {
       const auto index = std::to_string(i);
       programs.push_back(
-          constant("started", (directory_ / ("started" + index)).string()) +
-          constant("release", (directory_ / "release").string()) +
-          constant("finished", (directory_ / ("finished" + index)).string()) +
+          constant("started",
+                   (directory_.path() / ("started" + index)).string()) +
+          constant("release", (directory_.path() / "release").string()) +
+          constant("finished",
+                   (directory_.path() / ("finished" + index)).string()) +
           constant("read", "r") + constant("write", "w") + R"(
       declare ptr @fopen(ptr, ptr)
       declare i32 @fclose(ptr)
@@ -135,15 +134,17 @@ public:
       ADD_FAILURE() << error.what();
       MQT_DDSIM_QDMI_device_job_cancel(job_);
     }
-    std::error_code error;
-    std::filesystem::remove_all(directory_, error);
   }
   ControlledJob(const ControlledJob&) = delete;
   ControlledJob& operator=(const ControlledJob&) = delete;
 
   void release() {
     if (!released_) {
-      std::ofstream(directory_ / "release").put('1');
+      value(llvm::writeToOutput((directory_.path() / "release").string(),
+                                [](llvm::raw_ostream& os) {
+                                  os << '1';
+                                  return llvm::Error::success();
+                                }));
       for (size_t i = 0; i < count_; ++i) {
         awaitFile("finished" + std::to_string(i));
       }

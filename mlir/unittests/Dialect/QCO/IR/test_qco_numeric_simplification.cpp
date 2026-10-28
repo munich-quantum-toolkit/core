@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -29,7 +30,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -43,7 +43,7 @@ using namespace mlir::qco;
 
 namespace {
 
-class QCONumericCanonicalizationTest : public testing::Test {
+class QCONumericSimplificationTest : public testing::Test {
 protected:
   MLIRContext context_;
 
@@ -51,7 +51,7 @@ protected:
     context_.loadDialect<QCODialect, arith::ArithDialect, func::FuncDialect>();
   }
 
-  OwningOpRef<ModuleOp> canonicalize(StringRef source) {
+  OwningOpRef<ModuleOp> simplify(StringRef source) {
     auto moduleOp = parseSourceString<ModuleOp>(source, &context_);
     EXPECT_TRUE(moduleOp);
     if (!moduleOp) {
@@ -60,7 +60,7 @@ protected:
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     EXPECT_TRUE(succeeded(manager.run(*moduleOp)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
@@ -68,7 +68,7 @@ protected:
   }
 };
 
-TEST_F(QCONumericCanonicalizationTest, RMatrixPreservesLargeAxisAngles) {
+TEST_F(QCONumericSimplificationTest, RMatrixPreservesLargeAxisAngles) {
   constexpr double theta = 0.3;
   for (double phi : std::array{1.0e16, 1.0e308}) {
     SCOPED_TRACE(phi);
@@ -86,7 +86,7 @@ TEST_F(QCONumericCanonicalizationTest, RMatrixPreservesLargeAxisAngles) {
   }
 }
 
-TEST_F(QCONumericCanonicalizationTest, RMergePreservesLargeAxisAngles) {
+TEST_F(QCONumericSimplificationTest, RMergePreservesLargeAxisAngles) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
@@ -112,7 +112,7 @@ TEST_F(QCONumericCanonicalizationTest, RMergePreservesLargeAxisAngles) {
     ASSERT_TRUE(succeeded(verifyLinearity(*original)));
     OwningOpRef<ModuleOp> rewritten(original->clone());
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     ASSERT_TRUE(succeeded(manager.run(*rewritten)));
     ASSERT_TRUE(succeeded(verify(*rewritten)));
     ASSERT_TRUE(succeeded(verifyLinearity(*rewritten)));
@@ -134,7 +134,7 @@ TEST_F(QCONumericCanonicalizationTest, RMergePreservesLargeAxisAngles) {
   }
 }
 
-TEST_F(QCONumericCanonicalizationTest, RPowerPreservesLargeAxisAngles) {
+TEST_F(QCONumericSimplificationTest, RPowerPreservesLargeAxisAngles) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
@@ -163,7 +163,7 @@ TEST_F(QCONumericCanonicalizationTest, RPowerPreservesLargeAxisAngles) {
     ASSERT_TRUE(succeeded(verifyLinearity(*original)));
     OwningOpRef<ModuleOp> rewritten(original->clone());
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     ASSERT_TRUE(succeeded(manager.run(*rewritten)));
     ASSERT_TRUE(succeeded(verify(*rewritten)));
     ASSERT_TRUE(succeeded(verifyLinearity(*rewritten)));
@@ -183,7 +183,7 @@ TEST_F(QCONumericCanonicalizationTest, RPowerPreservesLargeAxisAngles) {
   }
 }
 
-TEST_F(QCONumericCanonicalizationTest, UMatricesPreserveLargeEulerAngles) {
+TEST_F(QCONumericSimplificationTest, UMatricesPreserveLargeEulerAngles) {
   for (auto [phi, lambda] : std::array{
            std::array{1.0e16, 1.0},
            std::array{1.0, 1.0e16},
@@ -211,7 +211,7 @@ TEST_F(QCONumericCanonicalizationTest, UMatricesPreserveLargeEulerAngles) {
   }
 }
 
-TEST_F(QCONumericCanonicalizationTest, UToU2PreservesLargeEulerAngles) {
+TEST_F(QCONumericSimplificationTest, UToU2PreservesLargeEulerAngles) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
@@ -233,7 +233,7 @@ TEST_F(QCONumericCanonicalizationTest, UToU2PreservesLargeEulerAngles) {
   ASSERT_TRUE(expected);
   EXPECT_TRUE((expected->adjoint() * *expected).isIdentity(1e-15));
 
-  auto rewritten = canonicalize(source);
+  auto rewritten = simplify(source);
   ASSERT_TRUE(rewritten);
   auto function = rewritten->lookupSymbol<func::FuncOp>("test");
   EXPECT_TRUE(function.getBody().getOps<UOp>().empty());
@@ -245,8 +245,8 @@ TEST_F(QCONumericCanonicalizationTest, UToU2PreservesLargeEulerAngles) {
   EXPECT_TRUE(matrix->isApprox(*expected, 1e-15));
 }
 
-TEST_F(QCONumericCanonicalizationTest, LargeEvenPauliPowerBecomesIdentity) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, LargeEvenPauliPowerBecomesIdentity) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %exponent = arith.constant 10000.0 : f64
@@ -267,8 +267,8 @@ TEST_F(QCONumericCanonicalizationTest, LargeEvenPauliPowerBecomesIdentity) {
   EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
 }
 
-TEST_F(QCONumericCanonicalizationTest, LargeOddPauliPowerPreservesUnitary) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, LargeOddPauliPowerPreservesUnitary) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %exponent = arith.constant 9007199254740991.0 : f64
@@ -297,8 +297,8 @@ TEST_F(QCONumericCanonicalizationTest, LargeOddPauliPowerPreservesUnitary) {
   ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
 }
 
-TEST_F(QCONumericCanonicalizationTest, PowerRetainsDynamicAngle) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, PowerRetainsDynamicAngle) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %angle: f64) -> !qco.qubit {
         %exponent = arith.constant 2.0 : f64
@@ -321,8 +321,8 @@ TEST_F(QCONumericCanonicalizationTest, PowerRetainsDynamicAngle) {
   EXPECT_EQ(rotation.getTheta(), function.getArgument(1));
 }
 
-TEST_F(QCONumericCanonicalizationTest, PowerRetainsUnsafeConstantProducts) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, PowerRetainsUnsafeConstantProducts) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @overflow(%q: !qco.qubit) -> !qco.qubit {
         %exponent = arith.constant 2.0 : f64
@@ -352,8 +352,8 @@ TEST_F(QCONumericCanonicalizationTest, PowerRetainsUnsafeConstantProducts) {
   }
 }
 
-TEST_F(QCONumericCanonicalizationTest, PowerRetainsOutOfRangeGlobalPhase) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, PowerRetainsOutOfRangeGlobalPhase) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %exponent = arith.constant 2.0 : f64
@@ -375,8 +375,8 @@ TEST_F(QCONumericCanonicalizationTest, PowerRetainsOutOfRangeGlobalPhase) {
   EXPECT_TRUE(function.getBody().getOps<GPhaseOp>().empty());
 }
 
-TEST_F(QCONumericCanonicalizationTest, NestedPowerOverflowKeepsParameterScope) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, NestedPowerOverflowKeepsParameterScope) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %angle: f64) -> !qco.qubit {
         %exponent = arith.constant 1.0e308 : f64
@@ -411,8 +411,8 @@ TEST_F(QCONumericCanonicalizationTest, NestedPowerOverflowKeepsParameterScope) {
   EXPECT_EQ(square.getRhs(), function.getArgument(1));
 }
 
-TEST_F(QCONumericCanonicalizationTest, NestedPowerRetainsDynamicExponentScope) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, NestedPowerRetainsDynamicExponentScope) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %exponent: f64) -> !qco.qubit {
         %two = arith.constant 2.0 : f64
@@ -445,8 +445,8 @@ TEST_F(QCONumericCanonicalizationTest, NestedPowerRetainsDynamicExponentScope) {
   EXPECT_EQ(square.getRhs(), function.getArgument(1));
 }
 
-TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsOverflowingAngles) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, RotationMergeRetainsOverflowingAngles) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %angle = arith.constant 1.0e308 : f64
@@ -461,7 +461,7 @@ TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsOverflowingAngles) {
   EXPECT_EQ(llvm::range_size(function.getBody().getOps<RXOp>()), 2U);
 }
 
-TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsLargeRoundingError) {
+TEST_F(QCONumericSimplificationTest, RotationMergeRetainsLargeRoundingError) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
@@ -474,7 +474,7 @@ TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsLargeRoundingError) {
     }
   )mlir";
   auto original = parseSourceString<ModuleOp>(source, &context_);
-  auto moduleOp = canonicalize(source);
+  auto moduleOp = simplify(source);
   ASSERT_TRUE(original);
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
@@ -482,8 +482,8 @@ TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsLargeRoundingError) {
   ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
 }
 
-TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsDynamicAngles) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, RotationMergeRetainsDynamicAngles) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %theta: f64, %phi: f64) -> !qco.qubit {
         %a = qco.rx(%theta) %q : !qco.qubit
@@ -498,8 +498,7 @@ TEST_F(QCONumericCanonicalizationTest, RotationMergeRetainsDynamicAngles) {
   EXPECT_TRUE(function.getBody().getOps<arith::AddFOp>().empty());
 }
 
-TEST_F(QCONumericCanonicalizationTest,
-       RotationMergeCombinesSafeConstantAngles) {
+TEST_F(QCONumericSimplificationTest, RotationMergeCombinesSafeConstantAngles) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
@@ -512,7 +511,7 @@ TEST_F(QCONumericCanonicalizationTest,
     }
   )mlir";
   auto original = parseSourceString<ModuleOp>(source, &context_);
-  auto moduleOp = canonicalize(source);
+  auto moduleOp = simplify(source);
   ASSERT_TRUE(original);
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
@@ -525,8 +524,8 @@ TEST_F(QCONumericCanonicalizationTest,
   ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
 }
 
-TEST_F(QCONumericCanonicalizationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCONumericSimplificationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %half = arith.constant 0.5 : f64

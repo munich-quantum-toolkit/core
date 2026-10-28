@@ -47,18 +47,17 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <ios>
 #include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -215,11 +214,13 @@ static void expectMatrixPreserved(func::FuncOp funcOp,
                                   StringRef label = {}) {
   // Logging of the matrices
   auto printMatrix = [](const Matrix2x2& matrix) {
-    std::ostringstream oss;
-    oss.precision(4);
-    oss << std::fixed << "[[" << matrix(0, 0) << ", " << matrix(0, 1) << "],\n"
-        << " [" << matrix(1, 0) << ", " << matrix(1, 1) << "]]";
-    return oss.str();
+    return llvm::formatv("[[({0:F4},{1:F4}), ({2:F4},{3:F4})],\n"
+                         " [({4:F4},{5:F4}), ({6:F4},{7:F4})]]",
+                         matrix(0, 0).real(), matrix(0, 0).imag(),
+                         matrix(0, 1).real(), matrix(0, 1).imag(),
+                         matrix(1, 0).real(), matrix(1, 0).imag(),
+                         matrix(1, 1).real(), matrix(1, 1).imag())
+        .str();
   };
   const auto printOriginal = printMatrix(original);
   const auto actual = compute1QUnitaryMatrix(funcOp.getBody());

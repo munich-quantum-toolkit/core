@@ -25,6 +25,7 @@
 #include "jeff/Conversion/NativeToJeff/NativeToJeff.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
+#include "jeff/Translation/Metadata.hpp"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -105,6 +106,48 @@ static std::optional<int64_t> arraySize(MemRefType type) {
     size *= dimension;
   }
   return size;
+}
+
+/// Encode input names as jeff text metadata.
+static LogicalResult serializeInputNames(func::FuncOp function) {
+  auto* context = function.getContext();
+  const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  for (auto argument : function.getArguments()) {
+    auto name =
+        function.getArgAttrOfType<StringAttr>(argument.getArgNumber(), key);
+    if (!name) {
+      continue;
+    }
+    auto existing = jeff::getMetadata(argument);
+    if (failed(existing)) {
+      return failure();
+    }
+    auto payload =
+        jeff::serializeTextMetadata(argument.getLoc(), name.getValue());
+    if (failed(payload)) {
+      return failure();
+    }
+    SmallVector<Attribute> metadata;
+    if (*existing) {
+      for (auto entry : *existing) {
+        if (cast<DictionaryAttr>(entry).getAs<StringAttr>("name").getValue() !=
+            key) {
+          metadata.push_back(entry);
+        }
+      }
+    }
+    metadata.push_back(DictionaryAttr::get(
+        context,
+        {
+            {StringAttr::get(context, "name"), StringAttr::get(context, key)},
+            {StringAttr::get(context, "value"), *payload},
+        }));
+    if (failed(
+            jeff::setMetadata(argument, ArrayAttr::get(context, metadata)))) {
+      return failure();
+    }
+  }
+  return success();
 }
 
 namespace {
@@ -2306,6 +2349,11 @@ protected:
         return;
       }
       function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+      // Input identities and parameter groups still need the MQT name.
+      if (failed(serializeInputNames(function))) {
+        signalPassFailure();
+        return;
+      }
     }
     state.cbitState.recordRegisterUses(moduleOp);
 

@@ -29,6 +29,11 @@ differences between these guides; neither upstream document is imported in full.
 
 - Use C++20 standard-library facilities before adding a project abstraction or
   dependency.
+- Use LLVM `raw_ostream` for output, `MemoryBuffer` for file input, and
+  `StringRef` for borrowed text. Reuse synchronized diagnostics for concurrent
+  logging. STL stream headers are forbidden, including in tests. Use GoogleTest
+  scoped traces for test context. Keep owned strings where needed; use
+  `SmallString` for suitable temporary buffers.
 - Keep variables local, initialize them when declared, and give each name one
   clear meaning.
 - Use `auto` when the initializer makes the type clear or when spelling the type

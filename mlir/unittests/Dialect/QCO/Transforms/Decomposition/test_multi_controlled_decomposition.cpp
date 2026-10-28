@@ -184,7 +184,8 @@ makeControlledGateDD(dd::Package& package, size_t numControls,
       controls.emplace(static_cast<dd::Qubit>(i));
     }
   }
-  return package.makeGateDD(matrix, controls, static_cast<dd::Qubit>(target));
+  return llvm::cantFail(
+      package.makeGateDD(matrix, controls, static_cast<dd::Qubit>(target)));
 }
 
 namespace {
@@ -365,7 +366,7 @@ static void expectImplementsControlledGate(
     func::FuncOp funcOp, size_t numControls, const dd::GateMatrix& matrix,
     size_t target, const DDArgumentBindings& bindings = DDArgumentBindings()) {
   ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
-  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto package = llvm::cantFail(dd::Package::create(numControls + 1));
   const auto actual = buildFunctionality(funcOp, *package, bindings);
   ASSERT_TRUE(succeeded(actual));
   const auto expected =
@@ -407,9 +408,9 @@ static void expectOperatorColumnsNear(const dd::MatrixDD& actual,
                                       size_t width, size_t inputWidth) {
   for (size_t column = 0; column < (size_t{1} << inputWidth); ++column) {
     for (size_t row = 0; row < (size_t{1} << width); ++row) {
-      const auto error =
-          std::abs(dd::getValueByIndex(actual, width, row, column) -
-                   dd::getValueByIndex(expected, width, row, column));
+      const auto error = std::abs(
+          llvm::cantFail(dd::getValueByIndex(actual, width, row, column)) -
+          llvm::cantFail(dd::getValueByIndex(expected, width, row, column)));
       if (!(error <= 1e-10)) {
         FAIL() << "row=" << row << " column=" << column << " error=" << error;
       }
@@ -423,17 +424,19 @@ static void expectMatchesReferenceOnStates(
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = llvm::cantFail(dd::Package::create(numQubits));
   const auto referenceGate =
       makeControlledGateDD(*dd, numControls, matrix, numControls);
   dd->incRef(referenceGate);
   std::mt19937_64 rng(0);
   for (const auto& state : states) {
-    const auto actual =
-        simulate(funcOp, dd::makeBasisState(numQubits, state, *dd), *dd, rng);
+    const auto actual = simulate(
+        funcOp, llvm::cantFail(dd::makeBasisState(numQubits, state, *dd)), *dd,
+        rng);
     ASSERT_TRUE(succeeded(actual));
     const auto expected = dd->applyOperation(
-        referenceGate, dd::makeBasisState(numQubits, state, *dd));
+        referenceGate,
+        llvm::cantFail(dd::makeBasisState(numQubits, state, *dd)));
     expectStatesNear(*dd, *actual, expected);
     dd->decRef(*actual);
     dd->decRef(expected);
@@ -489,7 +492,8 @@ template <typename Gate>
 [[nodiscard]] static size_t countSingleControlledGates(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&count](CtrlOp op) {
-    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner =
+        mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (op.getNumControls() == 1 && op.getNumTargets() == 1 && inner &&
         isa<Gate>(inner.getOperation())) {
       ++count;
@@ -576,10 +580,10 @@ static dd::MatrixDD ancillaFamilyReference(dd::Package& package,
     return makeControlledGateDD(package, k, rotationMatrix(*axis, 0.73), k);
   }
   if (family == AncillaFamily::Swap) {
-    return makeGateDD(
-        package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
-        {static_cast<dd::Qubit>(k - 1), static_cast<dd::Qubit>(k)},
-        makeControls(k - 1));
+    return llvm::cantFail(
+        makeGateDD(package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
+                   {static_cast<dd::Qubit>(k - 1), static_cast<dd::Qubit>(k)},
+                   makeControls(k - 1)));
   }
   if (family == AncillaFamily::Phase || family == AncillaFamily::PhasePi) {
     return makeControlledGateDD(
@@ -623,13 +627,13 @@ TEST_P(AncillaFamilyTest, DirtyFullOperatorAndBudget) {
       options.ancillaBudget = budget;
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
       expectFullyLowered(*module);
-      dd::Package package(width);
+      auto package = llvm::cantFail(dd::Package::create(width));
       auto actual =
-          buildFunctionality(*module->getOps<func::FuncOp>().begin(), package);
+          buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
       ASSERT_TRUE(succeeded(actual));
       // Full equality includes all helper states and their entanglement.
-      EXPECT_EQ(*actual, ancillaFamilyReference(package, family, k));
-      package.decRef(*actual);
+      EXPECT_EQ(*actual, ancillaFamilyReference(*package, family, k));
+      package->decRef(*actual);
       if (ancillaRotationAxis(family)) {
         const size_t fallback = expectedMcrCxBudget(k);
         EXPECT_EQ(countEffectiveCxOps(*module),
@@ -673,15 +677,15 @@ TEST_P(AncillaFamilyTest, CleanSubspaceAndBudget) {
       DecomposeMultiControlledOptions options;
       options.ancillaBudget = budget;
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
-      dd::Package package(width);
+      auto package = llvm::cantFail(dd::Package::create(width));
       auto actual =
-          buildFunctionality(*module->getOps<func::FuncOp>().begin(), package);
+          buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
       ASSERT_TRUE(succeeded(actual));
-      auto expected = ancillaFamilyReference(package, family, k);
-      package.incRef(expected);
+      auto expected = ancillaFamilyReference(*package, family, k);
+      package->incRef(expected);
       expectOperatorColumnsNear(*actual, expected, width, k + 1);
-      package.decRef(expected);
-      package.decRef(*actual);
+      package->decRef(expected);
+      package->decRef(*actual);
       if (ancillaRotationAxis(family)) {
         const size_t used = std::min<uint64_t>(budget, k - 2);
         const size_t cleanCost = 6 * used + expectedMcrCxBudget(k - used);
@@ -824,22 +828,22 @@ TEST_P(AncillaAngleTest, RuntimeAnglesAndMixedHelpers) {
     for (double theta : ArrayRef(K_ANCILLA_ANGLES).drop_back()) {
       SCOPED_TRACE(testing::Message()
                    << "budget=" << budget << " theta=" << theta);
-      dd::Package package(9);
+      auto package = llvm::cantFail(dd::Package::create(9));
       const DDArgumentBindings bindings{
           {
               function.getArgument(0),
               FloatAttr::get(Float64Type::get(context()), theta),
           },
       };
-      auto actual = buildFunctionality(function, package, bindings);
+      auto actual = buildFunctionality(function, *package, bindings);
       ASSERT_TRUE(succeeded(actual));
       auto expected = makeControlledGateDD(
-          package, 5,
+          *package, 5,
           axis ? rotationMatrix(*axis, -theta) : phaseMatrix(-theta), 5);
-      package.incRef(expected);
+      package->incRef(expected);
       expectOperatorColumnsNear(*actual, expected, 9, 7);
-      package.decRef(expected);
-      package.decRef(*actual);
+      package->decRef(expected);
+      package->decRef(*actual);
     }
   }
 }
@@ -876,22 +880,22 @@ TEST_P(AncillaAngleTest, DirtyRuntimeAnglesAndRestoration) {
   EXPECT_EQ(countEffectiveCxOps(*moduleOp), axis ? 28U : 60U);
   for (double theta : K_ANCILLA_ANGLES) {
     SCOPED_TRACE(theta);
-    dd::Package package(9);
+    auto package = llvm::cantFail(dd::Package::create(9));
     const DDArgumentBindings bindings{
         {
             function.getArgument(0),
             FloatAttr::get(Float64Type::get(context()), theta),
         },
     };
-    auto actual = buildFunctionality(function, package, bindings);
+    auto actual = buildFunctionality(function, *package, bindings);
     ASSERT_TRUE(succeeded(actual));
     auto expected = makeControlledGateDD(
-        package, 5, axis ? rotationMatrix(*axis, -theta) : phaseMatrix(-theta),
+        *package, 5, axis ? rotationMatrix(*axis, -theta) : phaseMatrix(-theta),
         2);
-    package.incRef(expected);
+    package->incRef(expected);
     EXPECT_EQ(*actual, expected);
-    package.decRef(expected);
-    package.decRef(*actual);
+    package->decRef(expected);
+    package->decRef(*actual);
   }
 }
 
@@ -926,22 +930,22 @@ TEST_P(AncillaAngleTest, DirtyConstantAnglesAndMixedSelection) {
                                                   : mixed ? 66U
                                                           : 100U);
       }
-      dd::Package package(11);
+      auto package = llvm::cantFail(dd::Package::create(11));
       auto actual = buildFunctionality(
-          *moduleOp->getOps<func::FuncOp>().begin(), package);
+          *moduleOp->getOps<func::FuncOp>().begin(), *package);
       ASSERT_TRUE(succeeded(actual));
       auto expected = makeControlledGateDD(
-          package, k, axis ? rotationMatrix(*axis, theta) : phaseMatrix(theta),
+          *package, k, axis ? rotationMatrix(*axis, theta) : phaseMatrix(theta),
           k);
-      package.incRef(expected);
+      package->incRef(expected);
       if (mixed) {
         // Only the last wire is known zero. All dirty/data states remain free.
         expectOperatorColumnsNear(*actual, expected, 11, 10);
       } else {
         EXPECT_EQ(*actual, expected);
       }
-      package.decRef(expected);
-      package.decRef(*actual);
+      package->decRef(expected);
+      package->decRef(*actual);
     }
   }
 }
@@ -1002,17 +1006,17 @@ TEST_P(AncillaAngleTest, ConstantAnglesAndReorderedOperands) {
       DecomposeMultiControlledOptions options;
       options.ancillaBudget = budget;
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
-      dd::Package package(7);
+      auto package = llvm::cantFail(dd::Package::create(7));
       auto actual = buildFunctionality(
-          *moduleOp->getOps<func::FuncOp>().begin(), package);
+          *moduleOp->getOps<func::FuncOp>().begin(), *package);
       ASSERT_TRUE(succeeded(actual));
       auto expected = makeControlledGateDD(
-          package, 5, axis ? rotationMatrix(*axis, theta) : phaseMatrix(theta),
+          *package, 5, axis ? rotationMatrix(*axis, theta) : phaseMatrix(theta),
           2);
-      package.incRef(expected);
+      package->incRef(expected);
       expectOperatorColumnsNear(*actual, expected, 7, 6);
-      package.decRef(expected);
-      package.decRef(*actual);
+      package->decRef(expected);
+      package->decRef(*actual);
     }
   }
 }
@@ -1035,16 +1039,16 @@ TEST_P(AncillaAngleTest, OneHelperWithBorrowedResidualControls) {
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
   expectFullyLowered(*moduleOp);
   EXPECT_EQ(countEffectiveCxOps(*moduleOp), axis ? 58U : 158U);
-  dd::Package package(k + 2);
+  auto package = llvm::cantFail(dd::Package::create(k + 2));
   auto actual =
-      buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), package);
+      buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
   ASSERT_TRUE(succeeded(actual));
   auto expected = makeControlledGateDD(
-      package, k, axis ? rotationMatrix(*axis, 0.73) : phaseMatrix(0.73), k);
-  package.incRef(expected);
+      *package, k, axis ? rotationMatrix(*axis, 0.73) : phaseMatrix(0.73), k);
+  package->incRef(expected);
   expectOperatorColumnsNear(*actual, expected, k + 2, k + 1);
-  package.decRef(expected);
-  package.decRef(*actual);
+  package->decRef(expected);
+  package->decRef(*actual);
 }
 
 TEST_P(AncillaAngleTest, AncillaFreeRuntimePhasesAndReorderedWires) {
@@ -1081,9 +1085,9 @@ TEST_P(AncillaAngleTest, AncillaFreeRuntimePhasesAndReorderedWires) {
               axis ? expectedMcrCxBudget(k) : expectedMcpCx(k));
     for (double theta : K_ANCILLA_ANGLES) {
       SCOPED_TRACE(theta);
-      dd::Package package(k + 1);
+      auto package = llvm::cantFail(dd::Package::create(k + 1));
       auto actual = buildFunctionality(
-          function, package,
+          function, *package,
           {
               {
                   function.getArgument(0),
@@ -1092,12 +1096,12 @@ TEST_P(AncillaAngleTest, AncillaFreeRuntimePhasesAndReorderedWires) {
           });
       ASSERT_TRUE(succeeded(actual));
       auto expected = makeControlledGateDD(
-          package, k,
+          *package, k,
           axis ? rotationMatrix(*axis, -theta) : phaseMatrix(-theta), 0);
-      package.incRef(expected);
+      package->incRef(expected);
       expectOperatorColumnsNear(*actual, expected, k + 1, k + 1);
-      package.decRef(expected);
-      package.decRef(*actual);
+      package->decRef(expected);
+      package->decRef(*actual);
     }
   }
 }
@@ -1128,12 +1132,12 @@ TEST_P(AncillaAngleTest, OneDirtyHelperFullOperator) {
       expectFullyLowered(*moduleOp);
       const size_t fallback = axis ? expectedMcrCxBudget(k) : expectedMcpCx(k);
       EXPECT_EQ(countEffectiveCxOps(*moduleOp), fallback);
-      dd::Package package(k + 2);
+      auto package = llvm::cantFail(dd::Package::create(k + 2));
       auto actual = buildFunctionality(
-          *moduleOp->getOps<func::FuncOp>().begin(), package);
+          *moduleOp->getOps<func::FuncOp>().begin(), *package);
       ASSERT_TRUE(succeeded(actual));
-      EXPECT_EQ(*actual, ancillaFamilyReference(package, family, k));
-      package.decRef(*actual);
+      EXPECT_EQ(*actual, ancillaFamilyReference(*package, family, k));
+      package->decRef(*actual);
     }
   }
 }
@@ -1149,13 +1153,13 @@ TEST_F(MultiControlledDecompositionTest, AncillaNegativePiUsesDirtyMczHelpers) {
   });
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
   EXPECT_EQ(countEffectiveCxOps(*moduleOp), 56U);
-  dd::Package package(7);
+  auto package = llvm::cantFail(dd::Package::create(7));
   auto actual =
-      buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), package);
+      buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
   ASSERT_TRUE(succeeded(actual));
-  EXPECT_EQ(*actual, makeControlledGateDD(package, 5,
+  EXPECT_EQ(*actual, makeControlledGateDD(*package, 5,
                                           phaseMatrix(-std::numbers::pi), 5));
-  package.decRef(*actual);
+  package->decRef(*actual);
 }
 
 TEST_F(MultiControlledDecompositionTest, AncillaPhaseDirtyLadderBeatsFallback) {
@@ -1178,12 +1182,12 @@ TEST_F(MultiControlledDecompositionTest, AncillaPhaseDirtyLadderBeatsFallback) {
     ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
     expectFullyLowered(*moduleOp);
     EXPECT_EQ(countEffectiveCxOps(*moduleOp), budget == 7 ? 282U : 290U);
-    dd::Package package(2 * k - 1);
+    auto package = llvm::cantFail(dd::Package::create(2 * k - 1));
     auto actual =
-        buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), package);
+        buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
     ASSERT_TRUE(succeeded(actual));
-    EXPECT_EQ(*actual, makeControlledGateDD(package, k, phaseMatrix(0.73), k));
-    package.decRef(*actual);
+    EXPECT_EQ(*actual, makeControlledGateDD(*package, k, phaseMatrix(0.73), k));
+    package->decRef(*actual);
   }
 }
 
@@ -1213,20 +1217,22 @@ TEST_P(AncillaAngleTest, ResetAndRestoredHelperReuse) {
           b.measure(helper);
           return SmallVector<Value>{};
         });
-    dd::Package package(7);
+    auto package = llvm::cantFail(dd::Package::create(7));
     auto function = *moduleOp->getOps<func::FuncOp>().begin();
     std::mt19937_64 beforeRng(7), afterRng(7);
     std::vector<dd::BasisStates> zero(7, dd::BasisStates::zero);
-    auto expected = simulate(function, dd::makeBasisState(7, zero, package),
-                             package, beforeRng);
+    auto expected = simulate(
+        function, llvm::cantFail(dd::makeBasisState(7, zero, *package)),
+        *package, beforeRng);
     ASSERT_TRUE(succeeded(expected));
     ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
-    auto actual = simulate(function, dd::makeBasisState(7, zero, package),
-                           package, afterRng);
+    auto actual = simulate(
+        function, llvm::cantFail(dd::makeBasisState(7, zero, *package)),
+        *package, afterRng);
     ASSERT_TRUE(succeeded(actual));
-    expectStatesNear(package, *actual, *expected);
-    package.decRef(*actual);
-    package.decRef(*expected);
+    expectStatesNear(*package, *actual, *expected);
+    package->decRef(*actual);
+    package->decRef(*expected);
     // Measurement alone is not zero; reset is. The restored zero proof must
     // survive the first gate so the second can borrow the same tensor slot.
     EXPECT_EQ(countEffectiveCxOps(*moduleOp), ancillaRotationAxis(family)
@@ -1275,18 +1281,18 @@ TEST_F(MultiControlledDecompositionTest,
             }
             return SmallVector<Value>{};
           });
-      dd::Package package(7);
+      auto package = llvm::cantFail(dd::Package::create(7));
       auto function = *module->getOps<func::FuncOp>().begin();
-      auto expected = simulateStatevector(function, package);
+      auto expected = simulateStatevector(function, *package);
       ASSERT_TRUE(succeeded(expected));
       DecomposeMultiControlledOptions options;
       options.ancillaBudget = 1;
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
-      auto actual = simulateStatevector(function, package);
+      auto actual = simulateStatevector(function, *package);
       ASSERT_TRUE(succeeded(actual));
-      expectStatesNear(package, *actual, *expected);
-      package.decRef(*actual);
-      package.decRef(*expected);
+      expectStatesNear(*package, *actual, *expected);
+      package->decRef(*actual);
+      package->decRef(*expected);
       EXPECT_EQ(countEffectiveCxOps(*module), dirty ? 56U : 42U);
       size_t measurements = 0;
       module->walk([&](MeasureOp) { ++measurements; });
@@ -1307,18 +1313,18 @@ TEST_F(MultiControlledDecompositionTest, AncillaCleanExtractedSlotCanBeReused) {
     b.mcx(controls, target);
     return SmallVector<Value>{};
   });
-  dd::Package package(7);
+  auto package = llvm::cantFail(dd::Package::create(7));
   auto function = *module->getOps<func::FuncOp>().begin();
-  auto expected = simulateStatevector(function, package);
+  auto expected = simulateStatevector(function, *package);
   ASSERT_TRUE(succeeded(expected));
   DecomposeMultiControlledOptions options;
   options.ancillaBudget = 1;
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
-  auto actual = simulateStatevector(function, package);
+  auto actual = simulateStatevector(function, *package);
   ASSERT_TRUE(succeeded(actual));
-  expectStatesNear(package, *actual, *expected);
-  package.decRef(*actual);
-  package.decRef(*expected);
+  expectStatesNear(*package, *actual, *expected);
+  package->decRef(*actual);
+  package->decRef(*expected);
   EXPECT_EQ(countEffectiveCxOps(*module), 84U);
 }
 
@@ -1338,19 +1344,20 @@ TEST_F(MultiControlledDecompositionTest, AncillaMultipleHelpersInOneTensor) {
   options.ancillaBudget = 2;
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
   EXPECT_EQ(countEffectiveCxOps(*module), 18U);
-  dd::Package package(7);
+  auto package = llvm::cantFail(dd::Package::create(7));
   auto actual =
-      buildFunctionality(*module->getOps<func::FuncOp>().begin(), package);
+      buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
   ASSERT_TRUE(succeeded(actual));
   for (size_t column = 0; column < 32; ++column) {
     const size_t expected = (column & 15U) == 15U ? column ^ 16U : column;
     for (size_t row = 0; row < 128; ++row) {
-      EXPECT_NEAR(std::abs(dd::getValueByIndex(*actual, 7, row, column) -
+      EXPECT_NEAR(std::abs(llvm::cantFail(
+                               dd::getValueByIndex(*actual, 7, row, column)) -
                            std::complex<double>(row == expected ? 1.0 : 0.0)),
                   0.0, 1e-10);
     }
   }
-  package.decRef(*actual);
+  package->decRef(*actual);
 }
 
 TEST_F(MultiControlledDecompositionTest,
@@ -1396,22 +1403,24 @@ TEST_F(MultiControlledDecompositionTest, AncillaMeasurementIsNotReset) {
           b.measure(helper);
           return SmallVector<Value>{};
         });
-    dd::Package package(7);
+    auto package = llvm::cantFail(dd::Package::create(7));
     auto function = *module->getOps<func::FuncOp>().begin();
     std::mt19937_64 beforeRng(7), afterRng(7);
     std::vector<dd::BasisStates> zero(7, dd::BasisStates::zero);
-    auto expected = simulate(function, dd::makeBasisState(7, zero, package),
-                             package, beforeRng);
+    auto expected = simulate(
+        function, llvm::cantFail(dd::makeBasisState(7, zero, *package)),
+        *package, beforeRng);
     ASSERT_TRUE(succeeded(expected));
     DecomposeMultiControlledOptions options;
     options.ancillaBudget = 1;
     ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
-    auto actual = simulate(function, dd::makeBasisState(7, zero, package),
-                           package, afterRng);
+    auto actual = simulate(
+        function, llvm::cantFail(dd::makeBasisState(7, zero, *package)),
+        *package, afterRng);
     ASSERT_TRUE(succeeded(actual));
-    expectStatesNear(package, *actual, *expected);
-    package.decRef(*actual);
-    package.decRef(*expected);
+    expectStatesNear(*package, *actual, *expected);
+    package->decRef(*actual);
+    package->decRef(*expected);
     EXPECT_EQ(countEffectiveCxOps(*module), reset ? 42U : 56U);
   }
 }
@@ -2009,20 +2018,20 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
       const size_t cost =
           k < 23 ? expectedMcpCx(k) : (k % 2 == 1 ? 88 * k - 54 : 96 * k - 154);
       EXPECT_EQ(countEffectiveCxOps(*moduleOp), cost + (family == 3 ? 2 : 0));
-      dd::Package package(k + 1);
+      auto package = llvm::cantFail(dd::Package::create(k + 1));
       auto reference =
           family == 3
-              ? makeGateDD(
-                    package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
+              ? llvm::cantFail(makeGateDD(
+                    *package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
                     {static_cast<dd::Qubit>(k), static_cast<dd::Qubit>(k - 1)},
-                    makeControls(k - 1))
+                    makeControls(k - 1)))
               : makeControlledGateDD(
-                    package, k,
+                    *package, k,
                     pauliMatrix(family == 0   ? ControlledPauli::X
                                 : family == 1 ? ControlledPauli::Y
                                               : ControlledPauli::Z),
                     k);
-      package.incRef(reference);
+      package->incRef(reference);
       std::mt19937_64 rng(7);
       for (size_t scenario = 0; scenario < 6; ++scenario) {
         std::vector<dd::BasisStates> state(k + 1, dd::BasisStates::one);
@@ -2036,16 +2045,19 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
         if (scenario >= 4) {
           state[k / 2 + 1] = dd::BasisStates::zero;
         }
-        auto expected = package.applyOperation(
-            reference, dd::makeBasisState(k + 1, state, package));
-        auto actual = simulate(
-            function, dd::makeBasisState(k + 1, state, package), package, rng);
+        auto expected = package->applyOperation(
+            reference,
+            llvm::cantFail(dd::makeBasisState(k + 1, state, *package)));
+        auto actual =
+            simulate(function,
+                     llvm::cantFail(dd::makeBasisState(k + 1, state, *package)),
+                     *package, rng);
         ASSERT_TRUE(succeeded(actual));
-        expectStatesNear(package, *actual, expected);
-        package.decRef(*actual);
-        package.decRef(expected);
+        expectStatesNear(*package, *actual, expected);
+        package->decRef(*actual);
+        package->decRef(expected);
       }
-      package.decRef(reference);
+      package->decRef(reference);
     }
   }
 }
@@ -2070,24 +2082,24 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideBudgetAndDirtyRestoration) {
             return SmallVector<Value>{};
           });
       auto function = *moduleOp->getOps<func::FuncOp>().begin();
-      dd::Package package(k + 2);
+      auto package = llvm::cantFail(dd::Package::create(k + 2));
       std::vector<dd::BasisStates> state(k + 2, dd::BasisStates::one);
       state[k] = dd::BasisStates::right;
       std::mt19937_64 beforeRng(7), afterRng(7);
-      auto expected =
-          simulate(function, dd::makeBasisState(k + 2, state, package), package,
-                   beforeRng);
+      auto expected = simulate(
+          function, llvm::cantFail(dd::makeBasisState(k + 2, state, *package)),
+          *package, beforeRng);
       ASSERT_TRUE(succeeded(expected));
       DecomposeMultiControlledOptions options;
       options.ancillaBudget = budget;
       ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
-      auto actual =
-          simulate(function, dd::makeBasisState(k + 2, state, package), package,
-                   afterRng);
+      auto actual = simulate(
+          function, llvm::cantFail(dd::makeBasisState(k + 2, state, *package)),
+          *package, afterRng);
       ASSERT_TRUE(succeeded(actual));
-      expectStatesNear(package, *actual, *expected);
-      package.decRef(*actual);
-      package.decRef(*expected);
+      expectStatesNear(*package, *actual, *expected);
+      package->decRef(*actual);
+      package->decRef(*expected);
       const size_t fallback = k % 2 == 1 ? 88 * k - 54 : 96 * k - 154;
       EXPECT_EQ(countEffectiveCxOps(*moduleOp),
                 1 + (budget == 0 ? fallback : 16 * k - 8));
@@ -2119,19 +2131,19 @@ TEST_F(MultiControlledDecompositionTest, AncillaFreeSwapReorderedWires) {
     function.walk([](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
     EXPECT_EQ(countEffectiveCxOps(*moduleOp),
               (k <= 8 ? expectedMcxCx(k) : expectedMcpCx(k)) + 2);
-    dd::Package package(k + 1);
-    auto actual = buildFunctionality(function, package);
+    auto package = llvm::cantFail(dd::Package::create(k + 1));
+    auto actual = buildFunctionality(function, *package);
     ASSERT_TRUE(succeeded(actual));
     dd::Controls controls;
     for (size_t i = 1; i < k; ++i) {
       controls.emplace(static_cast<dd::Qubit>(i));
     }
-    auto expected =
-        makeGateDD(package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
-                   {static_cast<dd::Qubit>(k), 0}, controls);
+    auto expected = llvm::cantFail(
+        makeGateDD(*package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
+                   {static_cast<dd::Qubit>(k), 0}, controls));
     // Full operator comparison, without discarding a global phase.
     EXPECT_EQ(*actual, expected);
-    package.decRef(*actual);
+    package->decRef(*actual);
   }
 }
 
@@ -2163,7 +2175,7 @@ TEST_F(MultiControlledDecompositionTest, ControlledSwapRespectsMinQubits) {
         size_t controlledSwaps = 0;
         moduleOp->walk([&](CtrlOp op) {
           auto inner =
-              mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+              mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
           if (op.getNumControls() == numControls && op.getNumTargets() == 2 &&
               inner && isa<SWAPOp>(inner.getOperation())) {
             ++controlledSwaps;
@@ -2175,16 +2187,16 @@ TEST_F(MultiControlledDecompositionTest, ControlledSwapRespectsMinQubits) {
         expectFullyDecomposed(funcOp);
       }
 
-      auto package = std::make_unique<dd::Package>(numControls + 2);
+      auto package = llvm::cantFail(dd::Package::create(numControls + 2));
       const auto actual = buildFunctionality(funcOp, *package);
       ASSERT_TRUE(succeeded(actual));
-      const auto expected =
+      const auto expected = llvm::cantFail(
           makeGateDD(*package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
                      {
                          static_cast<dd::Qubit>(numControls),
                          static_cast<dd::Qubit>(numControls + 1),
                      },
-                     makeControls(numControls));
+                     makeControls(numControls)));
       EXPECT_EQ(*actual, expected);
       package->decRef(*actual);
     }

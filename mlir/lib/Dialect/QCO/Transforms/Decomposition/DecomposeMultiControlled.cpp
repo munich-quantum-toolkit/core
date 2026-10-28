@@ -1687,9 +1687,9 @@ protected:
         .add<DecomposeControlledGatePattern, DecomposeRCCXPattern,
              UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
             &getContext(), minQubits, nativeTarget);
-    CtrlOp::getCanonicalizationPatterns(patterns, &getContext());
-    InvOp::getCanonicalizationPatterns(patterns, &getContext());
-    PowOp::getCanonicalizationPatterns(patterns, &getContext());
+    CtrlOp::getOptimizationPatterns(patterns, &getContext());
+    InvOp::getLoweringPatterns(patterns, &getContext());
+    PowOp::getLoweringPatterns(patterns, &getContext());
     if (ancillaBudget != 0) {
       // Borrowing can introduce inserts before later extracts. Restore the
       // flat tensor access form required by placement and routing.

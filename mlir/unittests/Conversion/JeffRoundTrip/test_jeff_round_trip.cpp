@@ -64,7 +64,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <utility>
 
@@ -77,18 +76,7 @@ struct JeffRoundTripTestCase {
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectPowAfterCleanup = false;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const JeffRoundTripTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
-  return os << "JeffRoundTrip{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
 protected:
@@ -1467,6 +1455,12 @@ module {
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("JeffRoundTrip: {0}, original={1}, reference={2}",
+                    GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [nameStr, programBuilder, referenceBuilder,
                expectPowAfterCleanup] = GetParam();
   const auto name = " (" + nameStr + ")";
@@ -1480,6 +1474,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1510,6 +1505,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1523,6 +1519,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

@@ -22,7 +22,7 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
+#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 
 #include "gtest/gtest.h"
 
@@ -48,6 +48,7 @@
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -92,6 +93,76 @@ h q[0];
 ctrl @ x q[0], q[1];
 bit[2] c = measure q;
 )qasm";
+
+TEST(OpenQASM3EmissionTest, PreservesOpaqueGateSignatureAndOperands) {
+  MLIRContext context(emissionDialects());
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 2.0; opaque hop(theta) a,b; qreg q[2]; hop(0.125) q[1],q[0];",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  auto gate = moduleOp->lookupSymbol<func::FuncOp>("hop");
+  ASSERT_TRUE(gate);
+  EXPECT_TRUE(gate.isPrivate());
+  EXPECT_TRUE(gate.isExternal());
+  ASSERT_EQ(gate.getNumArguments(), 3);
+  EXPECT_TRUE(gate.getArgumentTypes()[0].isF64());
+  EXPECT_TRUE(isa<qc::QubitType>(gate.getArgumentTypes()[1]));
+  EXPECT_TRUE(isa<qc::QubitType>(gate.getArgumentTypes()[2]));
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("hop(0.125) q[1], q[0];"), std::string::npos);
+  EXPECT_EQ(emitted->find("gate hop"), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, ValidatesExternalGateNames) {
+  for (const auto* declarations : {
+           "func.func private @a(!qc.qubit) attributes {mqt.source_name = "
+           "\"pulse\"} "
+           "func.func private @b(f64, !qc.qubit) attributes {mqt.source_name = "
+           "\"pulse\"}",
+           "func.func private @x(f64, !qc.qubit)",
+           "func.func private @a(!qc.qubit) attributes {mqt.source_name = "
+           "\"if\"}",
+       }) {
+    SCOPED_TRACE(declarations);
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(
+        std::string("module { ") + declarations +
+            " func.func @main() attributes {mqt.entry_point} { return } }",
+        &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+  }
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @x(!qc.qubit)
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 0 : !qc.qubit
+      func.call @x(%q) : (!qc.qubit) -> ()
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+}
+
+TEST(OpenQASM3EmissionTest, RejectsOpaqueNameUsedByGeneratedGate) {
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @ecr(!qc.qubit)
+    func.func @main() attributes {mqt.entry_point} {
+      %a = qc.static 0 : !qc.qubit
+      %b = qc.static 1 : !qc.qubit
+      func.call @ecr(%a) : (!qc.qubit) -> ()
+      qc.ecr %a, %b : !qc.qubit, !qc.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+}
 
 TEST(OpenQASM3EmissionTest, PreservesIndexCastBitPatterns) {
   constexpr llvm::StringLiteral source = R"mlir(module {
@@ -276,7 +347,7 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
       succeeded(qc::translateQCToOpenQASM3(std::move(moduleOp), stream)));
   stream.flush();
   EXPECT_EQ(streamedSource, *source);
-  EXPECT_TRUE(source->starts_with("OPENQASM 3.1;\n"));
+  EXPECT_TRUE(source->starts_with("OPENQASM 3;\n"));
   EXPECT_NE(source->find("include \"stdgates.inc\";"), std::string::npos);
   EXPECT_NE(source->find("cx q[0], q[1];"), std::string::npos);
   EXPECT_NE(source->find("output bit[2] c;"), std::string::npos);
@@ -329,15 +400,16 @@ ctrl(2) @ z q[0], q[1], q[2];
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*original)));
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(3);
+  auto packageOwner = llvm::cantFail(dd::Package::create(3));
+  auto& package = *packageOwner;
   auto expected =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*original), package);
   ASSERT_TRUE(succeeded(expected));
-  const auto expectedMatrix = dd::getMatrix(*expected, 3);
+  const auto expectedMatrix = llvm::cantFail(dd::getMatrix(*expected, 3));
   auto actual =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*restored), package);
   ASSERT_TRUE(succeeded(actual));
-  const auto actualMatrix = dd::getMatrix(*actual, 3);
+  const auto actualMatrix = llvm::cantFail(dd::getMatrix(*actual, 3));
   for (size_t row = 0; row < 8; ++row) {
     for (size_t column = 0; column < 8; ++column) {
       EXPECT_NEAR(
@@ -1261,6 +1333,7 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(emitted->find("switch (1)"), std::string::npos);
   EXPECT_NE(emitted->find("case 1 {"), std::string::npos);
   EXPECT_NE(emitted->find("default {"), std::string::npos);
@@ -1424,15 +1497,16 @@ TEST(OpenQASM3EmissionTest, CapturesFinalParametersInCompositeGates) {
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*original)));
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(2);
+  auto packageOwner = llvm::cantFail(dd::Package::create(2));
+  auto& package = *packageOwner;
   auto before =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*original), package);
   auto after =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*restored), package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
-  const auto expected = dd::getMatrix(*before, 2);
-  const auto actual = dd::getMatrix(*after, 2);
+  const auto expected = llvm::cantFail(dd::getMatrix(*before, 2));
+  const auto actual = llvm::cantFail(dd::getMatrix(*after, 2));
   for (size_t row = 0; row < 4; ++row) {
     for (size_t column = 0; column < 4; ++column) {
       EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
@@ -1473,15 +1547,16 @@ U(0.4, -0.2, 0.7) q;
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
   ASSERT_TRUE(succeeded(manager.run(*roundTrip)));
-  dd::Package package(1);
+  auto packageOwner = llvm::cantFail(dd::Package::create(1));
+  auto& package = *packageOwner;
   auto before =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*moduleOp), package);
   auto after =
       qco::buildFunctionality(mlir::mqt::getEntryPoint(*roundTrip), package);
   ASSERT_TRUE(succeeded(before));
   ASSERT_TRUE(succeeded(after));
-  const auto expected = dd::getMatrix(*before, 1);
-  const auto actual = dd::getMatrix(*after, 1);
+  const auto expected = llvm::cantFail(dd::getMatrix(*before, 1));
+  const auto actual = llvm::cantFail(dd::getMatrix(*after, 1));
   for (size_t row = 0; row < 2; ++row) {
     for (size_t column = 0; column < 2; ++column) {
       EXPECT_NEAR(std::abs(actual[row][column] - expected[row][column]), 0.,
@@ -1576,11 +1651,12 @@ wrapper(0.25) q;
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(moduleOp)));
     checkGateStructure(moduleOp);
-    dd::Package package(1);
+    auto packageOwner = llvm::cantFail(dd::Package::create(1));
+    auto& package = *packageOwner;
     auto functionality =
         qco::buildFunctionality(mlir::mqt::getEntryPoint(moduleOp), package);
     ASSERT_TRUE(succeeded(functionality));
-    const auto matrix = dd::getMatrix(*functionality, 1);
+    const auto matrix = llvm::cantFail(dd::getMatrix(*functionality, 1));
     // The six iterations sum to RX(6 * 0.25 + 3 * (1/2 + 1/3)) = RX(4).
     for (size_t row = 0; row < 2; ++row) {
       for (size_t column = 0; column < 2; ++column) {
@@ -2405,6 +2481,7 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   auto repeated = qc::translateQCToOpenQASM3(std::move(original));
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   EXPECT_EQ(emitted->find("array["), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
@@ -2412,11 +2489,12 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   PassManager manager(&context);
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(*restored)));
-  dd::Package package(2);
+  auto packageOwner = llvm::cantFail(dd::Package::create(2));
+  auto& package = *packageOwner;
   auto functionality = qco::buildFunctionality(
       restored->lookupSymbol<func::FuncOp>("main"), package);
   ASSERT_TRUE(succeeded(functionality));
-  const auto matrix = dd::getMatrix(*functionality, 2);
+  const auto matrix = llvm::cantFail(dd::getMatrix(*functionality, 2));
   for (size_t row = 0; row < 4; ++row) {
     for (size_t column = 0; column < 4; ++column) {
       const auto expected = row != column ? 0.0 : row == 3 ? -1.0 : 1.0;
@@ -3347,7 +3425,8 @@ TEST(OpenQASM3EmissionTest,
           *emitted, &context,
           {.gatePolicy = openqasm::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
-      dd::Package package(width);
+      auto packageOwner = llvm::cantFail(dd::Package::create(width));
+      auto& package = *packageOwner;
       PassManager manager(&context);
       manager.addPass(createInlinerPass());
       manager.addPass(createCanonicalizerPass());
@@ -3357,11 +3436,11 @@ TEST(OpenQASM3EmissionTest,
       auto lhs = qco::buildFunctionality(
           original->lookupSymbol<func::FuncOp>("main"), package);
       ASSERT_TRUE(succeeded(lhs));
-      const auto expected = dd::getMatrix(*lhs, width);
+      const auto expected = llvm::cantFail(dd::getMatrix(*lhs, width));
       auto rhs = qco::buildFunctionality(
           restored->lookupSymbol<func::FuncOp>("main"), package);
       ASSERT_TRUE(succeeded(rhs));
-      const auto actual = dd::getMatrix(*rhs, width);
+      const auto actual = llvm::cantFail(dd::getMatrix(*rhs, width));
       bool nonIdentity = false;
       for (size_t row = 0; row < expected.size(); ++row) {
         for (size_t column = 0; column < expected.size(); ++column) {

@@ -211,6 +211,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
                              /*shrinkQTensor=*/ancillaBudget == 0);
   pm.addPass(qco::createCombineControlledGates(target));
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
@@ -266,6 +267,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
                              /*shrinkQTensor=*/ancillaBudget == 0);
   pm.addPass(qco::createCombineControlledGates(target));
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target, 3, ancillaBudget));

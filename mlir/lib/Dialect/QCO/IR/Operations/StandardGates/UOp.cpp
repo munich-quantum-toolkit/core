@@ -115,8 +115,8 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 
-void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
+void UOp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* context) {
   results.add<ReplaceUWithP, ReplaceUWithRX, ReplaceUWithRY, ReplaceUWithU2>(
       context);
 }

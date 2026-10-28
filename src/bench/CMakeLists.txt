@@ -20,10 +20,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
 
   target_sources(${MQT_CORE_TARGET_NAME}-bench-library PRIVATE ${BENCH_SOURCES})
   target_link_libraries(${MQT_CORE_TARGET_NAME}-bench-library PUBLIC LLVMSupport)
-  target_include_directories(
-    ${MQT_CORE_TARGET_NAME}-bench-library
-    SYSTEM
-    PUBLIC $<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-bench-library
     PUBLIC

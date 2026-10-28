@@ -64,13 +64,13 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <string>
 #include <tuple>
 
@@ -83,18 +83,7 @@ struct QCToQCOTestCase {
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectsCompleteTensorState = false;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QCToQCOTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCToQCOTestCase& info) {
-  return os << "QCToQCO{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
 protected:
@@ -1656,6 +1645,11 @@ TEST_F(QCToQCORegressionTest, RejectsRegisterAliasingExposedByNormalization) {
 }
 
 TEST_P(QCToQCOTest, ProgramConversion) {
+  SCOPED_TRACE(llvm::formatv(
+                   "QCToQCO: {0}, original={1}, reference={2}", GetParam().name,
+                   ::mqt::test::displayName(GetParam().programBuilder.name),
+                   ::mqt::test::displayName(GetParam().referenceBuilder.name))
+                   .str());
   const auto& [_, programBuilder, referenceBuilder,
                expectsCompleteTensorState] = GetParam();
   const auto name = " (" + GetParam().name + ")";
@@ -1666,6 +1660,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1679,6 +1674,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
         program.get());
   }
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1689,6 +1685,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

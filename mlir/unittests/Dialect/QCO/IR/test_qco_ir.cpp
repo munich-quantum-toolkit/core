@@ -58,15 +58,14 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -81,17 +80,7 @@ struct QCOTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
-  return os << "QCO{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
@@ -121,6 +110,11 @@ static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
 }
 
 TEST_P(QCOTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QCO: {0}, original={1}, reference={2}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -130,6 +124,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -140,6 +135,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -2747,6 +2743,7 @@ TEST_F(QCOTest, NestedPowerOfSquaredPauliIsIdentity) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2762,6 +2759,7 @@ TEST_F(QCOTest, PowRxxFold) {
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2811,6 +2809,7 @@ TEST_F(QCOTest, PowGateFoldPreservesReorderedBodyResults) {
   ASSERT_TRUE(succeeded(verify(*program)));
 
   PassManager pm(context.get());
+  pm.addPass(mlir::mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(pm.run(*program)));
   ASSERT_TRUE(succeeded(verify(*program)));
@@ -2832,6 +2831,7 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   ASSERT_TRUE(succeeded(verify(*program)));
 
   PassManager pm(context.get());
+  pm.addPass(mlir::mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(pm.run(*program)));
   ASSERT_TRUE(succeeded(verify(*program)));
@@ -2858,6 +2858,7 @@ TEST_F(QCOTest, NegPowHExpands) {
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2874,6 +2875,7 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
                                                MQT_NAMED_BUILDER(ctrlPowSx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2912,6 +2914,7 @@ TEST_F(QCOTest, CtrlGPhasePassesTargetsThrough) {
                                              context.get());
   ASSERT_TRUE(program);
 
+  ASSERT_TRUE(succeeded(runPassPipeline(*program, "simplify-quantum")));
   ASSERT_TRUE(runQCOCleanupPipeline(*program).succeeded());
   ASSERT_TRUE(verify(*program).succeeded());
 

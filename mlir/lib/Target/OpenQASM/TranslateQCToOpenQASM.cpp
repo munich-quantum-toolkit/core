@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
+#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
@@ -17,6 +17,8 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -84,6 +86,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -93,6 +96,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -152,7 +156,8 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp) : moduleOp(moduleOp) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
+      : moduleOp(moduleOp), version2_(version2) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -191,10 +196,23 @@ public:
   }
 
   [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream) {
-    if (failed(preflight()) || failed(collectProgramShape())) {
+    if (failed(preflight())) {
       return failure();
     }
-    measurementStores = findMeasurementStores(function);
+    if (version2_) {
+      if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
+        return failure();
+      }
+      IRRewriter rewriter(moduleOp.getContext());
+      mqt::dropGlobalPhases(moduleOp, rewriter);
+    }
+    if (failed(collectProgramShape())) {
+      return failure();
+    }
+    measurementStores = findMeasurementStores(function, version2_);
+    if (version2_ && failed(prepareVersion2())) {
+      return failure();
+    }
     for (auto gate : gateFunctions_) {
       if (failed(emitGateDefinition(gate))) {
         return failure();
@@ -210,17 +228,38 @@ public:
         failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
-    if (outputs.empty()) {
+    if (outputs.empty() && !version2_) {
       bodyOutput.unindent();
       bodyOutput << "}\n";
     }
     bodyOutput.flush();
 
-    sourceStream << "OPENQASM 3.1;\n";
-    if (!nativeTarget_) {
-      sourceStream << "include \"stdgates.inc\";\n";
+    if (acceptedVersions_) {
+      const auto selected = acceptedVersions_->select(
+          version2_
+              ? ArrayRef{llvm::VersionTuple(2, 0)}
+              : ArrayRef{llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
+          llvm::VersionTuple(version2_ ? 2 : 3, requiredMinorVersion));
+      if (!selected) {
+        return fail(function, "no known OpenQASM version satisfies the program "
+                              "and target payload");
+      }
+      requiredMinorVersion = selected->getMinor().value_or(0);
+    }
+
+    sourceStream << (version2_ ? "OPENQASM 2.0" : "OPENQASM 3");
+    if (requiredMinorVersion != 0) {
+      sourceStream << '.' << requiredMinorVersion;
+    }
+    sourceStream << ";\n";
+    if (version2_ || !nativeTarget_) {
+      sourceStream << (version2_ ? "include \"qelib1.inc\";\n"
+                                 : "include \"stdgates.inc\";\n");
     }
     sourceStream << '\n';
+    if (version2_) {
+      emitOpaqueDeclarations(sourceStream);
+    }
     emitFixedHelpers(sourceStream);
     for (const auto& definition : gateDefinitions_) {
       sourceStream << definition << "\n";
@@ -230,6 +269,9 @@ public:
   }
 
 private:
+  bool version2_ = false;
+  std::string deviceRegister_;
+  uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
   func::FuncOp function;
@@ -243,6 +285,8 @@ private:
   DenseMap<Operation*, std::string> gateNames_;
   SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
+  llvm::StringSet<> externalGateNames_;
+  llvm::StringMap<std::pair<size_t, size_t>> opaqueSignatures_;
   llvm::StringSet<> declaredRegisterNames;
   llvm::StringSet<> fixedHelpers;
   std::string uHelperName_;
@@ -259,6 +303,8 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
   bool supportsDispatch = true;
+  std::optional<mqt::PayloadVersionRange> acceptedVersions_;
+  unsigned requiredMinorVersion = 0;
   int64_t numArrayElements_ = 0;
   DenseMap<Operation*, ArrayAssignment> arrayAssignments_;
   DenseSet<Operation*> elidedArrayOps_;
@@ -267,6 +313,116 @@ private:
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
   static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
+
+  [[nodiscard]] LogicalResult prepareVersion2() {
+    if (function.getNumArguments() != 0 ||
+        llvm::any_of(outputs, [](const ProgramOutput& result) {
+          return !isa<cbit::RegisterType>(result.value.getType());
+        })) {
+      return fail(function,
+                  "OpenQASM 2 requires bound inputs and register outputs");
+    }
+    size_t outputIndex = 0;
+    for (auto value : resourceOrder) {
+      auto& resource = resources.at(value);
+      if (resource.kind == ResourceKind::Array ||
+          (resource.kind == ResourceKind::Bit && !resource.output)) {
+        return fail(
+            function,
+            "OpenQASM 2 requires all classical storage to be output registers");
+      }
+      if (resource.kind == ResourceKind::Bit &&
+          outputs[outputIndex++].value != value) {
+        return fail(function,
+                    "OpenQASM 2 outputs must follow register allocation order");
+      }
+      if (resource.name.empty() || !llvm::isLower(resource.name.front())) {
+        return fail(
+            function,
+            "OpenQASM 2 register names must start with a lowercase letter");
+      }
+      if (resource.kind == ResourceKind::Qubit && resource.scalar) {
+        valueNames[value] = resource.name + "[0]";
+      }
+    }
+    const auto invalidDeviceIndex = function.walk([&](StaticOp qubit) {
+      if (qubit.getIndex() == std::numeric_limits<int64_t>::max()) {
+        std::ignore = fail(
+            qubit,
+            "device qubit index exceeds the OpenQASM 2 register width limit");
+        return WalkResult::interrupt();
+      }
+      deviceWidth_ = std::max(deviceWidth_, qubit.getIndex() + 1);
+      return WalkResult::advance();
+    });
+    if (invalidDeviceIndex.wasInterrupted()) {
+      return failure();
+    }
+    if (deviceWidth_ != 0) {
+      deviceRegister_ = qubitRegisterName("q");
+    }
+    return success();
+  }
+
+  [[nodiscard]] bool
+  isIncludedGate(const openqasm::frontend::GateCatalogEntry& gate) const {
+    using openqasm::frontend::GateAvailability;
+    return gate.availability == GateAvailability::Language ||
+           ((version2_ || !nativeTarget_) &&
+            (gate.availability == GateAvailability::StandardLibraryAndQELib1 ||
+             gate.availability == (version2_
+                                       ? GateAvailability::QELib1
+                                       : GateAvailability::StandardLibrary)));
+  }
+
+  [[nodiscard]] LogicalResult recordOpaqueGate(StringRef name,
+                                               size_t parameters, size_t qubits,
+                                               Operation* operation) {
+    if (name.empty() || !llvm::isLower(name.front()) ||
+        !openqasm::frontend::isValidIdentifier(name)) {
+      return fail(operation,
+                  "OpenQASM 2 gate names must start with a lowercase letter");
+    }
+    if (const auto* gate = openqasm::frontend::lookupGate(name);
+        gate != nullptr && isIncludedGate(*gate)) {
+      if (parameters != gate->parameterCount || qubits != gate->qubitCount()) {
+        return fail(operation,
+                    "external gate conflicts with its OpenQASM signature");
+      }
+      return success();
+    }
+    const auto signature = std::pair{parameters, qubits};
+    const auto [entry, inserted] =
+        opaqueSignatures_.try_emplace(name, signature);
+    if (!inserted && entry->second != signature) {
+      return fail(operation, "OpenQASM 2 gate names must have one signature");
+    }
+    return success();
+  }
+
+  void emitOpaqueDeclarations(llvm::raw_ostream& stream) {
+    SmallVector<StringRef> names;
+    for (const auto& entry : opaqueSignatures_) {
+      names.push_back(entry.getKey());
+    }
+    llvm::sort(names);
+    for (auto name : names) {
+      const auto [parameterCount, qubitCount] = opaqueSignatures_.at(name);
+      SmallVector<std::string> parameters;
+      SmallVector<std::string> qubits;
+      for (size_t index = 0; index < parameterCount; ++index) {
+        parameters.push_back((Twine("p") + Twine(index)).str());
+      }
+      for (size_t index = 0; index < qubitCount; ++index) {
+        qubits.push_back((Twine("q") + Twine(index)).str());
+      }
+      stream << "opaque " << name;
+      if (!parameters.empty()) {
+        stream << '(' << llvm::join(parameters, ", ") << ')';
+      }
+      stream << ' ' << llvm::join(qubits, ", ") << ";\n";
+    }
+  }
 
   /// OpenQASM assignments already snapshot their RHS, including concatenations.
   /// Recover adjacent copy sequences without changing the IR's non-overlap
@@ -478,7 +634,9 @@ private:
   [[nodiscard]] std::string uniqueName(const StringRef prefix,
                                        size_t& counter) {
     while (true) {
-      auto candidate = (Twine("_mqt_") + prefix + Twine(counter++)).str();
+      auto candidate =
+          (Twine(version2_ ? "mqt_" : "_mqt_") + prefix + Twine(counter++))
+              .str();
       if (!declaredRegisterNames.contains(candidate) &&
           usedNames.insert(candidate).second) {
         return candidate;
@@ -546,7 +704,7 @@ private:
         if (!gate) {
           return fail(current, "gate calls must target func.func definitions");
         }
-        if (gate.isPrivate() && !gate.isExternal() &&
+        if (!version2_ && gate.isPrivate() && !gate.isExternal() &&
             gate.getBody().hasOneBlock() && hasGateSignature(gate) &&
             hasGateBody(gate) &&
             llvm::all_of(*node, [&](const CallGraphNode::Edge& edge) {
@@ -620,6 +778,12 @@ private:
           usedNames.insert(operation.name());
         }
       }
+      const auto& format =
+          environment.environment().payloadSpecification().format();
+      if (format.id == "openqasm") {
+        acceptedVersions_ =
+            environment.environment().payloadSpecification().versionRange();
+      }
       supportsDispatch = environment.environment()
                              .payloadSpecification()
                              .supportsUnrestrictedMultiwayBranching();
@@ -636,6 +800,48 @@ private:
     if (function.isExternal() || function.getBody().getBlocks().size() != 1) {
       return fail(function,
                   "expected one defined function with one entry block");
+    }
+    // External QC gate signatures denote operations supplied by the receiver.
+    for (auto declaration : functions) {
+      if (!declaration.isExternal()) {
+        continue;
+      }
+      if (!declaration.isPrivate() || !hasGateSignature(declaration)) {
+        return fail(declaration,
+                    "external OpenQASM gates require a private gate signature");
+      }
+      const auto sourceName = declaration->getAttrOfType<StringAttr>(
+          mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+      const auto name =
+          sourceName ? sourceName.getValue() : declaration.getName();
+      if (!openqasm::frontend::isValidIdentifier(name) ||
+          (version2_ && !llvm::isLower(name.front()))) {
+        return fail(declaration,
+                    "external gate name must be an OpenQASM identifier");
+      }
+      if (!externalGateNames_.insert(name).second) {
+        return fail(declaration, "external gate names must be unique");
+      }
+      const auto parameterCount =
+          llvm::count_if(declaration.getArgumentTypes(),
+                         [](Type type) { return type.isF64(); });
+      const auto* gate = openqasm::frontend::lookupGate(name);
+      if (gate != nullptr && isIncludedGate(*gate)) {
+        if (!std::cmp_equal(parameterCount, gate->parameterCount) ||
+            declaration.getNumArguments() !=
+                gate->parameterCount + gate->qubitCount()) {
+          return fail(declaration,
+                      "external gate conflicts with its OpenQASM signature");
+        }
+      } else if (version2_ && failed(recordOpaqueGate(
+                                  name, static_cast<size_t>(parameterCount),
+                                  declaration.getNumArguments() -
+                                      static_cast<size_t>(parameterCount),
+                                  declaration))) {
+        return failure();
+      }
+      gateNames_.try_emplace(declaration, name.str());
+      usedNames.insert(name);
     }
     if (failed(prepareFunctions())) {
       return failure();
@@ -676,6 +882,7 @@ private:
       const auto requested = current.getName();
       const bool preserveName =
           openqasm::frontend::isValidIdentifier(requested) &&
+          (!version2_ || llvm::isLower(requested.front())) &&
           openqasm::frontend::lookupGate(requested) == nullptr &&
           usedNames.insert(requested).second;
       gateNames_.try_emplace(current, preserveName
@@ -966,6 +1173,17 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
+    if (version2_) {
+      for (auto value : resourceOrder) {
+        const auto& resource = resources.at(value);
+        *output << (resource.kind == ResourceKind::Qubit ? "qreg " : "creg ")
+                << resource.name << '[' << resource.width << "];\n";
+      }
+      if (deviceWidth_ != 0) {
+        *output << "qreg " << deviceRegister_ << '[' << deviceWidth_ << "];\n";
+      }
+      return success();
+    }
     for (auto argument : function.getArguments()) {
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
     }
@@ -1000,7 +1218,7 @@ private:
       }
       *output << ' ' << resource.name << ";\n";
     }
-    if (outputs.empty()) {
+    if (outputs.empty() && !version2_) {
       // Global classical declarations become implicit outputs on import.
       *output << "if (true) {\n";
       output->indent();
@@ -1114,6 +1332,12 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (version2_ && isa<scf::ForOp, scf::WhileOp, scf::IndexSwitchOp,
+                         cbit::WriteOp, memref::StoreOp, memref::CopyOp,
+                         memref::AllocaOp, tensor::ExtractOp>(&operation)) {
+      return fail(&operation,
+                  "operation requires lowering before OpenQASM 2 export");
+    }
     const auto resultType =
         operation.getNumResults() == 1
             ? dyn_cast<IntegerType>(operation.getResult(0).getType())
@@ -1122,7 +1346,7 @@ private:
         resultType && resultType.getWidth() > 64 &&
         (isa<arith::ExtUIOp>(&operation) ||
          operation.getName().getStringRef() == "math.ctpop");
-    if (!gateNames_.contains(function) &&
+    if (!version2_ && !gateNames_.contains(function) &&
         isInlineExpressionOperation(operation) &&
         !isa<arith::ConstantOp>(&operation) && operation.getNumResults() == 1 &&
         !wideBridge && !operation.getResult(0).use_empty()) {
@@ -1333,6 +1557,7 @@ private:
     if (failed(argument)) {
       return failure();
     }
+    requiredMinorVersion = std::max(requiredMinorVersion, 1U);
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto& [attribute, slots] : cases) {
@@ -1377,7 +1602,10 @@ private:
       return found->second;
     }
     if (auto staticOp = value.getDefiningOp<qc::StaticOp>()) {
-      return (Twine('$') + Twine(staticOp.getIndex())).str();
+      return version2_ ? (Twine(deviceRegister_) + "[" +
+                          Twine(staticOp.getIndex()) + "]")
+                             .str()
+                       : (Twine('$') + Twine(staticOp.getIndex())).str();
     }
     auto load = value.getDefiningOp<memref::LoadOp>();
     if (!load || load.getIndices().size() != 1) {
@@ -1392,6 +1620,9 @@ private:
     }
     if (index && (*index < 0 || *index >= resource->second.width)) {
       return failExpression(value, "constant qubit index is out of bounds");
+    }
+    if (version2_ && !index) {
+      return failExpression(value, "OpenQASM 2 requires static qubit indices");
     }
     auto emittedIndex = emitExpression(load.getIndices().front());
     if (failed(emittedIndex)) {
@@ -1413,6 +1644,10 @@ private:
     }
     if (index) {
       return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
+    }
+    if (version2_) {
+      return failExpression(indexValue,
+                            "OpenQASM 2 requires static bit indices");
     }
     auto dynamicIndex = emitExpression(indexValue);
     if (failed(dynamicIndex)) {
@@ -2046,8 +2281,11 @@ private:
       return failure();
     }
     if (auto measurement = store.getValue().getDefiningOp<qc::MeasureOp>();
-        measurement && measurementStores.contains(measurement)) {
+        measurement && measurementStores.lookup(measurement) == store) {
       return success();
+    }
+    if (version2_) {
+      return fail(store, "OpenQASM 2 only supports measurement stores");
     }
     auto value = emitExpression(store.getValue());
     if (failed(value)) {
@@ -2073,8 +2311,16 @@ private:
       if (failed(target)) {
         return failure();
       }
-      *output << *target << " = measure " << *qubit << ";\n";
+      if (version2_) {
+        *output << "measure " << *qubit << " -> " << *target << ";\n";
+      } else {
+        *output << *target << " = measure " << *qubit << ";\n";
+      }
       return success();
+    }
+    if (version2_) {
+      return fail(measurement,
+                  "OpenQASM 2 measurements require a register destination");
     }
     if (measurement.getResult().use_empty()) {
       *output << "measure " << *qubit << ";\n";
@@ -2201,7 +2447,170 @@ private:
                       block.getTerminator());
   }
 
+  [[nodiscard]] FailureOr<bool>
+  emitVersion2RegisterMeasurement(ArrayRef<Operation*> operations,
+                                  StringRef condition) {
+    auto first = cast<qc::MeasureOp>(operations.front());
+    auto reg = measurementStores.at(first).getReg();
+    const auto& destination = resources.at(reg);
+    if (operations.size() != destination.width) {
+      return false;
+    }
+    auto load = first.getQubit().getDefiningOp<memref::LoadOp>();
+    auto device = first.getQubit().getDefiningOp<qc::StaticOp>();
+    if ((!load || resources.at(load.getMemRef()).width != destination.width) &&
+        (!device || std::cmp_not_equal(deviceWidth_, destination.width))) {
+      return false;
+    }
+    for (auto [index, operation] : llvm::enumerate(operations)) {
+      auto measurement = dyn_cast<qc::MeasureOp>(operation);
+      if (!measurement || !measurementStores.contains(measurement)) {
+        return false;
+      }
+      auto store = measurementStores.at(measurement);
+      if (store.getReg() != reg ||
+          getConstantInteger(store.getIndex()) != index) {
+        return false;
+      }
+      if (load) {
+        auto element = measurement.getQubit().getDefiningOp<memref::LoadOp>();
+        if (!element || element.getMemRef() != load.getMemRef() ||
+            element.getIndices().size() != 1 ||
+            getConstantInteger(element.getIndices().front()) != index) {
+          return false;
+        }
+      } else {
+        auto element = measurement.getQubit().getDefiningOp<qc::StaticOp>();
+        if (!element || element.getIndex() != index) {
+          return false;
+        }
+      }
+      if (failed(checkNativeNonUnitary(measurement, "measure",
+                                       measurement.getQubit()))) {
+        return failure();
+      }
+    }
+    *output << condition << "measure "
+            << (load ? resources.at(load.getMemRef()).name : deviceRegister_)
+            << " -> " << destination.name << ";\n";
+    return true;
+  }
+
+  [[nodiscard]] LogicalResult emitVersion2If(scf::IfOp ifOp) {
+    if (ifOp.getNumResults() != 0 ||
+        (!ifOp.getElseRegion().empty() &&
+         !ifOp.getElseRegion().front().without_terminator().empty())) {
+      return fail(ifOp, "OpenQASM 2 if requires no results or else branch");
+    }
+    Value selector = ifOp.getCondition();
+    APInt expected(1, 1);
+    if (auto compare = selector.getDefiningOp<arith::CmpIOp>();
+        compare && compare.getPredicate() == arith::CmpIPredicate::eq) {
+      selector = compare.getLhs();
+      auto constant = dyn_cast_or_null<IntegerAttr>(
+          mqt::valueToConstantAttr(compare.getRhs()));
+      if (!constant) {
+        selector = compare.getRhs();
+        constant = dyn_cast_or_null<IntegerAttr>(
+            mqt::valueToConstantAttr(compare.getLhs()));
+      }
+      if (!constant) {
+        return fail(ifOp,
+                    "OpenQASM 2 if requires register equality with an integer");
+      }
+      expected = constant.getValue();
+    } else if (auto invert = selector.getDefiningOp<arith::XOrIOp>();
+               invert && selector.getType().isInteger(1) &&
+               getConstantInteger(invert.getRhs()).value_or(0) != 0) {
+      selector = invert.getLhs();
+      expected = APInt(1, 0);
+    }
+    Value reg;
+    auto* read = selector.getDefiningOp();
+    if (auto measurement = selector.getDefiningOp<qc::MeasureOp>();
+        measurement && measurementStores.contains(measurement)) {
+      auto store = measurementStores.at(measurement);
+      if (store.getReg().getType().getWidth() == 1 &&
+          getConstantInteger(store.getIndex()) == 0) {
+        reg = store.getReg();
+        read = store;
+      }
+    } else if (auto read = selector.getDefiningOp<cbit::ReadOp>()) {
+      reg = read.getReg();
+    } else if (auto load = selector.getDefiningOp<cbit::LoadOp>();
+               load && load.getReg().getType().getWidth() == 1 &&
+               getConstantInteger(load.getIndex()) == 0) {
+      reg = load.getReg();
+    }
+    if (!reg || read->getBlock() != ifOp->getBlock() ||
+        !read->isBeforeInBlock(ifOp)) {
+      return fail(ifOp, "OpenQASM 2 if requires a whole-register equality");
+    }
+    for (auto* operation = read->getNextNode(); operation != ifOp;
+         operation = operation->getNextNode()) {
+      auto effects = getEffectsRecursively(operation);
+      if (!effects || llvm::any_of(*effects, [&](const auto& effect) {
+            return isa<MemoryEffects::Write>(effect.getEffect()) &&
+                   (!effect.getValue() || effect.getValue() == reg);
+          })) {
+        return fail(ifOp, "OpenQASM 2 if cannot use a stale register value");
+      }
+    }
+    SmallString<32> value;
+    expected.toString(value, 10, false);
+    const auto condition =
+        (Twine("if (") + resources.at(reg).name + " == " + value + ") ").str();
+    SmallVector<Operation*> statements;
+    for (auto& operation : ifOp.getThenRegion().front().without_terminator()) {
+      if (isa<UnitaryOpInterface, func::CallOp, qc::MeasureOp, qc::ResetOp>(
+              operation)) {
+        statements.push_back(&operation);
+        continue;
+      }
+      if (isa<arith::ConstantOp, memref::LoadOp, qc::StaticOp>(operation) ||
+          (isInlineExpressionOperation(operation) &&
+           isMemoryEffectFree(&operation))) {
+        continue;
+      }
+      auto store = dyn_cast<cbit::StoreOp>(operation);
+      if (!store ||
+          measurementStores.lookup(store.getValue().getDefiningOp()) != store) {
+        return fail(&operation,
+                    "operation is not permitted in an OpenQASM 2 if");
+      }
+    }
+    for (auto [index, operation] : llvm::enumerate(statements)) {
+      if (auto measurement = dyn_cast<qc::MeasureOp>(operation);
+          measurement && measurementStores.contains(measurement) &&
+          measurementStores.at(measurement).getReg() == reg &&
+          index + 1 != statements.size()) {
+        // A register measurement must remain one statement: its first store
+        // can change the condition for the remaining measured bits.
+        auto grouped = emitVersion2RegisterMeasurement(
+            ArrayRef(statements).drop_front(index), condition);
+        if (failed(grouped)) {
+          return failure();
+        }
+        if (*grouped) {
+          return success();
+        }
+        return fail(ifOp,
+                    "OpenQASM 2 if cannot re-evaluate a modified condition");
+      }
+      if (!isa<qc::BarrierOp>(operation)) {
+        *output << condition;
+      }
+      if (failed(emitOperation(*operation))) {
+        return failure();
+      }
+    }
+    return success();
+  }
+
   [[nodiscard]] LogicalResult emitIf(scf::IfOp ifOp) {
+    if (version2_) {
+      return emitVersion2If(ifOp);
+    }
     if (failed(declareLocals(ifOp.getResults()))) {
       return failure();
     }
@@ -2381,6 +2790,7 @@ private:
     if (cases.empty()) {
       return emitResultBlock(switchOp.getDefaultBlock(), switchOp.getResults());
     }
+    requiredMinorVersion = std::max(requiredMinorVersion, 1U);
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto [index, caseValue] : llvm::enumerate(cases)) {
@@ -2425,6 +2835,17 @@ private:
     return success();
   }
 
+  [[nodiscard]] FailureOr<std::string> emitGateParameter(Value value) {
+    if (version2_ && !gateNames_.contains(function)) {
+      if (auto constant = mqt::valueToConstantAttr(value)) {
+        return emitConstant(constant, value.getLoc());
+      }
+      return failExpression(
+          value, "OpenQASM 2 requires bound constant gate parameters");
+    }
+    return emitExpression(value);
+  }
+
   [[nodiscard]] FailureOr<GateCall> emitFunctionCall(Operation* operation,
                                                      ValueRange operands) {
     auto callee = resolveGateCallee(operation);
@@ -2437,7 +2858,7 @@ private:
     for (const auto [operand, type] :
          llvm::zip_equal(operands, callee.getArgumentTypes())) {
       if (type.isF64()) {
-        auto parameter = emitExpression(operand);
+        auto parameter = emitGateParameter(operand);
         if (failed(parameter)) {
           return failure();
         }
@@ -2538,7 +2959,7 @@ private:
       call.parameters.emplace_back("pi / 2");
     }
     for (auto parameter : body.getParameters()) {
-      auto expression = emitExpression(parameter);
+      auto expression = emitGateParameter(parameter);
       if (failed(expression)) {
         return failure();
       }
@@ -2578,11 +2999,11 @@ private:
       return failure();
     }
     call.symbol = std::move(*symbol);
-    if (baseSymbol == "sxdg") {
+    if (baseSymbol == "sxdg" && !version2_) {
       call.modifiers = "inv @ ";
     }
     for (auto parameter : unitary.getParameters()) {
-      auto expression = emitExpression(parameter);
+      auto expression = emitGateParameter(parameter);
       if (failed(expression)) {
         return failure();
       }
@@ -2672,14 +3093,11 @@ private:
         const auto alias =
             (Twine(controls.size() == 1 ? "c" : "cc") + call.symbol).str();
         const auto* gate = openqasm::frontend::lookupGate(alias);
-        if (gate && gate->controlCount == controls.size() &&
+        const auto* baseGate = openqasm::frontend::lookupGate(call.symbol);
+        if (gate && baseGate && gate->controlCount == controls.size() &&
             gate->targetCount + controls.size() == call.qubits.size() &&
             !gate->inverse && !gate->variadicControls &&
-            (gate->availability ==
-                 openqasm::frontend::GateAvailability::StandardLibrary ||
-             gate->availability == openqasm::frontend::GateAvailability::
-                                       StandardLibraryAndQELib1) &&
-            openqasm::frontend::canonicalGateName(gate->gate) == call.symbol) {
+            isIncludedGate(*gate) && gate->gate == baseGate->gate) {
           call.symbol = alias;
           return call;
         }
@@ -2835,6 +3253,15 @@ private:
                     "qubits");
       }
     }
+    if (version2_ && !call.modifiers.empty()) {
+      return fail(operation,
+                  "OpenQASM 2 requires modifiers to be lowered before export");
+    }
+    if (version2_ && nativeTarget_ &&
+        failed(recordOpaqueGate(call.symbol, call.parameters.size(),
+                                call.qubits.size(), operation))) {
+      return failure();
+    }
     stream << call.modifiers << call.symbol;
     if (!call.parameters.empty()) {
       stream << '(' << llvm::join(call.parameters, ", ") << ')';
@@ -2848,6 +3275,39 @@ private:
 
   [[nodiscard]] FailureOr<std::string>
   portableGateSymbol(const StringRef symbol) {
+    if (version2_) {
+      if (symbol == "p") {
+        return std::string("u1");
+      }
+      if (symbol == "u" || symbol == "u2") {
+        if (uHelperName_.empty()) {
+          uHelperName_ = uniqueName("u", nextHelper);
+        }
+        return uHelperName_;
+      }
+      using openqasm::frontend::GateAvailability;
+      const auto* gate = openqasm::frontend::lookupGate(symbol);
+      if (gate != nullptr &&
+          (gate->availability == GateAvailability::QELib1 ||
+           gate->availability == GateAvailability::StandardLibraryAndQELib1)) {
+        return symbol.str();
+      }
+      if (symbol == "sx" || symbol == "sxdg" || symbol == "swap" ||
+          symbol == "r" || symbol == "iswap" || symbol == "dcx" ||
+          symbol == "rxx" || symbol == "ryy" || symbol == "rzz" ||
+          symbol == "rzx" || symbol == "rccx") {
+        if (externalGateNames_.contains(symbol)) {
+          emitError(function.getLoc())
+              << "external gate conflicts with generated definition";
+          return failure();
+        }
+        fixedHelpers.insert(symbol);
+        return symbol.str();
+      }
+      emitError(function.getLoc()) << "OpenQASM 2 requires gate '" << symbol
+                                   << "' to be lowered before export";
+      return failure();
+    }
     if (symbol == "sxdg") {
       return std::string("sx");
     }
@@ -2869,13 +3329,34 @@ private:
     }
     if (gate->availability ==
         openqasm::frontend::GateAvailability::Compatibility) {
+      if (externalGateNames_.contains(symbol)) {
+        emitError(function.getLoc())
+            << "OpenQASM emission error: external gate '" << symbol
+            << "' conflicts with a generated gate definition";
+        return failure();
+      }
       fixedHelpers.insert(symbol);
     }
     return symbol.str();
   }
 
   void emitFixedHelpers(llvm::raw_ostream& stream) const {
-    if (!uHelperName_.empty()) {
+    if (version2_) {
+      if (fixedHelpers.contains("sx")) {
+        stream << "gate sx q { h q; s q; h q; }\n";
+      }
+      if (fixedHelpers.contains("sxdg")) {
+        stream << "gate sxdg q { h q; sdg q; h q; }\n";
+      }
+      if (fixedHelpers.contains("swap")) {
+        stream << "gate swap a, b { cx a,b; cx b,a; cx a,b; }\n";
+      }
+    }
+    if (version2_ && !uHelperName_.empty()) {
+      stream << "gate " << uHelperName_
+             << "(p0, p1, p2) q {\n"
+                "  u1(p2) q;\n  ry(p0) q;\n  u1(p1) q;\n}\n";
+    } else if (!uHelperName_.empty()) {
       stream << "gate " << uHelperName_
              << "(p0, p1, p2) q {\n"
                 "  gphase(-p0 / 2);\n"
@@ -3004,6 +3485,18 @@ FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
   if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
+    return failure();
+  }
+  return source;
+}
+
+FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp) {
+  if (failed(verify(*moduleOp))) {
+    return failure();
+  }
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  if (failed(OpenQASMEmitter(*moduleOp, true).emit(stream))) {
     return failure();
   }
   return source;

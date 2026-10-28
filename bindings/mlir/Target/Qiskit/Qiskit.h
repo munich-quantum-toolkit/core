@@ -24,8 +24,22 @@ namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
 
-/// Import a Qiskit QuantumCircuit into a newly owned QC program.
-[[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
+/// Import a Qiskit QuantumCircuit into an independently owned QC program.
+///
+/// Ordinary import translates gate definitions and allocates program qubits.
+/// Native import fixes circuit indices to device qubits and preserves gate
+/// names and operands as opaque calls, without reading their definitions.
+/// The caller validates device support and placements. A complete transpiler
+/// layout is retained as metadata; it does not remap circuit indices.
+///
+/// @param circuit Borrowed Python circuit; it is neither modified nor consumed.
+/// @param native Whether the circuit is already compiled for a device.
+/// @returns A program owning its MLIR context and translated module.
+/// @throws std::runtime_error If the circuit is outside the supported import
+/// subset.
+/// @throws nanobind::python_error If a Python API call fails.
+[[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit,
+                                            bool native = false);
 
 /// Snapshot a Qiskit Target or BackendV2 into an owned compiler target.
 ///
@@ -35,7 +49,7 @@ namespace nb = nanobind;
 importTarget(nb::handle target, nb::handle operationNames,
              const std::optional<std::string>& name);
 
-/// Import gate capabilities independently of physical width and placement.
+/// Import gate capabilities independently of device width and placement.
 [[nodiscard]] mlir::CompilerTarget::NativeOperations
 importNativeOperations(nb::handle target, nb::handle operationNames);
 

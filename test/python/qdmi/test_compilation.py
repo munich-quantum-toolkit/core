@@ -404,8 +404,8 @@ def test_rejects_invalid_submission_options() -> None:
     source = compile_program(BELL, output=OutputFormat.QCO)
     with pytest.raises(ValueError, match="nonnegative"):
         submit_program(source, target=device, num_shots=-1)
-    with pytest.raises(ValueError, match="cannot emit"):
-        submit_program(source, target=device, program_format=ProgramFormat.QASM2)
+    with pytest.raises(ValueError, match="does not support"):
+        submit_program(source, target=device, program_format=ProgramFormat.QPY)
     assert source.is_valid
     compiled = compile_program(source, target=device, copy=True)
     assert source.is_valid
@@ -413,13 +413,19 @@ def test_rejects_invalid_submission_options() -> None:
         submit_program(compiled, target=device, program_format=ProgramFormat.QASM3)
 
 
-def test_explicit_target_preserves_input_format() -> None:
-    """Hardware snapshots produce directly executable OpenQASM by default."""
+@pytest.mark.parametrize(
+    ("output_format", "program_format"),
+    [(OutputFormat.OPENQASM2, ProgramFormat.QASM2), (None, ProgramFormat.QASM3)],
+)
+def test_explicit_target_preserves_input_format(
+    output_format: OutputFormat | None, program_format: ProgramFormat
+) -> None:
+    """Hardware snapshots produce directly executable OpenQASM."""
     device = open_device("mqt.ddsim.default")
     target = CompilerTarget.from_device(device)
-    output = compile_program(BELL, target=target)
+    output = compile_program(BELL, target=target, output=output_format)
     assert isinstance(output, OpenQASMProgram)
-    raw = device.submit_job(output.source, ProgramFormat.QASM3, num_shots=0)
+    raw = device.submit_job(output.source, program_format, num_shots=0)
     raw.wait()
     assert raw.get_dense_statevector() == pytest.approx([2**-0.5, 0, 0, 2**-0.5])
 
@@ -484,7 +490,7 @@ def test_payload_forward_branching(program_format: ProgramFormat) -> None:
     with pytest.raises(RuntimeError, match="Not supported"):
         job.get_dense_statevector()
     assert len(job.get_shots()) == 32
-    with pytest.raises(ValueError, match="Compilation failed"):
+    with pytest.raises(ValueError, match=r"failed to legalize operation 'qco\.if'"):
         submit_program(source, target=device, program_format=ProgramFormat.QIR_BASE_MODULE)
 
 
@@ -539,9 +545,10 @@ def test_qir_artifact_rejects_unsupported_entry_result(
     """Keep scalar program outputs distinct from the QDMI QIR status return."""
     source = f"OPENQASM 3.0; qubit q; bit c = measure q; int[{width}] k = int[{width}](c);"
     program = compile_program(source, output=OutputFormat.QCO) if staged else source
-    with pytest.raises(ValueError, match="Compilation failed"):
+    with pytest.raises(ValueError, match="QIR entry return supports only direct measurements") as error:
         compile_program(program, target="mqt.ddsim.default")
-    assert "scalar program outputs" in capfd.readouterr().err
+    assert "scalar program outputs" in str(error.value)
+    assert not capfd.readouterr().err
 
 
 @pytest.mark.parametrize("num_shots", [0, 8])
@@ -626,6 +633,5 @@ def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat,
             num_shots=shots,
             custom2=True,
         )
-    # The RTTI-free adapter can lose the nested exception text on macOS.
-    with pytest.raises(ValueError, match="Failed to submit compiled program"):
+    with pytest.raises(RuntimeError, match=r"Submitting job: Not supported\."):
         submit_program(BELL, target=device, program_format=program_format, num_shots=shots, custom2=True)

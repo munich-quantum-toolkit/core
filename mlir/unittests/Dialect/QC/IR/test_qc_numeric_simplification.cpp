@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 
@@ -24,7 +25,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -34,7 +34,7 @@ using namespace mlir::qc;
 
 namespace {
 
-class QCNumericCanonicalizationTest : public testing::Test {
+class QCNumericSimplificationTest : public testing::Test {
 protected:
   MLIRContext context_;
 
@@ -43,7 +43,7 @@ protected:
                          func::FuncDialect>();
   }
 
-  OwningOpRef<ModuleOp> canonicalize(StringRef source) {
+  OwningOpRef<ModuleOp> simplify(StringRef source) {
     auto moduleOp = parseSourceString<ModuleOp>(source, &context_);
     EXPECT_TRUE(moduleOp);
     if (!moduleOp) {
@@ -51,15 +51,15 @@ protected:
     }
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     EXPECT_TRUE(succeeded(manager.run(*moduleOp)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     return moduleOp;
   }
 };
 
-TEST_F(QCNumericCanonicalizationTest, LargeEvenPauliPowerBecomesIdentity) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, LargeEvenPauliPowerBecomesIdentity) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit) {
         %exponent = arith.constant 10000.0 : f64
@@ -79,8 +79,8 @@ TEST_F(QCNumericCanonicalizationTest, LargeEvenPauliPowerBecomesIdentity) {
   EXPECT_TRUE(function.getBody().getOps<GPhaseOp>().empty());
 }
 
-TEST_F(QCNumericCanonicalizationTest, LargeOddPauliPowerPreservesItsTarget) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, LargeOddPauliPowerPreservesItsTarget) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit) {
         %exponent = arith.constant 9007199254740991.0 : f64
@@ -102,8 +102,8 @@ TEST_F(QCNumericCanonicalizationTest, LargeOddPauliPowerPreservesItsTarget) {
   EXPECT_EQ(gate.getTarget(0), function.getArgument(0));
 }
 
-TEST_F(QCNumericCanonicalizationTest, PowerRetainsDynamicAngle) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, PowerRetainsDynamicAngle) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %angle: f64) {
         %exponent = arith.constant 2.0 : f64
@@ -126,8 +126,8 @@ TEST_F(QCNumericCanonicalizationTest, PowerRetainsDynamicAngle) {
   EXPECT_EQ(rotation.getTheta(), function.getArgument(1));
 }
 
-TEST_F(QCNumericCanonicalizationTest, PowerRetainsUnsafeConstantProducts) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, PowerRetainsUnsafeConstantProducts) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @overflow(%q: !qc.qubit) {
         %exponent = arith.constant 2.0 : f64
@@ -157,8 +157,8 @@ TEST_F(QCNumericCanonicalizationTest, PowerRetainsUnsafeConstantProducts) {
   }
 }
 
-TEST_F(QCNumericCanonicalizationTest, PowerRetainsOutOfRangeGlobalPhase) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, PowerRetainsOutOfRangeGlobalPhase) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit) {
         %exponent = arith.constant 2.0 : f64
@@ -180,8 +180,8 @@ TEST_F(QCNumericCanonicalizationTest, PowerRetainsOutOfRangeGlobalPhase) {
   EXPECT_TRUE(function.getBody().getOps<GPhaseOp>().empty());
 }
 
-TEST_F(QCNumericCanonicalizationTest, NestedPowerOverflowKeepsParameterScope) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, NestedPowerOverflowKeepsParameterScope) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %angle: f64) {
         %exponent = arith.constant 1.0e308 : f64
@@ -216,8 +216,8 @@ TEST_F(QCNumericCanonicalizationTest, NestedPowerOverflowKeepsParameterScope) {
   EXPECT_EQ(square.getRhs(), function.getArgument(1));
 }
 
-TEST_F(QCNumericCanonicalizationTest, NestedPowerRetainsDynamicExponentScope) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, NestedPowerRetainsDynamicExponentScope) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %exponent: f64) {
         %two = arith.constant 2.0 : f64
@@ -250,8 +250,8 @@ TEST_F(QCNumericCanonicalizationTest, NestedPowerRetainsDynamicExponentScope) {
   EXPECT_EQ(square.getRhs(), function.getArgument(1));
 }
 
-TEST_F(QCNumericCanonicalizationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCNumericSimplificationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit) {
         %half = arith.constant 0.5 : f64

@@ -15,10 +15,15 @@ def ShrinkQubitRegistersPass
     : Pass<"qc-shrink-qubit-registers", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qc::QCDialect", "mlir::arith::ArithDialect",
                            "mlir::memref::MemRefDialect"];
-  let summary =
-      "Shrink static `qc::QubitType` MemRef registers to accessed indices.";
+  let summary = "Compact static qubit registers";
   let description = [{
-    Shrinks one-dimensional static MemRef registers with element type `!qc.qubit` by removing never-read indices and remapping `memref.load` users accordingly.
+    Compacts one-dimensional static `memref` allocations of `!qc.qubit` with
+    identity layout and default memory space. Supported uses are constant-index
+    loads and a matching deallocation. Retained indices preserve their relative
+    order.
+
+    Run canonicalization first to fold index expressions. Allocations with
+    nonconstant indices or unsupported uses are left unchanged.
   }];
 }
 

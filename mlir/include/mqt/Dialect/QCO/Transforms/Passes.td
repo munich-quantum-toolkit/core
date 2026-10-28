@@ -23,7 +23,7 @@ def CombineControlledGates
     second operation, retaining dominance of captured parameters. Bodies stay
     within their block; the pass does not combine across loop iterations.
 
-    The pass concatenates bodies in order. Canonicalization or rotation fusion
+    The pass concatenates bodies in order. Quantum simplification or rotation fusion
     can simplify the combined body. Target pipelines preserve native control
     groups and their bodies, including fixed-parameter operations. They retain
     native controlled U fusion, then unroll surviving composites before routing

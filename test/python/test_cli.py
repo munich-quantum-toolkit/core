@@ -129,7 +129,7 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
         ),
     ])
     assert ret.success
-    assert ret.stdout.startswith("OPENQASM 3.1;")
+    assert ret.stdout.startswith("OPENQASM 3;")
     assert QCProgram.from_openqasm_str(ret.stdout).is_valid
 
 

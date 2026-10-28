@@ -23,7 +23,6 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_TOP_LEVEL})
 
-include(AddMQTPythonBinding)
 include(StandardProjectSettings)
 include(PreventInSourceBuilds)
 include(PackageAddTest)
@@ -158,16 +157,12 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
       VERBATIM)
   endif()
   if(BUILD_MQT_CORE_BINDINGS)
-    foreach(binding dd qdmi)
-      add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
-    endforeach()
+    add_dependencies(${MQT_CORE_TARGET_NAME}-bindings mqt-core-docs)
   endif()
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
-  set(MQT_CORE_WHEEL_TARGETS
-      mqt-core-bench-bindings mqt-core-dd-bindings mqt-core-qdmi-bindings mqt-cc mqt-core-bench
-      mqt-core-mlir-bindings)
+  set(MQT_CORE_WHEEL_TARGETS mqt-core-bindings mqt-cc mqt-core-bench)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
   endif()

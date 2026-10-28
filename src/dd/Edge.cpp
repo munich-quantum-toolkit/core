@@ -18,7 +18,9 @@
 #include "dd/RealNumber.hpp"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
@@ -27,23 +29,28 @@
 #include <complex>
 #include <cstddef>
 #include <functional>
-#include <iomanip>
-#include <iostream>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_set>
 #include <utility>
+
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
 
 namespace dd {
 namespace {
 
-void checkMatrixWidth(const mEdge& edge, const size_t width) {
+Error checkMatrixWidth(const mEdge& edge, const size_t width) {
   if (!edge.isTerminal() && width <= static_cast<size_t>(edge.p->v)) {
-    throw std::out_of_range("Matrix width is smaller than the DD dimension.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Matrix width is smaller than the DD dimension.");
   }
+  return Error::success();
 }
 
 void traverseVectorImpl(
@@ -111,20 +118,24 @@ void traverseMatrixImpl(const mEdge& edge, const std::complex<fp>& amp,
 //-----------------------------------------------------------------------------
 
 template <class Node>
-auto Edge<Node>::getValueByPath(const std::size_t numQubits,
-                                const std::string& decisions) const
-    -> std::complex<fp> {
+Expected<std::complex<fp>>
+Edge<Node>::getValueByPath(const std::size_t numQubits,
+                           const std::string& decisions) const {
   if (!isTerminal() && numQubits <= static_cast<size_t>(p->v)) {
-    throw std::out_of_range("Decision path does not cover the DD dimension.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Decision path does not cover the DD dimension.");
   }
   if (decisions.size() < numQubits) {
-    throw std::out_of_range(
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
         "Decision path is shorter than the number of qubits.");
   }
   const auto path = std::string_view(decisions).substr(0, numQubits);
   if (path.find_first_not_of(IsVector<Node> ? "01" : "0123") !=
       std::string_view::npos) {
-    throw std::invalid_argument("Decision path contains an invalid digit.");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Decision path contains an invalid digit.");
   }
   auto c = static_cast<std::complex<fp>>(w);
   if constexpr (IsVector<Node>) {
@@ -141,7 +152,7 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
     // node is not at the expected level (skipped node)
     if (r.isTerminal() || r.p->v != level - 1U) {
       if (r.isZeroTerminal() || tmp == 1U || tmp == 2U) {
-        return 0.;
+        return std::complex<fp>{0.};
       }
       --level;
       continue;
@@ -155,7 +166,7 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
   return c;
 }
 
-template <class Node> auto Edge<Node>::size() const -> std::size_t {
+template <class Node> std::size_t Edge<Node>::size() const {
   if (isTerminal()) {
     return 1U;
   }
@@ -169,8 +180,7 @@ template <class Node> auto Edge<Node>::size() const -> std::size_t {
 }
 
 template <class Node>
-auto Edge<Node>::size(std::unordered_set<const Node*>& visited) const
-    -> std::size_t {
+std::size_t Edge<Node>::size(std::unordered_set<const Node*>& visited) const {
   visited.emplace(p);
   std::size_t sum = 1U;
   if (!isTerminal()) {
@@ -209,8 +219,8 @@ template <class Node> void Edge<Node>::unmark() const noexcept {
 //                      \n Methods for vector DDs \n
 //-----------------------------------------------------------------------------
 
-auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode> {
+Edge<vNode> normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
+                      MemoryManager& mm, ComplexNumbers& cn) {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero()};
 
@@ -273,12 +283,14 @@ auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
   return r;
 }
 
-auto getValueByIndex(const vEdge& edge, const size_t i) -> std::complex<fp> {
+Expected<std::complex<fp>> getValueByIndex(const vEdge& edge, const size_t i) {
   const auto numQubits =
       edge.isTerminal() ? 0U : static_cast<size_t>(edge.p->v) + 1U;
   if (numQubits < std::numeric_limits<size_t>::digits &&
       (i >> numQubits) != 0U) {
-    throw std::out_of_range("Vector index is out of range.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Vector index is out of range.");
   }
   auto current = edge;
   auto amplitude = static_cast<std::complex<fp>>(current.w);
@@ -292,12 +304,14 @@ auto getValueByIndex(const vEdge& edge, const size_t i) -> std::complex<fp> {
   return amplitude;
 }
 
-auto getVector(const vEdge& edge, const fp threshold) -> CVec {
+Expected<CVec> getVector(const vEdge& edge, const fp threshold) {
   if (edge.isTerminal()) {
-    return {static_cast<std::complex<fp>>(edge.w)};
+    return CVec{static_cast<std::complex<fp>>(edge.w)};
   }
   if (edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
-    throw std::out_of_range("Vector dimension does not fit in size_t.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Vector dimension does not fit in size_t.");
   }
 
   const size_t dim = size_t{1} << (edge.p->v + 1U);
@@ -309,66 +323,83 @@ auto getVector(const vEdge& edge, const fp threshold) -> CVec {
   return vec;
 }
 
-auto getSparseVector(const vEdge& edge, const fp threshold) -> SparseCVec {
+Expected<SparseCVec> getSparseVector(const vEdge& edge, const fp threshold) {
   if (edge.isTerminal()) {
-    return {{0, static_cast<std::complex<fp>>(edge.w)}};
+    return SparseCVec{{0, static_cast<std::complex<fp>>(edge.w)}};
   }
 
   auto vec = SparseCVec{};
-  traverseVector(
-      edge, [&vec](const size_t i, const std::complex<fp>& c) { vec[i] = c; },
-      threshold);
+  if (auto error = traverseVector(
+          edge,
+          [&vec](const size_t i, const std::complex<fp>& c) { vec[i] = c; },
+          threshold)) {
+    return error;
+  }
   return vec;
 }
 
-void traverseVector(const vEdge& edge, const AmplitudeFunc& f,
-                    const fp threshold) {
+Error traverseVector(const vEdge& edge, const AmplitudeFunc& f,
+                     const fp threshold) {
   if (!edge.isTerminal() && edge.p->v >= std::numeric_limits<size_t>::digits) {
-    throw std::out_of_range("Vector basis indices do not fit in size_t.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Vector basis indices do not fit in size_t.");
   }
   traverseVectorImpl(edge, 1., 0, f, threshold);
+  return Error::success();
 }
 
-auto printVector(const vEdge& edge) -> void {
+Error printVector(const vEdge& edge) {
   if (!edge.isTerminal() &&
       edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
-    throw std::out_of_range("Vector dimension does not fit in size_t.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Vector dimension does not fit in size_t.");
   }
-  constexpr auto precision = 3;
-  const auto oldPrecision = std::cout.precision();
-  const auto restorePrecision =
-      llvm::scope_exit([oldPrecision] { std::cout.precision(oldPrecision); });
-  std::cout << std::setprecision(precision);
+  auto& output = llvm::outs();
 
   if (edge.isTerminal()) {
-    std::cout << "0: " << static_cast<std::complex<fp>>(edge.w) << "\n";
-    return;
+    output << "0: "
+           << llvm::format("(%.3g,%.3g)", RealNumber::val(edge.w.r),
+                           RealNumber::val(edge.w.i))
+           << "\n";
+    output.flush();
+    return Error::success();
   }
   const size_t element = size_t{1} << (edge.p->v + 1U);
   for (size_t i = 0; i < element; ++i) {
-    const auto amplitude = getValueByIndex(edge, i);
+    const auto amplitude = llvm::cantFail(getValueByIndex(edge, i));
     const auto n = static_cast<size_t>(edge.p->v) + 1U;
     for (auto j = n; j > 0; --j) {
-      std::cout << ((i >> (j - 1)) & 1ULL);
+      output << ((i >> (j - 1)) & 1ULL);
     }
-    std::cout << ": " << amplitude << "\n";
+    output << ": "
+           << llvm::format("(%.3g,%.3g)", amplitude.real(), amplitude.imag())
+           << "\n";
   }
-  std::cout << std::flush;
+  output.flush();
+  return Error::success();
 }
 
-auto addToVector(const vEdge& edge, CVec& amplitudes) -> void {
+Error addToVector(const vEdge& edge, CVec& amplitudes) {
   if (edge.isTerminal()) {
     if (amplitudes.empty()) {
-      throw std::out_of_range("Destination vector is too small.");
+      return createStringError(
+          std::make_error_code(std::errc::result_out_of_range),
+          "Destination vector is too small.");
     }
     amplitudes[0] += static_cast<std::complex<fp>>(edge.w);
-    return;
+    return Error::success();
   }
   if (edge.p->v >= std::numeric_limits<size_t>::digits - 1U) {
-    throw std::out_of_range("Vector dimension does not fit in size_t.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Vector dimension does not fit in size_t.");
   }
   if (amplitudes.size() < (size_t{1} << (edge.p->v + 1U))) {
-    throw std::out_of_range("Destination vector is too small.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Destination vector is too small.");
   }
 
   traverseVectorImpl(
@@ -377,13 +408,14 @@ auto addToVector(const vEdge& edge, CVec& amplitudes) -> void {
         amplitudes[i] += c;
       },
       0.);
+  return Error::success();
 }
 
 //-----------------------------------------------------------------------------
 //                      \n Methods for matrix DDs \n
 //-----------------------------------------------------------------------------
-auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode> {
+Edge<mNode> normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
+                      MemoryManager& mm, ComplexNumbers& cn) {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{
       e[0].w.exactlyZero(),
@@ -460,12 +492,17 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
   return mEdge{.p = p, .w = maxVal};
 }
 
-auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
-                     const size_t j) -> std::complex<fp> {
-  checkMatrixWidth(edge, numQubits);
+Expected<std::complex<fp>> getValueByIndex(const mEdge& edge,
+                                           const size_t numQubits,
+                                           const size_t i, const size_t j) {
+  if (auto error = checkMatrixWidth(edge, numQubits)) {
+    return error;
+  }
   if (numQubits < std::numeric_limits<size_t>::digits &&
       ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
-    throw std::out_of_range("Matrix index is out of range.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Matrix index is out of range.");
   }
   if (edge.isTerminal()) {
     return i == j ? static_cast<std::complex<fp>>(edge.w) : 0.;
@@ -481,7 +518,7 @@ auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
         q < std::numeric_limits<size_t>::digits ? (j >> q) & 1U : 0U;
     if (current.isTerminal() || current.p->v != q) {
       if (current.isZeroTerminal() || rowBit != colBit) {
-        return 0.;
+        return std::complex<fp>{0.};
       }
     } else {
       current = current.p->e[(2 * rowBit) + colBit];
@@ -491,11 +528,15 @@ auto getValueByIndex(const mEdge& edge, const size_t numQubits, const size_t i,
   return amplitude;
 }
 
-auto getMatrix(const mEdge& edge, const size_t numQubits, const fp threshold)
-    -> CMat {
-  checkMatrixWidth(edge, numQubits);
+Expected<CMat> getMatrix(const mEdge& edge, const size_t numQubits,
+                         const fp threshold) {
+  if (auto error = checkMatrixWidth(edge, numQubits)) {
+    return error;
+  }
   if (numQubits >= std::numeric_limits<size_t>::digits) {
-    throw std::out_of_range("Matrix dimension does not fit in size_t.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Matrix dimension does not fit in size_t.");
   }
   if (numQubits == 0U) {
     return CMat{1, {static_cast<std::complex<fp>>(edge.w)}};
@@ -503,69 +544,87 @@ auto getMatrix(const mEdge& edge, const size_t numQubits, const fp threshold)
 
   const size_t dim = size_t{1} << numQubits;
   auto mat = CMat(dim, CVec(dim, 0.));
-  traverseMatrix(
-      edge, 1, 0ULL, 0ULL,
-      [&mat](const size_t i, const size_t j, const std::complex<fp>& c) {
-        mat.at(i).at(j) = c;
-      },
-      numQubits, threshold);
+  if (auto error = traverseMatrix(
+          edge, 1, 0ULL, 0ULL,
+          [&mat](const size_t i, const size_t j, const std::complex<fp>& c) {
+            mat.at(i).at(j) = c;
+          },
+          numQubits, threshold)) {
+    return error;
+  }
   return mat;
 }
 
-auto getSparseMatrix(const mEdge& edge, const size_t numQubits,
-                     const fp threshold) -> SparseCMat {
-  checkMatrixWidth(edge, numQubits);
+Expected<SparseCMat> getSparseMatrix(const mEdge& edge, const size_t numQubits,
+                                     const fp threshold) {
+  if (auto error = checkMatrixWidth(edge, numQubits)) {
+    return error;
+  }
   if (numQubits == 0U) {
-    return {{{0U, 0U}, static_cast<std::complex<fp>>(edge.w)}};
+    return SparseCMat{{{0U, 0U}, static_cast<std::complex<fp>>(edge.w)}};
   }
 
   auto mat = SparseCMat{};
-  traverseMatrix(
-      edge, 1, 0ULL, 0ULL,
-      [&mat](const size_t i, const size_t j, const std::complex<fp>& c) {
-        mat[{i, j}] = c;
-      },
-      numQubits, threshold);
+  if (auto error = traverseMatrix(
+          edge, 1, 0ULL, 0ULL,
+          [&mat](const size_t i, const size_t j, const std::complex<fp>& c) {
+            mat[{i, j}] = c;
+          },
+          numQubits, threshold)) {
+    return error;
+  }
 
   return mat;
 }
 
-auto printMatrix(const mEdge& edge, const size_t numQubits) -> void {
-  checkMatrixWidth(edge, numQubits);
-  if (numQubits >= std::numeric_limits<size_t>::digits) {
-    throw std::out_of_range("Matrix dimension does not fit in size_t.");
+Error printMatrix(const mEdge& edge, const size_t numQubits) {
+  if (auto error = checkMatrixWidth(edge, numQubits)) {
+    return error;
   }
-  constexpr auto precision = 3;
-  const auto oldPrecision = std::cout.precision();
-  const auto restorePrecision =
-      llvm::scope_exit([oldPrecision] { std::cout.precision(oldPrecision); });
-  std::cout << std::setprecision(precision);
+  if (numQubits >= std::numeric_limits<size_t>::digits) {
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Matrix dimension does not fit in size_t.");
+  }
+  auto& output = llvm::outs();
 
   if (numQubits == 0U) {
-    std::cout << static_cast<std::complex<fp>>(edge.w) << "\n";
-    return;
+    output << llvm::format("(%.3g,%.3g)", RealNumber::val(edge.w.r),
+                           RealNumber::val(edge.w.i))
+           << "\n";
+    output.flush();
+    return Error::success();
   }
   const size_t element = size_t{1} << numQubits;
   for (size_t i = 0; i < element; ++i) {
     for (size_t j = 0; j < element; ++j) {
-      const auto amplitude = getValueByIndex(edge, numQubits, i, j);
-      std::cout << amplitude << " ";
+      const auto amplitude =
+          llvm::cantFail(getValueByIndex(edge, numQubits, i, j));
+      output << llvm::format("(%.3g,%.3g)", amplitude.real(), amplitude.imag())
+             << " ";
     }
-    std::cout << "\n";
+    output << "\n";
   }
-  std::cout << std::flush;
+  output.flush();
+  return Error::success();
 }
 
-void traverseMatrix(const mEdge& edge, const std::complex<fp>& amp,
-                    const size_t i, const size_t j,
-                    // Keep one callback copy at the public traversal boundary.
-                    // NOLINTNEXTLINE(performance-unnecessary-value-param)
-                    MatrixEntryFunc f, const size_t level, const fp threshold) {
+Error traverseMatrix(const mEdge& edge, const std::complex<fp>& amp,
+                     const size_t i, const size_t j,
+                     // Keep one callback copy at the public traversal boundary.
+                     // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                     MatrixEntryFunc f, const size_t level,
+                     const fp threshold) {
   if (level > std::numeric_limits<size_t>::digits) {
-    throw std::out_of_range("Matrix basis indices do not fit in size_t.");
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Matrix basis indices do not fit in size_t.");
   }
-  checkMatrixWidth(edge, level);
+  if (auto error = checkMatrixWidth(edge, level)) {
+    return error;
+  }
   traverseMatrixImpl(edge, amp, i, j, f, level, threshold);
+  return Error::success();
 }
 
 //-----------------------------------------------------------------------------
@@ -582,8 +641,8 @@ template struct Edge<mNode>;
 //-----------------------------------------------------------------------------
 
 template <class Node>
-auto std::hash<dd::Edge<Node>>::operator()(
-    const dd::Edge<Node>& e) const noexcept -> std::size_t {
+std::size_t
+std::hash<dd::Edge<Node>>::operator()(const dd::Edge<Node>& e) const noexcept {
   const auto h1 = dd::murmur64(e.p == nullptr ? 0U : e.p->id);
   const auto h2 = std::hash<dd::Complex>{}(e.w);
   return dd::combineHash(h1, h2);
