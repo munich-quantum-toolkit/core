@@ -156,8 +156,10 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
-      : moduleOp(moduleOp), version2_(version2) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false,
+                           bool physicalQubits = true)
+      : version2_(version2), physicalQubits_(physicalQubits),
+        moduleOp(moduleOp) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -210,7 +212,31 @@ public:
       return failure();
     }
     measurementStores = findMeasurementStores(function, version2_);
+    implicitOutputs_ =
+        !outputs.empty() &&
+        llvm::all_of(outputs,
+                     [](const ProgramOutput& result) {
+                       return isa<cbit::RegisterType>(result.value.getType());
+                     }) &&
+        llvm::all_of(resourceOrder,
+                     [&](Value value) {
+                       const auto& resource = resources.at(value);
+                       return resource.kind == ResourceKind::Qubit ||
+                              (resource.kind == ResourceKind::Bit &&
+                               resource.output);
+                     }) &&
+        llvm::all_of(function.getBody().front(), [&](Operation& operation) {
+          return isa<UnitaryOpInterface, func::CallOp, qc::StaticOp,
+                     qc::AllocOp, qc::DeallocOp, cbit::AllocOp, cbit::StoreOp,
+                     memref::AllocOp, memref::LoadOp, memref::DeallocOp,
+                     arith::ConstantOp, func::ReturnOp>(operation) ||
+                 (isa<qc::MeasureOp>(operation) &&
+                  measurementStores.contains(&operation));
+        });
     if (version2_ && failed(prepareVersion2())) {
+      return failure();
+    }
+    if (virtualQubits() && failed(prepareVirtualQubits())) {
       return failure();
     }
     for (auto gate : gateFunctions_) {
@@ -252,10 +278,8 @@ public:
       sourceStream << '.' << requiredMinorVersion;
     }
     sourceStream << ";\n";
-    if (version2_ || !nativeTarget_) {
-      sourceStream << (version2_ ? "include \"qelib1.inc\";\n"
-                                 : "include \"stdgates.inc\";\n");
-    }
+    sourceStream << (version2_ ? "include \"qelib1.inc\";\n"
+                               : "include \"stdgates.inc\";\n");
     sourceStream << '\n';
     if (version2_) {
       emitOpaqueDeclarations(sourceStream);
@@ -270,6 +294,11 @@ public:
 
 private:
   bool version2_ = false;
+  bool physicalQubits_;
+  bool implicitOutputs_ = false;
+
+  [[nodiscard]] bool virtualQubits() const { return !physicalQubits_; }
+
   std::string deviceRegister_;
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
@@ -345,11 +374,15 @@ private:
         valueNames[value] = resource.name + "[0]";
       }
     }
+    return prepareVirtualQubits();
+  }
+
+  [[nodiscard]] LogicalResult prepareVirtualQubits() {
     const auto invalidDeviceIndex = function.walk([&](StaticOp qubit) {
       if (qubit.getIndex() == std::numeric_limits<int64_t>::max()) {
         std::ignore = fail(
             qubit,
-            "device qubit index exceeds the OpenQASM 2 register width limit");
+            "device qubit index exceeds the OpenQASM register width limit");
         return WalkResult::interrupt();
       }
       deviceWidth_ = std::max(deviceWidth_, qubit.getIndex() + 1);
@@ -368,11 +401,22 @@ private:
   isIncludedGate(const openqasm::frontend::GateCatalogEntry& gate) const {
     using openqasm::frontend::GateAvailability;
     return gate.availability == GateAvailability::Language ||
-           ((version2_ || !nativeTarget_) &&
-            (gate.availability == GateAvailability::StandardLibraryAndQELib1 ||
-             gate.availability == (version2_
-                                       ? GateAvailability::QELib1
-                                       : GateAvailability::StandardLibrary)));
+           gate.availability == GateAvailability::StandardLibraryAndQELib1 ||
+           gate.availability == (version2_ ? GateAvailability::QELib1
+                                           : GateAvailability::StandardLibrary);
+  }
+
+  [[nodiscard]] bool hasCompatibleNativeMeaning(
+      const CompilerTarget::OperationCapability& operation) const {
+    const auto* declared = openqasm::frontend::lookupGate(operation.name());
+    if (declared == nullptr || !isIncludedGate(*declared)) {
+      return true;
+    }
+    const auto* canonical =
+        openqasm::frontend::lookupGate(operation.canonicalName());
+    return canonical != nullptr && declared->gate == canonical->gate &&
+           declared->controlCount == canonical->controlCount &&
+           declared->inverse == canonical->inverse;
   }
 
   [[nodiscard]] LogicalResult recordOpaqueGate(StringRef name,
@@ -1188,7 +1232,13 @@ private:
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
     }
     for (const auto& result : outputs) {
-      *output << "output " << result.kind << ' ' << result.name << ";\n";
+      if (!implicitOutputs_) {
+        *output << "output ";
+      }
+      *output << result.kind << ' ' << result.name << ";\n";
+    }
+    if (virtualQubits() && deviceWidth_ != 0) {
+      *output << "qubit[" << deviceWidth_ << "] " << deviceRegister_ << ";\n";
     }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
@@ -1602,10 +1652,11 @@ private:
       return found->second;
     }
     if (auto staticOp = value.getDefiningOp<qc::StaticOp>()) {
-      return version2_ ? (Twine(deviceRegister_) + "[" +
-                          Twine(staticOp.getIndex()) + "]")
-                             .str()
-                       : (Twine('$') + Twine(staticOp.getIndex())).str();
+      return (version2_ || virtualQubits())
+                 ? (Twine(deviceRegister_) + "[" + Twine(staticOp.getIndex()) +
+                    "]")
+                       .str()
+                 : (Twine('$') + Twine(staticOp.getIndex())).str();
     }
     auto load = value.getDefiningOp<memref::LoadOp>();
     if (!load || load.getIndices().size() != 1) {
@@ -2855,6 +2906,28 @@ private:
 
     GateCall call;
     call.symbol = gateNames_.at(callee);
+    if (nativeTarget_ && callee.isExternal()) {
+      SmallVector<CompilerTarget::SiteId> sites;
+      SmallVector<std::optional<double>> parameters;
+      for (auto operand : operands) {
+        if (operand.getType().isF64()) {
+          parameters.push_back(mqt::valueToDouble(operand));
+        } else if (auto site = operand.getDefiningOp<StaticOp>()) {
+          sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
+        } else {
+          return fail(operation, "native gates require static target sites");
+        }
+      }
+      const auto selected = nativeTarget_->findOperation(
+          call.symbol, sites.size(), parameters, sites, 0,
+          [this](const auto& capability) {
+            return hasCompatibleNativeMeaning(capability);
+          });
+      if (selected.capability == nullptr) {
+        return fail(operation, "external gate is not native for the target");
+      }
+      call.symbol = selected.capability->name().str();
+    }
     for (const auto [operand, type] :
          llvm::zip_equal(operands, callee.getArgumentTypes())) {
       if (type.isF64()) {
@@ -2928,10 +3001,11 @@ private:
       parameters.push_back(mqt::valueToDouble(parameter));
     }
     const auto symbol = body.getBaseSymbol();
-    const auto compatibleSpelling = [symbol](const auto& operation) {
+    const auto compatibleSpelling = [this, symbol](const auto& operation) {
       // Standard U-family spellings differ from QC by a phase.
       return operation.name() != "U" && operation.name() != "u2" &&
              operation.name() != "u3" && operation.name() != "cu3" &&
+             hasCompatibleNativeMeaning(operation) &&
              (openqasm::frontend::isValidIdentifier(operation.name()) ||
               (symbol == "gphase" && operation.name() == "gphase"));
     };
@@ -3257,6 +3331,19 @@ private:
       return fail(operation,
                   "OpenQASM 2 requires modifiers to be lowered before export");
     }
+    if (nativeTarget_ && !version2_) {
+      if (const auto* gate = openqasm::frontend::lookupGate(call.symbol);
+          gate != nullptr && isIncludedGate(*gate)) {
+        const auto controls = call.modifiers.empty()
+                                  ? 0
+                                  : cast<CtrlOp>(operation).getNumControls();
+        if (call.parameters.size() != gate->parameterCount ||
+            call.qubits.size() - controls != gate->qubitCount()) {
+          return fail(operation,
+                      "native gate conflicts with its OpenQASM signature");
+        }
+      }
+    }
     if (version2_ && nativeTarget_ &&
         failed(recordOpaqueGate(call.symbol, call.parameters.size(),
                                 call.qubits.size(), operation))) {
@@ -3474,17 +3561,20 @@ private:
 } // namespace
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output) {
+                                     llvm::raw_ostream& output,
+                                     bool physicalQubits) {
   if (failed(verify(*moduleOp))) {
     return failure();
   }
-  return OpenQASMEmitter(*moduleOp).emit(output);
+  return OpenQASMEmitter(*moduleOp, false, physicalQubits).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                                              bool physicalQubits) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
+  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream,
+                                    physicalQubits))) {
     return failure();
   }
   return source;

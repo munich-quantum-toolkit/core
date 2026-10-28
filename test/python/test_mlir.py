@@ -441,7 +441,8 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     optimized = compile_program(direct)
     assert_type(optimized, OpenQASMProgram)
     assert isinstance(optimized, OpenQASMProgram)
-    assert "output bit[2] c;" in optimized.source
+    assert "bit[2] c;" in optimized.source
+    assert "output " not in optimized.source
     assert set(sample(optimized, shots=32, seed=1)) == {"00", "11"}
 
     imported = compile_program(direct, output=OutputFormat.QC_IMPORT)

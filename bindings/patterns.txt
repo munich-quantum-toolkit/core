@@ -202,6 +202,9 @@ mqt\.core\.mlir\.__prefix__$:
         copy: bool
         qco_pipeline: str
         options: CompilationOptions
+        program_format: mqt.core.qdmi.ProgramFormat | None
+        terminal_readout: TerminalReadout | None
+        physical_qubits: bool
 
 mqt\.core\.mlir\.compile_program$:
     \from typing import overload, Literal

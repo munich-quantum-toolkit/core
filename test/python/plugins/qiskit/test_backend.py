@@ -396,7 +396,8 @@ def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBacken
     program = serializer(qc, ddsim_backend)
 
     assert isinstance(program, str)
-    outputs = re.findall(r"output bit\[(\d+)] (\w+);", program)
+    assert "output " not in program
+    outputs = re.findall(r"bit\[(\d+)] (\w+);", program)
     assert [int(width) for width, _ in outputs] == [1, 1, 3]
     for width, name in outputs:
         assert program.index(f'{name} = "{int(width) * "0"}";') < program.index("x $0;")

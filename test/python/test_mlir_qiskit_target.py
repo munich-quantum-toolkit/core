@@ -631,11 +631,14 @@ def test_unknown_width_and_disconnected_topology() -> None:
     with pytest.raises(ValueError, match="connected"):
         CompilerTarget.from_qiskit(source)
 
-    source = Target(num_qubits=3)
-    source.add_instruction(CXGate(), {(0, 1): None})
-    source.add_instruction(Gate("custom_bridge", 2, []), {(1, 2): None})
-    with pytest.warns(UserWarning, match="custom_bridge"), pytest.raises(ValueError, match="connected"):
-        CompilerTarget.from_qiskit(source)
+    for placements in ({(1, 2): None}, None):
+        source = Target(num_qubits=3)
+        source.add_instruction(CXGate(), {(0, 1): None})
+        source.add_instruction(Gate("custom_bridge", 2, []), placements)
+        with pytest.warns(UserWarning, match="custom_bridge"), pytest.raises(ValueError, match="connected"):
+            CompilerTarget.from_qiskit(source)
+        with pytest.raises(ValueError, match="connected"):
+            CompilerTarget.from_qiskit(source, operation_names=["cx"])
 
 
 @pytest.mark.parametrize("name", ["gpi", "gpi2"])

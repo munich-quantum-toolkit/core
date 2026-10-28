@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import string
@@ -34,10 +35,10 @@ from qiskit.circuit import (
     WhileLoopOp,
 )
 from qiskit.circuit.library import CU3Gate, CUGate
-from qiskit.quantum_info import SparsePauliOp
+from qiskit.quantum_info import SparsePauliOp, Statevector
 from qiskit.transpiler import Target
 
-from mqt.core.mlir import QCProgram
+from mqt.core.mlir import QCProgram, compile_program
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -140,6 +141,15 @@ class MockQDMIDevice:
         def parameters_num(self) -> int:
             """Return number of parameters for operation."""
             return self._params
+
+        @staticmethod
+        def query_custom_property(_property: object, _value_type: type[bytes]) -> bytes | None:
+            """Model an operation without custom metadata.
+
+            Returns:
+                None, as for an absent QDMI custom property.
+            """
+            return None
 
         def duration(self, sites: list[MockQDMIDevice.MockSite] | None = None) -> float | None:
             """Return custom duration if defined for the provided sites."""
@@ -395,11 +405,11 @@ def test_subclass_extra_gates_appear_in_target(alias: str) -> None:
         }
 
         def _add_operation_to_target(
-            self, target: Target, op: Device.Operation, seen_gate_names: MutableSet[str]
+            self, target: Target, op: Device.Operation, seen_gate_names: MutableSet[str], *, native: bool = False
         ) -> None:
             if alias == "filtered" and op.name() == "hop_alias":
                 return
-            super()._add_operation_to_target(target, op, seen_gate_names)
+            super()._add_operation_to_target(target, op, seen_gate_names, native=native)
 
     mock_device = MockQDMIDevice(
         name="Test Device with a device-native operation",
@@ -708,6 +718,60 @@ def test_builtin_serializer_rejects_excess_native_width(
     with pytest.raises(CircuitValidationError, match="native device has 2"):
         backend.run(circuit, shots=2)
     assert not submissions
+
+
+def test_native_parameter_alternatives(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fixed QDMI alternatives guide compilation and keep native gate aliases valid."""
+    angles = [-pi, -pi / 2, pi / 2, pi]
+    metadata = (
+        json.dumps({
+            "schema": "mqt.operation-parameters.v1",
+            "alternatives": [{"fixed": [angle]} for angle in angles],
+        }).encode()
+        + b"\0"
+    )
+    device = MockQDMIDevice(num_qubits=1, operations=["rx", "rz", "measure"])
+    monkeypatch.setattr(device.operations()[0], "query_custom_property", lambda *_: metadata)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    source = QuantumCircuit(1)
+    source.rx(0.31, 0)
+    native = compile_program(source, target=backend)
+    assert Statevector.from_instruction(native).equiv(Statevector.from_instruction(source))
+    assert "rx" not in backend.target.operation_names
+    backend.validate_circuit(native, native=True)
+    with pytest.raises(UnsupportedOperationError, match="parameters"):
+        backend.validate_circuit(source, native=True)
+    assert all(
+        instruction.operation.name == "rz" or instruction.operation.params[0] in angles for instruction in native.data
+    )
+
+
+def test_native_sparse_site_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A disabled site does not shift physical wires or shrink their address range."""
+    device = MockQDMIDevice(num_qubits=2, operations=["measure"])
+    sites = [MockQDMIDevice.MockSite(0), MockQDMIDevice.MockSite(2)]
+    monkeypatch.setattr(device, "sites", lambda: sites)
+    monkeypatch.setattr(device.operations()[0], "sites", lambda: sites)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(3, 1)
+    circuit.measure(2, 0)
+    assert backend.target.num_qubits == 3
+    backend.validate_circuit(circuit, native=True)
+    circuit.measure(1, 0)
+    with pytest.raises(UnsupportedOperationError, match=r"native device qubits \(1,\)"):
+        backend.validate_circuit(circuit, native=True)
+
+
+@pytest.mark.parametrize("operation", ["x", "cx"])
+def test_sparse_devices_require_explicit_placements(monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
+    """Global Target instructions would otherwise admit disabled physical sites."""
+    device = MockQDMIDevice(num_qubits=2, operations=[operation, "measure"])
+    monkeypatch.setattr(device, "sites", lambda: [MockQDMIDevice.MockSite(0), MockQDMIDevice.MockSite(2)])
+    monkeypatch.setattr(device, "coupling_map", lambda: None)
+    monkeypatch.setattr(device.operations()[0], "sites", lambda: None)
+    monkeypatch.setattr(device.operations()[0], "site_pairs", lambda: None)
+    with pytest.raises(UnsupportedOperationError, match=r"explicit placements.*sparse"):
+        QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
 
 
 def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytest.MonkeyPatch) -> None:
