@@ -166,20 +166,24 @@ void registerBindings(nb::module_& m) {
                        const std::optional<PythonJobParameter>& custom3,
                        const std::optional<PythonJobParameter>& custom4,
                        const std::optional<PythonJobParameter>& custom5,
-                       mlir::SerializationProfile profile) {
+                       std::optional<QDMI_Program_Format> programFormat,
+                       std::optional<mlir::TerminalReadout> terminalReadout,
+                       bool physicalQubits) {
              catalyst::JobParameters parameters{
                  ownJobParameter(custom1), ownJobParameter(custom2),
                  ownJobParameter(custom3), ownJobParameter(custom4),
                  ownJobParameter(custom5),
              };
              const nb::gil_scoped_release release;
-             return catalyst::Context::create(std::move(device),
-                                              std::move(parameters), profile);
+             return catalyst::Context::create(
+                 std::move(device), std::move(parameters), programFormat,
+                 terminalReadout, physicalQubits);
            }),
            "device"_a, nb::kw_only(), "custom1"_a = nb::none(),
            "custom2"_a = nb::none(), "custom3"_a = nb::none(),
            "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-           "profile"_a = mlir::SerializationProfile::Default)
+           "program_format"_a = nb::none(), "terminal_readout"_a = nb::none(),
+           "physical_qubits"_a = true)
       .def_prop_ro("id", &catalyst::Context::id);
 
   pennylane.def(

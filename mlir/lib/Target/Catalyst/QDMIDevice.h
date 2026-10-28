@@ -50,9 +50,11 @@ using JobParameters = std::array<std::optional<JobParameter>, 5>;
 /// Own one provider session and its retained submission configuration.
 class Context {
 public:
-  static std::shared_ptr<Context> create(
-      qdmi::Device device, JobParameters parameters = {},
-      mlir::SerializationProfile profile = mlir::SerializationProfile::Default);
+  static std::shared_ptr<Context>
+  create(qdmi::Device device, JobParameters parameters = {},
+         std::optional<QDMI_Program_Format> programFormat = std::nullopt,
+         std::optional<mlir::TerminalReadout> terminalReadout = std::nullopt,
+         bool physicalQubits = true);
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;
   ~Context();
@@ -61,11 +63,14 @@ public:
 
 private:
   explicit Context(qdmi::Device device, JobParameters parameters,
-                   mlir::SerializationProfile profile);
+                   std::optional<QDMI_Program_Format> programFormat,
+                   std::optional<mlir::TerminalReadout> terminalReadout,
+                   bool physicalQubits);
   qdmi::Device device_;
   JobParameters parameters_;
   mlir::TargetEnvironment environment_;
-  mlir::SerializationProfile profile_;
+  std::optional<mlir::TerminalReadout> terminalReadout_;
+  bool physicalQubits_;
   size_t qubits_;
   uint64_t id_ = 0;
   friend class QDMIDevice;

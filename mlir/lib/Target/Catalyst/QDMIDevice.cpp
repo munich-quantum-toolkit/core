@@ -235,19 +235,23 @@ static uint64_t parseContext(const char* kwargs) {
 }
 
 Context::Context(qdmi::Device device, JobParameters parameters,
-                 mlir::SerializationProfile profile)
+                 std::optional<QDMI_Program_Format> programFormat,
+                 std::optional<mlir::TerminalReadout> terminalReadout,
+                 bool physicalQubits)
     : device_(std::move(device)), parameters_(std::move(parameters)),
-      environment_(unwrap(mlir::targetEnvironmentFromDevice(
-          device_, profile == mlir::SerializationProfile::Default
-                       ? std::nullopt
-                       : std::make_optional(QDMI_PROGRAM_FORMAT_QASM3)))),
-      profile_(profile), qubits_(unwrap(device_.getQubitsNum())) {}
+      environment_(
+          unwrap(mlir::targetEnvironmentFromDevice(device_, programFormat))),
+      terminalReadout_(terminalReadout), physicalQubits_(physicalQubits),
+      qubits_(unwrap(device_.getQubitsNum())) {}
 
-std::shared_ptr<Context> Context::create(qdmi::Device device,
-                                         JobParameters parameters,
-                                         mlir::SerializationProfile profile) {
+std::shared_ptr<Context>
+Context::create(qdmi::Device device, JobParameters parameters,
+                std::optional<QDMI_Program_Format> programFormat,
+                std::optional<mlir::TerminalReadout> terminalReadout,
+                bool physicalQubits) {
   auto context = std::shared_ptr<Context>(
-      new Context(std::move(device), std::move(parameters), profile));
+      new Context(std::move(device), std::move(parameters), programFormat,
+                  terminalReadout, physicalQubits));
   auto& entries = registry();
   const std::scoped_lock lock(entries.mutex);
   require(entries.next < UINT64_MAX - 1, "QDMI context ID space exhausted.");
@@ -320,7 +324,8 @@ const QDMIDevice::Readout& QDMIDevice::read() {
   if (!result_) {
     if (!compiled_) {
       compiled_ = unwrap(mlir::CompiledProgram::compile(
-          takeProgram(), context_->environment_, {}, context_->profile_));
+          takeProgram(), context_->environment_, {}, context_->terminalReadout_,
+          context_->physicalQubits_));
     }
     const auto parameters = borrowParameters(context_->parameters_);
     auto job = unwrap(mlir::submitProgram(

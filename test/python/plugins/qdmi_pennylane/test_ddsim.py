@@ -18,7 +18,7 @@ import numpy as np
 import pennylane as qp
 import pytest
 
-from mqt.core.mlir import QCProgram, SerializationProfile, submit_program
+from mqt.core.mlir import QCProgram, TerminalReadout, submit_program
 from mqt.core.plugins.pennylane import (
     DDSIMDevice,
     PennyLaneJob,
@@ -26,6 +26,7 @@ from mqt.core.plugins.pennylane import (
     PennyLaneValidationError,
     QDMIDevice,
 )
+from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
     from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, VarianceMP
@@ -61,10 +62,16 @@ def test_plugin_registration_and_wire_order() -> None:
     assert circuit() == {"10": 20}
 
 
-def test_receiver_profile_preserves_named_wire_order() -> None:
+def test_terminal_readout_preserves_named_wire_order() -> None:
     """Explicit receiver serialization preserves an asymmetric QNode result."""
     wires = ["idle", "active", "spare"]
-    device = QDMIDevice("mqt.ddsim.default", wires=wires, profile=SerializationProfile.BRAKET_SIMULATOR)
+    device = QDMIDevice(
+        "mqt.ddsim.default",
+        wires=wires,
+        program_format=ProgramFormat.QASM3,
+        terminal_readout=TerminalReadout.ALL,
+        physical_qubits=False,
+    )
 
     @qp.qnode(device, shots=4)
     def circuit() -> SampleMP:

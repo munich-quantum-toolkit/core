@@ -15,8 +15,9 @@ from typing import cast
 import numpy as np
 import pennylane as qp
 import pytest
+from qiskit import QuantumCircuit
 
-from mqt.core.mlir import QCProgram, SerializationProfile, serialize_program
+from mqt.core.mlir import TerminalReadout, serialize_program
 from mqt.core.plugins.pennylane import (
     PennyLaneConfigurationError,
     PennyLaneExecutionError,
@@ -123,22 +124,27 @@ def test_retry_shot_copies_preserves_order_and_tracking(monkeypatch: pytest.Monk
     monkeypatch.setattr(QDMIJobHandle, "get_program_status", program_status)
     wires = ["left", "idle", "right"]
     device = QDMIDevice(
-        "mqt.ddsim.default", wires=wires, max_retries=max_retries, profile=SerializationProfile.BRAKET_SIMULATOR
+        "mqt.ddsim.default",
+        wires=wires,
+        max_retries=max_retries,
+        program_format=ProgramFormat.QASM3,
+        terminal_readout=TerminalReadout.ALL,
+        physical_qubits=False,
     )
+    native = QuantumCircuit(3, 3)
+    native.x(0)
+    native.measure([2, 0], [0, 2])
     program = serialize_program(
-        QCProgram.from_openqasm_str(
-            'OPENQASM 3; include "stdgates.inc"; bit[3] c = "000"; x $2; c[0] = measure $2; c[2] = measure $2;'
-        ),
+        native,
         target=device.qdmi_device,
         program_format=ProgramFormat.QASM3,
-        profile=SerializationProfile.BRAKET_SIMULATOR,
+        terminal_readout=TerminalReadout.ALL,
+        physical_qubits=False,
     )
     assert program.result_layout is not None
-    # Inject an equivalent prepared program with shared readout and a zero slot.
+    # Inject an equivalent prepared program with permuted readout and a zero slot.
     monkeypatch.setattr(device, "_prepare", lambda tapes: [program] * len(tapes))
-    tape = qp.tape.QuantumScript(
-        [qp.X("left"), qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4]
-    )
+    tape = qp.tape.QuantumScript([qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4])
     with qp.Tracker(device) as tracker:
         if max_retries:
             result = device.execute(tape)

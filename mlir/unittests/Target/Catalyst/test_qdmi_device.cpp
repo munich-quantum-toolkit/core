@@ -139,7 +139,7 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   EXPECT_EQ(decodeSamples(job, 3, 2), (std::vector<int8_t>{0, 0, 1, 1, 0, 0}));
   const mlir::ResultLayout layout{
       .rawWidth = 3,
-      .bits = {size_t{2}, false, size_t{0}, size_t{2}},
+      .bits = {size_t{2}, std::nullopt, size_t{0}, size_t{2}},
   };
   EXPECT_EQ(decodeSamples(job, 4, 2, 0, layout),
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0, 1, 0}));
@@ -218,42 +218,13 @@ TEST(CatalystQDMI, MatrixGatesShareCorrelatedTerminalReadouts) {
   EXPECT_EQ(runtime.Expval(identity), 1);
 }
 
-TEST(CatalystQDMI, ReceiverProfilesPreserveWireOrder) {
+TEST(CatalystQDMI, TerminalReadoutPreservesWireOrder) {
   const auto device =
       llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
-  auto& api =
-      const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
-  static thread_local decltype(QDMI_device_session_query_device_property)*
-      query;
-  static thread_local std::vector<QDMI_Site> sites;
-  query = api.device_session_query_device_property;
-  const auto allSites = llvm::cantFail(device.getSites());
-  sites.clear();
-  for (size_t i = 0; i < 3; ++i) {
-    sites.push_back(static_cast<QDMI_Site>(allSites[i]));
-  }
-  const auto restore = llvm::make_scope_exit(
-      [&] { api.device_session_query_device_property = query; });
-  // IBM declares the target's full register; bound the simulator's 65,535-site
-  // capacity.
-  api.device_session_query_device_property =
-      [](QDMI_Device_Session session, QDMI_Device_Property property,
-         size_t size, void* value, size_t* sizeRet) -> int {
-    if (property == QDMI_DEVICE_PROPERTY_QUBITSNUM) {
-      const size_t count = sites.size();
-      return copyResult(std::as_bytes(std::span(&count, 1)), size, value,
-                        sizeRet);
-    }
-    if (property == QDMI_DEVICE_PROPERTY_SITES) {
-      return copyResult(std::as_bytes(std::span(sites)), size, value, sizeRet);
-    }
-    return query(session, property, size, value, sizeRet);
-  };
-  for (const auto profile : {
-           mlir::SerializationProfile::BraketSimulator,
-           mlir::SerializationProfile::IBM,
-       }) {
-    QDMIDevice runtime(Context::create(device, {}, profile));
+  for (const auto physicalQubits : {false, true}) {
+    QDMIDevice runtime(Context::create(device, {}, QDMI_PROGRAM_FORMAT_QASM3,
+                                       mlir::TerminalReadout::All,
+                                       physicalQubits));
     const auto wires = runtime.AllocateQubits(3);
     runtime.NamedOperation("PauliX", {}, {wires[1]});
     runtime.SetDeviceShots(2);

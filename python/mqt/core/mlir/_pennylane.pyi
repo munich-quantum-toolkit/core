@@ -26,7 +26,9 @@ class Context:
         custom3: str | bool | float | bytes | None = None,
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
-        profile: mqt.core.mlir.SerializationProfile = mqt.core.mlir.SerializationProfile.DEFAULT,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        terminal_readout: mqt.core.mlir.TerminalReadout | None = None,
+        physical_qubits: bool = True,
     ) -> None: ...
     @property
     def id(self) -> int: ...

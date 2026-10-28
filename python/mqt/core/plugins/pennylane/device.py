@@ -17,7 +17,6 @@ __lazy_modules__ = {
     "mqt.core.mlir._pennylane",
     "mqt.core.plugins.pennylane.exceptions",
     "mqt.core.plugins.pennylane.job",
-    "mqt.core.qdmi",
     "mqt.core.qdmi.builtin_driver",
     "numbers",
     "operator",
@@ -39,13 +38,12 @@ from pennylane.transforms import defer_measurements
 from pennylane.transforms.core import CompilePipeline
 
 from mqt.core import mlir
-from mqt.core.mlir import QCProgram, SerializationProfile, compile_program
+from mqt.core.mlir import QCProgram, TerminalReadout, compile_program
 from mqt.core.mlir._pennylane import Context
 from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneTranslationError as TranslationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneValidationError as ValidationError
 from mqt.core.plugins.pennylane.job import PennyLaneJob
-from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
@@ -58,6 +56,7 @@ if TYPE_CHECKING:
 
     from mqt.core.mlir import CompiledProgram
     from mqt.core.qdmi import Device as QDMIDeviceHandle
+    from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
 __all__ = ["DDSIMDevice", "QDMIDevice"]
@@ -144,8 +143,9 @@ class QDMIDevice(Device):
         session_parameters: Device-session parameters for the MQT Core QDMI driver.
         job_parameters: QDMI custom job keyword arguments.
         max_retries: Maximum automatic replacements per failed entry; disabled by default.
-        profile: Explicit receiver syntax and readout requirements for compilation.
-            Nondefault profiles select OpenQASM 3.
+        program_format: Explicit QDMI execution format, or the device default.
+        terminal_readout: Optional canonical terminal measurements.
+        physical_qubits: Use physical OpenQASM site references.
     """
 
     config_filepath = str(Path(__file__).with_name("capabilities.toml"))
@@ -173,7 +173,9 @@ class QDMIDevice(Device):
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
         max_retries: int = 0,
-        profile: SerializationProfile | None = None,
+        program_format: ProgramFormat | None = None,
+        terminal_readout: TerminalReadout | None = None,
+        physical_qubits: bool = True,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
@@ -184,7 +186,9 @@ class QDMIDevice(Device):
             msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
             raise ConfigurationError(msg)
         self._max_retries = int(max_retries)
-        self._profile = SerializationProfile.DEFAULT if profile is None else profile
+        self._program_format = program_format
+        self._terminal_readout = terminal_readout
+        self._physical_qubits = physical_qubits
         self.last_job: PennyLaneJob | None = None
         session_parameters = session_parameters.copy() if session_parameters else {}
         job_parameters = job_parameters.copy() if job_parameters else {}
@@ -223,7 +227,13 @@ class QDMIDevice(Device):
 
         super().__init__(wires=resolved_wires)
         try:
-            self._context = Context(self._qdmi_device, profile=self._profile, **job_parameters)
+            self._context = Context(
+                self._qdmi_device,
+                program_format=program_format,
+                terminal_readout=terminal_readout,
+                physical_qubits=physical_qubits,
+                **job_parameters,
+            )
         except (RuntimeError, ValueError) as exc:
             raise ConfigurationError(str(exc)) from exc
         self._job_parameters = job_parameters
@@ -272,8 +282,9 @@ class QDMIDevice(Device):
             return compile_program(
                 [QCProgram.from_pennylane(tape, wires=self.wires) for tape in tapes],
                 target=self._qdmi_device,
-                profile=self._profile,
-                program_format=ProgramFormat.QASM3 if self._profile != SerializationProfile.DEFAULT else None,
+                program_format=self._program_format,
+                terminal_readout=self._terminal_readout,
+                physical_qubits=self._physical_qubits,
             )
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             raise TranslationError(str(exc)) from exc

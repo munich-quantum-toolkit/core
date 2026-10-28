@@ -114,12 +114,12 @@ order regardless of physical placement. If the provider returns only counts,
 samples are reconstructed without temporal shot order. Terminal measurements of
 a compiled circuit share one provider readout.
 
-Select receiver-specific OpenQASM syntax explicitly with
-`QDMIDevice(..., profile=SerializationProfile.BRAKET_SIMULATOR)`,
-`BRAKET_NATIVE`, or `IBM` from {py:mod}`mqt.core.mlir`. Nondefault profiles use
-OpenQASM 3. Both ordinary QNodes and Catalyst apply the compiled result layout
-before selecting PennyLane wires, including constant outputs and repeated
-readout destinations. The default profile retains the format preference above.
+Provider helpers select `program_format`, optional `terminal_readout`, and
+OpenQASM `physical_qubits` addressing. Both ordinary QNodes and Catalyst retain
+the compiler's result layout before selecting PennyLane wires. Terminal
+normalization supports measured subsets, permutations, and zero-filled holes;
+the default preserves the selected format's broader readout semantics. See
+[terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 Hardware parameter constraints come from the provider's QDMI operation metadata.
 Both execution modes use the same compiler target, including fixed angles and
