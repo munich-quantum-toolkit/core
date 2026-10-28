@@ -322,9 +322,14 @@ private:
       std::optional<PhaseContribution> phase;
       if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
         auto angle = op.getOperand(0);
-        phase.emplace(
-            isa<qc::GPhaseOp>(op) ? PhaseDialect::QC : PhaseDialect::QCO,
-            op.getLoc(), PhaseExpression(angle, getConstantAngle(angle)));
+        const auto constant = getConstantAngle(angle);
+        // Leave invalid expressions for dead-code removal or diagnostics.
+        if (constant && !isValidGlobalPhaseAngle(*constant)) {
+          continue;
+        }
+        phase.emplace(isa<qc::GPhaseOp>(op) ? PhaseDialect::QC
+                                            : PhaseDialect::QCO,
+                      op.getLoc(), PhaseExpression(angle, constant));
         directPhases.push_back(&op);
       } else if (op.getNumRegions() != 0) {
         phase = normalizeOperation(&op, extractionBoundary);

@@ -1166,6 +1166,9 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  PassManager modifierLowering(context.get());
+  modifierLowering.addPass(mlir::mqt::createLowerQuantumModifiers());
+  ASSERT_TRUE(succeeded(modifierLowering.run(*program)));
   EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(program.get())));
   printer.record(program.get(), "Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());

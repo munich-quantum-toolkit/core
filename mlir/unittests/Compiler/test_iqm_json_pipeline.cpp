@@ -16,7 +16,6 @@
 #include "gtest/gtest.h"
 
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -227,4 +226,33 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
   for (size_t index = 0; index + 3 < instructions.size(); ++index) {
     EXPECT_NE(instructions[index].getAsObject()->getString("name"), "measure");
   }
+}
+
+TEST(IQMJSONPipelineTest, NativeExportOmitsBarriers) {
+  auto qc = QCProgram::fromOpenQASMString(R"qasm(
+    OPENQASM 3.0;
+    bit[2] result;
+    r(0.25, 0.5) $5;
+    barrier $5, $17;
+    r(0.75, 1.0) $17;
+    result[0] = measure $5;
+    result[1] = measure $17;
+  )qasm");
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  const auto environment = makeIQMEnvironment();
+  auto output = std::move(*qc).intoIQMJSON(environment.target());
+  ASSERT_TRUE(succeeded(output));
+  const auto circuit = llvm::cantFail(llvm::json::parse(output->source()));
+  const auto& instructions = *circuit.getAsObject()->getArray("instructions");
+  ASSERT_EQ(instructions.size(), 4U);
+  EXPECT_EQ(instructions[0].getAsObject()->getString("name"), "prx");
+  EXPECT_EQ(instructions[1].getAsObject()->getString("name"), "prx");
+  EXPECT_EQ(instructions[2].getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions[3].getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(
+      instructions[0].getAsObject()->getObject("args")->getNumber("angle"),
+      0.25);
+  EXPECT_EQ(
+      instructions[1].getAsObject()->getObject("args")->getNumber("angle"),
+      0.75);
 }

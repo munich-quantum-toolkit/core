@@ -295,7 +295,10 @@ public:
         std::map<std::string, ParameterValue>(values.begin(), values.end()));
   }
 
-  /// Run the standard QC cleanup passes in place.
+  /// Fold classical values and remove structural scaffolding in place.
+  ///
+  /// Preserve supplied unitary gates. Use explicit quantum optimization passes
+  /// to cancel, fuse, or specialize gates.
   [[nodiscard]] LogicalResult cleanup();
 
   /// Normalize scoped global phases in place.
@@ -324,7 +327,8 @@ public:
   /// unsupported. The generated QIR returns a zero execution status.
   /// Base conversion requires straight-line quantum operations;
   /// Adaptive conversion retains loops. Calls with quantum-register arguments
-  /// must be inlined. Use runDefaultPipeline for compilation before export.
+  /// must be inlined.
+  /// Use runDefaultPipeline for compilation before export.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
 
   /// Consume this program and serialize PRX/CZ gates and readout as IQM JSON.
@@ -419,7 +423,10 @@ public:
         std::map<std::string, ParameterValue>(values.begin(), values.end()));
   }
 
-  /// Run the standard QCO cleanup passes in place.
+  /// Fold classical values and remove structural scaffolding in place.
+  ///
+  /// Preserve supplied unitary gates. Use explicit quantum optimization passes
+  /// to cancel, fuse, or specialize gates.
   [[nodiscard]] LogicalResult cleanup();
 
   /// Normalize scoped global phases in place.

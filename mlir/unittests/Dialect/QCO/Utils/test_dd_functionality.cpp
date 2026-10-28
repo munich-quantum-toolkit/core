@@ -17,6 +17,7 @@
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -3420,6 +3421,7 @@ TEST_F(QCODDFunctionalityTest, FixedGatePowersPreserveFullMatrix) {
     ASSERT_TRUE(original);
     ASSERT_TRUE(rewritten);
     PassManager manager(context.get());
+    manager.addPass(mlir::mqt::createLowerQuantumModifiers());
     manager.addPass(createCanonicalizerPass());
     ASSERT_TRUE(succeeded(manager.run(*rewritten)));
     auto before = mainFunc(*original);

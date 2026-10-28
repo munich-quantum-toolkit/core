@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import struct
 from pathlib import Path
 from typing import TYPE_CHECKING, get_type_hints
 
@@ -602,6 +603,7 @@ def test_qir_serializer_profile_controls_feedback(
     circuit.measure(0, 0)
     with circuit.if_test((circuit.clbits[0], True)):
         circuit.x(0)
+        circuit.barrier(0)
     circuit.measure(0, 1)
     if fmt == ProgramFormat.QIR_BASE_STRING:
         with pytest.raises(TranslationError, match="QIR_BASE_STRING"):
@@ -615,6 +617,7 @@ def test_iqm_serializer_uses_device_site_names() -> None:
     backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
     circuit = QuantumCircuit(1, 1, global_phase=0.7)
     circuit.r(0.731, -0.419, 0)
+    circuit.barrier(0)
     circuit.measure(0, 0)
     serializer = program_serializer(ProgramFormat.IQM_JSON)
     assert serializer is not None
@@ -626,3 +629,49 @@ def test_iqm_serializer_uses_device_site_names() -> None:
         {"name": "prx", "locus": [site], "args": {"angle": 0.731, "phase": -0.419}},
         {"name": "measure", "locus": [site], "args": {"key": "c_1_0_0"}},
     ]
+
+
+@pytest.mark.parametrize("fmt", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_ADAPTIVE_STRING])
+def test_native_submission_preserves_folded_unitary_sequence(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """Inspect the payload actually handed to the local device, not just its ideal result."""
+    serializer = program_serializer(fmt)
+    assert serializer is not None
+    payloads: list[str] = []
+
+    def capture(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+        payload = serializer(circuit, backend)
+        assert isinstance(payload, str)
+        payloads.append(payload)
+        return payload
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.program_serializer", lambda _: capture)
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.h(0)
+    circuit.rx(0.0, 0)
+    circuit.rx(1e-16, 0)
+    circuit.barrier(0, 1)
+    circuit.x(1)
+    circuit.measure([1, 0], [0, 1])
+    assert ddsim_backend.run(circuit, shots=16).result().get_counts() == {"01": 16}
+    assert len(payloads) == 1
+    pattern = r"^\s*(h|rx|x)\b" if fmt == ProgramFormat.QASM3 else r"call void @__quantum__qis__(h|rx|x)__body"
+    assert re.findall(pattern, payloads[0], re.MULTILINE) == ["h", "h", "rx", "rx", "x"]
+    if fmt == ProgramFormat.QASM3:
+        rotations = re.findall(r"rx\(([^)]+)\) \$0;", payloads[0])
+        assert [float(angle) for angle in rotations] == [0.0, 1e-16]
+        assert "x $1;" in payloads[0]
+    else:
+        rotations = re.findall(r"@__quantum__qis__rx__body\(double ([^,]+), ptr null\)", payloads[0])
+        assert len(rotations) == 2
+        angles = [
+            struct.unpack(">d", bytes.fromhex(token.removeprefix("f").removeprefix("0x")))[0]
+            if "0x" in token
+            else float(token)
+            for token in rotations
+        ]
+        assert angles == [0.0, 1e-16]
+        assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]

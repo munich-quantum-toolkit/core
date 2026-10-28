@@ -841,7 +841,11 @@ class QCProgram(Program):
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard QC cleanup pipeline in place."""
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates.
+        """
 
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
@@ -1006,7 +1010,11 @@ class QCOProgram(Program):
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard QCO cleanup pipeline in place."""
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates.
+        """
 
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""

@@ -1873,8 +1873,12 @@ Args:
         importing definitions. The caller validates device support and placements.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
-           "Run the standard QC cleanup pipeline in place.")
+      .def(
+          "cleanup", &FallibleMemberAdapter<&mlir::QCProgram::cleanup>::call,
+          R"pb(Fold classical values and remove structural scaffolding in place.
+
+Preserve supplied unitary gates. Use explicit quantum optimization passes to
+cancel, fuse, or specialize gates.)pb")
       .def(
           "normalize_global_phases",
           &FallibleMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
@@ -2006,8 +2010,12 @@ operations.)pb");
                   "path"_a, "Parse QCO MLIR from a file.")
       .def("copy", &copyProgram<mlir::QCOProgram>,
            "Return an independent copy of this program.")
-      .def("cleanup", &FallibleMemberAdapter<&mlir::QCOProgram::cleanup>::call,
-           "Run the standard QCO cleanup pipeline in place.")
+      .def(
+          "cleanup", &FallibleMemberAdapter<&mlir::QCOProgram::cleanup>::call,
+          R"pb(Fold classical values and remove structural scaffolding in place.
+
+Preserve supplied unitary gates. Use explicit quantum optimization passes to
+cancel, fuse, or specialize gates.)pb")
       .def("normalize_global_phases",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::normalizeGlobalPhases>::call,

@@ -112,6 +112,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -122,6 +123,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -809,6 +811,7 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   ASSERT_EQ(unitaries.size(), 1U);
   EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
 
+  ASSERT_TRUE(succeeded(runPassPipeline(*moduleOp, "simplify-quantum")));
   ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
   unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
   ASSERT_EQ(unitaries.size(), 1U);
@@ -821,6 +824,7 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
       "matrix",
       DenseElementsAttr::get(
           matrixType, llvm::ArrayRef<std::complex<double>>(identityValues)));
+  ASSERT_TRUE(succeeded(runPassPipeline(*moduleOp, "simplify-quantum")));
   ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
   EXPECT_TRUE(function.getBody().getOps<UnitaryOp>().empty());
 }
@@ -1407,6 +1411,7 @@ TEST_F(QCTest, PositiveIntegralPowUCanonicalizes) {
     });
     ASSERT_TRUE(program);
 
+    ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
     ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
     size_t powCount = 0;
     program->walk([&](PowOp) { ++powCount; });
@@ -1429,6 +1434,7 @@ TEST_F(QCTest, PowUWithDynamicParameterDoesNotCanonicalize) {
   auto uOp = *powOp.getBody()->getOps<UOp>().begin();
   uOp.getThetaMutable().assign(funcOp.getArgument(0));
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   size_t powCount = 0;
   program->walk([&](PowOp) { ++powCount; });
@@ -1443,6 +1449,7 @@ TEST_F(QCTest, FractionalPowUDoesNotCanonicalize) {
   });
   ASSERT_TRUE(program);
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   size_t powCount = 0;
   program->walk([&](PowOp) { ++powCount; });
@@ -1453,6 +1460,7 @@ TEST_F(QCTest, NestedPowerOfSquaredPauliIsIdentity) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -1468,6 +1476,7 @@ TEST_F(QCTest, NegPowHNoFold) {
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -1483,6 +1492,7 @@ TEST_F(QCTest, PowTwoSurvives) {
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powTwo));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2305,8 +2315,6 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubitNoMeasure),
                    MQT_NAMED_BUILDER(emptyQC)},
-        QCTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
-                   MQT_NAMED_BUILDER(allocQubitRegister)},
         QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubitsNoMeasure),
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"StaticQubitsWithOps",

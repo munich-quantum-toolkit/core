@@ -8,6 +8,7 @@
 
 add_executable(
   mqt-core-mlir-unittests-compiler
+  test_cleanup.cpp
   test_compiler_pipeline.cpp
   test_compiler_qdmi_adapter.cpp
   test_compiler_target.cpp

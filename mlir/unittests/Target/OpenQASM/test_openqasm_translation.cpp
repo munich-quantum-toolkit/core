@@ -968,6 +968,7 @@ TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(translated.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(translated.get()).succeeded());
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
@@ -983,6 +984,7 @@ TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -994,7 +996,9 @@ TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
 
   ASSERT_TRUE(succeeded(convertQCToQCO(translated.get())));
   ASSERT_TRUE(succeeded(convertQCToQCO(reference.get())));
+  ASSERT_TRUE(succeeded(runPassPipeline(translated.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCOCleanupPipeline(translated.get()).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(translated.get(), "Lowered Translated QCO IR" + name);
   printer.record(reference.get(), "Lowered Reference QCO IR" + name);

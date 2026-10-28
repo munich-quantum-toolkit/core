@@ -19,6 +19,7 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
@@ -159,6 +160,7 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   if (failed(runWithPassManager(
           moduleOp,
           [&](OpPassManager& pm) {
+            pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
               pm.addPass(createQCToQIRAdaptive());

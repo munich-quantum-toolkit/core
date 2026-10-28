@@ -1395,9 +1395,9 @@ protected:
         .add<DecomposeControlledGatePattern, DecomposeRCCXPattern,
              UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
             &getContext(), minQubits, nativeTarget);
-    CtrlOp::getCanonicalizationPatterns(patterns, &getContext());
-    InvOp::getCanonicalizationPatterns(patterns, &getContext());
-    PowOp::getCanonicalizationPatterns(patterns, &getContext());
+    CtrlOp::getOptimizationPatterns(patterns, &getContext());
+    InvOp::getLoweringPatterns(patterns, &getContext());
+    PowOp::getLoweringPatterns(patterns, &getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();

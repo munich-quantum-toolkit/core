@@ -11,6 +11,38 @@
 
 include "mlir/Pass/PassBase.td"
 
+def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
+                           "mlir::qco::QCODialect"];
+  let summary = "Lower quantum modifiers to supported gate forms";
+  let description = [{
+    Lowers nested controls, inverses and supported powers, preserving controlled
+    relative phase and folding generated arithmetic. Fixed single-qubit QCO
+    gates support runtime powers; other powers require constant parameters.
+    Unsupported powers remain for the consuming conversion to diagnose.
+
+    Run after inlining and modifier unrolling to prepare gates for conversion.
+    Adjacent-gate optimization and CFG cleanup are separate passes.
+  }];
+}
+
+def SimplifyQuantum : Pass<"simplify-quantum"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
+                           "mlir::qco::QCODialect"];
+  let summary = "Simplify quantum gates and modifiers";
+  let description = [{
+    Eliminates identity gates, cancels inverse pairs, combines rotations and
+    specializes gates and modifiers in QC or QCO programs. Generated arithmetic
+    is folded. Rotation elimination uses an absolute parameter tolerance of
+    1e-15, not a circuit error bound.
+
+    Use this pass when the gate sequence may change. Use canonicalization for
+    classical and structural cleanup. CFG simplification is separate.
+  }];
+}
+
 def PromoteClassicalMemory
     : Pass<"promote-classical-memory", "mlir::ModuleOp"> {
   let summary = "Promote local classical memory to SSA values";

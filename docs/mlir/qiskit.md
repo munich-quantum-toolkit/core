@@ -268,7 +268,7 @@ export. Target compilation synthesizes supported one- and two-qubit matrices to
 the target gate set. Dense unitary operations support at most eight qubits.
 Qiskit import preserves inverse, numeric power, and closed-control modifiers on
 dense-unitary operations. Export preserves inverse and closed-control modifiers.
-Other powers require canonicalization or synthesis.
+Other powers require explicit modifier lowering or synthesis.
 
 ### Transpiler layouts
 

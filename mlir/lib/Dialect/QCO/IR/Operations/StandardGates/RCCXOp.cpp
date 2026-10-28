@@ -20,8 +20,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void RCCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* /*context*/) {
+void RCCXOp::getOptimizationPatterns(RewritePatternSet& results,
+                                     MLIRContext* /*context*/) {
   results.add(&removeInversePairThreeTargetZeroParameter<RCCXOp, RCCXOp>);
 }
 
