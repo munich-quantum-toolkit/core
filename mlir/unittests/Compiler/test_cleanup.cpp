@@ -11,20 +11,26 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -184,6 +190,122 @@ TEST(Cleanup, FoldsArraysAndCastsWhileRetainingRuntimeValues) {
   EXPECT_TRUE(returned.getOperand(1).getDefiningOp<mlir::arith::AddFOp>());
   EXPECT_EQ(qc->str().find("tensor.extract"), std::string::npos);
   EXPECT_EQ(qc->str().find("math.sin"), std::string::npos);
+}
+
+TEST(Cleanup, PreservesDeferredPhaseDiagnostics) {
+  for (const auto* expression :
+       {"arith.divf %one, %zero", "arith.mulf %large, %large"}) {
+    for (bool reachable : {false, true}) {
+      SCOPED_TRACE(expression);
+      SCOPED_TRACE(reachable);
+      const auto source = std::string(R"(
+        module {
+          func.func @test(%c: !qc.qubit, %q: !qc.qubit) {
+            %one = arith.constant 1.0 : f64
+            %zero = arith.constant 0.0 : f64
+            %large = arith.constant 9000.0 : f64
+            %condition = arith.constant )") +
+                          (reachable ? "true" : "false") + R"(
+            scf.if %condition {
+              qc.ctrl(%c) targets(%t = %q) {
+                %invalid = )" +
+                          expression + R"( : f64
+                qc.gphase(%invalid)
+                qc.yield
+              } : {!qc.qubit}, {!qc.qubit}
+            }
+            return
+          }
+        }
+      )";
+      auto program = mlir::QCProgram::fromMLIRString(source);
+      ASSERT_TRUE(static_cast<bool>(program))
+          << llvm::toString(program.takeError());
+      EXPECT_EQ(mlir::succeeded(program->cleanup()), !reachable);
+      if (!reachable) {
+        EXPECT_EQ(program->str().find("qc.gphase"), std::string::npos);
+        EXPECT_EQ(program->str().find("qc.p("), std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(Cleanup, CompactsSparseRegisters) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"(OPENQASM 3;
+qubit[100] q;
+output bit[2] result;
+result[0] = measure q[0];
+result[1] = measure q[99];
+)");
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  auto qco = qc->copy().intoQCO();
+  ASSERT_TRUE(mlir::succeeded(qco));
+  ASSERT_TRUE(mlir::succeeded(qc->cleanup()));
+  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
+  mlir::memref::AllocOp qcAllocation;
+  qc->module().walk([&](mlir::memref::AllocOp op) { qcAllocation = op; });
+  ASSERT_TRUE(qcAllocation);
+  EXPECT_EQ(qcAllocation.getType().getDimSize(0), 2);
+  mlir::qtensor::AllocOp qcoAllocation;
+  qco->module().walk([&](mlir::qtensor::AllocOp op) { qcoAllocation = op; });
+  ASSERT_TRUE(qcoAllocation);
+  EXPECT_EQ(
+      mlir::cast<mlir::RankedTensorType>(qcoAllocation.getType()).getDimSize(0),
+      2);
+}
+
+TEST(Cleanup, FoldsCommonExpressionsAndPreservesSymbolicPhase) {
+  auto program = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @main(%theta: f64 {mqt.input_name = "theta"}) -> i1
+          attributes {mqt.entry_point} {
+        %a = math.sin %theta : f64
+        %b = math.sin %theta : f64
+        %ai = arith.bitcast %a : f64 to i64
+        %bi = arith.bitcast %b : f64 to i64
+        %same = arith.cmpi eq, %ai, %bi : i64
+        scf.if %same {
+          qco.gphase(%theta)
+        } else {
+          %other = arith.constant 0.7 : f64
+          qco.gphase(%other)
+        }
+        qco.gphase(%theta)
+        return %same : i1
+      }
+    }
+  )");
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
+  ASSERT_TRUE(mlir::succeeded(program->cleanup()));
+  auto function = program->module().lookupSymbol<mlir::func::FuncOp>("main");
+  auto returned =
+      mlir::cast<mlir::func::ReturnOp>(function.front().getTerminator());
+  llvm::APInt result;
+  ASSERT_TRUE(
+      mlir::matchPattern(returned.getOperand(0), mlir::m_ConstantInt(&result)));
+  EXPECT_TRUE(result.isOne());
+  EXPECT_EQ(program->str().find("scf.if"), std::string::npos);
+  ASSERT_TRUE(mlir::succeeded(program->normalizeGlobalPhases()));
+  unsigned phases = 0;
+  program->module().walk([&](mlir::qco::GPhaseOp) { ++phases; });
+  EXPECT_EQ(phases, 1U);
+
+  for (double theta : {0.37, 6000.0, -6000.0}) {
+    SCOPED_TRACE(theta);
+    auto bound = program->copy();
+    ASSERT_TRUE(mlir::succeeded(bound.bindParameters({{"theta", theta}})));
+    ASSERT_TRUE(mlir::succeeded(bound.normalizeGlobalPhases()));
+    mlir::qco::GPhaseOp phase;
+    bound.module().walk([&](mlir::qco::GPhaseOp op) { phase = op; });
+    ASSERT_TRUE(phase);
+    auto angle = phase->getOperand(0).getDefiningOp<mlir::arith::ConstantOp>();
+    ASSERT_TRUE(angle);
+    const double actual =
+        mlir::cast<mlir::FloatAttr>(angle.getValue()).getValueAsDouble();
+    EXPECT_NEAR(std::cos(actual), std::cos(2 * theta), 1e-10);
+    EXPECT_NEAR(std::sin(actual), std::sin(2 * theta), 1e-10);
+  }
 }
 
 TEST(Cleanup, QuantumPassesLowerModifiersInsideRuntimeBranches) {

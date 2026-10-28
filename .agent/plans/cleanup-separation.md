@@ -1,5 +1,7 @@
 # Separate cleanup from quantum optimization
 
+Status: implemented and locally validated; hosted validation is separate.
+
 One end-to-end PR separates structural cleanup, modifier lowering and optional
 quantum optimization across import, binding, synthesis and serialization.
 
@@ -29,7 +31,15 @@ export preparation: controlled relative phases remain conditional operations.
   including partial binding. Formal arguments stay symbolic until binding or
   inlining exposes constants. Runtime expressions remain unresolved.
 - Classical evaluation and static branch selection are allowed during cleanup.
-  LLVM/MLIR folding and canonicalization own this work.
+  LLVM/MLIR folding and canonicalization own this work. Phase normalization runs
+  before the cleanup canonicalizer, whose interleaved CSE folds generated
+  arithmetic and expressions exposed by deduplication. Cleanup preserves phase
+  semantics; explicit normalization provides phase aggregation. Known-invalid
+  phase expressions remain in their original region for dead-code removal or
+  diagnostics.
+- Register compaction matches supported static registers with already-folded
+  indices. Standalone callers canonicalize size and index expressions first.
+  Candidate worklists handle sibling rewrites without sweeping unrelated IR.
 - Modifier lowering supports fixed single-qubit QCO gates with runtime powers
   and guarded constant powers of other gates. Unsupported powers remain for
   conversion diagnostics. Numerical and branch-cut guards define supported
@@ -113,19 +123,44 @@ The public functionality call combines DD construction and matrix extraction.
 Reachable IR size and peak RSS do not establish allocation volume or occupied DD
 storage. No memory-saving claim is made.
 
-The baseline for this feedback round passes 4,159 native tests and 1,546
-selected Python integration tests. Isolated expensive rewrite checks pass 1,288
-selected tests. A dependency-only SCF reproducer exposes an upstream
-rewrite-notification defect; no Core workaround or installed dependency patch is
-included. Large-loop expensive checks exceed the bounded test budget. These
-checks are not a full expensive-check LLVM build.
+Native validation passes 4,164 tests; Python compiler and submission integration
+passes 1,246 tests. Repository lint and whole-file C++ lint pass. Compaction
+tests check sparse width, repeated-wire mapping, source metadata, nested
+deallocation and the folded-index precondition. A public cleanup regression
+checks QC and QCO compaction without assuming shared SSA constants. CSE-exposed
+control flow and symbolic phase are checked together, including phase-sensitive
+binding results. Reachable and unreachable invalid phase expressions check
+diagnostics under control modifiers.
 
-Executable prototypes compare existing indexed pattern dispatch,
-dialect-specific collection and centralized matching before choosing a
-production change. Quantum linearity, classical dependencies, side effects,
-region boundaries and rewrite notifications are required regardless of dispatch
-strategy. Measurements and reproducers live outside the repository in
-`/home/nvidia/.codex/experiments/cleanup-separation-550d/`.
+The shrinking passes use the upstream operation worklist with module scope;
+patterns may replace allocations outside a nested deallocation's region. Only
+candidate and newly created operations enter the worklist. Phase normalization
+retains its local folding utility; cleanup's canonicalizer owns general folding
+and CSE. A separate trailing canonicalizer was rejected because it increased
+pattern-matching work and compilation time.
+
+Representative target workloads cover Core's GHZ, QFT, QAOA, Bernstein–Vazirani
+and Grover generators through native IQM and IBM output. Against pre-change
+commit `76590d7b`, 51 workload/target pairs used the same Clang 23 ThinLTO
+toolchain and dependency archives, CPU 9 affinity, three rounds and five
+repetitions per round (first discarded). The harness asserts each loaded
+extension path and alternates variant order per workload. All final payload
+hashes match across variants and repetitions. Independent NumPy simulation of
+eight small payloads matches analytic benchmark probabilities within `1.2e-15`.
+
+Paired geometric-mean time ratios are `0.979` for QC cleanup, `0.979` for QCO
+cleanup, `0.994` through target QC and `0.982` through final output. Aggregate
+end-to-end round ratios are `0.997/1.037/0.949`; the large QFT/Emerald case is
+variable. A focused follow-up of six alternating paired rounds on QFT48/Emerald
+(three repetitions, first discarded) retained identical payloads and measured a
+median paired ratio of `0.975`. These shared-host results support removing
+repeated cleanup work, not a uniform or isolated speedup claim. Benchmark
+harnesses and raw measurements remain outside the repository.
+
+Earlier isolated expensive rewrite checks passed 1,288 selected quantum tests;
+these do not validate the changed compaction driver under a full expensive-check
+LLVM build. A dependency-only SCF reproducer exposes an upstream
+rewrite-notification defect. No Core workaround or dependency patch is included.
 
 Acceptance requires the native suite, Python integration tests, generated stubs,
 repository lint and whole-file C++ lint on the final change. Windows, hosted CI

@@ -2315,8 +2315,6 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubitNoMeasure),
                    MQT_NAMED_BUILDER(emptyQC)},
-        QCTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
-                   MQT_NAMED_BUILDER(allocQubitRegister)},
         QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubitsNoMeasure),
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"StaticQubitsWithOps",
