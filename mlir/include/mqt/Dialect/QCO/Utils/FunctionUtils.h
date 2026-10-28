@@ -50,5 +50,6 @@ namespace mlir::qco {
 ///
 /// Slot identity and disjoint extractions are program preconditions; known
 /// violations and positional region correspondence are checked separately.
+/// Returns false at nesting depth 64 or greater to bound recursive stack use.
 [[nodiscard]] bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0);
 } // namespace mlir::qco

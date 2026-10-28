@@ -17,6 +17,8 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     Control flow must use structured SCF operations. Operations with block
     successors, including `cf.br`, `cf.cond_br`, and `cf.switch`, are diagnosed
     before conversion.
+    Quantum allocations must be in a function's entry block. Nested regions
+    may use outer allocations through the supported SCF operations.
     Private helpers may borrow fixed-size rank-one qubit memrefs with identity
     layout and default memory space. They become qubit tensors. Updated scalar
     qubits and complete tensors are appended to ordinary results in argument

@@ -63,7 +63,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           python-version: "3.15"
@@ -71,7 +71,7 @@ jobs:
       - name: Check the Slurm test runner
         run: >-
           uv run --no-project --with 'pytest>=9.0.1' --python 3.15
-          pytest -o addopts= -q test/python/test_slurm_integration.py
+          pytest -o addopts= -q -m slurm test/python/test_slurm_integration.py
 
       - name: Test Slurm admission and QDMI execution
         timeout-minutes: 40

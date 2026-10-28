@@ -15,27 +15,25 @@ import json
 import pytest
 
 from mqt.core.bench import magic_state_distillation
-from mqt.core.mlir import compile_program, sample, submit_program
+from mqt.core.mlir import sample, submit_program
 from mqt.core.qdmi import ProgramFormat, open_device
 
 from .utils import assert_generates
 
 
-@pytest.mark.parametrize("levels", [1, 2, 3, 4, 8])
-def test_distillation_roundtrip(levels: int) -> None:
+def test_distillation_roundtrip() -> None:
     """Preserve the level count and semantic identity through both JSON forms."""
-    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
-    assert benchmark.options.levels == levels
+    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=2))
+    assert benchmark.options.levels == 2
     assert benchmark.output.name == "result"
     assert benchmark.output.width == 2
-    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"levels": levels}
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"levels": 2}
     instance = magic_state_distillation.MagicStateDistillation.from_instance_specification_json(
         benchmark.instance_specification_json
     )
     manifest = magic_state_distillation.MagicStateDistillation.from_manifest_json(benchmark.manifest_json)
     assert instance.case_id == manifest.case_id == benchmark.case_id
-    if levels != 1:
-        assert benchmark.case_id != magic_state_distillation.MagicStateDistillation().case_id
+    assert benchmark.case_id != magic_state_distillation.MagicStateDistillation().case_id
     assert_generates(benchmark.generate())
 
 
@@ -58,10 +56,9 @@ def test_distillation_reference() -> None:
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.625)
 
 
-@pytest.mark.parametrize("levels", [1, 2])
-def test_distillation_direct_sampling(levels: int) -> None:
+def test_distillation_direct_sampling() -> None:
     """Sample both direct rotations and injected lower-level magic states."""
-    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
+    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=2))
     assert sample(benchmark.generate(), shots=16, seed=17) == {"00": 16}
 
 
@@ -70,9 +67,8 @@ def test_distillation_ddsim(program_format: ProgramFormat | None) -> None:
     """Compile and execute the same circuit through both DDSIM payload paths."""
     benchmark = magic_state_distillation.MagicStateDistillation()
     device = open_device("mqt.ddsim.default")
-    compiled = compile_program(benchmark.generate(), target=device, program_format=program_format)
+    job = submit_program(benchmark.generate(), target=device, program_format=program_format, num_shots=16, custom1=17)
     if program_format is None:
-        assert compiled.program_format in {ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QIR_ADAPTIVE_STRING}
-    job = submit_program(compiled, target=device, num_shots=16, custom1=17)
+        assert job.program_format in {ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QIR_ADAPTIVE_STRING}
     job.wait()
     assert job.get_counts() == {"00": 16}

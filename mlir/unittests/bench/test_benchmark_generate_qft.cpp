@@ -21,6 +21,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cmath>
@@ -30,7 +31,8 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
-  const QFT benchmark{{.qubits = 4, .periodExponent = 2}};
+  const auto benchmark =
+      llvm::cantFail(QFT::create({.qubits = 4, .periodExponent = 2}));
   auto program = generate(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
   auto moduleOp = program->module();
@@ -40,8 +42,8 @@ TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
 TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
   for (const auto method : {QFTMethod::Standard, QFTMethod::Semiclassical}) {
     SCOPED_TRACE(static_cast<int>(method));
-    auto program =
-        generate(QFT{{.qubits = 1025, .periodExponent = 10, .method = method}});
+    auto program = generate(llvm::cantFail(
+        QFT::create({.qubits = 1025, .periodExponent = 10, .method = method})));
     ASSERT_TRUE(mlir::succeeded(program));
     EXPECT_LT(test::countOperations(program->module()), 100U);
     program->module().walk([&](arith::ConstantOp op) {
@@ -55,8 +57,8 @@ TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
 TEST(GenerateProgramTest, SamplesQFTAgainstReference) {
   for (const auto method : {QFTMethod::Standard, QFTMethod::Semiclassical}) {
     SCOPED_TRACE(static_cast<int>(method));
-    test::expectSamplingMatchesReference(
-        QFT{{.qubits = 8, .periodExponent = 4, .method = method}});
+    test::expectSamplingMatchesReference(llvm::cantFail(
+        QFT::create({.qubits = 8, .periodExponent = 4, .method = method})));
   }
 }
 

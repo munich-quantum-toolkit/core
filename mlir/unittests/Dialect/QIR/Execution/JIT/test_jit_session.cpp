@@ -17,23 +17,29 @@
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
+#include "support/TestSupport.hpp"
+
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
 #include "mlir/IR/BuiltinOps.h"
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <future>
 #include <iterator>
-#include <sstream>
-#include <stdexcept>
+#include <map>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -41,34 +47,42 @@
 #include <utility>
 #include <vector>
 
+using mqt::test::value;
+
 static std::string getProgram(const std::string_view file) {
   const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
-  std::ifstream stream(path);
-  EXPECT_TRUE(stream.is_open()) << "Failed to open " << path;
-  return {std::istreambuf_iterator<char>{stream}, {}};
+  auto buffer = llvm::MemoryBuffer::getFile(path.string());
+  if (!buffer) {
+    ADD_FAILURE() << "Failed to open " << path << ": "
+                  << buffer.getError().message();
+    return {};
+  }
+  return (*buffer)->getBuffer().str();
 }
 
 static void expectOpenQASMSampling(std::string_view source,
                                    std::string_view expected) {
   auto qc = mlir::QCProgram::fromOpenQASMString(source);
-  ASSERT_TRUE(mlir::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
+  MQT_ASSERT_SUCCESS(qco);
   auto sampled =
       mlir::qco::sample(mlir::mqt::getEntryPoint(qco->module()), 1, 42);
-  ASSERT_TRUE(mlir::succeeded(sampled));
+  MQT_ASSERT_SUCCESS(sampled);
   ASSERT_EQ(sampled->size(), 1);
   EXPECT_EQ(sampled->begin()->first, expected);
   auto restored = std::move(*qco).intoQC();
-  ASSERT_TRUE(mlir::succeeded(restored));
+  MQT_ASSERT_SUCCESS(restored);
   auto qir = std::move(*restored).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(mlir::succeeded(qir));
-  const auto ir = qir->llvmIR();
-  ASSERT_TRUE(mlir::succeeded(ir));
-  qir::JitSession session(*ir, "openqasm-slices", qir::Execution::Sampling, 42);
+  MQT_ASSERT_SUCCESS(qir);
+  const auto ir = std::move(*qir).intoLLVMIR();
+  MQT_ASSERT_SUCCESS(ir);
+  auto sessionOwner = value(qir::JitSession::create(
+      *ir, "openqasm-slices", qir::Execution::Sampling, 42));
+  auto& session = *sessionOwner;
   session.runtime().disableOutput();
   std::vector<std::string> shots;
-  ASSERT_EQ(session.sample(1, shots), 0);
+  ASSERT_EQ(value(session.sample(1, shots)), 0);
   // The JIT exposes recording order; DD strings put output bit zero on the
   // right.
   EXPECT_EQ(shots, std::vector<std::string>(
@@ -79,7 +93,8 @@ namespace {
 
 class JitSessionTest : public testing::Test {
 protected:
-  std::ostringstream sink;
+  std::string sinkText;
+  llvm::raw_string_ostream sink{sinkText};
 };
 
 TEST_F(JitSessionTest, BindsRuntimeForStaticConstructorsAndDestructors) {
@@ -90,10 +105,11 @@ TEST_F(JitSessionTest, BindsRuntimeForStaticConstructorsAndDestructors) {
     [{ i32, ptr, ptr } { i32 65535, ptr @cleanup, ptr null }]
 define void @setup() {
   call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__rt__bool_record_output(i1 true, ptr null)
   ret void
 }
 define void @cleanup() {
-  call void @__quantum__rt__int_record_output(i64 3, ptr null)
+  call void @__quantum__rt__bool_record_output(i1 false, ptr null)
   ret void
 }
 define i64 @main() #0 {
@@ -105,16 +121,16 @@ define i64 @main() #0 {
 declare void @__quantum__qis__x__body(ptr)
 declare void @__quantum__qis__mz__body(ptr, ptr)
 declare i1 @__quantum__rt__read_result(ptr)
-declare void @__quantum__rt__int_record_output(i64, ptr)
+declare void @__quantum__rt__bool_record_output(i1, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
   std::async(std::launch::async, [&] {
-    qir::JitSession session(ir, "static-lifecycle", qir::Execution::Sampling,
-                            42);
-    session.runtime().setOstream(sink);
-    EXPECT_EQ(session.run(), 1);
+    auto sessionOwner = value(qir::JitSession::create(
+        ir, "static-lifecycle", qir::Execution::Sampling, 42, &sink));
+    auto& session = *sessionOwner;
+    EXPECT_EQ(value(session.run()), 1);
   }).get();
-  EXPECT_EQ(sink.str(), "OUTPUT\tINT\t3\n");
+  EXPECT_EQ(sink.str(), "OUTPUT\tBOOL\ttrue\nOUTPUT\tBOOL\tfalse\n");
 }
 
 TEST(OpenQASMExecutionTest, ExecutesAffineQuantumSlices) {
@@ -144,18 +160,20 @@ if (sum == 199990000) { x q; }
 output bit result;
 result = measure q;
 )qasm");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  MQT_ASSERT_SUCCESS(qc);
   auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(mlir::succeeded(qir));
-  const auto ir = qir->llvmIR();
-  ASSERT_TRUE(mlir::succeeded(ir));
-  qir::JitSession session(*ir, "feedback-arithmetic", qir::Execution::Sampling,
-                          42);
+  MQT_ASSERT_SUCCESS(qir);
+  const auto ir = std::move(*qir).intoLLVMIR();
+  MQT_ASSERT_SUCCESS(ir);
+  auto sessionOwner = value(qir::JitSession::create(
+      *ir, "feedback-arithmetic", qir::Execution::Sampling, 42));
+  auto& session = *sessionOwner;
   session.runtime().disableOutput();
   EXPECT_FALSE(session.canSampleTerminal());
-  std::vector<std::string> shots;
-  ASSERT_EQ(session.sample(64, shots), 0);
-  EXPECT_EQ(shots, std::vector<std::string>(64, "0"));
+  ASSERT_TRUE(session.canSampleBranches());
+  std::map<std::string, size_t> counts;
+  ASSERT_EQ(value(session.sampleCounts(100000, counts)), 0);
+  EXPECT_EQ(counts, (std::map<std::string, size_t>{{"0", 100000}}));
 }
 
 TEST(OpenQASMExecutionTest, PreservesBitstringAndSliceOrder) {
@@ -223,20 +241,26 @@ TEST(OpenQASMExecutionTest, ExecutesInclusiveRangeBoundaries) {
   }
 }
 
-TEST_F(JitSessionTest, LoadModuleFromMemory) {
-  const auto program = getProgram("BellPairStatic.ll");
-  qir::JitSession session(program, "BellPairStatic.ll");
+TEST_F(JitSessionTest, LoadModuleFromUnterminatedMemory) {
+  auto program = getProgram("BellPairStatic.ll");
+  const auto size = program.size();
+  program += "outside the input buffer";
+  auto sessionOwner = value(qir::JitSession::create(
+      llvm::StringRef(program.data(), size), "BellPairStatic.ll"));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
-  ASSERT_EQ(session.run(), 0);
+  ASSERT_EQ(value(session.run()), 0);
   EXPECT_FALSE(session.runtime().getMeasurements().empty());
 }
 
 TEST_F(JitSessionTest, SamplingRecordsOutputs) {
   const auto program = getProgram("BellPairStatic.ll");
   // qir::Execution::Sampling is the default Execution mode
-  qir::JitSession session(program, "BellPairStatic.ll");
+  auto sessionOwner =
+      value(qir::JitSession::create(program, "BellPairStatic.ll"));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
-  ASSERT_EQ(session.run(), 0);
+  ASSERT_EQ(value(session.run()), 0);
   EXPECT_FALSE(session.runtime().getMeasurements().empty());
   session.runtime().outputShotStart();
   EXPECT_THAT(sink.str(), ::testing::HasSubstr("METADATA\tentry_point\n"));
@@ -246,24 +270,27 @@ TEST_F(JitSessionTest, SamplingRecordsOutputs) {
 
 TEST_F(JitSessionTest, StateExtractionLeavesNoRecordedOutputs) {
   const auto program = getProgram("BellPairStatic.ll");
-  qir::JitSession session(program, "BellPairStatic.ll",
-                          qir::Execution::StateExtraction);
+  auto sessionOwner = value(qir::JitSession::create(
+      program, "BellPairStatic.ll", qir::Execution::StateExtraction));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
-  ASSERT_EQ(session.run(), 0);
+  ASSERT_EQ(value(session.run()), 0);
   EXPECT_TRUE(session.runtime().getMeasurements().empty());
 }
 
 TEST_F(JitSessionTest, StateExtractionSupportsAdaptiveControlAndLifetimes) {
   const auto ir = getProgram("StatevectorAdaptive.ll");
-  qir::JitSession session(ir, "Adaptive.ll", qir::Execution::StateExtraction);
+  auto sessionOwner = value(qir::JitSession::create(
+      ir, "Adaptive.ll", qir::Execution::StateExtraction));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
   for (size_t run = 0; run < 2; ++run) {
-    ASSERT_EQ(session.run(), 0);
+    ASSERT_EQ(value(session.run()), 0);
     EXPECT_TRUE(session.runtime().getMeasurements().empty());
     EXPECT_TRUE(sink.str().empty());
-    auto state = session.runtime().takeState();
+    auto state = value(session.runtime().takeState());
     EXPECT_EQ(state.numQubits, 4);
-    const auto values = dd::getVector(state.edge);
+    const auto values = value(dd::getVector(state.edge));
     ASSERT_EQ(values.size(), 16);
     for (size_t i = 0; i < values.size(); ++i) {
       const auto expected = i == 4 || i == 7 ? std::polar(dd::SQRT2_2, 0.3)
@@ -286,17 +313,11 @@ declare void @__quantum__qis__x__body(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
 attributes #1 = { "irreversible" }
 )";
-  EXPECT_THROW(
-      {
-        try {
-          const qir::JitSession session(ir, "NonTerminal.ll",
-                                        qir::Execution::StateExtraction);
-        } catch (const std::invalid_argument& error) {
-          EXPECT_THAT(error.what(), ::testing::HasSubstr("terminal region"));
-          throw;
-        }
-      },
-      std::invalid_argument);
+  EXPECT_THAT(
+      llvm::toString(qir::JitSession::create(ir, "NonTerminal.ll",
+                                             qir::Execution::StateExtraction)
+                         .takeError()),
+      testing::HasSubstr("terminal region"));
 }
 
 TEST_F(JitSessionTest, OutputSchemaDefaultsToLabeledWhenAttributeAbsent) {
@@ -304,7 +325,8 @@ TEST_F(JitSessionTest, OutputSchemaDefaultsToLabeledWhenAttributeAbsent) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  qir::JitSession session(ir, "NoOutputSchema.ll");
+  auto sessionOwner = value(qir::JitSession::create(ir, "NoOutputSchema.ll"));
+  auto& session = *sessionOwner;
   EXPECT_EQ(session.runtime().getOutputSchema(),
             qir::Runtime::OutputSchema::Labeled);
 }
@@ -314,7 +336,9 @@ TEST_F(JitSessionTest, OutputSchemaFromLabeledAttribute) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "output_labeling_schema"="labeled" }
 )";
-  qir::JitSession session(ir, "LabeledOutputSchema.ll");
+  auto sessionOwner =
+      value(qir::JitSession::create(ir, "LabeledOutputSchema.ll"));
+  auto& session = *sessionOwner;
   EXPECT_EQ(session.runtime().getOutputSchema(),
             qir::Runtime::OutputSchema::Labeled);
 }
@@ -324,7 +348,9 @@ TEST_F(JitSessionTest, OutputSchemaFromOrderedAttribute) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "output_labeling_schema"="ordered" }
 )";
-  qir::JitSession session(ir, "OrderedOutputSchema.ll");
+  auto sessionOwner =
+      value(qir::JitSession::create(ir, "OrderedOutputSchema.ll"));
+  auto& session = *sessionOwner;
   EXPECT_EQ(session.runtime().getOutputSchema(),
             qir::Runtime::OutputSchema::Ordered);
 }
@@ -334,8 +360,52 @@ TEST_F(JitSessionTest, ExecutesArbitrarilyNamedEntryPoint) {
 define i64 @bell_entry() #0 { ret i64 7 }
   attributes #0 = { "entry_point" }
 )";
-  qir::JitSession session(ir, "NamedEntry.ll");
-  EXPECT_EQ(session.run(), 7);
+  auto sessionOwner = value(qir::JitSession::create(ir, "NamedEntry.ll"));
+  auto& session = *sessionOwner;
+  EXPECT_EQ(value(session.run()), 7);
+}
+
+TEST_F(JitSessionTest, AcceptsFutureMinorVersionsAndRejectsOtherMajors) {
+  const std::string program = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+!llvm.module.flags = !{!0, !1}
+!0 = !{i32 1, !"qir_major_version", )";
+  for (const auto& [major, minor] : {
+           std::pair{"i32 2", "i32 99"},
+           std::pair{"i32 3", "i32 0"},
+           std::pair{"i32 -1", "i32 0"},
+           std::pair{"!\"2\"", "i32 0"},
+           std::pair{"i32 2", "i32 -1"},
+           std::pair{"i32 2", "!\"1\""},
+       }) {
+    const std::string ir = program + major + R"(}
+!1 = !{i32 1, !"qir_minor_version", )" +
+                           minor + "}\n";
+    auto session = qir::JitSession::create(ir, "versions.ll");
+    if (llvm::StringRef(major) == "i32 2" &&
+        llvm::StringRef(minor) == "i32 99") {
+      ASSERT_TRUE(static_cast<bool>(session));
+      EXPECT_EQ(value((*session)->run()), 0);
+    } else {
+      ASSERT_FALSE(static_cast<bool>(session));
+      EXPECT_NE(llvm::toString(session.takeError()).find("major version 2"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST_F(JitSessionTest, RejectsMalformedModuleFlagsBeforeReadingVersions) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" }
+!llvm.module.flags = !{!0}
+!0 = !{i32 1}
+)";
+  auto session = qir::JitSession::create(ir, "malformed-version.ll");
+  ASSERT_FALSE(static_cast<bool>(session));
+  EXPECT_NE(llvm::toString(session.takeError()).find("Invalid QIR module"),
+            std::string::npos);
 }
 
 TEST_F(JitSessionTest, SupportsQir21DynamicResources) {
@@ -361,9 +431,10 @@ declare void @__quantum__rt__result_release(ptr)
 declare void @__quantum__rt__qubit_release(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-  qir::JitSession session(ir, "Qir21Resources.ll");
+  auto sessionOwner = value(qir::JitSession::create(ir, "Qir21Resources.ll"));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
-  EXPECT_EQ(session.run(), 0);
+  EXPECT_EQ(value(session.run()), 0);
   EXPECT_EQ(session.runtime().getMeasurements(), "1");
 }
 
@@ -389,9 +460,10 @@ declare void @__quantum__qis__mz__body(ptr, ptr)
 declare void @__quantum__rt__result_record_output(ptr, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="4" "required_num_results"="2" }
 )";
-  qir::JitSession session(ir, "NativeControls.ll");
+  auto sessionOwner = value(qir::JitSession::create(ir, "NativeControls.ll"));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
-  EXPECT_EQ(session.run(), 0);
+  EXPECT_EQ(value(session.run()), 0);
   EXPECT_EQ(session.runtime().getMeasurements(), "11");
 }
 
@@ -408,7 +480,10 @@ declare ptr @__quantum__rt__qubit_allocate()
 declare void @__quantum__rt__qubit_release(ptr)
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "LegacyAllocation.ll"), std::runtime_error);
+  EXPECT_FALSE(
+      llvm::toString(
+          qir::JitSession::create(ir, "LegacyAllocation.ll").takeError())
+          .empty());
 }
 
 TEST_F(JitSessionTest, SupportsGenericControlledSpecialization) {
@@ -463,9 +538,11 @@ declare void @__quantum__rt__array_update_reference_count(ptr, i32)
 declare void @__quantum__rt__qubit_release(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-  qir::JitSession session(ir, "ControlledRotation.ll");
+  auto sessionOwner =
+      value(qir::JitSession::create(ir, "ControlledRotation.ll"));
+  auto& session = *sessionOwner;
   session.runtime().setOstream(sink);
-  EXPECT_EQ(session.run(), 0);
+  EXPECT_EQ(value(session.run()), 0);
   EXPECT_EQ(session.runtime().getMeasurements(), "1");
 }
 
@@ -478,22 +555,28 @@ define i64 @pauli_rotation() #0 {
 declare void @__quantum__qis__r__body(i2, double, ptr)
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "QirRunnerPauli.ll"), std::runtime_error);
+  EXPECT_FALSE(llvm::toString(
+                   qir::JitSession::create(ir, "QirRunnerPauli.ll").takeError())
+                   .empty());
 }
 
 TEST_F(JitSessionTest, SessionsExecuteIndependently) {
   const auto program = getProgram("BellPairStatic.ll");
-  qir::JitSession first(program, "first.ll");
-  qir::JitSession second(program, "second.ll");
-  std::ostringstream firstSink;
-  std::ostringstream secondSink;
+  std::string firstSinkText;
+  llvm::raw_string_ostream firstSink{firstSinkText};
+  std::string secondSinkText;
+  llvm::raw_string_ostream secondSink{secondSinkText};
+  auto firstOwner = value(qir::JitSession::create(program, "first.ll"));
+  auto& first = *firstOwner;
+  auto secondOwner = value(qir::JitSession::create(program, "second.ll"));
+  auto& second = *secondOwner;
   first.runtime().setOstream(firstSink);
   second.runtime().setOstream(secondSink);
   int64_t firstExit = -1;
   int64_t secondExit = -1;
 
-  std::thread firstThread([&] { firstExit = first.run(); });
-  std::thread secondThread([&] { secondExit = second.run(); });
+  std::thread firstThread([&] { firstExit = value(first.run()); });
+  std::thread secondThread([&] { secondExit = value(second.run()); });
   firstThread.join();
   secondThread.join();
 
@@ -508,8 +591,10 @@ TEST_F(JitSessionTest, SessionsExecuteIndependently) {
 
 TEST_F(JitSessionTest, SeedReproducesShotSequence) {
   const auto program = getProgram("BellPairStatic.ll");
-  qir::JitSession first(program, "first.ll");
-  qir::JitSession second(program, "second.ll");
+  auto firstOwner = value(qir::JitSession::create(program, "first.ll"));
+  auto& first = *firstOwner;
+  auto secondOwner = value(qir::JitSession::create(program, "second.ll"));
+  auto& second = *secondOwner;
   first.runtime().seed(42);
   second.runtime().seed(42);
   first.runtime().setOstream(sink);
@@ -518,8 +603,8 @@ TEST_F(JitSessionTest, SeedReproducesShotSequence) {
   std::string secondSequence;
 
   for (std::size_t shot = 0; shot < 16; ++shot) {
-    ASSERT_EQ(first.run(), 0);
-    ASSERT_EQ(second.run(), 0);
+    ASSERT_EQ(value(first.run()), 0);
+    ASSERT_EQ(value(second.run()), 0);
     firstSequence += first.runtime().getMeasurements().front();
     secondSequence += second.runtime().getMeasurements().front();
   }
@@ -529,9 +614,25 @@ TEST_F(JitSessionTest, SeedReproducesShotSequence) {
   EXPECT_THAT(firstSequence, ::testing::HasSubstr("1"));
 }
 
-TEST(JitSessionErrors, MalformedIRThrows) {
+TEST(JitSessionErrors, OwnsDiagnosticsAcrossLaterSessions) {
+  auto error = [] {
+    const std::string name = "owned-diagnostic.ll";
+    return qir::JitSession::create("not LLVM IR", name).takeError();
+  }();
+  auto session =
+      value(qir::JitSession::create("define i64 @main() #0 { ret i64 7 }\n"
+                                    "attributes #0 = { \"entry_point\" }",
+                                    "valid.ll"));
+  EXPECT_EQ(value(session->run()), 7);
+  EXPECT_THAT(llvm::toString(std::move(error)),
+              testing::HasSubstr("owned-diagnostic.ll"));
+}
+
+TEST(JitSessionErrors, MalformedIRReturnsError) {
   constexpr std::string_view ir = R"(define i32 @main() {})";
-  EXPECT_THROW(qir::JitSession(ir, "MalformedIR.ll"), std::runtime_error);
+  EXPECT_FALSE(
+      llvm::toString(qir::JitSession::create(ir, "MalformedIR.ll").takeError())
+          .empty());
 }
 
 TEST(JitSessionErrors, RejectsNonCompliantEntryPointSignature) {
@@ -539,7 +640,10 @@ TEST(JitSessionErrors, RejectsNonCompliantEntryPointSignature) {
 define i32 @main() #0 { ret i32 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "BadEntrySignature.ll"), std::runtime_error);
+  EXPECT_FALSE(
+      llvm::toString(
+          qir::JitSession::create(ir, "BadEntrySignature.ll").takeError())
+          .empty());
 }
 
 TEST(JitSessionErrors, RejectsNonCEntryPointCallingConvention) {
@@ -547,9 +651,9 @@ TEST(JitSessionErrors, RejectsNonCEntryPointCallingConvention) {
 define preserve_allcc i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "entry-convention"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("C calling convention")));
+  EXPECT_THAT(llvm::toString(
+                  qir::JitSession::create(ir, "entry-convention").takeError()),
+              testing::HasSubstr("C calling convention"));
 }
 
 TEST(JitSessionErrors, RejectsEntryPointABIAttributes) {
@@ -557,56 +661,65 @@ TEST(JitSessionErrors, RejectsEntryPointABIAttributes) {
 define inreg i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "entry-attribute"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("unsupported ABI attribute inreg")));
+  EXPECT_THAT(llvm::toString(
+                  qir::JitSession::create(ir, "entry-attribute").takeError()),
+              testing::HasSubstr("unsupported ABI attribute inreg"));
 }
 
 TEST(JitSessionErrors, RejectsNonCRuntimeCallingConventions) {
-  for (const auto& [declaration, call] :
-       std::array<std::pair<std::string_view, std::string_view>, 3>{
-           {
-               {"preserve_allcc ", "preserve_allcc "},
-               {"preserve_allcc ", ""},
-               {"", "preserve_allcc "},
-           },
-       }) {
-    const auto ir = std::string("declare ") + std::string(declaration) +
-                    "void @__quantum__qis__h__body(ptr)\n"
-                    "define i64 @main() #0 { call " +
-                    std::string(call) +
-                    "void @__quantum__qis__h__body(ptr null)\nret i64 0 }\n"
-                    "attributes #0 = { \"entry_point\" }";
-    SCOPED_TRACE(ir);
-    EXPECT_THAT([&] { qir::JitSession(ir, "runtime-convention"); },
-                testing::ThrowsMessage<std::runtime_error>(
-                    testing::HasSubstr("C calling convention")));
+  for (const auto* symbol : {"h__body", "sdg__body"}) {
+    for (const auto& [declaration, call] :
+         std::array<std::pair<std::string_view, std::string_view>, 3>{
+             {
+                 {"preserve_allcc ", "preserve_allcc "},
+                 {"preserve_allcc ", ""},
+                 {"", "preserve_allcc "},
+             },
+         }) {
+      const auto ir =
+          std::string("declare void @__quantum__qis__s__adj(ptr)\ndeclare ") +
+          std::string(declaration) + "void @__quantum__qis__" + symbol +
+          "(ptr)\n"
+          "define i64 @main() #0 { call " +
+          std::string(call) + "void @__quantum__qis__" + symbol +
+          "(ptr null)\nret i64 0 }\n"
+          "attributes #0 = { \"entry_point\" }";
+      SCOPED_TRACE(ir);
+      EXPECT_THAT(
+          llvm::toString(
+              qir::JitSession::create(ir, "runtime-convention").takeError()),
+          testing::HasSubstr("C calling convention"));
+    }
   }
 }
 
 TEST(JitSessionErrors, RejectsRuntimeABIAttributes) {
-  for (const auto* attribute : {
-           "byval(i8)",
-           "byref(i8)",
-           "sret(i8)",
-           "inreg",
-           "nest",
-           "swiftself",
-           "swiftasync",
-       }) {
-    for (const bool onDeclaration : {false, true}) {
-      const auto ir =
-          std::string("declare void @__quantum__qis__h__body(ptr ") +
-          (onDeclaration ? attribute : "") +
-          ")\ndefine i64 @main() #0 { %q = alloca i8\n"
-          "call void @__quantum__qis__h__body(ptr " +
-          (onDeclaration ? "" : attribute) +
-          " %q)\nret i64 0 }\n"
-          "attributes #0 = { \"entry_point\" }";
-      SCOPED_TRACE(ir);
-      EXPECT_THAT([&] { qir::JitSession(ir, "runtime-attribute"); },
-                  testing::ThrowsMessage<std::runtime_error>(
-                      testing::HasSubstr("unsupported ABI attribute")));
+  for (const auto* symbol : {"h__body", "sdg__body"}) {
+    for (const auto* attribute : {
+             "byval(i8)",
+             "byref(i8)",
+             "sret(i8)",
+             "inreg",
+             "nest",
+             "swiftself",
+             "swiftasync",
+         }) {
+      for (const bool onDeclaration : {false, true}) {
+        const auto ir =
+            std::string("declare void @__quantum__qis__s__adj(ptr)\ndeclare "
+                        "void @__quantum__qis__") +
+            symbol + "(ptr " + (onDeclaration ? attribute : "") +
+            ")\ndefine i64 @main() #0 { %q = alloca i8\n"
+            "call void @__quantum__qis__" +
+            symbol + "(ptr " + (onDeclaration ? "" : attribute) +
+            " %q)\nret i64 0 }\n"
+            "attributes #0 = { \"entry_point\" }";
+        SCOPED_TRACE(ir);
+        EXPECT_THAT(
+            llvm::toString(
+                qir::JitSession::create(ir, "runtime-attribute").takeError()),
+            testing::HasSubstr("unsupported ABI attribute"));
+      }
     }
   }
 }
@@ -620,9 +733,9 @@ define i64 @main() #0 {
 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "runtime-call-type"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("must match its declaration")));
+  EXPECT_THAT(llvm::toString(
+                  qir::JitSession::create(ir, "runtime-call-type").takeError()),
+              testing::HasSubstr("must match its declaration"));
 }
 
 TEST(JitSessionErrors, RejectsInvalidModulesBeforeExecution) {
@@ -636,9 +749,9 @@ exit:
 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THAT([&] { qir::JitSession(ir, "invalid-module"); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::HasSubstr("Invalid QIR module")));
+  EXPECT_THAT(
+      llvm::toString(qir::JitSession::create(ir, "invalid-module").takeError()),
+      testing::HasSubstr("Invalid QIR module"));
 }
 
 TEST(QIRJIT, AcceptsInternalCallingConventionsAndSemanticAttributes) {
@@ -653,8 +766,9 @@ define noundef i64 @main() #0 {
 define internal fastcc i64 @helper() { ret i64 7 }
 attributes #0 = { nounwind alignstack=16 "entry_point" }
 )";
-  qir::JitSession session(ir, "internal-convention");
-  EXPECT_EQ(session.run(), 7);
+  auto sessionOwner = value(qir::JitSession::create(ir, "internal-convention"));
+  auto& session = *sessionOwner;
+  EXPECT_EQ(value(session.run()), 7);
 }
 
 TEST(JitSessionErrors, RejectsMultipleEntryPoints) {
@@ -663,7 +777,10 @@ define i64 @first() #0 { ret i64 0 }
 define i64 @second() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "MultipleEntries.ll"), std::runtime_error);
+  EXPECT_FALSE(
+      llvm::toString(
+          qir::JitSession::create(ir, "MultipleEntries.ll").takeError())
+          .empty());
 }
 
 TEST(JitSessionErrors, RejectsMismatchedRuntimeDeclaration) {
@@ -675,57 +792,184 @@ define i64 @main() #0 {
 declare void @__quantum__qis__x__body(double)
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "BadRuntimeSignature.ll"),
-               std::runtime_error);
+  EXPECT_FALSE(
+      llvm::toString(
+          qir::JitSession::create(ir, "BadRuntimeSignature.ll").takeError())
+          .empty());
 }
 
 } // namespace
 
 TEST(QIRBatchSampling, PreservesLogicalOutputOrderAndRepeatedMeasurements) {
   constexpr llvm::StringRef ir = R"(
+@label = constant [6 x i8] c"items\00"
 define i64 @main() #0 {
   call void @__quantum__rt__initialize(ptr null)
   call void @__quantum__qis__x__body(ptr null)
   call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 2 to ptr))
   call void @__quantum__qis__mz__body(ptr null, ptr null)
   call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 1 to ptr))
-  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__tuple_record_output(i64 4, ptr @label)
+  call void @__quantum__rt__array_record_output(i64 2, ptr @label)
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr @label)
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
-  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr @label)
+  call void @__quantum__rt__int_record_output(i64 7, ptr @label)
+  call void @__quantum__rt__double_record_output(double 0.5, ptr null)
   ret i64 0
 }
+declare void @__quantum__rt__int_record_output(i64, ptr)
+declare void @__quantum__rt__double_record_output(double, ptr)
 declare void @__quantum__rt__initialize(ptr)
 declare void @__quantum__qis__x__body(ptr)
 declare void @__quantum__qis__swap__body(ptr, ptr)
 declare void @__quantum__qis__mz__body(ptr, ptr)
 declare void @__quantum__rt__result_record_output(ptr, ptr)
+declare void @__quantum__rt__array_record_output(i64, ptr)
+declare void @__quantum__rt__tuple_record_output(i64, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" "required_num_results"="2" }
 )";
-  qir::JitSession session(ir, "output-order");
-  session.runtime().disableOutput();
-  std::vector<std::string> results;
-  ASSERT_EQ(session.sample(32, results), 0);
-  EXPECT_EQ(results, std::vector<std::string>(32, "101"));
-  ASSERT_EQ(session.sample(2, results), 0);
-  EXPECT_EQ(results, std::vector<std::string>(2, "101"));
-  ASSERT_EQ(session.sample(0, results), 0);
-  EXPECT_TRUE(results.empty());
+  for (const auto schema : {
+           qir::Runtime::OutputSchema::Ordered,
+           qir::Runtime::OutputSchema::Labeled,
+       }) {
+    std::string outputText;
+    llvm::raw_string_ostream output{outputText};
+    auto sessionOwner = value(qir::JitSession::create(
+        ir, "output-order", qir::Execution::Sampling, 42, &output));
+    auto& session = *sessionOwner;
+    session.runtime().setOutputSchema(schema);
+    std::vector<std::string> results;
+    bool stateAvailable = false;
+    ASSERT_EQ(value(session.sample(
+                  2, [&](std::string_view shot) { results.emplace_back(shot); },
+                  &stateAvailable)),
+              0);
+    EXPECT_TRUE(stateAvailable);
+    EXPECT_EQ(results, std::vector<std::string>(2, "100"));
+    const std::string label =
+        schema == qir::Runtime::OutputSchema::Labeled ? "\titems" : "";
+    std::string expectedRecordsStorage;
+    llvm::raw_string_ostream expectedRecords(expectedRecordsStorage);
+    expectedRecords << "OUTPUT\tTUPLE\t4" << label << "\n"
+                    << "OUTPUT\tARRAY\t2" << label << "\n"
+                    << "OUTPUT\tRESULT\t1" << label << "\n"
+                    << "OUTPUT\tRESULT\t0\n"
+                    << "OUTPUT\tRESULT\t0" << label << "\n"
+                    << "OUTPUT\tINT\t7" << label << "\n"
+                    << "OUTPUT\tDOUBLE\t0.5\nEND\t0\n";
+    const auto expected = expectedRecords.str();
+    const auto text = output.str();
+    const auto first = text.find(expected);
+    ASSERT_NE(first, std::string::npos);
+    EXPECT_NE(text.find(expected, first + expected.size()), std::string::npos);
+    ASSERT_EQ(value(session.sample(0, results)), 0);
+    EXPECT_TRUE(results.empty());
+  }
 }
 
 TEST(QIRBatchSampling, SeedReproducesBellSamples) {
   const auto ir = getProgram("BellPairStatic.ll");
-  qir::JitSession first(ir, "first", qir::Execution::Sampling, 42);
-  qir::JitSession second(ir, "second", qir::Execution::Sampling, 42);
+  auto firstOwner =
+      value(qir::JitSession::create(ir, "first", qir::Execution::Sampling, 42));
+  auto& first = *firstOwner;
+  auto secondOwner = value(
+      qir::JitSession::create(ir, "second", qir::Execution::Sampling, 42));
+  auto& second = *secondOwner;
   first.runtime().disableOutput();
   second.runtime().disableOutput();
   std::vector<std::string> a;
   std::vector<std::string> b;
-  ASSERT_EQ(first.sample(256, a), 0);
-  ASSERT_EQ(second.sample(256, b), 0);
+  ASSERT_EQ(value(first.sample(256, a)), 0);
+  ASSERT_EQ(value(second.sample(256, b)), 0);
   EXPECT_EQ(a, b);
   EXPECT_THAT(a, testing::Each(testing::AnyOf("00", "11")));
   EXPECT_THAT(a, testing::Contains("00"));
   EXPECT_THAT(a, testing::Contains("11"));
+}
+
+TEST(QIRBatchSampling, TerminalArraysPreserveProjectionAndState) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"qasm(
+OPENQASM 3.0; include "stdgates.inc";
+qubit[2] q; bit[3] c;
+h q[0]; rz(0.6) q[0]; x q[1];
+c[0] = measure q[1];
+c[1] = measure q[0];
+c[2] = measure q[0];
+)qasm");
+  MQT_ASSERT_SUCCESS(qc);
+  auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
+  MQT_ASSERT_SUCCESS(qir);
+  auto ir = std::move(*qir).intoLLVMIR();
+  MQT_ASSERT_SUCCESS(ir);
+  auto sessionOwner = value(qir::JitSession::create(
+      *ir, "terminal-arrays", qir::Execution::Sampling, 17, nullptr));
+  auto& session = *sessionOwner;
+  std::map<std::string, size_t> counts;
+  bool retained = false;
+  ASSERT_EQ(value(session.sampleCounts(32768, counts, &retained)), 0);
+  ASSERT_TRUE(retained);
+  ASSERT_EQ(counts.size(), 2);
+  EXPECT_EQ(counts.at("100") + counts.at("111"), 32768);
+  EXPECT_NEAR(static_cast<double>(counts.at("100")), 16384., 550.);
+  auto state = value(session.runtime().takeState());
+  const auto vector = value(dd::getVector(state.edge));
+  ASSERT_EQ(vector.size(), 4);
+  EXPECT_NEAR(std::abs(vector[2] - std::polar(std::sqrt(0.5), -0.3)), 0.,
+              1e-12);
+  EXPECT_NEAR(std::abs(vector[3] - std::polar(std::sqrt(0.5), 0.3)), 0., 1e-12);
+  EXPECT_NEAR(std::abs(vector[0]) + std::abs(vector[1]), 0., 1e-12);
+  state.dd->decRef(state.edge);
+}
+
+TEST(QIRBatchSampling, DeferralFallsBackForMeasuredGatesAndQubitReuse) {
+  for (const bool reuse : {false, true}) {
+    const auto* continuation =
+        reuse ? "%next = call ptr @__quantum__rt__qubit_allocate(ptr null)\n"
+                "call void @__quantum__qis__mz__body(ptr %next, ptr null)\n"
+              : "call void @__quantum__qis__h__body(ptr %q)\n"
+                "call void @__quantum__qis__mz__body(ptr %q, ptr null)\n";
+    const std::string ir =
+        R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__initialize(ptr null)
+  %q = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  call void @__quantum__qis__h__body(ptr %q)
+  call void @__quantum__qis__mz__body(ptr %q, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+)" +
+        std::string(reuse ? "call void @__quantum__rt__qubit_release(ptr %q)\n"
+                          : "") +
+        continuation + R"(
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare ptr @__quantum__rt__qubit_allocate(ptr)
+declare void @__quantum__rt__qubit_release(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+    auto sessionOwner = value(qir::JitSession::create(
+        ir, "deferral-fallback", qir::Execution::Sampling, 17, nullptr));
+    auto& session = *sessionOwner;
+    std::map<std::string, size_t> counts;
+    bool retained = true;
+    ASSERT_EQ(value(session.sampleCounts(32768, counts, &retained)), 0);
+    EXPECT_FALSE(retained);
+    EXPECT_EQ(counts.size(), reuse ? 2 : 4);
+    size_t total = 0;
+    for (const auto& [bits, count] : counts) {
+      if (reuse) {
+        EXPECT_EQ(bits.back(), '0');
+      }
+      EXPECT_NEAR(static_cast<double>(count), reuse ? 16384. : 8192., 550.);
+      total += count;
+    }
+    EXPECT_EQ(total, 32768);
+  }
 }
 
 TEST(QIRBatchSampling, RetainedStatePreservesPhaseOrderAndSessionLifetime) {
@@ -749,39 +993,88 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_
 )";
   qir::Runtime::QState state;
   {
-    qir::JitSession session(ir, "retained-state");
+    auto sessionOwner = value(qir::JitSession::create(ir, "retained-state"));
+    auto& session = *sessionOwner;
     session.runtime().disableOutput();
     std::vector<std::string> shots;
     bool available = false;
-    ASSERT_EQ(session.sample(16, shots, &available), 0);
+    ASSERT_EQ(value(session.sample(16, shots, &available)), 0);
     ASSERT_TRUE(available);
-    state = session.runtime().takeState();
-    ASSERT_EQ(session.sample(0, shots, &available), 0);
+    state = value(session.runtime().takeState());
+    ASSERT_EQ(value(session.sample(0, shots, &available)), 0);
     EXPECT_FALSE(available);
   }
   EXPECT_EQ(state.numQubits, 2);
-  const auto vector = dd::getVector(state.edge);
+  const auto vector = value(dd::getVector(state.edge));
   ASSERT_EQ(vector.size(), 4);
   EXPECT_NEAR(std::abs(vector[2] - std::polar(1., 0.3)), 0., 1e-12);
   EXPECT_NEAR(std::abs(vector[0]) + std::abs(vector[1]) + std::abs(vector[3]),
               0., 1e-12);
 }
 
-TEST(QIRBatchSampling, TextOutputKeepsPerShotRecords) {
+TEST(QIRBatchSampling, TextOutputPreservesTerminalSamplesAndState) {
   const auto ir = getProgram("BellPairStatic.ll");
-  qir::JitSession session(ir, "text", qir::Execution::Sampling, 42);
-  std::ostringstream output;
-  session.runtime().setOstream(output);
+  std::string outputText;
+  llvm::raw_string_ostream output{outputText};
+  auto sessionOwner = value(qir::JitSession::create(
+      ir, "text", qir::Execution::Sampling, 42, &output));
+  auto& session = *sessionOwner;
   std::vector<std::string> results;
-  ASSERT_EQ(session.sample(4, results), 0);
-  EXPECT_EQ(results.size(), 4);
-  const auto text = output.str();
-  size_t ends = 0;
-  for (size_t pos = text.find("END\t0\n"); pos != std::string::npos;
-       pos = text.find("END\t0\n", pos + 1)) {
-    ++ends;
+  bool stateAvailable = false;
+  ASSERT_EQ(value(session.sample(32, results, &stateAvailable)), 0);
+  ASSERT_TRUE(stateAvailable);
+  EXPECT_THAT(results, testing::Contains("00"));
+  EXPECT_THAT(results, testing::Contains("11"));
+  size_t shot = 0;
+  std::string bits;
+  for (auto line : llvm::split(output.str(), '\n')) {
+    if (line.starts_with("OUTPUT\tRESULT\t")) {
+      bits += line[std::string_view("OUTPUT\tRESULT\t").size()];
+    } else if (line == "END\t0") {
+      ASSERT_LT(shot, results.size());
+      EXPECT_EQ(bits, results[shot++]);
+      bits.clear();
+    }
   }
-  EXPECT_EQ(ends, 4);
+  EXPECT_EQ(shot, results.size());
+  const auto state = value(session.runtime().takeState());
+  const auto vector = value(dd::getVector(state.edge));
+  ASSERT_EQ(vector.size(), 4);
+  EXPECT_NEAR(std::abs(vector[0]), std::sqrt(0.5), 1e-12);
+  EXPECT_NEAR(std::abs(vector[3]), std::sqrt(0.5), 1e-12);
+}
+
+TEST(QIRBatchSampling, FramesEmptyTerminalOutputs) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__tuple_record_output(i64 0, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__tuple_record_output(i64, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)";
+  for (const bool enabled : {false, true}) {
+    std::string output;
+    llvm::raw_string_ostream stream(output);
+    auto sessionOwner = value(
+        qir::JitSession::create(ir, "empty-output", qir::Execution::Sampling,
+                                42, enabled ? &stream : nullptr));
+    auto& session = *sessionOwner;
+    std::vector<std::string> results;
+    ASSERT_EQ(
+        value(session.sample(
+            3, [&](std::string_view shot) { results.emplace_back(shot); })),
+        0);
+    EXPECT_EQ(results, std::vector<std::string>(3));
+    size_t starts = 0;
+    size_t ends = 0;
+    for (auto line : llvm::split(output, '\n')) {
+      starts += static_cast<size_t>(line == "START");
+      ends += static_cast<size_t>(line == "END\t0");
+    }
+    EXPECT_EQ(starts, enabled ? 3U : 0U);
+    EXPECT_EQ(ends, starts);
+  }
 }
 
 TEST(QIRBatchSampling, ExecutesClassicalSideEffectsOnEveryShot) {
@@ -797,36 +1090,103 @@ define i64 @main() #0 {
 }
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
 )";
-  qir::JitSession session(ir, "side-effects");
+  auto sessionOwner = value(qir::JitSession::create(ir, "side-effects"));
+  auto& session = *sessionOwner;
   EXPECT_FALSE(session.canShareCompiledCode());
   session.runtime().disableOutput();
   std::vector<std::string> results;
   qir::Runtime worker(17);
-  EXPECT_THROW(session.sampleWithRuntime(worker, 1, results), std::logic_error);
-  EXPECT_EQ(session.sample(5, results), 1);
+  EXPECT_FALSE(
+      llvm::toString(session.sampleWithRuntime(worker, 1, results).takeError())
+          .empty());
+  EXPECT_EQ(value(session.sample(5, results)), 1);
   EXPECT_EQ(results.size(), 2);
+  auto histogramOwner = value(qir::JitSession::create(
+      ir, "histogram-side-effects", qir::Execution::Sampling, 17, nullptr));
+  auto& histogram = *histogramOwner;
+  std::map<std::string, size_t> counts;
+  EXPECT_FALSE(histogram.canSampleBranches());
+  EXPECT_EQ(value(histogram.sampleCounts(5, counts)), 1);
+  EXPECT_EQ(counts, (std::map<std::string, size_t>{{"", 2}}));
+}
+
+TEST(QIRBatchSampling, HistogramIncludesUnrecordedResetAndReleaseMeasurements) {
+  for (const auto* operation :
+       {"__quantum__qis__reset__body", "__quantum__rt__qubit_release"}) {
+    SCOPED_TRACE(operation);
+    const std::string ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__initialize(ptr null)
+  %a = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  %b = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  call void @__quantum__qis__h__body(ptr %a)
+  call void @__quantum__qis__cnot__body(ptr %a, ptr %b)
+  call void @)" + std::string(operation) +
+                           R"((ptr %a)
+  call void @__quantum__qis__mz__body(ptr %b, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__int_record_output(i64 17, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare ptr @__quantum__rt__qubit_allocate(ptr)
+declare void @__quantum__rt__qubit_release(ptr)
+declare void @__quantum__qis__reset__body(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__cnot__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+declare void @__quantum__rt__int_record_output(i64, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+    std::string text;
+    llvm::raw_string_ostream output(text);
+    auto sessionOwner = value(qir::JitSession::create(
+        ir, "hidden-measurement", qir::Execution::Sampling, 17, &output));
+    auto& session = *sessionOwner;
+    ASSERT_TRUE(session.canSampleBranches());
+    constexpr size_t shots = 100000;
+    std::map<std::string, size_t> counts;
+    ASSERT_EQ(value(session.sampleCounts(shots, counts)), 0);
+    EXPECT_TRUE(text.empty());
+    ASSERT_EQ(counts.size(), 2);
+    EXPECT_EQ(counts["0"] + counts["1"], shots);
+    EXPECT_NEAR(static_cast<double>(counts["0"]), shots / 2., 1500.);
+    session.runtime().seed(17);
+    std::map<std::string, size_t> repeated;
+    ASSERT_EQ(value(session.sampleCounts(shots, repeated)), 0);
+    EXPECT_EQ(repeated, counts);
+    std::vector<std::string> reference;
+    ASSERT_EQ(value(session.sample(2048, reference)), 0);
+    EXPECT_NEAR(static_cast<double>(std::ranges::count(reference, "0")), 1024.,
+                200.);
+    EXPECT_FALSE(text.empty());
+  }
 }
 
 TEST(QIRBatchSampling, SharesCompiledCodeWithPrivateConcurrentRuntimes) {
   const auto ir = getProgram("BellPairAdaptive.ll");
-  qir::JitSession shared(ir, "shared", qir::Execution::Sampling, 17);
+  auto sharedOwner = value(
+      qir::JitSession::create(ir, "shared", qir::Execution::Sampling, 17));
+  auto& shared = *sharedOwner;
   ASSERT_TRUE(shared.canShareCompiledCode());
   std::array<std::vector<std::string>, 2> actual;
   std::array<std::future<int64_t>, 2> tasks;
   for (size_t i = 0; i < tasks.size(); ++i) {
     tasks[i] = std::async(std::launch::async, [&, i] {
-      auto worker = shared.makeWorkerRuntime(21 + i);
+      auto worker = value(shared.makeWorkerRuntime(21 + i));
       worker->disableOutput();
-      return shared.sampleWithRuntime(*worker, 128, actual[i], false);
+      return value(shared.sampleWithRuntime(*worker, 128, actual[i], false));
     });
   }
   for (size_t i = 0; i < tasks.size(); ++i) {
     EXPECT_EQ(tasks[i].get(), 0);
-    qir::JitSession reference(ir, "reference", qir::Execution::Sampling,
-                              21 + i);
+    auto referenceOwner = value(qir::JitSession::create(
+        ir, "reference", qir::Execution::Sampling, 21 + i));
+    auto& reference = *referenceOwner;
     reference.runtime().disableOutput();
     std::vector<std::string> expected;
-    ASSERT_EQ(reference.sample(128, expected), 0);
+    ASSERT_EQ(value(reference.sample(128, expected)), 0);
     EXPECT_EQ(actual[i], expected);
   }
 }
@@ -846,10 +1206,11 @@ declare i1 @__quantum__rt__read_result(ptr)
 declare void @__quantum__rt__result_record_output(ptr, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-  qir::JitSession session(ir, "no-initialize");
+  auto sessionOwner = value(qir::JitSession::create(ir, "no-initialize"));
+  auto& session = *sessionOwner;
   session.runtime().disableOutput();
   std::vector<std::string> results;
-  ASSERT_EQ(session.sample(32, results), 0);
+  ASSERT_EQ(value(session.sample(32, results)), 0);
   EXPECT_EQ(results, std::vector<std::string>(32, "1"));
 }
 
@@ -862,20 +1223,21 @@ define i64 @main() #0 {
 declare void @__quantum__qis__x__body(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" }
 )";
-  qir::JitSession session(ir, "declared-width",
-                          qir::Execution::StateExtraction);
+  auto sessionOwner = value(qir::JitSession::create(
+      ir, "declared-width", qir::Execution::StateExtraction));
+  auto& session = *sessionOwner;
   for (size_t job = 0; job < 2; ++job) {
-    ASSERT_EQ(session.run(), 0);
-    auto state = session.runtime().takeState();
+    ASSERT_EQ(value(session.run()), 0);
+    auto state = value(session.runtime().takeState());
     EXPECT_EQ(state.numQubits, 3);
     EXPECT_EQ(state.dd->qubits(), 3);
-    const auto values = dd::getVector(state.edge);
+    const auto values = value(dd::getVector(state.edge));
     ASSERT_EQ(values.size(), 8);
     EXPECT_EQ(values[1], 1.);
     state.dd->decRef(state.edge);
   }
   std::vector<std::string> results;
-  EXPECT_THROW(session.sample(1, results), std::logic_error);
+  EXPECT_FALSE(llvm::toString(session.sample(1, results).takeError()).empty());
 }
 
 TEST(QIRStaticResources, RejectsQubitCapacityBeyondDDRange) {
@@ -883,7 +1245,10 @@ TEST(QIRStaticResources, RejectsQubitCapacityBeyondDDRange) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "required_num_qubits"="65537" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "excess-qubit-capacity"), std::out_of_range);
+  EXPECT_FALSE(
+      llvm::toString(
+          qir::JitSession::create(ir, "excess-qubit-capacity").takeError())
+          .empty());
 }
 
 TEST(QIRStaticResources, RejectsMalformedResourceCapacities) {
@@ -895,8 +1260,10 @@ TEST(QIRStaticResources, RejectsMalformedResourceCapacities) {
     const std::string ir = std::string("define i64 @main() #0 { ret i64 0 }\n"
                                        "attributes #0 = { \"entry_point\" ") +
                            attribute + " }";
-    EXPECT_THROW(qir::JitSession(ir, "invalid-capacity"),
-                 std::invalid_argument);
+    EXPECT_FALSE(
+        llvm::toString(
+            qir::JitSession::create(ir, "invalid-capacity").takeError())
+            .empty());
   }
 }
 
@@ -905,17 +1272,20 @@ TEST(QIRStaticResources, ConfiguresRuntimeResourceBounds) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "required_num_qubits"="1" "required_num_results"="1" }
 )";
-  qir::JitSession session(ir, "resource-bounds");
+  auto sessionOwner = value(qir::JitSession::create(ir, "resource-bounds"));
+  auto& session = *sessionOwner;
   auto& runtime = session.runtime();
   Qubit* zeroQubit = nullptr;
   Result* zeroResult = nullptr;
-  EXPECT_NO_THROW(runtime.measure(zeroQubit, zeroResult));
-  EXPECT_THROW(
-      runtime.measure(reinterpret_cast<Qubit*>(uintptr_t{1}), zeroResult),
-      std::out_of_range);
-  EXPECT_THROW(
-      runtime.measure(zeroQubit, reinterpret_cast<Result*>(uintptr_t{1})),
-      std::out_of_range);
+  value(runtime.measure(zeroQubit, zeroResult));
+  EXPECT_FALSE(
+      llvm::toString(
+          runtime.measure(reinterpret_cast<Qubit*>(uintptr_t{1}), zeroResult))
+          .empty());
+  EXPECT_FALSE(
+      llvm::toString(
+          runtime.measure(zeroQubit, reinterpret_cast<Result*>(uintptr_t{1})))
+          .empty());
 }
 
 TEST(QIRJIT, ResolvesProcessSymbolsWithDefaultGenerator) {
@@ -928,8 +1298,9 @@ define i64 @main() #0 {
 declare i64 @strlen(ptr)
 attributes #0 = { "entry_point" }
 )";
-  qir::JitSession session(ir, "process-symbol");
-  EXPECT_EQ(session.run(), 4);
+  auto sessionOwner = value(qir::JitSession::create(ir, "process-symbol"));
+  auto& session = *sessionOwner;
+  EXPECT_EQ(value(session.run()), 4);
 }
 
 TEST(QIRJIT, RejectsTargetIncompatibleWithInProcessExecution) {
@@ -938,8 +1309,10 @@ target triple = "wasm32-unknown-unknown"
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" }
 )";
-  EXPECT_THROW(qir::JitSession(ir, "incompatible-target"),
-               std::invalid_argument);
+  EXPECT_FALSE(
+      llvm::toString(
+          qir::JitSession::create(ir, "incompatible-target").takeError())
+          .empty());
 }
 
 TEST(QIRBatchSampling, PreservesWideSeededOutputMappings) {
@@ -958,7 +1331,8 @@ TEST(QIRBatchSampling, PreservesWideSeededOutputMappings) {
     const auto pointer = [](size_t q) {
       return "ptr inttoptr (i64 " + std::to_string(q) + " to ptr)";
     };
-    std::ostringstream ir;
+    std::string irStorage;
+    llvm::raw_string_ostream ir(irStorage);
     ir << "define i64 @main() #0 {\n";
     for (const size_t q : {0, 5, 63}) {
       ir << "call void @__quantum__qis__x__body(" << pointer(q) << ")\n";
@@ -985,11 +1359,12 @@ declare void @__quantum__qis__mz__body(ptr, ptr)
 declare void @__quantum__rt__result_record_output(ptr, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="64" "required_num_results"="64" }
 )";
-    qir::JitSession session(ir.str(), "wide-output", qir::Execution::Sampling,
-                            42);
+    auto sessionOwner = value(qir::JitSession::create(
+        ir.str(), "wide-output", qir::Execution::Sampling, 42));
+    auto& session = *sessionOwner;
     session.runtime().disableOutput();
     std::vector<std::string> shots;
-    ASSERT_EQ(session.sample(32, shots), 0);
+    ASSERT_EQ(value(session.sample(32, shots)), 0);
     ASSERT_EQ(shots.size(), 32);
     EXPECT_EQ(session.runtime().getMeasurements(), shots.back());
     if (mode == 0) {
@@ -1010,7 +1385,10 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_
     }
     session.runtime().seed(42);
     std::vector<std::string> repeated;
-    ASSERT_EQ(session.sample(32, repeated), 0);
+    ASSERT_EQ(
+        value(session.sample(
+            32, [&](std::string_view shot) { repeated.emplace_back(shot); })),
+        0);
     EXPECT_EQ(repeated, shots);
   }
 }
@@ -1031,19 +1409,22 @@ declare void @__quantum__rt__result_record_output(ptr, ptr)
 declare void @__quantum__rt__bool_record_output(i1, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="1" "required_num_results"="1" }
 )";
-  qir::JitSession session(ir, "boolean-output", qir::Execution::Sampling);
+  std::string outputText;
+  llvm::raw_string_ostream output{outputText};
+  auto sessionOwner = value(
+      qir::JitSession::create(ir, "boolean-output", qir::Execution::Sampling));
+  auto& session = *sessionOwner;
   EXPECT_EQ(session.quantumCallSites(), 1U);
   session.runtime().disableOutput();
   std::vector<std::string> shots;
   bool available = false;
-  ASSERT_EQ(session.sample(4, shots, &available), 0);
+  ASSERT_EQ(value(session.sample(4, shots, &available)), 0);
   EXPECT_FALSE(available);
   EXPECT_EQ(shots, (std::vector<std::string>{"011", "011", "011", "011"}));
   EXPECT_EQ(session.runtime().getMeasurements(), shots.back());
 
-  std::ostringstream output;
   session.runtime().setOstream(output);
-  ASSERT_EQ(session.sample(4, shots, &available), 0);
+  ASSERT_EQ(value(session.sample(4, shots, &available)), 0);
   EXPECT_FALSE(available);
   EXPECT_EQ(shots, (std::vector<std::string>{"011", "011", "011", "011"}));
   EXPECT_FALSE(output.str().empty());
@@ -1059,11 +1440,13 @@ define i64 @main() #0 {
 declare void @__quantum__rt__bool_record_output(i1, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="0" "required_num_results"="0" }
 )";
-  qir::JitSession session(ir, "constant-output", qir::Execution::Sampling);
+  auto sessionOwner = value(
+      qir::JitSession::create(ir, "constant-output", qir::Execution::Sampling));
+  auto& session = *sessionOwner;
   session.runtime().disableOutput();
   std::vector<std::string> shots;
   bool available = false;
-  ASSERT_EQ(session.sample(3, shots, &available), 0);
+  ASSERT_EQ(value(session.sample(3, shots, &available)), 0);
   EXPECT_FALSE(available);
   EXPECT_EQ(shots, (std::vector<std::string>{"10", "10", "10"}));
   EXPECT_EQ(session.runtime().getMeasurements(), shots.back());
@@ -1074,10 +1457,12 @@ TEST(QIRStaticResources, EmptyStatesKeepZeroCapacityAfterTransfer) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="0" }
 )";
-  qir::JitSession session(ir, "empty-state", qir::Execution::StateExtraction);
+  auto sessionOwner = value(qir::JitSession::create(
+      ir, "empty-state", qir::Execution::StateExtraction));
+  auto& session = *sessionOwner;
   for (size_t job = 0; job < 2; ++job) {
-    ASSERT_EQ(session.run(), 0);
-    auto state = session.runtime().takeState();
+    ASSERT_EQ(value(session.run()), 0);
+    auto state = value(session.runtime().takeState());
     ASSERT_NE(state.dd, nullptr);
     EXPECT_EQ(state.dd->qubits(), 0);
     EXPECT_EQ(state.numQubits, 0);
@@ -1114,10 +1499,12 @@ declare void @__quantum__qis__swap__body(ptr, ptr)
 declare void @__quantum__qis__mz__body(ptr, ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-    qir::JitSession session(ir, "non-terminal",
-                            qir::Execution::StateExtraction);
-    EXPECT_THROW(session.run(), std::invalid_argument);
-    EXPECT_THROW(session.runtime().takeState(), std::invalid_argument);
+    auto sessionOwner = value(qir::JitSession::create(
+        ir, "non-terminal", qir::Execution::StateExtraction));
+    auto& session = *sessionOwner;
+    EXPECT_FALSE(llvm::toString(session.run().takeError()).empty());
+    EXPECT_FALSE(
+        llvm::toString(session.runtime().takeState().takeError()).empty());
   }
 }
 
@@ -1155,9 +1542,11 @@ declare void @__quantum__qis__mz__body(ptr, ptr)
 declare i1 @__quantum__rt__read_result(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-    EXPECT_THROW(
-        qir::JitSession(ir, "unsupported", qir::Execution::StateExtraction),
-        std::invalid_argument);
+    EXPECT_FALSE(
+        llvm::toString(qir::JitSession::create(ir, "unsupported",
+                                               qir::Execution::StateExtraction)
+                           .takeError())
+            .empty());
   }
 }
 
@@ -1174,15 +1563,17 @@ exit:
 declare ptr @__quantum__rt__qubit_allocate(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-  qir::JitSession session(ir, "unused-allocation",
-                          qir::Execution::StateExtraction);
-  ASSERT_EQ(session.run(), 7);
-  auto state = session.runtime().takeState();
+  auto sessionOwner = value(qir::JitSession::create(
+      ir, "unused-allocation", qir::Execution::StateExtraction));
+  auto& session = *sessionOwner;
+  ASSERT_EQ(value(session.run()), 7);
+  auto state = value(session.runtime().takeState());
   EXPECT_EQ(state.numQubits, 0);
   EXPECT_TRUE(state.edge.isOneTerminal());
   const std::array<Qubit*, 1> qubits{nullptr};
-  session.runtime().reset(qubits);
-  EXPECT_THROW(session.runtime().takeState(), std::invalid_argument);
-  ASSERT_EQ(session.run(), 7);
-  EXPECT_NO_THROW(session.runtime().takeState());
+  value(session.runtime().reset(qubits));
+  EXPECT_FALSE(
+      llvm::toString(session.runtime().takeState().takeError()).empty());
+  ASSERT_EQ(value(session.run()), 7);
+  value(session.runtime().takeState());
 }

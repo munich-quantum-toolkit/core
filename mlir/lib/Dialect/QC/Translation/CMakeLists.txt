@@ -8,7 +8,6 @@
 
 add_mlir_library(
   MLIRQCTranslationSupport
-  PARTIAL_SOURCES_INTENDED
   StandardGate.cpp
   MeasurementStores.cpp
   LINK_LIBS
@@ -22,51 +21,8 @@ mqt_mlir_target_use_project_options(MLIRQCTranslationSupport)
 
 target_sources(
   MLIRQCTranslationSupport
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/StandardGate.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/MeasurementStores.h)
-
-add_mlir_library(
-  MLIRQCOpenQASMTranslation
-  PARTIAL_SOURCES_INTENDED
-  OpenQASMToQCEmitter.cpp
-  TranslateOpenQASMToQC.cpp
-  TranslateQCToOpenQASM3.cpp
-  LINK_LIBS
-  MQTCompilerTarget
-  MLIRAnalysis
-  MLIRFuncInlinerExtension
-  MLIRLLVMIRTransforms
-  MLIRTransforms
-  MLIRArithDialect
-  MLIRCBitDialect
-  MLIRFuncDialect
-  MLIRLLVMDialect
-  MLIROpenQASMFrontend
-  MLIRControlFlowDialect
-  MLIRMathDialect
-  MLIRMemRefDialect
-  MLIRMQTDialect
-  MLIRMQTUtils
-  MLIRSCFDialect
-  MLIRTensorDialect
-  MLIRUBDialect
-  MLIRQCDialect
-  MLIRQCProgramBuilder
-  MLIRQCTranslationSupport)
-
-mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)
-
-target_sources(
-  MLIRQCOpenQASMTranslation
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)
+  PUBLIC
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/StandardGate.h
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/MeasurementStores.h)

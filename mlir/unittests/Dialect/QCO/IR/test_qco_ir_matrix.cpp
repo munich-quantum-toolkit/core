@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -26,6 +27,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -35,6 +37,7 @@
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -56,6 +59,28 @@
 
 using namespace mlir;
 using namespace qco;
+
+static LogicalResult simplify(ModuleOp moduleOp) {
+  PassManager manager(moduleOp.getContext());
+  manager.addPass(mlir::mqt::createSimplifyQuantum());
+  populateQCOCleanupPipeline(manager);
+  return manager.run(moduleOp);
+}
+
+/// Build an ordinary function whose quantum results remain observable.
+template <typename Build>
+static OwningOpRef<ModuleOp> buildQuantumFunction(MLIRContext* context,
+                                                  Build build) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  auto function = builder.createFunction(
+      "test", {}, [&](ValueRange) { return build(builder); });
+  function.setPublic();
+  auto moduleOp = builder.finalize();
+  moduleOp->lookupSymbol<func::FuncOp>("main").erase();
+  function.setName("main");
+  return moduleOp;
+}
 
 [[nodiscard]] static DynamicMatrix controlledMatrix(const Matrix2x2& body) {
   DynamicMatrix result = DynamicMatrix::identity(4);
@@ -113,15 +138,15 @@ static Value composedBodyWithNestedPow(QCOProgramBuilder& b) {
 }
 
 template <typename GateOp, typename Builder>
-static void assertCanonicalizedPowMatrixMatches(MLIRContext* context,
-                                                Builder&& build) {
+static void assertSimplifiedPowMatrixMatches(MLIRContext* context,
+                                             Builder&& build) {
   auto moduleOp =
       QCOProgramBuilder::build(context, std::forward<Builder>(build));
   ASSERT_TRUE(moduleOp);
 
   const auto expected = firstPowOp(*moduleOp).getUnitaryMatrix();
   ASSERT_TRUE(expected);
-  ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(simplify(*moduleOp)));
 
   auto funcOp = cast<func::FuncOp>(moduleOp->getBody()->front());
   EXPECT_TRUE(funcOp.getBody().template getOps<PowOp>().empty());
@@ -208,7 +233,7 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
                 unitaries.front().getQubitsIn().front()),
             unitaries.front().getQubitsOut().front());
 
-  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
+  ASSERT_TRUE(succeeded(simplify(*module)));
   unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
   ASSERT_EQ(unitaries.size(), 1U);
   EXPECT_TRUE(
@@ -227,7 +252,7 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
       "matrix",
       DenseElementsAttr::get(
           matrixType, llvm::ArrayRef<std::complex<double>>(identityValues)));
-  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
+  ASSERT_TRUE(succeeded(simplify(*module)));
   EXPECT_TRUE(function.getBody().getOps<UnitaryOp>().empty());
 }
 
@@ -762,20 +787,20 @@ TEST_F(QCOMatrixTest, PowThirdXOpMatrix) {
   ASSERT_TRUE(cubed.isApprox(XOp::getUnitaryMatrix()));
 }
 
-TEST_F(QCOMatrixTest, CanonicalizedPowThirdXPreservesFullMatrix) {
-  assertCanonicalizedPowMatrixMatches<RXOp>(context.get(), powThirdX);
+TEST_F(QCOMatrixTest, SimplifiedPowThirdXPreservesFullMatrix) {
+  assertSimplifiedPowMatrixMatches<RXOp>(context.get(), powThirdX);
 }
 
-TEST_F(QCOMatrixTest, CanonicalizedPowHalfYPreservesFullMatrix) {
-  assertCanonicalizedPowMatrixMatches<RYOp>(context.get(), powHalfY);
+TEST_F(QCOMatrixTest, SimplifiedPowHalfYPreservesFullMatrix) {
+  assertSimplifiedPowMatrixMatches<RYOp>(context.get(), powHalfY);
 }
 
-TEST_F(QCOMatrixTest, CanonicalizedPowThirdSxPreservesFullMatrix) {
-  assertCanonicalizedPowMatrixMatches<RXOp>(context.get(), powThirdSx);
+TEST_F(QCOMatrixTest, SimplifiedPowThirdSxPreservesFullMatrix) {
+  assertSimplifiedPowMatrixMatches<RXOp>(context.get(), powThirdSx);
 }
 
-TEST_F(QCOMatrixTest, CanonicalizedPowThirdSxdgPreservesFullMatrix) {
-  assertCanonicalizedPowMatrixMatches<RXOp>(context.get(), powThirdSxdg);
+TEST_F(QCOMatrixTest, SimplifiedPowThirdSxdgPreservesFullMatrix) {
+  assertSimplifiedPowMatrixMatches<RXOp>(context.get(), powThirdSxdg);
 }
 
 TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
@@ -809,7 +834,7 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
     ASSERT_TRUE(moduleOp);
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
-    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(succeeded(simplify(*moduleOp)));
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
 
@@ -829,7 +854,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
                0.1, 0.2, 0.3,
                static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT)},
        }) {
-    auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
+    auto moduleOp = buildQuantumFunction(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
       auto [control, target] =
@@ -843,7 +868,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
     ASSERT_TRUE(moduleOp);
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
-    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(succeeded(simplify(*moduleOp)));
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
 
@@ -864,7 +889,7 @@ TEST_F(QCOMatrixTest, RejectedPowURemainsUnchanged) {
     SCOPED_TRACE(testing::Message()
                  << "theta=" << theta << ", phi=" << phi
                  << ", lambda=" << lambda << ", exponent=" << exponent);
-    auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
+    auto moduleOp = buildQuantumFunction(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
       auto [control, target] =
@@ -880,7 +905,7 @@ TEST_F(QCOMatrixTest, RejectedPowURemainsUnchanged) {
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
-    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(succeeded(simplify(*moduleOp)));
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
@@ -900,7 +925,7 @@ TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
     SCOPED_TRACE(testing::Message()
                  << "theta=" << theta << ", phi=" << phi
                  << ", lambda=" << lambda << ", exponent=" << exponent);
-    auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
+    auto moduleOp = buildQuantumFunction(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
       auto [control, target] =
@@ -916,7 +941,7 @@ TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
-    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(succeeded(simplify(*moduleOp)));
     ASSERT_TRUE(verify(*moduleOp).succeeded());
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
@@ -924,14 +949,14 @@ TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
 }
 
 TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
-  auto moduleOp = QCOProgramBuilder::build(context.get(), [](auto& b) {
+  auto moduleOp = buildQuantumFunction(context.get(), [](auto& b) {
     auto q = b.staticQubit(0);
     q = b.pow(0.5, q, [&](Value arg) { return b.u(0.1, 0.2, 0.3, arg); });
     return SmallVector<Value>{q};
   });
   ASSERT_TRUE(moduleOp);
 
-  ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(simplify(*moduleOp)));
   EXPECT_EQ(llvm::range_size(cast<func::FuncOp>(moduleOp->getBody()->front())
                                  .getBody()
                                  .getOps<PowOp>()),
@@ -954,7 +979,7 @@ TEST_F(QCOMatrixTest, FractionalParameterizedPowDoesNotFold) {
     const auto expected = firstPowOp(*moduleOp).getUnitaryMatrix();
     ASSERT_TRUE(expected);
 
-    ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
+    ASSERT_TRUE(succeeded(simplify(*moduleOp)));
     auto powOps =
         llvm::to_vector(cast<func::FuncOp>(moduleOp->getBody()->front())
                             .getBody()
@@ -1109,7 +1134,7 @@ TEST_F(QCOMatrixTest, DcxInverseReversesTargets) {
 TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
   for (const bool reversed : {false, true}) {
     SCOPED_TRACE(reversed);
-    auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto program = buildQuantumFunction(context.get(), [&](auto& builder) {
       auto in0 = builder.staticQubit(0);
       auto in1 = builder.staticQubit(1);
       auto [q0, q1] = builder.dcx(in0, in1);
@@ -1122,7 +1147,7 @@ TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
     });
     ASSERT_TRUE(program);
     OwningOpRef<ModuleOp> expected = program->clone();
-    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
+    ASSERT_TRUE(succeeded(simplify(*program)));
     ASSERT_TRUE(succeeded(verifyLinearity(*program)));
     ::mqt::test::expectFullUnitaryEqual(*expected, *program, 2);
     auto function = *program->getOps<func::FuncOp>().begin();
@@ -1132,7 +1157,7 @@ TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
 }
 
 TEST_F(QCOMatrixTest, ControlledSwapRemainsConditional) {
-  auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+  auto program = buildQuantumFunction(context.get(), [&](auto& builder) {
     auto control = builder.staticQubit(0);
     auto q0 = builder.staticQubit(1);
     auto q1 = builder.staticQubit(2);
@@ -1144,7 +1169,7 @@ TEST_F(QCOMatrixTest, ControlledSwapRemainsConditional) {
     return SmallVector<Value>{controls[0], targets[0], targets[1]};
   });
   ASSERT_TRUE(program);
-  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
+  ASSERT_TRUE(succeeded(simplify(*program)));
   ASSERT_TRUE(succeeded(verifyLinearity(*program)));
   auto function = *program->getOps<func::FuncOp>().begin();
   auto controls = llvm::to_vector(function.getBody().getOps<CtrlOp>());

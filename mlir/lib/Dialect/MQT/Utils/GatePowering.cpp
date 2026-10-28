@@ -50,14 +50,11 @@ bool isIntegerExponent(const double value) {
   return value == std::floor(value) && std::isfinite(value);
 }
 
-bool isEvenExponent(const double value) {
-  return isIntegerExponent(value) && std::fmod(std::fabs(value), 2.0) == 0.0;
-}
+bool isEvenExponent(const double value) { return std::fmod(value, 2.0) == 0.0; }
 
 std::optional<UPowerParameters>
 powerUParameters(double theta, double phi, double lambda, double exponent) {
-  if (!std::isfinite(theta) || !std::isfinite(phi) || !std::isfinite(lambda) ||
-      !isIntegerExponent(exponent) || exponent <= 0.0 ||
+  if (!isIntegerExponent(exponent) || exponent <= 0.0 ||
       exponent > static_cast<double>(MAX_SAFE_U_POWER_EXPONENT)) {
     return std::nullopt;
   }

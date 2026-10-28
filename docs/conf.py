@@ -58,7 +58,7 @@ extensions = [
     "sphinxext.opengraph",
 ]
 
-# Both builders execute notebooks that write to the same source directory.
+# Build Markdown after HTML to reuse its doctrees and native API output.
 llms_txt_build_parallel = False
 
 # The Markdown builder omits these nodes; keep warnings for new unsupported types.
@@ -119,6 +119,8 @@ myst_heading_anchors = 3
 
 nb_execution_mode = "force"
 nb_execution_raise_on_error = True
+# Preserve textual notebook results in the LLM Markdown output.
+nb_mime_priority_overrides = [("llms-markdown", "text/plain", 0)]
 
 
 class CDAStyle(UnsrtStyle):
@@ -146,11 +148,17 @@ copybutton_line_continuation_character = "\\"
 modindex_common_prefix = ["mqt.core."]
 
 autoapi_dirs = ["../python/mqt"]
+# Native API declarations live in stubs; Python files only expose their modules.
+autoapi_file_patterns = ["*.pyi", "*.py"]
 autoapi_python_use_implicit_namespaces = True
 autoapi_root = "api"
 autoapi_add_toctree_entry = False
 autoapi_ignore = [
     "*/**/_version.py",
+    "*/mqt/core/bench.py",
+    "*/mqt/core/dd.py",
+    "*/mqt/core/mlir.py",
+    "*/mqt/core/qdmi.py",
 ]
 autoapi_options = [
     "members",
@@ -169,6 +177,8 @@ napoleon_numpy_docstring = False
 # are typing expressions, private types, or dependency types absent from their inventories.
 nitpick_ignore_regex = [
     ("py:(class|obj)", r"_Result"),
+    # Compiler signature aliases are private stub types, not runtime classes.
+    ("py:class", r"_(CompilerInput|CompilerInputT|CompilerTarget|CompilerOutput|CompileOptions|ProgramT|SourceT)"),
     ("py:class", r"mqt\.core\.plugins\.pennylane\.converter\._ConvertedProgram"),
     ("py:class", r"qiskit\.result\.models\.ExperimentResult"),
     (
@@ -194,13 +204,11 @@ linkcheck_anchors_ignore_for_url = [
 ]
 
 
-cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
-_qdmi_api_base = "https://munich-quantum-software-stack.github.io/QDMI/v1.4.0/"
+cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/")
 qdmi_api_tagfile = (
     "_build/qdmi.tag",
-    _qdmi_api_base,
+    "https://munich-quantum-software-stack.github.io/QDMI/v1.4.0/",
 )
-qdmi_api_tagfile_url = f"{_qdmi_api_base}qdmi.tag"
 
 # -- Options for HTML output -------------------------------------------------
 

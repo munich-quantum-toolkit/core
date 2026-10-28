@@ -74,7 +74,10 @@ def MQTDialect : Dialect {
     required by those contracts in the explicit attributes above.
 
     `mqt.entry_point` marks the single public, defined `func.func` program entry
-    in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
+    in a module. QC/QCO entries cannot return quantum values. Their classical
+    results are program data; an entry with no outputs returns no values. QIR conversion records supported bit outputs and generates
+    an `i64` zero execution status. It rejects other scalar program outputs.
+    Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
     qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
     entry block. Other functions receive quantum resources as arguments;
     they cannot allocate them. Classical allocations and static qubit references
@@ -289,11 +292,15 @@ def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",
 }
 
 def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
-  let summary = "Exact payload identity";
+  let summary = "Selected payload format and accepted versions";
   let description = [{
-    Identifies a payload by format ID, exact version, optional profile ID, and
+    Identifies a payload by format ID, receiver-version constraint, optional profile ID, and
     encoding. Every field takes part in identity. An empty profile denotes a
     payload without a named profile.
+    An empty version identifies an unversioned format. Nonempty versions use
+    `major[.minor[.patch]]` for a same-major ceiling, or comma-conjoined
+    `>=`, `<`, and `<=` bounds. For example, `2.1` accepts versions from 2.0
+    through 2.1, while `>=2.1,<3` requires at least 2.1.
 
     The following identity selects binary QIR 2.1 with the base profile:
 

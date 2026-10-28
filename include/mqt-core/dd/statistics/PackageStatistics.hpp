@@ -15,26 +15,27 @@
 
 #include "dd/Package.hpp"
 
-#include <iostream>
+#include "llvm/Support/raw_ostream.h"
+
 #include <string>
 
 namespace dd {
 
 /// Computes an estimate for the memory usage of active DDs.
 ///
-/// The estimate is based on the number of active entries which are
-/// computed by temporarily marking all nodes reachable from the current root
-/// set and subsequently counting them in the unique tables. It accounts for the
-/// memory used by DD nodes, DD edges, and real numbers.
+/// The estimate counts nodes reachable from tracked roots and their real
+/// numbers. Node sizes include outgoing edges. Unused capacity and compute
+/// tables are excluded.
+///
 /// @param package The package instance
 /// @return The estimated memory usage in MiB
 [[nodiscard]] double computeActiveMemoryMiB(Package& package);
 
 /// Computes an estimate for the peak memory usage of DDs.
 ///
-/// The estimate is based on the peak number of used entries in the
-/// respective memory managers. It accounts for the memory used by DD nodes, DD
-/// edges, and real numbers.
+/// The estimate sums each manager's peak used entries. Node sizes include
+/// outgoing edges. Unused capacity and compute tables are excluded.
+///
 /// @param package The package instance
 /// @return The estimated memory usage in MiB
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
@@ -52,6 +53,6 @@ namespace dd {
 [[nodiscard]] std::string
 getStatisticsString(Package& package, bool includeIndividualTables = false);
 
-void printStatistics(Package& package, std::ostream& os = std::cout);
+void printStatistics(Package& package, llvm::raw_ostream& os = llvm::outs());
 
 } // namespace dd

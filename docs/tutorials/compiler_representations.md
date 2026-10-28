@@ -126,15 +126,16 @@ and results.
 
 ## Run one optimization and check its meaning
 
-A **pass** inspects or transforms IR. The `canonicalize` pass applies registered
-rules that simplify operations, including cancellation of adjacent Hadamards on
-the same qubit. It can apply several such rules; it is not a Hadamard-only pass.
+A **pass** inspects or transforms IR. The `simplify-quantum` pass cancels
+inverse pairs, combines rotations and specializes gates. For example, it cancels
+adjacent Hadamards on the same qubit. `canonicalize` folds classical values and
+removes structural scaffolding while preserving supplied unitary gates.
 
 Predict the gate count, then run it on a copy:
 
 ```{code-cell} ipython3
 optimized = qco.copy()
-optimized.run_pass_pipeline("canonicalize")
+optimized.run_pass_pipeline("simplify-quantum")
 final_qc = optimized.to_qc(copy=True)
 
 before = qc.num_gates()
@@ -214,8 +215,8 @@ display(Code(compiled.ir, language="mlir"))
 ```
 
 Use `qco_pipeline="canonicalize"` to replace the default QCO optimization
-pipeline in a target-independent compilation. It does not remove the compiler's
-required preparation and output stages. See the
+pipeline with classical and structural cleanup in a target-independent
+compilation. The compiler still runs its preparation and output stages. See the
 [compiler guide](../mlir/mqt_compiler_collection.md#run-passes-explicitly) for
 composing passes; the tutorial's target compilation uses the coordinated target
 pipeline.
@@ -240,9 +241,9 @@ print(f"Result owns a module: {converted_temporary.is_valid}")
 IR-verification method or a check of algorithmic correctness. Python module
 ownership and QCO's linear quantum values are different concepts.
 
-High-level `compile_program` preserves typed inputs by default; `inplace=True`
-allows it to consume them. Recreate inputs or use copies when comparing results
-interactively.
+High-level `compile_program` also consumes typed MLIR inputs, including when
+compilation fails. Set `copy=True` to keep a program for another conversion or
+comparison. Source strings, paths and Qiskit circuits remain reusable.
 
 ## Experiment: which Hadamards cancel?
 
@@ -254,14 +255,14 @@ for hadamards in range(5):
     variant = source.replace("h a;\nh a;\nh a;", "h a;\n" * hadamards)
     original = QCProgram.from_openqasm_str(variant).to_qco()
     simplified = original.copy()
-    simplified.run_pass_pipeline("canonicalize")
+    simplified.run_pass_pipeline("simplify-quantum")
     np.testing.assert_allclose(
         build_functionality(simplified),
         build_functionality(original),
         rtol=0,
         atol=1e-12,
     )
-    gates = simplified.to_qc(copy=True).num_gates()
+    gates = simplified.num_gates()
     assert gates == 1 + hadamards % 2
     print(f"{hadamards} Hadamards → {gates} total gates")
 ```
@@ -280,7 +281,7 @@ Hadamards across Z? Predict the final state before running:
 intervening = source.replace("h a;\nh a;\nh a;", "h a;\nz a;\nh a;")
 intervening_qco = QCProgram.from_openqasm_str(intervening).to_qco()
 simplified = intervening_qco.copy()
-simplified.run_pass_pipeline("canonicalize")
+simplified.run_pass_pipeline("simplify-quantum")
 np.testing.assert_allclose(
     build_functionality(simplified),
     build_functionality(intervening_qco),

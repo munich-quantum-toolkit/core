@@ -22,6 +22,7 @@ namespace mlir::qco {
 ///
 /// The iterator follows the flow of a qubit through a sequence of quantum
 /// operations while respecting the semantics of each operation.
+/// It requires a scalar QCO qubit and linear def-use chains.
 /// Unitary calls preserve the wire without entering the callee. Generic
 /// `func.call` operations end traversal; clients manage callee traversal.
 class [[nodiscard]] WireIterator {
@@ -38,8 +39,6 @@ public:
       : op_(qubit.getDefiningOp()), qubit_(qubit) {
     if (op_ == nullptr || isHead(op_)) {
       pos_ = Position::Head;
-    } else if (isTail(op_)) {
-      pos_ = Position::Tail;
     } else {
       pos_ = Position::Between;
     }
@@ -90,9 +89,6 @@ public:
 private:
   /// Labels the position on the wire.
   enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
-
-  /// Return true, if an op doesn't return, but only consumes, a qubit value.
-  static bool isTail(Operation*);
 
   /// Return true, if an op doesn't consume, but only returns, a qubit value.
   static bool isHead(Operation*);

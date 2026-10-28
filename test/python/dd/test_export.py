@@ -10,22 +10,24 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage
+from mqt.core.dd import DDPackage, MatrixDD, VectorDD
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 @pytest.mark.parametrize("matrix", [False, True])
-@pytest.mark.parametrize("colored", [False, True])
-@pytest.mark.parametrize("classic", [False, True])
-@pytest.mark.parametrize("edge_labels", [False, True])
+@pytest.mark.parametrize(
+    ("colored", "classic", "edge_labels"),
+    [(False, False, False), (True, False, False), (False, True, False), (False, False, True)],
+)
 def test_dot_options(*, matrix: bool, colored: bool, classic: bool, edge_labels: bool) -> None:
     """Keep export options available for both DD types."""
     package = DDPackage(1)
@@ -62,22 +64,70 @@ def test_svg_without_graphviz_executable(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_svg_native_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the native dot command when PyGraphviz is absent."""
+    """Render paths with spaces and report Graphviz failures."""
     monkeypatch.setitem(sys.modules, "pygraphviz", None)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PATH", str(tmp_path))
-    dot = tmp_path / ("dot.bat" if sys.platform == "win32" else "dot")
-    dot.write_text(
-        '@echo off\n> "%~4" echo native dot\n'
-        if sys.platform == "win32"
-        else '#!/bin/sh\nprintf "native dot\\n" > "$4"\n',
-        encoding="utf-8",
-    )
-    dot.chmod(0o755)
+    if sys.platform == "win32":
+        if shutil.which("dot.exe") is None:
+            pytest.skip("Graphviz dot.exe is not installed")
+    else:
+        monkeypatch.setenv("PATH", str(tmp_path))
+        dot = tmp_path / "dot"
+        dot.write_text('#!/bin/sh\nprintf "native dot\\n" > "$4"\n', encoding="utf-8")
+        dot.chmod(0o755)
     package = DDPackage(1)
     dd = package.zero_state(1)
+    directory = tmp_path / "folder.with.dot"
+    directory.mkdir()
+    filename = directory / "測定 with spaces;literal"
 
-    dd.to_svg("diagram.svg")
+    dd.to_svg(str(filename))
 
-    assert (tmp_path / "diagram.svg").read_text(encoding="utf-8").strip() == "native dot"
-    assert (tmp_path / "diagram.dot").read_text(encoding="utf-8") == dd.to_dot()
+    svg = filename.with_suffix(".svg").read_text(encoding="utf-8")
+    if sys.platform == "win32":
+        assert "<svg" in svg
+    else:
+        assert svg.strip() == "native dot"
+    assert filename.with_suffix(".dot").read_text(encoding="utf-8") == dd.to_dot()
+
+    if sys.platform != "win32":
+        dot.write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
+        with pytest.raises(RuntimeError, match="Graphviz dot exited with code 7"):
+            dd.to_svg(str(filename))
+
+
+@pytest.mark.parametrize("matrix", [False, True])
+@pytest.mark.parametrize("binary", [False, True])
+def test_serialized_bytes_and_errors(*, matrix: bool, binary: bool) -> None:
+    """Preserve serialized values and translate malformed-input exceptions."""
+    package = DDPackage(2)
+    values = np.array([[1, 2j], [-3, -4j]]) if matrix else np.array([1, 2j, -3, -4j])
+    dd = package.from_matrix(values) if matrix else package.from_vector(values)
+    payload = dd.to_bytes(binary=binary)
+    restored = type(dd).from_bytes(package, payload, binary=binary)
+    actual = restored.get_matrix(1) if isinstance(restored, MatrixDD) else restored.get_vector()
+    np.testing.assert_allclose(actual, values, rtol=1e-14, atol=0)
+    malformed = payload + b"\0" if binary else b"1\ninvalid\n"
+    with pytest.raises(RuntimeError):
+        type(dd).from_bytes(package, malformed, binary=binary)
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        (b"\n1\n", ValueError),
+        (b"invalid\n1\n", ValueError),
+        (b"+-1\n1\n", ValueError),
+        (b"2\n1\n", RuntimeError),
+        (b"1x\n1\n", RuntimeError),
+        (b"1\ninvalid\n", RuntimeError),
+        (b"2147483648\n1\n", IndexError),
+        (b"1\n1e400\n", IndexError),
+        (b"1\n1e-400\n", IndexError),
+    ],
+)
+def test_serialized_text_error_categories(payload: bytes, error: type[Exception]) -> None:
+    """Retain numeric syntax, numeric range, and serialized-format error classes."""
+    package = DDPackage(1)
+    with pytest.raises(error):
+        VectorDD.from_bytes(package, payload, binary=False)

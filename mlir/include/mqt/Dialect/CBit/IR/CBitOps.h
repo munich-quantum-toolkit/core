@@ -35,4 +35,12 @@ void validateStaticRegisterIndex(Value reg,
 /// bit loads, stores, and ordinary integer arithmetic.
 void populateCBitDecompositionPatterns(RewritePatternSet& patterns);
 
+/// Lower wide register comparisons to Boolean operations at the snapshot point.
+///
+/// For promotion, restrict expansion to bounded local registers with static
+/// accesses whose reads only feed constant comparisons. Other consumers retain
+/// packed snapshots.
+void populateRegisterComparisonPatterns(RewritePatternSet& patterns,
+                                        bool forPromotion = false);
+
 } // namespace mlir::cbit

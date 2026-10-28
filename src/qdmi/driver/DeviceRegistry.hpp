@@ -12,6 +12,8 @@
 
 #include "Driver.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -21,26 +23,25 @@
 namespace qdmi::detail {
 
 /// Rejects IDs that the QDMI string-property ABI cannot represent.
-void validateDeviceId(std::string_view id);
+llvm::Error validateDeviceId(std::string_view id);
 
 /// Stages one low-precedence device manifest before the driver is frozen.
-auto stageDeviceManifest(const std::filesystem::path& path) -> int;
+int stageDeviceManifest(const std::filesystem::path& path);
 
 /// Freezes and returns the staged device manifests.
-[[nodiscard]] auto freezeDeviceManifests()
-    -> std::vector<std::filesystem::path>;
+[[nodiscard]] std::vector<std::filesystem::path> freezeDeviceManifests();
 
 /// Reopens device-manifest staging after driver construction fails.
 void rollbackDeviceManifestFreeze();
 
 /// Parses one strict JSON object with the manifest session grammar.
-auto parseDeviceSessionJson(const char* data, size_t size,
-                            DeviceSessionConfig& config) -> int;
+int parseDeviceSessionJson(const char* data, size_t size,
+                           DeviceSessionConfig& config);
 
 /// Discovers configured QDMI devices without loading their libraries.
 class DeviceRegistry {
 public:
-  DeviceRegistry();
+  [[nodiscard]] static llvm::Expected<DeviceRegistry> discover();
 
   [[nodiscard]] const std::vector<qdmi::DeviceDefinition>& definitions() const {
     return definitions_;
@@ -51,6 +52,7 @@ public:
   }
 
 private:
+  DeviceRegistry() = default;
   std::vector<qdmi::DeviceDefinition> definitions_;
   std::vector<std::string> disabledIds_;
 };

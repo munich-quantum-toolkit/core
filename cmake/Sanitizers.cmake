@@ -37,9 +37,7 @@ function(enable_sanitizers target_name)
 
     option(ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" FALSE)
     if(ENABLE_SANITIZER_MEMORY AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-      if("address" IN_LIST sanitizers
-         OR "thread" IN_LIST sanitizers
-         OR "leak" IN_LIST sanitizers)
+      if("address" IN_LIST sanitizers OR "thread" IN_LIST sanitizers OR "leak" IN_LIST sanitizers)
         message(
           WARNING "Memory sanitizer does not work with Address, Thread and Leak sanitizer enabled")
       else()

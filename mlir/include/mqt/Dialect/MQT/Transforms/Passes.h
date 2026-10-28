@@ -13,9 +13,20 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 
+namespace mlir {
+class ModuleOp;
+class RewriterBase;
+} // namespace mlir
+
 namespace mlir::mqt {
 
-/// Forward block-local classical memory and propagate scoped QCO conditions.
+/// Discard entry-point QC and QCO phases outside quantum modifier bodies.
+///
+/// Preserves probabilities, not exact amplitudes. Helper functions are
+/// unchanged.
+void dropGlobalPhases(ModuleOp moduleOp, RewriterBase& rewriter);
+
+/// Propagate scoped QCO branch conditions.
 void simplifyClassicalControl(Operation* operation);
 
 #define GEN_PASS_DECL

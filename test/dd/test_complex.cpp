@@ -16,19 +16,28 @@
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
+#include "support/TestSupport.hpp"
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <array>
+#include <clocale>
 #include <cmath>
 #include <cstddef>
 #include <functional>
-#include <iomanip>
-#include <iostream>
 #include <limits>
-#include <sstream>
-#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
+
+using mqt::test::errorCode;
+using mqt::test::value;
 
 using namespace dd;
 
@@ -37,7 +46,9 @@ namespace {
 class CNTest : public testing::Test {
 protected:
   const fp savedTolerance = RealNumber::eps;
-  void TearDown() override { ComplexNumbers::setTolerance(savedTolerance); }
+  void TearDown() override {
+    value(ComplexNumbers::setTolerance(savedTolerance));
+  }
 
   MemoryManager mm{MemoryManager::create<RealNumber>()};
   RealNumberUniqueTable ut{mm};
@@ -54,8 +65,9 @@ TEST_F(CNTest, RejectsInvalidTolerance) {
            std::numeric_limits<fp>::infinity(),
            std::numeric_limits<fp>::quiet_NaN(),
        }) {
-    EXPECT_THROW(ComplexNumbers::setTolerance(tolerance),
-                 std::invalid_argument);
+    EXPECT_EQ(
+        errorCode([&] { return ComplexNumbers::setTolerance(tolerance); }),
+        std::errc::invalid_argument);
     EXPECT_EQ(RealNumber::eps, savedTolerance);
   }
 }
@@ -71,28 +83,28 @@ TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_EQ(RealNumber::val(cn.lookup(-1., -1.).r), -1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(-1., -1.).i), -1.);
   auto c = cn.lookup(0., -1.);
-  std::cout << c << "\n";
+  llvm::outs() << c << "\n";
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), 0.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -1.);
   c = cn.lookup(0., 1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), 0.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), 1.);
   c = cn.lookup(0., -0.5);
-  std::cout << c << "\n";
+  llvm::outs() << c << "\n";
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), 0.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -0.5);
   c = cn.lookup(-1., -1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).r), -1.);
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -1.);
-  std::cout << c << "\n";
+  llvm::outs() << c << "\n";
 
   auto const e = cn.lookup(1., -1.);
-  std::cout << e << "\n";
-  std::cout << ComplexValue{1., 1.} << "\n";
-  std::cout << ComplexValue{1., -1.} << "\n";
-  std::cout << ComplexValue{1., -0.5} << "\n";
+  llvm::outs() << e << "\n";
+  llvm::outs() << ComplexValue{1., 1.} << "\n";
+  llvm::outs() << ComplexValue{1., -1.} << "\n";
+  llvm::outs() << ComplexValue{1., -0.5} << "\n";
   ut.print();
-  std::cout << ut.getStats();
+  llvm::outs() << ut.getStats();
 }
 
 TEST_F(CNTest, NearZeroLookup) {
@@ -176,7 +188,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
   auto* second = ut.lookup(0.25 + (4 * RealNumber::eps));
   ASSERT_NE(first, second);
   RealNumber::mark(first);
-  ComplexNumbers::setTolerance(RealNumber::eps * 16);
+  value(ComplexNumbers::setTolerance(RealNumber::eps * 16));
   EXPECT_EQ(ut.lookup(second->value), second);
   EXPECT_EQ(ut.lookup(first->value), first);
   EXPECT_TRUE(RealNumber::isMarked(first));
@@ -188,7 +200,7 @@ TEST_F(CNTest, ToleranceChangesPreserveNearestLookup) {
            1e-6,
            1e-3,
        }) {
-    ComplexNumbers::setTolerance(tolerance);
+    value(ComplexNumbers::setTolerance(tolerance));
     for (const fp value : {
              0.25,
              std::nextafter(0.25, 0.),
@@ -241,6 +253,42 @@ TEST(DDComplexTest, LowestFractions) {
               ::testing::Pair(1, 1));
 }
 
+TEST(DDComplexTest, ParsesFiniteSerializedComponents) {
+  for (const auto& [real, imaginary, expected] :
+       std::to_array<std::tuple<const char*, const char*, ComplexValue>>({
+           {"", "", {}},
+           {"+1.25", "", {1.25}},
+           {"-2.5e-3", "", {-0.0025}},
+           {"", "i", {0., 1.}},
+           {"", "I", {0., 1.}},
+           {"", "+i", {0., 1.}},
+           {"", "+I", {0., 1.}},
+           {"", "-i", {0., -1.}},
+           {"", "-I", {0., -1.}},
+           {"0.5", "+i", {0.5, 1.}},
+           {"0.5", "-I", {0.5, -1.}},
+           {"0.5", "", {0.5, 0.}},
+           {"", "-2.5e+3i", {0., -2500.}},
+           {"-0", " - 0i", {-0., -0.}},
+           {"1.25", " - 2.5e-3i", {1.25, -0.0025}},
+           {"0e-400", "", {}},
+           {
+               "4.9406564584124654e-324",
+               "",
+               {std::numeric_limits<fp>::denorm_min()},
+           },
+       })) {
+    SCOPED_TRACE(::testing::Message() << real << ": " << imaginary);
+    ComplexValue parsed;
+    MQT_ASSERT_SUCCESS(parsed.fromString(real, imaginary));
+    EXPECT_DOUBLE_EQ(parsed.r, expected.r);
+    EXPECT_DOUBLE_EQ(parsed.i, expected.i);
+    EXPECT_EQ(std::fpclassify(parsed.r), std::fpclassify(expected.r));
+    EXPECT_EQ(std::signbit(parsed.r), std::signbit(expected.r));
+    EXPECT_EQ(std::signbit(parsed.i), std::signbit(expected.i));
+  }
+}
+
 TEST_F(CNTest, NumberPrintingToString) {
   auto const imag = cn.lookup(0., 1.);
   auto const imagStr = imag.toString(false);
@@ -258,172 +306,49 @@ TEST_F(CNTest, NumberPrintingToString) {
   EXPECT_STREQ(negSuperpositionStrFormatted.c_str(), "1/√2(1-i)");
 }
 
-TEST(DDComplexTest, NumberPrintingFormattedFractions) {
-  std::stringstream ss{};
+TEST(DDComplexTest, NumberPrintingFormatted) {
+  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., true, 3), "0.123");
+  EXPECT_EQ(ComplexValue::toString(0.123456789, 0., false, 0), "0.1");
+  using Case = std::tuple<fp, const char*, const char*>;
+  constexpr std::array cases{
+      Case{0.0, "0", "+0i"},
+      Case{-0.0, "-0", "-0i"},
+      Case{0.25, "1/4", "+i/4"},
+      Case{0.5, "1/2", "+i/2"},
+      Case{0.75, "3/4", "+3i/4"},
+      Case{1., "1", "+i"},
+      Case{1.5, "3/2", "+3i/2"},
+      Case{2., "2", "+2i"},
+      Case{0.25 * SQRT2_2, "1/(4√2)", "+i/(4√2)"},
+      Case{0.5 * SQRT2_2, "1/(2√2)", "+i/(2√2)"},
+      Case{0.75 * SQRT2_2, "3/(4√2)", "+3i/(4√2)"},
+      Case{SQRT2_2, "1/√2", "+i/√2"},
+      Case{1.5 * SQRT2_2, "3/(2√2)", "+3i/(2√2)"},
+      Case{2 * SQRT2_2, "2/√2", "+2i/√2"},
+      Case{0.25 * PI, "π/4", "+πi/4"},
+      Case{0.5 * PI, "π/2", "+πi/2"},
+      Case{0.75 * PI, "3π/4", "+3πi/4"},
+      Case{PI, "π", "+πi"},
+      Case{1.5 * PI, "3π/2", "+3πi/2"},
+      Case{2 * PI, "2π", "+2πi"},
+      Case{0.1234, "0.1234", "+0.1234i"},
+  };
 
-  ComplexValue::printFormatted(ss, 0.0, false);
-  EXPECT_STREQ(ss.str().c_str(), "0");
-  ss.str("");
-  ComplexValue::printFormatted(ss, -0.0, false);
-  EXPECT_STREQ(ss.str().c_str(), "-0");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.0, true);
-  EXPECT_STREQ(ss.str().c_str(), "+0i");
-  ss.str("");
-  ComplexValue::printFormatted(ss, -0.0, true);
-  EXPECT_STREQ(ss.str().c_str(), "-0i");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.25, false);
-  EXPECT_STREQ(ss.str().c_str(), "1/4");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.25, true);
-  EXPECT_STREQ(ss.str().c_str(), "+i/4");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.5, false);
-  EXPECT_STREQ(ss.str().c_str(), "1/2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.5, true);
-  EXPECT_STREQ(ss.str().c_str(), "+i/2");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.75, false);
-  EXPECT_STREQ(ss.str().c_str(), "3/4");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.75, true);
-  EXPECT_STREQ(ss.str().c_str(), "+3i/4");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 1, false);
-  EXPECT_STREQ(ss.str().c_str(), "1");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 1, true);
-  EXPECT_STREQ(ss.str().c_str(), "+i");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 1.5, false);
-  EXPECT_STREQ(ss.str().c_str(), "3/2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 1.5, true);
-  EXPECT_STREQ(ss.str().c_str(), "+3i/2");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 2, false);
-  EXPECT_STREQ(ss.str().c_str(), "2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+2i");
-  ss.str("");
-}
-
-TEST(DDComplexTest, NumberPrintingFormattedFractionsSqrt) {
-  std::stringstream ss{};
-
-  ComplexValue::printFormatted(ss, 0.25 * SQRT2_2, false);
-  EXPECT_STREQ(ss.str().c_str(), "1/(4√2)");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.25 * SQRT2_2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+i/(4√2)");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.5 * SQRT2_2, false);
-  EXPECT_STREQ(ss.str().c_str(), "1/(2√2)");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.5 * SQRT2_2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+i/(2√2)");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.75 * SQRT2_2, false);
-  EXPECT_STREQ(ss.str().c_str(), "3/(4√2)");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.75 * SQRT2_2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+3i/(4√2)");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, SQRT2_2, false);
-  EXPECT_STREQ(ss.str().c_str(), "1/√2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, SQRT2_2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+i/√2");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 1.5 * SQRT2_2, false);
-  EXPECT_STREQ(ss.str().c_str(), "3/(2√2)");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 1.5 * SQRT2_2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+3i/(2√2)");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 2 * SQRT2_2, false);
-  EXPECT_STREQ(ss.str().c_str(), "2/√2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 2 * SQRT2_2, true);
-  EXPECT_STREQ(ss.str().c_str(), "+2i/√2");
-  ss.str("");
-}
-
-TEST(DDComplexTest, NumberPrintingFormattedFractionsPi) {
-  std::stringstream ss{};
-
-  ComplexValue::printFormatted(ss, 0.25 * PI, false);
-  EXPECT_STREQ(ss.str().c_str(), "π/4");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.25 * PI, true);
-  EXPECT_STREQ(ss.str().c_str(), "+πi/4");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.5 * PI, false);
-  EXPECT_STREQ(ss.str().c_str(), "π/2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.5 * PI, true);
-  EXPECT_STREQ(ss.str().c_str(), "+πi/2");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 0.75 * PI, false);
-  EXPECT_STREQ(ss.str().c_str(), "3π/4");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.75 * PI, true);
-  EXPECT_STREQ(ss.str().c_str(), "+3πi/4");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, PI, false);
-  EXPECT_STREQ(ss.str().c_str(), "π");
-  ss.str("");
-  ComplexValue::printFormatted(ss, PI, true);
-  EXPECT_STREQ(ss.str().c_str(), "+πi");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 1.5 * PI, false);
-  EXPECT_STREQ(ss.str().c_str(), "3π/2");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 1.5 * PI, true);
-  EXPECT_STREQ(ss.str().c_str(), "+3πi/2");
-  ss.str("");
-
-  ComplexValue::printFormatted(ss, 2 * PI, false);
-  EXPECT_STREQ(ss.str().c_str(), "2π");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 2 * PI, true);
-  EXPECT_STREQ(ss.str().c_str(), "+2πi");
-  ss.str("");
-}
-
-TEST(DDComplexTest, NumberPrintingFormattedFloating) {
-  std::stringstream ss{};
-  ComplexValue::printFormatted(ss, 0.1234, false);
-  EXPECT_STREQ(ss.str().c_str(), "0.1234");
-  ss.str("");
-  ComplexValue::printFormatted(ss, 0.1234, true);
-  EXPECT_STREQ(ss.str().c_str(), "+0.1234i");
-  ss.str("");
+  for (const auto& [value, real, imaginary] : cases) {
+    SCOPED_TRACE(value);
+    std::string buffer;
+    llvm::raw_string_ostream ss(buffer);
+    ComplexValue::printFormatted(ss, value, false);
+    EXPECT_STREQ(ss.str().c_str(), real);
+    buffer.clear();
+    ComplexValue::printFormatted(ss, value, true);
+    EXPECT_STREQ(ss.str().c_str(), imaginary);
+  }
 }
 
 TEST_F(CNTest, ComplexTableAllocation) {
   auto mem = MemoryManager::create<RealNumber>();
   const auto allocs = mem.getStats().numAllocated;
-  std::cout << allocs << "\n";
   std::vector<RealNumber*> nums{allocs};
   // get all the numbers that are pre-allocated
   for (auto i = 0U; i < allocs; ++i) {
@@ -472,8 +397,6 @@ TEST_F(CNTest, DoubleHitInFindOrInsert) {
 }
 
 TEST_F(CNTest, DoubleHitAcrossBuckets) {
-  std::cout << std::setprecision(std::numeric_limits<fp>::max_digits10);
-
   // insert a number at a lower bucket border
   const fp num1 = 8191.5 / (static_cast<fp>(ut.getTable().size()) - 1);
   const auto* tnum1 = ut.lookup(num1);
@@ -512,34 +435,24 @@ TEST_F(CNTest, exactlyOneComparison) {
   EXPECT_TRUE(one.exactlyOne());
 }
 
-TEST_F(CNTest, ExportConditionalFormat1) {
-  EXPECT_STREQ(conditionalFormat(cn.lookup(1, 0)).c_str(), "1");
-}
-
-TEST_F(CNTest, ExportConditionalFormat2) {
-  EXPECT_STREQ(conditionalFormat(cn.lookup(0, 1)).c_str(), "i");
-}
-
-TEST_F(CNTest, ExportConditionalFormat3) {
-  EXPECT_STREQ(conditionalFormat(cn.lookup(-1, 0)).c_str(), "-1");
-}
-
-TEST_F(CNTest, ExportConditionalFormat4) {
-  EXPECT_STREQ(conditionalFormat(cn.lookup(0, -1)).c_str(), "-i");
-}
-
-TEST_F(CNTest, ExportConditionalFormat5) {
-  const auto num = cn.lookup(-SQRT2_2, -SQRT2_2);
-  EXPECT_STREQ(conditionalFormat(num).c_str(), "ℯ(-iπ 3/4)");
-  EXPECT_STREQ(conditionalFormat(num, false).c_str(), "-1/√2(1+i)");
-}
-
-TEST_F(CNTest, ExportConditionalFormat6) {
-  EXPECT_STREQ(conditionalFormat(cn.lookup(-1, -1)).c_str(), "2/√2 ℯ(-iπ 3/4)");
-}
-
-TEST_F(CNTest, ExportConditionalFormat7) {
-  EXPECT_STREQ(conditionalFormat(cn.lookup(-SQRT2_2, 0)).c_str(), "-1/√2");
+TEST_F(CNTest, ExportConditionalFormat) {
+  using Case = std::tuple<fp, fp, const char*>;
+  constexpr std::array cases{
+      Case{1., 0., "1"},
+      Case{0., 1., "i"},
+      Case{-1., 0., "-1"},
+      Case{0., -1., "-i"},
+      Case{-SQRT2_2, -SQRT2_2, "ℯ(-iπ 3/4)"},
+      Case{-1., -1., "2/√2 ℯ(-iπ 3/4)"},
+      Case{-SQRT2_2, 0., "-1/√2"},
+  };
+  for (const auto& [real, imaginary, expected] : cases) {
+    SCOPED_TRACE(::testing::Message() << real << ", " << imaginary);
+    EXPECT_STREQ(conditionalFormat(cn.lookup(real, imaginary)).c_str(),
+                 expected);
+  }
+  EXPECT_STREQ(conditionalFormat(cn.lookup(-SQRT2_2, -SQRT2_2), false).c_str(),
+               "-1/√2(1+i)");
 }
 
 TEST(DDComplexTest, HashesSignedQuantizedWeights) {
@@ -614,21 +527,49 @@ TEST(DDComplexTest, ScalarComplexDivisorsPreserveRange) {
 
 TEST(DDComplexTest, ComplexTextRejectsUnrepresentableValues) {
   ComplexValue value;
-  EXPECT_THROW(value.fromString("1e-400", ""), std::out_of_range);
-  EXPECT_THROW(value.fromString("", "1e400i"), std::out_of_range);
-  EXPECT_THROW(value.fromString("invalid", ""), std::invalid_argument);
+  for (const auto* real : {"invalid", "nan", "inf"}) {
+    SCOPED_TRACE(real);
+    EXPECT_EQ(errorCode([&] { return value.fromString(real, ""); }),
+              std::errc::invalid_argument);
+  }
+  for (const auto* real : {"1e-400", "1e400"}) {
+    SCOPED_TRACE(real);
+    EXPECT_EQ(errorCode([&] { return value.fromString(real, ""); }),
+              std::errc::result_out_of_range);
+  }
+  EXPECT_EQ(errorCode([&] { return value.fromString("", "1e400i"); }),
+            std::errc::result_out_of_range);
 }
 
-TEST(DDComplexTest, ParsesImaginaryUnits) {
-  for (const auto* imaginary : {"i", "I", "+i", "+I", "-i", "-I"}) {
-    SCOPED_TRACE(imaginary);
-    ComplexValue value;
-    value.fromString("0.5", imaginary);
-    EXPECT_EQ(value.r, 0.5);
-    EXPECT_EQ(value.i, *imaginary == '-' ? -1. : 1.);
+TEST(DDComplexTest, ParsesFiniteSerializedNumbers) {
+  for (const auto value : {
+           std::numeric_limits<fp>::denorm_min(),
+           std::numeric_limits<fp>::min(),
+           std::numeric_limits<fp>::max(),
+           -1e-310,
+       }) {
+    SCOPED_TRACE(value);
+    ComplexValue parsed;
+    MQT_ASSERT_SUCCESS(parsed.fromString(
+        ComplexValue::toString(value, 0., false,
+                               std::numeric_limits<fp>::max_digits10),
+        ""));
+    EXPECT_EQ(parsed.r, value);
+    EXPECT_EQ(parsed.i, 0.);
   }
-  ComplexValue value;
-  value.fromString("0.5", "");
-  EXPECT_EQ(value.r, 0.5);
-  EXPECT_EQ(value.i, 0.);
+}
+
+TEST(DDComplexTest, SerializedNumbersIgnoreNumericLocale) {
+  const auto originalLocale = std::string(std::setlocale(LC_NUMERIC, nullptr));
+  const llvm::scope_exit restoreLocale(
+      [&] { std::setlocale(LC_NUMERIC, originalLocale.c_str()); });
+  if (std::setlocale(LC_NUMERIC, "de_DE.UTF-8") == nullptr &&
+      std::setlocale(LC_NUMERIC, "de_DE.utf8") == nullptr) {
+    GTEST_SKIP() << "A comma-decimal numeric locale is unavailable";
+  }
+  EXPECT_EQ(ComplexValue::toString(0.125, -0.375, false), "0.125-0.375i");
+  ComplexValue parsed;
+  MQT_ASSERT_SUCCESS(parsed.fromString("0.125", "-0.375i"));
+  EXPECT_EQ(parsed.r, 0.125);
+  EXPECT_EQ(parsed.i, -0.375);
 }

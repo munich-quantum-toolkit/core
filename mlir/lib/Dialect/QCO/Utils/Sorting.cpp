@@ -10,6 +10,8 @@
 
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
 
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -25,6 +27,20 @@
 
 namespace mlir::qco {
 
+bool hasPotentialClassicalAliases(Block& block) {
+  for (Operation& op : block) {
+    const auto effects = getEffectsRecursively(&op);
+    if (effects && any_of(*effects, [](const auto& effect) {
+          auto value = effect.getValue();
+          return value && isa<cbit::RegisterType>(value.getType()) &&
+                 !value.template getDefiningOp<cbit::AllocOp>();
+        })) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void reorderTopologically(Block& block, IRRewriter& rewriter) {
   Operation* const terminator = block.getTerminator();
 
@@ -37,6 +53,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
   DenseMap<Operation*, Dependencies> dependencies;
   dependencies.reserve(numOperations);
   DenseMap<Value, Operation*> lastEffect;
+  const bool mayAlias = hasPotentialClassicalAliases(block);
 
   // Count repeated edges on both ends instead of maintaining deduplication
   // sets.
@@ -57,6 +74,10 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
         auto value = effect.getValue();
         if (!value) {
           continue;
+        }
+        if (mayAlias && isa<cbit::RegisterType>(value.getType())) {
+          // Aliased register handles share one effect chain.
+          value = {};
         }
         auto [it, inserted] = lastEffect.try_emplace(value, &op);
         if (!inserted && it->second != &op) {

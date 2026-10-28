@@ -20,8 +20,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* /*context*/) {
+void ZOp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* /*context*/) {
   results.add(&removeInversePairOneTargetZeroParameter<ZOp, ZOp>);
 }
 

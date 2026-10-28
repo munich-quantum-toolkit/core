@@ -52,7 +52,7 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
   auto overflowIndex = builder.indexConstant(width - 1);
 
   const auto toggleOverflow = [&](bool complement) {
-    inverseQFT(builder, accumulator, width);
+    qft(builder, accumulator, width, true);
     if (complement) {
       builder.x(builder.loadQubit(accumulator, overflowIndex));
     }
@@ -60,7 +60,7 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
     if (complement) {
       builder.x(builder.loadQubit(accumulator, overflowIndex));
     }
-    forwardQFT(builder, accumulator, width);
+    qft(builder, accumulator, width);
   };
 
   phaseAdd(builder, accumulator, width, addend, controls, inverse);
@@ -83,7 +83,7 @@ void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
                         Value multiplier, Value modulus, int64_t bits,
                         bool inverse) {
   const auto width = bits + 1;
-  forwardQFT(builder, accumulator, width);
+  qft(builder, accumulator, width);
   auto loop =
       scf::ForOp::create(builder, builder.getLoc(), builder.indexConstant(0),
                          builder.indexConstant(bits), builder.indexConstant(1),
@@ -106,7 +106,7 @@ void multiplyAccumulate(qc::QCProgramBuilder& builder, Value control,
     auto next = arith::RemUIOp::create(builder, doubled, modulus);
     scf::YieldOp::create(builder, builder.getLoc(), ValueRange{next});
   }
-  inverseQFT(builder, accumulator, width);
+  qft(builder, accumulator, width, true);
 }
 
 } // namespace mqt::bench::detail

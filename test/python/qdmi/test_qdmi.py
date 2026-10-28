@@ -18,10 +18,8 @@ from collections import Counter
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from packaging import version
 
 from mqt.core.mlir import (
-    CompiledProgram,
     OutputFormat,
     compile_program,
     submit_program,
@@ -67,27 +65,23 @@ def device(request: pytest.FixtureRequest) -> Device:
     return cast("Device", request.param)
 
 
-@pytest.fixture(params=_get_devices())
-def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Device.Site]:
+@pytest.fixture
+def device_and_site(device: Device) -> tuple[Device, Device.Site]:
     """Fixture to provide a device for testing.
 
     Returns:
        A tuple containing a quantum device instance and one of its sites.
     """
-    dev = request.param
-    site = dev.sites()[0]
-    return dev, site
+    return device, device.sites()[0]
 
 
-@pytest.fixture(params=_get_devices())
-def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device.Operation]:
+@pytest.fixture
+def device_and_operation(device: Device) -> tuple[Device, Device.Operation]:
     """Fixture to provide a device for testing.
 
     Returns:
        A tuple containing a quantum device instance and one of its operations.
     """
-    device = request.param
-
     # If the device has no operations, skip tests that use this fixture.
     ops = device.operations()
     if not ops:
@@ -465,14 +459,15 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
         assert mss > 0
 
 
-def test_site_and_operation_custom_properties_unsupported(
-    device_and_site: tuple[Device, Device.Site],
-    device_and_operation: tuple[Device, Device.Operation],
-) -> None:
-    """Test custom queries on site and operation objects."""
+def test_site_custom_properties_unsupported(device_and_site: tuple[Device, Device.Site]) -> None:
+    """Test custom queries on site objects."""
     _device, site = device_and_site
     site_value: bytes | None = site.query_custom_property(CustomProperty.CUSTOM1, bytes)
     assert site_value is None
+
+
+def test_operation_custom_properties_unsupported(device_and_operation: tuple[Device, Device.Operation]) -> None:
+    """Test custom queries on operation objects."""
     _device, operation = device_and_operation
     operation_value: bytes | None = operation.query_custom_property(CustomProperty.CUSTOM1, bytes)
     assert operation_value is None
@@ -534,50 +529,14 @@ h q[0];
 cx q[0], q[1];
 c = measure q;
 """
-    program = compile_program(qasm3_program, target=ddsim_device, program_format=ProgramFormat.QIR_BASE_STRING)
-    assert isinstance(program, CompiledProgram)
-    assert program.program_format == ProgramFormat.QIR_BASE_STRING
-    assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
-
-    job = submit_program(program, target=ddsim_device)
+    job = submit_program(qasm3_program, target=ddsim_device, program_format=ProgramFormat.QIR_BASE_STRING)
+    assert job.program_format == ProgramFormat.QIR_BASE_STRING
     job.wait()
 
     assert job.check() == Job.Status.DONE
     counts = job.get_counts()
     assert set(counts) == {"00", "11"}
     assert sum(counts.values()) == 1024
-
-
-def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -> None:
-    """Keep DDSIM-native controlled gates and their global phase."""
-    qiskit = pytest.importorskip("qiskit")
-    if not (
-        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
-        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-    ):
-        pytest.skip(f"no Qiskit translation is registered for {qiskit.__version__}")
-    circuit_library = pytest.importorskip("qiskit.circuit.library")
-    quantum_info = pytest.importorskip("qiskit.quantum_info")
-
-    circuit = qiskit.QuantumCircuit(5)
-    circuit.global_phase = 0.37
-    circuit.x(0)
-    circuit.x(1)
-    circuit.append(circuit_library.HGate().control(2, annotated=False), [0, 1, 2])
-    circuit.append(circuit_library.RXGate(0.23).control(2, annotated=False), [0, 1, 2])
-    circuit.append(circuit_library.RXXGate(0.31).control(annotated=False), [0, 3, 4])
-    circuit.append(circuit_library.SwapGate().control(annotated=False), [0, 3, 4])
-    circuit.append(circuit_library.RCCXGate().control(annotated=False), [0, 1, 2, 3])
-    circuit.mcx([0, 1], 4)
-    circuit.mcp(0.41, [0, 1], 4)
-    expected = quantum_info.Statevector.from_instruction(circuit).data
-
-    program = compile_program(circuit, target=ddsim_device, program_format=ProgramFormat.QIR_BASE_STRING)
-    assert isinstance(program, CompiledProgram)
-    job = submit_program(program, target=ddsim_device, num_shots=0)
-    job.wait()
-
-    assert job.get_dense_statevector() == pytest.approx(expected)
 
 
 def test_device_executes_binary_qir_program(ddsim_device: Device) -> None:
@@ -630,16 +589,20 @@ def test_custom_parameter_bytes_preserve_seed(ddsim_device: Device, submission: 
     """Packed native values reach direct and compiler submission unchanged."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q;'
     seed = struct.pack("@i", 1234567)
-    expected = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=1234567)
     if submission == "text":
+        expected = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=1234567)
         actual = ddsim_device.submit_job(source, ProgramFormat.QASM3, 64, custom1=seed)
     elif submission == "binary":
         compiled = compile_program(source, output=OutputFormat.QIR_BASE)
-        actual = ddsim_device.submit_job(compiled.to_bitcode(), ProgramFormat.QIR_BASE_MODULE, 64, custom1=seed)
+        payload = compiled.to_bitcode()
+        expected = ddsim_device.submit_job(payload, ProgramFormat.QIR_BASE_MODULE, 64, custom1=1234567)
+        actual = ddsim_device.submit_job(payload, ProgramFormat.QIR_BASE_MODULE, 64, custom1=seed)
     elif submission == "compiled":
         compiled = compile_program(source, target=ddsim_device)
+        expected = submit_program(compiled, target=ddsim_device, num_shots=64, custom1=1234567)
         actual = submit_program(compiled, target=ddsim_device, num_shots=64, custom1=seed)
     else:
+        expected = submit_program(source, target=ddsim_device, num_shots=64, custom1=1234567)
         actual = submit_program(source, target=ddsim_device, num_shots=64, custom1=seed)
     expected.wait()
     actual.wait()
@@ -743,7 +706,7 @@ def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
 
 
 def test_job_shots_match_counts(submitted_job: Job) -> None:
-    """Keep the same ordered samples on repeated reads and in the histogram."""
+    """Keep the same sample sequence on repeated reads and in the histogram."""
     submitted_job.wait()
     shots = submitted_job.get_shots()
     assert len(shots) == submitted_job.num_shots

@@ -29,6 +29,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
@@ -111,12 +112,12 @@ TEST_F(QuantumLoopUnrollTest, InvalidUnrollFactor) {
 
 TEST_F(QuantumLoopUnrollTest, NoOp) {
   auto m = getGHZ(context.get(), 2);
-  auto mClone = m->clone();
+  OwningOpRef<ModuleOp> mClone = m->clone();
 
   const auto res = runPass(m, QuantumLoopUnrollOptions{.unrollFactor = 0});
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(mlir::OperationEquivalence::isEquivalentTo(
-      m->getOperation(), mClone.getOperation(),
+      m->getOperation(), mClone->getOperation(),
       mlir::OperationEquivalence::Flags::None));
 }
 
@@ -155,7 +156,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
               });
         })[0];
     b.qtensorDealloc(tensor);
-    return b.intConstant(0);
+    return SmallVector<Value>{};
   });
   ASSERT_TRUE(m);
 

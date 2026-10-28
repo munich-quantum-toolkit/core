@@ -365,6 +365,37 @@ backend batch; different shot counts or precisions follow Qiskit's scheduling.
 Primitive-job cancellation follows Qiskit's future semantics: it does not abort
 an already-running backend call.
 
+### Exact local expectations
+
+{py:class}`~mqt.core.plugins.qiskit.estimator.DDEstimator` evaluates real sparse
+Pauli sums with Core's local DD engine. It prepares each bound circuit once for
+all its broadcast observables without materializing a dense state or observable
+matrix. This entry point does not use a QDMI device; `backend.estimator()`
+remains the sampled estimator above.
+
+```{code-cell} ipython3
+from mqt.core.plugins.qiskit import DDEstimator
+
+exact = DDEstimator().run([(circuit, ["XX", "ZZ"])]).result()[0]
+assert all(abs(value - 1) < 1e-12 for value in exact.data.evs)
+assert all(value == 0 for value in exact.data.stds)
+assert exact.metadata["method"] == "exact"
+```
+
+Qiskit's PUB parameter ordering and observable/binding broadcasting apply. PUB
+precision overrides run precision, which overrides `default_precision=0`. Every
+finite nonnegative precision uses the same exact numerical calculation. Zero
+`stds` means zero sampling uncertainty, not zero quantum variance or
+floating-point error. Metadata records the requested precision and circuit
+metadata without a shot count.
+
+Eligible terminal measurements are deferred, so expectations describe the
+uncollapsed state before readout. Resets, feedback and other nonterminal
+measurements are rejected. For bound OpenQASM or existing compiler programs,
+{py:func}`~mqt.core.mlir.expectation_values` exposes the same native calculation
+with a sequence of mappings from Pauli strings to real coefficients. Labels span
+all program wires; the rightmost character acts on wire zero.
+
 ### Backend requirements
 
 | Feature                                    | Required QDMI result support  |
@@ -458,23 +489,69 @@ When you run a circuit, the backend:
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
-The built-in OpenQASM serializers validate circuit width and ordered operation
-placements against native QDMI metadata after preprocessing. They reject an
-invalid circuit before any job in its batch is submitted. This check uses the
-native device sites because a backend extension may hide sites from its public
-Target or use preprocessing to address them. It does not route circuits.
+The built-in OpenQASM and QPY serializers validate circuit width and ordered
+operation placements against native QDMI metadata after preprocessing. They
+reject an invalid circuit before any job in its batch is submitted. This check
+uses the native device sites because a backend extension may hide sites from its
+public Target or use preprocessing to address them. It does not route circuits.
+Custom serializers can use
+{py:meth}`~mqt.core.plugins.qiskit.backend.QDMIBackend.validate_circuit` with
+`native=True` to check their input placements.
+
+Equivalent device aliases contribute all their placements to the Target. For
+overlapping placements, the first advertised alias supplies the calibration. An
+alias with global support supplies the global calibration instead of local
+placements. Three-parameter `cu3` and four-parameter `cu` remain distinct gates.
+Backend extensions must use distinct Target names for unequal instructions,
+including gates with different fixed parameters; conflicting aliases are
+rejected.
+
+OpenQASM serialization uses MQT Core's Qiskit importer and OpenQASM exporters.
+Circuit indices denote device qubits; gate names and ordered operands are
+preserved without compiling their definitions. Floating-point gate parameters
+are preserved without rounding them to nearby constants. The
+[compiler circuit translation limits](../mlir/qiskit.md#circuit-translation-contract)
+apply. OpenQASM 3 represents classical registers as zero-initialized outputs,
+excludes temporary values from results, and uses the lowest required language
+version. OpenQASM 2 supports register-equality conditions, measurements, and
+resets, declares receiver-defined gates as `opaque`, and discards program-wide
+global phase. See the
+[OpenQASM output contract](../mlir/OpenQASM.md#export-openqasm) for its
+supported subset.
 
 Control-flow instructions require explicit support in the backend's Target;
 their bodies are checked recursively using the enclosing circuit's qubits.
-Advertising OpenQASM 3 alone does not enable control flow. Custom serializers
-retain responsibility for validating the native programs they produce.
+Advertising OpenQASM 3 or QPY alone does not enable control flow. Custom
+serializers retain responsibility for validating the native programs they
+produce.
 
 ### Program Serializers
 
 A _program serializer_ turns one circuit into one program in one program format.
-MQT Core provides the serializers for OpenQASM 2 and OpenQASM 3. Every other
-format belongs to the package that owns the device, which registers its
-serializer through the same registry.
+MQT Core provides OpenQASM 2/3, QPY, IQM JSON, and Base/Adaptive QIR
+serializers. The compiler-backed serializers import device qubits and gate calls
+without routing, synthesis, or quantum optimization. Compile the circuit for the
+device before submission.
+
+QIR is available as LLVM text (`*_STRING`) and bitcode (`*_MODULE`). Base
+Profile requires straight-line gates followed by terminal measurements of every
+output bit. Adaptive Profile supports classical control, resets, and initialized
+or computed outputs. Opaque gates become consumer-defined QIS functions with
+`f64` parameters followed by qubit pointers and no return values. Built-in
+aliases use Core's QIS signatures; the receiving device must implement the
+emitted functions, including Core's `gphase` extension for nonzero global phase.
+
+IQM JSON accepts PRX/CZ gates on named target sites and one terminal measurement
+per output bit. It discards program-wide global phase and preserves output
+register names and order. Unsupported instructions and readout layouts fail
+serialization before submission.
+
+The QPY serializer sends one Qiskit circuit, including serializable metadata. It
+writes QPY version 17 using Qiskit’s native writer. The receiver must support
+this version and the circuit's instructions; QDMI does not negotiate QPY
+versions. Register a custom serializer for a device that needs a different
+version. For compiler program import and export, see
+[QPY files](../mlir/qiskit.md#qpy-files).
 
 A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a serializer that returns `str`:
@@ -516,8 +593,9 @@ from mqt.core.qdmi import ProgramFormat
 register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
 ```
 
-Pass `replace=True` to take over a format that already has a serializer,
-including OpenQASM 2 and OpenQASM 3.
+Built-in serializers are fallbacks: package entry points and explicit
+registrations take precedence. Pass `replace=True` to replace an existing
+registration. Unregistering a format disables its fallback too.
 
 A device usually accepts several formats. The backend walks them in the order of
 {py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
@@ -526,15 +604,15 @@ not the order the device reports:
 
 ```text
 IQM_JSON, CUSTOM1 ... CUSTOM5,
-QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
 QPY, QASM3,
+QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
 QIR_BASE_MODULE, QIR_BASE_STRING,
 QASM2
 ```
 
-Device-native formats take precedence. Among standard formats, those with
-classical control precede restricted profiles; binary encoding wins ties within
-a QIR profile.
+Device-native formats take precedence. QPY and OpenQASM 3 preserve device gate
+names and precede QIR, whose QIS functions require receiver support. Adaptive
+precedes Base Profile; binary encoding wins ties within a QIR profile.
 
 ### Device-specific execution options
 

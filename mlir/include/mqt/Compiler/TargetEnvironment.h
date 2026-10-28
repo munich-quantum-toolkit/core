@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -38,7 +39,7 @@ class TargetEnvAttr;
 /// Payload representation encoding.
 enum class PayloadEncoding : uint8_t { Text, Binary };
 
-/// Exact identity of one executable payload representation.
+/// Selected payload family, accepted versions, profile, and encoding.
 struct PayloadFormat {
   std::string id;
   std::string version;
@@ -88,10 +89,18 @@ struct ProgramCapability {
 /// contains all optional device capabilities.
 class PayloadSpecification {
 public:
+  /// Return compiler-supported capabilities for OpenQASM 3 or a QIR profile.
+  ///
+  /// Optional device capabilities remain unknown until supplied by a target.
+  [[nodiscard]] static llvm::Expected<PayloadSpecification>
+  forProgramFormat(ProgramFormat format,
+                   PayloadEncoding encoding = PayloadEncoding::Text);
+
   /// Create and validate a selected payload specification.
   ///
-  /// Numeric versions accept one to three components; omitted components are
-  /// zero, and the stored version always uses major.minor.patch.
+  /// Versions accept numeric ceilings or comma-conjoined >=, <, <= bounds.
+  /// Bare versions retain a same-major ceiling; omitted components are zero.
+  /// An empty version identifies an unversioned format.
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(PayloadFormat format, std::vector<ProgramCapability> capabilities = {},
          bool optionalCapabilitiesKnown = false);
@@ -100,8 +109,13 @@ public:
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(mqt::PayloadSpecAttr attribute);
 
-  /// Return the exact payload format.
+  /// Return the selected payload format and receiver-version constraint.
   [[nodiscard]] const PayloadFormat& format() const noexcept;
+
+  /// Return the parsed receiver interval, or no interval for unversioned
+  /// formats.
+  [[nodiscard]] const std::optional<mqt::PayloadVersionRange>&
+  versionRange() const noexcept;
 
   /// Return the compiler output selected by the payload format.
   [[nodiscard]] llvm::Expected<ProgramFormat> compilerOutput() const;
@@ -112,6 +126,14 @@ public:
   /// Return whether optional capability metadata is complete.
   [[nodiscard]] bool optionalCapabilitiesKnown() const noexcept;
 
+  /// Restrict capabilities to those supported by both payloads.
+  ///
+  /// Keep this format. Across different formats, only structural control-flow
+  /// capabilities are comparable; format-specific capabilities remain
+  /// unchanged.
+  [[nodiscard]] PayloadSpecification
+  restrictCapabilities(const PayloadSpecification& other) const;
+
   /// Whether generated switches may have arbitrary nesting and case counts.
   [[nodiscard]] bool supportsUnrestrictedMultiwayBranching() const noexcept;
 
@@ -120,10 +142,12 @@ public:
 
 private:
   PayloadSpecification(PayloadFormat format,
+                       std::optional<mqt::PayloadVersionRange> versions,
                        std::vector<ProgramCapability> capabilities,
                        bool optionalCapabilitiesKnown);
 
   PayloadFormat format_;
+  std::optional<mqt::PayloadVersionRange> versionRange_;
   std::vector<ProgramCapability> capabilities_;
   bool optionalCapabilitiesKnown_;
 };

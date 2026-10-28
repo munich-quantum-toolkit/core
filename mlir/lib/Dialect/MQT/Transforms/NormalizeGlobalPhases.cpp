@@ -12,27 +12,28 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/Angles.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
@@ -52,11 +53,8 @@ namespace {
 
 struct Add final {};
 struct Negate final {};
-struct Scale final {
-  double factor;
-};
 
-using PhaseInstruction = std::variant<double, Value, Add, Negate, Scale>;
+using PhaseInstruction = std::variant<double, Value, Add, Negate>;
 
 /// A postfix phase expression.
 ///
@@ -66,12 +64,11 @@ using PhaseInstruction = std::variant<double, Value, Add, Negate, Scale>;
 /// bubbling.
 class PhaseExpression final {
 public:
-  explicit PhaseExpression(Value angle) {
-    if (const auto constant = valueToConstantDouble(angle)) {
+  PhaseExpression(Value angle, std::optional<double> constant) {
+    if (constant) {
       instructions.emplace_back(normalizeAngle(*constant));
     } else {
       instructions.emplace_back(angle);
-      leaves.push_back(angle);
     }
   }
 
@@ -93,13 +90,10 @@ public:
     if (lhs && rhs) {
       instructions.clear();
       instructions.emplace_back(normalizeAngle(*lhs + *rhs));
-      leaves.clear();
       return;
     }
     instructions.append(std::make_move_iterator(other.instructions.begin()),
                         std::make_move_iterator(other.instructions.end()));
-    leaves.append(std::make_move_iterator(other.leaves.begin()),
-                  std::make_move_iterator(other.leaves.end()));
     instructions.emplace_back(Add{});
   }
 
@@ -111,32 +105,10 @@ public:
     instructions.emplace_back(Negate{});
   }
 
-  void scale(const double factor) {
-    if (factor == 0.0) {
-      instructions.clear();
-      instructions.emplace_back(0.0);
-      leaves.clear();
-      return;
-    }
-    if (factor == 1.0) {
-      return;
-    }
-    if (const auto constant = getConstant()) {
-      instructions.front() = normalizeAngle(*constant * factor);
-      return;
-    }
-    instructions.emplace_back(Scale{factor});
-  }
-
-  void forEachValue(const llvm::function_ref<void(Value)> callback) const {
-    for (auto value : leaves) {
-      callback(value);
-    }
-  }
-
   [[nodiscard]] Value materialize(RewriterBase& rewriter,
                                   const Location loc) const {
     SmallVector<Value> stack;
+    bool hasSum = false;
     for (const auto& instruction : instructions) {
       if (const auto* constant = std::get_if<double>(&instruction)) {
         stack.push_back(constantFromScalar(rewriter, loc, *constant));
@@ -147,6 +119,7 @@ public:
         continue;
       }
       if (std::holds_alternative<Add>(instruction)) {
+        hasSum = true;
         assert(stack.size() >= 2);
         auto rhs = stack.pop_back_val();
         auto lhs = stack.pop_back_val();
@@ -155,21 +128,16 @@ public:
       }
       assert(!stack.empty());
       auto operand = stack.pop_back_val();
-      if (std::holds_alternative<Negate>(instruction)) {
-        stack.push_back(rewriter.createOrFold<arith::NegFOp>(loc, operand));
-        continue;
-      }
-      const auto factor = std::get<Scale>(instruction).factor;
-      auto factorValue = constantFromScalar(rewriter, loc, factor);
-      stack.push_back(
-          rewriter.createOrFold<arith::MulFOp>(loc, factorValue, operand));
+      stack.push_back(rewriter.createOrFold<arith::NegFOp>(loc, operand));
     }
     assert(stack.size() == 1);
     Value result = stack.front();
-    // Fold pure constant arith trees back to a single normalized angle so
-    // merged exit phases stay within the GPhase verifier contract.
-    if (const auto constant = valueToConstantDouble(result)) {
-      return constantFromScalar(rewriter, loc, normalizeAngle(*constant));
+    if (hasSum) {
+      // Keep dynamic sums within the phase range using exporter-supported ops.
+      rewriter.getContext()->getOrLoadDialect<math::MathDialect>();
+      const FloatExpression angle(rewriter, loc, result);
+      const auto two = FloatExpression::constant(rewriter, loc, 2.0);
+      return (two * (angle / two).tan().atan()).getValue();
     }
     return result;
   }
@@ -185,7 +153,6 @@ private:
   }
 
   SmallVector<PhaseInstruction> instructions;
-  SmallVector<Value> leaves;
 };
 
 enum class PhaseDialect : std::uint8_t { QC, QCO };
@@ -202,65 +169,6 @@ struct PhaseContribution final {
   }
 };
 
-} // namespace
-
-/// Collect a memory-effect-free, body-local dependency slice in order.
-///
-/// Extraction crosses only eager quantum modifiers, never classical branches.
-static bool collectHoistableSlice(Value value, Block& body,
-                                  SmallPtrSetImpl<Operation*>& visiting,
-                                  SmallPtrSetImpl<Operation*>& collected,
-                                  SmallVectorImpl<Operation*>& ordered) {
-  if (auto blockArg = dyn_cast<BlockArgument>(value)) {
-    return blockArg.getOwner() != &body;
-  }
-
-  auto* definingOp = value.getDefiningOp();
-  if (definingOp == nullptr || definingOp->getBlock() != &body) {
-    return true;
-  }
-  if (collected.contains(definingOp)) {
-    return true;
-  }
-  if (!visiting.insert(definingOp).second || definingOp->getNumRegions() != 0 ||
-      !isMemoryEffectFree(definingOp)) {
-    return false;
-  }
-  for (auto operand : definingOp->getOperands()) {
-    if (!collectHoistableSlice(operand, body, visiting, collected, ordered)) {
-      return false;
-    }
-  }
-  visiting.erase(definingOp);
-  collected.insert(definingOp);
-  ordered.push_back(definingOp);
-  return true;
-}
-
-/// Make all dynamic leaves of @p expression available before @p modifier.
-static bool hoistExpressionBefore(const PhaseExpression& expression,
-                                  Block& body, Operation* modifier,
-                                  RewriterBase& rewriter) {
-  SmallPtrSet<Operation*, 8> visiting;
-  SmallPtrSet<Operation*, 8> collected;
-  SmallVector<Operation*> ordered;
-  bool hoistable = true;
-  expression.forEachValue([&](Value value) {
-    if (hoistable &&
-        !collectHoistableSlice(value, body, visiting, collected, ordered)) {
-      hoistable = false;
-    }
-  });
-  if (hoistable) {
-    for (auto* op : ordered) {
-      rewriter.moveOpBefore(op, modifier);
-    }
-  }
-  return hoistable;
-}
-
-namespace {
-
 class GlobalPhaseNormalizer final {
 public:
   explicit GlobalPhaseNormalizer(RewriterBase& rewriter) : rewriter(rewriter) {}
@@ -268,71 +176,66 @@ public:
   void normalize(Region& region) { normalizeRegion(region); }
 
 private:
+  [[nodiscard]] std::optional<double> getConstantAngle(Value angle) {
+    if (const auto constant = valueToDouble(angle)) {
+      return constant;
+    }
+    return attributeToDouble(valueToConstantAttr(angle, constants_));
+  }
+
   [[nodiscard]] std::optional<PhaseContribution>
-  normalizeOperation(Operation* op) {
+  normalizeOperation(Operation* op, Operation* hoistBefore) {
+    if (hoistBefore == nullptr) {
+      hoistBefore = op;
+    }
     if (auto inv = dyn_cast<qc::InvOp>(op)) {
-      return factorInverse(inv);
+      return factorInverse(inv, hoistBefore);
     }
     if (auto inv = dyn_cast<qco::InvOp>(op)) {
-      return factorInverse(inv);
+      return factorInverse(inv, hoistBefore);
     }
-    if (auto pow = dyn_cast<qc::PowOp>(op)) {
-      return factorPower(pow);
-    }
-    if (auto pow = dyn_cast<qco::PowOp>(op)) {
-      return factorPower(pow);
+    // Phase rounding inside a power can be amplified by an arbitrary exponent.
+    if (isa<qc::PowOp, qco::PowOp>(op)) {
+      return std::nullopt;
     }
     if (auto ctrl = dyn_cast<qc::CtrlOp>(op)) {
-      return factorControl(ctrl);
+      return factorControl(ctrl, hoistBefore);
     }
     if (auto ctrl = dyn_cast<qco::CtrlOp>(op)) {
-      return factorControl(ctrl);
+      return factorControl(ctrl, hoistBefore);
     }
-    for (auto& nested : op->getRegions()) {
-      normalizeRegion(nested);
+    if (op->hasTrait<OpTrait::IsIsolatedFromAbove>()) {
+      GlobalPhaseNormalizer isolated(rewriter);
+      for (auto& nested : op->getRegions()) {
+        isolated.normalizeRegion(nested);
+      }
+    } else {
+      for (auto& nested : op->getRegions()) {
+        normalizeRegion(nested);
+      }
     }
     return std::nullopt;
   }
 
   template <typename InvOp>
-  [[nodiscard]] std::optional<PhaseContribution> factorInverse(InvOp op) {
-    auto phase = normalizeBlock(*op.getBody(), op);
+  [[nodiscard]] std::optional<PhaseContribution>
+  factorInverse(InvOp op, Operation* hoistBefore) {
+    auto phase = normalizeBlock(*op.getBody(), hoistBefore);
     if (phase) {
       phase->expression.negate();
-    }
-    return phase;
-  }
-
-  template <typename PowOp>
-  [[nodiscard]] std::optional<PhaseContribution> factorPower(PowOp op) {
-    const auto exponent = op.getExponentValue();
-    if (!exponent || !isIntegerExponent(*exponent)) {
-      normalizeRegion(op->getRegion(0));
-      return std::nullopt;
-    }
-    auto phase = normalizeBlock(*op.getBody(), op);
-    if (phase) {
-      phase->expression.scale(*exponent);
-    }
-    return phase;
-  }
-
-  void eraseDeadBodyOps(Block& body) {
-    for (auto* op = body.getTerminator()->getPrevNode(); op != nullptr;) {
-      auto* previous = op->getPrevNode();
-      if (!isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op) &&
-          isOpTriviallyDead(op)) {
-        rewriter.eraseOp(op);
+      if (llvm::hasSingleElement(*op.getBody())) {
+        inlineModifierBody(op, *op.getBody(), op->getOperands(), rewriter);
       }
-      op = previous;
     }
+    return phase;
   }
 
-  [[nodiscard]] std::optional<PhaseContribution> factorControl(qc::CtrlOp op) {
-    auto phase = normalizeBlock(*op.getBody(), op);
+  [[nodiscard]] std::optional<PhaseContribution>
+  factorControl(qc::CtrlOp op, Operation* hoistBefore) {
+    auto phase = normalizeBlock(*op.getBody(), hoistBefore);
     const bool releasePhase = phase.has_value() && op.getNumControls() == 0;
     if (phase && !releasePhase && !phase->expression.isZero()) {
-      rewriter.setInsertionPoint(op);
+      rewriter.setInsertionPoint(hoistBefore);
       auto angle = phase->expression.materialize(rewriter, phase->loc);
       rewriter.setInsertionPointAfter(op);
       if (op.getNumControls() == 1) {
@@ -346,20 +249,18 @@ private:
                            });
       }
     }
-    if (phase) {
-      eraseDeadBodyOps(*op.getBody());
-    }
     if (llvm::hasSingleElement(*op.getBody())) {
       rewriter.eraseOp(op);
     }
-    return releasePhase ? phase : std::nullopt;
+    return releasePhase ? std::move(phase) : std::nullopt;
   }
 
-  [[nodiscard]] std::optional<PhaseContribution> factorControl(qco::CtrlOp op) {
-    auto phase = normalizeBlock(*op.getBody(), op);
+  [[nodiscard]] std::optional<PhaseContribution>
+  factorControl(qco::CtrlOp op, Operation* hoistBefore) {
+    auto phase = normalizeBlock(*op.getBody(), hoistBefore);
     const bool releasePhase = phase.has_value() && op.getNumControls() == 0;
     if (phase && !releasePhase && !phase->expression.isZero()) {
-      rewriter.setInsertionPoint(op);
+      rewriter.setInsertionPoint(hoistBefore);
       auto angle = phase->expression.materialize(rewriter, phase->loc);
       rewriter.setInsertionPointAfter(op);
       SmallVector<Value> oldControls(op.getOutputControls());
@@ -386,9 +287,6 @@ private:
         rewriter.replaceAllUsesExcept(oldControl, newControl, relativePhase);
       }
     }
-    if (phase) {
-      eraseDeadBodyOps(*op.getBody());
-    }
     if (llvm::hasSingleElement(*op.getBody())) {
       SmallVector<Value> replacements(op.getInputControls());
       for (auto yielded : op.getBody()->getTerminator()->getOperands()) {
@@ -397,7 +295,7 @@ private:
       }
       rewriter.replaceOp(op, replacements);
     }
-    return releasePhase ? phase : std::nullopt;
+    return releasePhase ? std::move(phase) : std::nullopt;
   }
 
   void normalizeRegion(Region& region) {
@@ -410,25 +308,40 @@ private:
   normalizeBlock(Block& block, Operation* extractionBoundary) {
     SmallVector<PhaseContribution> contributions;
     SmallVector<Operation*> directPhases;
-    bool hasNestedContribution = false;
+    Operation* insertionBefore = nullptr;
 
     for (auto& op : llvm::make_early_inc_range(block.without_terminator())) {
+      auto* current = &op;
+      auto* next = op.getNextNode();
+      if (extractionBoundary != nullptr &&
+          !isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op)) {
+        // Hoist once, in source order, across the full eager modifier nest.
+        rewriter.moveOpBefore(&op, extractionBoundary);
+        continue;
+      }
       std::optional<PhaseContribution> phase;
-      if (auto gphase = dyn_cast<qc::GPhaseOp>(&op)) {
-        phase.emplace(PhaseDialect::QC, gphase.getLoc(),
-                      PhaseExpression(gphase.getTheta()));
-        directPhases.push_back(gphase);
-      } else if (auto gphase = dyn_cast<qco::GPhaseOp>(&op)) {
-        phase.emplace(PhaseDialect::QCO, gphase.getLoc(),
-                      PhaseExpression(gphase.getTheta()));
-        directPhases.push_back(gphase);
-      } else {
-        phase = normalizeOperation(&op);
-        hasNestedContribution |= phase.has_value();
+      if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
+        auto angle = op.getOperand(0);
+        const auto constant = getConstantAngle(angle);
+        // Leave invalid expressions for dead-code removal or diagnostics.
+        if (constant && !isValidGlobalPhaseAngle(*constant)) {
+          continue;
+        }
+        phase.emplace(isa<qc::GPhaseOp>(op) ? PhaseDialect::QC
+                                            : PhaseDialect::QCO,
+                      op.getLoc(), PhaseExpression(angle, constant));
+        directPhases.push_back(&op);
+      } else if (op.getNumRegions() != 0) {
+        phase = normalizeOperation(&op, extractionBoundary);
+      }
+      // A following modifier may disappear or emit a relative phase.
+      if (insertionBefore == current && next->getPrevNode() != current) {
+        insertionBefore = next;
       }
       if (!phase) {
         continue;
       }
+      insertionBefore = next;
       contributions.push_back(std::move(*phase));
     }
 
@@ -442,23 +355,17 @@ private:
       }
     }
     auto aggregate = std::move(contributions.front());
-    if (extractionBoundary != nullptr &&
-        hoistExpressionBefore(aggregate.expression, block, extractionBoundary,
-                              rewriter)) {
+    if (extractionBoundary != nullptr) {
       for (auto* phase : directPhases) {
         rewriter.eraseOp(phase);
       }
       return aggregate;
     }
 
-    // Preserve already-normalized exit phases, including dynamic angles.
-    if (extractionBoundary == nullptr && !hasNestedContribution &&
-        directPhases.size() == 1 &&
-        directPhases.front()->getNextNode() == block.getTerminator()) {
-      auto angle = dyn_cast<qc::GPhaseOp>(directPhases.front())
-                       ? cast<qc::GPhaseOp>(directPhases.front()).getTheta()
-                       : cast<qco::GPhaseOp>(directPhases.front()).getTheta();
-      const auto constant = valueToConstantDouble(angle);
+    // Preserve a single normalized phase, including dynamic angles.
+    if (contributions.size() == 1 && directPhases.size() == 1) {
+      const auto constant =
+          getConstantAngle(directPhases.front()->getOperand(0));
       if (!constant ||
           (normalizeAngle(*constant) == *constant && *constant != 0.0)) {
         return std::nullopt;
@@ -471,7 +378,7 @@ private:
     if (aggregate.expression.isZero()) {
       return std::nullopt;
     }
-    rewriter.setInsertionPoint(block.getTerminator());
+    rewriter.setInsertionPoint(insertionBefore);
     auto angle = aggregate.expression.materialize(rewriter, aggregate.loc);
     if (aggregate.dialect == PhaseDialect::QC) {
       qc::GPhaseOp::create(rewriter, aggregate.loc, angle);
@@ -482,6 +389,8 @@ private:
   }
 
   RewriterBase& rewriter;
+  // Scalar values retain their meaning; each isolated scope owns its cache.
+  DenseMap<Value, Attribute> constants_;
 };
 
 struct NormalizeGlobalPhases final

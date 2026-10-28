@@ -12,8 +12,10 @@
 
 #include "WorkerProtocol.hpp"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Program.h"
 
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -25,7 +27,8 @@ class Worker {
 public:
   ~Worker();
   bool start();
-  bool execute(const WorkerRequest& request, WorkerResponse& response);
+  bool execute(const WorkerRequest& request, WorkerResponse& response,
+               llvm::function_ref<size_t(size_t)> reserveWorkers);
   /// Close a completed session and allow bounded process cleanup.
   ///
   /// No execute call may be active.

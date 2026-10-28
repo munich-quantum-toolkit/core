@@ -18,13 +18,17 @@
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <limits>
+#include <optional>
 #include <ranges>
-#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -58,16 +62,19 @@ public:
     size_t maxBuckets = 1048576U;
   };
 
-  /// The default constructor
+  /// Validate capacities and create a table.
   ///
-  /// @param manager The memory manager to use
-  /// @param config The configuration for the unique table
-  ///
-  /// The MemoryManager shall be constructed from the same type that the unique
-  /// table is then used for in the lookup method.
-  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  /// The manager must allocate the node type used in lookup and outlive the
+  /// table.
+  [[nodiscard]] static llvm::Expected<UniqueTable>
+  create(MemoryManager& manager, const UniqueTableConfig& config);
 
-  void resize(std::size_t nVars);
+  /// Grow the table without invalidating existing entries.
+  ///
+  /// @param nVars The requested number of levels.
+  /// Returns an error if nVars is less than the current number of
+  /// levels.
+  [[nodiscard]] llvm::Error resize(std::size_t nVars);
 
   /// The hash function for the hash table.
   ///
@@ -125,7 +132,7 @@ public:
     // if node not found → add it to front of unique table bucket
     if (p->id == 0U) {
       if (nextId_ == std::numeric_limits<uint32_t>::max()) {
-        throw std::overflow_error("Unique table node IDs exhausted.");
+        llvm::report_fatal_error("Unique table node IDs exhausted.");
       }
       p->id = ++nextId_;
     }
@@ -146,9 +153,12 @@ public:
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
-  /// Get a reference to individual statistics
-  [[nodiscard]] const UniqueTableStatistics&
-  getStats(std::size_t idx) const noexcept;
+  /// Get a reference to the statistics for a level.
+  ///
+  /// @param idx The level index.
+  /// Returns an error if idx does not name an allocated level.
+  [[nodiscard]] llvm::Expected<const UniqueTableStatistics&>
+  getStats(std::size_t idx) const;
 
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;
@@ -171,22 +181,30 @@ public:
                   "Node must be derived from NodeBase");
     auto q = cfg.nVars - 1U;
     for (const auto& table : std::ranges::reverse_view(tables)) {
-      std::cout << "\tq" << q << ":" << "\n";
+      llvm::outs() << "\tq" << q << ":" << "\n";
       for (std::size_t key = 0; key < table.size(); ++key) {
         const auto* p = static_cast<Node*>(table[key]);
         if (p != nullptr) {
-          std::cout << "\tkey=" << key << ": ";
+          llvm::outs() << "\tkey=" << key << ": ";
         }
 
         while (p != nullptr) {
-          std::cout << "\t\t" << std::hex
-                    << reinterpret_cast<std::uintptr_t>(p);
+          llvm::outs() << "\t\t"
+                       << llvm::format_hex_no_prefix(
+                              reinterpret_cast<std::uintptr_t>(p), 0);
           for (const auto& e : p->e) {
-            std::cout << " p" << reinterpret_cast<std::uintptr_t>(e.p) << "(r"
-                      << reinterpret_cast<std::uintptr_t>(e.w.r) << " i"
-                      << reinterpret_cast<std::uintptr_t>(e.w.i) << ")";
+            llvm::outs() << " p"
+                         << llvm::format_hex_no_prefix(
+                                reinterpret_cast<std::uintptr_t>(e.p), 0)
+                         << "(r"
+                         << llvm::format_hex_no_prefix(
+                                reinterpret_cast<std::uintptr_t>(e.w.r), 0)
+                         << " i"
+                         << llvm::format_hex_no_prefix(
+                                reinterpret_cast<std::uintptr_t>(e.w.i), 0)
+                         << ")";
           }
-          std::cout << std::dec << "\n";
+          llvm::outs() << "\n";
           p = p->next();
         }
       }
@@ -195,6 +213,11 @@ public:
   }
 
 private:
+  friend class Package;
+  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
+  [[nodiscard]] static llvm::Error checkCapacity(size_t initial,
+                                                 size_t maximum);
+
   /// Typedef for a bucket in the table
   using Bucket = NodeBase*;
   /// Typedef for the table

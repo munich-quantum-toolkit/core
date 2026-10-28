@@ -19,27 +19,29 @@
 
 namespace mlir::mqt {
 
-/// Convert a floating-point or integer attribute to a double.
+/// Convert a floating-point or integer attribute to a double, if present.
 [[nodiscard]] std::optional<double> attributeToDouble(Attribute attr);
 
 /// Convert a direct constant-like value to a double.
 [[nodiscard]] std::optional<double> valueToDouble(Value value);
 
-/// Recursively constant-fold a pure SSA expression DAG to an attribute.
+/// Constant-fold a pure SSA expression DAG, returning null on failure.
 ///
-/// The cache memoizes successful and failed evaluations so shared operands are
-/// resolved once.
+/// Nonconstant operations must be region-free and fold to exactly one result.
+/// The cache stores a nonnull attribute on success and a null attribute on
+/// failure. An absent entry has not been evaluated. Discard the cache when the
+/// evaluated IR changes. Evaluation uses an explicit stack to support deep
+/// expressions and stops at the first non-constant operand.
 ///
 /// @param value SSA value to evaluate.
 /// @param cache Evaluation results indexed by SSA value.
-[[nodiscard]] std::optional<Attribute>
-valueToConstantAttr(Value value,
-                    DenseMap<Value, std::optional<Attribute>>& cache);
+[[nodiscard]] Attribute valueToConstantAttr(Value value,
+                                            DenseMap<Value, Attribute>& cache);
 
-/// Recursively constant-fold a pure SSA expression DAG to an attribute.
-[[nodiscard]] std::optional<Attribute> valueToConstantAttr(Value value);
+/// Constant-fold a pure SSA expression DAG, returning null on failure.
+[[nodiscard]] Attribute valueToConstantAttr(Value value);
 
-/// Recursively constant-fold a pure SSA expression DAG to a double.
+/// Constant-fold a pure SSA expression DAG to a double.
 [[nodiscard]] std::optional<double> valueToConstantDouble(Value value);
 
 } // namespace mlir::mqt

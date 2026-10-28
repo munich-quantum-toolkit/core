@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 mqt.core
-qiskit[visualization]~=2.5.0
+qiskit[visualization]~=2.6.0
 jupyterlab
 mlir-pygments>=1
 openqasm-pygments>=0.2

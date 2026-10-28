@@ -332,16 +332,16 @@ TEST_F(CNOTPhaseResynthesisTest, TensorBackedWires) {
     qubits.push_back(qubit);
   }
   threeGadgets(builder, qubits);
-  // Transfer wires through a tensor, in a different slot order.
+  // Reuse the wires in reverse order while preserving their tensor slots.
   for (unsigned i = 0; i < 3; ++i) {
-    tensor = builder.qtensorInsert(qubits[i], tensor, 2U - i);
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
   }
   for (unsigned i = 0; i < 3; ++i) {
-    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, 2U - i);
   }
   threeGadgets(builder, qubits);
   for (unsigned i = 0; i < 3; ++i) {
-    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+    tensor = builder.qtensorInsert(qubits[i], tensor, 2U - i);
   }
   builder.qtensorDealloc(tensor);
   auto moduleOp = builder.finalize();

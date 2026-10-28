@@ -10,8 +10,8 @@ functions and calls as Qiskit Gates. Nested and repeated definitions must stay
 linear in the size of the definition graph and preserve parameters, public
 names, global phases, qubit order, and supported modifiers.
 
-The normalized boundary is `bindings/mlir/qiskit/QiskitTranslation.h`. The
-Qiskit 2.5 implementation is in `bindings/mlir/qiskit/Qiskit2_5.cpp`;
+The normalized boundary is `bindings/mlir/Target/Qiskit/QiskitTranslation.h`.
+The Qiskit 2.5 implementation is in `bindings/mlir/Target/Qiskit/Qiskit2_5.cpp`;
 format-independent import and export are in `QiskitImport.cpp` and
 `QiskitExport.cpp`. Behavioral coverage is in
 `test/python/test_mlir_qiskit_translation.py`.

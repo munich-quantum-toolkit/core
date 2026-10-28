@@ -37,6 +37,7 @@
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
@@ -111,6 +112,15 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
   return success(!result.wasInterrupted());
 }
 
+LogicalResult mlir::mqt::verifyEntryPointResults(func::FuncOp function) {
+  if (llvm::any_of(function.getResultTypes(), [](Type type) {
+        return isa<qc::QubitType, qco::QubitType>(getElementTypeOrSelf(type));
+      })) {
+    return function.emitError("'mqt.entry_point' cannot return quantum values");
+  }
+  return success();
+}
+
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   if (!isa<UnitAttr>(attribute.getValue())) {
@@ -126,6 +136,10 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' requires a public, defined module-level function";
+  }
+
+  if (failed(verifyEntryPointResults(function))) {
+    return failure();
   }
 
   for (Operation& candidate : moduleOp.getBody()->getOperations()) {

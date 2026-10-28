@@ -499,6 +499,29 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
       }
     }
   )mlir"));
+  for (const auto* type : {
+           "!qc.qubit",
+           "memref<2x!qc.qubit>",
+           "!qco.qubit",
+           "tensor<2x!qco.qubit>",
+       }) {
+    SCOPED_TRACE(type);
+    const auto source =
+        "module { func.func @helper(%value: " + std::string(type) + ") -> " +
+        type + " { return %value : " + type + " } }";
+    auto moduleOp = parse(source);
+    ASSERT_TRUE(moduleOp);
+    mqt::setEntryPoint(moduleOp->lookupSymbol<func::FuncOp>("helper"));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          StringRef(diagnostic.str())
+              .contains("'mqt.entry_point' cannot return quantum values");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    EXPECT_TRUE(diagnosed);
+  }
 }
 
 TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {

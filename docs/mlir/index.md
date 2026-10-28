@@ -26,6 +26,15 @@ hardware. Passes that are not tied to a single dialect are documented on the
 {doc}`passes <Transforms>` page. For interoperability, we provide
 {doc}`conversions <Conversions>` between dialects.
 
+QC and QCO entry functions return classical program data and cannot return
+qubits or quantum registers. Helper functions may pass and return quantum state.
+Programs without results use a void entry function; a returned integer zero is
+still data. The C++ program builders infer the entry signature in `finalize()`
+from its return values. Scalar results survive OpenQASM, QC, QCO, and jeff
+interchange. Each exporter defines its supported result types;
+{doc}`QIR <../qir/index>` accepts direct measurements and CBit registers and
+creates its runtime exit status during conversion.
+
 ## Quantum resource contract
 
 QC, QCO, and QTensor share these requirements for semantic round trips:

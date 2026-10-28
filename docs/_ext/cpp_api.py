@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -111,87 +112,27 @@ def read_tagfile(path: Path, base_uri: str) -> dict[str, ApiTarget]:
     return targets
 
 
-def read_xml_inventory(path: Path, base_uri: str) -> dict[str, ApiTarget]:
-    """Read symbols omitted from tag files from Doxygen's XML output.
+class CppApiDomain(Domain):
+    """Resolve C++ references from Doxygen's tag file."""
 
-    Returns:
-        The API targets indexed by their qualified and unqualified names.
-    """
-    targets: dict[str, ApiTarget] = {}
-    index = ET.parse(path / "index.xml").getroot()  # ruff:ignore[suspicious-xml-element-tree-usage]
-    member_targets: dict[str, ApiTarget] = {}
-
-    for compound in index.findall("compound"):
-        refid = compound.get("refid", "")
-        kind = compound.get("kind", "object")
-        name = compound.findtext("name", "")
-        html_file = path.parent / "html" / f"{refid}.html"
-        if not refid:
-            continue
-        if name and html_file.is_file():
-            targets.setdefault(name, ApiTarget(kind, urljoin(base_uri, html_file.name)))
-
-        for member in compound.findall("member"):
-            member_refid = member.get("refid", "")
-            member_kind = member.get("kind", "object")
-            member_name = member.findtext("name", "")
-            if not member_refid or not member_name:
-                continue
-            member_html = path.parent / "html" / f"{member_refid.rsplit('_1', maxsplit=1)[0]}.html"
-            if not member_html.is_file():
-                continue
-            anchor = member_refid.rsplit("_1", maxsplit=1)[-1]
-            target = ApiTarget(member_kind, f"{urljoin(base_uri, member_html.name)}#{anchor}")
-            member_targets[member_refid] = target
-            targets.setdefault(member_name, target)
-
-        compound_xml = path / f"{refid}.xml"
-        if not compound_xml.is_file():
-            continue
-        root = ET.parse(compound_xml).getroot()  # ruff:ignore[suspicious-xml-element-tree-usage]
-        for member in root.findall(".//memberdef"):
-            member_refid = member.get("id", "")
-            member_name = member.findtext("name", "")
-            qualified_name = member.findtext("qualifiedname", member_name)
-            target = member_targets.get(member_refid)
-            if target is None or not qualified_name:
-                continue
-            targets.setdefault(member_name, target)
-            targets.setdefault(qualified_name, target)
-
-            args = member.findtext("argsstring", "")
-            if args:
-                targets.setdefault(f"{qualified_name}{args}", target)
-
-    return targets
-
-
-class TagfileDomain(Domain):
-    """Base domain resolving references through a Doxygen tag file."""
-
+    name = "cpp-api"
+    label = "MQT Core C++ API"
     roles: ClassVar[dict[str, XRefRole]] = {
         role: ApiXRefRole() for role in ("any", "class", "concept", "enum", "func", "struct", "type", "var")
     }
     directives: ClassVar[dict[str, object]] = {}
     initial_data: ClassVar[dict[str, object]] = {}
-    config_name: ClassVar[str]
 
     def _targets(self) -> dict[str, ApiTarget]:
         cached = self.data.get("targets")
         if isinstance(cached, dict):
             return cached
 
-        config = getattr(self.env.config, self.config_name)
-        tagfile, base_uri = config[:2]
+        tagfile, base_uri = self.env.config.cpp_api_tagfile
         path = Path(tagfile)
         if not path.is_absolute():
             path = Path(self.env.srcdir) / path
         targets = read_tagfile(path, base_uri)
-        if len(config) == 3:
-            xml_path = Path(config[2])
-            if not xml_path.is_absolute():
-                xml_path = Path(self.env.srcdir) / xml_path
-            targets.update(read_xml_inventory(xml_path, base_uri))
         self.data["targets"] = targets
         return targets
 
@@ -254,22 +195,6 @@ class TagfileDomain(Domain):
         return [(f"{self.name}:{api_target.kind}", resolved)]
 
 
-class CppApiDomain(TagfileDomain):
-    """Domain for the MQT Core C++ API."""
-
-    name = "cpp-api"
-    label = "MQT Core C++ API"
-    config_name = "cpp_api_tagfile"
-
-
-class QdmiApiDomain(TagfileDomain):
-    """Domain for the versioned external QDMI API."""
-
-    name = "qdmi"
-    label = "QDMI API"
-    config_name = "qdmi_api_tagfile"
-
-
 def _path_from_config(app: Sphinx, path: str) -> Path:
     """Resolve a documentation-relative path from an extension setting.
 
@@ -280,6 +205,48 @@ def _path_from_config(app: Sphinx, path: str) -> Path:
     return configured_path if configured_path.is_absolute() else Path(app.srcdir) / configured_path
 
 
+def write_doxygen_header(doxygen: str, source_dir: Path) -> None:
+    """Add MQT branding to the installed Doxygen version's HTML header.
+
+    Raises:
+        ExtensionError: If the generated header lacks the expected insertion points.
+    """
+    header = source_dir / "_build" / "doxygen-header.html"
+    header.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(  # ruff:ignore[subprocess-without-shell-equals-true]
+        [doxygen, "-w", "html", str(header), os.devnull, os.devnull, "Doxyfile"],
+        cwd=source_dir,
+        check=True,
+    )
+    # shortcut: No native Mermaid diagrams; restore $mermaidjs if any are added.
+    content = header.read_text(encoding="utf-8").replace("$mermaidjs", "")
+    # Doxygen owns the version-specific scripts and open page structure.
+    for marker, addition in (
+        ("$extrastylesheet", '\n<script defer src="$relpath^cpp-api-navigation.js"></script>'),
+        (
+            '<div id="top">',
+            (
+                '\n<div class="mqt-docs-backlink"><a id="mqt-docs-backlink" href="$relpath^../index.html">'
+                "← Back to MQT Core documentation</a></div>"
+            ),
+        ),
+        (
+            '<tr id="projectrow">',
+            (
+                '\n<td class="mqt-doxygen-logo">'
+                '<img class="mqt-logo-light" alt="Munich Quantum Toolkit" src="$relpath^mqt_dark.png" />'
+                '<img class="mqt-logo-dark" alt="Munich Quantum Toolkit" src="$relpath^mqt_light.png" />'
+                "</td>"
+            ),
+        ),
+    ):
+        if content.count(marker) != 1:
+            msg = f"Doxygen HTML header must contain exactly one {marker!r}"
+            raise ExtensionError(msg)
+        content = content.replace(marker, marker + addition, 1)
+    header.write_text(content, encoding="utf-8")
+
+
 def build_doxygen(app: Sphinx) -> None:
     """Download the QDMI inventory and generate the native C++ API.
 
@@ -287,13 +254,21 @@ def build_doxygen(app: Sphinx) -> None:
         ExtensionError: If the QDMI inventory cannot be downloaded or Doxygen
             cannot generate the API documentation.
     """
+    # The serialized llms.txt child reuses the primary build's native output.
+    if app.tags.has("sphinx_llm_markdown"):
+        return
     tagfile = _path_from_config(app, app.config.qdmi_api_tagfile[0])
     tagfile.parent.mkdir(parents=True, exist_ok=True)
     doxygen = shutil.which("doxygen")
     if doxygen is None:
         msg = "Doxygen is required to build the native C++ API documentation"
         raise ExtensionError(msg)
+    # Doxygen leaves pages for removed symbols behind on incremental builds.
+    html_dir = _path_from_config(app, app.config.cpp_api_tagfile[0]).parent / "html"
+    if html_dir.exists():
+        shutil.rmtree(html_dir)
     try:
+        write_doxygen_header(doxygen, Path(app.srcdir))
         with urlopen(urljoin(app.config.qdmi_api_tagfile[1], "qdmi.tag"), timeout=30) as response:  # ruff:ignore[suspicious-url-open-usage]
             tagfile.write_bytes(response.read())
         subprocess.run(  # ruff:ignore[subprocess-without-shell-equals-true]
@@ -315,7 +290,7 @@ def rewrite_doxygen_linkcheck_uri(app: Sphinx, uri: str) -> str | None:
     Returns:
         The generated file path, or ``None`` for other URIs.
     """
-    tagfile, base_uri = app.config.cpp_api_tagfile[:2]
+    tagfile, base_uri = app.config.cpp_api_tagfile
     if not uri.startswith(base_uri):
         return None
 
@@ -329,19 +304,21 @@ def publish_doxygen_html(app: Sphinx, exception: Exception | None) -> None:
     if exception is not None or app.builder.format != "html":
         return
     source = _path_from_config(app, app.config.cpp_api_tagfile[0]).parent / "html"
-    shutil.copytree(source, Path(app.outdir) / "cpp", dirs_exist_ok=True)
+    destination = Path(app.outdir) / "cpp"
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(source, destination)
 
 
 def setup(app: Sphinx) -> ExtensionMetadata:
-    """Register Doxygen tag-file-backed cross-reference domains.
+    """Register the C++ cross-reference domain and Doxygen build hooks.
 
     Returns:
         Metadata declaring that the extension supports parallel builds.
     """
-    app.add_config_value("cpp_api_tagfile", ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml"), "env")
+    app.add_config_value("cpp_api_tagfile", ("_build/doxygen/mqt-core.tag", "cpp/"), "env")
     app.add_config_value("qdmi_api_tagfile", ("_build/qdmi.tag", ""), "env")
     app.add_domain(CppApiDomain)
-    app.add_domain(QdmiApiDomain)
     app.connect("builder-inited", build_doxygen)
     app.connect("linkcheck-process-uri", rewrite_doxygen_linkcheck_uri)
     app.connect("build-finished", publish_doxygen_html)

@@ -27,6 +27,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Metadata.h"
@@ -36,57 +37,37 @@
 
 #include <cassert>
 #include <cstdint>
-#include <iterator>
 #include <limits>
 #include <string>
 
 namespace mlir::qir {
 
-[[nodiscard]] static uint64_t moduleFlagIntegerValue(llvm::Module& moduleOp,
-                                                     const StringRef key) {
-  const auto* constant = llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(
-      moduleOp.getModuleFlag(key));
-  const auto* integer =
-      constant != nullptr
-          ? llvm::dyn_cast<llvm::ConstantInt>(constant->getValue())
-          : nullptr;
-  return integer != nullptr ? integer->getZExtValue() : 0;
-}
-
-static void setIntegerModuleFlag(llvm::Module& moduleOp,
-                                 const llvm::Module::ModFlagBehavior behavior,
-                                 const StringRef key, const unsigned bitWidth,
-                                 const uint64_t value) {
-  auto& context = moduleOp.getContext();
-  moduleOp.setModuleFlag(
-      behavior, key,
-      llvm::ConstantInt::get(llvm::IntegerType::get(context, bitWidth), value));
-}
-
 void normalizeQIRModuleFlags(llvm::Module& moduleOp) {
-  for (const auto* const key : {
+  for (const StringRef key : {
            "dynamic_qubit_management",
            "dynamic_result_management",
            "arrays",
            "ir_functions",
            "multiple_target_branching",
            "multiple_return_points",
+           "backwards_branching",
        }) {
-    if (moduleOp.getModuleFlag(key) != nullptr) {
-      setIntegerModuleFlag(moduleOp, llvm::Module::Error, key, 1,
-                           moduleFlagIntegerValue(moduleOp, key));
+    if (auto* flag = moduleOp.getModuleFlag(key)) {
+      const auto* integer = llvm::mdconst::dyn_extract<llvm::ConstantInt>(flag);
+      const uint32_t bitWidth = key == "backwards_branching" ? 2 : 1;
+      moduleOp.setModuleFlag(
+          llvm::Module::Error, key,
+          llvm::ConstantInt::get(
+              llvm::IntegerType::get(moduleOp.getContext(), bitWidth),
+              integer != nullptr ? integer->getZExtValue() : 0));
     }
-  }
-  if (moduleOp.getModuleFlag("backwards_branching") != nullptr) {
-    setIntegerModuleFlag(
-        moduleOp, llvm::Module::Error, "backwards_branching", 2,
-        moduleFlagIntegerValue(moduleOp, "backwards_branching"));
   }
 }
 
-void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
-                 ValueRange parameters, ValueRange controls, ValueRange targets,
-                 const StringRef fnName) {
+LLVM::CallOp emitQISCall(OpBuilder& builder, Operation* anchor,
+                         const Location loc, ValueRange parameters,
+                         ValueRange controls, ValueRange targets,
+                         const StringRef fnName) {
   const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
   const auto voidType = LLVM::LLVMVoidType::get(builder.getContext());
   const auto isGenericControlled =
@@ -99,15 +80,11 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
     operands.append(controls.begin(), controls.end());
     operands.append(targets.begin(), targets.end());
 
-    SmallVector<Type> argumentTypes;
-    argumentTypes.reserve(operands.size());
-    llvm::transform(operands, std::back_inserter(argumentTypes),
-                    [](Value value) { return value.getType(); });
-    const auto signature = LLVM::LLVMFunctionType::get(voidType, argumentTypes);
+    const auto signature = LLVM::LLVMFunctionType::get(
+        voidType, llvm::to_vector(ValueRange(operands).getTypes()));
     auto declaration =
         getOrCreateFunctionDeclaration(builder, anchor, fnName, signature);
-    LLVM::CallOp::create(builder, loc, declaration, operands);
-    return;
+    return LLVM::CallOp::create(builder, loc, declaration, operands);
   }
   assert(!controls.empty() &&
          "generic controlled specialization requires controls");
@@ -118,7 +95,7 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
   const auto pointerSize = layout.getTypeSize(ptrType);
   assert(!pointerSize.isScalable() && "pointer size must be fixed");
   const auto pointerBytes = pointerSize.getFixedValue();
-  assert(pointerBytes <= std::numeric_limits<std::uint32_t>::max());
+  assert(pointerBytes <= std::numeric_limits<uint32_t>::max());
 
   const auto arrayCreateType =
       LLVM::LLVMFunctionType::get(ptrType, {i32Type, i64Type});
@@ -127,12 +104,12 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
   auto elementSize =
       LLVM::ConstantOp::create(
           builder, loc,
-          builder.getI32IntegerAttr(static_cast<std::int32_t>(pointerBytes)))
+          builder.getI32IntegerAttr(static_cast<int32_t>(pointerBytes)))
           .getResult();
   auto controlCount =
       LLVM::ConstantOp::create(
           builder, loc,
-          builder.getI64IntegerAttr(static_cast<std::int64_t>(controls.size())))
+          builder.getI64IntegerAttr(static_cast<int64_t>(controls.size())))
           .getResult();
   auto controlArray =
       LLVM::CallOp::create(builder, loc, arrayCreate,
@@ -144,11 +121,10 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
   auto arrayElement = getOrCreateFunctionDeclaration(
       builder, anchor, QIR_ARRAY_ELEMENT, arrayElementType);
   for (const auto& [index, control] : llvm::enumerate(controls)) {
-    auto indexValue =
-        LLVM::ConstantOp::create(
-            builder, loc,
-            builder.getI64IntegerAttr(static_cast<std::int64_t>(index)))
-            .getResult();
+    auto indexValue = LLVM::ConstantOp::create(builder, loc,
+                                               builder.getI64IntegerAttr(
+                                                   static_cast<int64_t>(index)))
+                          .getResult();
     auto element = LLVM::CallOp::create(builder, loc, arrayElement,
                                         ValueRange{controlArray, indexValue})
                        .getResult();
@@ -166,30 +142,26 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
     payload.append(parameters.begin(), parameters.end());
     payload.append(targets.begin(), targets.end());
 
-    SmallVector<Type> payloadTypes;
-    payloadTypes.reserve(payload.size());
-    llvm::transform(payload, std::back_inserter(payloadTypes),
-                    [](Value value) { return value.getType(); });
-    const auto tupleType =
-        LLVM::LLVMStructType::getLiteral(builder.getContext(), payloadTypes);
+    const auto tupleType = LLVM::LLVMStructType::getLiteral(
+        builder.getContext(), llvm::to_vector(ValueRange(payload).getTypes()));
     const auto tupleSize = layout.getTypeSize(tupleType);
     assert(!tupleSize.isScalable() && "QIR tuple size must be fixed");
 
     const auto tupleCreateType = LLVM::LLVMFunctionType::get(ptrType, i64Type);
     auto tupleCreate = getOrCreateFunctionDeclaration(
         builder, anchor, QIR_TUPLE_CREATE, tupleCreateType);
-    auto sizeValue = LLVM::ConstantOp::create(
-                         builder, loc,
-                         builder.getI64IntegerAttr(static_cast<std::int64_t>(
-                             tupleSize.getFixedValue())))
-                         .getResult();
+    auto sizeValue =
+        LLVM::ConstantOp::create(builder, loc,
+                                 builder.getI64IntegerAttr(static_cast<int64_t>(
+                                     tupleSize.getFixedValue())))
+            .getResult();
     gateArgs =
         LLVM::CallOp::create(builder, loc, tupleCreate, sizeValue).getResult();
 
     for (const auto& [index, value] : llvm::enumerate(payload)) {
       const SmallVector<LLVM::GEPArg> indices{
           0,
-          static_cast<std::int32_t>(index),
+          static_cast<int32_t>(index),
       };
       auto element = LLVM::GEPOp::create(builder, loc, ptrType, tupleType,
                                          gateArgs, indices)
@@ -205,8 +177,8 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
       LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
   auto controlled =
       getOrCreateFunctionDeclaration(builder, anchor, fnName, controlledType);
-  LLVM::CallOp::create(builder, loc, controlled,
-                       ValueRange{controlArray, gateArgs});
+  auto call = LLVM::CallOp::create(builder, loc, controlled,
+                                   ValueRange{controlArray, gateArgs});
 
   const auto releaseType =
       LLVM::LLVMFunctionType::get(voidType, {ptrType, i32Type});
@@ -223,6 +195,7 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
       builder, anchor, QIR_ARRAY_RELEASE, releaseType);
   LLVM::CallOp::create(builder, loc, arrayRelease,
                        ValueRange{controlArray, decrement});
+  return call;
 }
 
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
@@ -275,6 +248,13 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
   }
 
   auto function = cast<LLVM::LLVMFuncOp>(fnDecl);
+  if (fnName == QIR_MEASURE) {
+    function.setArgAttr(1, LLVM::LLVMDialect::getWriteOnlyAttrName(),
+                        builder.getUnitAttr());
+  } else if (fnName == QIR_READ_RESULT) {
+    function.setArgAttr(0, LLVM::LLVMDialect::getReadonlyAttrName(),
+                        builder.getUnitAttr());
+  }
   if (fnName != QIR_MEASURE && fnName != QIR_RESET) {
     return function;
   }
@@ -304,17 +284,19 @@ static LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
 
   auto symbolName = builder.getStringAttr((symbolPrefix + "_" + label).str());
 
-  if (!symbols.lookup<LLVM::GlobalOp>(symbolName)) {
-    const auto llvmArrayType = LLVM::LLVMArrayType::get(
-        builder.getIntegerType(8), static_cast<unsigned>(label.size() + 1));
-    const auto stringInitializer = builder.getStringAttr(label.str() + '\0');
+  auto global = symbols.lookup<LLVM::GlobalOp>(symbolName);
+  auto initializer = builder.getStringAttr(label.str() + '\0');
+  if (!global || !global.getConstant() || global.getAddrSpace() != 0 ||
+      global.getValueAttr() != initializer) {
+    const auto llvmArrayType =
+        LLVM::LLVMArrayType::get(builder.getIntegerType(8), label.size() + 1);
 
     // Create the declaration at the start of the module
     builder.setInsertionPointToStart(moduleOp.getBody());
 
     auto globalOp = LLVM::GlobalOp::create(
         builder, op->getLoc(), llvmArrayType, /*isConstant=*/true,
-        LLVM::Linkage::Internal, symbolName, stringInitializer);
+        LLVM::Linkage::Internal, symbolName, initializer);
     globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
     globalOp->setAttr("dso_local", builder.getUnitAttr());
     symbolName = symbols.insert(globalOp);
@@ -360,97 +342,104 @@ Value createPointerFromIndex(OpBuilder& builder, const Location loc,
 }
 
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
-                         ArrayRef<ClassicalRegister> classicalRegisters,
-                         const DenseMap<int64_t, StaticResult>& staticResults) {
-  if (classicalRegisters.empty() && staticResults.empty()) {
+                         ArrayRef<OutputRecord> outputs) {
+  if (outputs.empty()) {
     return;
   }
 
   auto* ctx = builder.getContext();
-  auto i64Type = builder.getI64Type();
   auto ptrType = LLVM::LLVMPointerType::get(ctx);
   auto voidType = LLVM::LLVMVoidType::get(ctx);
   auto loc = anchor->getLoc();
-
-  auto resultSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-  auto resultDec = getOrCreateFunctionDeclaration(builder, anchor,
-                                                  QIR_RECORD_OUTPUT, resultSig);
 
   auto main = getMainFunction(anchor);
   if (!main) {
     llvm::reportFatalInternalError("Main function not found");
   }
   SymbolTable symbols(main->getParentOfType<ModuleOp>());
-  const auto createLabel = [&](StringRef label) {
+  llvm::StringSet<> outputLabels;
+  for (const auto& output : outputs) {
+    outputLabels.insert(output.label);
+  }
+  llvm::StringSet<> labels;
+  size_t suffix = 0;
+  const auto createLabel = [&](StringRef base, bool topLevel = false) {
+    auto label = base.str();
+    // Generated child labels must not consume original register names.
+    while ((!topLevel && outputLabels.contains(label)) ||
+           !labels.insert(label).second) {
+      label = base.str() + "_" + std::to_string(++suffix);
+      topLevel = false;
+    }
     return createResultLabel(builder, anchor, label, "qir.result_label",
                              symbols, main)
         .getResult();
   };
 
+  Operation* firstRecord = nullptr;
+  const auto record = [&](LLVM::LLVMFuncOp& declaration, StringRef name,
+                          ValueRange operands) {
+    if (!declaration) {
+      const auto signature = LLVM::LLVMFunctionType::get(
+          voidType, llvm::to_vector(operands.getTypes()));
+      declaration =
+          getOrCreateFunctionDeclaration(builder, anchor, name, signature);
+    }
+    auto call = LLVM::CallOp::create(builder, loc, declaration, operands);
+    if (!firstRecord) {
+      firstRecord = call;
+    }
+  };
+  LLVM::LLVMFuncOp resultDec;
   LLVM::LLVMFuncOp baseArrayDec;
   LLVM::LLVMFuncOp adaptiveArrayDec;
-  // Classical registers
-  for (const auto& reg : classicalRegisters) {
-    if (!reg.record) {
+  LLVM::LLVMFuncOp booleanDec;
+  for (const auto& output : outputs) {
+    auto label = createLabel(output.label, true);
+    if (const auto* result = std::get_if<Value>(&output.value)) {
+      if (result->getType().isInteger(1)) {
+        record(booleanDec, QIR_BOOL_RECORD_OUTPUT, {*result, label});
+      } else {
+        record(resultDec, QIR_RECORD_OUTPUT, {*result, label});
+      }
       continue;
     }
-
+    const auto& reg = *std::get<const ClassicalRegister*>(output.value);
     auto size = resolveIntVariant(builder, loc, reg.size);
-    auto label = createLabel(reg.label);
 
     // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
     if (reg.array && !reg.booleanStorage) {
-      if (!adaptiveArrayDec) {
-        auto arraySig =
-            LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
-        adaptiveArrayDec = getOrCreateFunctionDeclaration(
-            builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
-      }
-      LLVM::CallOp::create(builder, loc, adaptiveArrayDec,
-                           ValueRange{size, reg.array, label});
+      record(adaptiveArrayDec, QIR_RESULT_ARRAY_RECORD_OUTPUT,
+             {size, reg.array, label});
       continue;
     }
 
-    // Base Profile: emit `__quantum__rt__array_record_output` followed by
-    // `__quantum__rt__result_record_output` for each bit
-    if (!baseArrayDec) {
-      auto arraySig = LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType});
-      baseArrayDec = getOrCreateFunctionDeclaration(
-          builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
-    }
-    LLVM::CallOp::create(builder, loc, baseArrayDec, ValueRange{size, label});
+    // Record the array header, then each Result or Boolean element.
+    record(baseArrayDec, QIR_ARRAY_RECORD_OUTPUT, {size, label});
     if (reg.booleanStorage) {
-      auto signature =
-          LLVM::LLVMFunctionType::get(voidType, {builder.getI1Type(), ptrType});
-      auto record = getOrCreateFunctionDeclaration(
-          builder, anchor, QIR_BOOL_RECORD_OUTPUT, signature);
       for (int64_t index = 0; index < std::get<int64_t>(reg.size); ++index) {
-        auto position = LLVM::ConstantOp::create(
-            builder, loc, builder.getI64IntegerAttr(index));
-        auto address =
-            LLVM::GEPOp::create(builder, loc, ptrType, builder.getI1Type(),
-                                reg.array, ValueRange{position});
-        auto bit =
-            LLVM::LoadOp::create(builder, loc, builder.getI1Type(), address);
-        auto bitLabel = createLabel(reg.label + "_" + std::to_string(index));
-        LLVM::CallOp::create(builder, loc, record, ValueRange{bit, bitLabel});
+        Value bit;
+        {
+          // QIR requires output recording to follow all computation.
+          OpBuilder::InsertionGuard guard(builder);
+          builder.setInsertionPoint(firstRecord);
+          auto position = LLVM::ConstantOp::create(
+              builder, loc, builder.getI64IntegerAttr(index));
+          auto address =
+              LLVM::GEPOp::create(builder, loc, ptrType, builder.getI1Type(),
+                                  reg.array, ValueRange{position});
+          bit =
+              LLVM::LoadOp::create(builder, loc, builder.getI1Type(), address);
+        }
+        auto bitLabel = createLabel(output.label + "_" + std::to_string(index));
+        record(booleanDec, QIR_BOOL_RECORD_OUTPUT, {bit, bitLabel});
       }
       continue;
     }
     for (auto [index, ptr] : llvm::enumerate(reg.results)) {
-      auto bitLabel = createLabel(reg.label + "_" + std::to_string(index));
-      LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, bitLabel});
+      auto bitLabel = createLabel(output.label + "_" + std::to_string(index));
+      record(resultDec, QIR_RECORD_OUTPUT, {ptr, bitLabel});
     }
-  }
-
-  // Static results
-  for (const auto& [index, result] : staticResults) {
-    if (!result.record) {
-      continue;
-    }
-    auto label = createLabel("__unnamed__" + std::to_string(index));
-    LLVM::CallOp::create(builder, loc, resultDec,
-                         ValueRange{result.pointer, label});
   }
 }
 

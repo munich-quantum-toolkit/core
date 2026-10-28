@@ -63,19 +63,20 @@ the full lint session pass. One CTest is skipped by its existing test policy.
 
 ## Code and ownership
 
-`bindings/mlir/qiskit/QiskitTranslation.h` defines the frontend-neutral circuit,
-control-flow, expression, register, and parameter records shared by the generic
-translator and Qiskit adapters. `bindings/mlir/qiskit/QiskitExport.cpp`
-validates a `mlir::QCProgram`, recursively collects instructions, and writes the
-validated model through `CircuitWriter`. `bindings/mlir/qiskit/QiskitImport.cpp`
-converts captured Qiskit expressions and control flow to QC MLIR.
+`bindings/mlir/Target/Qiskit/QiskitTranslation.h` defines the frontend-neutral
+circuit, control-flow, expression, register, and parameter records shared by the
+generic translator and Qiskit adapters.
+`bindings/mlir/Target/Qiskit/QiskitExport.cpp` validates a `mlir::QCProgram`,
+recursively collects instructions, and writes the validated model through
+`CircuitWriter`. `bindings/mlir/Target/Qiskit/QiskitImport.cpp` converts
+captured Qiskit expressions and control flow to QC MLIR.
 
-`bindings/mlir/qiskit/Qiskit2_5.cpp` is the only layer that constructs Qiskit
-Python control-flow objects. It creates child circuits against the root bit
-objects, places temporary barriers, finalizes child writers, and replaces the
-barriers with Qiskit operations. `test/python/test_mlir_qiskit_translation.py`
-contains the end-to-end contract. `docs/mlir/python_compiler_collection.md`
-documents the supported MLIR forms.
+`bindings/mlir/Target/Qiskit/Qiskit2_5.cpp` is the only layer that constructs
+Qiskit Python control-flow objects. It creates child circuits against the root
+bit objects, places temporary barriers, finalizes child writers, and replaces
+the barriers with Qiskit operations.
+`test/python/test_mlir_qiskit_translation.py` contains the end-to-end contract.
+`docs/mlir/python_compiler_collection.md` documents the supported MLIR forms.
 
 A classical snapshot is a `cbit.load` value used by a later condition. Export
 rejects the snapshot if an intervening store can make it stale. A returned

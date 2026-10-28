@@ -78,13 +78,10 @@ static Value measureToRegister(QCOProgramBuilder& b, Value qubit) {
 }
 
 static Value measureAndReturn(QCOProgramBuilder& b, ValueRange qubits) {
-  if (qubits.empty()) {
-    return b.intConstant(0);
-  }
   return measureToRegister(b, qubits);
 }
 
-Value emptyQCO(QCOProgramBuilder& b) { return b.intConstant(0); }
+SmallVector<Value> emptyQCO(QCOProgramBuilder&) { return {}; }
 
 Value reusableUnitaryFunction(QCOProgramBuilder& b) {
   auto qubit = b.allocQubit();
@@ -118,9 +115,9 @@ Value alloc2Qubits(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q0, q1});
 }
 
-Value allocQubitNoMeasure(QCOProgramBuilder& b) {
+SmallVector<Value> allocQubitNoMeasure(QCOProgramBuilder& b) {
   (void)b.allocQubit();
-  return b.intConstant(0);
+  return {};
 }
 
 Value alloc1QubitRegister(QCOProgramBuilder& b) {
@@ -149,10 +146,10 @@ Value allocLargeRegister(QCOProgramBuilder& b) {
   return measureToRegister(b, {r[0], r[99]});
 }
 
-Value staticQubitsNoMeasure(QCOProgramBuilder& b) {
+SmallVector<Value> staticQubitsNoMeasure(QCOProgramBuilder& b) {
   (void)b.staticQubit(0);
   (void)b.staticQubit(1);
-  return b.intConstant(0);
+  return {};
 }
 
 Value staticQubits(QCOProgramBuilder& b) {
@@ -197,10 +194,10 @@ Value staticQubitsWithInv(QCOProgramBuilder& b) {
   return measureToRegister(b, q0);
 }
 
-Value allocSinkPair(QCOProgramBuilder& b) {
+SmallVector<Value> allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   b.sink(q);
-  return b.intConstant(0);
+  return {};
 }
 
 SmallVector<Value> deadGatesProgram(QCOProgramBuilder& b) {
@@ -419,9 +416,9 @@ SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
   return {c};
 }
 
-Value globalPhase(QCOProgramBuilder& b) {
+SmallVector<Value> globalPhase(QCOProgramBuilder& b) {
   b.gphase(0.123);
-  return b.intConstant(0);
+  return {};
 }
 
 Value singleControlledGlobalPhase(QCOProgramBuilder& b) {
@@ -436,12 +433,12 @@ Value multipleControlledGlobalPhase(QCOProgramBuilder& b) {
   return measureAndReturn(b, qs);
 }
 
-Value inverseGlobalPhase(QCOProgramBuilder& b) {
+SmallVector<Value> inverseGlobalPhase(QCOProgramBuilder& b) {
   b.inv(ValueRange{}, [&](ValueRange /*qubits*/) {
     b.gphase(-0.123);
     return SmallVector<Value>{};
   });
-  return b.intConstant(0);
+  return {};
 }
 
 Value inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
@@ -454,30 +451,30 @@ Value inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
   return measureAndReturn(b, qs);
 }
 
-Value powGphaseScaled(QCOProgramBuilder& b) {
+SmallVector<Value> powGphaseScaled(QCOProgramBuilder& b) {
   b.pow(3.0, ValueRange{}, [&](mlir::ValueRange /*qubits*/) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });
-  return b.intConstant(0);
+  return {};
 }
 
-Value powGphaseScaledRef(QCOProgramBuilder& b) {
+SmallVector<Value> powGphaseScaledRef(QCOProgramBuilder& b) {
   b.gphase(3.0 * 0.123);
-  return b.intConstant(0);
+  return {};
 }
 
-Value negPowGphase(QCOProgramBuilder& b) {
+SmallVector<Value> negPowGphase(QCOProgramBuilder& b) {
   b.pow(-3.0, ValueRange{}, [&](mlir::ValueRange /*qubits*/) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });
-  return b.intConstant(0);
+  return {};
 }
 
-Value negPowGphaseRef(QCOProgramBuilder& b) {
+SmallVector<Value> negPowGphaseRef(QCOProgramBuilder& b) {
   b.gphase(-3.0 * 0.123);
-  return b.intConstant(0);
+  return {};
 }
 
 Value identity(QCOProgramBuilder& b) {
@@ -4497,23 +4494,23 @@ Value indexSwitchMultiCaseCompleteTensorState(QCOProgramBuilder& b) {
   return measureAndReturnQTensor(b, tensor, size);
 }
 
-Value qtensorAlloc(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorAlloc(QCOProgramBuilder& b) {
   (void)b.qtensorAlloc(3);
-  return measureAndReturn(b, {});
+  return {};
 }
 
-Value qtensorDealloc(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorDealloc(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   b.qtensorDealloc(qtensor);
-  return measureAndReturn(b, {});
+  return {};
 }
 
-Value qtensorFromElements(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorFromElements(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
   (void)b.qtensorFromElements({q0, q1, q2});
-  return measureAndReturn(b, {});
+  return {};
 }
 
 Value qtensorExtract(QCOProgramBuilder& b) {
@@ -4522,49 +4519,32 @@ Value qtensorExtract(QCOProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-Value qtensorInsert(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorInsert(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
   (void)b.qtensorInsert(q1, extractOutTensor, 0);
-  return measureAndReturn(b, {});
+  return {};
 }
 
-Value qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
-  auto qtensor = b.qtensorAlloc(3);
-  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
-  (void)b.qtensorInsert(q0, extractOutTensor, 1);
-  return measureAndReturn(b, {});
-}
-
-Value qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   (void)b.qtensorInsert(q0, extractOutTensor, 0);
-  return measureAndReturn(b, {});
+  return {};
 }
 
-Value qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
-  auto qtensor = b.qtensorAlloc(3);
-  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
-  auto q1 = b.h(q0);
-  auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
-  auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 1);
-  (void)b.qtensorInsert(q2, extractOutTensor1, 0);
-  return measureAndReturn(b, {});
-}
-
-Value qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 0);
   (void)b.qtensorInsert(q2, extractOutTensor1, 0);
-  return measureAndReturn(b, {});
+  return {};
 }
 
-Value qtensorChain(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorChain(QCOProgramBuilder& b) {
   Value q0;
   Value q1;
   Value q2;
@@ -4581,10 +4561,10 @@ Value qtensorChain(QCOProgramBuilder& b) {
   qtensor = b.qtensorInsert(q0, qtensor, 0);
   b.qtensorDealloc(qtensor);
 
-  return measureAndReturn(b, {});
+  return {};
 }
 
-Value qtensorAlternativeChain(QCOProgramBuilder& b) {
+SmallVector<Value> qtensorAlternativeChain(QCOProgramBuilder& b) {
   Value q0;
   Value q1;
   Value q2;
@@ -4601,7 +4581,7 @@ Value qtensorAlternativeChain(QCOProgramBuilder& b) {
   qtensor = b.qtensorInsert(q2, qtensor, 2);
   b.qtensorDealloc(qtensor);
 
-  return measureAndReturn(b, {});
+  return {};
 }
 
 Value simpleWhileReset(QCOProgramBuilder& b) {

@@ -64,10 +64,10 @@ focused include-cleaner checks passed.
 their count, and `vertexForSite()` maps a target-defined site ID to that dense
 order.
 
-`bindings/mlir/qiskit/QiskitExport.cpp` collects quantum and classical resources
-from a `QCProgram` and constructs a Qiskit `QuantumCircuit` through Qiskit's C
-API. `bindings/mlir/qiskit/Qiskit.h` declares the native exporter.
-`bindings/mlir/register_mlir.cpp` exposes it as `QCProgram.to_qiskit`.
+`bindings/mlir/Target/Qiskit/QiskitExport.cpp` collects quantum and classical
+resources from a `QCProgram` and constructs a Qiskit `QuantumCircuit` through
+Qiskit's C API. `bindings/mlir/Target/Qiskit/Qiskit.h` declares the native
+exporter. `bindings/mlir/register_mlir.cpp` exposes it as `QCProgram.to_qiskit`.
 `python/mqt/core/mlir.pyi` is the generated Python type stub.
 
 Mapping replaces dynamic QCO allocations with `qco.static` operations that use

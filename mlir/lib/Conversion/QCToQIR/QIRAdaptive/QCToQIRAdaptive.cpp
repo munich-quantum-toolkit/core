@@ -41,6 +41,8 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/WalkPatternRewriteDriver.h"
 
+#include "llvm/ADT/STLExtras.h"
+
 #include <cassert>
 #include <cstdint>
 #include <utility>
@@ -55,15 +57,25 @@ using namespace qir;
 
 namespace {
 
-constexpr unsigned LOCAL_CBIT_REGISTER = 1U;
-constexpr unsigned RETURNED_CBIT_REGISTER = 2U;
-constexpr unsigned MIXED_CBIT_REGISTER =
+constexpr uint32_t LOCAL_CBIT_REGISTER = 1U;
+constexpr uint32_t RETURNED_CBIT_REGISTER = 2U;
+constexpr uint32_t MIXED_CBIT_REGISTER =
     LOCAL_CBIT_REGISTER | RETURNED_CBIT_REGISTER;
 
 } // namespace
 
 static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
                                                  LoweringState& state) {
+  // Output recording and fused stores need no register-access analysis.
+  if (llvm::none_of(state.cregIndices, [&](const auto& entry) {
+        const auto& reg = state.cregs[entry.second];
+        return reg.record && !reg.booleanStorage &&
+               llvm::any_of(entry.first->getUsers(), [&](Operation* user) {
+                 return !state.deferredMeasurementStores.contains(user);
+               });
+      })) {
+    return success();
+  }
   DenseMap<Value, SmallVector<Value>> forwardedRegisters;
   moduleOp->walk([&](Operation* operation) {
     for (auto& region : operation->getRegions()) {
@@ -72,26 +84,19 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
           if (!isa<cbit::RegisterType>(argument.getType())) {
             continue;
           }
-          for (auto* predecessor : block.getPredecessors()) {
-            auto branch =
-                dyn_cast<BranchOpInterface>(predecessor->getTerminator());
+          for (auto& edge : block.getUses()) {
+            auto branch = dyn_cast<BranchOpInterface>(edge.getOwner());
             if (!branch) {
               continue;
             }
-            for (unsigned successorIndex = 0;
-                 successorIndex < branch->getNumSuccessors();
-                 ++successorIndex) {
-              if (branch->getSuccessor(successorIndex) != &block) {
-                continue;
-              }
-              auto operands = branch.getSuccessorOperands(successorIndex);
-              if (argument.getArgNumber() >= operands.size() ||
-                  operands.isOperandProduced(argument.getArgNumber())) {
-                continue;
-              }
-              if (auto incoming = operands[argument.getArgNumber()]) {
-                forwardedRegisters[incoming].push_back(argument);
-              }
+            auto operands =
+                branch.getSuccessorOperands(edge.getOperandNumber());
+            if (argument.getArgNumber() >= operands.size() ||
+                operands.isOperandProduced(argument.getArgNumber())) {
+              continue;
+            }
+            if (auto incoming = operands[argument.getArgNumber()]) {
+              forwardedRegisters[incoming].push_back(argument);
             }
           }
         }
@@ -107,19 +112,16 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
     }
   });
 
-  DenseMap<Value, unsigned> representations;
+  DenseMap<Value, uint32_t> representations;
   SmallVector<Value> worklist;
-  moduleOp->walk([&](cbit::AllocOp allocOp) {
-    const auto it = state.cregIndices.find(allocOp.getOperation());
-    if (it == state.cregIndices.end()) {
-      return;
-    }
-    const auto& reg = state.cregs[it->second];
-    representations[allocOp.getResult()] = reg.record && !reg.booleanStorage
-                                               ? RETURNED_CBIT_REGISTER
-                                               : LOCAL_CBIT_REGISTER;
-    worklist.push_back(allocOp.getResult());
-  });
+  for (const auto& [allocation, index] : state.cregIndices) {
+    auto value = allocation->getResult(0);
+    const auto& reg = state.cregs[index];
+    representations[value] = reg.record && !reg.booleanStorage
+                                 ? RETURNED_CBIT_REGISTER
+                                 : LOCAL_CBIT_REGISTER;
+    worklist.push_back(value);
+  }
 
   while (!worklist.empty()) {
     auto source = worklist.pop_back_val();
@@ -241,8 +243,8 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
     auto& state = getState();
     const auto it = state.cregIndices.find(op.getOperation());
     if (it == state.cregIndices.end()) {
-      rewriter.eraseOp(op);
-      return success();
+      return op.emitError(
+          "QIR conversion requires CBit allocations in the entry function");
     }
     auto& reg = state.cregs[it->second];
 
@@ -266,14 +268,10 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
       reg.array = storage;
       if (op.getInitialization() == cbit::Initialization::Zero) {
         rewriter.setInsertionPoint(op);
-        auto zero = LLVM::ConstantOp::create(rewriter, loc,
-                                             rewriter.getI8IntegerAttr(0));
-        auto null = LLVM::ZeroOp::create(rewriter, loc, ptrType);
-        auto end = LLVM::GEPOp::create(rewriter, loc, ptrType, i1Type, null,
-                                       ValueRange{size});
-        auto bytes =
-            LLVM::PtrToIntOp::create(rewriter, loc, rewriter.getI64Type(), end);
-        LLVM::MemsetOp::create(rewriter, loc, storage, zero, bytes, false);
+        auto zero = LLVM::ZeroOp::create(
+            rewriter, loc,
+            LLVM::LLVMArrayType::get(i1Type, op.getType().getWidth()));
+        LLVM::StoreOp::create(rewriter, loc, zero, storage);
       }
       rewriter.replaceOp(op, storage);
       return success();
@@ -623,8 +621,12 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
         getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, fnSignature);
 
     // Replace operation with CallOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              adaptor.getOperands());
+    auto call = LLVM::CallOp::create(rewriter, op.getLoc(), fnDecl,
+                                     adaptor.getOperands());
+    if (failed(getState().nameNativeCall(call, "reset", adaptor.getQubit()))) {
+      return failure();
+    }
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -658,10 +660,24 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
     auto voidType = LLVM::LLVMVoidType::get(ctx);
 
+    auto returnedResult = state.measuredResults.find(op);
     auto result =
         resolveRegisterMeasurement(state, op.getOperation(), rewriter);
     if (!result) {
-      result = getResultPtr(state, op.getOperation(), rewriter, true);
+      if (returnedResult != state.measuredResults.end()) {
+        result = getResultPtr(state, op.getOperation(), rewriter, true);
+      } else {
+        // Non-output results are read into SSA values before the next measure.
+        if (!state.scratchResult) {
+          state.scratchResult =
+              getResultPtr(state, op.getOperation(), rewriter, true);
+        }
+        result = state.scratchResult;
+      }
+    }
+
+    if (returnedResult != state.measuredResults.end()) {
+      returnedResult->second.value = result;
     }
 
     // Create measure call
@@ -669,8 +685,11 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
 
-    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
-                         ValueRange{adaptor.getQubit(), result});
+    auto call = LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                                     ValueRange{adaptor.getQubit(), result});
+    if (failed(state.nameNativeCall(call, "measure", adaptor.getQubit()))) {
+      return failure();
+    }
 
     // Create read-result call if the result is used
     if (op.getResult().use_empty()) {
@@ -779,8 +798,8 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_RESULT_RELEASE, sig);
-      for (auto& [_, result] : state->scalarResults) {
-        LLVM::CallOp::create(builder, main->getLoc(), dec, result.pointer);
+      for (auto result : state->scalarResults) {
+        LLVM::CallOp::create(builder, main->getLoc(), dec, result);
       }
     }
 
@@ -895,8 +914,17 @@ protected:
     // Stage 5: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
-                               memref::MemRefDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect>();
+      // Defer classical memory and index types to final MemRef-to-LLVM
+      // lowering.
+      target.addDynamicallyLegalDialect<memref::MemRefDialect>(
+          [&](Operation* op) {
+            return llvm::all_of(
+                llvm::concat<Type>(op->getOperandTypes(), op->getResultTypes()),
+                [&](Type type) {
+                  return !isa<MemRefType>(type) || typeConverter.isLegal(type);
+                });
+          });
 
       populateQCToQIRAdaptivePatterns(patterns, typeConverter, ctx, state);
 

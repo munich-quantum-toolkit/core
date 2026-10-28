@@ -25,7 +25,7 @@ namespace mlir::mqt {
 
 std::optional<double> addConstantAngles(double lhs, double rhs) {
   const double sum = lhs + rhs;
-  if (!std::isfinite(lhs) || !std::isfinite(rhs) || !std::isfinite(sum)) {
+  if (!std::isfinite(sum)) {
     return std::nullopt;
   }
   // TwoSum recovers the rounding error even when one operand is much smaller.
@@ -40,19 +40,14 @@ std::optional<double> addConstantAngles(double lhs, double rhs) {
 
 std::optional<double> scaleConstantAngle(double angle, double factor) {
   const double product = angle * factor;
-  if (!std::isfinite(angle) || !std::isfinite(factor) ||
-      !std::isfinite(product) ||
-      std::abs(std::fma(angle, factor, -product)) >
-          PARAMETER_COMPARISON_TOLERANCE) {
+  if (!std::isfinite(product) || std::abs(std::fma(angle, factor, -product)) >
+                                     PARAMETER_COMPARISON_TOLERANCE) {
     return std::nullopt;
   }
   return product;
 }
 
 std::optional<PhaseGate> classifyPhaseGate(double angle) {
-  if (!std::isfinite(angle)) {
-    return std::nullopt;
-  }
   const double normalized = normalizeAngle(angle);
   const double pi = std::numbers::pi;
   const auto validatedGate = [&](PhaseGate gate, double real,
@@ -101,11 +96,11 @@ double normalizeAngle(double theta) {
 }
 
 bool isValidGlobalPhaseAngle(const double theta) {
-  return std::isfinite(theta) && std::abs(theta) <= MAX_GLOBAL_PHASE_ANGLE;
+  return std::abs(theta) <= MAX_GLOBAL_PHASE_ANGLE;
 }
 
 LogicalResult verifyGlobalPhaseAngle(Operation* operation, Value angle) {
-  const auto constant = valueToConstantDouble(angle);
+  const auto constant = valueToDouble(angle);
   if (!constant || !std::isfinite(*constant)) {
     return success();
   }

@@ -11,9 +11,11 @@
 #include "Worker.hpp"
 
 #include "qdmi/common/DeviceConfiguration.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include "WorkerProtocol.hpp"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Error.h"
@@ -25,8 +27,8 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -101,8 +103,8 @@ bool Worker::start() {
   llvm::SmallString<128> directory;
   if (const auto error =
           llvm::sys::fs::createUniqueDirectory("mqt-dd", directory)) {
-    std::cerr << "Cannot create DDSIM worker socket: " + error.message()
-              << '\n';
+    qdmi::diagnostics::error("Cannot create DDSIM worker socket: {0}",
+                             error.message());
     return false;
   }
   const llvm::scope_exit cleanup(
@@ -111,12 +113,15 @@ bool Worker::start() {
   llvm::sys::path::append(socketPath, "socket");
   auto listener = llvm::ListeningSocket::createUnix(socketPath);
   if (!listener) {
-    std::cerr << llvm::toString(listener.takeError()) << '\n';
+    qdmi::diagnostics::error("{0}", llvm::toString(listener.takeError()));
     return false;
   }
-  const auto executablePath =
-      (qdmi::detail::moduleDirectory(&MODULE_ANCHOR) / MQT_DDSIM_WORKER_NAME)
-          .u8string();
+  auto modulePath = qdmi::detail::moduleDirectory(&MODULE_ANCHOR);
+  if (!modulePath) {
+    qdmi::diagnostics::error("{0}", llvm::toString(modulePath.takeError()));
+    return false;
+  }
+  const auto executablePath = (*modulePath / MQT_DDSIM_WORKER_NAME).u8string();
   const std::string executable(executablePath.begin(), executablePath.end());
   {
     const std::scoped_lock lock(mutex_);
@@ -127,7 +132,7 @@ bool Worker::start() {
     process_ = llvm::sys::ExecuteNoWait(executable, {executable, socketPath},
                                         std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
-      std::cerr << "Cannot start DDSIM worker: " + error << '\n';
+      qdmi::diagnostics::error("Cannot start DDSIM worker: {0}", error);
       return false;
     }
   }
@@ -151,22 +156,36 @@ bool Worker::start() {
       return false;
     }
   }
-  std::cerr << "DDSIM worker did not connect before the startup deadline."
-            << '\n';
+  qdmi::diagnostics::error(
+      "DDSIM worker did not connect before the startup deadline.");
   return false;
 }
-bool Worker::execute(const WorkerRequest& request, WorkerResponse& response) {
+bool Worker::execute(const WorkerRequest& request, WorkerResponse& response,
+                     llvm::function_ref<size_t(size_t)> reserveWorkers) {
   if (!stream_ && !start()) {
     return false;
   }
   std::string bytes;
-  if (writeFrame(*stream_, encode(request)) && readFrame(*stream_, bytes) &&
-      decode(bytes, response)) {
-    return true;
+  if (writeFrame(*stream_, encode(request)) && readFrame(*stream_, bytes)) {
+    WorkerSlots slots;
+    if (decode(bytes, slots)) {
+      if (slots.count > request.maxWorkers) {
+        return false;
+      }
+      const auto grant = reserveWorkers(slots.count);
+      if (grant == 0 || grant > slots.count ||
+          !writeFrame(*stream_, encode(WorkerSlots{grant})) ||
+          !readFrame(*stream_, bytes)) {
+        return false;
+      }
+    }
+    if (decode(bytes, response)) {
+      return true;
+    }
   }
 
-  std::cerr << "DDSIM worker exited or returned an incomplete response."
-            << '\n';
+  qdmi::diagnostics::error(
+      "DDSIM worker exited or returned an incomplete response.");
   return false;
 }
 WorkerPool::~WorkerPool() { shutdown(); }

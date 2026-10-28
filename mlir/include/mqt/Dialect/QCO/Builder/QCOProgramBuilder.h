@@ -16,6 +16,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
@@ -32,7 +33,6 @@ namespace mlir {
 
 // Forward declarations
 class MLIRContext;
-class ModuleOp;
 class Operation;
 class ValueRange;
 
@@ -42,7 +42,10 @@ namespace qco {
 ///
 /// Operations consume qubit SSA values and return their replacements. The
 /// builder tracks live values and terminates with a usage error when a
-/// consumed or untracked value is reused.
+/// consumed or untracked value is reused. The builder destroys unfinished IR
+/// on destruction; `finalize()` transfers ownership to its caller. Builders
+/// are move-only. The borrowed MLIR context must outlive the builder and its
+/// IR.
 ///
 /// @par Qubit addressing:
 /// A program must use either static qubits (`staticQubit`) or dynamic
@@ -53,6 +56,8 @@ namespace qco {
 /// `mqt.entry_point` function. Helpers receive allocated qubits as arguments.
 ///
 /// @par Structured control flow:
+/// Quantum values must enter regions through explicit arguments; classical
+/// captures remain supported.
 /// These rules apply to linear results; `qcoIf` may prepend classical results.
 /// Callbacks for `qcoIf`, `qcoIndexSwitch`, `scfFor`, and `scfWhile` must
 /// preserve each input's type and qubit or register identity by result
@@ -87,26 +92,12 @@ public:
   // Initialization
   //===--------------------------------------------------------------------===//
 
-  /// Initialize the builder and prepare for program construction, with
-  /// a default return type of i64.
+  /// Initialize the builder with an entry function that returns no values.
   ///
-  /// Creates a main function with an `mqt.entry_point` attribute. Must be
-  /// called before adding operations.
+  /// Creates a main function with an `mqt.entry_point` attribute. Finalization
+  /// derives its result types from the returned program data. Must be called
+  /// before adding operations.
   void initialize();
-
-  /// Initialize the builder and prepare for program construction with specified
-  /// return types.
-  ///
-  /// @param returnTypes The return types for the main function
-  ///
-  /// Creates a main function with an `mqt.entry_point` attribute. Must be
-  /// called before adding operations.
-  void initialize(TypeRange returnTypes);
-
-  /// Modify the return types of the main function after initialization.
-  ///
-  /// @param returnTypes The new return types for the main function
-  void retype(TypeRange returnTypes);
 
   //===--------------------------------------------------------------------===//
   // Functions
@@ -381,6 +372,9 @@ public:
   /// extracted qubit is added to the qubit tracking and the tracking of the
   /// source tensor is updated.
   ///
+  /// The index must identify an unextracted slot; dynamic index equality is a
+  /// program precondition.
+  ///
   /// @param tensor Source tensor (must be valid/unconsumed)
   /// @param index The index from where the qubit is extracted
   /// @return Pair of (outTensor, extractedQubit)
@@ -400,6 +394,9 @@ public:
   /// Inserts a scalar qubit into the one-dimensional tensor of qubits at the
   /// given index. The inserted qubit is consumed and removed from the qubit
   /// tracking while the tracking for the source tensor is updated.
+  ///
+  /// The scalar must return to its original register and slot; equality of
+  /// dynamic extraction and insertion indices is a program precondition.
   ///
   /// @param scalar The scalar qubit that is inserted (must be valid/unconsumed)
   /// @param tensor The tensor where the qubit is inserted (must be
@@ -1760,33 +1757,17 @@ public:
   // Finalization
   //===--------------------------------------------------------------------===//
 
-  /// Finalize the program and return the constructed module
+  /// Finalize the program and transfer the constructed module to the caller.
   ///
-  /// Automatically deallocates all remaining valid qubits and tensors of
-  /// qubits, adds a return statement with exit code 0 (indicating successful
-  /// execution), and transfers ownership of the module to the caller. The
-  /// builder should not be used after calling this method.
+  /// Disposes all remaining valid qubits and qubit tensors and adds the entry
+  /// return. The return values determine the entry function result types; an
+  /// empty range produces a void entry. Quantum values cannot be returned by an
+  /// entry function. QIR conversion generates its own execution status.
+  /// The builder must not be used after finalization.
   ///
-  /// @return OwningOpRef containing the constructed quantum program module
-  OwningOpRef<ModuleOp> finalize();
-
-  /// Finalize the program with the given return values and return the
-  /// constructed module
-  ///
-  /// @param returnValues Values representing the return values of the main
-  /// function.
-  ///
-  /// Automatically deallocates all remaining valid qubits and tensors of
-  /// qubits, adds a return statement with the given return values, and
-  /// transfers ownership of the module to the caller. The builder should not be
-  /// used after calling this method.
-  ///
-  /// The return values must have the types indicated by the function signature
-  /// of the main function, which returns an `i64` by default and can be
-  /// modified by passing different arguments to the `initialize()` method.
-  ///
-  /// @return OwningOpRef containing the constructed quantum program module
-  OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
+  /// @param returnValues Classical program outputs, if any.
+  /// @return The constructed quantum program module.
+  OwningOpRef<ModuleOp> finalize(ValueRange returnValues = {});
 
   /// Convenience method for building quantum programs.
   ///
@@ -1814,8 +1795,7 @@ public:
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
-  MLIRContext* ctx{};
-  Operation* moduleOp_;
+  OwningOpRef<ModuleOp> moduleOp_;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
@@ -1828,13 +1808,14 @@ private:
   ///
   /// @param qubit Qubit value to validate
   /// Terminates with a usage error if the qubit is consumed or untracked.
-  void validateQubitValue(Value qubit) const;
+  void validateQubitValue(Value qubit, bool checkScope = true) const;
 
   /// Update tracking when an operation consumes and produces a qubit
   ///
   /// @param inputQubit Input qubit being consumed (must be valid)
   /// @param outputQubit New output qubit being produced
-  void updateQubitTracking(Value inputQubit, Value outputQubit);
+  void updateQubitTracking(Value inputQubit, Value outputQubit,
+                           bool checkScope = true);
 
   /// Count unique tensors
   int64_t tensorCounter = 0;
@@ -1858,13 +1839,14 @@ private:
   ///
   /// @param tensor Tensor value to validate
   /// Terminates with a usage error if the tensor is consumed or untracked.
-  void validateTensorValue(Value tensor) const;
+  void validateTensorValue(Value tensor, bool checkScope = true) const;
 
   /// Update tracking when an operation consumes and produces a tensor
   ///
   /// @param inputTensor Input tensor being consumed (must be valid)
   /// @param outputTensor New output tensor being produced
-  void updateTensorTracking(Value inputTensor, Value outputTensor);
+  void updateTensorTracking(Value inputTensor, Value outputTensor,
+                            bool checkScope = true);
 
   /// Dispose of every live linear value in the current function.
   void disposeLinearValues();

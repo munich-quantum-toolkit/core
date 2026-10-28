@@ -18,7 +18,10 @@
 #include "dd/Package.hpp"
 #include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>
@@ -26,12 +29,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <random>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -44,10 +46,11 @@
 /// pointer opaque such that it cannot be dereferenced
 struct ResultStruct {
   bool r{};
+  std::optional<dd::Qubit> deferredWire;
 };
 struct ArrayImpl {
   int32_t refcount{};
-  std::vector<int8_t> data{};
+  std::vector<int8_t> data;
   int64_t elementSize{};
 };
 
@@ -81,11 +84,10 @@ public:
   struct QState {
     std::unique_ptr<dd::Package> dd;
     dd::vEdge edge;
-    size_t numQubits;
+    size_t numQubits = 0;
 
     QState()
-        : dd(std::make_unique<dd::Package>(0)), edge(dd::vEdge::one()),
-          numQubits(0) {}
+        : dd(llvm::cantFail(dd::Package::create(0))), edge(dd::vEdge::one()) {}
 
     /// Reset to a fresh empty state.
     ///
@@ -93,7 +95,7 @@ public:
     /// `garbageCollect` path is used so the package (and its internal caches)
     /// is kept warm. A moved-out package is recreated on the next quantum
     /// operation.
-    auto reset() -> void {
+    void reset() {
       if (dd) {
         dd->decRef(edge);
         dd->garbageCollect();
@@ -133,30 +135,45 @@ private:
   uintptr_t currentMaxResultAddress;
   QState qState;
   std::mt19937_64 mt;
-  std::ostream* os = &std::cout;
+  struct SamplingBranches {
+    std::vector<bool> path;
+    std::vector<std::pair<std::vector<bool>, size_t>> pending;
+    size_t count;
+    size_t position = 0;
+  };
+  SamplingBranches* samplingBranches_ = nullptr;
+  std::vector<dd::SamplingOutput>* deferredOutputs_ = nullptr;
+  llvm::raw_ostream* os = &llvm::outs();
+  // Set only while building a terminal-sampling template in a
+  // raw_string_ostream.
+  std::vector<uint64_t>* outputResultPositions_ = nullptr;
   // The QIR spec does not define a default output schema.
   // The runtime picks @c Labeled when a program doesn't declare one.
   OutputSchema outputSchema = OutputSchema::Labeled;
   std::vector<std::pair<std::string, std::string>> metadata;
 
-  auto enlargeState(size_t maxQubit) -> void;
-  void configureStaticResources(std::optional<size_t> qubits,
-                                std::optional<size_t> results);
-  auto sampleMeasurements(std::span<const uintptr_t> outputs, size_t shots,
-                          std::vector<std::string>& results) -> void;
-  static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
+  llvm::Error enlargeState(size_t maxQubit);
+  llvm::Expected<bool> measureQubit(dd::Qubit target);
+  llvm::Error configureStaticResources(std::optional<size_t> qubits,
+                                       std::optional<size_t> results);
+  llvm::Error
+  sampleMeasurements(std::span<const uintptr_t> qubits, size_t shots,
+                     llvm::function_ref<void(std::string&&)> emitOwned,
+                     llvm::function_ref<void(std::string_view)> emitBorrowed);
+  static llvm::Expected<dd::Qubit> staticQubitId(const Qubit* qubit) {
     const auto id = reinterpret_cast<uintptr_t>(qubit);
     if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {
-      throw std::out_of_range(
+      return llvm::createStringError(
+          std::errc::result_out_of_range,
           "Static QIR qubit ID exceeds the supported qubit range");
     }
     return static_cast<dd::Qubit>(id);
   }
-  static auto bind(Runtime* runtime) noexcept -> Runtime*;
-  auto resolveAddress(const Qubit* qubit) -> dd::Qubit;
-  auto translateAddresses(std::span<Qubit* const> qubits,
-                          std::span<Qubit* const> additionalQubits = {})
-      -> llvm::SmallVector<dd::Qubit>;
+  static Runtime* bind(Runtime* runtime) noexcept;
+  llvm::Expected<dd::Qubit> resolveAddress(const Qubit* qubit);
+  llvm::Expected<llvm::SmallVector<dd::Qubit>>
+  translateAddresses(std::span<Qubit* const> qubits,
+                     std::span<Qubit* const> additionalQubits = {});
 
   // Helper function to output a type (bool, int...) to @c os, honoring the
   // active @c outputSchema.
@@ -169,7 +186,7 @@ public:
   Runtime();
   explicit Runtime(uint64_t randomSeed);
 
-  [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
+  [[nodiscard]] static uint64_t generateRandomSeed();
   /// Return the runtime bound to this thread.
   ///
   /// When no session is executing, a thread-local fallback keeps direct calls
@@ -181,21 +198,21 @@ public:
   Runtime(Runtime&&) = delete;
   Runtime& operator=(Runtime&&) = delete;
 
-  auto reset() -> void;
-  auto seed(uint64_t randomSeed) -> void;
+  void reset();
+  void seed(uint64_t randomSeed);
   /// Apply a row-major matrix with a runtime-sized control set.
-  auto apply(std::span<const std::complex<dd::fp>> matrix,
-             std::span<Qubit* const> controls, std::span<Qubit* const> targets)
-      -> void;
+  llvm::Error apply(std::span<const std::complex<dd::fp>> matrix,
+                    std::span<Qubit* const> controls,
+                    std::span<Qubit* const> targets);
   template <typename Matrix>
     requires requires(const Matrix& matrix) { matrix.entries(); }
-  auto apply(const Matrix& matrix, std::span<Qubit* const> controls,
-             std::span<Qubit* const> targets) -> void {
-    apply(matrix.entries(), controls, targets);
+  llvm::Error apply(const Matrix& matrix, std::span<Qubit* const> controls,
+                    std::span<Qubit* const> targets) {
+    return apply(matrix.entries(), controls, targets);
   }
-  auto applyGlobalPhase(dd::fp phase) -> void;
-  auto measure(Qubit* qubit, Result* result) -> void;
-  template <typename... Args> auto measure(Args... args) -> void {
+  void applyGlobalPhase(dd::fp phase);
+  llvm::Error measure(Qubit* qubit, Result* result);
+  template <typename... Args> llvm::Error measure(Args... args) {
     const auto qubits = packOfType<Qubit*>(args...);
     const auto results = packOfType<Result*>(args...);
     static_assert(
@@ -207,22 +224,27 @@ public:
         "Number of qubits and results must match the number of arguments. "
         "First, all qubits followed then by all results.");
     for (size_t i = 0; i < qubits.size(); ++i) {
-      measure(qubits[i], results[i]);
+      if (auto error = measure(qubits[i], results[i])) {
+        return error;
+      }
     }
+    return llvm::Error::success();
   }
-  auto reset(std::span<Qubit* const> qubits) -> void;
-  auto swap(Qubit* qubit1, Qubit* qubit2) -> void;
-  auto qAlloc() -> Qubit*;
-  auto qFree(Qubit* qubit) -> void;
-  auto rAlloc() -> Result*;
-  auto deref(Result* result) -> ResultStruct&;
-  auto rFree(Result* result) -> void;
+  llvm::Error reset(std::span<Qubit* const> qubits);
+  llvm::Error swap(Qubit* qubit1, Qubit* qubit2);
+  llvm::Expected<Qubit*> qAlloc();
+  llvm::Error qFree(Qubit* qubit);
+  llvm::Expected<Result*> rAlloc();
+  llvm::Expected<ResultStruct*> deref(Result* result);
+  llvm::Error rFree(Result* result);
 
   /// Append a measurement bit to the measurement string.
-  auto appendMeasurementBit(bool result) -> void;
+  void
+  appendMeasurementBit(bool result,
+                       std::optional<dd::Qubit> deferredWire = std::nullopt);
 
   /// Returns the accumulated measurement string.
-  auto getMeasurements() const -> const std::string&;
+  const std::string& getMeasurements() const;
 
   /// Move the quantum state out of the runtime.
   ///
@@ -231,59 +253,58 @@ public:
   /// reported an available uncollapsed state.
   ///
   /// @returns the moved @c QState from the runtime.
-  auto takeState() -> QState;
+  llvm::Expected<QState> takeState();
 
-  auto setOstream(std::ostream& other) -> void;
-  auto resetOstream() -> void;
+  /// Borrow a stream that outlives execution and session teardown.
+  void setOstream(llvm::raw_ostream& other);
+  void resetOstream();
   /// Disable textual records while retaining measurement bits.
-  auto disableOutput() -> void;
-  [[nodiscard]] auto hasOutput() const -> bool {
+  void disableOutput();
+  [[nodiscard]] bool hasOutput() const {
     return os != nullptr && !extractState_;
   }
 
   /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
-  auto outputResult(bool value, const char* label) const -> void;
+  void outputResult(bool value, const char* label) const;
 
   /// Emit `OUTPUT\tRESULT_ARRAY\t<bits>[\tlabel]\n` in memory order.
-  auto outputResultArray(std::string_view values, const char* label) const
-      -> void;
+  void outputResultArray(std::string_view values, const char* label) const;
 
   /// Emit `OUTPUT\tBOOL\t<true|false>[\tlabel]\n` to the output stream.
-  auto outputBool(bool value, const char* label) const -> void;
+  void outputBool(bool value, const char* label) const;
 
   /// Emit `OUTPUT\tINT\t<value>[\tlabel]\n` to the output stream.
-  auto outputInt(int64_t value, const char* label) const -> void;
+  void outputInt(int64_t value, const char* label) const;
 
   /// Emit `OUTPUT\tDOUBLE\t<value>[\tlabel]\n` to the output stream.
-  auto outputFloat(double value, const char* label) const -> void;
+  void outputFloat(double value, const char* label) const;
 
   /// Emit `OUTPUT\tTUPLE\t<elementCount>[\tlabel]\n` to the output stream.
-  auto outputTuple(int64_t elementCount, const char* label) const -> void;
+  void outputTuple(int64_t elementCount, const char* label) const;
 
   /// Emit `OUTPUT\tARRAY\t<elementCount>[\tlabel]\n` to the output stream.
-  auto outputArray(int64_t elementCount, const char* label) const -> void;
+  void outputArray(int64_t elementCount, const char* label) const;
 
   /// Emit the HEADER records (once per submitted program):
   /// `HEADER\tschema_id\t<labeled|ordered>`
   /// `HEADER\tschema_version\t2.1`
-  auto outputProgramHeader() const -> void;
+  void outputProgramHeader() const;
 
   /// Emit `START\n` followed by
   /// `METADATA\toutput_labeling_schema\t<labeled|ordered>\n` (one per shot).
-  auto outputShotStart() const -> void;
+  void outputShotStart() const;
 
   /// Emit `END\t<exitCode>\n` (one per shot).
-  auto outputShotEnd(int64_t exitCode = 0) const -> void;
+  void outputShotEnd(int64_t exitCode = 0) const;
 
-  [[nodiscard]] auto getOutputSchema() const -> OutputSchema;
-  auto setOutputSchema(OutputSchema schema) -> void;
-  auto setMetadata(
-      std::vector<std::pair<std::string, std::string>> entryPointMetadata)
-      -> void;
+  [[nodiscard]] OutputSchema getOutputSchema() const;
+  void setOutputSchema(OutputSchema schema);
+  void setMetadata(
+      std::vector<std::pair<std::string, std::string>> entryPointMetadata);
 };
 
 /// Write the schema's spec-mandated literal (`labeled` or `ordered`).
-auto operator<<(std::ostream& os, Runtime::OutputSchema schema)
-    -> std::ostream&;
+llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
+                              Runtime::OutputSchema schema);
 
 } // namespace qir

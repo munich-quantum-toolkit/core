@@ -30,6 +30,10 @@ class Evaluation:
     """Verified factors recovered from measured phases."""
 
     @property
+    def shots(self) -> int:
+        """The number of evaluated shots."""
+
+    @property
     def success_probability(self) -> float:
         """The fraction of shots that independently yield a verified factor pair."""
 

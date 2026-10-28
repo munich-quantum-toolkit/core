@@ -43,12 +43,12 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -232,7 +232,7 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     b.qtensorAlloc(3);
-    return b.intConstant(0);
+    return SmallVector<Value>{};
   });
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
@@ -336,6 +336,7 @@ TEST_F(QTensorTest, NestedRegisterAccessInsideModifierFailsVerification) {
 namespace {
 enum class AdjacentIndexKind : std::uint8_t {
   EqualConstants,
+  DifferentConstants,
   IdenticalDynamicValue,
   PotentiallyAliasingDynamicValues,
 };
@@ -358,9 +359,11 @@ buildAdjacentInsertExtractProgram(MLIRContext* context,
 
   Value insertIndex;
   Value extractIndex;
-  if (indexKind == AdjacentIndexKind::EqualConstants) {
+  if (indexKind == AdjacentIndexKind::EqualConstants ||
+      indexKind == AdjacentIndexKind::DifferentConstants) {
     insertIndex = arith::ConstantIndexOp::create(b, 0);
-    extractIndex = arith::ConstantIndexOp::create(b, 0);
+    extractIndex = arith::ConstantIndexOp::create(
+        b, indexKind == AdjacentIndexKind::EqualConstants ? 0 : 1);
   } else {
     insertIndex = block->getArgument(0);
     extractIndex = indexKind == AdjacentIndexKind::IdenticalDynamicValue
@@ -394,11 +397,7 @@ static LogicalResult canonicalize(ModuleOp moduleOp) {
 
 static OwningOpRef<ModuleOp>
 buildTwoQubitInsertChainProgram(MLIRContext* context,
-                                const bool reverseInsertOrder,
-                                const bool swapInsertTargets) {
-  const int64_t q0Target = swapInsertTargets ? 1 : 0;
-  const int64_t q1Target = swapInsertTargets ? 0 : 1;
-
+                                const bool reverseInsertOrder) {
   QCOProgramBuilder builder(context);
   builder.initialize();
 
@@ -410,11 +409,11 @@ buildTwoQubitInsertChainProgram(MLIRContext* context,
   std::tie(tensor, q1) = builder.qtensorExtract(tensor, 1);
 
   if (reverseInsertOrder) {
-    tensor = builder.qtensorInsert(q1, tensor, q1Target);
-    tensor = builder.qtensorInsert(q0, tensor, q0Target);
+    tensor = builder.qtensorInsert(q1, tensor, 1);
+    tensor = builder.qtensorInsert(q0, tensor, 0);
   } else {
-    tensor = builder.qtensorInsert(q0, tensor, q0Target);
-    tensor = builder.qtensorInsert(q1, tensor, q1Target);
+    tensor = builder.qtensorInsert(q0, tensor, 0);
+    tensor = builder.qtensorInsert(q1, tensor, 1);
   }
 
   return builder.finalize();
@@ -468,41 +467,31 @@ buildResetWithSameIndexInsertProgram(MLIRContext* context,
 
 namespace {
 
-TEST_F(QTensorTest, AdjacentInsertExtractFoldsEqualConstants) {
-  auto moduleOp = buildAdjacentInsertExtractProgram(
-      context.get(), AdjacentIndexKind::EqualConstants);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 1U);
-  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 1U);
-}
-
-TEST_F(QTensorTest, AdjacentInsertExtractFoldsIdenticalDynamicValue) {
-  auto moduleOp = buildAdjacentInsertExtractProgram(
-      context.get(), AdjacentIndexKind::IdenticalDynamicValue);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 1U);
-  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 1U);
-}
-
-TEST_F(QTensorTest, AdjacentInsertExtractKeepsPotentialDynamicAlias) {
-  auto moduleOp = buildAdjacentInsertExtractProgram(
-      context.get(), AdjacentIndexKind::PotentiallyAliasingDynamicValues);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  EXPECT_EQ(countOps<ExtractOp>(*moduleOp), 2U);
-  EXPECT_EQ(countOps<InsertOp>(*moduleOp), 2U);
+TEST_F(QTensorTest, AdjacentInsertExtractFoldsOnlyEqualIndices) {
+  for (const auto& [name, indexKind, expectedCount] : {
+           std::tuple{"equal constants", AdjacentIndexKind::EqualConstants, 1U},
+           std::tuple{"different constants",
+                      AdjacentIndexKind::DifferentConstants, 2U},
+           std::tuple{"same dynamic value",
+                      AdjacentIndexKind::IdenticalDynamicValue, 1U},
+           std::tuple{"potential dynamic alias",
+                      AdjacentIndexKind::PotentiallyAliasingDynamicValues, 2U},
+       }) {
+    SCOPED_TRACE(name);
+    auto moduleOp = buildAdjacentInsertExtractProgram(context.get(), indexKind);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    EXPECT_EQ(countOps<ExtractOp>(*moduleOp), expectedCount);
+    EXPECT_EQ(countOps<InsertOp>(*moduleOp), expectedCount);
+  }
 }
 
 TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {
-  auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
+  auto program = buildTwoQubitInsertChainProgram(context.get(), false);
   ASSERT_TRUE(program);
   ASSERT_TRUE(verify(*program).succeeded());
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
@@ -510,7 +499,7 @@ TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {
   ASSERT_TRUE(verify(*program).succeeded());
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
 
-  auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
+  auto reference = buildTwoQubitInsertChainProgram(context.get(), true);
   ASSERT_TRUE(reference);
   ASSERT_TRUE(verify(*reference).succeeded());
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*reference)));
@@ -520,23 +509,6 @@ TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {
 
   EXPECT_EQ(countOps<InsertOp>(*program), 2U);
   EXPECT_EQ(countOps<InsertOp>(*reference), 0U);
-}
-
-TEST_F(QTensorTest, InsertChainDifferentAssignmentsNotEquivalent) {
-  auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
-  ASSERT_TRUE(program);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(verify(*program).succeeded());
-
-  auto reference = buildTwoQubitInsertChainProgram(context.get(), true, true);
-  ASSERT_TRUE(reference);
-  EXPECT_TRUE(verify(*reference).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
-  EXPECT_TRUE(verify(*reference).succeeded());
-
-  EXPECT_FALSE(
-      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
 TEST_F(QTensorTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
@@ -773,16 +745,7 @@ struct QTensorIntegrationTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QTensorIntegrationTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os,
-                         const QTensorIntegrationTestCase& info) {
-  return os << "QTensor{" << info.name << "}";
-}
 
 class QTensorIntegrationTest
     : public testing::TestWithParam<QTensorIntegrationTestCase> {
@@ -800,6 +763,7 @@ protected:
 };
 
 TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
+  SCOPED_TRACE(GetParam().name);
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -852,17 +816,9 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qtensorExtractInsertSameIndex),
             MQT_NAMED_BUILDER(qtensorAlloc)},
         QTensorIntegrationTestCase{
-            "QTensorExtractInsertIndexMismatch",
-            MQT_NAMED_BUILDER(qtensorExtractInsertIndexMismatch),
-            MQT_NAMED_BUILDER(qtensorExtractInsertIndexMismatch)},
-        QTensorIntegrationTestCase{
             "QTensorInsertExtractSameIndex",
             MQT_NAMED_BUILDER(qtensorInsertExtractSameIndex),
             MQT_NAMED_BUILDER(qtensorInsert)},
-        QTensorIntegrationTestCase{
-            "QTensorInsertExtractIndexMismatch",
-            MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch),
-            MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch)},
         QTensorIntegrationTestCase{"QTensorAlternativeInsertChain",
                                    MQT_NAMED_BUILDER(qtensorAlternativeChain),
                                    MQT_NAMED_BUILDER(qtensorChain)}));

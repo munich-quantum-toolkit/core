@@ -22,6 +22,7 @@
 
 #include "llvm/Support/Threading.h"
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -141,123 +142,98 @@ TEST_F(ErrorHandling, CustomEnums) {
   const qdmi_test::JobGuard j{s.session};
 
   MQT_DDSIM_QDMI_Device_Session session = nullptr;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  for (const auto param : {
+           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3,
+           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4,
+           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5,
+       }) {
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_session_set_parameter(session, param, 0, nullptr),
+        QDMI_ERROR_NOTSUPPORTED)
+        << param;
+  }
   MQT_DDSIM_QDMI_device_session_free(session);
 
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM2, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM3, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM4, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM5, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  for (const auto prop : {
+           QDMI_DEVICE_PROPERTY_CUSTOM1,
+           QDMI_DEVICE_PROPERTY_CUSTOM2,
+           QDMI_DEVICE_PROPERTY_CUSTOM3,
+           QDMI_DEVICE_PROPERTY_CUSTOM4,
+           QDMI_DEVICE_PROPERTY_CUSTOM5,
+       }) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                  s.session, prop, 0, nullptr, nullptr),
+              prop == QDMI_DEVICE_PROPERTY_CUSTOM1 ? QDMI_SUCCESS
+                                                   : QDMI_ERROR_NOTSUPPORTED)
+        << prop;
+  }
 
   const auto sites = qdmi_test::querySites(s.session);
-  auto* const site = sites.front();
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_site_property(
-          s.session, site, QDMI_SITE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-      QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_site_property(
-          s.session, site, QDMI_SITE_PROPERTY_CUSTOM2, 0, nullptr, nullptr),
-      QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_site_property(
-          s.session, site, QDMI_SITE_PROPERTY_CUSTOM3, 0, nullptr, nullptr),
-      QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_site_property(
-          s.session, site, QDMI_SITE_PROPERTY_CUSTOM4, 0, nullptr, nullptr),
-      QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_site_property(
-          s.session, site, QDMI_SITE_PROPERTY_CUSTOM5, 0, nullptr, nullptr),
-      QDMI_ERROR_NOTSUPPORTED);
+  ASSERT_FALSE(sites.empty());
+  for (const auto prop : {
+           QDMI_SITE_PROPERTY_CUSTOM1,
+           QDMI_SITE_PROPERTY_CUSTOM2,
+           QDMI_SITE_PROPERTY_CUSTOM3,
+           QDMI_SITE_PROPERTY_CUSTOM4,
+           QDMI_SITE_PROPERTY_CUSTOM5,
+       }) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_site_property(
+                  s.session, sites.front(), prop, 0, nullptr, nullptr),
+              QDMI_ERROR_NOTSUPPORTED)
+        << prop;
+  }
 
   const auto ops = qdmi_test::queryOperations(s.session);
-  auto* const op = ops.front();
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_CUSTOM2, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_CUSTOM3, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_CUSTOM4, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_CUSTOM5, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  ASSERT_FALSE(ops.empty());
+  for (const auto prop : {
+           QDMI_OPERATION_PROPERTY_CUSTOM1,
+           QDMI_OPERATION_PROPERTY_CUSTOM2,
+           QDMI_OPERATION_PROPERTY_CUSTOM3,
+           QDMI_OPERATION_PROPERTY_CUSTOM4,
+           QDMI_OPERATION_PROPERTY_CUSTOM5,
+       }) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                  s.session, ops.front(), 0, nullptr, 0, nullptr, prop, 0,
+                  nullptr, nullptr),
+              QDMI_ERROR_NOTSUPPORTED)
+        << prop;
+  }
 
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, 0, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, 0, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, 0, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM4, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM5, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  for (const auto param : {
+           QDMI_DEVICE_JOB_PARAMETER_CUSTOM1,
+           QDMI_DEVICE_JOB_PARAMETER_CUSTOM2,
+           QDMI_DEVICE_JOB_PARAMETER_CUSTOM3,
+           QDMI_DEVICE_JOB_PARAMETER_CUSTOM4,
+           QDMI_DEVICE_JOB_PARAMETER_CUSTOM5,
+       }) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(j.job, param, 0, nullptr),
+              param == QDMI_DEVICE_JOB_PARAMETER_CUSTOM4 ||
+                      param == QDMI_DEVICE_JOB_PARAMETER_CUSTOM5
+                  ? QDMI_ERROR_NOTSUPPORTED
+                  : QDMI_SUCCESS)
+        << param;
+  }
 
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 16), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0U, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0U, QDMI_JOB_RESULT_CUSTOM2, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0U, QDMI_JOB_RESULT_CUSTOM3, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0U, QDMI_JOB_RESULT_CUSTOM4, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0U, QDMI_JOB_RESULT_CUSTOM5, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  for (const auto result : {
+           QDMI_JOB_RESULT_CUSTOM1,
+           QDMI_JOB_RESULT_CUSTOM2,
+           QDMI_JOB_RESULT_CUSTOM3,
+           QDMI_JOB_RESULT_CUSTOM4,
+           QDMI_JOB_RESULT_CUSTOM5,
+       }) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, 0U, result, 0,
+                                                    nullptr, nullptr),
+              QDMI_ERROR_NOTSUPPORTED)
+        << result;
+  }
 }
 
 TEST_F(ErrorHandling, BadState) {
@@ -278,6 +254,7 @@ TEST_F(ErrorHandling, BadState) {
   MQT_DDSIM_QDMI_Device_Job job = nullptr;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_BADSTATE);
+  MQT_DDSIM_QDMI_device_session_free(session);
 
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -290,30 +267,52 @@ TEST_F(ErrorHandling, BadState) {
 
 TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   const qdmi_test::SessionGuard s{};
-  // Sampling mode
-  {
+  for (const size_t shots : {128U, 0U}) {
     const qdmi_test::JobGuard j{s.session};
     ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                     qdmi_test::QASM3_MALFORMED),
               QDMI_SUCCESS);
-    ASSERT_EQ(qdmi_test::setShots(j.job, 128), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-    QDMI_Job_Status js{};
-    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &js), QDMI_SUCCESS);
-    EXPECT_EQ(js, QDMI_JOB_STATUS_FAILED);
+    QDMI_Job_Status status{};
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED) << shots;
   }
-  // Statevector mode
-  {
-    const qdmi_test::JobGuard j{s.session};
-    ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                    qdmi_test::QASM3_MALFORMED),
-              QDMI_SUCCESS);
-    ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
-    ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-    QDMI_Job_Status js{};
-    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &js), QDMI_SUCCESS);
-    EXPECT_EQ(js, QDMI_JOB_STATUS_FAILED);
+}
+
+TEST_F(ErrorHandling, ParallelQIRExitCodeFailsJob) {
+  if (llvm::heavyweight_hardware_concurrency().compute_thread_count() < 2) {
+    GTEST_SKIP() << "Parallel execution requires two worker slots";
   }
+  constexpr std::string_view program = R"qir(
+define i64 @main() #0 { ret i64 7 }
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)qir";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 4), QDMI_SUCCESS);
+  const size_t workers = 2;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(workers),
+                &workers),
+            QDMI_SUCCESS);
+  const bool capture = true;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(capture),
+                &capture),
+            QDMI_SUCCESS);
+  ::testing::internal::CaptureStderr();
+  const auto result = qdmi_test::submitAndWait(job.job, 0);
+  const auto diagnostic = ::testing::internal::GetCapturedStderr();
+  ASSERT_EQ(result, QDMI_SUCCESS);
+  QDMI_Job_Status status{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+  EXPECT_NE(diagnostic.find("QIR program returned exit code 7"),
+            std::string::npos);
 }
 
 TEST_F(ErrorHandling, QASM3PartiallyInitializedOutputFails) {

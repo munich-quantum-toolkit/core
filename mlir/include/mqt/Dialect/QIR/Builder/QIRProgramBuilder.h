@@ -20,14 +20,12 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Allocator.h"
-#include "llvm/Support/StringSaver.h"
 
+#include <cstddef>
 #include <cstdint>
-#include <string>
-#include <utility>
 #include <variant>
 
 namespace mlir {
@@ -51,7 +49,14 @@ namespace qir {
 /// In the Adaptive Profile, `allocQubit` and `allocQubitRegister` allocate
 /// dynamically and cannot be mixed with `staticQubit`. In the Base Profile,
 /// all three methods use static qubit IDs. Mixing static and dynamic
-/// addressing terminates with a usage error.
+/// addressing terminates with a usage error. Dynamic qubits must be allocated
+/// in the initial entry or body block, before building control flow; allocation
+/// elsewhere terminates with a usage error.
+///
+/// @par Ownership:
+/// The builder owns its unfinished module. Destruction discards it, moving
+/// transfers it to the destination builder, and `finalize` transfers it to the
+/// caller. A moved-from or finalized builder must not be used again.
 ///
 /// @par Example Usage:
 /// ```c++
@@ -77,8 +82,13 @@ public:
 
   /// Construct a new QIRProgramBuilder
   ///
+  /// Loads the LLVM dialect in the supplied context.
+  ///
   /// @param context The MLIR context to use for building operations
   explicit QIRProgramBuilder(MLIRContext* context);
+  QIRProgramBuilder(const QIRProgramBuilder&) = delete;
+  QIRProgramBuilder& operator=(const QIRProgramBuilder&) = delete;
+  QIRProgramBuilder(QIRProgramBuilder&&) = default;
 
   //===--------------------------------------------------------------------===//
   // Initialization
@@ -1034,7 +1044,8 @@ public:
   /// QIR metadata attributes are set, and transfers ownership of the module to
   /// the caller. The builder should not be used after calling this method.
   ///
-  /// @return OwningOpRef containing the constructed QIR program module
+  /// @return The constructed module, or empty if verification or QIR metadata
+  /// generation fails.
   OwningOpRef<ModuleOp> finalize();
 
   /// Finalize the program with the given return value and return the
@@ -1051,7 +1062,8 @@ public:
   /// the main function, which returns an `i64` by default and can be modified
   /// by passing different arguments to the `initialize()` method.
   ///
-  /// @return OwningOpRef containing the constructed quantum program module
+  /// @return The constructed module, or empty if verification or QIR metadata
+  /// generation fails.
   OwningOpRef<ModuleOp> finalize(Value returnValue);
 
   /// Convenience method for building quantum programs
@@ -1071,15 +1083,11 @@ public:
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
-  /// The main module
-  Operation* module{};
+  /// Own the unfinished program until finalization transfers it to the caller.
+  OwningOpRef<ModuleOp> moduleOp_;
 
   /// The main function
   Operation* mainFunc{};
-
-  /// Allocator and StringSaver for stable StringRefs
-  llvm::BumpPtrAllocator allocator;
-  llvm::StringSaver stringSaver{allocator};
 
   /// Entry block: constants and initialization
   Block* entryBlock{};
@@ -1089,9 +1097,6 @@ private:
   Block* measurementsBlock{};
   /// Output block: output recording calls
   Block* outputBlock{};
-
-  /// Exit code constant (created in entry block, used in output block)
-  Value exitCode;
 
   /// Qubit pointers to be deallocated at the end of the program
   SmallVector<Value> qubitPtrs;
@@ -1107,9 +1112,6 @@ private:
 
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
-
-  /// Cache loaded qubit pointers for reuse
-  DenseMap<Value, DenseSet<Value>> loadedQubits;
 
   /// Map from register name to `ClassicalRegister`
   llvm::StringMap<ClassicalRegister> cregs;
@@ -1144,8 +1146,6 @@ private:
   /// measurements.
   void generateOutputRecording();
 
-  bool isFinalized = false;
-
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
   AllocationMode resultAllocationMode = AllocationMode::Unset;
@@ -1156,7 +1156,7 @@ private:
   /// Track whether Base or Adaptive Profile is used.
   Profile profile = Profile::Adaptive;
 
-  /// Check if the builder has been finalized
+  /// Reject use after finalization or moving the program to another builder.
   void checkFinalized() const;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.

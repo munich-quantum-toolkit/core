@@ -15,42 +15,61 @@
 
 #include "statistics/StatisticsJson.hpp"
 
-#include "nlohmann/json.hpp"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
 
 #include <algorithm>
 #include <bit>
 #include <cstddef>
-#include <stdexcept>
 #include <string>
+#include <system_error>
+
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
 
 namespace dd {
+
+Error UniqueTable::checkCapacity(const size_t initial, const size_t maximum) {
+  if (!std::has_single_bit(initial) || !std::has_single_bit(maximum) ||
+      maximum < initial) {
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Unique table capacities must be powers of two, with maximum "
+        "at least the initial capacity.");
+  }
+  return Error::success();
+}
+
+Expected<UniqueTable> UniqueTable::create(MemoryManager& manager,
+                                          const UniqueTableConfig& config) {
+  if (auto error = checkCapacity(config.nBuckets, config.maxBuckets)) {
+    return error;
+  }
+  return UniqueTable(manager, config);
+}
 
 UniqueTable::UniqueTable(MemoryManager& manager,
                          const UniqueTableConfig& config)
     : cfg(config), gcLimit(config.initialGCLimit), memoryManager(&manager) {
-  if (!std::has_single_bit(cfg.nBuckets) ||
-      !std::has_single_bit(cfg.maxBuckets) || cfg.maxBuckets < cfg.nBuckets) {
-    throw std::invalid_argument(
-        "Unique table capacities must be powers of two, with maximum at least "
-        "the initial capacity.");
-  }
-  resize(config.nVars);
+  llvm::cantFail(resize(config.nVars));
 }
 
-void UniqueTable::resize(const std::size_t nVars) {
+Error UniqueTable::resize(const std::size_t nVars) {
   const auto oldSize = tables.size();
-  for (auto i = nVars; i < oldSize; ++i) {
-    entryCount_ -= stats[i].numEntries;
+  if (nVars < oldSize) {
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "A unique table cannot be shrunk.");
   }
-  cfg.nVars = nVars;
   tables.resize(nVars);
-  // TODO: release entries for removed levels when shrinking populated tables.
   stats.resize(nVars);
   for (auto i = oldSize; i < nVars; ++i) {
     tables[i].resize(cfg.nBuckets);
     stats[i].entrySize = sizeof(Bucket);
     stats[i].numBuckets = cfg.nBuckets;
   }
+  cfg.nVars = nVars;
+  return Error::success();
 }
 
 bool UniqueTable::possiblyNeedsCollection() const {
@@ -113,18 +132,24 @@ void UniqueTable::clear() {
   }
 };
 
-const UniqueTableStatistics&
-UniqueTable::getStats(const std::size_t idx) const noexcept {
-  return stats.at(idx);
+Expected<const UniqueTableStatistics&>
+UniqueTable::getStats(const std::size_t idx) const {
+  if (idx >= stats.size()) {
+    return createStringError(
+        std::make_error_code(std::errc::result_out_of_range),
+        "Unique table level is out of range.");
+  }
+  return stats[idx];
 }
 
-nlohmann::basic_json<> toJson(const UniqueTable& table,
-                              const bool includeIndividualTables) {
+void writeJson(llvm::json::OStream& json, const UniqueTable& table,
+               const bool includeIndividualTables, const size_t activeEntries) {
   const auto& stats = table.getStats();
   if (std::ranges::all_of(stats, [](const UniqueTableStatistics& stat) {
         return stat.peakNumEntries == 0U;
       })) {
-    return "unused";
+    json.value("unused");
+    return;
   }
 
   UniqueTableStatistics totalStats;
@@ -140,16 +165,20 @@ nlohmann::basic_json<> toJson(const UniqueTable& table,
     totalStats.gcRuns = std::max(totalStats.gcRuns, stat.gcRuns);
   }
 
-  nlohmann::basic_json<> j;
-  j["total"] = toJson(totalStats);
-  if (includeIndividualTables) {
-    std::size_t v = 0U;
-    for (const auto& stat : stats) {
-      j[std::to_string(v)] = toJson(stat);
-      ++v;
+  json.object([&] {
+    json.attributeBegin("total");
+    writeJson(json, totalStats, activeEntries);
+    json.attributeEnd();
+    if (includeIndividualTables) {
+      size_t v = 0U;
+      for (const auto& stat : stats) {
+        json.attributeBegin(std::to_string(v));
+        writeJson(json, stat);
+        json.attributeEnd();
+        ++v;
+      }
     }
-  }
-  return j;
+  });
 }
 
 std::size_t UniqueTable::getNumEntries() const noexcept { return entryCount_; }

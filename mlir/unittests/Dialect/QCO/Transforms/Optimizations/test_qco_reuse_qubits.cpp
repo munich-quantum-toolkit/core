@@ -99,8 +99,7 @@ protected:
 // A simple case where qubit reuse can be applied directly to go from 2
 // to 1 qubit.
 TEST_F(QCOQubitReuseTest, simpleReuse) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
@@ -117,8 +116,7 @@ TEST_F(QCOQubitReuseTest, simpleReuse) {
   programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;
@@ -142,8 +140,7 @@ TEST_F(QCOQubitReuseTest, simpleReuse) {
 
 // A simple case where qubit reuse cannot be applied.
 TEST_F(QCOQubitReuseTest, noReuse) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
@@ -160,8 +157,7 @@ TEST_F(QCOQubitReuseTest, noReuse) {
   programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -366,11 +362,7 @@ TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
 // Test that partial qubit reuse is applied correctly in a context with
 // three qubits.
 TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
-  programBuilder.initialize({
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-  });
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -392,11 +384,7 @@ TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-  });
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -430,11 +418,7 @@ TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
 // Test that qubit reuse is applied correctly in a context with three
 // qubits that can all be reused.
 TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
-  programBuilder.initialize({
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-  });
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -456,11 +440,7 @@ TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-  });
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;
@@ -489,11 +469,7 @@ TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
 // Test that qubit reuse can be applied even if the qubits are indirectly
 // connected.
 TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
-  programBuilder.initialize({
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-  });
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -515,11 +491,7 @@ TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-  });
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -552,8 +524,7 @@ TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
 
 // Test that qubit reuse can be applied after measurement lifting.
 TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
@@ -570,8 +541,7 @@ TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
   programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;
@@ -599,11 +569,7 @@ TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
 // Test that qubit reuse can be applied after lifting measurements and
 // replacing controls.
 TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
-  programBuilder.initialize({
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-  });
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -626,11 +592,7 @@ TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-  });
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -666,8 +628,7 @@ TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
 // Test that qubit reuse can be applied with the help of measurement
 // lifting.
 TEST_F(QCOQubitReuseTest, singleReuseThroughLift) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
@@ -684,8 +645,7 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughLift) {
   programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;
@@ -712,8 +672,7 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughLift) {
 // Test that qubit reuse can be applied with the help of multi-step
 // measurement lifting.
 TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
@@ -731,8 +690,7 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
   programBuilder.sink(q1);
   module = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;
@@ -764,11 +722,7 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
 // controlled gates if the qubit for which reuse should be applied was pulled
 // into an if/else block.
 TEST_F(QCOQubitReuseTest, multiReuseLiftOutOfIf) {
-  programBuilder.initialize({
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-  });
+  programBuilder.initialize();
   // As qubit reuse is built on a heuristic, the order of qubit allocations
   // matters. For this test, we need q0 to be allocated last.
   auto q1 = programBuilder.allocQubit();
@@ -792,11 +746,7 @@ TEST_F(QCOQubitReuseTest, multiReuseLiftOutOfIf) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-  });
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;

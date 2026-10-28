@@ -12,19 +12,24 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import struct
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, get_type_hints
+from typing import TYPE_CHECKING, get_type_hints
 
 import numpy as np
 import pytest
-from qiskit import QuantumCircuit
-from qiskit.circuit import ClassicalRegister, Clbit, Parameter
+from qiskit import QuantumCircuit, transpile
+from qiskit.circuit import ClassicalRegister, Clbit, Parameter, QuantumRegister
+from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
+from mqt.core.mlir import sample
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
+    TranslationError,
     UnsupportedOperationError,
     program_serializer,
 )
@@ -34,21 +39,6 @@ from mqt.core.typing import QDMISessionParameters
 
 if TYPE_CHECKING:
     from mqt.core.qdmi import Device as QDMIDevice
-
-    class _QDMIDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
-        def name(self) -> str: ...
-
-        def version(self) -> str: ...
-
-        def qubits_num(self) -> int: ...
-
-        def operations(self) -> list[object]: ...
-
-        def coupling_map(self) -> object: ...
-
-    SiteSpecificDevice = _QDMIDeviceLike
-    MisconfiguredDevice = _QDMIDeviceLike
-    ZonedDevice = _QDMIDeviceLike
 
 
 @pytest.fixture
@@ -110,185 +100,67 @@ def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
     assert ddsim_backend.target.num_qubits > 0
     assert ddsim_backend.device_id == "mqt.ddsim.default"
+    assert ddsim_backend.max_circuits is None
+    assert ddsim_backend.options.shots == 1024
 
 
-def test_direct_backend_has_no_stable_device_id() -> None:
-    """Direct construction remains valid when no registry ID is available."""
-    backend = QDMIBackend(open_device("mqt.ddsim.default"))
-    assert backend.device_id is None
+@pytest.mark.parametrize("device_id", [None, "allocated.device"])
+def test_direct_backend_device_id(device_id: str | None) -> None:
+    """Direct construction retains an optional stable ID without opening it again."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"), device_id=device_id)
+    assert backend.device_id == device_id
 
 
-def test_direct_backend_accepts_explicit_stable_device_id() -> None:
-    """Specialized construction can retain the ID of an already-open device."""
-    backend = QDMIBackend(open_device("mqt.ddsim.default"), device_id="allocated.device")
-    assert backend.device_id == "allocated.device"
-
-
-def _single_qubit_circuit() -> QuantumCircuit:
-    """Return a simple 1-qubit circuit with a parameterized rotation and measurement."""
-    qc = QuantumCircuit(1)
-    qc.ry(1.5708, 0)
-    qc.measure_all()
-    return qc
-
-
-def _two_qubit_circuit() -> QuantumCircuit:
-    """Return a simple 2-qubit circuit with a CZ gate and measurement."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-    return qc
-
-
-def _two_qubit_barrier_circuit() -> QuantumCircuit:
-    """Return a 2-qubit circuit with a CZ gate, a barrier, and measurement to test barrier handling."""
-    qc = _two_qubit_circuit()
-    qc.barrier()
-    return qc
-
-
-def _two_qubit_circuit_without_measurements() -> QuantumCircuit:
-    """Return a 2-qubit circuit with a CZ gate to test measurement handling."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    return qc
-
-
-@pytest.fixture(
-    params=[
-        (_single_qubit_circuit, 100, True),
-        (_two_qubit_circuit, 256, True),
-        (_two_qubit_circuit, 500, True),
-        (_two_qubit_barrier_circuit, 100, True),
-        (_two_qubit_circuit_without_measurements, 100, False),
-    ]
+@pytest.mark.parametrize(
+    ("width", "barrier", "measure", "shots"),
+    [(1, False, True, 100), (2, False, True, 256), (2, True, True, 500), (2, False, False, 100)],
 )
-def backend_circuit_case(request: pytest.FixtureRequest) -> tuple[QuantumCircuit, int, bool]:
-    """Provide reusable backend circuit cases.
-
-    Returns:
-        Tuple containing a prepared circuit, the shots to execute, and whether counts are expected.
-    """
-    builder, shots, expect_meas = request.param
-    return builder(), shots, expect_meas
-
-
 def test_backend_runs_variety_of_circuits(
-    ddsim_backend: QDMIBackend, backend_circuit_case: tuple[QuantumCircuit, int, bool]
+    ddsim_backend: QDMIBackend, width: int, *, barrier: bool, measure: bool, shots: int
 ) -> None:
-    """Backend executes multiple circuit shapes and shot counts consistently."""
-    circuit, shots, expect_measurements = backend_circuit_case
+    """Execute rotations, CZ, barriers, and circuits without classical outputs."""
+    circuit = QuantumCircuit(width)
+    if width == 1:
+        circuit.ry(1.5708, 0)
+    else:
+        circuit.cz(0, 1)
+    if measure:
+        circuit.measure_all()
+    if barrier:
+        circuit.barrier()
     job = ddsim_backend.run(circuit, shots=shots)
     result = job.result()
-    assert result.success is True
-
-    if expect_measurements:
+    assert result.success
+    assert job.status() == JobStatus.DONE
+    assert result.results is not None
+    assert result.results[0].success
+    assert result.results[0].shots == shots
+    if measure:
         counts = result.get_counts()
         assert sum(counts.values()) == shots
-        for key in counts:
-            assert all(bit in {"0", "1"} for bit in key)
+        assert all(len(bits) == width and not set(bits) - {"0", "1"} for bits in counts)
 
 
-def test_backend_runs_multiple_circuits(ddsim_backend: QDMIBackend) -> None:
-    """Backend executes multiple circuits in a single run call."""
-    # Create three different circuits
-    qc1 = QuantumCircuit(2, name="bell_state")
-    qc1.h(0)
-    qc1.cx(0, 1)
-    qc1.measure_all()
-
-    qc2 = QuantumCircuit(2, name="x_then_measure")
-    qc2.x(0)
-    qc2.measure_all()
-
-    qc3 = QuantumCircuit(2, name="hadamard_all")
-    qc3.h([0, 1])
-    qc3.measure_all()
-
-    # Submit all circuits at once
-    circuits = [qc1, qc2, qc3]
-    job = ddsim_backend.run(circuits, shots=500)
-    result = job.result()
-
-    # Check overall success
-    assert result.success is True
-
-    # Check we have results for all circuits
+@pytest.mark.parametrize("widths", [(2,), (2, 2, 2), (1, 2)])
+def test_backend_runs_circuit_lists(ddsim_backend: QDMIBackend, widths: tuple[int, ...]) -> None:
+    """Preserve each experiment's name, width, order, and shots in native batches."""
+    circuits = []
+    for index, width in enumerate(widths):
+        circuit = QuantumCircuit(width, name=f"circuit-{index}")
+        for qubit in range(min(index, width)):
+            circuit.x(qubit)
+        circuit.measure_all()
+        circuits.append(circuit)
+    result = ddsim_backend.run(circuits, shots=100).result()
+    assert result.success
     assert result.results is not None
-    assert len(result.results) == 3
-
-    # Check each circuit result
-    for idx, expected_name in enumerate(["bell_state", "x_then_measure", "hadamard_all"]):
-        exp_result = result.results[idx]
-        assert exp_result.success is True
-        assert exp_result.header["name"] == expected_name
-        assert exp_result.shots == 500
-
-        # Check counts for this circuit
-        counts = result.get_counts(idx)
-        assert sum(counts.values()) == 500
-        for key in counts:
-            assert all(bit in {"0", "1"} for bit in key)
-            assert len(key) == 2  # 2 qubits
-
-
-def test_backend_runs_single_circuit_in_list(ddsim_backend: QDMIBackend) -> None:
-    """Backend correctly handles a single circuit passed as a list."""
-    qc = QuantumCircuit(2)
-    qc.h(0)
-    qc.cx(0, 1)
-    qc.measure_all()
-
-    # Submit as a list with one element
-    job = ddsim_backend.run([qc], shots=100)
-    result = job.result()
-
-    assert result.success is True
-    assert result.results is not None
-    assert len(result.results) == 1
-    counts = result.get_counts()
-    assert sum(counts.values()) == 100
-
-
-def test_backend_runs_circuits_with_different_qubit_counts(ddsim_backend: QDMIBackend) -> None:
-    """Backend correctly handles multiple circuits with different qubit counts."""
-    # Create a 1-qubit circuit
-    qc1 = QuantumCircuit(1, name="single_qubit")
-    qc1.h(0)
-    qc1.measure_all()
-
-    # Create a 2-qubit circuit
-    qc2 = QuantumCircuit(2, name="two_qubit")
-    qc2.h(0)
-    qc2.cx(0, 1)
-    qc2.measure_all()
-
-    # Run both circuits together
-    circuits = [qc1, qc2]
-    shots = 200
-    job = ddsim_backend.run(circuits, shots=shots)
-    result = job.result()
-
-    # Check overall success
-    assert result.success is True
-
-    # Check we have results for both circuits
-    assert result.results is not None
-    assert len(result.results) == 2
-
-    # Check first circuit (1-qubit)
-    counts_1q = result.get_counts(0)
-    assert sum(counts_1q.values()) == shots
-    for bitstring in counts_1q:
-        assert len(bitstring) == 1, f"Expected 1-qubit bitstring, got '{bitstring}' with length {len(bitstring)}"
-        assert all(bit in {"0", "1"} for bit in bitstring)
-
-    # Check second circuit (2-qubit)
-    counts_2q = result.get_counts(1)
-    assert sum(counts_2q.values()) == shots
-    for bitstring in counts_2q:
-        assert len(bitstring) == 2, f"Expected 2-qubit bitstring, got '{bitstring}' with length {len(bitstring)}"
-        assert all(bit in {"0", "1"} for bit in bitstring)
+    assert len(result.results) == len(circuits)
+    for index, (circuit, experiment) in enumerate(zip(circuits, result.results, strict=True)):
+        assert experiment.success
+        assert experiment.header["name"] == circuit.name
+        assert experiment.shots == 100
+        expected = "0" * (circuit.num_qubits - min(index, circuit.num_qubits)) + "1" * min(index, circuit.num_qubits)
+        assert result.get_counts(index) == {expected: 100}
 
 
 def test_unsupported_operation(ddsim_backend: QDMIBackend) -> None:
@@ -302,101 +174,44 @@ def test_unsupported_operation(ddsim_backend: QDMIBackend) -> None:
         ddsim_backend.run(qc)
 
 
-def test_backend_max_circuits(ddsim_backend: QDMIBackend) -> None:
-    """Backend max_circuits should return None (no limit)."""
-    assert ddsim_backend.max_circuits is None
+@pytest.mark.parametrize(("shots", "message"), [("invalid", "Invalid 'shots' value"), (-100, "'shots' must be >= 0")])
+def test_backend_rejects_invalid_shots(ddsim_backend: QDMIBackend, shots: object, message: str) -> None:
+    """Reject invalid shot types and negative counts before submission."""
+    with pytest.raises(CircuitValidationError, match=message):
+        ddsim_backend.run(QuantumCircuit(1), shots=shots)
 
 
-def test_backend_options(ddsim_backend: QDMIBackend) -> None:
-    """Backend options should be accessible."""
-    assert ddsim_backend.options.shots == 1024
+@pytest.mark.parametrize("binding", ["missing", "expression", "partial"])
+def test_backend_rejects_unbound_parameters(ddsim_backend: QDMIBackend, binding: str) -> None:
+    """Both free parameters and partially bound expressions need explicit values."""
+    theta, phi = Parameter("theta"), Parameter("phi")
+    circuit = QuantumCircuit(1)
+    circuit.ry(theta if binding == "missing" else theta + phi, 0)
+    values = [{theta: 0.5}] if binding == "partial" else None
+    with pytest.raises(
+        CircuitValidationError, match=r"Circuit contains unbound parameters.*Provide `parameter_values`"
+    ):
+        ddsim_backend.run(circuit, parameter_values=values)
 
 
-def test_backend_run_with_invalid_shots_type(ddsim_backend: QDMIBackend) -> None:
-    """Backend run should raise CircuitValidationError for invalid shots type."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    with pytest.raises(CircuitValidationError, match="Invalid 'shots' value"):
-        ddsim_backend.run(qc, shots="invalid")
-
-
-def test_backend_run_with_negative_shots(ddsim_backend: QDMIBackend) -> None:
-    """Backend run should raise CircuitValidationError for negative shots."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    with pytest.raises(CircuitValidationError, match="'shots' must be >= 0"):
-        ddsim_backend.run(qc, shots=-100)
-
-
-def test_backend_circuit_with_parameters(ddsim_backend: QDMIBackend) -> None:
-    """Backend should reject circuits with unbound parameters."""
-    qc = QuantumCircuit(2)
+@pytest.mark.parametrize("binding", ["manual", "dict", "list"])
+def test_backend_binds_parameters(ddsim_backend: QDMIBackend, binding: str) -> None:
+    """Manual and per-run parameter binding preserve the bound rotation."""
     theta = Parameter("theta")
-    qc.ry(theta, 0)
-    qc.measure_all()
-
-    with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
-        ddsim_backend.run(qc)
-
-
-def test_backend_circuit_with_bound_parameters(ddsim_backend: QDMIBackend) -> None:
-    """Backend should execute circuits with bound parameters."""
-    qc = QuantumCircuit(2)
-    theta = Parameter("theta")
-    qc.ry(theta, 0)
-    qc.measure_all()
-
-    qc_bound = qc.assign_parameters({theta: 1.5708})
-
-    job = ddsim_backend.run(qc_bound, shots=100)
-    result = job.result()
+    circuit = QuantumCircuit(1)
+    circuit.ry(theta, 0)
+    circuit.measure_all()
+    values = None
+    if binding == "manual":
+        circuit = circuit.assign_parameters({theta: np.pi})
+    else:
+        values = [{theta: np.pi}] if binding == "dict" else [[np.pi]]
+    result = ddsim_backend.run(circuit, parameter_values=values, shots=100).result()
     assert result.success
-
-
-def test_backend_circuit_with_parameter_expression(ddsim_backend: QDMIBackend) -> None:
-    """Backend should raise CircuitValidationError for unbound parameter expressions."""
-    qc = QuantumCircuit(2)
-    theta = Parameter("theta")
-    phi = Parameter("phi")
-    qc.ry(theta + phi, 0)  # Parameter expression
-    qc.measure_all()
-
-    with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
-        ddsim_backend.run(qc)
-
-
-def test_backend_run_with_parameter_values_dict(ddsim_backend: QDMIBackend) -> None:
-    """Backend should bind parameters using parameter_values with dict format."""
-    theta = Parameter("theta")
-    qc = QuantumCircuit(2)
-    qc.ry(theta, 0)
-    qc.measure_all()
-
-    # Pass parameter values as a dict
-    job = ddsim_backend.run(qc, parameter_values=[{theta: 1.5708}], shots=100)
-    result = job.result()
-    assert result.success
-    counts = result.get_counts()
-    assert sum(counts.values()) == 100
-
-
-def test_backend_run_with_parameter_values_list(ddsim_backend: QDMIBackend) -> None:
-    """Backend should bind parameters using parameter_values with list format."""
-    theta = Parameter("theta")
-    qc = QuantumCircuit(2)
-    qc.ry(theta, 0)
-    qc.measure_all()
-
-    # Pass parameter values as a list (in order of circuit.parameters)
-    job = ddsim_backend.run(qc, parameter_values=[[1.5708]], shots=100)
-    result = job.result()
-    assert result.success
-    counts = result.get_counts()
-    assert sum(counts.values()) == 100
+    assert result.get_counts() == {"1": 100}
+    assert result.get_counts(circuit) == {"1": 100}
+    if binding != "manual":
+        assert list(circuit.parameters) == [theta]
 
 
 def test_backend_run_multiple_circuits_with_parameter_values(ddsim_backend: QDMIBackend) -> None:
@@ -446,21 +261,6 @@ def test_backend_run_parameter_values_length_mismatch(ddsim_backend: QDMIBackend
         ddsim_backend.run(qc, parameter_values=[{theta: 0.5}, {theta: 1.5}])
 
 
-def test_backend_run_parameter_binding_failure(ddsim_backend: QDMIBackend) -> None:
-    """Backend should raise error when parameters remain unbound after partial binding."""
-    theta = Parameter("theta")
-    phi = Parameter("phi")
-    qc = QuantumCircuit(2)
-    qc.ry(theta, 0)
-    qc.rz(phi, 0)
-    qc.measure_all()
-
-    # Pass incomplete parameter dict (missing phi) - Qiskit allows partial binding
-    # but we'll catch the remaining unbound parameters
-    with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
-        ddsim_backend.run(qc, parameter_values=[{theta: 0.5}])
-
-
 def test_backend_run_mixed_parameterized_circuits(ddsim_backend: QDMIBackend) -> None:
     """Backend should handle mix of parameterized and non-parameterized circuits correctly."""
     theta = Parameter("theta")
@@ -502,83 +302,32 @@ def test_backend_run_raises_unused_parameter_values(ddsim_backend: QDMIBackend) 
         ddsim_backend.run(qc, parameter_values=[{theta: 1.0}], shots=100)
 
 
-def test_backend_run_missing_parameter_values(ddsim_backend: QDMIBackend) -> None:
-    """Backend should raise error when circuits have parameters but no parameter_values provided."""
-    theta = Parameter("theta")
-    qc = QuantumCircuit(2)
-    qc.ry(theta, 0)
-    qc.measure_all()
-
-    # Don't provide parameter_values
-    with pytest.raises(
-        CircuitValidationError, match=r"Circuit contains unbound parameters.*Provide `parameter_values`"
-    ):
-        ddsim_backend.run(qc)
-
-
-def test_backend_named_circuit_results_queryable_by_name(ddsim_backend: QDMIBackend) -> None:
-    """Backend should preserve circuit name and allow querying results by name."""
-    qc = QuantumCircuit(2, name="my_circuit")
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    job = ddsim_backend.run(qc, shots=100)
-    result = job.result()
-
-    # Circuit name should be preserved in metadata
+@pytest.mark.parametrize("name", [None, "my_circuit"])
+def test_backend_results_queryable_by_name(ddsim_backend: QDMIBackend, name: str | None) -> None:
+    """Preserve explicit or generated circuit names for result lookup."""
+    circuit = QuantumCircuit(2, name=name)
+    circuit.cz(0, 1)
+    circuit.measure_all()
+    result = ddsim_backend.run(circuit, shots=100).result()
     assert result.results is not None
-    assert result.results[0].header["name"] == "my_circuit"
-
-    # Should be able to query results by circuit name
-    counts = result.get_counts("my_circuit")
-    assert sum(counts.values()) == 100
+    assert result.results[0].header["name"] == circuit.name
+    assert result.get_counts(circuit.name) == result.get_counts() == {"00": 100}
 
 
-def test_backend_unnamed_circuit_results_queryable_by_generated_name(ddsim_backend: QDMIBackend) -> None:
-    """Backend should generate a name for unnamed circuits and allow querying results by it."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    job = ddsim_backend.run(qc, shots=100)
-    result = job.result()
-
-    # Should have a generated name
-    assert result.results is not None
-    header = result.results[0].header
-    assert header["name"] == qc.name
-    circuit_name = header["name"]
-
-    # Should be able to query results by the generated name
-    counts = result.get_counts(circuit_name)
-    assert sum(counts.values()) == 100
-
-
-def test_job_status(ddsim_backend: QDMIBackend) -> None:
-    """Job should be in DONE status after backend.run() completes."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    job = ddsim_backend.run(qc, shots=100)
-    _ = job.result()  # Wait for job to complete
-    assert job.status() == JobStatus.DONE
-
-
-def test_job_result_success_and_shots(ddsim_backend: QDMIBackend) -> None:
-    """Job result should contain success status and shot count for each circuit."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    job = ddsim_backend.run(qc, shots=100)
-    result = job.result()
-
-    assert result.success is True
-    assert result.results is not None
-    assert len(result.results) == 1
-    assert result.results[0].shots == 100
-    assert result.results[0].success is True
+def test_backend_advertised_classical_feedback(ddsim_backend: QDMIBackend) -> None:
+    """Advertised if/else executes with its measured classical condition."""
+    assert "if_else" in ddsim_backend.target.operation_names
+    circuit = QuantumCircuit(3, 3)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)) as otherwise:
+        circuit.x(1)
+    with otherwise:
+        circuit.x(2)
+    circuit.measure([1, 2], [1, 2])
+    counts = ddsim_backend.run(circuit, shots=128).result().get_counts(circuit)
+    assert sum(counts.values()) == 128
+    assert set(counts) == {"011", "100"}
 
 
 def test_job_get_counts_default(ddsim_backend: QDMIBackend) -> None:
@@ -621,17 +370,6 @@ def test_backend_supports_rccx_gate(ddsim_backend: QDMIBackend) -> None:
     assert counts == {"111": 100}
 
 
-def test_backend_supports_cz_gate(ddsim_backend: QDMIBackend) -> None:
-    """Backend executes CZ gate circuits and returns counts."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    job = ddsim_backend.run(qc, shots=100)
-    counts = job.result().get_counts()
-    assert sum(counts.values()) == 100
-
-
 def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> None:
     """Backend executes multi-controlled gates (e.g., MCX) and returns counts."""
     qc = QuantumCircuit(3)
@@ -645,10 +383,11 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
 
 
 def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBackend) -> None:
-    """Initialize nonempty registers once and loose bits individually before measurement."""
+    """Unwritten register and loose bits remain zero alongside a partial measurement."""
     qc = QuantumCircuit(1)
     qc.add_bits([Clbit()])
-    qc.add_register(ClassicalRegister(0, "empty"), ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
+    qc.add_register(ClassicalRegister(1, "a"), ClassicalRegister(3, "b"))
+    qc.x(0)
     qc.measure(0, 3)
     original = qc.copy()
 
@@ -657,11 +396,11 @@ def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBacken
     program = serializer(qc, ddsim_backend)
 
     assert isinstance(program, str)
-    for assignment in ("a = 0;", "b = 0;", "_bit0 = false;"):
-        assert program.count(assignment) == 1
-        assert program.index(assignment) < program.index("b[1] = measure q[0];")
-    assert "empty =" not in program
-    assert program.count("= false;") == 1
+    outputs = re.findall(r"output bit\[(\d+)] (\w+);", program)
+    assert [int(width) for width, _ in outputs] == [1, 1, 3]
+    for width, name in outputs:
+        assert program.index(f'{name} = "{int(width) * "0"}";') < program.index("x $0;")
+    assert sample(program, shots=8) == {"01000": 8}
     assert qc == original
 
 
@@ -703,3 +442,236 @@ def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seco
     assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
     assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
     assert target["measure"][0,] is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"), [("for", "101 0"), ("while", "101 0"), ("break", "100 0"), ("continue", "110 1")]
+)
+@pytest.mark.parametrize("compile_first", [False, True])
+def test_backend_loops_and_nested_jumps(
+    ddsim_backend: QDMIBackend, kind: str, expected: str, *, compile_first: bool
+) -> None:
+    """Loop jumps preserve nearest-loop semantics and asymmetric registers."""
+    q = QuantumRegister(4, "q")
+    flag, readout = ClassicalRegister(1, "flag"), ClassicalRegister(3, "readout")
+    circuit = QuantumCircuit(q, flag, readout)
+    circuit.x(3)
+    if kind == "for":
+        with circuit.for_loop(range(3)):
+            circuit.x(2)
+    elif kind == "while":
+        circuit.x(0)
+        circuit.measure(0, flag[0])
+        with circuit.while_loop((flag[0], True)):
+            circuit.x(2)
+            circuit.reset(0)
+            circuit.measure(0, flag[0])
+    elif kind == "break":
+        with circuit.for_loop(range(2)), circuit.for_loop(range(3)):
+            circuit.x(2)
+            circuit.break_loop()
+            circuit.x(1)
+    else:
+        circuit.x(0)
+        circuit.measure(0, flag[0])
+        with circuit.for_loop(range(3)):
+            with circuit.for_loop(range(2)):
+                circuit.x(2)
+                with circuit.if_test((flag[0], True)):
+                    circuit.continue_loop()
+                circuit.x(1)
+            circuit.x(1)
+    circuit.measure([2, 1, 3], readout)
+    if compile_first:
+        circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    original = circuit.copy()
+    result = ddsim_backend.run(circuit, shots=16, memory=True).result()
+    assert circuit == original
+    assert result.get_counts() == {expected: 16}
+    assert result.get_memory() == [expected] * 16
+
+
+def test_backend_for_loop_binds_external_parameters(ddsim_backend: QDMIBackend) -> None:
+    """Bind circuit parameters while retaining the loop's local induction value."""
+    theta, index = Parameter("theta"), Parameter("index")
+    circuit = QuantumCircuit(2, 2)
+    with circuit.for_loop(range(1, 4, 2), index):
+        circuit.rx(theta * index, 1)
+    circuit.measure([0, 1], [0, 1])
+    result = ddsim_backend.run(circuit, parameter_values=[{theta: np.pi / 4}], shots=16).result()
+    assert result.get_counts() == {"10": 16}
+
+
+@pytest.mark.parametrize(
+    ("value", "readout_name", "expected"),
+    [(0, "readout", "01 01"), (1, "if", "10 00"), (2, "測定", "01 11"), (3, "readout", "11 11")],
+)
+@pytest.mark.parametrize("compile_first", [False, True])
+def test_backend_switch_preserves_only_register_outputs(
+    ddsim_backend: QDMIBackend, value: int, readout_name: str, expected: str, *, compile_first: bool
+) -> None:
+    """Nested switches snapshot their target and exclude temporary integers from results."""
+    selector = ClassicalRegister(2, "switch_dummy")
+    readout = ClassicalRegister(2, readout_name)
+    circuit = QuantumCircuit(QuantumRegister(4, "q"), selector, readout)
+    for bit in range(2):
+        if value & (1 << bit):
+            circuit.x(bit)
+    circuit.measure([0, 1], selector)
+    with circuit.for_loop(range(1)), circuit.switch(selector) as case:
+        with case(0, 2):
+            circuit.x(2)
+            circuit.measure(2, selector[0])
+        with case(1):
+            circuit.x(3)
+            circuit.reset(0)
+            circuit.measure(0, selector[0])
+        with case(case.DEFAULT):
+            circuit.x(2)
+            circuit.x(3)
+    circuit.measure([2, 3], readout)
+    if compile_first:
+        circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    original = circuit.copy()
+    result = ddsim_backend.run(circuit, shots=16, memory=True).result()
+    assert circuit == original
+    assert result.get_counts() == {expected: 16}
+    assert result.get_memory() == [expected] * 16
+    sampled = ddsim_backend.sampler(default_shots=16).run([circuit]).result()[0]
+    assert sampled.data[readout_name].get_counts() == {expected.split(maxsplit=1)[0]: 16}
+    assert sampled.data[selector.name].get_counts() == {expected.split()[1]: 16}
+
+
+@pytest.mark.parametrize("compile_first", [False, True])
+def test_backend_classical_assignments(ddsim_backend: QDMIBackend, *, compile_first: bool) -> None:
+    """Stores update captured locals and output bits through the public backend."""
+    flag, output = ClassicalRegister(1, "flag"), ClassicalRegister(3, "output")
+    circuit = QuantumCircuit(QuantumRegister(1), flag, output)
+    counter = circuit.add_var("counter", expr.Value(0, types.Uint(3)))
+    circuit.store(
+        flag[0],
+        True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit Store arguments are positional-only.
+    )
+    with circuit.while_loop(expr.less(counter, 2)):
+        circuit.store(counter, expr.add(counter, 1))
+    with circuit.if_test((flag[0], True)):
+        circuit.store(output, counter)
+        circuit.store(
+            expr.index(output, 0),
+            True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit Store arguments are positional-only.
+        )
+        circuit.x(0)
+    circuit.measure(0, flag[0])
+    if compile_first:
+        circuit = transpile(circuit, ddsim_backend, optimization_level=1)
+    result = ddsim_backend.run(circuit, shots=8, memory=True).result()
+    assert result.get_counts() == {"011 1": 8}
+    assert result.get_memory() == ["011 1"] * 8
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+def test_qir_serializers_execute_register_order(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """Both QIR encodings retain asymmetric output registers and bound angles."""
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    circuit = QuantumCircuit(QuantumRegister(3, "q"), ClassicalRegister(1, "a"), ClassicalRegister(2, "b"))
+    angle = Parameter("theta")
+    circuit.rx(angle, 2)
+    circuit.cx(2, 1)
+    circuit.measure([2, 1, 0], [0, 1, 2])
+    result = ddsim_backend.run(circuit, parameter_values=[[np.pi]], shots=16).result()
+    assert result.get_counts() == {"01 1": 16}
+
+
+@pytest.mark.parametrize("fmt", [ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_ADAPTIVE_STRING])
+def test_qir_serializer_profile_controls_feedback(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """Adaptive executes feedback; Base reports its restricted profile."""
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    circuit = QuantumCircuit(1, 2)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.x(0)
+        circuit.barrier(0)
+    circuit.measure(0, 1)
+    if fmt == ProgramFormat.QIR_BASE_STRING:
+        with pytest.raises(TranslationError, match="QIR_BASE_STRING"):
+            ddsim_backend.run(circuit, shots=8)
+    else:
+        assert ddsim_backend.run(circuit, shots=8).result().get_counts() == {"01": 8}
+
+
+def test_iqm_serializer_uses_device_site_names() -> None:
+    """The fallback resolves device names and preserves the native PRX angles."""
+    backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
+    circuit = QuantumCircuit(1, 1, global_phase=0.7)
+    circuit.r(0.731, -0.419, 0)
+    circuit.barrier(0)
+    circuit.measure(0, 0)
+    serializer = program_serializer(ProgramFormat.IQM_JSON)
+    assert serializer is not None
+    payload = serializer(circuit, backend)
+    assert isinstance(payload, str)
+    instructions = json.loads(payload)["instructions"]
+    site = backend.device.sites()[0].name()
+    assert instructions == [
+        {"name": "prx", "locus": [site], "args": {"angle": 0.731, "phase": -0.419}},
+        {"name": "measure", "locus": [site], "args": {"key": "c_1_0_0"}},
+    ]
+
+
+@pytest.mark.parametrize("fmt", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_ADAPTIVE_STRING])
+def test_native_submission_preserves_folded_unitary_sequence(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
+) -> None:
+    """Inspect the payload actually handed to the local device, not just its ideal result."""
+    serializer = program_serializer(fmt)
+    assert serializer is not None
+    payloads: list[str] = []
+
+    def capture(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+        payload = serializer(circuit, backend)
+        assert isinstance(payload, str)
+        payloads.append(payload)
+        return payload
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.program_serializer", lambda _: capture)
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.h(0)
+    circuit.rx(0.0, 0)
+    circuit.rx(1e-16, 0)
+    circuit.barrier(0, 1)
+    circuit.x(1)
+    circuit.measure([1, 0], [0, 1])
+    assert ddsim_backend.run(circuit, shots=16).result().get_counts() == {"01": 16}
+    assert len(payloads) == 1
+    pattern = r"^\s*(h|rx|x)\b" if fmt == ProgramFormat.QASM3 else r"call void @__quantum__qis__(h|rx|x)__body"
+    assert re.findall(pattern, payloads[0], re.MULTILINE) == ["h", "h", "rx", "rx", "x"]
+    if fmt == ProgramFormat.QASM3:
+        rotations = re.findall(r"rx\(([^)]+)\) \$0;", payloads[0])
+        assert [float(angle) for angle in rotations] == [0.0, 1e-16]
+        assert "x $1;" in payloads[0]
+    else:
+        rotations = re.findall(r"@__quantum__qis__rx__body\(double ([^,]+), ptr null\)", payloads[0])
+        assert len(rotations) == 2
+        angles = [
+            struct.unpack(">d", bytes.fromhex(token.removeprefix("f").removeprefix("0x")))[0]
+            if "0x" in token
+            else float(token)
+            for token in rotations
+        ]
+        assert angles == [0.0, 1e-16]
+        assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]

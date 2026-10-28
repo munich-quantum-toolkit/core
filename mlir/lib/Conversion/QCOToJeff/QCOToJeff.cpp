@@ -25,13 +25,23 @@
 #include "jeff/Conversion/NativeToJeff/NativeToJeff.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
+#include "jeff/Translation/Metadata.hpp"
 
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/ComposeSubView.h"
+#include "mlir/Dialect/MemRef/Transforms/Passes.h"
+#include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
@@ -45,10 +55,12 @@
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/Passes.h"
 #include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -75,6 +87,69 @@ using namespace qco;
 #define GEN_PASS_DEF_QCOTOJEFF
 #include "mqt/Conversion/QCOToJeff/QCOToJeff.h.inc"
 
+/// Fixed contiguous storage can be flattened into jeff's one-dimensional
+/// arrays.
+static std::optional<int64_t> arraySize(MemRefType type) {
+  if (!type.hasStaticShape() || !type.getLayout().isIdentity() ||
+      type.getMemorySpace() ||
+      !(isa<IntegerType>(type.getElementType()) ||
+        type.getElementType().isF32() || type.getElementType().isF64())) {
+    return std::nullopt;
+  }
+  int64_t size = llvm::is_contained(type.getShape(), 0) ? 0 : 1;
+  for (auto dimension : type.getShape()) {
+    if (dimension > std::numeric_limits<int32_t>::max() ||
+        (dimension != 0 &&
+         size > std::numeric_limits<int32_t>::max() / dimension)) {
+      return std::nullopt;
+    }
+    size *= dimension;
+  }
+  return size;
+}
+
+/// Encode input names as jeff text metadata.
+static LogicalResult serializeInputNames(func::FuncOp function) {
+  auto* context = function.getContext();
+  const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  for (auto argument : function.getArguments()) {
+    auto name =
+        function.getArgAttrOfType<StringAttr>(argument.getArgNumber(), key);
+    if (!name) {
+      continue;
+    }
+    auto existing = jeff::getMetadata(argument);
+    if (failed(existing)) {
+      return failure();
+    }
+    auto payload =
+        jeff::serializeTextMetadata(argument.getLoc(), name.getValue());
+    if (failed(payload)) {
+      return failure();
+    }
+    SmallVector<Attribute> metadata;
+    if (*existing) {
+      for (auto entry : *existing) {
+        if (cast<DictionaryAttr>(entry).getAs<StringAttr>("name").getValue() !=
+            key) {
+          metadata.push_back(entry);
+        }
+      }
+    }
+    metadata.push_back(DictionaryAttr::get(
+        context,
+        {
+            {StringAttr::get(context, "name"), StringAttr::get(context, key)},
+            {StringAttr::get(context, "value"), *payload},
+        }));
+    if (failed(
+            jeff::setMetadata(argument, ArrayAttr::get(context, metadata)))) {
+      return failure();
+    }
+  }
+  return success();
+}
+
 namespace {
 
 /// Qubit allocation mode
@@ -84,13 +159,14 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
-/// Tracks the current jeff array value for each mutable CBit register.
+/// Tracks the current jeff array value for each mutable classical allocation.
 class ClassicalRegisterSSAState {
 public:
   /// Returns the source register represented by @p value, if any.
   [[nodiscard]] Value findRegister(Value value) const {
     value = resolveAlias(value);
-    return isa<cbit::RegisterType>(value.getType()) ? value : Value{};
+    return isa<cbit::RegisterType, MemRefType>(value.getType()) ? value
+                                                                : Value{};
   }
 
   /// Returns the register used by @p operation before operand conversion.
@@ -147,16 +223,17 @@ public:
   /// Records source register operands before dialect conversion remaps them.
   void recordRegisterUses(Operation* root) {
     root->walk([&](Operation* operation) {
-      if (isa<cbit::LoadOp, cbit::ReadOp>(operation)) {
+      if (isa<cbit::LoadOp, cbit::ReadOp, memref::LoadOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(0);
-      } else if (isa<cbit::StoreOp, cbit::WriteOp>(operation)) {
+      } else if (isa<cbit::StoreOp, cbit::WriteOp, memref::StoreOp,
+                     bufferization::MaterializeInDestinationOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(1);
       }
     });
   }
 
 private:
-  /// Resolves an SSA alias to its source CBit register.
+  /// Resolves an SSA alias to its source classical storage.
   [[nodiscard]] Value resolveAlias(Value value) const {
     const auto it = registerAliases.find(value);
     return it != registerAliases.end() ? it->second : value;
@@ -530,28 +607,59 @@ static void getAboveValues(Region& region, SetVector<Value>& values) {
 
 namespace {
 
-/// Converts a CBit allocation to a jeff zero-initialized integer array.
-struct ConvertCBitAllocOpToJeff final
-    : StatefulOpConversionPattern<cbit::AllocOp> {
+/// Replace whole-array initialization with the corresponding immutable value.
+struct ConvertArrayInitialization final
+    : StatefulOpConversionPattern<bufferization::MaterializeInDestinationOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(cbit::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(bufferization::MaterializeInDestinationOp op,
+                  OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto registerType = op.getResult().getType();
-    const auto sizeValue = registerType.getWidth();
-    if (!std::in_range<int32_t>(sizeValue)) {
-      return op.emitError("CBit register width exceeds the jeff i32 limit");
+    auto& state = getState().cbitState;
+    auto reg = state.resolveRegisterUse(op, op.getDest());
+    auto type = dyn_cast_or_null<RankedTensorType>(
+        getTypeConverter()->convertType(reg.getType()));
+    if (!type || adaptor.getSource().getType() != type) {
+      return rewriter.notifyMatchFailure(op, "unsupported array initializer");
     }
-    const auto arrayType =
-        RankedTensorType::get({sizeValue}, rewriter.getI1Type());
+    state.setCurrentValue(reg, adaptor.getSource(), op);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// Convert classical storage to an array; uninitialized contents may be zero.
+template <typename AllocOp>
+struct ConvertClassicalAllocToJeff final
+    : StatefulOpConversionPattern<AllocOp> {
+  using StatefulOpConversionPattern<AllocOp>::StatefulOpConversionPattern;
+  using typename StatefulOpConversionPattern<AllocOp>::OpAdaptor;
+
+  LogicalResult
+  matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto arrayType = dyn_cast_or_null<RankedTensorType>(
+        this->getTypeConverter()->convertType(op.getType()));
+    if (!arrayType) {
+      return rewriter.notifyMatchFailure(op, "unsupported classical storage");
+    }
+    const auto sizeValue = arrayType.getDimSize(0);
+    if (!std::in_range<int32_t>(sizeValue)) {
+      return op.emitError("classical array size exceeds the jeff i32 limit");
+    }
     auto size = jeff::IntConst32Op::create(
         rewriter, op.getLoc(),
         rewriter.getI32IntegerAttr(static_cast<int32_t>(sizeValue)));
-    auto array =
-        jeff::IntArrayZeroOp::create(rewriter, op.getLoc(), arrayType, size)
-            .getResult();
-    auto& state = getState().cbitState;
+    Value array;
+    if (isa<FloatType>(arrayType.getElementType())) {
+      array = jeff::FloatArrayZeroOp::create(rewriter, op.getLoc(), arrayType,
+                                             size);
+    } else {
+      array =
+          jeff::IntArrayZeroOp::create(rewriter, op.getLoc(), arrayType, size);
+    }
+    auto& state = this->getState().cbitState;
     state.setCurrentValue(op.getResult(), array, op);
     state.addAlias(array, op.getResult());
     rewriter.replaceOp(op, array);
@@ -559,25 +667,64 @@ struct ConvertCBitAllocOpToJeff final
   }
 };
 
-/// Converts a CBit store to a jeff integer-array update.
-struct ConvertCBitStoreOpToJeff final
-    : StatefulOpConversionPattern<cbit::StoreOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+} // namespace
+
+/// Flatten an access to the original contiguous allocation in row-major order.
+static Value arrayIndex(Value reg, ValueRange indices, Location loc,
+                        ConversionPatternRewriter& rewriter) {
+  if (isa<cbit::RegisterType>(reg.getType())) {
+    return indices.front();
+  }
+  auto type = cast<MemRefType>(reg.getType());
+  if (indices.empty()) {
+    return {jeff::IntConst32Op::create(rewriter, loc,
+                                       rewriter.getI32IntegerAttr(0))};
+  }
+  Value index = indices.front();
+  for (auto [dimension, component] : llvm::enumerate(indices.drop_front())) {
+    auto stride = jeff::IntConst32Op::create(
+        rewriter, loc,
+        rewriter.getI32IntegerAttr(
+            static_cast<int32_t>(type.getDimSize(dimension + 1))));
+    index = jeff::IntBinaryOp::create(rewriter, loc, index, stride,
+                                      jeff::IntBinaryOperation::_mul);
+    index = jeff::IntBinaryOp::create(rewriter, loc, index, component,
+                                      jeff::IntBinaryOperation::_add);
+  }
+  return index;
+}
+
+namespace {
+
+/// Convert classical stores to jeff array updates.
+template <typename StoreOp>
+struct ConvertClassicalStoreToJeff final
+    : StatefulOpConversionPattern<StoreOp> {
+  using StatefulOpConversionPattern<StoreOp>::StatefulOpConversionPattern;
+  using typename StatefulOpConversionPattern<StoreOp>::OpAdaptor;
 
   LogicalResult
-  matchAndRewrite(cbit::StoreOp op, OpAdaptor adaptor,
+  matchAndRewrite(StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState().cbitState;
+    auto& state = this->getState().cbitState;
     auto reg = state.resolveRegisterUse(op, op->getOperand(1));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
     }
     array = rewriter.getRemappedValue(array);
-    auto updated = jeff::IntArraySetIndexOp::create(
-                       rewriter, op.getLoc(), array.getType(), array,
-                       adaptor.getIndex(), adaptor.getValue())
-                       .getResult();
+    auto index = arrayIndex(reg, adaptor.getOperands().drop_front(2),
+                            op.getLoc(), rewriter);
+    Value updated;
+    if (isa<FloatType>(adaptor.getValue().getType())) {
+      updated = jeff::FloatArraySetIndexOp::create(rewriter, op.getLoc(),
+                                                   array.getType(), array,
+                                                   index, adaptor.getValue());
+    } else {
+      updated = jeff::IntArraySetIndexOp::create(rewriter, op.getLoc(),
+                                                 array.getType(), array, index,
+                                                 adaptor.getValue());
+    }
     state.setCurrentValue(reg, updated, op);
     state.addAlias(updated, reg);
     rewriter.eraseOp(op);
@@ -585,23 +732,52 @@ struct ConvertCBitStoreOpToJeff final
   }
 };
 
-/// Converts a CBit load to a jeff integer-array access.
-struct ConvertCBitLoadOpToJeff final
-    : StatefulOpConversionPattern<cbit::LoadOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+/// Convert classical loads to jeff array accesses.
+template <typename LoadOp>
+struct ConvertClassicalLoadToJeff final : StatefulOpConversionPattern<LoadOp> {
+  using StatefulOpConversionPattern<LoadOp>::StatefulOpConversionPattern;
+  using typename StatefulOpConversionPattern<LoadOp>::OpAdaptor;
 
   LogicalResult
-  matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
+  matchAndRewrite(LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState().cbitState;
+    auto& state = this->getState().cbitState;
     auto reg = state.resolveRegisterUse(op, op->getOperand(0));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
     }
     array = rewriter.getRemappedValue(array);
-    rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
-        op, op.getType(), array, adaptor.getIndex());
+    auto index = arrayIndex(reg, adaptor.getOperands().drop_front(),
+                            op.getLoc(), rewriter);
+    auto type = this->getTypeConverter()->convertType(op.getType());
+    if (isa<FloatType>(type)) {
+      rewriter.replaceOpWithNewOp<jeff::FloatArrayGetIndexOp>(op, type, array,
+                                                              index);
+    } else {
+      rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(op, type, array,
+                                                            index);
+    }
+    return success();
+  }
+};
+
+/// jeff represents ordered greater-than comparisons with swapped operands.
+struct ConvertFloatGreaterComparison final
+    : OpConversionPattern<arith::CmpFOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(arith::CmpFOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getPredicate() != arith::CmpFPredicate::OGT &&
+        op.getPredicate() != arith::CmpFPredicate::OGE) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<jeff::FloatComparisonOp>(
+        op, adaptor.getRhs(), adaptor.getLhs(),
+        op.getPredicate() == arith::CmpFPredicate::OGT
+            ? jeff::FloatComparisonOperation::_lt
+            : jeff::FloatComparisonOperation::_lte);
     return success();
   }
 };
@@ -755,11 +931,6 @@ struct ConvertCBitWriteOpToJeff final
   LogicalResult
   matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto width = op.getValue().getType().getWidth();
-    if (width > 64) {
-      return op.emitError(
-          "jeff supports general integer expressions only up to 64 bits");
-    }
     auto& state = getState().cbitState;
     auto reg = state.resolveRegisterUse(op, op->getOperand(1));
     auto array = state.getCurrentValue(reg, op);
@@ -767,6 +938,13 @@ struct ConvertCBitWriteOpToJeff final
       return rewriter.notifyMatchFailure(op, "unknown classical register");
     }
     array = rewriter.getRemappedValue(array);
+    // Captured scalar operands may already have their promoted jeff width.
+    const auto width = static_cast<uint64_t>(
+        cast<RankedTensorType>(array.getType()).getDimSize(0));
+    if (width > 64) {
+      return op.emitError(
+          "jeff supports general integer expressions only up to 64 bits");
+    }
     auto value = adaptor.getValue();
     auto type = cast<IntegerType>(value.getType());
     auto zero =
@@ -791,6 +969,29 @@ struct ConvertCBitWriteOpToJeff final
     state.setCurrentValue(reg, array, op);
     state.addAlias(array, reg);
     rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertNegFOp final : OpConversionPattern<arith::NegFOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(arith::NegFOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto type = op.getType();
+    Value minusOne;
+    if (type.isF32()) {
+      minusOne = jeff::FloatConst32Op::create(rewriter, op.getLoc(),
+                                              rewriter.getF32FloatAttr(-1.0));
+    } else if (type.isF64()) {
+      minusOne = jeff::FloatConst64Op::create(rewriter, op.getLoc(),
+                                              rewriter.getF64FloatAttr(-1.0));
+    } else {
+      return rewriter.notifyMatchFailure(op, "expected scalar f32 or f64");
+    }
+    // Multiplication flips both signed zeros; subtraction from +0 does not.
+    rewriter.replaceOpWithNewOp<jeff::FloatBinaryOp>(
+        op, adaptor.getOperand(), minusOne, jeff::FloatBinaryOperation::_mul);
     return success();
   }
 };
@@ -985,98 +1186,6 @@ struct ConvertIntegerExpression final : ConversionPattern {
                                          jeff::IntBinaryOperation::_or);
     }
     rewriter.replaceOp(op, maskInteger(rewriter, loc, result, width));
-    return success();
-  }
-};
-
-} // namespace
-
-static Value
-buildBitComparison(OpBuilder& builder, const Location location,
-                   const arith::CmpIPredicate predicate, const llvm::APInt& rhs,
-                   const llvm::function_ref<Value(int64_t)> loadBit) {
-  const auto encodedPredicate = mqt::unsignedPredicate(predicate);
-  auto encodedRhs = rhs;
-  const bool biasSignBit = encodedPredicate != predicate;
-  if (biasSignBit) {
-    encodedRhs.flipBit(encodedRhs.getBitWidth() - 1U);
-  }
-
-  auto one = arith::ConstantIntOp::create(builder, location, 1, 1);
-  Value equal = one;
-  Value less;
-  if (encodedPredicate != arith::CmpIPredicate::eq &&
-      encodedPredicate != arith::CmpIPredicate::ne) {
-    less = arith::ConstantIntOp::create(builder, location, 0, 1);
-  }
-  for (int64_t index = static_cast<int64_t>(encodedRhs.getBitWidth()) - 1;
-       index >= 0; --index) {
-    auto bit = loadBit(index);
-    if (biasSignBit &&
-        index == static_cast<int64_t>(encodedRhs.getBitWidth()) - 1) {
-      bit = arith::XOrIOp::create(builder, location, bit, one);
-    }
-    Value matches = bit;
-    if (!encodedRhs[static_cast<unsigned>(index)]) {
-      matches = arith::XOrIOp::create(builder, location, bit, one);
-    } else if (less) {
-      auto lower = arith::XOrIOp::create(builder, location, bit, one);
-      auto firstDifference =
-          arith::AndIOp::create(builder, location, equal, lower);
-      less = arith::OrIOp::create(builder, location, less, firstDifference);
-    }
-    equal = arith::AndIOp::create(builder, location, equal, matches);
-  }
-  switch (encodedPredicate) {
-  case arith::CmpIPredicate::eq:
-    return equal;
-  case arith::CmpIPredicate::ne:
-    return arith::XOrIOp::create(builder, location, equal, one);
-  case arith::CmpIPredicate::ult:
-    return less;
-  case arith::CmpIPredicate::ule:
-    return arith::OrIOp::create(builder, location, less, equal);
-  case arith::CmpIPredicate::ugt: {
-    auto lessOrEqual = arith::OrIOp::create(builder, location, less, equal);
-    return arith::XOrIOp::create(builder, location, lessOrEqual, one);
-  }
-  case arith::CmpIPredicate::uge:
-    return arith::XOrIOp::create(builder, location, less, one);
-  default:
-    llvm_unreachable("signed CBit predicate must be encoded as unsigned");
-  }
-}
-
-namespace {
-
-/// Lower explicit register snapshots compared with constants at the read point.
-struct LowerRegisterComparison final : OpRewritePattern<arith::CmpIOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(arith::CmpIOp op,
-                                PatternRewriter& rewriter) const override {
-    auto read = op.getLhs().getDefiningOp<cbit::ReadOp>();
-    llvm::APInt constant;
-    if (!read || read.getType().getWidth() <= 64 ||
-        !matchPattern(op.getRhs(), m_ConstantInt(&constant))) {
-      return failure();
-    }
-    OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(read);
-    auto result = buildBitComparison(
-        rewriter, op.getLoc(), op.getPredicate(), constant,
-        [&](int64_t index) -> Value {
-          auto position =
-              arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
-          return cbit::LoadOp::create(rewriter, read.getLoc(),
-                                      rewriter.getI1Type(), read.getReg(),
-                                      position)
-              .getResult();
-        });
-    rewriter.replaceOp(op, result);
-    if (read->use_empty()) {
-      rewriter.eraseOp(read);
-    }
     return success();
   }
 };
@@ -1983,6 +2092,11 @@ public:
       return RankedTensorType::get({type.getWidth()},
                                    IntegerType::get(type.getContext(), 1));
     });
+    addConversion([this](MemRefType type) -> Type {
+      const auto size = arraySize(type);
+      auto element = convertType(type.getElementType());
+      return size && element ? RankedTensorType::get({*size}, element) : Type{};
+    });
   }
 };
 
@@ -2091,9 +2205,77 @@ protected:
       return;
     }
 
+    if (moduleOp
+            .walk([](bufferization::MaterializeInDestinationOp op) {
+              auto constant = op.getSource().getDefiningOp<arith::ConstantOp>();
+              auto allocation = op.getDest().getDefiningOp<memref::AllocaOp>();
+              if (!constant || !isa<DenseElementsAttr>(constant.getValue()) ||
+                  !allocation || !arraySize(allocation.getType())) {
+                op.emitError("jeff array initialization requires a constant "
+                             "tensor and contiguous local storage");
+                return WalkResult::interrupt();
+              }
+              return WalkResult::advance();
+            })
+            .wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
+
+    bool hasArrays = false;
+    moduleOp.walk([&](memref::AllocaOp) { hasArrays = true; });
+    if (hasArrays) {
+      if (moduleOp
+              .walk([](memref::CopyOp copy) {
+                if (!isa<MemRefType>(copy.getSource().getType()) ||
+                    !isa<MemRefType>(copy.getTarget().getType())) {
+                  copy.emitError("array copies require ranked storage");
+                  return WalkResult::interrupt();
+                }
+                IRRewriter rewriter(copy.getContext());
+                rewriter.setInsertionPoint(copy);
+                auto structuredCopy =
+                    linalg::CopyOp::create(rewriter, copy.getLoc(),
+                                           copy.getSource(), copy.getTarget());
+                if (failed(linalg::linalgOpToLoops(rewriter, structuredCopy))) {
+                  copy.emitError("could not lower array copy to loops");
+                  return WalkResult::interrupt();
+                }
+                rewriter.eraseOp(structuredCopy);
+                rewriter.eraseOp(copy);
+                return WalkResult::advance();
+              })
+              .wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
+      RewritePatternSet arrays(context);
+      memref::populateComposeSubViewPatterns(arrays, context);
+      memref::populateFoldMemRefAliasOpPatterns(arrays);
+      if (failed(applyPatternsGreedily(moduleOp, std::move(arrays)))) {
+        signalPassFailure();
+        return;
+      }
+      OpPassManager normalization(ModuleOp::getOperationName());
+      normalization.addPass(createLowerAffinePass());
+      normalization.addPass(createCanonicalizerPass());
+      if (failed(runPipeline(normalization, moduleOp))) {
+        signalPassFailure();
+        return;
+      }
+    }
+    if (moduleOp
+            .walk([](cf::AssertOp op) {
+              op.emitError("jeff cannot preserve runtime safety assertions");
+              return WalkResult::interrupt();
+            })
+            .wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
+
     RewritePatternSet comparisons(context);
-    comparisons.add<LowerRegisterComparison>(context);
-    arith::CmpIOp::getCanonicalizationPatterns(comparisons, context);
+    cbit::populateRegisterComparisonPatterns(comparisons);
     mqt::populateIntegerExpansionPatterns(comparisons);
     if (failed(applyPatternsGreedily(moduleOp, std::move(comparisons)))) {
       signalPassFailure();
@@ -2128,6 +2310,24 @@ protected:
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCOToJeffTypeConverter typeConverter(context);
+    TypeConverter initializationTypeConverter(typeConverter);
+    initializationTypeConverter.addConversion(
+        [&](Value value) -> std::optional<Type> {
+          auto type = dyn_cast<RankedTensorType>(value.getType());
+          if (!type) {
+            return std::nullopt;
+          }
+          // Flatten and widen only whole-array initializers, not tensor
+          // expressions.
+          if (value.use_empty() ||
+              !llvm::all_of(value.getUsers(), [](Operation* user) {
+                return isa<bufferization::MaterializeInDestinationOp>(user);
+              })) {
+            return type;
+          }
+          return typeConverter.convertType(
+              MemRefType::get(type.getShape(), type.getElementType()));
+        });
 
     LoweringState state;
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
@@ -2142,13 +2342,18 @@ protected:
         state.entryPointName = function.getSymName();
         mqt::removeEntryPoint(function);
       } else if (llvm::any_of(function.getArgumentTypes(),
-                              llvm::IsaPred<cbit::RegisterType>)) {
+                              llvm::IsaPred<cbit::RegisterType, MemRefType>)) {
         function.emitError("classical register arguments in helper functions "
                            "are not supported");
         signalPassFailure();
         return;
       }
       function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+      // Input identities and parameter groups still need the MQT name.
+      if (failed(serializeInputNames(function))) {
+        signalPassFailure();
+        return;
+      }
     }
     state.cbitState.recordRegisterUses(moduleOp);
 
@@ -2156,6 +2361,7 @@ protected:
     target.addIllegalDialect<cbit::CBitDialect, QCODialect,
                              qtensor::QTensorDialect, arith::ArithDialect,
                              math::MathDialect, tensor::TensorDialect,
+                             bufferization::BufferizationDialect,
                              scf::SCFDialect, memref::MemRefDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
     target.addIllegalOp<LLVM::FshlOp, LLVM::FshrOp>();
@@ -2171,16 +2377,26 @@ protected:
     populateCallOpTypeConversionPattern(patterns, typeConverter);
 
     // Register operation conversion patterns
-    jeff::populateNativeToJeffConversionPatterns(patterns);
-    patterns.add<ConvertIntegerExpression>(typeConverter, context);
-    patterns.add<ConvertCBitAllocOpToJeff, ConvertCBitStoreOpToJeff,
-                 ConvertCBitLoadOpToJeff, ConvertCBitReadOpToJeff,
-                 ConvertCBitWriteOpToJeff, ConvertQTensorAllocOp,
-                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-                 ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
-                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
-                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
+    jeff::populateNativeToJeffConversionPatterns(patterns,
+                                                 &initializationTypeConverter);
+    patterns.add<ConvertIntegerExpression, ConvertNegFOp>(typeConverter,
+                                                          context);
+    patterns.add<ConvertFloatGreaterComparison>(typeConverter, context);
+    patterns.add<ConvertArrayInitialization>(initializationTypeConverter,
+                                             context, &state);
+    patterns.add<ConvertClassicalAllocToJeff<cbit::AllocOp>,
+                 ConvertClassicalAllocToJeff<memref::AllocaOp>,
+                 ConvertClassicalStoreToJeff<cbit::StoreOp>,
+                 ConvertClassicalStoreToJeff<memref::StoreOp>,
+                 ConvertClassicalLoadToJeff<cbit::LoadOp>,
+                 ConvertClassicalLoadToJeff<memref::LoadOp>,
+                 ConvertCBitReadOpToJeff, ConvertCBitWriteOpToJeff,
+                 ConvertQTensorAllocOp, ConvertQTensorExtractOp,
+                 ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
+                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
+                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
+                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
+        typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
@@ -2262,6 +2478,9 @@ protected:
     }
 
     patchCregYields(moduleOp, state);
+
+    IRRewriter rewriter(context);
+    static_cast<void>(runRegionDCE(rewriter, moduleOp->getRegions()));
 
     if (cleanUp(moduleOp, state).failed()) {
       signalPassFailure();

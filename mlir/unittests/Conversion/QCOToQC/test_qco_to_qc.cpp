@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
 
+#include "Conversion/ConversionTestCases.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "qc_programs.h"
@@ -46,10 +47,10 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 
@@ -61,18 +62,7 @@ struct QCOToQCTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QCOToQCTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCOToQCTestCase& info) {
-  return os << "QCOToQC{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
 protected:
@@ -298,8 +288,7 @@ module {
     %out = qco.x %q : !qco.qubit
     return %out : !qco.qubit
   }
-  func.func @main(%q: !qco.qubit) -> !qco.qubit
-      attributes {mqt.entry_point} {
+  func.func @caller(%q: !qco.qubit) -> !qco.qubit {
     %out = qco.call @flip(%q) : (!qco.qubit) -> !qco.qubit
     return %out : !qco.qubit
   }
@@ -334,8 +323,7 @@ module {
     %flag = arith.constant true
     return %flag, %out : i1, !qco.qubit
   }
-  func.func @main(%q: !qco.qubit) -> (i1, !qco.qubit)
-      attributes {mqt.entry_point} {
+  func.func @caller(%q: !qco.qubit) -> (i1, !qco.qubit) {
     %flag, %out = func.call @reset(%q)
         : (!qco.qubit) -> (i1, !qco.qubit)
     return %flag, %out : i1, !qco.qubit
@@ -353,7 +341,7 @@ module {
     ASSERT_EQ(function.getNumResults(), 1U);
     EXPECT_TRUE(function.getResultTypes().front().isInteger(1));
   }
-  auto main = mlir::mqt::getEntryPoint(*moduleOp);
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("caller");
   ASSERT_TRUE(main);
   auto call = *main.getBody().getOps<func::CallOp>().begin();
   ASSERT_EQ(call.getNumResults(), 1U);
@@ -375,8 +363,7 @@ module {
     %flag = arith.constant true
     return %flag, %out : i1, !qco.qubit
   }
-  func.func @main(%q: !qco.qubit) -> (i1, !qco.qubit)
-      attributes {mqt.entry_point} {
+  func.func @caller(%q: !qco.qubit) -> (i1, !qco.qubit) {
     %flag, %out = func.call @reset(%q) {
         res_attrs = [{}, {tag = "wire"}]
       } : (!qco.qubit) -> (i1, !qco.qubit)
@@ -391,8 +378,7 @@ module {
     %out = qco.x %q : !qco.qubit
     return %out : !qco.qubit
   }
-  func.func @main(%q: !qco.qubit) -> !qco.qubit
-      attributes {mqt.entry_point} {
+  func.func @caller(%q: !qco.qubit) -> !qco.qubit {
     %out = qco.call @flip(%q) {res_attrs = [{tag = "wire"}]}
         : (!qco.qubit) -> !qco.qubit
     return %out : !qco.qubit
@@ -502,6 +488,110 @@ TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
       diagnosticText.find(
           "must return one trailing quantum value for each quantum argument"),
       std::string::npos);
+}
+
+TEST(QCOToQCRegressionTest, RejectsNonPositionalRegionResults) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      %left = qco.alloc : !qco.qubit
+      %right = qco.alloc : !qco.qubit
+      %results:2 = qco.if %condition args(%a = %left, %b = %right)
+          -> (!qco.qubit, !qco.qubit) {
+        qco.yield %b, %a : !qco.qubit, !qco.qubit
+      } else args(%a = %left, %b = %right) {
+        qco.yield %a, %b : !qco.qubit, !qco.qubit
+      }
+      qco.sink %results#0 : !qco.qubit
+      qco.sink %results#1 : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+            std::string::npos);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST(QCOToQCRegressionTest, PreservesFlatControlledGateWires) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, qco::QCODialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %left = qco.static 0 : !qco.qubit
+      %right = qco.static 1 : !qco.qubit
+      %control, %target = qco.ctrl(%left) targets(%arg = %right) {
+        %flipped = qco.z %arg : !qco.qubit
+        qco.yield %flipped : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit})
+      %flipped = qco.x %control : !qco.qubit
+      qco.sink %flipped : !qco.qubit
+      qco.sink %target : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto qubits = llvm::to_vector(function.getOps<qc::StaticOp>());
+  ASSERT_EQ(qubits.size(), 2U);
+  ASSERT_FALSE(function.getOps<qc::CtrlOp>().empty());
+  auto controlled = *function.getOps<qc::CtrlOp>().begin();
+  EXPECT_EQ(controlled.getControls().front(), qubits[0].getResult());
+  EXPECT_EQ(controlled.getTargets().front(), qubits[1].getResult());
+  ASSERT_FALSE(function.getOps<qc::XOp>().empty());
+  auto flipped = *function.getOps<qc::XOp>().begin();
+  EXPECT_EQ(flipped->getOperand(0), qubits[0].getResult());
+}
+
+TEST(QCOToQCRegressionTest, ChecksFlatTensorSlotCorrespondence) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                      arith::ArithDialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %left = qco.static 0 : !qco.qubit
+      %right = qco.static 1 : !qco.qubit
+      %tensor = qtensor.from_elements %left, %right : tensor<2x!qco.qubit>
+      %rest, %qubit = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %full = qtensor.insert %qubit into %rest[%c1] : tensor<2x!qco.qubit>
+      qtensor.dealloc %full : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("original register slot"), std::string::npos);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
@@ -949,6 +1039,11 @@ module {
 }
 
 TEST_P(QCOToQCTest, ProgramEquivalence) {
+  SCOPED_TRACE(llvm::formatv(
+                   "QCOToQC: {0}, original={1}, reference={2}", GetParam().name,
+                   ::mqt::test::displayName(GetParam().programBuilder.name),
+                   ::mqt::test::displayName(GetParam().referenceBuilder.name))
+                   .str());
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -958,6 +1053,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -966,6 +1062,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -976,6 +1073,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -984,506 +1082,35 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-// QCOToQC/QubitManagement/QubitManagement.cpp
+static SmallVector<QCOToQCTestCase> commonConversionCases() {
+  SmallVector<QCOToQCTestCase> cases;
+  for (const auto& testCase : ::mqt::test::COMMON_QC_QCO_CONVERSION_CASES) {
+    cases.push_back({
+        .name = std::get<0>(testCase),
+        .programBuilder = std::get<2>(testCase),
+        .referenceBuilder = std::get<1>(testCase),
+    });
+  }
+  return cases;
+}
+
+INSTANTIATE_TEST_SUITE_P(CommonCases, QCOToQCTest,
+                         testing::ValuesIn(commonConversionCases()));
+
 INSTANTIATE_TEST_SUITE_P(
-    QCOQubitManagementTest, QCOToQCTest,
+    SpecialCases, QCOToQCTest,
     testing::Values(
-        QCOToQCTestCase{"StaticQubits", MQT_NAMED_BUILDER(qco::staticQubits),
-                        MQT_NAMED_BUILDER(qc::staticQubits)},
-        QCOToQCTestCase{"StaticQubitsWithOps",
-                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps),
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps)},
-        QCOToQCTestCase{"StaticQubitsWithParametricOps",
-                        MQT_NAMED_BUILDER(qco::staticQubitsWithParametricOps),
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps)},
-        QCOToQCTestCase{"StaticQubitsWithTwoTargetOps",
-                        MQT_NAMED_BUILDER(qco::staticQubitsWithTwoTargetOps),
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps)},
-        QCOToQCTestCase{"StaticQubitsWithCtrl",
-                        MQT_NAMED_BUILDER(qco::staticQubitsWithCtrl),
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl)},
-        QCOToQCTestCase{"StaticQubitsWithInv",
-                        MQT_NAMED_BUILDER(qco::staticQubitsWithInv),
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithInv)},
         QCOToQCTestCase{"AllocDeallocPair",
                         MQT_NAMED_BUILDER(qco::allocSinkPair),
-                        MQT_NAMED_BUILDER(qc::allocDeallocPair)}));
-
-// QCOToQC/Modifiers/PowOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOPowOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"CtrlPowSx",
-                                    MQT_NAMED_BUILDER(qco::ctrlPowSx),
-                                    MQT_NAMED_BUILDER(qc::ctrlPowSx)},
-                    QCOToQCTestCase{"PowTwo", MQT_NAMED_BUILDER(qco::powTwo),
-                                    MQT_NAMED_BUILDER(qc::powTwo)}));
-
-// QCOToQC/Modifiers/CtrlOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOCtrlOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qco::ctrlTwo),
-                                    MQT_NAMED_BUILDER(qc::ctrlTwo)},
-                    QCOToQCTestCase{"CtrlTwoMixed",
-                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed),
-                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
-                    QCOToQCTestCase{"CtrlInvTwo",
-                                    MQT_NAMED_BUILDER(qco::ctrlInvTwo),
-                                    MQT_NAMED_BUILDER(qc::ctrlInvTwo)}));
-
-// QCOToQC/Modifiers/InvOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOInvOpTest, QCOToQCTest,
-    testing::Values(
-        // iSWAP cannot be inverted with current canonicalization
-        QCOToQCTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(qco::inverseIswap),
-                        MQT_NAMED_BUILDER(qc::inverseIswap)},
-        QCOToQCTestCase{"InverseMultipleControllediSWAP",
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
-                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap)},
-        // Inverse DCX is not canonicalized in QCO
+                        MQT_NAMED_BUILDER(qc::allocDeallocPair)},
         QCOToQCTestCase{"InverseDCX", MQT_NAMED_BUILDER(qco::inverseDcx),
                         MQT_NAMED_BUILDER(qc::dcx)},
         QCOToQCTestCase{"InverseMultipleControlledDCX",
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
                         MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
-        QCOToQCTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
-                        MQT_NAMED_BUILDER(qc::invTwo)}));
-
-// QCOToQC/Operations/StandardGates/BarrierOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOBarrierOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"Barrier", MQT_NAMED_BUILDER(qco::barrier),
-                                    MQT_NAMED_BUILDER(qc::barrier)},
-                    QCOToQCTestCase{"BarrierTwoQubits",
-                                    MQT_NAMED_BUILDER(qco::barrierTwoQubits),
-                                    MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
-                    QCOToQCTestCase{
-                        "BarrierMultipleQubits",
-                        MQT_NAMED_BUILDER(qco::barrierMultipleQubits),
-                        MQT_NAMED_BUILDER(qc::barrierMultipleQubits)}));
-
-// QCOToQC/Operations/StandardGates/DcxOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCODCXOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"DCX", MQT_NAMED_BUILDER(qco::dcx),
-                                    MQT_NAMED_BUILDER(qc::dcx)},
-                    QCOToQCTestCase{"SingleControlledDCX",
-                                    MQT_NAMED_BUILDER(qco::singleControlledDcx),
-                                    MQT_NAMED_BUILDER(qc::singleControlledDcx)},
-                    QCOToQCTestCase{
-                        "MultipleControlledDCX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledDcx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)}));
-
-// QCOToQC/Operations/StandardGates/EcrOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOECROpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"ECR", MQT_NAMED_BUILDER(qco::ecr),
-                                    MQT_NAMED_BUILDER(qc::ecr)},
-                    QCOToQCTestCase{"SingleControlledECR",
-                                    MQT_NAMED_BUILDER(qco::singleControlledEcr),
-                                    MQT_NAMED_BUILDER(qc::singleControlledEcr)},
-                    QCOToQCTestCase{
-                        "MultipleControlledECR",
-                        MQT_NAMED_BUILDER(qco::multipleControlledEcr),
-                        MQT_NAMED_BUILDER(qc::multipleControlledEcr)}));
-
-// QCOToQC/Operations/StandardGates/GphaseOp.cpp
-INSTANTIATE_TEST_SUITE_P(QCOGPhaseOpTest, QCOToQCTest,
-                         testing::Values(QCOToQCTestCase{
-                             "GlobalPhase", MQT_NAMED_BUILDER(qco::globalPhase),
-                             MQT_NAMED_BUILDER(qc::globalPhase)}));
-
-// QCOToQC/Operations/StandardGates/HOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOHOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"H", MQT_NAMED_BUILDER(qco::h),
-                                    MQT_NAMED_BUILDER(qc::h)},
-                    QCOToQCTestCase{"SingleControlledH",
-                                    MQT_NAMED_BUILDER(qco::singleControlledH),
-                                    MQT_NAMED_BUILDER(qc::singleControlledH)},
-                    QCOToQCTestCase{"MultipleControlledH",
-                                    MQT_NAMED_BUILDER(qco::multipleControlledH),
-                                    MQT_NAMED_BUILDER(qc::multipleControlledH)},
-                    QCOToQCTestCase{"HWithoutRegister",
-                                    MQT_NAMED_BUILDER(qco::hWithoutRegister),
-                                    MQT_NAMED_BUILDER(qc::hWithoutRegister)}));
-
-// QCOToQC/Operations/StandardGates/IswapOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOiSWAPOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"iSWAP", MQT_NAMED_BUILDER(qco::iswap),
-                        MQT_NAMED_BUILDER(qc::iswap)},
-        QCOToQCTestCase{"SingleControllediSWAP",
-                        MQT_NAMED_BUILDER(qco::singleControlledIswap),
-                        MQT_NAMED_BUILDER(qc::singleControlledIswap)},
-        QCOToQCTestCase{"MultipleControllediSWAP",
-                        MQT_NAMED_BUILDER(qco::multipleControlledIswap),
-                        MQT_NAMED_BUILDER(qc::multipleControlledIswap)}));
-
-// QCOToQC/Operations/StandardGates/POp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOPOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"P", MQT_NAMED_BUILDER(qco::p),
-                                    MQT_NAMED_BUILDER(qc::p)},
-                    QCOToQCTestCase{"SingleControlledP",
-                                    MQT_NAMED_BUILDER(qco::singleControlledP),
-                                    MQT_NAMED_BUILDER(qc::singleControlledP)},
-                    QCOToQCTestCase{
-                        "MultipleControlledP",
-                        MQT_NAMED_BUILDER(qco::multipleControlledP),
-                        MQT_NAMED_BUILDER(qc::multipleControlledP)}));
-
-// QCOToQC/Operations/StandardGates/RCCXOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORCCXOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"RCCX", MQT_NAMED_BUILDER(qco::rccx),
-                        MQT_NAMED_BUILDER(qc::rccx)},
-        QCOToQCTestCase{"SingleControlledRCCX",
-                        MQT_NAMED_BUILDER(qco::singleControlledRccx),
-                        MQT_NAMED_BUILDER(qc::singleControlledRccx)},
-        QCOToQCTestCase{"MultipleControlledRCCX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRccx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRccx)}));
-
-// QCOToQC/Operations/StandardGates/ROp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOROpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"R", MQT_NAMED_BUILDER(qco::r),
-                                    MQT_NAMED_BUILDER(qc::r)},
-                    QCOToQCTestCase{"SingleControlledR",
-                                    MQT_NAMED_BUILDER(qco::singleControlledR),
-                                    MQT_NAMED_BUILDER(qc::singleControlledR)},
-                    QCOToQCTestCase{
-                        "MultipleControlledR",
-                        MQT_NAMED_BUILDER(qco::multipleControlledR),
-                        MQT_NAMED_BUILDER(qc::multipleControlledR)}));
-
-// QCOToQC/Operations/StandardGates/RxOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORXOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RX", MQT_NAMED_BUILDER(qco::rx),
-                                    MQT_NAMED_BUILDER(qc::rx)},
-                    QCOToQCTestCase{"SingleControlledRX",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRx),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRx)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRx)}));
-
-// QCOToQC/Operations/StandardGates/RxxOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORXXOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RXX", MQT_NAMED_BUILDER(qco::rxx),
-                                    MQT_NAMED_BUILDER(qc::rxx)},
-                    QCOToQCTestCase{"SingleControlledRXX",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRxx),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRxx)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRXX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRxx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRxx)}));
-
-// QCOToQC/Operations/StandardGates/RyOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORYOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RY", MQT_NAMED_BUILDER(qco::ry),
-                                    MQT_NAMED_BUILDER(qc::ry)},
-                    QCOToQCTestCase{"SingleControlledRY",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRy),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRy)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRY",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRy),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRy)}));
-
-// QCOToQC/Operations/StandardGates/RyyOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORYYOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RYY", MQT_NAMED_BUILDER(qco::ryy),
-                                    MQT_NAMED_BUILDER(qc::ryy)},
-                    QCOToQCTestCase{"SingleControlledRYY",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRyy),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRyy)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRYY",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRyy),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRyy)}));
-
-// QCOToQC/Operations/StandardGates/RzOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORZOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RZ", MQT_NAMED_BUILDER(qco::rz),
-                                    MQT_NAMED_BUILDER(qc::rz)},
-                    QCOToQCTestCase{"SingleControlledRZ",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRz),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRz)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRZ",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRz),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRz)}));
-
-// QCOToQC/Operations/StandardGates/RzxOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORZXOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RZX", MQT_NAMED_BUILDER(qco::rzx),
-                                    MQT_NAMED_BUILDER(qc::rzx)},
-                    QCOToQCTestCase{"SingleControlledRZX",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRzx),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRzx)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRZX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRzx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRzx)}));
-
-// QCOToQC/Operations/StandardGates/RzzOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCORZZOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"RZZ", MQT_NAMED_BUILDER(qco::rzz),
-                                    MQT_NAMED_BUILDER(qc::rzz)},
-                    QCOToQCTestCase{"SingleControlledRZZ",
-                                    MQT_NAMED_BUILDER(qco::singleControlledRzz),
-                                    MQT_NAMED_BUILDER(qc::singleControlledRzz)},
-                    QCOToQCTestCase{
-                        "MultipleControlledRZZ",
-                        MQT_NAMED_BUILDER(qco::multipleControlledRzz),
-                        MQT_NAMED_BUILDER(qc::multipleControlledRzz)}));
-
-// QCOToQC/Operations/StandardGates/SOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOSOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"S", MQT_NAMED_BUILDER(qco::s),
-                                    MQT_NAMED_BUILDER(qc::s)},
-                    QCOToQCTestCase{"SingleControlledS",
-                                    MQT_NAMED_BUILDER(qco::singleControlledS),
-                                    MQT_NAMED_BUILDER(qc::singleControlledS)},
-                    QCOToQCTestCase{
-                        "MultipleControlledS",
-                        MQT_NAMED_BUILDER(qco::multipleControlledS),
-                        MQT_NAMED_BUILDER(qc::multipleControlledS)}));
-
-// QCOToQC/Operations/StandardGates/SdgOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOSdgOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"Sdg", MQT_NAMED_BUILDER(qco::sdg),
-                                    MQT_NAMED_BUILDER(qc::sdg)},
-                    QCOToQCTestCase{"SingleControlledSdg",
-                                    MQT_NAMED_BUILDER(qco::singleControlledSdg),
-                                    MQT_NAMED_BUILDER(qc::singleControlledSdg)},
-                    QCOToQCTestCase{
-                        "MultipleControlledSdg",
-                        MQT_NAMED_BUILDER(qco::multipleControlledSdg),
-                        MQT_NAMED_BUILDER(qc::multipleControlledSdg)}));
-
-// QCOToQC/Operations/StandardGates/SwapOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOSWAPOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SWAP", MQT_NAMED_BUILDER(qco::swap),
-                        MQT_NAMED_BUILDER(qc::swap)},
-        QCOToQCTestCase{"SingleControlledSWAP",
-                        MQT_NAMED_BUILDER(qco::singleControlledSwap),
-                        MQT_NAMED_BUILDER(qc::singleControlledSwap)},
-        QCOToQCTestCase{"MultipleControlledSWAP",
-                        MQT_NAMED_BUILDER(qco::multipleControlledSwap),
-                        MQT_NAMED_BUILDER(qc::multipleControlledSwap)}));
-
-// QCOToQC/Operations/StandardGates/SxOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOSXOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"SX", MQT_NAMED_BUILDER(qco::sx),
-                                    MQT_NAMED_BUILDER(qc::sx)},
-                    QCOToQCTestCase{"SingleControlledSX",
-                                    MQT_NAMED_BUILDER(qco::singleControlledSx),
-                                    MQT_NAMED_BUILDER(qc::singleControlledSx)},
-                    QCOToQCTestCase{
-                        "MultipleControlledSX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledSx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledSx)}));
-
-// QCOToQC/Operations/StandardGates/SxdgOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOSXdgOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SXdg", MQT_NAMED_BUILDER(qco::sxdg),
-                        MQT_NAMED_BUILDER(qc::sxdg)},
-        QCOToQCTestCase{"SingleControlledSXdg",
-                        MQT_NAMED_BUILDER(qco::singleControlledSxdg),
-                        MQT_NAMED_BUILDER(qc::singleControlledSxdg)},
-        QCOToQCTestCase{"MultipleControlledSXdg",
-                        MQT_NAMED_BUILDER(qco::multipleControlledSxdg),
-                        MQT_NAMED_BUILDER(qc::multipleControlledSxdg)}));
-
-// QCOToQC/Operations/StandardGates/TOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOTOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"T", MQT_NAMED_BUILDER(qco::t_),
-                                    MQT_NAMED_BUILDER(qc::t_)},
-                    QCOToQCTestCase{"SingleControlledT",
-                                    MQT_NAMED_BUILDER(qco::singleControlledT),
-                                    MQT_NAMED_BUILDER(qc::singleControlledT)},
-                    QCOToQCTestCase{
-                        "MultipleControlledT",
-                        MQT_NAMED_BUILDER(qco::multipleControlledT),
-                        MQT_NAMED_BUILDER(qc::multipleControlledT)}));
-
-// QCOToQC/Operations/StandardGates/TdgOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOTdgOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"Tdg", MQT_NAMED_BUILDER(qco::tdg),
-                                    MQT_NAMED_BUILDER(qc::tdg)},
-                    QCOToQCTestCase{"SingleControlledTdg",
-                                    MQT_NAMED_BUILDER(qco::singleControlledTdg),
-                                    MQT_NAMED_BUILDER(qc::singleControlledTdg)},
-                    QCOToQCTestCase{
-                        "MultipleControlledTdg",
-                        MQT_NAMED_BUILDER(qco::multipleControlledTdg),
-                        MQT_NAMED_BUILDER(qc::multipleControlledTdg)}));
-
-// QCOToQC/Operations/StandardGates/U2Op.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOU2OpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"U2", MQT_NAMED_BUILDER(qco::u2),
-                                    MQT_NAMED_BUILDER(qc::u2)},
-                    QCOToQCTestCase{"SingleControlledU2",
-                                    MQT_NAMED_BUILDER(qco::singleControlledU2),
-                                    MQT_NAMED_BUILDER(qc::singleControlledU2)},
-                    QCOToQCTestCase{
-                        "MultipleControlledU2",
-                        MQT_NAMED_BUILDER(qco::multipleControlledU2),
-                        MQT_NAMED_BUILDER(qc::multipleControlledU2)}));
-
-// QCOToQC/Operations/StandardGates/UOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOUOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"U", MQT_NAMED_BUILDER(qco::u),
-                                    MQT_NAMED_BUILDER(qc::u)},
-                    QCOToQCTestCase{"SingleControlledU",
-                                    MQT_NAMED_BUILDER(qco::singleControlledU),
-                                    MQT_NAMED_BUILDER(qc::singleControlledU)},
-                    QCOToQCTestCase{
-                        "MultipleControlledU",
-                        MQT_NAMED_BUILDER(qco::multipleControlledU),
-                        MQT_NAMED_BUILDER(qc::multipleControlledU)}));
-
-// QCOToQC/Operations/StandardGates/XOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOXOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"X", MQT_NAMED_BUILDER(qco::x),
-                                    MQT_NAMED_BUILDER(qc::x)},
-                    QCOToQCTestCase{"SingleControlledX",
-                                    MQT_NAMED_BUILDER(qco::singleControlledX),
-                                    MQT_NAMED_BUILDER(qc::singleControlledX)},
-                    QCOToQCTestCase{"MultipleControlledX",
-                                    MQT_NAMED_BUILDER(qco::multipleControlledX),
-                                    MQT_NAMED_BUILDER(qc::multipleControlledX)},
-                    QCOToQCTestCase{
-                        "RepeatedControlledX",
-                        MQT_NAMED_BUILDER(qco::repeatedControlledX),
-                        MQT_NAMED_BUILDER(qc::repeatedControlledX)}));
-
-// QCOToQC/Operations/StandardGates/XxMinusYyOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOXXMinusYYOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qco::xxMinusYY),
-                        MQT_NAMED_BUILDER(qc::xxMinusYY)},
-        QCOToQCTestCase{"SingleControlledXXMinusYY",
-                        MQT_NAMED_BUILDER(qco::singleControlledXxMinusYY),
-                        MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY)},
-        QCOToQCTestCase{"MultipleControlledXXMinusYY",
-                        MQT_NAMED_BUILDER(qco::multipleControlledXxMinusYY),
-                        MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY)}));
-
-// QCOToQC/Operations/StandardGates/XxPlusYyOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOXXPlusYYOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qco::xxPlusYY),
-                        MQT_NAMED_BUILDER(qc::xxPlusYY)},
-        QCOToQCTestCase{"SingleControlledXXPlusYY",
-                        MQT_NAMED_BUILDER(qco::singleControlledXxPlusYY),
-                        MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY)},
-        QCOToQCTestCase{"MultipleControlledXXPlusYY",
-                        MQT_NAMED_BUILDER(qco::multipleControlledXxPlusYY),
-                        MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY)}));
-
-// QCOToQC/Operations/StandardGates/YOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOYOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"Y", MQT_NAMED_BUILDER(qco::y),
-                                    MQT_NAMED_BUILDER(qc::y)},
-                    QCOToQCTestCase{"SingleControlledY",
-                                    MQT_NAMED_BUILDER(qco::singleControlledY),
-                                    MQT_NAMED_BUILDER(qc::singleControlledY)},
-                    QCOToQCTestCase{
-                        "MultipleControlledY",
-                        MQT_NAMED_BUILDER(qco::multipleControlledY),
-                        MQT_NAMED_BUILDER(qc::multipleControlledY)}));
-
-// QCOToQC/Operations/StandardGates/ZOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOZOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"Z", MQT_NAMED_BUILDER(qco::z),
-                                    MQT_NAMED_BUILDER(qc::z)},
-                    QCOToQCTestCase{"SingleControlledZ",
-                                    MQT_NAMED_BUILDER(qco::singleControlledZ),
-                                    MQT_NAMED_BUILDER(qc::singleControlledZ)},
-                    QCOToQCTestCase{
-                        "MultipleControlledZ",
-                        MQT_NAMED_BUILDER(qco::multipleControlledZ),
-                        MQT_NAMED_BUILDER(qc::multipleControlledZ)}));
-
-// QCOToQC/Operations/MeasureOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOMeasureOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SingleMeasurementToSingleBit",
-                        MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit),
-                        MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit)},
-        QCOToQCTestCase{"RepeatedMeasurementToSameBit",
-                        MQT_NAMED_BUILDER(qco::repeatedMeasurementToSameBit),
-                        MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit)},
-        QCOToQCTestCase{
-            "RepeatedMeasurementToDifferentBits",
-            MQT_NAMED_BUILDER(qco::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits)},
-        QCOToQCTestCase{
-            "MultipleClassicalRegistersAndMeasurements",
-            MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)},
-        QCOToQCTestCase{"PartialMeasurementToRegister",
-                        MQT_NAMED_BUILDER(qco::partialMeasurementToRegister),
-                        MQT_NAMED_BUILDER(qc::partialMeasurementToRegister)},
-        QCOToQCTestCase{"DynamicallyIndexedMeasurement",
-                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement),
-                        MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement)},
-        QCOToQCTestCase{"MeasurementWithoutRegisters",
-                        MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
-                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters)}));
-
-// QCOToQC/Operations/ResetOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOResetOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"ResetQubitAfterSingleOp",
-                        MQT_NAMED_BUILDER(qco::resetQubitAfterSingleOp),
-                        MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)},
-        QCOToQCTestCase{
-            "ResetMultipleQubitsAfterSingleOp",
-            MQT_NAMED_BUILDER(qco::resetMultipleQubitsAfterSingleOp),
-            MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp)},
         QCOToQCTestCase{"RepeatedResetAfterSingleOp",
                         MQT_NAMED_BUILDER(qco::repeatedResetAfterSingleOp),
-                        MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)}));
-
-// QCOToQC/Operations/IfOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOIfOpTest, QCOToQCTest,
-    testing::Values(
+                        MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)},
         QCOToQCTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qco::simpleIf),
                         MQT_NAMED_BUILDER(qc::simpleIf)},
         QCOToQCTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
@@ -1495,50 +1122,18 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::ifWithMeasurement)},
         QCOToQCTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qco::ifWithCreg),
                         MQT_NAMED_BUILDER(qc::ifWithCreg)},
-        QCOToQCTestCase{"NestedIfOpForLoop",
-                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
-                        MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
-
-// QCOToQC/Operations/IndexSwitchOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    QCOIndexSwitchOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"SimpleIndexSwitchOp",
-                                    MQT_NAMED_BUILDER(qco::simpleIndexSwitch),
-                                    MQT_NAMED_BUILDER(qc::simpleIndexSwitch)},
-                    QCOToQCTestCase{
-                        "IndexSwitchMultiCase",
+        QCOToQCTestCase{"SimpleIndexSwitchOp",
+                        MQT_NAMED_BUILDER(qco::simpleIndexSwitch),
+                        MQT_NAMED_BUILDER(qc::simpleIndexSwitch)},
+        QCOToQCTestCase{"IndexSwitchMultiCase",
                         MQT_NAMED_BUILDER(qco::indexSwitchMultiCase),
-                        MQT_NAMED_BUILDER(qc::indexSwitchMultiCase)}));
-
-// QCOToQC/Operations/WhileOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    SCFWhileOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SimpleWhile", MQT_NAMED_BUILDER(qco::simpleWhileReset),
-                        MQT_NAMED_BUILDER(qc::simpleWhileReset)},
-        QCOToQCTestCase{"SimpleDoWhile",
-                        MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
-                        MQT_NAMED_BUILDER(qc::simpleDoWhileReset)}));
-
-// QCOToQC/Operations/ForOp.cpp
-INSTANTIATE_TEST_SUITE_P(
-    SCFForOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qco::simpleForLoop),
-                        MQT_NAMED_BUILDER(qc::simpleForLoop)},
-        QCOToQCTestCase{"NestedForLoopIfOp",
-                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
-                        MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
+                        MQT_NAMED_BUILDER(qc::indexSwitchMultiCase)},
         QCOToQCTestCase{"NestedForLoopWhileOp",
                         MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)},
         QCOToQCTestCase{"NestedForLoopSwitchOp",
                         MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp)},
-        QCOToQCTestCase{
-            "NestedForLoopCtrlOpWithSeparateQubit",
-            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
-            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit)},
         QCOToQCTestCase{
             "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),

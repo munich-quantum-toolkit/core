@@ -41,7 +41,7 @@ standardQFT(qc::QCProgramBuilder& builder, const QFT& benchmark) {
   builder.scfFor(period, qubits, 1, [&](Value index) {
     builder.h(builder.loadQubit(query, index));
   });
-  detail::forwardQFT(builder, query, qubits);
+  detail::qft(builder, query, qubits);
 
   auto last = builder.indexConstant(qubits - 1);
   builder.scfFor(0, qubits, 1, [&](Value index) {

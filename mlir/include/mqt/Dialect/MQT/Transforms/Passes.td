@@ -11,15 +11,58 @@
 
 include "mlir/Pass/PassBase.td"
 
+def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
+                           "mlir::qco::QCODialect"];
+  let summary = "Lower quantum modifiers to supported gate forms";
+  let description = [{
+    Lowers nested controls, inverses and supported powers, preserving controlled
+    relative phase and folding generated arithmetic. Fixed single-qubit QCO
+    gates support runtime powers; other powers require constant parameters.
+    Unsupported powers remain for the consuming conversion to diagnose.
+
+    Run after inlining and modifier unrolling to prepare gates for conversion.
+    Adjacent-gate optimization and CFG cleanup are separate passes.
+  }];
+}
+
+def SimplifyQuantum : Pass<"simplify-quantum"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
+                           "mlir::qco::QCODialect"];
+  let summary = "Simplify quantum gates and modifiers";
+  let description = [{
+    Eliminates identity gates, cancels inverse pairs, combines rotations and
+    specializes gates and modifiers in QC or QCO programs. Generated arithmetic
+    is folded. Rotation elimination uses an absolute parameter tolerance of
+    1e-15, not a circuit error bound.
+
+    Use this pass when the gate sequence may change. Use canonicalization for
+    classical and structural cleanup. CFG simplification is separate.
+  }];
+}
+
+def PromoteClassicalMemory
+    : Pass<"promote-classical-memory", "mlir::ModuleOp"> {
+  let summary = "Promote local classical memory to SSA values";
+  let description = [{
+    Folds access indices, splits local allocations with SROA, and promotes
+    supported loads and stores with Mem2Reg. Local CBit registers support up to
+    256 bits with static accesses. Packed reads support up to 64 bits; wider
+    reads are expanded at their snapshot point when all reads of the register
+    feed constant comparisons. Escaping registers retain storage.
+
+    Modules without promotable or destructurable allocations are left unchanged.
+    Run again after static loop expansion to expose constant-index accesses.
+  }];
+}
+
 def SimplifyClassicalControl
     : Pass<"simplify-classical-control", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::arith::ArithDialect"];
-  let summary = "Forward classical bits and propagate known branch conditions";
+  let summary = "Propagate known QCO branch conditions";
   let description = [{
-    Visits each block once to forward classical-bit loads from known stores,
-    previous loads, or zero initialization. Ambiguous writes invalidate memory
-    facts; memory facts do not cross region or block boundaries.
-
     Within each QCO if branch, replaces uses of its condition with the known
     boolean value. A following canonicalizer folds the exposed expressions and
     static branches. Run after inlining and again after static loop unrolling.
@@ -27,25 +70,44 @@ def SimplifyClassicalControl
 }
 
 def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qc::QCDialect",
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect", "mlir::qc::QCDialect",
                            "mlir::qco::QCODialect"];
   let summary = "Normalize scoped QC and QCO global phases";
   let description = [{
     Combines direct `qc.gphase` and `qco.gphase` operations into at most one
-    operation per basic block, placed immediately before the block terminator.
-    Nested regions are normalized independently.
+    operation per basic block, placed at the last phase contribution.
+    Nested regions are normalized independently, except power subtrees, which
+    remain unchanged: phase rounding can be amplified by a large exponent.
 
-    A normalized phase is moved out of `inv`, negating its angle, and out of
-    `pow` only when the exponent is a finite compile-time integer. A phase in a
+    A normalized phase is moved out of `inv`, negating its angle. A phase in a
     `ctrl` body becomes a relative phase on the control register: `p` for one
-    control or a smaller controlled `p` for multiple controls. Phase angles
-    defined inside a modifier are moved only when their complete local SSA
-    dependency slice is pure and independent of modifier block arguments.
+    control or a smaller controlled `p` for multiple controls. Eager classical
+    computations in verified modifier bodies move once, in source order, before
+    the outermost enclosing `inv` or `ctrl`.
 
+    Constant angles are reduced modulo 2π. Symbolic sums are balanced and
+    reduced with `2 * atan(tan(angle / 2))` to keep runtime phases in range.
     Function, CFG, structured-control-flow, and unknown region boundaries are
-    otherwise preserved. The pass is linear in the number of visited
-    operations and does not scan an enclosing module from individual rewrite
-    patterns.
+    preserved. The pass does not scan an enclosing module from individual
+    rewrite patterns.
+  }];
+}
+
+def DropGlobalPhases : Pass<"drop-global-phases", "mlir::ModuleOp"> {
+  let summary = "Discard final-program QC and QCO global phases";
+  let description = [{
+    Erases direct global phases in the function marked `mqt.entry_point`,
+    including its classical execution paths. Phases in helper functions and
+    quantum modifier bodies are retained: they can become observable relative
+    phases under coherent control or non-integer powers. Modules without an
+    entry point are unchanged.
+
+    This pass preserves measurement probabilities, not exact statevectors or
+    unitaries. Run it only when the final program's global phase is irrelevant.
+    It does not remove angle producers; subsequent dead-code elimination may
+    remove unused pure computations. Normalize modifiers separately to expose
+    further disposable phases while retaining relative phases.
   }];
 }
 

@@ -128,8 +128,8 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,
 }
 
 bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
-  // Reject nesting at depth 64 to bound recursive stack use.
-  if (depth == 64) {
+  // Bound recursive stack use at nesting depth 64.
+  if (depth >= 64) {
     return false;
   }
   const auto isTensor = [](Value value) {
@@ -236,7 +236,10 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
   };
   auto result = root->walk([&](Operation* op, const WalkStage& stage) {
     if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      tie(unitary.getInputQubits(), unitary.getOutputQubits());
+      for (auto [input, output] : llvm::zip_equal(unitary.getInputQubits(),
+                                                  unitary.getOutputQubits())) {
+        origins[output] = origin(input);
+      }
       return WalkResult::skip();
     }
     if (!stage.isAfterAllRegions()) {
@@ -303,10 +306,14 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
     } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
       origins[insert.getResult()] = origin(insert.getDest());
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      for (auto [index, result] : llvm::enumerate(call.getResults())) {
-        if (auto argument = qco::getCallArgumentForResult(call, index);
-            succeeded(argument)) {
-          origins[result] = origin(call.getOperand(*argument));
+      auto arguments = getQuantumArgumentIndices(call.getOperandTypes());
+      if (call.getNumResults() >= arguments.size()) {
+        for (auto [argument, result] : llvm::zip_equal(
+                 arguments, call.getResults().take_back(arguments.size()))) {
+          auto input = call.getOperand(argument);
+          if (result.getType() == input.getType()) {
+            origins[result] = origin(input);
+          }
         }
       }
     }
@@ -336,7 +343,17 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
   }
 
   DenseSet<uint64_t> staticIndices;
+  bool needsPositionalChecks = false;
   const auto walkResult = root->walk([&](Operation* op) {
+    if (!needsPositionalChecks) {
+      if (auto function = dyn_cast<func::FuncOp>(op)) {
+        needsPositionalChecks =
+            !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
+      } else {
+        needsPositionalChecks =
+            op->getNumRegions() != 0 && !isa<ModuleOp, UnitaryOpInterface>(op);
+      }
+    }
     if (auto staticOp = dyn_cast<StaticOp>(op)) {
       if (entryPoint &&
           (entryPoint.isDeclaration() ||
@@ -373,6 +390,10 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
   });
   if (walkResult.wasInterrupted()) {
     return failure();
+  }
+  // Flat owned circuits have no positional signatures to check.
+  if (!needsPositionalChecks) {
+    return success();
   }
   DenseMap<Value, Value> origins;
   return collectWireOrigins(root, origins);

@@ -9,6 +9,7 @@
 add_mlir_dialect_library(
   MLIRMQTDialect
   MQTAttributes.cpp
+  PayloadVersion.cpp
   MQTDialect.cpp
   QubitLayout.cpp
   ADDITIONAL_HEADER_DIRS
@@ -35,15 +36,6 @@ file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/MQ
 
 target_sources(
   MLIRMQTDialect
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${IR_HEADERS_SOURCE}
-         FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_BUILD_INCLUDE_DIR}
-         FILES
-         ${IR_HEADERS_BUILD})
+  PUBLIC
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${IR_HEADERS_SOURCE}
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR} FILES ${IR_HEADERS_BUILD})

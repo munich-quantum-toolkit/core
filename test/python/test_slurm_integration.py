@@ -22,6 +22,8 @@ import pytest
 if TYPE_CHECKING:
     from types import ModuleType
 
+pytestmark = pytest.mark.slurm
+
 if sys.platform == "win32":
     pytest.skip("the Slurm fixture requires a POSIX Docker host", allow_module_level=True)
 
@@ -40,11 +42,27 @@ def load_script(script: Path) -> ModuleType:
     return module
 
 
-runner = load_script(Path(__file__).parents[1] / "slurm" / "run_integration.py")
-monitor = load_script(runner.CLUSTER / "update_availability.py")
+@pytest.fixture(scope="module")
+def runner() -> ModuleType:
+    """Load the Slurm integration runner.
+
+    Returns:
+        The runner module from the source checkout.
+    """
+    return load_script(Path(__file__).parents[1] / "slurm" / "run_integration.py")
 
 
-def test_probe_timeout_keeps_admission_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(scope="module")
+def monitor(runner: ModuleType) -> ModuleType:
+    """Load the Slurm availability monitor.
+
+    Returns:
+        The monitor module from the source checkout.
+    """
+    return load_script(runner.CLUSTER / "update_availability.py")
+
+
+def test_probe_timeout_keeps_admission_closed(monitor: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     """A hung device leaves its license reserved until a later successful probe."""
     commands = []
 
@@ -63,7 +81,7 @@ def test_probe_timeout_keeps_admission_closed(monkeypatch: pytest.MonkeyPatch) -
     assert all(command[0] != "delete" for command in commands)
 
 
-def test_controller_failure_never_runs_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_controller_failure_never_runs_probe(monitor: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed admission update cannot produce a healthy, open result."""
 
     def unavailable(*_arguments: str) -> str:
@@ -75,7 +93,7 @@ def test_controller_failure_never_runs_probe(monkeypatch: pytest.MonkeyPatch) ->
     assert monitor.main(("--license", "example.device:2")) == 2
 
 
-def test_prepare_keeps_private_key_and_preserves_existing_cluster(tmp_path: Path) -> None:
+def test_prepare_keeps_private_key_and_preserves_existing_cluster(runner: ModuleType, tmp_path: Path) -> None:
     """Create usable shared files without overwriting a cluster's authentication."""
     runtime = tmp_path / "cluster"
     command = ("sh", str(runner.CLUSTER / "prepare.sh"), str(runtime))
@@ -89,7 +107,7 @@ def test_prepare_keeps_private_key_and_preserves_existing_cluster(tmp_path: Path
     assert key.read_bytes() == original
 
 
-def test_timeout_kills_children_holding_output_pipes(tmp_path: Path) -> None:
+def test_timeout_kills_children_holding_output_pipes(runner: ModuleType, tmp_path: Path) -> None:
     """A Compose-like grandchild must not defeat the command deadline."""
     marker = tmp_path / "started"
     program = (
@@ -104,13 +122,13 @@ def test_timeout_kills_children_holding_output_pipes(tmp_path: Path) -> None:
     assert time.monotonic() - started < 5
 
 
-def test_diagnostic_timeout_is_best_effort() -> None:
+def test_diagnostic_timeout_is_best_effort(runner: ModuleType) -> None:
     """Bound failed diagnostics without replacing the original test failure."""
     result = runner.run((sys.executable, "-c", "import time; time.sleep(30)"), check=False, timeout=0.1)
     assert result.returncode == 124
 
 
-def test_command_failure_keeps_output() -> None:
+def test_command_failure_keeps_output(runner: ModuleType) -> None:
     """Retain command diagnostics when a checked command fails."""
     with pytest.raises(subprocess.CalledProcessError) as error:
         runner.run((sys.executable, "-c", "import sys; print('reason'); sys.exit(7)"))
@@ -119,14 +137,18 @@ def test_command_failure_keeps_output() -> None:
 
 
 @pytest.mark.parametrize("record", ["FAILED|1:0", "COMPLETED|0:9"])
-def test_failed_accounting_record_is_not_success(monkeypatch: pytest.MonkeyPatch, record: str) -> None:
+def test_failed_accounting_record_is_not_success(
+    runner: ModuleType, monkeypatch: pytest.MonkeyPatch, record: str
+) -> None:
     """A result file cannot hide a failed job or termination by signal."""
     monkeypatch.setattr(runner, "job", lambda *args: subprocess.CompletedProcess(args, 0, record, ""))
     with pytest.raises(AssertionError, match="Slurm job 42 ended"):
         runner.job_finished("42")
 
 
-def test_diagnostic_failure_still_tears_down(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_diagnostic_failure_still_tears_down(
+    runner: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """An unavailable diagnostic service must not orphan a failed cluster."""
     monkeypatch.setattr(runner, "RUNTIME", tmp_path / "runtime")
     monkeypatch.setattr(runner, "run", lambda *args: subprocess.CompletedProcess(args, 0, "2", ""))
@@ -150,7 +172,7 @@ def test_diagnostic_failure_still_tears_down(tmp_path: Path, monkeypatch: pytest
     assert commands[-1][0] == "down"
 
 
-def test_invocations_use_distinct_projects_and_artifacts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_invocations_use_distinct_projects_and_artifacts(runner: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     """Concurrent worktrees or runs must not stop or clean each other's cluster."""
     script = runner.FIXTURE / "run_integration.py"
     first, second = load_script(script), load_script(script)
@@ -168,7 +190,7 @@ def test_invocations_use_distinct_projects_and_artifacts(monkeypatch: pytest.Mon
     assert calls[0][1] != calls[1][1]
 
 
-def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
+def test_provider_options_preserve_command_arguments(runner: ModuleType, tmp_path: Path) -> None:
     """Keep workload arguments separate from fixture options."""
     options = runner.parse_arguments((
         "--workload",
@@ -201,14 +223,16 @@ def test_provider_options_preserve_command_arguments(tmp_path: Path) -> None:
         ("--device-license", "provider.device:2", "--", "/bin/true"),
     ],
 )
-def test_invalid_provider_inputs_fail_before_docker(arguments: tuple[str, ...]) -> None:
+def test_invalid_provider_inputs_fail_before_docker(runner: ModuleType, arguments: tuple[str, ...]) -> None:
     """Reject incomplete or unrepresentable fixture inputs at the CLI."""
     with pytest.raises(SystemExit) as error:
         runner.parse_arguments(arguments)
     assert error.value.code == 2
 
 
-def test_result_written_during_accounting_query(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_result_written_during_accounting_query(
+    runner: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Read the shared output after accounting reports completion."""
     (tmp_path / "jobs").mkdir()
     monkeypatch.setattr(runner, "RUNTIME", tmp_path)

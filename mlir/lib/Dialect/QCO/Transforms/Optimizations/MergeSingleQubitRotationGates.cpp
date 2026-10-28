@@ -33,6 +33,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -44,7 +45,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <numbers>
 #include <optional>
 #include <type_traits>
@@ -218,9 +218,9 @@ static Val gateParam(UnitaryOpInterface op, unsigned i, RewriterBase& rewriter,
 ///
 /// Only runtime gates need symbolic formulas; return their phase with the
 /// quaternion so each parameter is read once.
-static std::pair<Quat, Val> quaternionFromGate(UnitaryOpInterface op,
-                                               const ScalarConsts& c,
-                                               RewriterBase& rewriter) {
+static std::pair<Quat, Val>
+quaternionFromGate(UnitaryOpInterface op, const ScalarConsts& c,
+                   RewriterBase& rewriter, DenseMap<Value, Value>& parameters) {
   const Location loc = op->getLoc();
   const auto constant = [&](double value) {
     return Val::constant(rewriter, loc, value);
@@ -237,7 +237,11 @@ static std::pair<Quat, Val> quaternionFromGate(UnitaryOpInterface op,
             constant(phase)};
   }
   const auto param = [&](unsigned i) {
-    return gateParam(op, i, rewriter, loc);
+    auto& normalized = parameters[op.getParameter(i)];
+    if (!normalized) {
+      normalized = gateParam(op, i, rewriter, loc).getValue();
+    }
+    return Val(rewriter, loc, normalized);
   };
   if (const auto axis = getRotationAxis(op.getOperation())) {
     const auto angle = param(0);
@@ -504,13 +508,12 @@ struct MergeSingleQubitRotationGatesPattern final
   /// @return The chain of operations in circuit order (first applied to last)
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector chain{start};
-    for (auto curr = std::next(WireIterator(start.getOutputQubit(0)));
-         curr != std::default_sentinel; ++curr) {
-      if (!isMergeable(curr.operation())) {
+    SmallVector<UnitaryOpInterface> chain;
+    for (auto* op : WireRange(start.getOutputQubit(0))) {
+      if (!isMergeable(op)) {
         break;
       }
-      chain.emplace_back(cast<UnitaryOpInterface>(*curr.operation()));
+      chain.emplace_back(cast<UnitaryOpInterface>(op));
     }
     return chain;
   }
@@ -754,12 +757,15 @@ struct MergeSingleQubitRotationGatesPattern final
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts(rewriter, loc);
 
+    DenseMap<Value, Value> parameters;
     std::optional<Quat> qAccum;
     Val phaseAccum = consts.zero;
     for (UnitaryOpInterface chainOp : chain) {
-      const auto [qi, phase] = quaternionFromGate(chainOp, consts, rewriter);
+      const auto [qi, phase] =
+          quaternionFromGate(chainOp, consts, rewriter, parameters);
       qAccum = qAccum ? hamiltonProduct(qi, *qAccum) : qi;
-      phaseAccum = normalizeGateAngle(phaseAccum + phase);
+      phaseAccum =
+          decomposition::normalizeRotationParameter(phaseAccum + phase);
     }
 
     for (auto chainOp : llvm::drop_begin(chain)) {
@@ -925,13 +931,13 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
     const CompilerTarget* target) {
   populateRotationCompositionPatterns(patterns, target);
-  RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  RZOp::getOptimizationPatterns(patterns, patterns.getContext());
   if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
     return;
   }
-  RXOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  POp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  RXOp::getOptimizationPatterns(patterns, patterns.getContext());
+  RYOp::getOptimizationPatterns(patterns, patterns.getContext());
+  POp::getOptimizationPatterns(patterns, patterns.getContext());
   patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
                                                      basis, target);
 }

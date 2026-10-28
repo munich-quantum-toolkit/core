@@ -15,6 +15,7 @@
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <array>
@@ -23,13 +24,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <exception>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <new>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -51,16 +50,18 @@ struct alignas(std::max_align_t) TupleHeader {
   std::abort();
 }
 
-// Keep C++ exceptions inside the runtime, never across generated QIR frames.
-template <typename Function>
-static decltype(auto) runtimeCall(Function&& operation) noexcept {
-  try {
-    return std::forward<Function>(operation)();
-  } catch (const std::exception& error) {
-    fail(error.what());
-  } catch (...) {
-    fail("Unknown runtime failure");
+// QIR cannot return native C++ errors across generated frames.
+static void requireSuccess(llvm::Error error) noexcept {
+  if (error) {
+    fail(llvm::toString(std::move(error)).c_str());
   }
+}
+
+template <typename T> static T requireValue(llvm::Expected<T> value) noexcept {
+  if (!value) {
+    fail(llvm::toString(value.takeError()).c_str());
+  }
+  return std::move(*value);
 }
 
 static auto getTupleHeader(Tuple* tuple) -> TupleHeader* {
@@ -87,17 +88,15 @@ template <typename GateOp, size_t NumParams>
 static auto applyGateMatrix(const std::array<double, NumParams>& parameters,
                             std::span<Qubit* const> controls,
                             std::span<Qubit* const> targets) -> void {
-  runtimeCall([&] {
-    auto& runtime = qir::Runtime::getInstance();
-    if constexpr (std::is_same_v<GateOp, mlir::qco::SWAPOp>) {
-      if (controls.empty() && targets.size() == 2) {
-        runtime.swap(targets[0], targets[1]);
-        return;
-      }
+  auto& runtime = qir::Runtime::getInstance();
+  if constexpr (std::is_same_v<GateOp, mlir::qco::SWAPOp>) {
+    if (controls.empty() && targets.size() == 2) {
+      requireSuccess(runtime.swap(targets[0], targets[1]));
+      return;
     }
-    runtime.apply(mlir::qco::getStandardGateMatrix<GateOp>(parameters),
-                  controls, targets);
-  });
+  }
+  requireSuccess(runtime.apply(
+      mlir::qco::getStandardGateMatrix<GateOp>(parameters), controls, targets));
 }
 
 template <typename GateOp, size_t NumTargets, typename... Args>
@@ -162,20 +161,23 @@ static Resource* allocate(bool* outError) noexcept {
   if (outError != nullptr) {
     *outError = false;
   }
-  try {
-    auto& runtime = qir::Runtime::getInstance();
+  auto& runtime = qir::Runtime::getInstance();
+  auto resource = [&]() -> llvm::Expected<Resource*> {
     if constexpr (std::is_same_v<Resource, Qubit>) {
       return runtime.qAlloc();
     } else {
       return runtime.rAlloc();
     }
-  } catch (const std::logic_error& error) {
-    if (outError == nullptr) {
-      fail(error.what());
-    }
-    *outError = true;
-    return nullptr;
+  }();
+  if (resource) {
+    return *resource;
   }
+  if (outError == nullptr) {
+    fail(llvm::toString(resource.takeError()).c_str());
+  }
+  llvm::consumeError(resource.takeError());
+  *outError = true;
+  return nullptr;
 }
 
 template <typename Resource>
@@ -183,16 +185,14 @@ static void releaseArray(int64_t size, Resource** array) noexcept {
   if (size < 0 || (size > 0 && array == nullptr)) {
     fail("Invalid QIR resource array release");
   }
-  runtimeCall([&] {
-    auto& runtime = qir::Runtime::getInstance();
-    for (auto* resource : std::span(array, static_cast<size_t>(size))) {
-      if constexpr (std::is_same_v<Resource, Qubit>) {
-        runtime.qFree(resource);
-      } else {
-        runtime.rFree(resource);
-      }
+  auto& runtime = qir::Runtime::getInstance();
+  for (auto* resource : std::span(array, static_cast<size_t>(size))) {
+    if constexpr (std::is_same_v<Resource, Qubit>) {
+      requireSuccess(runtime.qFree(resource));
+    } else {
+      requireSuccess(runtime.rFree(resource));
     }
-  });
+  }
 }
 
 template <typename Resource>
@@ -317,7 +317,7 @@ Result* __quantum__rt__result_allocate(bool* outError) noexcept {
 }
 
 void __quantum__rt__result_release(Result* result) noexcept {
-  return runtimeCall([&] { qir::Runtime::getInstance().rFree(result); });
+  requireSuccess(qir::Runtime::getInstance().rFree(result));
 }
 
 void __quantum__rt__result_array_allocate(const int64_t size, Result** array,
@@ -331,10 +331,7 @@ void __quantum__rt__result_array_release(const int64_t size,
 }
 
 void __quantum__rt__qubit_release(Qubit* qubit) noexcept {
-  return runtimeCall([&] {
-    auto& runtime = qir::Runtime::getInstance();
-    runtime.qFree(qubit);
-  });
+  requireSuccess(qir::Runtime::getInstance().qFree(qubit));
 }
 
 // QUANTUM INSTRUCTION SET
@@ -524,17 +521,11 @@ void __quantum__qis__cnot__body(Qubit* control, Qubit* target) noexcept {
 }
 
 void __quantum__qis__mz__body(Qubit* qubit, Result* result) noexcept {
-  return runtimeCall([&] {
-    auto& runtime = qir::Runtime::getInstance();
-    runtime.measure(qubit, result);
-  });
+  requireSuccess(qir::Runtime::getInstance().measure(qubit, result));
 }
 
 void __quantum__qis__reset__body(Qubit* qubit) noexcept {
-  return runtimeCall([&] {
-    auto& runtime = qir::Runtime::getInstance();
-    runtime.reset(std::array{qubit});
-  });
+  requireSuccess(qir::Runtime::getInstance().reset(std::array{qubit}));
 }
 
 void __quantum__rt__initialize(char* /*unused*/) noexcept {
@@ -542,19 +533,15 @@ void __quantum__rt__initialize(char* /*unused*/) noexcept {
 }
 
 bool __quantum__rt__read_result(Result* result) noexcept {
-  return runtimeCall([&] {
-    auto& runtime = qir::Runtime::getInstance();
-    return runtime.deref(result).r;
-  });
+  return requireValue(qir::Runtime::getInstance().deref(result))->r;
 }
 
 void __quantum__rt__result_record_output(Result* result,
                                          const char* label) noexcept {
-  const bool bit = __quantum__rt__read_result(result);
   auto& runtime = qir::Runtime::getInstance();
-  runtime.outputResult(bit, label);
-  // Accumulate new measurement bit.
-  runtime.appendMeasurementBit(bit);
+  const auto* value = requireValue(runtime.deref(result));
+  runtime.outputResult(value->r, label);
+  runtime.appendMeasurementBit(value->r, value->deferredWire);
 }
 
 void __quantum__rt__bool_record_output(bool value, const char* label) noexcept {
@@ -595,11 +582,11 @@ void __quantum__rt__result_array_record_output(const int64_t size,
     values.reserve(static_cast<std::size_t>(size));
   }
   for (Result* result : std::span(results, static_cast<std::size_t>(size))) {
-    const auto value = __quantum__rt__read_result(result);
+    const auto* value = requireValue(runtime.deref(result));
     if (runtime.hasOutput()) {
-      values.push_back(value ? '1' : '0');
+      values.push_back(value->r ? '1' : '0');
     }
-    runtime.appendMeasurementBit(value);
+    runtime.appendMeasurementBit(value->r, value->deferredWire);
   }
   runtime.outputResultArray(values, label);
 }

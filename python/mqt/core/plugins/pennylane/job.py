@@ -94,7 +94,7 @@ class PennyLaneJob:
 
     @staticmethod
     def _shots_or_counts(job: Job, program_index: int = 0) -> tuple[list[str], list[int] | None]:
-        """Read ordered shots or distinct outcomes with their multiplicities.
+        """Read individual shots or distinct outcomes with their multiplicities.
 
         Returns:
             Bit strings and optional repetition counts for histogram results.

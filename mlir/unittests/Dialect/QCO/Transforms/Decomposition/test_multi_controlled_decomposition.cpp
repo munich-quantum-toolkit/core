@@ -153,9 +153,15 @@ enum class RotationAxis : uint8_t { X, Y, Z };
 
 [[nodiscard]] static dd::MatrixDD
 makeControlledGateDD(dd::Package& package, size_t numControls,
-                     const dd::GateMatrix& matrix) {
-  return package.makeGateDD(matrix, makeControls(numControls),
-                            static_cast<dd::Qubit>(numControls));
+                     const dd::GateMatrix& matrix, size_t target) {
+  dd::Controls controls;
+  for (size_t i = 0; i <= numControls; ++i) {
+    if (i != target) {
+      controls.emplace(static_cast<dd::Qubit>(i));
+    }
+  }
+  return llvm::cantFail(
+      package.makeGateDD(matrix, controls, static_cast<dd::Qubit>(target)));
 }
 
 namespace {
@@ -327,22 +333,15 @@ buildRCCXModule(MLIRContext* context) {
   return numQubits;
 }
 
-static void expectImplementsControlledRotation(
-    func::FuncOp funcOp, size_t numControls, RotationAxis axis, double theta,
-    const DDArgumentBindings& bindings = DDArgumentBindings()) {
+static void expectImplementsControlledGate(
+    func::FuncOp funcOp, size_t numControls, const dd::GateMatrix& matrix,
+    size_t target, const DDArgumentBindings& bindings = DDArgumentBindings()) {
   ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
-  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto package = llvm::cantFail(dd::Package::create(numControls + 1));
   const auto actual = buildFunctionality(funcOp, *package, bindings);
   ASSERT_TRUE(succeeded(actual));
-  const auto target = static_cast<dd::Qubit>(numControls / 2);
-  dd::Controls controls;
-  for (size_t i = 0; i <= numControls; ++i) {
-    if (i != static_cast<size_t>(target)) {
-      controls.emplace(static_cast<dd::Qubit>(i));
-    }
-  }
   const auto expected =
-      package->makeGateDD(rotationMatrix(axis, theta), controls, target);
+      makeControlledGateDD(*package, numControls, matrix, target);
   // Full operator equality preserves phase and restores every borrowed control,
   // including when controls are entangled with other qubits.
   EXPECT_EQ(*actual, expected);
@@ -355,23 +354,6 @@ static void expectFullyDecomposed(func::FuncOp funcOp) {
     EXPECT_EQ(op.getNumTargets(), 1U);
   });
   funcOp.walk([](RCCXOp) { ADD_FAILURE() << "unexpected leftover rccx"; });
-}
-
-static void expectImplementsControlledPauli(func::FuncOp funcOp,
-                                            size_t numControls,
-                                            ControlledPauli pauli) {
-  const auto numQubits = countStaticQubits(funcOp);
-  ASSERT_EQ(numQubits, numControls + 1);
-  expectFullyDecomposed(funcOp);
-
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
-  const auto referenceDD =
-      makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
 }
 
 /// Compare the complete states, including phase, without requiring identical
@@ -389,104 +371,56 @@ static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
   package.decRef(difference);
 }
 
-static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
-                                                size_t numControls,
-                                                ControlledPauli pauli) {
+static void expectMatchesReferenceOnStates(
+    func::FuncOp funcOp, size_t numControls, const dd::GateMatrix& matrix,
+    const std::vector<std::vector<dd::BasisStates>>& states) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
-
-  std::vector<std::vector<bool>> basisStates;
-  basisStates.emplace_back(numQubits, true);
-  basisStates.back()[numControls] = false;
-  basisStates.emplace_back(numQubits, true);
-  for (const size_t inactiveControl :
-       std::array<size_t, 3>{0U, numControls / 2U, numControls - 1U}) {
-    basisStates.emplace_back(numQubits, true);
-    basisStates.back()[inactiveControl] = false;
-    basisStates.back()[numControls] = false;
-  }
-
-  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto dd = llvm::cantFail(dd::Package::create(numQubits));
   const auto referenceGate =
-      makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
+      makeControlledGateDD(*dd, numControls, matrix, numControls);
   dd->incRef(referenceGate);
   std::mt19937_64 rng(0);
-  for (const auto& basisState : basisStates) {
-    const auto decomposedOutput = simulate(
-        funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd, rng);
-    ASSERT_TRUE(succeeded(decomposedOutput));
-    const auto referenceOutput = dd->applyOperation(
-        referenceGate, dd::makeBasisState(numQubits, basisState, *dd));
-    expectStatesNear(*dd, *decomposedOutput, referenceOutput);
-    dd->decRef(*decomposedOutput);
-    dd->decRef(referenceOutput);
+  for (const auto& state : states) {
+    const auto actual = simulate(
+        funcOp, llvm::cantFail(dd::makeBasisState(numQubits, state, *dd)), *dd,
+        rng);
+    ASSERT_TRUE(succeeded(actual));
+    const auto expected = dd->applyOperation(
+        referenceGate,
+        llvm::cantFail(dd::makeBasisState(numQubits, state, *dd)));
+    expectStatesNear(*dd, *actual, expected);
+    dd->decRef(*actual);
+    dd->decRef(expected);
   }
   dd->decRef(referenceGate);
 }
 
-[[nodiscard]] static dd::VectorDD
-makeCoherentControlInput(size_t numControls, bool targetOne, dd::Package& dd) {
-  const auto numQubits = numControls + 1;
-  const auto coherentControl = numControls / 2;
-  std::vector<dd::BasisStates> basisState(numQubits, dd::BasisStates::one);
-  basisState[coherentControl] = dd::BasisStates::plus;
-  basisState[numControls] =
-      targetOne ? dd::BasisStates::one : dd::BasisStates::zero;
-  return dd::makeBasisState(numQubits, basisState, dd);
+static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
+                                                size_t numControls,
+                                                ControlledPauli pauli) {
+  std::vector<std::vector<dd::BasisStates>> states(
+      2, std::vector(numControls + 1, dd::BasisStates::one));
+  states.front()[numControls] = dd::BasisStates::zero;
+  for (const size_t inactiveControl :
+       std::array<size_t, 3>{0U, numControls / 2U, numControls - 1U}) {
+    states.emplace_back(numControls + 1, dd::BasisStates::one);
+    states.back()[inactiveControl] = dd::BasisStates::zero;
+    states.back()[numControls] = dd::BasisStates::zero;
+  }
+  expectMatchesReferenceOnStates(funcOp, numControls, pauliMatrix(pauli),
+                                 states);
 }
 
 static void
 expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
                                       bool targetOne,
-                                      const dd::GateMatrix& referenceMatrix) {
-  const auto numQubits = countStaticQubits(funcOp);
-  ASSERT_EQ(numQubits, numControls + 1);
-  expectFullyDecomposed(funcOp);
-
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  std::mt19937_64 rng(0);
-  const auto decomposedOutput = simulate(
-      funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd, rng);
-  ASSERT_TRUE(succeeded(decomposedOutput));
-  const auto referenceOutput = dd->applyOperation(
-      makeControlledGateDD(*dd, numControls, referenceMatrix),
-      makeCoherentControlInput(numControls, targetOne, *dd));
-
-  expectStatesNear(*dd, *decomposedOutput, referenceOutput);
-
-  dd->decRef(*decomposedOutput);
-  dd->decRef(referenceOutput);
-}
-
-static void expectMatchesControlledPauliOnCoherentState(func::FuncOp funcOp,
-                                                        size_t numControls,
-                                                        ControlledPauli pauli) {
-  expectMatchesReferenceOnCoherentState(
-      funcOp, numControls, pauli == ControlledPauli::Z, pauliMatrix(pauli));
-}
-
-static void expectMatchesMcpOnCoherentState(func::FuncOp funcOp,
-                                            size_t numControls, double theta) {
-  expectMatchesReferenceOnCoherentState(funcOp, numControls, true,
-                                        phaseMatrix(theta));
-}
-
-static void
-expectImplementsMcp(func::FuncOp funcOp, size_t numControls, double theta,
-                    const DDArgumentBindings& bindings = DDArgumentBindings()) {
-  const auto numQubits = countStaticQubits(funcOp);
-  ASSERT_EQ(numQubits, numControls + 1);
-  expectFullyDecomposed(funcOp);
-
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd, bindings);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
-  const auto referenceDD =
-      makeControlledGateDD(*dd, numControls, phaseMatrix(theta));
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
+                                      const dd::GateMatrix& matrix) {
+  std::vector<dd::BasisStates> state(numControls + 1, dd::BasisStates::one);
+  state[numControls / 2] = dd::BasisStates::plus;
+  state[numControls] = targetOne ? dd::BasisStates::one : dd::BasisStates::zero;
+  expectMatchesReferenceOnStates(funcOp, numControls, matrix, {state});
 }
 
 /// Count `CtrlOp`s whose control operand count is at least @p minControlCount.
@@ -507,44 +441,23 @@ countMultiControlledOps(ModuleOp moduleOp, size_t minControlCount = 2) {
   return count;
 }
 
-[[nodiscard]] static bool ctrlBodyIsSingleX(CtrlOp op) {
-  if (op.getNumControls() != 1) {
-    return false;
-  }
-  size_t xCount = 0;
-  op.getBody()->walk([&](XOp) { ++xCount; });
-  return xCount == 1;
-}
-
-[[nodiscard]] static size_t countElementaryCxOps(ModuleOp moduleOp) {
+template <typename Gate>
+[[nodiscard]] static size_t countSingleControlledGates(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&count](CtrlOp op) {
-    if (ctrlBodyIsSingleX(op)) {
+    auto inner =
+        mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (op.getNumControls() == 1 && op.getNumTargets() == 1 && inner &&
+        isa<Gate>(inner.getOperation())) {
       ++count;
     }
   });
   return count;
 }
 
-[[nodiscard]] static bool ctrlBodyIsSingleP(CtrlOp op) {
-  if (op.getNumControls() != 1) {
-    return false;
-  }
-  size_t pCount = 0;
-  size_t xCount = 0;
-  op.getBody()->walk([&](POp) { ++pCount; });
-  op.getBody()->walk([&](XOp) { ++xCount; });
-  return xCount == 0 && pCount == 1;
-}
-
 [[nodiscard]] static size_t countEffectiveCxOps(ModuleOp moduleOp) {
-  size_t singleP = 0;
-  moduleOp.walk([&singleP](CtrlOp op) {
-    if (ctrlBodyIsSingleP(op)) {
-      ++singleP;
-    }
-  });
-  return countElementaryCxOps(moduleOp) + (2 * singleP);
+  return countSingleControlledGates<XOp>(moduleOp) +
+         (2 * countSingleControlledGates<POp>(moduleOp));
 }
 
 static void expectFullyLowered(ModuleOp moduleOp) {
@@ -581,7 +494,8 @@ TEST_P(McrDdTest, PreservesFullOperatorAndBorrowedControls) {
     expectFullyLowered(moduleOp.get());
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
     expectFullyDecomposed(funcOp);
-    expectImplementsControlledRotation(funcOp, numControls, axis, theta);
+    expectImplementsControlledGate(
+        funcOp, numControls, rotationMatrix(axis, theta), numControls / 2);
   }
 }
 
@@ -627,8 +541,10 @@ TEST_F(MultiControlledDecompositionTest, RotationsPreserveRuntimeAngles) {
                 FloatAttr::get(Float64Type::get(context()), theta),
             },
         };
-        expectImplementsControlledRotation(
-            funcOp, numControls, axis, regionLocal ? -theta : theta, bindings);
+        expectImplementsControlledGate(
+            funcOp, numControls,
+            rotationMatrix(axis, regionLocal ? -theta : theta), numControls / 2,
+            bindings);
       }
     }
   }
@@ -685,7 +601,9 @@ TEST_F(MultiControlledDecompositionTest, PhasesPreserveRuntimeAngles) {
             },
         };
         // Full operator equality includes the phase on coherent controls.
-        expectImplementsMcp(funcOp, numControls, -theta, bindings);
+        expectFullyDecomposed(funcOp);
+        expectImplementsControlledGate(funcOp, numControls, phaseMatrix(-theta),
+                                       numControls, bindings);
       }
     }
   }
@@ -727,7 +645,7 @@ TEST_F(MultiControlledDecompositionTest,
         funcOp.walk(
             [](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
         // The same bound covers every axis and permits future cancellation.
-        EXPECT_LE(countElementaryCxOps(moduleOp.get()),
+        EXPECT_LE(countSingleControlledGates<XOp>(moduleOp.get()),
                   expectedMcrCxBudget(numControls));
         size_t elementaryGates = 0;
         funcOp.walk([&](UnitaryOpInterface op) {
@@ -751,13 +669,13 @@ TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
         succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
     EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+    expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
 
     options.minQubits = 4;
     ASSERT_TRUE(
         succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
     EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
-    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+    expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
   }
 }
 
@@ -786,7 +704,7 @@ TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
     EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+    expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
   }
 }
 
@@ -801,12 +719,13 @@ TEST_P(McPauliDdTest, EquivalenceAndCxCount) {
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   expectFullyLowered(moduleOp.get());
   // MCY and MCZ share MCX's CX budget; their basis changes add no CX.
-  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), expectedMcxCx(k))
+  EXPECT_EQ(countSingleControlledGates<XOp>(moduleOp.get()), expectedMcxCx(k))
       << "k=" << k;
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   if (k <= K_MATRIX_DD_MAX_PAULI) {
-    expectImplementsControlledPauli(funcOp, k, pauli);
+    expectFullyDecomposed(funcOp);
+    expectImplementsControlledGate(funcOp, k, pauliMatrix(pauli), k);
   } else {
     expectMatchesReferenceOnBasisStates(funcOp, k, pauli);
   }
@@ -823,7 +742,8 @@ TEST_P(McpDdTest, EquivalenceAndCxCount) {
 
   if (k <= K_MATRIX_DD_MAX_MCP) {
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectImplementsMcp(funcOp, k, theta);
+    expectFullyDecomposed(funcOp);
+    expectImplementsControlledGate(funcOp, k, phaseMatrix(theta), k);
   }
 }
 
@@ -859,7 +779,8 @@ TEST_F(MultiControlledDecompositionTest,
       ASSERT_TRUE(moduleOp);
       ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-      expectMatchesControlledPauliOnCoherentState(funcOp, k, pauli);
+      expectMatchesReferenceOnCoherentState(
+          funcOp, k, pauli == ControlledPauli::Z, pauliMatrix(pauli));
     }
   }
 }
@@ -872,7 +793,7 @@ TEST_F(MultiControlledDecompositionTest, CoherentStatesMatchForLargerSp22Mcp) {
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectMatchesMcpOnCoherentState(funcOp, k, theta);
+    expectMatchesReferenceOnCoherentState(funcOp, k, true, phaseMatrix(theta));
   }
 }
 
@@ -886,7 +807,7 @@ TEST_P(McPauliSmokeTest, FullyLowersWithExpectedCx) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   expectFullyLowered(moduleOp.get());
-  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), expectedMcxCx(k))
+  EXPECT_EQ(countSingleControlledGates<XOp>(moduleOp.get()), expectedMcxCx(k))
       << "k=" << k;
 }
 
@@ -939,20 +860,16 @@ TEST_F(MultiControlledDecompositionTest, LeavesSingleControlledUntouched) {
   EXPECT_EQ(singleControlled, 6U);
 }
 
-TEST_F(MultiControlledDecompositionTest, DecomposesRCCX) {
-  auto moduleOp = buildRCCXModule(context());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
-  EXPECT_EQ(countRCCXOps(moduleOp.get()), 0U);
-}
-
-TEST_F(MultiControlledDecompositionTest, LeavesRCCXWhenMinQubitsIsFour) {
-  auto moduleOp = buildRCCXModule(context());
-  ASSERT_TRUE(moduleOp);
-  DecomposeMultiControlledOptions options;
-  options.minQubits = 4;
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
-  EXPECT_EQ(countRCCXOps(moduleOp.get()), 1U);
+TEST_F(MultiControlledDecompositionTest, RCCXRespectsMinQubits) {
+  for (const uint64_t minQubits : {3U, 4U}) {
+    SCOPED_TRACE(minQubits);
+    auto moduleOp = buildRCCXModule(context());
+    ASSERT_TRUE(moduleOp);
+    DecomposeMultiControlledOptions options;
+    options.minQubits = minQubits;
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+    EXPECT_EQ(countRCCXOps(*moduleOp), minQubits == 3 ? 0U : 1U);
+  }
 }
 
 TEST_F(MultiControlledDecompositionTest,
@@ -1006,7 +923,8 @@ TEST_F(MultiControlledDecompositionTest, MinQubitsThreshold) {
     ASSERT_TRUE(
         runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
     auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectImplementsControlledPauli(funcOp, 2, pauli);
+    expectFullyDecomposed(funcOp);
+    expectImplementsControlledGate(funcOp, 2, pauliMatrix(pauli), 2);
 
     options.minQubits = 2;
     EXPECT_FALSE(
@@ -1039,105 +957,60 @@ TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeMcy) {
   });
 }
 
-TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
-  auto moduleOp =
-      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
-        std::ignore =
-            builder.cswap(builder.staticQubit(0), builder.staticQubit(1),
-                          builder.staticQubit(2));
-        return SmallVector<Value>{};
-      });
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
-  expectFullyLowered(moduleOp.get());
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  expectFullyDecomposed(funcOp);
-
-  const auto numQubits = countStaticQubits(funcOp);
-  ASSERT_EQ(numQubits, 3U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
-  const auto referenceDD =
-      makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, {1, 2}, {{0}});
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
-}
-
-TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
-  auto moduleOp =
-      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
-        std::ignore =
-            builder.mcswap({builder.staticQubit(0), builder.staticQubit(1)},
-                           builder.staticQubit(2), builder.staticQubit(3));
-        return SmallVector<Value>{};
-      });
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
-  expectFullyLowered(moduleOp.get());
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  expectFullyDecomposed(funcOp);
-
-  const auto numQubits = countStaticQubits(funcOp);
-  ASSERT_EQ(numQubits, 4U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
-  const auto referenceDD = makeGateDD(
-      *dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, {2, 3}, {{0}, {1}});
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
-}
-
-TEST_F(MultiControlledDecompositionTest,
-       LeavesSingleControlledSwapWhenMinQubitsIsFour) {
-  auto moduleOp =
-      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
-        std::ignore =
-            builder.cswap(builder.staticQubit(0), builder.staticQubit(1),
-                          builder.staticQubit(2));
-        return SmallVector<Value>{};
-      });
-  ASSERT_TRUE(moduleOp);
-  DecomposeMultiControlledOptions options;
-  options.minQubits = 4;
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
-
-  size_t controlledSwap = 0;
-  moduleOp->walk([&](CtrlOp op) {
-    if (op.getNumControls() == 1 && op.getNumTargets() == 2) {
-      auto inner =
-          mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
-      if (inner && isa<SWAPOp>(inner.getOperation())) {
-        ++controlledSwap;
+TEST_F(MultiControlledDecompositionTest, ControlledSwapRespectsMinQubits) {
+  for (const size_t numControls : {1U, 2U}) {
+    for (const uint64_t minQubits : {3U, 4U}) {
+      SCOPED_TRACE(testing::Message() << "controls=" << numControls
+                                      << " min-qubits=" << minQubits);
+      auto moduleOp =
+          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+            auto c0 = builder.staticQubit(0);
+            if (numControls == 1) {
+              std::ignore = builder.cswap(c0, builder.staticQubit(1),
+                                          builder.staticQubit(2));
+            } else {
+              std::ignore = builder.mcswap({c0, builder.staticQubit(1)},
+                                           builder.staticQubit(2),
+                                           builder.staticQubit(3));
+            }
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      DecomposeMultiControlledOptions options;
+      options.minQubits = minQubits;
+      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+      auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+      ASSERT_EQ(countStaticQubits(funcOp), numControls + 2);
+      if (numControls + 2 < minQubits) {
+        size_t controlledSwaps = 0;
+        moduleOp->walk([&](CtrlOp op) {
+          auto inner =
+              mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+          if (op.getNumControls() == numControls && op.getNumTargets() == 2 &&
+              inner && isa<SWAPOp>(inner.getOperation())) {
+            ++controlledSwaps;
+          }
+        });
+        EXPECT_EQ(controlledSwaps, 1U);
+      } else {
+        expectFullyLowered(*moduleOp);
+        expectFullyDecomposed(funcOp);
       }
+
+      auto package = llvm::cantFail(dd::Package::create(numControls + 2));
+      const auto actual = buildFunctionality(funcOp, *package);
+      ASSERT_TRUE(succeeded(actual));
+      const auto expected = llvm::cantFail(
+          makeGateDD(*package, DynamicMatrix{SWAPOp::getUnitaryMatrix()},
+                     {
+                         static_cast<dd::Qubit>(numControls),
+                         static_cast<dd::Qubit>(numControls + 1),
+                     },
+                     makeControls(numControls)));
+      EXPECT_EQ(*actual, expected);
+      package->decRef(*actual);
     }
-  });
-  EXPECT_EQ(controlledSwap, 1U);
-}
-
-TEST_F(MultiControlledDecompositionTest,
-       DecomposesTwoControlledSwapWhenMinQubitsIsFour) {
-  // Two-control SWAP acts on 4 qubits, so min-qubits=4 still rewrites it.
-  auto moduleOp =
-      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
-        std::ignore =
-            builder.mcswap({builder.staticQubit(0), builder.staticQubit(1)},
-                           builder.staticQubit(2), builder.staticQubit(3));
-        return SmallVector<Value>{};
-      });
-  ASSERT_TRUE(moduleOp);
-  DecomposeMultiControlledOptions options;
-  options.minQubits = 4;
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
-  expectFullyLowered(moduleOp.get());
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  expectFullyDecomposed(funcOp);
+  }
 }
 
 TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
@@ -1314,10 +1187,12 @@ TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
           << "k=" << k << " theta=" << theta;
       expectFullyLowered(moduleOp.get());
       // ±π must take the Z path, so CX counts match MCZ/MCX.
-      EXPECT_EQ(countElementaryCxOps(moduleOp.get()), expectedMcxCx(k))
+      EXPECT_EQ(countSingleControlledGates<XOp>(moduleOp.get()),
+                expectedMcxCx(k))
           << "k=" << k << " theta=" << theta;
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-      expectImplementsMcp(funcOp, k, theta);
+      expectFullyDecomposed(funcOp);
+      expectImplementsControlledGate(funcOp, k, phaseMatrix(theta), k);
     }
   }
 }

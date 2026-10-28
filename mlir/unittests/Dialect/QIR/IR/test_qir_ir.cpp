@@ -27,6 +27,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OperationSupport.h"
@@ -47,14 +48,13 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <variant>
@@ -89,17 +89,7 @@ struct QIRTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
-  return os << "QIR{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
@@ -119,6 +109,11 @@ protected:
 } // namespace
 
 TEST_P(QIRTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QIR: {0}, original={1}, reference={2}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -148,6 +143,60 @@ TEST_P(QIRTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST(QIRBuilderTest, BuildsWithFreshContext) {
+  MLIRContext context;
+  auto moduleOp = QIRProgramBuilder::build(&context, [](QIRProgramBuilder& b) {
+    b.x(b.allocQubit());
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, BuilderTransfersModuleOwnership) {
+  auto moduleOp = [&] {
+    QIRProgramBuilder source(context.get());
+    source.initialize();
+    auto qubit = source.allocQubit();
+    QIRProgramBuilder destination(std::move(source));
+    destination.x(qubit);
+    return destination.finalize();
+  }();
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, BuilderRejectsConditionalQubitAllocation) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.scfIf(true, [&] { builder.x(builder.allocQubit()); });
+      },
+      "Allocate dynamic qubits before building control flow");
+}
+
+TEST_F(QIRTest, BuilderRejectsRepeatedQubitAllocation) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.scfWhile([&] {
+          auto qubits = builder.allocQubitRegister(1);
+          return builder.measure(qubits[0], 0);
+        });
+      },
+      "Allocate dynamic qubits before building control flow");
+}
+
+TEST_F(QIRTest, BuilderReturnsEmptyModuleOnVerificationFailure) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  ScopedDiagnosticHandler diagnostics(context.get(),
+                                      [](Diagnostic&) { return success(); });
+  EXPECT_FALSE(builder.finalize(builder.doubleConstant(0.0)));
+}
+
 TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
   EXPECT_DEATH(
       {
@@ -163,57 +212,10 @@ TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         builder.initialize();
         mixedDynamicRegisterThenStaticQubit(builder);
       },
-      "Cannot mix dynamic and static qubit allocation modes");
+      "Cannot mix static and dynamic qubit allocation modes");
 }
 
-TEST_F(QIRTest, BuilderRecordsRegistersInAllocationOrder) {
-  QIRProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> arrays;
-  for (size_t i = 0; i < 12; ++i) {
-    arrays.push_back(builder.allocClassicalBitRegister(1).array);
-  }
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  SmallVector<Value> recorded;
-  module->walk([&](LLVM::CallOp call) {
-    if (call.getCallee() == QIR_RESULT_ARRAY_RECORD_OUTPUT) {
-      recorded.push_back(call.getOperand(1));
-    }
-  });
-  EXPECT_EQ(recorded, arrays);
-}
-
-TEST_F(QIRTest, AdaptiveBuilderOwnsScalarAndRegisterResults) {
-  QIRProgramBuilder builder(context.get());
-  builder.initialize();
-  auto q = builder.allocQubit();
-  auto scalar = builder.measure(q, 0);
-  auto reg = builder.allocClassicalBitRegister(1);
-  builder.measure(q, reg, 0);
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  auto allocation = scalar.getDefiningOp<LLVM::CallOp>();
-  ASSERT_TRUE(allocation);
-  EXPECT_EQ(allocation.getCallee(), QIR_RESULT_ALLOC);
-  size_t scalarReleases = 0;
-  size_t arrayReleases = 0;
-  module->walk([&](LLVM::CallOp call) {
-    if (call.getCallee() == QIR_RESULT_RELEASE) {
-      ++scalarReleases;
-      EXPECT_EQ(call.getOperand(0), scalar);
-    }
-    if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
-      ++arrayReleases;
-    }
-  });
-  EXPECT_EQ(scalarReleases, 1);
-  EXPECT_EQ(arrayReleases, 1);
-}
-
-TEST_F(QIRTest, AdaptiveBuilderReleasesEachResourceKindInAllocationOrder) {
+TEST_F(QIRTest, AdaptiveBuilderRecordsAndReleasesResourcesInAllocationOrder) {
   QIRProgramBuilder builder(context.get());
   builder.initialize();
   std::array<SmallVector<Value>, 4> allocated;
@@ -222,15 +224,23 @@ TEST_F(QIRTest, AdaptiveBuilderReleasesEachResourceKindInAllocationOrder) {
     allocated[0].push_back(qubit);
     auto qubits = builder.allocQubitRegister(1);
     allocated[1].push_back(qubits.value);
-    auto result = builder.measure(qubit, i, false);
+    auto index = builder.intConstant(0);
+    builder.x(builder.loadQubit(qubits.value, index));
+    builder.x(builder.loadQubit(qubits.value, index));
+    auto result = builder.measure(qubit, i);
+    auto allocation = result.getDefiningOp<LLVM::CallOp>();
+    ASSERT_TRUE(allocation);
+    EXPECT_EQ(allocation.getCallee(), QIR_RESULT_ALLOC);
     allocated[2].push_back(result);
     auto results = builder.allocClassicalBitRegister(1);
+    builder.measure(qubit, results, 0);
     allocated[3].push_back(results.array);
   }
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   std::array<SmallVector<Value>, 4> released;
+  SmallVector<Value> recorded;
   moduleOp->walk([&](LLVM::CallOp call) {
     if (call.getCallee() == QIR_QUBIT_RELEASE) {
       released[0].push_back(call.getOperand(0));
@@ -240,9 +250,12 @@ TEST_F(QIRTest, AdaptiveBuilderReleasesEachResourceKindInAllocationOrder) {
       released[2].push_back(call.getOperand(0));
     } else if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
       released[3].push_back(call.getOperand(1));
+    } else if (call.getCallee() == QIR_RESULT_ARRAY_RECORD_OUTPUT) {
+      recorded.push_back(call.getOperand(1));
     }
   });
   EXPECT_EQ(released, allocated);
+  EXPECT_EQ(recorded, allocated[3]);
 }
 
 TEST_F(QIRTest, AdaptiveBuilderUsesAnArrayForWideClassicalRegisters) {
@@ -257,35 +270,7 @@ TEST_F(QIRTest, AdaptiveBuilderUsesAnArrayForWideClassicalRegisters) {
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
-TEST_F(QIRTest, OutputRecordingReusesLabelsAcrossBatches) {
-  ClassicalRegister reg;
-  auto moduleOp = QIRProgramBuilder::build(
-      context.get(),
-      [&](QIRProgramBuilder& builder) {
-        reg = builder.allocClassicalBitRegister(2);
-        return builder.intConstant(0);
-      },
-      QIRProgramBuilder::Profile::Base);
-  ASSERT_TRUE(moduleOp);
-  auto main = getMainFunction(*moduleOp);
-  ASSERT_TRUE(main);
-  OpBuilder builder(main.getBody().back().getTerminator());
-  auto existing = createResultLabel(builder, main, "c0_0");
-  const DenseMap<int64_t, StaticResult> staticResults;
-  emitOutputRecording(builder, main, {reg}, staticResults);
-  EXPECT_EQ(existing.getGlobalName(), "qir.result_label_c0_0");
-  SmallVector<StringRef> labels;
-  for (auto global : moduleOp->getOps<LLVM::GlobalOp>()) {
-    labels.push_back(global.getSymName());
-  }
-  llvm::sort(labels);
-  EXPECT_EQ(labels, (SmallVector<StringRef>{"qir.result_label_c0",
-                                            "qir.result_label_c0_0",
-                                            "qir.result_label_c0_1"}));
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-}
-
-TEST_F(QIRTest, ResultLabelsAvoidExistingFunctionSymbols) {
+TEST_F(QIRTest, ResultLabelsAvoidConflictingSymbols) {
   auto moduleOp =
       QIRProgramBuilder::build(context.get(), [](QIRProgramBuilder& builder) {
         return builder.intConstant(0);
@@ -302,6 +287,34 @@ TEST_F(QIRTest, ResultLabelsAvoidExistingFunctionSymbols) {
   EXPECT_NE(global.getSymName(), function.getSymName());
   EXPECT_EQ(global.getValueAttr(),
             builder.getStringAttr(StringRef("collision\0", 10)));
+  auto original = createResultLabel(builder, *moduleOp, "first");
+  auto conflicting =
+      moduleOp->lookupSymbol<LLVM::GlobalOp>(original.getGlobalName());
+  conflicting.setValueAttr(builder.getStringAttr(StringRef("other\0", 6)));
+  auto corrected = createResultLabel(builder, *moduleOp, "first");
+  EXPECT_NE(corrected.getGlobalName(), original.getGlobalName());
+  EXPECT_EQ(moduleOp->lookupSymbol<LLVM::GlobalOp>(corrected.getGlobalName())
+                .getValueAttr(),
+            builder.getStringAttr(StringRef("first\0", 6)));
+  for (const bool isConstant : {false, true}) {
+    const StringRef label = isConstant ? "address_space" : "mutable";
+    auto initializer = builder.getStringAttr(label.str() + '\0');
+    builder.setInsertionPointToEnd(moduleOp->getBody());
+    auto collision = LLVM::GlobalOp::create(
+        builder, moduleOp->getLoc(),
+        LLVM::LLVMArrayType::get(builder.getI8Type(), label.size() + 1),
+        isConstant, LLVM::Linkage::Internal,
+        ("qir.result_label_" + label).str(), initializer);
+    collision.setAddrSpace(isConstant ? 1U : 0U);
+    auto resolved = createResultLabel(builder, *moduleOp, label);
+    auto labelGlobal =
+        moduleOp->lookupSymbol<LLVM::GlobalOp>(resolved.getGlobalName());
+    ASSERT_TRUE(labelGlobal);
+    EXPECT_NE(labelGlobal.getSymName(), collision.getSymName());
+    EXPECT_TRUE(labelGlobal.getConstant());
+    EXPECT_EQ(labelGlobal.getAddrSpace(), 0U);
+    EXPECT_EQ(labelGlobal.getValueAttr(), initializer);
+  }
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
@@ -372,19 +385,27 @@ TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
   EXPECT_FALSE(returnedRegister.array);
 }
 
-TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
+TEST_F(QIRTest, ReusedDeclarationsPreserveAttributesIdempotently) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();
   auto moduleOp = ModuleOp::create(location);
   builder.setInsertionPointToStart(moduleOp.getBody());
   const auto ptrType = LLVM::LLVMPointerType::get(context.get());
-  const auto voidType = LLVM::LLVMVoidType::get(context.get());
+  const Type voidType = LLVM::LLVMVoidType::get(context.get());
   const auto nounwind = builder.getStringAttr("nounwind");
   const auto targetCPU = builder.getStrArrayAttr({"target-cpu", "generic"});
 
-  for (const StringRef name : {StringRef(QIR_MEASURE), StringRef(QIR_RESET)}) {
+  for (const StringRef name : {
+           StringRef(QIR_MEASURE),
+           StringRef(QIR_RESET),
+           StringRef(QIR_READ_RESULT),
+       }) {
+    SCOPED_TRACE(name.str());
     const SmallVector<Type> parameters(name == QIR_MEASURE ? 2 : 1, ptrType);
-    const auto functionType = LLVM::LLVMFunctionType::get(voidType, parameters);
+    const auto returnType =
+        name == QIR_READ_RESULT ? builder.getI1Type() : voidType;
+    const auto functionType =
+        LLVM::LLVMFunctionType::get(returnType, parameters);
     auto declaration =
         LLVM::LLVMFuncOp::create(builder, location, name, functionType);
     declaration->setAttr("passthrough",
@@ -400,11 +421,18 @@ TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
     const auto passthrough =
         declaration->getAttrOfType<ArrayAttr>("passthrough");
     ASSERT_TRUE(passthrough);
-    ASSERT_EQ(passthrough.size(), 3U);
+    ASSERT_EQ(passthrough.size(), name == QIR_READ_RESULT ? 2U : 3U);
     EXPECT_EQ(passthrough[0], nounwind);
     EXPECT_EQ(passthrough[1], targetCPU);
     EXPECT_EQ(llvm::count(passthrough, builder.getStringAttr("irreversible")),
-              1);
+              name == QIR_READ_RESULT ? 0 : 1);
+    if (name == QIR_MEASURE) {
+      EXPECT_TRUE(
+          declaration.getArgAttr(1, LLVM::LLVMDialect::getWriteOnlyAttrName()));
+    } else if (name == QIR_READ_RESULT) {
+      EXPECT_TRUE(
+          declaration.getArgAttr(0, LLVM::LLVMDialect::getReadonlyAttrName()));
+    }
   }
 }
 
@@ -545,138 +573,221 @@ TEST_F(QIRTest, MetadataDeclaresResourceCapacities) {
   }
 }
 
-TEST_F(QIRTest, MetadataCountsEveryStaticPointerUse) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-module {
-  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
-  llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
-  llvm.func @main() attributes {passthrough = ["entry_point"]} {
-    %id = llvm.mlir.constant(7 : i64) : i64
-    %qubit = llvm.inttoptr %id : i64 to !llvm.ptr
-    %result = llvm.inttoptr %id : i64 to !llvm.ptr
-    %label = llvm.mlir.zero : !llvm.ptr
-    llvm.call @__quantum__qis__mz__body(%qubit, %result)
-        : (!llvm.ptr, !llvm.ptr) -> ()
-    llvm.call @__quantum__rt__result_record_output(%result, %label)
-        : (!llvm.ptr, !llvm.ptr) -> ()
-    llvm.return
+TEST_F(QIRTest, MetadataCountsResourceRolesAcrossCalls) {
+  struct Case {
+    StringRef instruction;
+    StringRef qubits;
+    StringRef results;
+  };
+  for (const auto& testCase : {
+           Case{
+               .instruction =
+                   "llvm.call @__quantum__qis__mz__body(%zero, %r9) : "
+                   "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "1",
+               .results = "10",
+           },
+           Case{
+               .instruction =
+                   "llvm.call @__quantum__qis__cnot__body(%q7, %zero) : "
+                   "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "8",
+               .results = "0",
+           },
+           Case{
+               .instruction =
+                   "%bit = llvm.call @__quantum__rt__read_result(%r9) : "
+                   "(!llvm.ptr) -> i1",
+               .qubits = "0",
+               .results = "10",
+           },
+           Case{
+               .instruction =
+                   "llvm.call @__quantum__rt__result_record_output(%r9, %zero) "
+                   ": "
+                   "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "0",
+               .results = "10",
+           },
+           Case{
+               .instruction =
+                   "llvm.call @__quantum__qis__mz__body(%zero, %zero) : "
+                   "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "1",
+               .results = "1",
+           },
+           Case{
+               .instruction = "llvm.call @__quantum__qis__mz__body(%q, %r) : "
+                              "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "0",
+               .results = "0",
+           },
+           Case{
+               .instruction = "llvm.call @helper(%zero, %r9) : "
+                              "(!llvm.ptr, !llvm.ptr) -> ()\n"
+                              "llvm.call @helper(%q7, %zero) : "
+                              "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "8",
+               .results = "10",
+           },
+           Case{
+               .instruction =
+                   "%returned = llvm.call @supply() : () -> !llvm.ptr\n"
+                   "%again = llvm.call @supply() : () -> !llvm.ptr\n"
+                   "llvm.call @__quantum__qis__cnot__body(%returned, %again) : "
+                   "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "8",
+               .results = "0",
+           },
+           Case{
+               .instruction =
+                   "%choice = llvm.mlir.constant(0 : i32) : i32\n"
+                   "llvm.switch %choice : i32, ^merge(%zero : !llvm.ptr) "
+                   "[0: ^merge(%q7 : !llvm.ptr), 1: ^merge(%r9 : !llvm.ptr)]\n"
+                   "^merge(%selected: !llvm.ptr):\n"
+                   "llvm.call @__quantum__qis__cnot__body(%selected, "
+                   "%selected) : "
+                   "(!llvm.ptr, !llvm.ptr) -> ()",
+               .qubits = "10",
+               .results = "0",
+           },
+       }) {
+    SCOPED_TRACE(testCase.instruction.str());
+    const std::string ir = R"mlir(module {
+      llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+      llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
+      llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+      llvm.func @helper(%q: !llvm.ptr, %r: !llvm.ptr) {
+        llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.return
+      }
+      llvm.func @supply() -> !llvm.ptr {
+        %seven = llvm.mlir.constant(7 : i64) : i64
+        %qubit = llvm.inttoptr %seven : i64 to !llvm.ptr
+        llvm.return %qubit : !llvm.ptr
+      }
+      llvm.func @main(%q: !llvm.ptr, %r: !llvm.ptr)
+          attributes {passthrough = ["entry_point"]} {
+        %seven = llvm.mlir.constant(7 : i64) : i64
+        %nine = llvm.mlir.constant(9 : i64) : i64
+        %zero = llvm.mlir.zero : !llvm.ptr
+        %q7 = llvm.inttoptr %seven : i64 to !llvm.ptr
+        %r9 = llvm.inttoptr %nine : i64 to !llvm.ptr
+    )mlir" + testCase.instruction.str() +
+                           R"mlir(
+        llvm.return
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    OpBuilder builder(context.get());
+    const auto attributes = getMainFunction(*moduleOp).getPassthroughAttr();
+    EXPECT_TRUE(llvm::is_contained(
+        attributes,
+        builder.getStrArrayAttr({"required_num_qubits", testCase.qubits})));
+    EXPECT_TRUE(llvm::is_contained(
+        attributes,
+        builder.getStrArrayAttr({"required_num_results", testCase.results})));
   }
 }
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
-  auto main = getMainFunction(*module);
-  OpBuilder builder(context.get());
-  EXPECT_TRUE(llvm::is_contained(
-      main.getPassthroughAttr(),
-      builder.getStrArrayAttr({"required_num_qubits", "8"})));
-}
 
-TEST_F(QIRTest, MetadataCountsCnotAliasQubits) {
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
-    llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
-    llvm.func @main() attributes {passthrough = ["entry_point"]} {
-      %id = llvm.mlir.constant(7 : i64) : i64
-      %control = llvm.inttoptr %id : i64 to !llvm.ptr
-      %target = llvm.mlir.zero : !llvm.ptr
-      llvm.call @__quantum__qis__cnot__body(%control, %target)
-          : (!llvm.ptr, !llvm.ptr) -> ()
-      llvm.return
-    }
-  )mlir",
-                                              context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-  OpBuilder builder(context.get());
-  EXPECT_TRUE(llvm::is_contained(
-      getMainFunction(*moduleOp).getPassthroughAttr(),
-      builder.getStrArrayAttr({"required_num_qubits", "8"})));
-}
-
-TEST_F(QIRTest, MetadataDoesNotCountResultReadsAsQubits) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-module {
-  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
-  llvm.func @__quantum__qis__read_result__body(!llvm.ptr) -> i1
-  llvm.func @main() attributes {passthrough = ["entry_point"]} {
-    %qubit_id = llvm.mlir.constant(0 : i64) : i64
-    %result_id = llvm.mlir.constant(7 : i64) : i64
-    %qubit = llvm.inttoptr %qubit_id : i64 to !llvm.ptr
-    %result = llvm.inttoptr %result_id : i64 to !llvm.ptr
-    llvm.call @__quantum__qis__mz__body(%qubit, %result)
-        : (!llvm.ptr, !llvm.ptr) -> ()
-    %bit = llvm.call @__quantum__qis__read_result__body(%result)
-        : (!llvm.ptr) -> i1
-    llvm.return
+TEST_F(QIRTest, MetadataClassifiesLoopDependenciesAcrossFunctions) {
+  for (const auto& [condition, expected] : {
+           std::pair{
+               StringRef("%condition = llvm.icmp \"slt\" %next, %ten : i64"),
+               1},
+           std::pair{
+               StringRef(
+                   "%condition = llvm.call @__quantum__rt__read_result(%zero) "
+                   ": (!llvm.ptr) -> i1"),
+               2},
+           std::pair{
+               StringRef("%bit = llvm.call @__quantum__rt__read_result(%zero) "
+                         ": (!llvm.ptr) -> i1\n"
+                         "%wide = llvm.zext %bit : i1 to i64\n"
+                         "%condition = llvm.icmp \"eq\" %wide, %ten : i64"),
+               2},
+           std::pair{StringRef("%condition = llvm.call @unknown() : () -> i1"),
+                     3},
+           std::pair{
+               StringRef("%bit = llvm.call @__quantum__rt__read_result(%zero) "
+                         ": (!llvm.ptr) -> i1\n"
+                         "%selector = llvm.zext %bit : i1 to i32\n"
+                         "llvm.switch %selector : i32, ^count [1: ^exit]\n"
+                         "^count:\n"
+                         "%condition = llvm.icmp \"slt\" %next, %ten : i64"),
+               2},
+           std::pair{
+               StringRef("%bit = llvm.call @__quantum__rt__read_result(%zero) "
+                         ": (!llvm.ptr) -> i1\n"
+                         "llvm.cond_br %bit, ^header(%next : i64), ^check\n"
+                         "^check:\n"
+                         "%condition = llvm.icmp \"slt\" %next, %ten : i64"),
+               2},
+           std::pair{
+               StringRef(
+                   "llvm.br ^inner(%start : i64)\n"
+                   "^inner(%j: i64):\n"
+                   "%inner_next = llvm.add %j, %one : i64\n"
+                   "%again = llvm.call @__quantum__rt__read_result(%zero) "
+                   ": (!llvm.ptr) -> i1\n"
+                   "llvm.cond_br %again, ^inner(%inner_next : i64), "
+                   "^after_inner\n"
+                   "^after_inner:\n"
+                   "%condition = llvm.icmp \"slt\" %next, %ten : i64"),
+               3},
+           std::pair{StringRef(R"mlir(
+                 %choose = llvm.mlir.constant(true) : i1
+                 llvm.cond_br %choose, ^left(%next : i64), ^right(%next : i64)
+               ^left(%local: i64):
+                 %incremented = llvm.add %local, %one : i64
+                 llvm.br ^right(%incremented : i64)
+               ^right(%counter: i64):
+                 %repeat = llvm.icmp "slt" %counter, %ten : i64
+                 llvm.cond_br %repeat, ^left(%counter : i64), ^after_cycle
+               ^after_cycle:
+                 %condition = llvm.icmp "slt" %next, %ten : i64
+               )mlir"),
+                     3},
+       }) {
+    SCOPED_TRACE(condition.str());
+    const std::string ir = R"mlir(module {
+      llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @unknown() -> i1
+      llvm.func @loop(%ten: i64) {
+        %zero = llvm.mlir.zero : !llvm.ptr
+        %start = llvm.mlir.constant(0 : i64) : i64
+        %one = llvm.mlir.constant(1 : i64) : i64
+        llvm.br ^header(%start : i64)
+      ^header(%i: i64):
+        llvm.br ^latch
+      ^latch:
+        %next = llvm.add %i, %one : i64
+    )mlir" + condition.str() +
+                           R"mlir(
+        llvm.cond_br %condition, ^header(%next : i64), ^exit
+      ^exit:
+        llvm.return
+      }
+      llvm.func @main() attributes {passthrough = ["entry_point"]} {
+        %ten = llvm.mlir.constant(10 : i64) : i64
+        llvm.call @loop(%ten) : (i64) -> ()
+        llvm.return
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    const auto flag = findModuleFlag(*moduleOp, "backwards_branching");
+    ASSERT_TRUE(flag);
+    EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), expected);
   }
-}
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
-  auto main = getMainFunction(*module);
-  OpBuilder builder(context.get());
-  EXPECT_TRUE(llvm::is_contained(
-      main.getPassthroughAttr(),
-      builder.getStrArrayAttr({"required_num_qubits", "1"})));
-}
-
-TEST_F(QIRTest, MetadataAcceptsDynamicPointerArguments) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-module {
-  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
-  llvm.func @main(%q: !llvm.ptr, %r: !llvm.ptr)
-      attributes {passthrough = ["entry_point"]} {
-    llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
-    llvm.return
-  }
-}
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
-  auto main = getMainFunction(*module);
-  OpBuilder builder(context.get());
-  EXPECT_TRUE(llvm::is_contained(
-      main.getPassthroughAttr(),
-      builder.getStrArrayAttr({"required_num_qubits", "0"})));
-}
-
-TEST_F(QIRTest, MetadataIncludesMeasurementLatch) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-module {
-  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
-  llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
-  llvm.func @main() attributes {passthrough = ["entry_point"]} {
-    %zero = llvm.mlir.constant(0 : i64) : i64
-    %result = llvm.inttoptr %zero : i64 to !llvm.ptr
-    llvm.br ^header
-  ^header:
-    llvm.br ^latch
-  ^latch:
-    llvm.call @__quantum__qis__mz__body(%result, %result)
-        : (!llvm.ptr, !llvm.ptr) -> ()
-    %again = llvm.call @__quantum__rt__read_result(%result)
-        : (!llvm.ptr) -> i1
-    llvm.cond_br %again, ^header, ^exit
-  ^exit:
-    llvm.return
-  }
-}
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*module, true)));
-  auto flag = findModuleFlag(*module, "backwards_branching");
-  ASSERT_TRUE(flag);
-  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 2);
 }
 
 TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
@@ -698,28 +809,6 @@ TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
       moduleOp.get(), before->getOperation(),
       OperationEquivalence::Flags::None));
-}
-
-TEST_F(QIRTest, MetadataCountsNullStaticResourceIds) {
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
-    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
-    llvm.func @main() attributes {passthrough = ["entry_point"]} {
-      %zero = llvm.mlir.zero : !llvm.ptr
-      llvm.call @__quantum__qis__mz__body(%zero, %zero)
-          : (!llvm.ptr, !llvm.ptr) -> ()
-      llvm.return
-    }
-  })mlir",
-                                              context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
-  OpBuilder builder(context.get());
-  for (const auto* resource : {"required_num_qubits", "required_num_results"}) {
-    EXPECT_TRUE(
-        llvm::is_contained(getMainFunction(*moduleOp).getPassthroughAttr(),
-                           builder.getStrArrayAttr({resource, "1"})));
-  }
 }
 
 TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
@@ -747,12 +836,18 @@ TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
                                               context.get());
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(moduleOp.get())));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(moduleOp.get(), true)));
   auto main = getMainFunction(moduleOp.get());
   OpBuilder builder(context.get());
   EXPECT_TRUE(llvm::is_contained(
       main.getPassthroughAttr(),
       builder.getStrArrayAttr({"required_num_qubits", "8"})));
+  const auto arrays = findModuleFlag(*moduleOp, "arrays");
+  ASSERT_TRUE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(arrays.getValue()).getInt(), 1);
+  const auto dynamic = findModuleFlag(*moduleOp, "dynamic_qubit_management");
+  ASSERT_TRUE(dynamic);
+  EXPECT_EQ(cast<IntegerAttr>(dynamic.getValue()).getInt(), 0);
 }
 
 TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
@@ -860,10 +955,111 @@ TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
   EXPECT_EQ(backwardsBranchingValue.getType(),
             IntegerType::get(context.get(), 32));
   const auto arrays = findModuleFlag(adaptive.get(), "arrays");
+  EXPECT_FALSE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(
+                findModuleFlag(adaptive.get(), "qir_minor_version").getValue())
+                .getInt(),
+            0);
+}
+
+TEST_F(QIRTest, ResourceRuntimeCallsRequireQIR21) {
+  for (const auto* name : {
+           QIR_QUBIT_RELEASE,
+           QIR_RESULT_RELEASE,
+           QIR_QUBIT_ARRAY_RELEASE,
+           QIR_RESULT_ARRAY_RELEASE,
+           QIR_RESULT_ARRAY_RECORD_OUTPUT,
+       }) {
+    SCOPED_TRACE(name);
+    const auto array = StringRef(name).contains("array");
+    const auto output = StringRef(name).ends_with("record_output");
+    const auto* signature = output  ? "(i64, !llvm.ptr, !llvm.ptr)"
+                            : array ? "(i64, !llvm.ptr)"
+                                    : "(!llvm.ptr)";
+    const auto* operands = output  ? "(%zero, %pointer, %pointer)"
+                           : array ? "(%zero, %pointer)"
+                                   : "(%pointer)";
+    auto moduleOp =
+        parseSourceString<ModuleOp>(llvm::formatv(R"mlir(module {{
+          llvm.func @{0}{1}
+          llvm.func @helper(%pointer: !llvm.ptr) -> i64 {{
+            %zero = llvm.mlir.constant(0 : i64) : i64
+            llvm.call @{0}{2} : {1} -> ()
+            llvm.return %zero : i64
+          }
+          llvm.func @main() -> i64 attributes {{passthrough = ["entry_point"]} {{
+            %zero = llvm.mlir.constant(0 : i64) : i64
+            llvm.return %zero : i64
+          }
+        })mlir",
+                                                  name, signature, operands)
+                                        .str(),
+                                    context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+    EXPECT_EQ(cast<IntegerAttr>(
+                  findModuleFlag(*moduleOp, "qir_minor_version").getValue())
+                  .getInt(),
+              1);
+    EXPECT_EQ(static_cast<bool>(findModuleFlag(*moduleOp, "arrays")), array);
+  }
+}
+
+TEST_F(QIRTest, ClassicalStorageRequiresArrayAndElementCapabilities) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+    llvm.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      %two = llvm.mlir.constant(2 : i64) : i64
+      %memory = llvm.alloca %two x f64 : (i64) -> !llvm.ptr
+      %resource = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__mz__body(%resource, %resource) : (!llvm.ptr, !llvm.ptr) -> ()
+      %bit = llvm.call @__quantum__rt__read_result(%resource) : (!llvm.ptr) -> i1
+      %index = llvm.zext %bit : i1 to i64
+      %element = llvm.getelementptr %memory[%index] : (!llvm.ptr, i64) -> !llvm.ptr, f64
+      %value = llvm.mlir.constant(1.0 : f64) : f64
+      llvm.store %value, %element : f64, !llvm.ptr
+      %zero = llvm.mlir.constant(0 : i64) : i64
+      llvm.return %zero : i64
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  const auto arrays = findModuleFlag(*moduleOp, "arrays");
   ASSERT_TRUE(arrays);
-  const auto arraysValue = dyn_cast<IntegerAttr>(arrays.getValue());
-  ASSERT_TRUE(arraysValue);
-  EXPECT_EQ(arraysValue.getType(), IntegerType::get(context.get(), 32));
+  EXPECT_EQ(cast<IntegerAttr>(arrays.getValue()).getInt(), 1);
+  const auto floating = findModuleFlag(*moduleOp, "float_computations");
+  ASSERT_TRUE(floating);
+  EXPECT_EQ(floating.getValue(),
+            Builder(context.get()).getStrArrayAttr({"double"}));
+  const auto loops = findModuleFlag(*moduleOp, "backwards_branching");
+  ASSERT_TRUE(loops);
+  EXPECT_EQ(cast<IntegerAttr>(loops.getValue()).getInt(), 0);
+}
+
+TEST_F(QIRTest, OutputLabelPointerDoesNotRequireArrays) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.mlir.global internal constant @labels("xresult\00")
+    llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+    llvm.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      %labels = llvm.mlir.addressof @labels : !llvm.ptr
+      %label = llvm.getelementptr inbounds %labels[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.array<8 x i8>
+      %result = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__rt__result_record_output(%result, %label) : (!llvm.ptr, !llvm.ptr) -> ()
+      %zero = llvm.mlir.constant(0 : i64) : i64
+      llvm.return %zero : i64
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  const auto arrays = findModuleFlag(*moduleOp, "arrays");
+  EXPECT_FALSE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(
+                findModuleFlag(*moduleOp, "qir_minor_version").getValue())
+                .getInt(),
+            0);
 }
 
 TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
@@ -1491,57 +1687,3 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
                     MQT_NAMED_BUILDER(staticQubitsCanonical)}));
 /// @}
-
-TEST_F(QIRTest, MetadataIncludesUnrecordedMeasuredAndReadResults) {
-  for (const auto* call : {
-           "llvm.call @__quantum__qis__mz__body(%qubit, %result) : (!llvm.ptr, "
-           "!llvm.ptr) -> ()",
-           "%value = llvm.call @__quantum__rt__read_result(%result) : "
-           "(!llvm.ptr) "
-           "-> i1",
-       }) {
-    SCOPED_TRACE(call);
-    const std::string ir = std::string(R"mlir(module {
-      llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
-      llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
-      llvm.func @main() attributes {passthrough = ["entry_point"]} {
-        %zero = llvm.mlir.constant(0 : i64) : i64
-        %seven = llvm.mlir.constant(7 : i64) : i64
-        %qubit = llvm.inttoptr %zero : i64 to !llvm.ptr
-        %result = llvm.inttoptr %seven : i64 to !llvm.ptr
-    )mlir") + call + R"mlir(
-        llvm.return
-      }
-    })mlir";
-    auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
-    auto main = getMainFunction(*moduleOp);
-    OpBuilder builder(context.get());
-    EXPECT_TRUE(llvm::is_contained(
-        main.getPassthroughAttr(),
-        builder.getStrArrayAttr({"required_num_results", "8"})));
-  }
-}
-
-TEST_F(QIRTest, ClassifiesUnconditionalBackEdge) {
-  OpBuilder builder(context.get());
-  const auto location = builder.getUnknownLoc();
-  auto moduleOp = ModuleOp::create(location);
-  builder.setInsertionPointToStart(moduleOp.getBody());
-  auto main = LLVM::LLVMFuncOp::create(
-      builder, location, "main",
-      LLVM::LLVMFunctionType::get(builder.getI64Type(), {}));
-  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
-  auto* entry = main.addEntryBlock(builder);
-  auto* loop = main.addBlock();
-  builder.setInsertionPointToEnd(entry);
-  LLVM::BrOp::create(builder, location, ValueRange{}, loop);
-  builder.setInsertionPointToEnd(loop);
-  LLVM::BrOp::create(builder, location, ValueRange{}, loop);
-  ASSERT_TRUE(attachQIRMetadata(moduleOp, true).succeeded());
-  const auto flag = findModuleFlag(moduleOp, "backwards_branching");
-  ASSERT_TRUE(flag);
-  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 1);
-}

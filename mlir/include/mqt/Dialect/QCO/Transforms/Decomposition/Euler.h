@@ -46,6 +46,13 @@ using RotationParameter = mqt::FloatParameter;
 normalizeRotationParameter(OpBuilder& builder, Location loc,
                            RotationParameter angle);
 
+/// Normalize arithmetic built with FloatExpression without revisiting its DAG.
+///
+/// Only direct constants are folded. Use the overload above to evaluate an
+/// existing SSA expression first.
+[[nodiscard]] mqt::FloatExpression
+normalizeRotationParameter(mqt::FloatExpression angle);
+
 struct RotationAngleTerm {
   Value value;
   double scale = 1.;

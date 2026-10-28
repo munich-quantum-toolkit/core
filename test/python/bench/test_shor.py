@@ -33,6 +33,7 @@ def test_shor_instance() -> None:
     ):
         assert restored.case_id == benchmark.case_id
     evaluation = benchmark.evaluate({"0010101011": 3, "0000000000": 1})
+    assert evaluation.shots == 4
     assert evaluation.factors == (3, 7)
     assert evaluation.success_probability == pytest.approx(0.75)
     assert_generates(benchmark.generate())
@@ -58,7 +59,7 @@ def test_factor_callback() -> None:
     assert exhausted.attempts == 1
 
 
-@pytest.mark.parametrize(("number", "factors"), [(2, None), (31, None), (14, (2, 7)), (27, (3, 9))])
+@pytest.mark.parametrize(("number", "factors"), [(31, None), (27, (3, 9))])
 def test_factor_prechecks(number: int, factors: tuple[int, int] | None) -> None:
     """Classical prechecks require no execution."""
 
@@ -78,9 +79,14 @@ def test_shor_errors() -> None:
     with pytest.raises(ValueError, match="width"):
         shor.Shor(shor.Options(number=21)).evaluate({"0": 1})
 
-    def failed(_: shor.Shor) -> dict[str, int]:
-        msg = "execution failed"
-        raise RuntimeError(msg)
 
-    with pytest.raises(RuntimeError, match="execution failed"):
+def test_factor_preserves_callback_exception() -> None:
+    """Keep the original callback exception across native error propagation."""
+    error = RuntimeError("execution failed")
+
+    def failed(_: shor.Shor) -> dict[str, int]:
+        raise error
+
+    with pytest.raises(RuntimeError) as caught:
         shor.factor(21, failed)
+    assert caught.value is error

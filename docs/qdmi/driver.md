@@ -35,6 +35,14 @@ global destructors.
 The builtin MQT Core QDMI driver shares device libraries across path aliases
 with the same symbol prefix. Independent sessions keep their own parameters.
 Initializing one device does not block initialization of unrelated devices.
+Standard sessions borrow a fixed device catalog; targeted sessions own their
+device. Devices own their jobs and release them before closing the device
+session.
+
+The builtin driver returns `QDMI_ERROR_OUTOFMEM` when allocating a session or
+job handle fails. Internal registry and configuration allocations are not
+recoverable; applications must not rely on a status return for general memory
+exhaustion. The driver does not install a process-wide allocation handler.
 
 Any compatible driver can be selected through the standard opening API:
 

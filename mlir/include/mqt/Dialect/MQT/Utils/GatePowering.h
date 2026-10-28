@@ -31,7 +31,7 @@ namespace mlir::mqt {
 /// Evaluate U(θ, φ, λ) in row-major order for finite input angles.
 ///
 /// Compose phase factors without adding angles, so large finite parameters
-/// cannot overflow or absorb a fixed phase offset. Callers validate finiteness.
+/// cannot overflow or absorb a fixed phase offset.
 [[nodiscard]] std::array<std::complex<double>, 4>
 computeUMatrix(double theta, double phi, double lambda);
 
@@ -61,12 +61,12 @@ struct UPowerParameters {
 /// Check whether a floating-point exponent is an even integer.
 [[nodiscard]] bool isEvenExponent(double value);
 
-/// Compute a positive integral power of a constant U gate.
+/// Compute a positive integral power of a U gate with finite input angles.
 ///
 /// @return Parameters satisfying
 /// `U(θ, φ, λ)^exponent = exp(i*phase) * U(result)`, or
 /// `std::nullopt` if @p exponent is not a positive integer no greater than
-/// `MAX_SAFE_U_POWER_EXPONENT`, an input is not finite, or the binary64 result
+/// `MAX_SAFE_U_POWER_EXPONENT`, or the binary64 result
 /// cannot be reconstructed within `U_POWER_EQUIVALENCE_TOLERANCE`.
 [[nodiscard]] std::optional<UPowerParameters>
 powerUParameters(double theta, double phi, double lambda, double exponent);

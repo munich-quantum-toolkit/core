@@ -10,7 +10,7 @@ include "mlir/Pass/PassBase.td"
 
 def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
   let summary = "Lower the QC dialect to the LLVM dialect compliant with the "
-                "QIR Adaptive Profile 2.1";
+                "QIR Adaptive Profile";
 
   let description = [{
     Lower supported QC operations to QIR Adaptive Profile runtime calls and
@@ -21,13 +21,18 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
 
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with `mqt.entry_point` and have a single return.
-    - Measurement-only returned CBit registers require stores in the same block
-      as their measurements and indices that are available or safely computable
-      before measurement. Intervening effects must be limited to quantum
-      resources or stores to distinct constant indices of the same register.
+    - Measurements and CBit allocations must be in the entry function.
+      Returns may contain direct measurements, direct CBit allocations, and
+      Boolean scalar values. Other scalar program outputs are not supported.
 
     Behavior:
 
+    - Outputs retain return order and repetitions. Every record has a unique label.
+      Computed Boolean scalars use Boolean output records without register storage.
+    - Returned registers use Result arrays when measurement stores can fuse safely
+      and preserve returned measurement snapshots. Other stores use Boolean storage,
+      including runtime-indexed accesses. Boolean output loads precede all output recording.
+    - The entry function returns an `i64` zero execution status after output recording.
     - Each QC quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
     - Operations from the scf dialect are lowered into the cf dialect before they are lowered to the LLVM dialect.
     - The pass extends the existing block structure of the entry function with an entry block and an epilogue block:
@@ -37,11 +42,17 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - Quantum releases retain their original control-flow positions.
     - Local qubit-reference buffers support loads, stores, and shape casts without
       allocating qubits.
-    - Scalar and register results are dynamically allocated and released after output recording.
+    - Measurement results are dynamically allocated and released after output recording.
     - Measurement results may be used as classical values to drive conditional branches.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
     - Constant classical tensors and element reads are lowered to constant LLVM arrays and loads, including reads with runtime indices.
       Other classical tensor operations must be lowered before this pass.
+    - Statically shaped classical stack memrefs lower to native LLVM arrays, loads, and stores.
+      Classical heap allocation is rejected. These operations require the
+      Adaptive array capability and the stored element types.
+    - Classical array indices must be in bounds. No runtime checks are inserted.
+      The metadata pass conservatively requires loop support for residual
+      dynamic array indices.
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect",

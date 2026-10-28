@@ -64,19 +64,19 @@ namespace mlir::qco {
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
-      ctx(context), moduleOp_(ModuleOp::create(*this)) {
-  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
-                   qtensor::QTensorDialect>();
+      moduleOp_(ModuleOp::create(*this)) {
+  getContext()
+      ->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
+                    qtensor::QTensorDialect>();
 }
 
-void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
-
-void QCOProgramBuilder::initialize(TypeRange returnTypes) {
+void QCOProgramBuilder::initialize() {
+  checkFinalized();
   // Set insertion point to the module body
-  setInsertionPointToStart(cast<ModuleOp>(moduleOp_).getBody());
+  setInsertionPointToStart(moduleOp_->getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, returnTypes);
+  auto funcType = getFunctionType({}, {});
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   mqt::setEntryPoint(mainFunc);
@@ -84,16 +84,6 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
-}
-
-void QCOProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
-  if (!mainFunc) {
-    llvm::reportFatalUsageError("Main function not found for retyping");
-  }
-  auto funcType =
-      getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
-  mainFunc.setType(funcType);
 }
 
 static bool isQubitTensor(Type type) {
@@ -105,7 +95,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
     const StringRef name, const TypeRange argumentTypes,
     const function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
-  auto moduleOp = cast<ModuleOp>(moduleOp_);
+  auto moduleOp = *moduleOp_;
   auto mainFunc = mqt::getEntryPoint(moduleOp);
   if (!mainFunc) {
     llvm::reportFatalUsageError(
@@ -195,22 +185,13 @@ func::FuncOp QCOProgramBuilder::createUnitaryFunction(
 SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
                                            ValueRange operands) {
   checkFinalized();
-  if (callee->getParentOp() != moduleOp_ ||
+  if (callee->getParentOp() != moduleOp_->getOperation() ||
       callee.getArgumentTypes() != operands.getTypes()) {
     llvm::reportFatalUsageError(
         "Call operands must match a function in the current module");
   }
   auto quantumArguments = getQuantumArgumentIndices(operands.getTypes());
-  SmallVector<Value> quantumOperands;
-  for (const auto argument : quantumArguments) {
-    quantumOperands.emplace_back(operands[argument]);
-  }
-  quantumOperands = prepareInitArgs(quantumOperands);
-  SmallVector<Value> updatedOperands(operands);
-  for (auto [argument, operand] :
-       llvm::zip_equal(quantumArguments, quantumOperands)) {
-    updatedOperands[argument] = operand;
-  }
+  auto updatedOperands = prepareInitArgs(operands);
 
   SmallVector<Value> results;
   if (mqt::isUnitaryFunction(callee)) {
@@ -230,8 +211,9 @@ SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
   const auto firstQuantumResult = results.size() - quantumArguments.size();
   for (auto [index, result] : llvm::enumerate(results)) {
     if (index >= firstQuantumResult) {
-      updateQubitValueTracking(quantumOperands[index - firstQuantumResult],
-                               result);
+      updateQubitValueTracking(
+          updatedOperands[quantumArguments[index - firstQuantumResult]],
+          result);
     } else if (isa<QubitType>(result.getType())) {
       validQubits.insert(result);
     } else if (isQubitTensor(result.getType())) {
@@ -300,7 +282,8 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   }
   auto qtensor = qtensorAlloc(size);
   if (!name.empty()) {
-    ctx->getLoadedDialect<mqt::MQTDialect>()
+    getContext()
+        ->getLoadedDialect<mqt::MQTDialect>()
         ->getRegisterNameAttrHelper()
         .setAttr(qtensor.getDefiningOp(), getStringAttr(name));
   }
@@ -325,10 +308,11 @@ Value QCOProgramBuilder::allocClassicalBitRegister(
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  const auto type = cbit::RegisterType::get(ctx, size);
+  const auto type = cbit::RegisterType::get(getContext(), size);
   auto alloc = cbit::AllocOp::create(*this, type, initialization);
   if (!name.empty()) {
-    ctx->getLoadedDialect<mqt::MQTDialect>()
+    getContext()
+        ->getLoadedDialect<mqt::MQTDialect>()
         ->getRegisterNameAttrHelper()
         .setAttr(alloc, getStringAttr(name));
   }
@@ -355,7 +339,7 @@ void QCOProgramBuilder::storeClassicalBit(
 // Linear Ownership Tracking Helpers
 //===----------------------------------------------------------------------===//
 
-void QCOProgramBuilder::validateQubitValue(Value qubit) const {
+void QCOProgramBuilder::validateQubitValue(Value qubit, bool checkScope) const {
   if (!validQubits.contains(qubit)) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
@@ -363,12 +347,17 @@ void QCOProgramBuilder::validateQubitValue(Value qubit) const {
     llvm::reportFatalUsageError(
         "Invalid qubit value used (either consumed or not tracked)");
   }
+  if (checkScope &&
+      qubit.getParentRegion() != getInsertionBlock()->getParent()) {
+    llvm::reportFatalUsageError(
+        "Quantum values must be passed explicitly through region arguments");
+  }
 }
 
-void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
-                                            Value outputQubit) {
+void QCOProgramBuilder::updateQubitTracking(Value inputQubit, Value outputQubit,
+                                            bool checkScope) {
   // Validate the input qubit
-  validateQubitValue(inputQubit);
+  validateQubitValue(inputQubit, checkScope);
 
   auto it = validQubits.find(inputQubit);
   auto trackedQubit = *it;
@@ -381,13 +370,19 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
       Qubit{outputQubit, trackedQubit.regId, trackedQubit.regIndex});
 }
 
-void QCOProgramBuilder::validateTensorValue(Value tensor) const {
+void QCOProgramBuilder::validateTensorValue(Value tensor,
+                                            bool checkScope) const {
   if (!validTensors.contains(tensor)) {
     llvm::errs() << "Attempting to use an invalid tensor SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
     llvm::reportFatalUsageError(
         "Invalid tensor value used (either consumed or not tracked)");
+  }
+  if (checkScope &&
+      tensor.getParentRegion() != getInsertionBlock()->getParent()) {
+    llvm::reportFatalUsageError(
+        "Quantum values must be passed explicitly through region arguments");
   }
 
   auto tensorType = dyn_cast<RankedTensorType>(tensor.getType());
@@ -400,9 +395,10 @@ void QCOProgramBuilder::validateTensorValue(Value tensor) const {
 }
 
 void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
-                                             Value outputTensor) {
+                                             Value outputTensor,
+                                             bool checkScope) {
   // Validate the input tensor
-  validateTensorValue(inputTensor);
+  validateTensorValue(inputTensor, checkScope);
 
   auto it = validTensors.find(inputTensor);
   auto trackedTensor = *it;
@@ -438,26 +434,28 @@ static bool isDefinedBefore(Value lhs, Value rhs) {
 
 Value QCOProgramBuilder::insertExtractedQubits(Value tensor,
                                                MutableArrayRef<Qubit> qubits) {
+  validateTensorValue(tensor);
+  auto inputTensor = tensor;
   llvm::sort(qubits, [](const Qubit& lhs, const Qubit& rhs) {
     return isDefinedBefore(lhs, rhs);
   });
   for (const auto& qubit : qubits) {
-    auto newTensor =
-        qtensor::InsertOp::create(*this, qubit, tensor, qubit.regIndex)
-            .getResult();
-    updateTensorTracking(tensor, newTensor);
-    tensor = newTensor;
+    validateQubitValue(qubit);
+    tensor = qtensor::InsertOp::create(*this, qubit, tensor, qubit.regIndex)
+                 .getResult();
     validQubits.erase(qubit);
+  }
+  if (tensor != inputTensor) {
+    updateTensorTracking(inputTensor, tensor);
   }
   return tensor;
 }
 
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
-  DenseSet<Value> initQubits;
   DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
-      initQubits.insert(initArg);
+      validateQubitValue(initArg);
     } else if (isQubitTensor(initArg.getType())) {
       validateTensorValue(initArg);
       if (!qubitsByRegister.try_emplace(validTensors.find(initArg)->regId)
@@ -468,6 +466,12 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
     }
   }
   if (!qubitsByRegister.empty()) {
+    DenseSet<Value> initQubits;
+    for (auto initArg : initArgs) {
+      if (isa<QubitType>(initArg.getType())) {
+        initQubits.insert(initArg);
+      }
+    }
     for (const auto& qubit : validQubits) {
       auto it = qubitsByRegister.find(qubit.regId);
       if (it != qubitsByRegister.end()) {
@@ -516,10 +520,11 @@ void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
   if (oldValue.getType() != newValue.getType()) {
     llvm::reportFatalUsageError("Result types must match input types");
   }
+  // Explicit region arguments and results transfer ownership across scopes.
   if (isa<QubitType>(oldValue.getType())) {
-    updateQubitTracking(oldValue, newValue);
+    updateQubitTracking(oldValue, newValue, false);
   } else if (isQubitTensor(oldValue.getType())) {
-    updateTensorTracking(oldValue, newValue);
+    updateTensorTracking(oldValue, newValue, false);
   }
 }
 
@@ -609,12 +614,22 @@ Value QCOProgramBuilder::qtensorInsert(
     Value scalar, Value tensor, const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto insertOp = qtensor::InsertOp::create(*this, scalar, tensor, indexValue);
-
-  auto outTensor = insertOp.getResult();
-
   validateQubitValue(scalar);
+  validateTensorValue(tensor);
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  const auto& qubit = *validQubits.find(scalar);
+  if (qubit.regId != validTensors.find(tensor)->regId || !qubit.regIndex) {
+    llvm::reportFatalUsageError(
+        "Inserted qubit must belong to the destination register");
+  }
+  auto originalIndex = getConstantIntValue(qubit.regIndex);
+  auto indexConstant = getConstantIntValue(indexValue);
+  if (originalIndex && indexConstant && originalIndex != indexConstant) {
+    llvm::reportFatalUsageError(
+        "Inserted qubit must return to its original slot");
+  }
+  auto insertOp = qtensor::InsertOp::create(*this, scalar, tensor, indexValue);
+  auto outTensor = insertOp.getResult();
   validQubits.erase(scalar);
   updateTensorTracking(tensor, outTensor);
 
@@ -1096,6 +1111,10 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
                         function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
+  for (Value qubit : controls) {
+    validateQubitValue(qubit);
+  }
+
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
   auto qubitType = QubitType::get(getContext());
@@ -1115,7 +1134,7 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
 
   auto controlsOut = ctrlOp.getControlsOut();
   for (auto [control, controlOut] : llvm::zip_equal(controls, controlsOut)) {
-    updateQubitTracking(control, controlOut);
+    updateQubitTracking(control, controlOut, false);
   }
   auto targetsOut = ctrlOp.getTargetsOut();
   for (auto [target, targetOut] :
@@ -1198,44 +1217,20 @@ QCOProgramBuilder::pow(const mqt::FloatParameter& exponent, ValueRange qubits,
 
 Value QCOProgramBuilder::pow(const mqt::FloatParameter& exponent, Value qubit,
                              function_ref<Value(Value)> body) {
-  checkFinalized();
-
-  Value innerQubitOut;
-  auto powOp =
-      PowOp::create(*this, qubit, exponent, [&](Value qubitArg) -> Value {
-        updateQubitTracking(qubit, qubitArg);
-        innerQubitOut = body(qubitArg);
-        return innerQubitOut;
-      });
-
-  auto qubitsOut = powOp.getQubitsOut();
-  assert(qubitsOut.size() == 1);
-  updateQubitTracking(innerQubitOut, qubitsOut.front());
-
-  return qubitsOut.front();
+  return pow(exponent, ValueRange{qubit},
+             [&](ValueRange args) {
+               return SmallVector<Value>{body(args.front())};
+             })
+      .front();
 }
 
 std::pair<ValueRange, Value>
 QCOProgramBuilder::ctrl(ValueRange controls, Value target,
                         function_ref<Value(Value)> body) {
-  checkFinalized();
-
-  Value innerTargetOut;
-  auto ctrlOp =
-      CtrlOp::create(*this, controls, target, [&](Value targetArg) -> Value {
-        updateQubitTracking(target, targetArg);
-        innerTargetOut = body(targetArg);
-        return innerTargetOut;
+  auto [controlsOut, targetsOut] =
+      ctrl(controls, ValueRange{target}, [&](ValueRange args) {
+        return SmallVector<Value>{body(args.front())};
       });
-
-  auto controlsOut = ctrlOp.getControlsOut();
-  for (auto [control, controlOut] : llvm::zip_equal(controls, controlsOut)) {
-    updateQubitTracking(control, controlOut);
-  }
-  auto targetsOut = ctrlOp.getTargetsOut();
-  assert(targetsOut.size() == 1);
-  updateQubitTracking(innerTargetOut, targetsOut.front());
-
   return {controlsOut, targetsOut.front()};
 }
 
@@ -1248,20 +1243,11 @@ QCOProgramBuilder::ctrl(Value control, Value target,
 }
 
 Value QCOProgramBuilder::inv(Value qubit, function_ref<Value(Value)> body) {
-  checkFinalized();
-
-  Value innerQubitOut;
-  auto invOp = InvOp::create(*this, qubit, [&](Value qubitArg) -> Value {
-    updateQubitTracking(qubit, qubitArg);
-    innerQubitOut = body(qubitArg);
-    return innerQubitOut;
-  });
-
-  auto qubitsOut = invOp.getQubitsOut();
-  assert(qubitsOut.size() == 1);
-  updateQubitTracking(innerQubitOut, qubitsOut.front());
-
-  return qubitsOut.front();
+  return inv(ValueRange{qubit},
+             [&](ValueRange args) {
+               return SmallVector<Value>{body(args.front())};
+             })
+      .front();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1600,7 +1586,7 @@ QCOProgramBuilder::scfCondition(Value reg,
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::checkFinalized() const {
-  if (ctx == nullptr) {
+  if (!moduleOp_) {
     llvm::reportFatalUsageError(
         "QCOProgramBuilder instance has been finalized");
   }
@@ -1609,7 +1595,7 @@ void QCOProgramBuilder::checkFinalized() const {
 void QCOProgramBuilder::ensureAllocationMode(
     const AllocationMode requestedMode) {
   if (requestedMode == AllocationMode::Dynamic) {
-    auto entryPoint = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+    auto entryPoint = mqt::getEntryPoint(*moduleOp_);
     if (!entryPoint || entryPoint.getBody().empty() ||
         getInsertionBlock() != &entryPoint.getBody().front()) {
       llvm::reportFatalUsageError(
@@ -1661,6 +1647,7 @@ void QCOProgramBuilder::disposeLinearValues() {
     return isDefinedBefore(lhs, rhs);
   });
   for (const auto& qubit : qubitsToSink) {
+    validateQubitValue(qubit);
     SinkOp::create(*this, qubit);
   }
   for (const auto& tensor : tensors) {
@@ -1672,20 +1659,13 @@ void QCOProgramBuilder::disposeLinearValues() {
   validTensors.clear();
 }
 
-OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
-  checkFinalized();
-
-  auto exitCode = intConstant(0);
-  return finalize({exitCode});
-}
-
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
   checkFinalized();
 
   // Ensure that the entry-point function exists and the insertion point is
   // valid.
   auto* insertionBlock = getInsertionBlock();
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+  auto mainFunc = mqt::getEntryPoint(*moduleOp_);
   if (mainFunc == nullptr) {
     llvm::reportFatalUsageError("Could not find entry-point function");
   }
@@ -1695,17 +1675,11 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
         "Insertion point is not in entry block of main function");
   }
 
-  // Returning a linear value is its final consumption. Remove such values from
-  // the live sets before automatically disposing of everything left over.
-  for (auto returnValue : returnValues) {
-    const auto type = returnValue.getType();
-    if (isa<QubitType>(type)) {
-      validateQubitValue(returnValue);
-      validQubits.erase(returnValue);
-    } else if (isLinearQubitType(type)) {
-      validateTensorValue(returnValue);
-      validTensors.erase(returnValue);
-    }
+  mainFunc.setType(
+      getFunctionType(mainFunc.getArgumentTypes(), returnValues.getTypes()));
+  if (failed(mqt::verifyEntryPointResults(mainFunc))) {
+    llvm::reportFatalUsageError(
+        "Entry-point function cannot return quantum values");
   }
 
   disposeLinearValues();
@@ -1713,10 +1687,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
   // Add return statement with the given return values to the main function
   func::ReturnOp::create(*this, returnValues);
 
-  // Invalidate context to prevent use-after-finalize
-  ctx = nullptr;
-
-  return cast<ModuleOp>(moduleOp_);
+  return moduleOp_.release();
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(
@@ -1725,7 +1696,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::build(
   QCOProgramBuilder builder(context);
   builder.initialize();
   auto result = buildFunc(builder);
-  builder.retype(ValueRange(result).getTypes());
   return builder.finalize(result);
 }
 
@@ -1735,7 +1705,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::build(
   QCOProgramBuilder builder(context);
   builder.initialize();
   auto result = buildFunc(builder);
-  builder.retype(result.getType());
   return builder.finalize(result);
 }
 

@@ -33,15 +33,18 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <cstddef>
 #include <memory>
 #include <string>
 
-static mlir::Value unobservedH(mlir::qco::QCOProgramBuilder& builder) {
+static llvm::SmallVector<mlir::Value>
+unobservedH(mlir::qco::QCOProgramBuilder& builder) {
   auto qubit = builder.allocQubit();
   qubit = builder.h(qubit);
   builder.sink(qubit);
-  return builder.intConstant(0);
+  return {};
 }
 
 namespace {

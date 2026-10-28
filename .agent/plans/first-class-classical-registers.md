@@ -26,13 +26,13 @@ outputs.
 
 - The fix merged in #2140 had to teach Qiskit export that an allocation followed
   by one false store per element is initialization rather than classical
-  execution. Evidence: `bindings/mlir/qiskit/QiskitExport.cpp` contains
+  execution. Evidence: `bindings/mlir/Target/Qiskit/QiskitExport.cpp` contains
   `initialClassicalZeroStoreIndex` and a block-order recognizer.
 
 - Qiskit import needed a builder-wide initialization policy only because the
   register type did not carry initialization. Evidence:
-  `bindings/mlir/qiskit/QiskitImport.cpp` constructs `QCProgramBuilder` with
-  `ClassicalRegisterInitialization::Zero`.
+  `bindings/mlir/Target/Qiskit/QiskitImport.cpp` constructs `QCProgramBuilder`
+  with `ClassicalRegisterInitialization::Zero`.
 
 - QIR and OpenQASM contain separate reconstructions of the same missing
   semantics. Evidence: `mlir/lib/Conversion/QCToQIR/QIRCommon/QIRCommon.cpp`
@@ -256,11 +256,11 @@ destination is supplied. Conditional builder helpers use `loadClassicalBit`.
 Remove the overloaded QC constructor, overloaded static `build` helpers, and the
 builder member that apply one policy to every allocation.
 
-Qiskit conversion lives in `bindings/mlir/qiskit/QiskitImport.cpp` and
-`bindings/mlir/qiskit/QiskitExport.cpp`. Import must allocate Qiskit classical
-registers with zero initialization, load conditions through CBit, store
-measurements through CBit, and return all Qiskit-visible registers. Export must
-discover output registers only from the entry function return, not from all
+Qiskit conversion lives in `bindings/mlir/Target/Qiskit/QiskitImport.cpp` and
+`bindings/mlir/Target/Qiskit/QiskitExport.cpp`. Import must allocate Qiskit
+classical registers with zero initialization, load conditions through CBit,
+store measurements through CBit, and return all Qiskit-visible registers. Export
+must discover output registers only from the entry function return, not from all
 allocations. It accepts static direct stores of measurement results,
 zero-initialized elements that are never written, and undefined registers only
 when every returned element is written. It rejects dynamic output destinations,

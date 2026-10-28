@@ -25,7 +25,7 @@ __lazy_modules__ = {
     "qiskit.result.models",
 }
 
-import datetime
+import datetime as dt
 from collections import Counter
 from copy import deepcopy
 from numbers import Integral
@@ -81,7 +81,7 @@ class QDMIJob(JobV1):
         backend: The backend this job runs on.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
-        memory: Whether to collect genuine ordered shots.
+        memory: Whether to collect individual shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
             disabled by default. Cancelled or uncertain jobs are never retried.
         job_parameters: Custom submission parameters retained for replacements.
@@ -118,7 +118,7 @@ class QDMIJob(JobV1):
         ]
         self._shots = shots
         self._memory = memory
-        self._job_parameters = job_parameters or {}
+        self._job_parameters = job_parameters.copy() if job_parameters is not None else {}
         self._result: Result | None = None
         formats = backend.device.supported_program_formats()
         self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] = tuple(
@@ -223,7 +223,7 @@ class QDMIJob(JobV1):
                 backend_version=self._backend.backend_version,
                 job_id=self.job_id(),
                 success=True,
-                date=datetime.datetime.now(datetime.UTC).isoformat(),
+                date=dt.datetime.now(dt.UTC).isoformat(),
                 results=[entry.result for entry in self.entries],
             )
         except BaseException as exc:
@@ -238,7 +238,7 @@ class QDMIJob(JobV1):
         """Collect and validate one circuit's result.
 
         Returns:
-            A Qiskit experiment with counts and, if requested, ordered memory.
+            A Qiskit experiment with counts and, if requested, per-shot memory.
 
         Raises:
             JobError: If execution failed or the result violates the circuit's output contract.

@@ -120,6 +120,12 @@ LogicalResult SyntaxBuilder::assignment(SMLoc location,
   return success();
 }
 
+LogicalResult SyntaxBuilder::arrayDecl(SMLoc location,
+                                       SyntaxArrayDeclaration declaration) {
+  std::ignore = addStatement(location, std::move(declaration));
+  return success();
+}
+
 LogicalResult
 SyntaxBuilder::qubitRegister(SMLoc location, StringRef identifier,
                              std::optional<SyntaxExpressionId> size) {
@@ -178,8 +184,10 @@ LogicalResult SyntaxBuilder::gateCall(const GateCall& call) {
 
 LogicalResult SyntaxBuilder::gateDefinition(
     SMLoc location, StringRef identifier, ArrayRef<StringRef> parameters,
-    ArrayRef<StringRef> qubits, function_ref<LogicalResult()> continuation) {
+    ArrayRef<StringRef> qubits, function_ref<LogicalResult()> continuation,
+    bool opaque) {
   SyntaxGateDefinition definition{
+      .opaque = opaque,
       .identifier = identifier,
       .parameters = parameters.vec(),
       .qubits = qubits.vec(),
@@ -238,23 +246,14 @@ SyntaxBuilder::ifStmt(SMLoc location, SyntaxExpressionId condition,
 }
 
 LogicalResult
-SyntaxBuilder::forStmt(SMLoc location, StringRef inductionVariable,
-                       const bool isUnsigned, SyntaxExpressionId start,
-                       SyntaxExpressionId step, SyntaxExpressionId stop,
+SyntaxBuilder::forStmt(SMLoc location, SyntaxFor loop,
                        function_ref<LogicalResult()> continuation) {
   auto body = parseNestedBody(continuation);
   if (failed(body)) {
     return failure();
   }
-  std::ignore =
-      addStatement(location, SyntaxFor{
-                                 .inductionVariable = inductionVariable,
-                                 .isUnsigned = isUnsigned,
-                                 .start = start,
-                                 .step = step,
-                                 .stop = stop,
-                                 .body = std::move(*body),
-                             });
+  loop.body = std::move(*body);
+  std::ignore = addStatement(location, std::move(loop));
   return success();
 }
 

@@ -253,16 +253,31 @@ struct Unitary1QEulerPlan {
 
 } // namespace
 
+static double normalizeConstantRotationAngle(double angle) {
+  return std::abs(angle) <= 2. * std::numbers::pi
+             ? angle
+             : 4. * std::atan(std::tan(angle / 4.));
+}
+
 RotationParameter normalizeRotationParameter(OpBuilder& builder, Location loc,
                                              RotationParameter angle) {
   if (const auto value = mqt::parameterToConstantDouble(angle)) {
-    return std::abs(*value) <= 2. * std::numbers::pi
-               ? *value
-               : 4. * std::atan(std::tan(*value / 4.));
+    return normalizeConstantRotationAngle(*value);
   }
-  const auto four = mqt::FloatExpression::constant(builder, loc, 4.);
-  const mqt::FloatExpression value(builder, loc, std::get<Value>(angle));
-  return ((value / four).tan().atan() * four).getValue();
+  return normalizeRotationParameter(
+             mqt::FloatExpression(builder, loc, std::get<Value>(angle)))
+      .getValue();
+}
+
+mqt::FloatExpression normalizeRotationParameter(mqt::FloatExpression angle) {
+  if (const auto value = mqt::valueToDouble(angle.getValue())) {
+    return mqt::FloatExpression::constant(
+        angle.getBuilder(), angle.getLoc(),
+        normalizeConstantRotationAngle(*value));
+  }
+  const auto four =
+      mqt::FloatExpression::constant(angle.getBuilder(), angle.getLoc(), 4.);
+  return (angle / four).tan().atan() * four;
 }
 
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, Value phase) {

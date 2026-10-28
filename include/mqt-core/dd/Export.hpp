@@ -19,18 +19,17 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <fstream>
-#include <iostream>
-#include <queue>
-#include <sstream>
-#include <stdexcept>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
+#include <system_error>
 
 namespace dd {
 
@@ -38,13 +37,18 @@ std::string colorFromPhase(const Complex& a);
 
 fp thicknessFromMagnitude(const Complex& a);
 
-void printPhaseFormatted(std::ostream& os, fp r);
+void printPhaseFormatted(llvm::raw_ostream& os, fp r);
 
 std::string conditionalFormat(const Complex& a, bool formatAsPolar = true);
 
+/// Render a DOT file as a sibling SVG using Graphviz.
+///
+/// Requires `dot` on PATH and returns an error if rendering fails.
+[[nodiscard]] llvm::Error renderDotToSvg(llvm::StringRef dotFilename);
+
 template <class Node>
-static std::ostream& header(const Edge<Node>& e, std::ostream& os,
-                            bool edgeLabels, bool formatAsPolar = true) {
+static llvm::raw_ostream& header(const Edge<Node>& e, llvm::raw_ostream& os,
+                                 bool edgeLabels, bool formatAsPolar = true) {
   os << "digraph \"DD\" {graph[];node[shape=plain];edge[arrowhead=none]\n";
   os << "root [label=\"\",shape=point,style=invis]\n";
   os << "t [label=<<font "
@@ -66,8 +70,9 @@ static std::ostream& header(const Edge<Node>& e, std::ostream& os,
   return os;
 }
 template <class Node>
-static std::ostream& coloredHeader(const Edge<Node>& e, std::ostream& os,
-                                   bool edgeLabels, bool formatAsPolar = true) {
+static llvm::raw_ostream& coloredHeader(const Edge<Node>& e,
+                                        llvm::raw_ostream& os, bool edgeLabels,
+                                        bool formatAsPolar = true) {
   os << "digraph \"DD\" {graph[];node[shape=plain];edge[arrowhead=none]\n";
   os << "root [label=\"\",shape=point,style=invis]\n";
   os << "t [label=<<font "
@@ -87,8 +92,8 @@ static std::ostream& coloredHeader(const Edge<Node>& e, std::ostream& os,
   return os;
 }
 template <class Node>
-static std::ostream& memoryHeader(const Edge<Node>& e, std::ostream& os,
-                                  bool edgeLabels) {
+static llvm::raw_ostream& memoryHeader(const Edge<Node>& e,
+                                       llvm::raw_ostream& os, bool edgeLabels) {
   os << "digraph \"DD\" {graph[];node[shape=plain];edge[arrowhead=none]\n";
   os << "root [label=\"\",shape=point,style=invis]\n";
   os << "t [label=<<font "
@@ -114,7 +119,8 @@ static std::ostream& memoryHeader(const Edge<Node>& e, std::ostream& os,
       } else if (RealNumber::exactlyOne(e.w.r)) {
         os << "1";
       } else {
-        os << std::hex << reinterpret_cast<std::uintptr_t>(e.w.r) << std::dec;
+        os << llvm::format_hex_no_prefix(
+            reinterpret_cast<std::uintptr_t>(e.w.r), 1);
       }
       os << " ";
       if (RealNumber::exactlyZero(e.w.i)) {
@@ -124,7 +130,8 @@ static std::ostream& memoryHeader(const Edge<Node>& e, std::ostream& os,
       } else if (RealNumber::exactlyOne(e.w.i)) {
         os << "1";
       } else {
-        os << std::hex << reinterpret_cast<std::uintptr_t>(e.w.i) << std::dec;
+        os << llvm::format_hex_no_prefix(
+            reinterpret_cast<std::uintptr_t>(e.w.i), 1);
       }
     }
     os << "]</font>>";
@@ -133,22 +140,25 @@ static std::ostream& memoryHeader(const Edge<Node>& e, std::ostream& os,
   return os;
 }
 
-std::ostream& modernNode(const mEdge& e, size_t nodeId, std::ostream& os,
-                         bool formatAsPolar = true);
-std::ostream& modernNode(const vEdge& e, size_t nodeId, std::ostream& os,
-                         bool formatAsPolar = true);
-std::ostream& classicNode(const mEdge& e, size_t nodeId, std::ostream& os,
-                          bool formatAsPolar = true);
-std::ostream& classicNode(const vEdge& e, size_t nodeId, std::ostream& os,
-                          bool formatAsPolar = true);
+llvm::raw_ostream& modernNode(const mEdge& e, size_t nodeId,
+                              llvm::raw_ostream& os, bool formatAsPolar = true);
+llvm::raw_ostream& modernNode(const vEdge& e, size_t nodeId,
+                              llvm::raw_ostream& os, bool formatAsPolar = true);
+llvm::raw_ostream& classicNode(const mEdge& e, size_t nodeId,
+                               llvm::raw_ostream& os,
+                               bool formatAsPolar = true);
+llvm::raw_ostream& classicNode(const vEdge& e, size_t nodeId,
+                               llvm::raw_ostream& os,
+                               bool formatAsPolar = true);
 template <class Node>
-static std::ostream& memoryNode(const Edge<Node>& e, size_t nodeId,
-                                std::ostream& os) {
+static llvm::raw_ostream& memoryNode(const Edge<Node>& e, size_t nodeId,
+                                     llvm::raw_ostream& os) {
   constexpr std::size_t n = std::tuple_size_v<decltype(e.p->e)>;
   os << nodeId << "[label=<";
   os << R"(<font point-size="10"><table border="1" cellspacing="0" cellpadding="2" style="rounded">)";
-  os << R"(<tr><td colspan=")" << n << R"(" border="1" sides="B">)" << std::hex
-     << reinterpret_cast<std::uintptr_t>(e.p) << std::dec << "</td></tr>";
+  os << R"(<tr><td colspan=")" << n << R"(" border="1" sides="B">)"
+     << llvm::format_hex_no_prefix(reinterpret_cast<std::uintptr_t>(e.p), 1)
+     << "</td></tr>";
   os << "<tr>";
   for (std::size_t i = 0; i < n; ++i) {
     os << "<td port=\"" << i << R"(" href="javascript:;" border="0" tooltip=")"
@@ -162,32 +172,32 @@ static std::ostream& memoryNode(const Edge<Node>& e, size_t nodeId,
     os << "</td>";
   }
   os << "</tr>";
-  os << "</table></font>>,tooltip=\"" << std::hex
-     << reinterpret_cast<std::uintptr_t>(e.p) << "\"]\n"
-     << std::dec;
+  os << "</table></font>>,tooltip=\""
+     << llvm::format_hex_no_prefix(reinterpret_cast<std::uintptr_t>(e.p), 1)
+     << "\"]\n";
   return os;
 }
 
-std::ostream& bwEdge(const mEdge& to, size_t fromId, size_t toId,
-                     std::uint16_t idx, std::ostream& os,
-                     bool edgeLabels = false, bool classic = false,
-                     bool formatAsPolar = true);
-std::ostream& bwEdge(const vEdge& to, size_t fromId, size_t toId,
-                     std::uint16_t idx, std::ostream& os,
-                     bool edgeLabels = false, bool classic = false,
-                     bool formatAsPolar = true);
-std::ostream& coloredEdge(const mEdge& to, size_t fromId, size_t toId,
-                          std::uint16_t idx, std::ostream& os,
+llvm::raw_ostream& bwEdge(const mEdge& to, size_t fromId, size_t toId,
+                          std::uint16_t idx, llvm::raw_ostream& os,
                           bool edgeLabels = false, bool classic = false,
                           bool formatAsPolar = true);
-std::ostream& coloredEdge(const vEdge& to, size_t fromId, size_t toId,
-                          std::uint16_t idx, std::ostream& os,
+llvm::raw_ostream& bwEdge(const vEdge& to, size_t fromId, size_t toId,
+                          std::uint16_t idx, llvm::raw_ostream& os,
                           bool edgeLabels = false, bool classic = false,
                           bool formatAsPolar = true);
+llvm::raw_ostream& coloredEdge(const mEdge& to, size_t fromId, size_t toId,
+                               std::uint16_t idx, llvm::raw_ostream& os,
+                               bool edgeLabels = false, bool classic = false,
+                               bool formatAsPolar = true);
+llvm::raw_ostream& coloredEdge(const vEdge& to, size_t fromId, size_t toId,
+                               std::uint16_t idx, llvm::raw_ostream& os,
+                               bool edgeLabels = false, bool classic = false,
+                               bool formatAsPolar = true);
 template <class Node>
-static std::ostream& memoryEdge(const Edge<Node>& to, size_t fromId,
-                                size_t toId, std::uint16_t idx,
-                                std::ostream& os, bool edgeLabels = false) {
+static llvm::raw_ostream&
+memoryEdge(const Edge<Node>& to, size_t fromId, size_t toId, std::uint16_t idx,
+           llvm::raw_ostream& os, bool edgeLabels = false) {
   os << fromId << ":" << idx << ":s->";
   if (to.isTerminal()) {
     os << "t";
@@ -211,7 +221,8 @@ static std::ostream& memoryEdge(const Edge<Node>& to, size_t fromId,
       } else if (RealNumber::exactlyOne(to.w.r)) {
         os << "1";
       } else {
-        os << std::hex << reinterpret_cast<std::uintptr_t>(to.w.r) << std::dec;
+        os << llvm::format_hex_no_prefix(
+            reinterpret_cast<std::uintptr_t>(to.w.r), 1);
       }
       os << " ";
       if (RealNumber::exactlyZero(to.w.i)) {
@@ -221,7 +232,8 @@ static std::ostream& memoryEdge(const Edge<Node>& to, size_t fromId,
       } else if (RealNumber::exactlyOne(to.w.i)) {
         os << "1";
       } else {
-        os << std::hex << reinterpret_cast<std::uintptr_t>(to.w.i) << std::dec;
+        os << llvm::format_hex_no_prefix(
+            reinterpret_cast<std::uintptr_t>(to.w.i), 1);
       }
     }
     os << "]</font>>";
@@ -231,103 +243,44 @@ static std::ostream& memoryEdge(const Edge<Node>& to, size_t fromId,
   return os;
 }
 
+/// Write DOT text; the caller owns the output stream and its error state.
 template <class Node>
-static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
-                  bool edgeLabels = false, bool classic = false,
-                  bool memory = false, bool formatAsPolar = true) {
-  std::ostringstream oss{};
-  // header, root and terminal declaration
-
-  if (memory) {
-    memoryHeader(e, oss, edgeLabels);
-  } else if (colored) {
-    coloredHeader(e, oss, edgeLabels, formatAsPolar);
-  } else {
-    header(e, oss, edgeLabels, formatAsPolar);
-  }
-
-  // Assign IDs on discovery, independent of allocation addresses.
-  std::unordered_map<const Node*, size_t> nodes{{e.p, 0}};
-  std::queue<const Edge<Node>*> q;
-  q.push(&e);
-
-  // bfs until finished
-  while (!q.empty()) {
-    auto node = q.front();
-    q.pop();
-
-    // base case
-    if (node->isTerminal()) {
-      continue;
-    }
-
-    const auto nodeId = nodes.at(node->p);
-
-    // node definition as HTML-like label (href="javascript:;" is used as
-    // workaround to make tooltips work)
-    if (memory) {
-      memoryNode(*node, nodeId, oss);
-    } else if (classic) {
-      classicNode(*node, nodeId, oss, formatAsPolar);
-    } else {
-      modernNode(*node, nodeId, oss, formatAsPolar);
-    }
-
-    // iterate over edges in reverse to guarantee correct processing order
-    for (auto i = static_cast<std::int16_t>(node->p->e.size() - 1); i >= 0;
-         --i) {
-      auto& edge = node->p->e[static_cast<std::size_t>(i)];
-      if ((!memory && edge.w.approximatelyZero()) || edge.w.exactlyZero()) {
-        // potentially add zero stubs here
-        continue;
-      }
-
-      size_t childId = 0;
-      if (!edge.isTerminal()) {
-        const auto [it, inserted] = nodes.try_emplace(edge.p, nodes.size());
-        childId = it->second;
-        if (inserted) {
-          q.push(&edge);
-        }
-      }
-
-      if (memory) {
-        memoryEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), oss,
-                   edgeLabels);
-      } else if (colored) {
-        coloredEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), oss,
-                    edgeLabels, classic, formatAsPolar);
-      } else {
-        bwEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), oss,
-               edgeLabels, classic, formatAsPolar);
-      }
-    }
-  }
-  oss << "}\n";
-
-  os << oss.str() << std::flush;
-}
+void toDot(const Edge<Node>& e, llvm::raw_ostream& os, bool colored = true,
+           bool edgeLabels = false, bool classic = false, bool memory = false,
+           bool formatAsPolar = true);
 
 template <class Node>
-[[maybe_unused]] static void
-export2Dot(Edge<Node> basic, const std::string& outputFilename,
-           bool colored = true, bool edgeLabels = false, bool classic = false,
-           bool memory = false, bool show = true, bool formatAsPolar = true) {
-  std::ofstream init(outputFilename);
-  toDot(basic, init, colored, edgeLabels, classic, memory, formatAsPolar);
-  init.close();
+[[nodiscard]] static llvm::Error
+exportToDot(Edge<Node> basic, llvm::StringRef outputFilename,
+            bool colored = true, bool edgeLabels = false, bool classic = false,
+            bool memory = false, bool show = true, bool formatAsPolar = true) {
+  int descriptor = -1;
+  auto error = llvm::sys::fs::openFileForWrite(outputFilename, descriptor);
+  if (error) {
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot open DOT file: %s",
+                                   error.message().c_str());
+  }
+  llvm::raw_fd_ostream output(descriptor, false);
+  toDot(basic, output, colored, edgeLabels, classic, memory, formatAsPolar);
+  output.flush();
+  error = output.error();
+  output.clear_error();
+  if (const auto closeError =
+          llvm::sys::Process::SafelyCloseFileDescriptor(descriptor);
+      !error) {
+    error = closeError;
+  }
+  if (error) {
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot write DOT file: %s",
+                                   error.message().c_str());
+  }
 
   if (show) {
-    std::ostringstream oss;
-    oss << "dot -Tsvg " << outputFilename << " -o "
-        << outputFilename.substr(0, outputFilename.find_last_of('.')) << ".svg";
-    const auto str =
-        oss.str(); // required to avoid immediate deallocation of temporary
-    const auto exitCode = std::system(str.c_str());
-    if (exitCode != 0) {
-      std::cerr << "Error: dot returned with exit code " << exitCode << "\n";
-    }
+    return renderDotToSvg(outputFilename);
   }
+  return llvm::Error::success();
 }
 
 ///
@@ -336,83 +289,41 @@ export2Dot(Edge<Node> basic, const std::string& outputFilename,
 /// architectures/platforms
 ///
 
-void serialize(const vEdge& basic, std::ostream& os, bool writeBinary = false);
+void serialize(const vEdge& basic, llvm::raw_ostream& os,
+               bool writeBinary = false);
 
-void serializeMatrix(const mEdge& basic, std::int64_t& idx,
-                     std::unordered_map<mNode*, std::int64_t>& nodeIndex,
-                     std::unordered_set<mNode*>& visited, std::ostream& os,
-                     bool writeBinary = false);
-void serialize(const mEdge& basic, std::ostream& os, bool writeBinary = false);
+void serialize(const mEdge& basic, llvm::raw_ostream& os,
+               bool writeBinary = false);
 template <class Node>
-static void serialize(const Edge<Node>& basic,
-                      const std::string& outputFilename,
-                      bool writeBinary = false) {
-  std::ofstream ofs = std::ofstream(outputFilename, std::ios::binary);
-
-  if (!ofs.good()) {
-    throw std::invalid_argument("Cannot open file: " + outputFilename);
+[[nodiscard]] static llvm::Error serialize(const Edge<Node>& basic,
+                                           llvm::StringRef outputFilename,
+                                           bool writeBinary = false) {
+  int descriptor = -1;
+  auto error = llvm::sys::fs::openFileForWrite(outputFilename, descriptor);
+  if (error) {
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot open serialized file: %s",
+                                   error.message().c_str());
   }
-
-  serialize(basic, ofs, writeBinary);
-  ofs.close();
-  if (!ofs) {
-    throw std::runtime_error("Cannot write file: " + outputFilename);
+  llvm::raw_fd_ostream output(descriptor, false);
+  serialize(basic, output, writeBinary);
+  output.flush();
+  error = output.error();
+  output.clear_error();
+  if (const auto closeError =
+          llvm::sys::Process::SafelyCloseFileDescriptor(descriptor);
+      !error) {
+    error = closeError;
   }
+  if (error) {
+    return llvm::createStringError(std::errc::io_error,
+                                   "Cannot write serialized file: %s",
+                                   error.message().c_str());
+  }
+  return llvm::Error::success();
 }
 
 template <typename Node>
-static void exportEdgeWeights(const Edge<Node>& edge, std::ostream& stream) {
-  struct Priocmp {
-    bool operator()(const Edge<Node>* left, const Edge<Node>* right) {
-      if (left->p == nullptr) {
-        return right->p != nullptr;
-      }
-      if (right->p == nullptr) {
-        return false;
-      }
-      return left->p->v < right->p->v;
-    }
-  };
-  stream << std::showpos << RealNumber::val(edge.w.r)
-         << RealNumber::val(edge.w.i) << std::noshowpos << "i\n";
-
-  std::unordered_set<decltype(edge.p)> nodes{};
-
-  std::priority_queue<const Edge<Node>*, std::vector<const Edge<Node>*>,
-                      Priocmp>
-      q;
-  q.push(&edge);
-
-  // bfs until finished
-  while (!q.empty()) {
-    auto edgePtr = q.top();
-    q.pop();
-
-    // base case
-    if (edgePtr->isTerminal()) {
-      continue;
-    }
-
-    // check if edgePtr has already been processed
-    if (auto ret = nodes.emplace(edgePtr->p); !ret.second) {
-      continue;
-    }
-
-    // iterate over edges in reverse to guarantee correct processing order
-    for (auto i = static_cast<std::int16_t>(edgePtr->p->e.size() - 1); i >= 0;
-         --i) {
-      auto& child = edgePtr->p->e[static_cast<std::size_t>(i)];
-      if (child.w.approximatelyZero()) {
-        // potentially add zero stubs here
-        continue;
-      }
-
-      // non-zero child to be included
-      q.push(&child);
-      stream << std::showpos << RealNumber::val(child.w.r)
-             << RealNumber::val(child.w.i) << std::noshowpos << "i\n";
-    }
-  }
-}
+void exportEdgeWeights(const Edge<Node>& edge, llvm::raw_ostream& stream);
 
 } // namespace dd

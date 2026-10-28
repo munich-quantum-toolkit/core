@@ -9,9 +9,13 @@
 add_test(
   NAME mqt-core-mqt-cc-qir-output-test
   COMMAND
-    ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>" "-DLLVM_AS=$<TARGET_FILE:llvm-as>"
-    "-DLLVM_DIS=$<TARGET_FILE:llvm-dis>" "-DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
-    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/output-$<CONFIG>" -P
+    ${CMAKE_COMMAND}
+    "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
+    "-DLLVM_AS=$<TARGET_FILE:llvm-as>"
+    "-DLLVM_DIS=$<TARGET_FILE:llvm-dis>"
+    "-DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
+    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/output-$<CONFIG>"
+    -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_qir_output.cmake")
 
 add_test(
@@ -25,16 +29,19 @@ add_test(
 add_test(
   NAME mqt-core-mqt-cc-debugging-test
   COMMAND
-    ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
+    ${CMAKE_COMMAND}
+    "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
     "-DQASM_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
     "-DNONLINEAR_QCO_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/nonlinear.qco.mlir"
-    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/debugging-output-$<CONFIG>" -P
+    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/debugging-output-$<CONFIG>"
+    -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_debugging.cmake")
 
 target_sources(mqt-core-mlir-unittests-compiler PRIVATE test_cli_options.cpp)
 target_compile_definitions(
   mqt-core-mlir-unittests-compiler
-  PRIVATE MQT_CORE_MQT_CC="$<TARGET_FILE:mqt-cc>"
-          MQT_CORE_MQT_CC_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
-          MQT_CORE_MQT_CC_LAYOUT_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/layout.qc.mlir")
+  PRIVATE
+    MQT_CORE_MQT_CC="$<TARGET_FILE:mqt-cc>"
+    MQT_CORE_MQT_CC_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
+    MQT_CORE_MQT_CC_LAYOUT_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/layout.qc.mlir")
 add_dependencies(mqt-core-mlir-unittests-compiler mqt-cc)

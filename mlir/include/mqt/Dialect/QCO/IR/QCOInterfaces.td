@@ -25,6 +25,9 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         The interface enables uniform introspection and composition capabilities
         across all unitary operations with value semantics.
 
+        Input and output qubit ranges correspond positionally: the i-th output
+        continues the i-th input wire, including for SWAP operations.
+
         Gate parameters must be finite, including values produced at runtime.
         Operation verification only checks direct constants as a sanity check.
     }];

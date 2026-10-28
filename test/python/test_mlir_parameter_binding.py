@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+from collections import UserDict
+
 import numpy as np
+import numpy.typing as npt
 import pytest
 import qiskit
 from qiskit import QuantumCircuit
@@ -18,7 +21,7 @@ from qiskit.circuit import Parameter
 from qiskit.quantum_info import Operator
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import QCProgram
+from mqt.core.mlir import QCProgram, build_functionality, sample
 
 
 @pytest.mark.skipif(not supports_qiskit_translation(), reason=f"No registered Qiskit adapter for {qiskit.__version__}")
@@ -73,20 +76,145 @@ def test_scalar_parameters_round_trip_through_openqasm() -> None:
     )
 
 
-@pytest.mark.parametrize("values", [{"a": 1.0, "unknown": 2.0}, {"a": np.inf}, {"a": np.nan}])
-def test_invalid_binding_is_atomic(values: dict[str, float]) -> None:
-    """Invalid assignments leave the input reusable."""
+@pytest.fixture
+def array_program() -> QCProgram:
+    """Create two rotations with an array input and a scalar offset.
+
+    Returns:
+        The parameterized QC program.
+    """
+    return QCProgram.from_mlir_str("""
+    module {
+      func.func @main(%angles: tensor<2xf64> {mqt.input_name = "angles"},
+                      %offset: f64 {mqt.input_name = "offset"})
+          -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %first = tensor.extract %angles[%zero] : tensor<2xf64>
+        %second = tensor.extract %angles[%one] : tensor<2xf64>
+        %shifted = arith.addf %first, %offset : f64
+        %q0 = qc.alloc : !qc.qubit
+        %q1 = qc.alloc : !qc.qubit
+        qc.rx(%shifted) %q0 : !qc.qubit
+        qc.ry(%second) %q1 : !qc.qubit
+        %b0 = qc.measure %q0 : !qc.qubit -> i1
+        %b1 = qc.measure %q1 : !qc.qubit -> i1
+        %result = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        cbit.store %b0, %result[%zero] : !cbit.reg<2>
+        cbit.store %b1, %result[%one] : !cbit.reg<2>
+        qc.dealloc %q0 : !qc.qubit
+        qc.dealloc %q1 : !qc.qubit
+        return %result : !cbit.reg<2>
+      }
+    }
+    """)
+
+
+@pytest.mark.parametrize("qco", [False, True], ids=["qc", "qco"])
+@pytest.mark.parametrize("as_array", [False, True], ids=["list", "numpy"])
+def test_array_binding_preserves_scalar_input(array_program: QCProgram, *, as_array: bool, qco: bool) -> None:
+    """Binding one array preserves the scalar input and the resulting circuit."""
+    program = array_program.to_qco() if qco else array_program
+    original = program.copy()
+    angles = [np.pi / 2, np.pi]
+    program.bind_parameters(UserDict({"angles": np.asarray(angles) if as_array else angles}))
+    assert program.parameters == ["offset"]
+    program.bind_parameters({"offset": np.pi / 2})
+    assert program.parameters == []
+    assert sample(program, shots=4, seed=42) == {"11": 4}
+    assert original.parameters == ["angles", "offset"]
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [np.longdouble(0.25), np.float64(0.25), np.array(0.25)],
+    ids=["numpy-longdouble", "numpy-float64", "numpy-scalar-array"],
+)
+def test_numpy_scalar_and_single_element_array_binding(
+    offset: np.floating | npt.NDArray[np.float64],
+) -> None:
+    """Bind NumPy scalars and a read-only array with one element."""
     program = QCProgram.from_mlir_str("""
     module {
-      func.func @main(%a: f64 {mqt.input_name = "a"}) attributes {mqt.entry_point} {
-        %q = qc.alloc : !qc.qubit
-        qc.rx(%a) %q : !qc.qubit
-        qc.dealloc %q : !qc.qubit
+      func.func @main(%angles: tensor<1xf64> {mqt.input_name = "angles"},
+                      %offset: f64 {mqt.input_name = "offset"})
+          attributes {mqt.entry_point} {
         return
       }
     }
     """)
+    angles = np.array([0.5])
+    angles.setflags(write=False)
+    program.bind_parameters({"angles": angles, "offset": offset})
+    assert program.parameters == []
+
+
+@pytest.mark.parametrize(
+    ("angles", "message"),
+    [
+        (np.array(0.0), "requires an array"),
+        (np.zeros((2, 1)), "must be one-dimensional"),
+        (np.zeros((2, 1), dtype=object), "must be one-dimensional"),
+        (np.zeros((2, 1), dtype=">f8"), "must be one-dimensional"),
+    ],
+)
+def test_numpy_array_binding_rejects_other_ranks(array_program: QCProgram, angles: npt.NDArray, message: str) -> None:
+    """A scalar or matrix cannot silently become a one-dimensional array."""
+    before = array_program.ir
+    with pytest.raises(ValueError, match=message):
+        array_program.bind_parameters({"angles": angles, "offset": 0.25})
+    assert array_program.ir == before
+
+
+@pytest.mark.parametrize("qco", [False, True], ids=["qc", "qco"])
+def test_invalid_binding_is_atomic(array_program: QCProgram, *, qco: bool) -> None:
+    """Reject a scalar mismatch after a valid array without changing either input."""
+    program = array_program.to_qco() if qco else array_program
     before = program.ir
-    with pytest.raises(ValueError, match=r"unknown f64 parameter|must be finite"):
-        program.bind_parameters(values)
+    with pytest.raises(ValueError, match="requires a scalar"):
+        program.bind_parameters({"angles": [0.0, 0.0], "offset": [0.0]})
     assert program.ir == before
+
+
+def test_parameterized_controlled_body_folds_without_quantum_optimization() -> None:
+    """Inlining resolves formal arithmetic while retaining gates and relative phase."""
+    program = QCProgram.from_openqasm_str(
+        'OPENQASM 3; include "stdgates.inc"; '
+        "gate custom(a,b,c) q,r { cu3(a,b,c) q,r; } "
+        "h $0; h $0; custom(-0.7,0.2,0.3) $1,$0;"
+    ).to_qco()
+    program.run_pass_pipeline("canonicalize")
+    assert "arith.addf" in program.ir
+    with pytest.raises(ValueError, match="compile-time constant matrix"):
+        build_functionality(program)
+    program.run_pass_pipeline("inline,canonicalize")
+    assert program.ir.count("qco.h") == 2
+    assert "arith.addf" not in program.ir
+    assert "arith.mulf" not in program.ir
+    theta, phi, lam = -0.7, 0.2, 0.3
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    expected = np.eye(4, dtype=complex)
+    expected[2:, 2:] = np.exp(-0.25j) * np.array([
+        [c, -np.exp(1j * lam) * s],
+        [np.exp(1j * phi) * s, np.exp(1j * (phi + lam)) * c],
+    ])
+    np.testing.assert_allclose(build_functionality(program), expected, rtol=0, atol=1e-12)
+
+
+def test_classical_folding_rejects_nonfinite_gate_parameter() -> None:
+    """Explicit folding retains the verifier's finite-parameter diagnostic."""
+    program = QCProgram.from_mlir_str("""
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qc.static 0 : !qc.qubit
+        %one = arith.constant 1.0 : f64
+        %zero = arith.constant 0.0 : f64
+        %angle = arith.divf %one, %zero : f64
+        qc.rx(%angle) %q : !qc.qubit
+        return
+      }
+    }
+    """)
+    qco = program.to_qco()
+    with pytest.raises(RuntimeError, match="must be finite"):
+        qco.run_pass_pipeline("canonicalize")

@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/MagicStateDistillation.hpp"
 
+#include "register_benchmark.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -48,7 +50,7 @@ Bit 1 flags any rejected block; bit 0 checks the retained root state against
 regardless of rejection. The benchmark models ideal logical circuits without
 input noise, physical error correction, or retries.)pb");
   magicStateDistillation
-      .def(nb::init<bench::MagicStateDistillationOptions>(),
+      .def("__init__", benchmarkInit(&bench::MagicStateDistillation::create),
            "options"_a = bench::MagicStateDistillationOptions{})
       .def_prop_ro("options", &bench::MagicStateDistillation::options,
                    nb::rv_policy::reference_internal,
@@ -56,46 +58,16 @@ input noise, physical error correction, or retries.)pb");
       .def_prop_ro("output", &bench::MagicStateDistillation::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::MagicStateDistillation::probability,
+      .def("probability",
+           benchmarkOutcome(&bench::MagicStateDistillation::probability),
            "outcome"_a, "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::MagicStateDistillation::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
-      .def(
-          "generate",
-          [](const bench::MagicStateDistillation& value) {
-            return nb::module_::import_("mqt.core.mlir")
-                .attr("_generate_benchmark")(
-                    bench::toInstanceSpecificationJSON(value));
-          },
-          nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
-          "Generate the benchmark as a QC program.")
-      .def_prop_ro(
-          "instance_specification_json",
-          [](const bench::MagicStateDistillation& value) {
-            return bench::toInstanceSpecificationJSON(value);
-          },
-          "The canonical instance specification JSON.")
-      .def_prop_ro(
-          "manifest_json",
-          [](const bench::MagicStateDistillation& value) {
-            return bench::toManifestJSON(value);
-          },
-          "The canonical manifest JSON.")
-      .def_prop_ro(
-          "case_id",
-          [](const bench::MagicStateDistillation& value) {
-            return bench::caseId(value);
-          },
-          "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::magicStateDistillationFromInstanceSpecificationJSON,
-                  "json"_a, nb::kw_only(),
-                  "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json",
-                  &bench::magicStateDistillationFromManifestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def("evaluate",
+           benchmarkMethod(&bench::MagicStateDistillation::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
+  registerBenchmarkIO(
+      magicStateDistillation,
+      &bench::magicStateDistillationFromInstanceSpecificationJSON,
+      &bench::magicStateDistillationFromManifestJSON);
 }
 
 } // namespace mqt

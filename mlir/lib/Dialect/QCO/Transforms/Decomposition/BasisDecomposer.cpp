@@ -96,6 +96,14 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
       relativeEq(basisWeyl->c(), 0.0, WEYL_DIAGONALIZATION_TOLERANCE,
                  WEYL_SUPER_CONTROLLED_MAX_RELATIVE);
 
+  TwoQubitBasisDecomposer decomposer;
+  decomposer.basisFidelity = basisFidelity;
+  decomposer.basisWeyl = *basisWeyl;
+  decomposer.isSuperControlled = isSuperControlled;
+  if (!isSuperControlled) {
+    return decomposer;
+  }
+
   const auto b = basisWeyl->b();
   const Complex expMinusB = std::exp(-1i * b);
   const Complex expPlusB = std::exp(1i * b);
@@ -144,10 +152,6 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
   const Matrix2x2 k2rDaggerK12r = k2rDagger * K12_R_ARR;
   const Matrix2x2 iPauliZ = Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
 
-  TwoQubitBasisDecomposer decomposer;
-  decomposer.basisFidelity = basisFidelity;
-  decomposer.basisWeyl = *basisWeyl;
-  decomposer.isSuperControlled = isSuperControlled;
   decomposer.smb = TwoQubitBasisDecomposer::SmbPrecomputed{
       .u0l = k31l * k1lDagger,
       .u0r = k31r * k1rDagger,
@@ -180,27 +184,32 @@ TwoQubitBasisDecomposer::decomposeTarget(
   return twoQubitDecompose(*targetWeyl, numBasisGateUses);
 }
 
+uint8_t TwoQubitBasisDecomposer::numBasisGates(
+    std::array<double, 3> coordinates) const {
+  const auto traceValues = traces(coordinates);
+  const uint8_t maxBasisUses = isSuperControlled ? 3 : 1;
+  uint8_t bestNbasis = 0;
+  auto bestValue = std::numeric_limits<double>::lowest();
+  double fidelityPower = 1.0;
+  for (uint8_t i = 0; i <= maxBasisUses; ++i) {
+    const auto value = traceToFidelity(traceValues[i]) * fidelityPower;
+    fidelityPower *= basisFidelity;
+    if (value > bestValue) {
+      bestNbasis = i;
+      bestValue = value;
+    }
+  }
+  return bestNbasis;
+}
+
 std::optional<TwoQubitNativeDecomposition>
 TwoQubitBasisDecomposer::twoQubitDecompose(
     const TwoQubitWeylDecomposition& targetDecomposition,
     std::optional<std::uint8_t> numBasisGateUses) const {
-  std::uint8_t bestNbasis = 0;
-  if (numBasisGateUses) {
-    bestNbasis = *numBasisGateUses;
-  } else {
-    const auto traceValues = traces(targetDecomposition);
-    auto bestValue = std::numeric_limits<double>::lowest();
-    double fidelityPower = 1.0;
-    for (int i = 0; std::cmp_less(i, traceValues.size()); ++i) {
-      const auto value = traceToFidelity(traceValues[i]) * fidelityPower;
-      fidelityPower *= basisFidelity;
-      if (value > bestValue) {
-        bestNbasis = static_cast<std::uint8_t>(i);
-        bestValue = value;
-      }
-    }
-  }
-  if (bestNbasis > 1 && !isSuperControlled) {
+  const auto bestNbasis =
+      numBasisGateUses ? *numBasisGateUses
+                       : numBasisGates(targetDecomposition.coordinates());
+  if (bestNbasis > (isSuperControlled ? 3 : 1)) {
     return std::nullopt;
   }
 
@@ -332,19 +341,17 @@ SmallVector<Value, 2> TwoQubitBasisDecomposer::emitCartan(
 }
 
 std::array<std::complex<double>, 4>
-TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
+TwoQubitBasisDecomposer::traces(std::array<double, 3> coordinates) const {
+  const auto [a, b, c] = coordinates;
+  const auto da = a - basisWeyl.a();
+  const auto db = b - basisWeyl.b();
+  const auto dc = c - basisWeyl.c();
   return {
-      4. * std::complex<double>{std::cos(target.a()) * std::cos(target.b()) *
-                                    std::cos(target.c()),
-                                std::sin(target.a()) * std::sin(target.b()) *
-                                    std::sin(target.c())},
-      4. * std::complex<double>{std::cos(BASIS_PI_OVER_4 - target.a()) *
-                                    std::cos(basisWeyl.b() - target.b()) *
-                                    std::cos(target.c()),
-                                std::sin(BASIS_PI_OVER_4 - target.a()) *
-                                    std::sin(basisWeyl.b() - target.b()) *
-                                    std::sin(target.c())},
-      std::complex<double>{4. * std::cos(target.c()), 0.},
+      4. * std::complex<double>{std::cos(a) * std::cos(b) * std::cos(c),
+                                std::sin(a) * std::sin(b) * std::sin(c)},
+      4. * std::complex<double>{std::cos(da) * std::cos(db) * std::cos(dc),
+                                std::sin(da) * std::sin(db) * std::sin(dc)},
+      std::complex<double>{4. * std::cos(c), 0.},
       std::complex<double>{4., 0.},
   };
 }

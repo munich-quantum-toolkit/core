@@ -39,11 +39,14 @@
 #include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include <cassert>
 #include <cstddef>
@@ -88,14 +91,20 @@ static LogicalResult moveTerminalMeasurements(Block& body,
                                               Block& measurements) {
   DenseSet<Value> measuredQubits;
   SmallVector<LLVM::CallOp> measurementCalls;
-  for (auto call : body.getOps<LLVM::CallOp>()) {
-    if (!call.getCallee() ||
-        !call.getCallee()->starts_with("__quantum__qis__")) {
+  for (auto& operation : body) {
+    if (auto store = dyn_cast<LLVM::StoreOp>(operation);
+        store && store->hasAttr(QIR_QUBIT_STORE_ATTR) &&
+        measuredQubits.contains(store.getValue())) {
+      return store.emitError(
+          "QIR Base Profile forbids using a qubit after measurement");
+    }
+    auto call = dyn_cast<LLVM::CallOp>(operation);
+    if (!call) {
       continue;
     }
     const bool isMeasurement = call.getCallee() == QIR_MEASURE;
     // Measurement's second pointer identifies a result, not a qubit.
-    auto operands = call.getOperands();
+    auto operands = call.getArgOperands();
     if (isMeasurement) {
       operands = operands.take_front(1);
     }
@@ -116,6 +125,55 @@ static LogicalResult moveTerminalMeasurements(Block& body,
   return success();
 }
 
+static bool isBaseConstant(Value value) {
+  auto* op = value.getDefiningOp();
+  if (op == nullptr) {
+    return false;
+  }
+  if (isa<LLVM::ConstantOp, LLVM::ZeroOp, LLVM::AddressOfOp>(op)) {
+    return true;
+  }
+  return isa<LLVM::IntToPtrOp, LLVM::GEPOp>(op) &&
+         llvm::all_of(op->getOperands(), isBaseConstant);
+}
+
+/// Base has no classical memory or runtime computation, even for gate angles.
+static LogicalResult verifyBaseInstructions(LLVM::LLVMFuncOp function) {
+  DenseSet<Value> initializedResults;
+  const auto result = function.getBody().walk([&](Operation* op) {
+    const auto constantOperands =
+        llvm::all_of(op->getOperands(), isBaseConstant);
+    if (isa<LLVM::ConstantOp, LLVM::ZeroOp, LLVM::AddressOfOp>(op) ||
+        (isa<LLVM::IntToPtrOp, LLVM::GEPOp, LLVM::ReturnOp>(op) &&
+         constantOperands) ||
+        (isa<LLVM::BrOp>(op) && op->getNumOperands() == 0)) {
+      return WalkResult::advance();
+    }
+    if (auto call = dyn_cast<LLVM::CallOp>(op); call && call.getCallee() &&
+                                                call.getNumResults() == 0 &&
+                                                constantOperands) {
+      const auto name = *call.getCallee();
+      if (name == QIR_MEASURE) {
+        initializedResults.insert(call.getOperand(1));
+      } else if (name == QIR_RECORD_OUTPUT &&
+                 !initializedResults.contains(call.getOperand(0))) {
+        call.emitError("QIR Base Profile requires every output bit to be "
+                       "measured; use Adaptive Profile for initialized "
+                       "classical outputs");
+        return WalkResult::interrupt();
+      }
+      if (name.starts_with("__quantum__qis__") || name == QIR_INITIALIZE ||
+          name == "__quantum__rt__tuple_record_output" ||
+          name == QIR_ARRAY_RECORD_OUTPUT || name == QIR_RECORD_OUTPUT) {
+        return WalkResult::advance();
+      }
+    }
+    op->emitError("operation requires capabilities beyond QIR Base Profile");
+    return WalkResult::interrupt();
+  });
+  return failure(result.wasInterrupted());
+}
+
 namespace {
 
 /// Converts `cbit.alloc` to static result
@@ -131,8 +189,8 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
     auto& state = getState();
     const auto it = state.cregIndices.find(op.getOperation());
     if (it == state.cregIndices.end()) {
-      rewriter.eraseOp(op);
-      return success();
+      return op.emitError(
+          "QIR conversion requires CBit allocations in the entry function");
     }
     auto& reg = state.cregs[it->second];
     const auto* size = std::get_if<int64_t>(&reg.size);
@@ -151,8 +209,7 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
       reg.results.push_back(result);
       // The results are recorded as part of the register
-      state.scalarResults.try_emplace(
-          index, qir::StaticResult{.pointer = result, .record = false});
+      state.scalarResults.push_back(result);
     }
 
     rewriter.eraseOp(op);
@@ -360,13 +417,21 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       result = getResultPtr(state, op.getOperation(), rewriter, false);
     }
 
+    if (auto it = state.measuredResults.find(op);
+        it != state.measuredResults.end()) {
+      it->second.value = result;
+    }
+
     // Preserve instruction order until terminal measurements are verified.
     rewriter.setInsertionPoint(op);
     auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
-    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
-                         ValueRange{adaptor.getQubit(), result});
+    auto call = LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                                     ValueRange{adaptor.getQubit(), result});
+    if (failed(state.nameNativeCall(call, "measure", adaptor.getQubit()))) {
+      return failure();
+    }
 
     rewriter.eraseOp(op);
 
@@ -525,8 +590,17 @@ protected:
     // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
-                               memref::MemRefDialect, scf::SCFDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect, scf::SCFDialect>();
+      // Defer classical memory and index types to final MemRef-to-LLVM
+      // lowering.
+      target.addDynamicallyLegalDialect<memref::MemRefDialect>(
+          [&](Operation* op) {
+            return llvm::all_of(
+                llvm::concat<Type>(op->getOperandTypes(), op->getResultTypes()),
+                [&](Type type) {
+                  return !isa<MemRefType>(type) || typeConverter.isLegal(type);
+                });
+          });
 
       populateQCToQIRBasePatterns(patterns, typeConverter, ctx, state);
 
@@ -536,15 +610,23 @@ protected:
         return;
       }
 
-      auto& body = *std::next(main.getBody().begin());
-      if (failed(moveTerminalMeasurements(body, *state.measurementsBlock))) {
-        signalPassFailure();
-        return;
-      }
       addOutputRecording(main, ctx, state);
     }
 
     if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {
+      signalPassFailure();
+      return;
+    }
+    // Reconcile argument casts before comparing canonical qubit pointers.
+    auto& body = *std::next(main.getBody().begin());
+    if (failed(moveTerminalMeasurements(body, *state.measurementsBlock))) {
+      signalPassFailure();
+      return;
+    }
+    // Discard folded descriptor operations before enforcing Base's subset.
+    PassManager cleanup(ctx);
+    cleanup.addPass(createCanonicalizerPass());
+    if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main))) {
       signalPassFailure();
     }
   }

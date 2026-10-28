@@ -15,6 +15,7 @@
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -51,27 +52,33 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/Scalar/MemCpyOptimizer.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+using llvm::createStringError;
+using llvm::Error;
+using llvm::Expected;
 
 #define DEBUG_TYPE "mqt-core-qir-jit"
 
@@ -81,11 +88,12 @@ static auto isEntryPoint(const llvm::Function& function) -> bool {
   return function.hasFnAttribute(ENTRY_POINT_ATTR);
 }
 
-static void validateNativeABI(llvm::CallingConv::ID convention,
-                              llvm::AttributeList attributes,
-                              const llvm::Twine& description) {
+static Error validateNativeABI(llvm::CallingConv::ID convention,
+                               llvm::AttributeList attributes,
+                               const llvm::Twine& description) {
   if (convention != llvm::CallingConv::C) {
-    throw std::runtime_error(
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
         (description + " must use the C calling convention").str());
   }
   for (const auto index : attributes.indexes()) {
@@ -107,41 +115,51 @@ static void validateNativeABI(llvm::CallingConv::ID convention,
              llvm::Attribute::Nest,
          }) {
       if (attributeSet.hasAttribute(kind)) {
-        throw std::runtime_error((description +
-                                  " has unsupported ABI attribute " +
-                                  attributeSet.getAttribute(kind).getAsString())
-                                     .str());
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            (description + " has unsupported ABI attribute " +
+             attributeSet.getAttribute(kind).getAsString())
+                .str());
       }
     }
   }
+  return Error::success();
 }
 
-static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
+static auto selectEntryPoint(llvm::Module& module)
+    -> Expected<llvm::Function*> {
   llvm::Function* selected = nullptr;
   for (auto& function : module) {
     if (!function.isDeclaration() && isEntryPoint(function)) {
       if (selected != nullptr) {
-        throw std::runtime_error("Multiple QIR entry points were found");
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            "Multiple QIR entry points were found");
       }
       selected = &function;
     }
   }
   if (selected == nullptr) {
-    throw std::runtime_error("No QIR entry point was found");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "No QIR entry point was found");
   }
   auto& entryPoint = *selected;
-  validateNativeABI(entryPoint.getCallingConv(), entryPoint.getAttributes(),
-                    "QIR entry point '" + entryPoint.getName() + "'");
+  if (auto error = validateNativeABI(
+          entryPoint.getCallingConv(), entryPoint.getAttributes(),
+          "QIR entry point '" + entryPoint.getName() + "'")) {
+    return error;
+  }
   const auto* type = entryPoint.getFunctionType();
   if (type->isVarArg() || type->getNumParams() != 0 ||
       !type->getReturnType()->isIntegerTy(64)) {
-    std::string actual;
-    llvm::raw_string_ostream stream(actual);
-    type->print(stream);
-    throw std::runtime_error("QIR entry point '" + entryPoint.getName().str() +
-                             "' must have type i64 (), but has type " + actual);
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        llvm::formatv(
+            "QIR entry point '{0}' must have type i64 (), but has type {1}",
+            entryPoint.getName(), *type)
+            .str());
   }
-  return entryPoint;
+  return &entryPoint;
 }
 
 static auto readOutputSchema(const llvm::Function& entryPoint)
@@ -166,12 +184,12 @@ static int mingwNoopMain() {
 // Try to enable debugger support for the given instance.
 // This always returns success, but prints a warning if it's not able to enable
 // debugger support.
-static llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
+static Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
   if (auto err = enableDebuggerSupport(jit)) {
     [[maybe_unused]] const std::string errMsg = toString(std::move(err));
     LLVM_DEBUG(llvm::dbgs() << DEBUG_TYPE ": " << errMsg << "\n");
   }
-  return llvm::Error::success();
+  return Error::success();
 }
 
 namespace {
@@ -237,7 +255,8 @@ static auto matches(const llvm::FunctionType& actual,
 }
 
 static auto describe(const RuntimeSymbol& symbol) -> std::string {
-  std::ostringstream description;
+  std::string descriptionStorage;
+  llvm::raw_string_ostream description(descriptionStorage);
   description << abiTypeName(symbol.result) << " (";
   for (std::size_t i = 0; i < symbol.parameters.size(); ++i) {
     if (i != 0) {
@@ -246,7 +265,7 @@ static auto describe(const RuntimeSymbol& symbol) -> std::string {
     description << abiTypeName(symbol.parameters[i]);
   }
   description << ")";
-  return description.str();
+  return descriptionStorage;
 }
 
 template <typename Function>
@@ -370,7 +389,7 @@ static auto createRuntimeRegistry() -> RuntimeRegistry {
 }
 
 static auto selectRuntimeSymbols(const llvm::Module& module)
-    -> std::vector<std::pair<std::string, void*>> {
+    -> Expected<std::vector<std::pair<std::string, void*>>> {
   static const auto REGISTRY = createRuntimeRegistry();
   std::vector<std::pair<std::string, void*>> selected;
   for (const auto& function : module) {
@@ -380,21 +399,24 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
     }
     const auto it = REGISTRY.find(function.getName().str());
     if (it == REGISTRY.end()) {
-      throw std::runtime_error("Unsupported QIR runtime declaration '" +
-                               function.getName().str() + "'");
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Unsupported QIR runtime declaration '" + function.getName().str() +
+              "'");
     }
-    validateNativeABI(function.getCallingConv(), function.getAttributes(),
-                      "QIR runtime declaration '" + function.getName() + "'");
+    if (auto error = validateNativeABI(
+            function.getCallingConv(), function.getAttributes(),
+            "QIR runtime declaration '" + function.getName() + "'")) {
+      return error;
+    }
     const auto& symbol = it->second;
     if (!matches(*function.getFunctionType(), symbol)) {
-      std::string actual;
-      llvm::raw_string_ostream stream(actual);
-      function.getFunctionType()->print(stream);
-      std::ostringstream message;
-      message << "QIR declaration '" << function.getName().str()
-              << "' has unsupported type " << actual << "; expected "
-              << describe(symbol);
-      throw std::runtime_error(message.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          llvm::formatv(
+              "QIR declaration '{0}' has unsupported type {1}; expected {2}",
+              function.getName(), *function.getFunctionType(), describe(symbol))
+              .str());
     }
     selected.emplace_back(function.getName().str(), symbol.address);
   }
@@ -410,26 +432,28 @@ static auto selectRuntimeSymbols(const llvm::Module& module)
           !callee->getName().starts_with("__quantum__")) {
         continue;
       }
-      validateNativeABI(call->getCallingConv(), call->getAttributes(),
-                        "QIR runtime call to '" + callee->getName() + "'");
+      if (auto error = validateNativeABI(
+              call->getCallingConv(), call->getAttributes(),
+              "QIR runtime call to '" + callee->getName() + "'")) {
+        return error;
+      }
       if (call->getFunctionType() != callee->getFunctionType()) {
-        throw std::runtime_error("QIR runtime call to '" +
-                                 callee->getName().str() +
-                                 "' must match its declaration");
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            "QIR runtime call to '" + callee->getName().str() +
+                "' must match its declaration");
       }
     }
   }
   return selected;
 }
 
-llvm::Expected<llvm::orc::ThreadSafeModule>
+Expected<llvm::orc::ThreadSafeModule>
 JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
                                  const llvm::StringRef bufferName) {
   llvm::orc::ThreadSafeContext context{std::make_unique<llvm::LLVMContext>()};
   llvm::SMDiagnostic err;
-  auto buffer = llvm::MemoryBuffer::getMemBuffer(
-      irBytes, bufferName,
-      /*RequiresNullTerminator=*/false); // bitcode isn't null-terminated
+  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(irBytes, bufferName);
   auto m = context.withContextDo([&](llvm::LLVMContext* ctx) {
     return parseIR(buffer->getMemBufferRef(), err, *ctx);
   });
@@ -443,21 +467,41 @@ JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
   return llvm::orc::ThreadSafeModule(std::move(m), std::move(context));
 }
 
-JitSession::JitSession(const llvm::StringRef irBytes,
-                       const llvm::StringRef bufferName,
-                       const Execution execution,
-                       std::optional<uint64_t> randomSeed)
+JitSession::JitSession(Execution execution, std::optional<uint64_t> randomSeed,
+                       llvm::raw_ostream* output)
     : runtime_(std::make_unique<Runtime>(
           randomSeed ? *randomSeed : Runtime::generateRandomSeed())),
       execution_(execution) {
-  initialize(loadModuleFromMemory(irBytes, bufferName), execution);
+  if (output != nullptr) {
+    runtime_->setOstream(*output);
+  } else {
+    runtime_->disableOutput();
+  }
+}
+
+Expected<std::unique_ptr<JitSession>>
+JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+                   Execution execution, std::optional<uint64_t> randomSeed,
+                   llvm::raw_ostream* output) {
+  auto loadedModule = loadModuleFromMemory(irBytes, bufferName);
+  if (!loadedModule) {
+    return loadedModule.takeError();
+  }
+  auto session = std::unique_ptr<JitSession>(
+      new JitSession(execution, randomSeed, output));
+  if (auto error = session->initialize(std::move(*loadedModule), execution)) {
+    // A failed construction must not run program destructors.
+    session->jit_.reset();
+    return error;
+  }
+  return session;
 }
 
 JitSession::~JitSession() { deinitialize(); }
 
-int64_t JitSession::run() { return runWithRuntime(*runtime_); }
+Expected<int64_t> JitSession::run() { return runWithRuntime(*runtime_); }
 
-int64_t JitSession::runWithRuntime(Runtime& runtime) {
+Expected<int64_t> JitSession::runWithRuntime(Runtime& runtime) {
   if (runtime.extractState_ && !initializesRuntime_) {
     runtime.reset();
   }
@@ -465,33 +509,148 @@ int64_t JitSession::runWithRuntime(Runtime& runtime) {
   const auto restoreRuntime =
       llvm::scope_exit([previous] { Runtime::bind(previous); });
   const auto code = entryPointFn_();
-  if (runtime.invalidStateExtraction_) {
-    throw std::invalid_argument(
+  if (runtime.invalidStateExtraction_ && runtime.deferredOutputs_ == nullptr) {
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
         "QIR state extraction cannot reset or operate on a measured qubit");
   }
   return code;
 }
 
-int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
-                           bool* stateAvailable, bool emitHeader) {
+Expected<int64_t> JitSession::sample(size_t shots,
+                                     std::vector<std::string>& results,
+                                     bool* stateAvailable, bool emitHeader) {
   return sampleWithRuntime(*runtime_, shots, results, emitHeader,
                            stateAvailable);
 }
 
-int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
-                                      std::vector<std::string>& results,
-                                      bool emitHeader, bool* stateAvailable) {
+Expected<int64_t>
+JitSession::sample(size_t shots,
+                   llvm::function_ref<void(std::string_view)> emit,
+                   bool* stateAvailable, bool emitHeader,
+                   std::optional<SampledOutput>* terminalOutput) {
+  return sampleWithRuntimeImpl(
+      *runtime_, shots, [&](const std::string& shot) { emit(shot); }, emit,
+      emitHeader, stateAvailable, terminalOutput);
+}
+
+Expected<int64_t>
+JitSession::sampleCounts(size_t shots, std::map<std::string, size_t>& counts,
+                         bool* stateAvailable) {
+  counts.clear();
+  auto& runtime = *runtime_;
+  auto* output = runtime.os;
+  runtime.disableOutput();
+  const auto restore = llvm::scope_exit([&] { runtime.os = output; });
+  if (shots != 0 && (samplingOutputs_ || tryTerminalSampling_)) {
+    std::vector<dd::SamplingOutput> outputs;
+    runtime.deferredOutputs_ = &outputs;
+    runtime.extractState_ = true;
+    const auto endTrial = llvm::scope_exit([&] {
+      runtime.extractState_ = false;
+      runtime.deferredOutputs_ = nullptr;
+    });
+    if (auto code = runWithRuntime(runtime); !code || *code != 0) {
+      if (stateAvailable != nullptr) {
+        *stateAvailable = false;
+      }
+      return code;
+    }
+    if (!runtime.invalidStateExtraction_) {
+      auto sampled = dd::Package::sampleCounts(runtime.qState.edge, outputs,
+                                               shots, runtime.mt);
+      if (!sampled) {
+        return sampled.takeError();
+      }
+      counts = std::move(*sampled);
+      if (stateAvailable != nullptr) {
+        *stateAvailable = true;
+      }
+      return 0;
+    }
+  }
+  if (!sampleBranches_ || shots == 0) {
+    return sample(
+        shots, [&](std::string_view shot) { ++counts[std::string(shot)]; },
+        stateAvailable, false);
+  }
+  if (stateAvailable != nullptr) {
+    *stateAvailable = false;
+  }
+  Runtime::SamplingBranches branches{.count = shots};
+  runtime.samplingBranches_ = &branches;
+  const auto restoreBranches =
+      llvm::scope_exit([&] { runtime.samplingBranches_ = nullptr; });
+  for (;;) {
+    if (!initializesRuntime_) {
+      runtime.reset();
+    }
+    if (auto code = runWithRuntime(runtime); !code || *code != 0) {
+      return code;
+    }
+    counts[runtime.getMeasurements()] += branches.count;
+    if (branches.pending.empty()) {
+      return 0;
+    }
+    auto next = std::move(branches.pending.back());
+    branches.pending.pop_back();
+    branches.path = std::move(next.first);
+    branches.count = next.second;
+  }
+}
+
+Expected<int64_t>
+JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
+                              std::vector<std::string>& results,
+                              bool emitHeader, bool* stateAvailable) {
   if (&runtime != runtime_.get() && !shareCompiledCode_) {
-    throw std::logic_error("QIR entry point cannot be shared across workers");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "QIR entry point cannot be shared across workers");
   }
   if (stateAvailable != nullptr) {
     *stateAvailable = false;
   }
   if (execution_ != Execution::Sampling) {
-    throw std::logic_error("Cannot sample a QIR state-extraction session");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Cannot sample a QIR state-extraction session");
   }
   results.clear();
   results.reserve(shots);
+  return sampleWithRuntimeImpl(
+      runtime, shots,
+      [&](std::string&& shot) { results.push_back(std::move(shot)); },
+      [&](std::string_view shot) { results.emplace_back(shot); }, emitHeader,
+      stateAvailable, nullptr);
+}
+
+Expected<int64_t>
+JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
+                              llvm::function_ref<void(std::string_view)> emit,
+                              bool emitHeader, bool* stateAvailable) {
+  return sampleWithRuntimeImpl(
+      runtime, shots, [&](const std::string& shot) { emit(shot); }, emit,
+      emitHeader, stateAvailable, nullptr);
+}
+
+Expected<int64_t> JitSession::sampleWithRuntimeImpl(
+    Runtime& runtime, size_t shots,
+    llvm::function_ref<void(std::string&&)> emitOwned,
+    llvm::function_ref<void(std::string_view)> emitBorrowed, bool emitHeader,
+    bool* stateAvailable, std::optional<SampledOutput>* terminalOutput) {
+  if (&runtime != runtime_.get() && !shareCompiledCode_) {
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "QIR entry point cannot be shared across workers");
+  }
+  if (stateAvailable != nullptr) {
+    *stateAvailable = false;
+  }
+  if (execution_ != Execution::Sampling) {
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Cannot sample a QIR state-extraction session");
+  }
+  if (terminalOutput != nullptr) {
+    terminalOutput->reset();
+  }
   if (emitHeader) {
     runtime.outputProgramHeader();
   }
@@ -500,28 +659,68 @@ int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
       runtime.reset();
     }
     runtime.outputShotStart();
-    const auto code = runWithRuntime(runtime);
-    runtime.outputShotEnd(code);
-    return code;
-  };
-  if (samplingOutputs_ && !runtime.hasOutput() && shots != 0) {
-    runtime.deferMeasurements_ = true;
-    const auto restore =
-        llvm::scope_exit([&] { runtime.deferMeasurements_ = false; });
-    if (const auto code = execute(); code != 0) {
+    auto code = runWithRuntime(runtime);
+    if (!code) {
       return code;
     }
-    runtime.sampleMeasurements(*samplingOutputs_, shots, results);
+    runtime.outputShotEnd(*code);
+    return code;
+  };
+  if (samplingOutputs_ && shots != 0) {
+    SampledOutput record;
+    llvm::raw_string_ostream captured(record.text);
+    auto* output = runtime.os;
+    runtime.deferMeasurements_ = true;
+    const auto restore = llvm::scope_exit([&] {
+      runtime.deferMeasurements_ = false;
+      runtime.os = output;
+      runtime.outputResultPositions_ = nullptr;
+    });
+    if (output != nullptr) {
+      runtime.setOstream(captured);
+      runtime.outputResultPositions_ = &record.resultOffsets;
+    }
+    if (auto code = execute(); !code || *code != 0) {
+      return code;
+    }
+    if (output != nullptr && terminalOutput == nullptr) {
+      const auto writeShot = [&](std::string_view shot) {
+        for (size_t i = 0; i < record.resultOffsets.size(); ++i) {
+          record.text[record.resultOffsets[i]] = shot[i];
+        }
+        *output << record.text;
+      };
+      if (auto error = runtime.sampleMeasurements(
+              *samplingOutputs_, shots,
+              [&](std::string&& shot) {
+                writeShot(shot);
+                emitOwned(std::move(shot));
+              },
+              [&](std::string_view shot) {
+                writeShot(shot);
+                emitBorrowed(shot);
+              })) {
+        return error;
+      }
+    } else {
+      if (auto error = runtime.sampleMeasurements(*samplingOutputs_, shots,
+                                                  emitOwned, emitBorrowed)) {
+        return error;
+      }
+      if (output != nullptr) {
+        *terminalOutput = std::move(record);
+      }
+    }
     if (stateAvailable != nullptr) {
       *stateAvailable = true;
     }
     return 0;
   }
   for (size_t i = 0; i < shots; ++i) {
-    if (const auto code = execute(); code != 0) {
+    if (auto code = execute(); !code || *code != 0) {
       return code;
     }
-    results.push_back(runtime.getMeasurements());
+    emitBorrowed(runtime.getMeasurements());
   }
   return 0;
 }
@@ -529,20 +728,24 @@ int64_t JitSession::sampleWithRuntime(Runtime& runtime, size_t shots,
 auto JitSession::runtime() -> Runtime& { return *runtime_; }
 
 bool JitSession::canSampleTerminal() const {
-  return samplingOutputs_.has_value() && !runtime_->hasOutput();
+  return samplingOutputs_.has_value();
 }
 
 bool JitSession::canShareCompiledCode() const { return shareCompiledCode_; }
 
-std::unique_ptr<Runtime> JitSession::makeWorkerRuntime(uint64_t seed) const {
+Expected<std::unique_ptr<Runtime>>
+JitSession::makeWorkerRuntime(uint64_t seed) const {
   if (!shareCompiledCode_ || execution_ != Execution::Sampling) {
-    throw std::logic_error("QIR entry point cannot be shared across workers");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "QIR entry point cannot be shared across workers");
   }
   auto worker = std::make_unique<Runtime>(seed);
   worker->outputSchema = runtime_->outputSchema;
   worker->metadata = runtime_->metadata;
-  worker->configureStaticResources(runtime_->staticQubits_,
-                                   runtime_->staticResults_);
+  if (auto error = worker->configureStaticResources(runtime_->staticQubits_,
+                                                    runtime_->staticResults_)) {
+    return error;
+  }
   return worker;
 }
 
@@ -559,15 +762,16 @@ void JitSession::initNativeTargets() {
   });
 }
 
-static std::optional<size_t>
+static Expected<std::optional<size_t>>
 readStaticCapacity(const llvm::Module& llvmModule,
                    const llvm::Function& entryPoint, llvm::StringRef flagName,
                    llvm::StringRef attributeName) {
   if (auto* flag = llvmModule.getModuleFlag(flagName)) {
     const auto* dynamic = llvm::mdconst::dyn_extract<llvm::ConstantInt>(flag);
     if (dynamic == nullptr || dynamic->getValue().getLimitedValue() > 1) {
-      throw std::invalid_argument("Invalid QIR resource flag '" +
-                                  flagName.str() + "'");
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Invalid QIR resource flag '" + flagName.str() + "'");
     }
     if (!dynamic->isZero()) {
       return std::nullopt;
@@ -580,31 +784,101 @@ readStaticCapacity(const llvm::Module& llvmModule,
   uint64_t capacity = 0;
   if (attribute.getValueAsString().getAsInteger(10, capacity) ||
       capacity > std::numeric_limits<size_t>::max()) {
-    throw std::invalid_argument("Invalid QIR resource capacity '" +
-                                attributeName.str() + "'");
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "Invalid QIR resource capacity '" +
+                                 attributeName.str() + "'");
   }
   return static_cast<size_t>(capacity);
 }
 
-void JitSession::initialize(
-    llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-    const Execution execution) {
-  if (!llvmModule) {
-    throw std::runtime_error(llvm::toString(llvmModule.takeError()));
+static Error normalizeNativeQISNames(llvm::Module& module) {
+  for (auto& function : llvm::make_early_inc_range(module)) {
+    auto name = function.getName();
+    if (!function.isDeclaration() || !name.consume_front("__quantum__qis__")) {
+      continue;
+    }
+    auto [gate, specialization] = name.split("__");
+    llvm::StringRef canonical;
+    if (gate == "r") {
+      canonical = "prx";
+    } else if (gate == "u") {
+      canonical = "u3";
+    } else if (gate == "measure") {
+      canonical = "mz";
+    } else if (gate == "sdg" || gate == "tdg" || gate == "sxdg" ||
+               gate == "csdg") {
+      canonical = gate.drop_back(2);
+      if (specialization == "body") {
+        specialization = "adj";
+      } else if (specialization == "ctl") {
+        specialization = "ctladj";
+      } else {
+        continue;
+      }
+    } else {
+      continue;
+    }
+    const auto replacement =
+        (llvm::Twine("__quantum__qis__") + canonical + "__" + specialization)
+            .str();
+    if (auto* existing = module.getFunction(replacement)) {
+      if (existing->getFunctionType() != function.getFunctionType()) {
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            "Conflicting native QIR function signatures");
+      }
+      if (auto error = validateNativeABI(
+              function.getCallingConv(), function.getAttributes(),
+              "QIR runtime declaration '" + function.getName() + "'")) {
+        return error;
+      }
+      function.replaceAllUsesWith(existing);
+      function.eraseFromParent();
+    } else {
+      function.setName(replacement);
+    }
   }
-  auto loadedModule = std::move(*llvmModule);
+  return Error::success();
+}
+
+Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
+                             const Execution execution) {
 
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
-  loadedModule.withModuleDo([&](llvm::Module& module) {
+  bool hasAggregateLoads = false;
+  auto preparation = loadedModule.withModuleDo([&](llvm::Module& module)
+                                                   -> Error {
+    if (auto error = normalizeNativeQISNames(module)) {
+      return error;
+    }
     std::string verification;
     llvm::raw_string_ostream diagnostics(verification);
     if (llvm::verifyModule(module, &diagnostics)) {
-      throw std::runtime_error("Invalid QIR module: " + verification);
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Invalid QIR module: " + verification);
+    }
+    // Missing version flags remain valid for existing authored programs.
+    for (const auto* key : {"qir_major_version", "qir_minor_version"}) {
+      if (auto* metadata = module.getModuleFlag(key)) {
+        const auto* value =
+            llvm::mdconst::dyn_extract<llvm::ConstantInt>(metadata);
+        if (value == nullptr || value->getValue().isNegative() ||
+            (llvm::StringRef(key) == "qir_major_version" &&
+             value->getValue() != 2)) {
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
+              "QIR requires nonnegative numeric version flags and major "
+              "version 2");
+        }
+      }
     }
     for (const auto& function : module) {
       for (const auto& block : function) {
         for (const auto& instruction : block) {
+          hasAggregateLoads |= llvm::isa<llvm::LoadInst>(instruction) &&
+                               instruction.getType()->isAggregateType();
           const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
           const auto* callee =
               call == nullptr ? nullptr : call->getCalledFunction();
@@ -628,7 +902,11 @@ void JitSession::initialize(
                  function.isIntrinsic() ||
                  function.getName().starts_with("__quantum__");
         });
-    auto& entryPoint = selectEntryPoint(module);
+    auto selected = selectEntryPoint(module);
+    if (!selected) {
+      return selected.takeError();
+    }
+    auto& entryPoint = **selected;
     entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));
     std::vector<std::pair<std::string, std::string>> metadata;
@@ -640,27 +918,50 @@ void JitSession::initialize(
     }
     runtime_->setMetadata(std::move(metadata));
     if (execution == Execution::StateExtraction) {
-      prepareForStateExtraction(entryPoint);
+      auto prepared = prepareForStateExtraction(entryPoint);
+      if (!prepared) {
+        return prepared.takeError();
+      }
       runtime_->extractState_ = entryPoint.getFnAttribute(QIR_PROFILES_ATTR)
                                     .getValueAsString()
                                     .compare(ADAPTIVE_PROFILE) == 0;
     }
-    runtimeSymbols = selectRuntimeSymbols(module);
-    runtime_->configureStaticResources(
-        readStaticCapacity(module, entryPoint, "dynamic_qubit_management",
-                           "required_num_qubits"),
+    auto symbols = selectRuntimeSymbols(module);
+    if (!symbols) {
+      return symbols.takeError();
+    }
+    runtimeSymbols = std::move(*symbols);
+    auto qubits = readStaticCapacity(
+        module, entryPoint, "dynamic_qubit_management", "required_num_qubits");
+    if (!qubits) {
+      return qubits.takeError();
+    }
+    auto results =
         readStaticCapacity(module, entryPoint, "dynamic_result_management",
-                           "required_num_results"));
+                           "required_num_results");
+    if (!results) {
+      return results.takeError();
+    }
+    if (auto error = runtime_->configureStaticResources(*qubits, *results)) {
+      return error;
+    }
     const auto* first =
         llvm::dyn_cast<llvm::CallInst>(&entryPoint.getEntryBlock().front());
     initializesRuntime_ =
         first != nullptr && first->getCalledFunction() != nullptr &&
         first->getCalledFunction()->isDeclaration() &&
         first->getCalledFunction()->getName() == "__quantum__rt__initialize";
-    if (execution == Execution::Sampling) {
+    // Destructors may inspect the last shot's collapsed state and Result
+    // values.
+    if (execution == Execution::Sampling &&
+        module.getNamedGlobal("llvm.global_dtors") == nullptr) {
       samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
     }
+    return Error::success();
   });
+  if (preparation) {
+    return preparation;
+  }
   initNativeTargets();
 
   // Get TargetTriple and DataLayout from the main module if they're explicitly
@@ -682,12 +983,13 @@ void JitSession::initialize(
   // Use the module's target triple if set, otherwise detect the host's.
   auto host = llvm::orc::JITTargetMachineBuilder::detectHost();
   if (!host) {
-    throw std::runtime_error(llvm::toString(host.takeError()));
+    return host.takeError();
   }
   if (tt) {
     if (tt->getArch() != host->getTargetTriple().getArch() ||
         tt->getOS() != host->getTargetTriple().getOS()) {
-      throw std::invalid_argument(
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
           "QIR target triple must match the execution host");
     }
     host->getTargetTriple() = *tt;
@@ -720,7 +1022,7 @@ void JitSession::initialize(
   // Build the JIT.
   auto expectedJit = builder.create();
   if (!expectedJit) {
-    throw std::runtime_error(llvm::toString(expectedJit.takeError()));
+    return expectedJit.takeError();
   }
   jit_ = std::move(*expectedJit);
 
@@ -732,7 +1034,7 @@ void JitSession::initialize(
         llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
   }
   if (auto err = jd.define(llvm::orc::absoluteSymbols(hostSymbols))) {
-    throw std::runtime_error(llvm::toString(std::move(err)));
+    return err;
   }
 
   // GDB listener (no error path)
@@ -758,12 +1060,13 @@ void JitSession::initialize(
                 },
             },
         }))) {
-      throw std::runtime_error(llvm::toString(std::move(err)));
+      return err;
     }
   }
 
   // Avoid optimizer startup for programs eligible for terminal sampling.
-  if (execution == Execution::Sampling && !samplingOutputs_) {
+  if (!samplingOutputs_ &&
+      (execution == Execution::Sampling || hasAggregateLoads)) {
     loadedModule.withModuleDo([&](llvm::Module& module) {
       module.setDataLayout(jit_->getDataLayout());
       module.setTargetTriple(jit_->getTargetTriple());
@@ -780,14 +1083,26 @@ void JitSession::initialize(
       passBuilder.registerLoopAnalyses(loopAnalyses);
       passBuilder.crossRegisterProxies(loopAnalyses, functionAnalyses,
                                        cgsccAnalyses, moduleAnalyses);
-      auto pipeline = passBuilder.buildPerModuleDefaultPipeline(
-          llvm::OptimizationLevel::O1);
+      llvm::ModulePassManager pipeline;
+      // Keep aggregate copies compact through scalar replacement and codegen.
+      pipeline.addPass(
+          llvm::createModuleToFunctionPassAdaptor(llvm::MemCpyOptPass()));
+      if (execution == Execution::Sampling) {
+        pipeline.addPass(passBuilder.buildPerModuleDefaultPipeline(
+            llvm::OptimizationLevel::O1));
+      }
       pipeline.run(module, moduleAnalyses);
+      sampleBranches_ =
+          execution == Execution::Sampling &&
+          qir::canSampleBranches(*module.getFunction(entryPointName));
+      tryTerminalSampling_ =
+          sampleBranches_ &&
+          qir::canDeferMeasurements(*module.getFunction(entryPointName));
     });
   }
 
   if (auto err = jit_->addIRModule(std::move(loadedModule))) {
-    throw std::runtime_error(llvm::toString(std::move(err)));
+    return err;
   }
 
   // Run any static constructors.
@@ -795,15 +1110,16 @@ void JitSession::initialize(
   const auto restore =
       llvm::scope_exit([previous] { Runtime::bind(previous); });
   if (auto err = jit_->initialize(jit_->getMainJITDylib())) {
-    throw std::runtime_error(llvm::toString(std::move(err)));
+    return err;
   }
 
   // Resolve the selected QIR entry point.
   auto entryPointAddress = jit_->lookup(entryPointName);
   if (!entryPointAddress) {
-    throw std::runtime_error(llvm::toString(entryPointAddress.takeError()));
+    return entryPointAddress.takeError();
   }
   entryPointFn_ = entryPointAddress->toPtr<EntryPointFn*>();
+  return Error::success();
 }
 
 void JitSession::deinitialize() const {

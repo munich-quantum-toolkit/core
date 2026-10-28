@@ -82,7 +82,8 @@ longer needs callbacks.
 `mlir/lib/Target/OpenQASM/OpenQASMSemantics.cpp` records scalar signedness and
 width. `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp` emits typed
 MLIR; `TranslateQCToOpenQASM3.cpp` in the same directory exports expressions.
-The Qiskit adapter, importer, and exporter live in `bindings/mlir/qiskit/`.
+The Qiskit adapter, importer, and exporter live in
+`bindings/mlir/Target/Qiskit/`.
 
 `mlir/lib/Support/IntegerExpressions.cpp` expands integer intrinsics only for
 targets that lack them. `mlir/lib/Conversion/QCOToJeff/QCOToJeff.cpp` promotes

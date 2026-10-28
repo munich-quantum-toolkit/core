@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/Teleportation.hpp"
 
+#include "register_benchmark.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -34,44 +36,13 @@ measurements stay internal.)pb");
       .def_prop_ro("output", &bench::Teleportation::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::Teleportation::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::Teleportation::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
-      .def(
-          "generate",
-          [](const bench::Teleportation& value) {
-            return nb::module_::import_("mqt.core.mlir")
-                .attr("_generate_benchmark")(
-                    bench::toInstanceSpecificationJSON(value));
-          },
-          nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
-          "Generate the benchmark as a QC program.")
-      .def_prop_ro(
-          "instance_specification_json",
-          [](const bench::Teleportation& value) {
-            return bench::toInstanceSpecificationJSON(value);
-          },
-          "The canonical instance specification JSON.")
-      .def_prop_ro(
-          "manifest_json",
-          [](const bench::Teleportation& value) {
-            return bench::toManifestJSON(value);
-          },
-          "The canonical manifest JSON.")
-      .def_prop_ro(
-          "case_id",
-          [](const bench::Teleportation& value) {
-            return bench::caseId(value);
-          },
-          "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::teleportationFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::teleportationFromManifestJSON,
-                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def("probability", benchmarkOutcome(&bench::Teleportation::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::Teleportation::evaluate),
+           "counts"_a, "Compare sampled counts with the ideal distribution.");
+  registerBenchmarkIO(teleportation,
+                      &bench::teleportationFromInstanceSpecificationJSON,
+                      &bench::teleportationFromManifestJSON);
 }
 
 } // namespace mqt

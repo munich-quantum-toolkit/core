@@ -184,6 +184,9 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
 QuantumProgramInfo QCProgram::inspect() const { return inspectProgram(mod()); }
 QuantumProgramInfo QCOProgram::inspect() const { return inspectProgram(mod()); }
 
+QuantumProgramAnalysis::QuantumProgramAnalysis(ModuleOp moduleOp)
+    : info_(inspectProgram(moduleOp)) {}
+
 static size_t countGatesIf(ModuleOp moduleOp,
                            function_ref<bool(size_t)> predicate) {
   size_t count = 0;

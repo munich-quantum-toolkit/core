@@ -130,9 +130,9 @@ constexpr std::array GATE_SPECIFICATIONS{
     },
     GateSpecification{
         .kind = GateKind::SQRTISWAP,
-        .name = "sqrt_iswap",
+        .name = "xx_plus_yy",
         .arity = 2,
-        .numParameters = 0,
+        .numParameters = 2,
     },
     GateSpecification{
         .kind = GateKind::ISWAP,
@@ -164,10 +164,14 @@ constexpr std::array GATE_SPECIFICATIONS{
 } // namespace
 
 /// Fixed parameters must admit the entangler used by native synthesis.
-static std::optional<double> synthesisParameter(GateKind gate) {
+static std::optional<double> synthesisParameter(GateKind gate,
+                                                size_t parameter) {
   if (gate == GateKind::RXX || gate == GateKind::RYY || gate == GateKind::RZX ||
       gate == GateKind::RZZ) {
     return std::numbers::pi / 2.;
+  }
+  if (gate == GateKind::SQRTISWAP) {
+    return parameter == 0 ? -std::numbers::pi / 2. : 0.;
   }
   return std::nullopt;
 }
@@ -619,7 +623,7 @@ struct CompilerTarget::Storage {
   supportsGate(GateKind gate,
                std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
                AngleSupport angles = AngleSupport::Fixed) const;
-  [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis() const;
+  [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis();
 
   std::optional<std::string> name;
   std::optional<DurationUnit> durationUnit;
@@ -640,6 +644,7 @@ struct CompilerTarget::Storage {
   /// Keys borrow the immutable site tuples owned by operations.
   std::vector<llvm::DenseSet<ArrayRef<SiteId>>> operationSites;
   SmallVector<GateKind> supportedGates;
+  SmallVector<Entangler> entanglers;
   std::optional<SynthesisBasis> basis;
 };
 
@@ -846,10 +851,10 @@ matchesSynthesisParameters(const CompilerTarget::OperationCapability& operation,
            operation.acceptsParameter(0, 0.) &&
            operation.acceptsParameter(0, std::numbers::pi / 2.);
   }
-  return matchesParameters(operation, [gate, angles](size_t) {
+  return matchesParameters(operation, [gate, angles](size_t parameter) {
     return angles == CompilerTarget::AngleSupport::Unrestricted
                ? std::nullopt
-               : synthesisParameter(gate);
+               : synthesisParameter(gate, parameter);
   });
 }
 
@@ -859,7 +864,9 @@ bool CompilerTarget::Storage::supportsGate(
   if ((gate == GateKind::CX &&
        supportsOperation("x", 2, 0, orderedSites, /*variadicOnly=*/true)) ||
       (gate == GateKind::CZ &&
-       supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true))) {
+       supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true)) ||
+      (gate == GateKind::SQRTISWAP &&
+       supportsOperation("sqrt_iswap", 2, 0, orderedSites))) {
     return true;
   }
   // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
@@ -875,7 +882,7 @@ bool CompilerTarget::Storage::supportsGate(
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
-CompilerTarget::Storage::resolveSynthesisBasis() const {
+CompilerTarget::Storage::resolveSynthesisBasis() {
   const auto supportsEveryPlacement =
       [&](StringRef operationName, size_t arity, size_t numParameters,
           bool variadicOnly = false,
@@ -980,7 +987,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
           return false;
         }
         if ((gate == GateKind::CX && supportsEveryPlacement("x", 2, 0, true)) ||
-            (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true))) {
+            (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true)) ||
+            (gate == GateKind::SQRTISWAP &&
+             supportsEveryPlacement("sqrt_iswap", 2, 0))) {
           return true;
         }
         // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
@@ -1019,38 +1028,29 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::RZZ, GateKind::ISWAP, GateKind::CZ,
       GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
-  std::optional<Entangler> entangler;
+  const auto addEntangler = [&](GateKind gate, AngleSupport angles) {
+    if (!llvm::any_of(entanglers,
+                      [gate](const auto& item) { return item.gate == gate; }) &&
+        supportsOnEveryCoupling(gate, angles)) {
+      entanglers.push_back({.gate = gate, .angles = angles});
+    }
+  };
   // An arbitrary-angle Pauli entangler realizes each Cartan rotation directly.
   for (const auto gate :
        {GateKind::RXX, GateKind::RYY, GateKind::RZX, GateKind::RZZ}) {
-    if (supportsOnEveryCoupling(gate, AngleSupport::Unrestricted)) {
-      entangler = {
-          .gate = gate,
-          .angles = CompilerTarget::AngleSupport::Unrestricted,
-      };
-      break;
-    }
+    addEntangler(gate, AngleSupport::Unrestricted);
   }
-  if (!entangler) {
-    for (const auto gate :
-         {GateKind::RZZ, GateKind::RXX, GateKind::RYY, GateKind::RZX}) {
-      if (supportsOnEveryCoupling(gate, AngleSupport::ZeroToHalfPi)) {
-        entangler = {.gate = gate, .angles = AngleSupport::ZeroToHalfPi};
-        break;
-      }
-    }
+  for (const auto gate :
+       {GateKind::RZZ, GateKind::RXX, GateKind::RYY, GateKind::RZX}) {
+    addEntangler(gate, AngleSupport::ZeroToHalfPi);
   }
-  if (!entangler) {
-    for (const auto gate : entanglerPreference) {
-      if (supportsOnEveryCoupling(gate)) {
-        entangler = {.gate = gate};
-        break;
-      }
-    }
+  for (const auto gate : entanglerPreference) {
+    addEntangler(gate, AngleSupport::Fixed);
   }
   return SynthesisBasis{
       .singleQubit = *singleQubit,
-      .entangler = entangler,
+      .entangler =
+          entanglers.empty() ? std::nullopt : std::optional{entanglers.front()},
       .quarterTurnGates = quarterTurnGates,
       .hasHalfTurn = hasHalfTurn,
   };
@@ -1418,6 +1418,38 @@ bool CompilerTarget::supportsOperation(
       });
 }
 
+CompilerTarget::OperationMatch CompilerTarget::findOperation(
+    StringRef name, size_t arity, ArrayRef<std::optional<double>> parameters,
+    std::optional<ArrayRef<SiteId>> sites, size_t numControls,
+    function_ref<bool(const OperationCapability&)> filter) const {
+  const auto select = [&](StringRef spelling, bool variadicOnly) {
+    const OperationCapability* selected = nullptr;
+    const bool supported = storage_->supportsOperation(
+        spelling, arity, parameters.size(), sites, variadicOnly, nullptr,
+        [&](const OperationCapability& operation) {
+          if ((!sites && !operation.siteTuples().empty()) ||
+              !matchesParameters(
+                  operation, [&](size_t index) { return parameters[index]; }) ||
+              (filter && !filter(operation))) {
+            return false;
+          }
+          selected = &operation;
+          return true;
+        });
+    return supported ? selected : nullptr;
+  };
+  if (numControls != 0 && numControls <= 2) {
+    if (const auto* operation = select(
+            (Twine(numControls == 1 ? "c" : "cc") + name).str(), false)) {
+      return {.capability = operation, .genericControls = false};
+    }
+  }
+  return {
+      .capability = select(name, numControls != 0),
+      .genericControls = numControls != 0,
+  };
+}
+
 bool CompilerTarget::supports(::mlir::Operation* operation) const {
   return supportsImpl(operation, std::nullopt);
 }
@@ -1514,6 +1546,11 @@ ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
 const std::optional<CompilerTarget::SynthesisBasis>&
 CompilerTarget::synthesisBasis() const noexcept {
   return storage_->basis;
+}
+
+ArrayRef<CompilerTarget::Entangler>
+CompilerTarget::synthesisEntanglers() const noexcept {
+  return storage_->entanglers;
 }
 
 mqt::CompilationTargetAttr

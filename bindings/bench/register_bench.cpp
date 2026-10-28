@@ -20,12 +20,14 @@ namespace nb = nanobind;
 
 // forward declarations
 void registerBV(const nb::module_& m);
+void registerFanOut(const nb::module_& m);
 void registerGHZ(const nb::module_& m);
 void registerGrover(const nb::module_& m);
-void registerWeakMeasurementGrover(const nb::module_& m);
+void registerGroverWeakMeasurement(const nb::module_& m);
 void registerMagicStateDistillation(const nb::module_& m);
 void registerModularMultiplier(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
+void registerQAOA(const nb::module_& m);
 void registerQFT(const nb::module_& m);
 void registerQFTAdder(const nb::module_& m);
 void registerQPE(const nb::module_& m);
@@ -34,9 +36,8 @@ void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
 void registerWState(const nb::module_& m);
 
-// The nanobind module macro requires its module handle by value.
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+// NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
+void registerBench(nb::module_& m) {
   m.doc() = "Typed benchmark instances and references.";
 
   nb::class_<bench::Output>(m, "Output",
@@ -47,6 +48,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   nb::class_<bench::Evaluation>(
       m, "Evaluation", "The result of comparing counts with a reference.")
+      .def_ro("shots", &bench::Evaluation::shots,
+              "The number of evaluated shots.")
       .def_ro("total_variation_distance",
               &bench::Evaluation::totalVariationDistance,
               "The total variation distance from the ideal distribution.")
@@ -60,6 +63,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "bv", "Bernstein--Vazirani benchmark instances and options.");
   registerBV(bv);
 
+  const nb::module_ fanOut = m.def_submodule(
+      "fan_out", "Quantum fan-out benchmark instances and options.");
+  registerFanOut(fanOut);
+
   const nb::module_ ghz =
       m.def_submodule("ghz", "GHZ benchmark instances and options.");
   registerGHZ(ghz);
@@ -71,7 +78,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ groverWeakMeasurement = m.def_submodule(
       "grover_weak_measurement",
       "Weak-measurement Grover benchmark instances and options.");
-  registerWeakMeasurementGrover(groverWeakMeasurement);
+  registerGroverWeakMeasurement(groverWeakMeasurement);
 
   const nb::module_ magicStateDistillation = m.def_submodule(
       "magic_state_distillation",
@@ -86,6 +93,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ multiplexer = m.def_submodule(
       "multiplexer", "Quantum multiplexer benchmark instances and options.");
   registerMultiplexer(multiplexer);
+
+  const nb::module_ qaoa =
+      m.def_submodule("qaoa", "QAOA benchmark instances and options.");
+  registerQAOA(qaoa);
 
   const nb::module_ qft =
       m.def_submodule("qft", "QFT benchmark instances and options.");

@@ -61,6 +61,11 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
+struct ConversionRequirements {
+  AllocationMode allocationMode = AllocationMode::Unset;
+  bool needsWireOrigins = false;
+};
+
 /// Track function argument positions and the module's allocation mode.
 ///
 /// Dynamic qubits require deallocation at sinks; static qubits do not. Mixed
@@ -93,11 +98,22 @@ private:
 };
 } // namespace
 
-/// Determines allocation mode independently of conversion traversal order.
-[[nodiscard]] static FailureOr<AllocationMode>
-collectAllocationMode(ModuleOp moduleOp) {
-  auto mode = AllocationMode::Unset;
+/// Determine allocation mode and required wire checks before conversion.
+[[nodiscard]] static FailureOr<ConversionRequirements>
+collectConversionRequirements(ModuleOp moduleOp) {
+  ConversionRequirements requirements;
   auto result = moduleOp.walk([&](Operation* op) {
+    if (!requirements.needsWireOrigins) {
+      if (isa<qtensor::InsertOp>(op)) {
+        requirements.needsWireOrigins = true;
+      } else if (op->getNumRegions() != 0 &&
+                 !isa<ModuleOp, qco::UnitaryOpInterface>(op)) {
+        auto function = dyn_cast<func::FuncOp>(op);
+        requirements.needsWireOrigins =
+            !function ||
+            !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
+      }
+    }
     const auto requested = isa<qco::StaticOp>(op) ? AllocationMode::Static
                            : isa<qco::AllocOp, qtensor::AllocOp>(op)
                                ? AllocationMode::Dynamic
@@ -105,18 +121,19 @@ collectAllocationMode(ModuleOp moduleOp) {
     if (requested == AllocationMode::Unset) {
       return WalkResult::advance();
     }
-    if (mode != AllocationMode::Unset && mode != requested) {
+    if (requirements.allocationMode != AllocationMode::Unset &&
+        requirements.allocationMode != requested) {
       op->emitOpError("cannot mix static and dynamic qubit allocation modes "
                       "in QCO program");
       return WalkResult::interrupt();
     }
-    mode = requested;
+    requirements.allocationMode = requested;
     return WalkResult::advance();
   });
   if (result.wasInterrupted()) {
     return failure();
   }
-  return mode;
+  return requirements;
 }
 
 /// Move a region, replace its block arguments with @p replacementValues,
@@ -1259,24 +1276,28 @@ protected:
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
 
-    const auto allocationMode = collectAllocationMode(moduleOp);
-    if (failed(allocationMode)) {
+    const auto requirements = collectConversionRequirements(moduleOp);
+    if (failed(requirements)) {
       signalPassFailure();
       return;
     }
-    LoweringState state(*allocationMode);
-    {
+    LoweringState state(requirements->allocationMode);
+    // Flat owned circuits without tensor inserts have no wire checks to make.
+    if (requirements->needsWireOrigins) {
       DenseMap<Value, Value> origins;
       if (failed(collectWireOrigins(moduleOp, origins)) ||
-          failed(verifyTensorSlots(moduleOp, origins)) ||
-          failed(collectFunctionQubitArguments(moduleOp, state))) {
+          failed(verifyTensorSlots(moduleOp, origins))) {
         signalPassFailure();
         return;
       }
     }
+    if (failed(collectFunctionQubitArguments(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
     const auto tensors = moduleOp.walk([&](Operation* op) {
       if (isa<qtensor::FromElementsOp>(op) &&
-          *allocationMode != AllocationMode::Static) {
+          requirements->allocationMode != AllocationMode::Static) {
         op->emitOpError("QCO-to-QC requires static qubits in tensors of "
                         "existing qubits; run placement before conversion");
         return WalkResult::interrupt();

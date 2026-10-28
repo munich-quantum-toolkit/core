@@ -18,7 +18,6 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -37,11 +36,18 @@ class OpBuilder;
 class Operation;
 namespace LLVM {
 class AddressOfOp;
+class CallOp;
 class LLVMFuncOp;
 } // namespace LLVM
 } // namespace mlir
 
 namespace mlir::qir {
+
+/// Records the selected native QIS name until executable serialization.
+inline constexpr auto QIR_NATIVE_NAME_ATTR = "qir.native_name";
+
+/// Marks qubit arguments of opaque QIS declarations for resource counting.
+inline constexpr auto QIR_QUBIT_ARG_ATTR = "qir.qubit";
 
 /// Marks stores of qubit pointers into compiler-emitted control arrays/tuples.
 inline constexpr auto QIR_QUBIT_STORE_ATTR = "qir.qubit_store";
@@ -136,9 +142,9 @@ inline StringRef selectQISFunctionName(const StringRef body,
 /// the first argument is an array of controls and the second is either the
 /// single target or a tuple containing parameters followed by targets.
 /// Qubit stores carry a role attribute for resource counting after lowering.
-void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
-                 ValueRange parameters, ValueRange controls, ValueRange targets,
-                 StringRef fnName);
+LLVM::CallOp emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
+                         ValueRange parameters, ValueRange controls,
+                         ValueRange targets, StringRef fnName);
 
 /// Find the main LLVM function
 ///
@@ -154,7 +160,8 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op);
 /// found, creates a new function declaration at the end of the module.
 ///
 /// For QIR functions that are irreversible (measurement and reset), the
-/// "irreversible" attribute is added automatically.
+/// "irreversible" attribute is added automatically. Measurement result
+/// parameters are writeonly; read_result parameters are readonly.
 ///
 /// @param builder The builder to use for creating operations
 /// @param op The operation requesting the function (for context)
@@ -216,17 +223,20 @@ struct StaticResult {
   bool record = false;
 };
 
-/// Emit the output-recording calls.
+/// One output occurrence, independent of resource ownership.
 ///
-/// @param builder The builder to use
-/// @param anchor An operation used to locate the enclosing module
-/// @param classicalRegisters The classical registers to record. If `record` is
-/// not set, the register is skipped.
-/// @param staticResults The static results to record. If `record` is not set,
-/// the result is skipped.
+/// Register descriptors must outlive emission. Scalars are Result pointers
+/// or Boolean values.
+struct OutputRecord {
+  std::string label;
+  std::variant<const ClassicalRegister*, Value> value;
+};
+
+/// Emit outputs in order, preserving repetitions and assigning unique labels.
+///
+/// Call once with all outputs when finalizing the entry function.
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
-                         ArrayRef<ClassicalRegister> classicalRegisters,
-                         const DenseMap<int64_t, StaticResult>& staticResults);
+                         ArrayRef<OutputRecord> outputs);
 
 /// Helper to resolve a variant of either `int64_t` type or `Value` type
 /// to a `Value`

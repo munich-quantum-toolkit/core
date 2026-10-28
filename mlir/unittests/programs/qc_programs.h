@@ -17,7 +17,7 @@ namespace mlir::qc {
 class QCProgramBuilder;
 
 /// Creates an empty QC Program.
-Value emptyQC(QCProgramBuilder& b);
+SmallVector<Value> emptyQC(QCProgramBuilder& b);
 
 /// Calls a reusable unitary rotation.
 Value reusableUnitaryFunction(QCProgramBuilder& b);
@@ -31,7 +31,7 @@ Value reusableResetFunction(QCProgramBuilder& b);
 Value allocQubit(QCProgramBuilder& b);
 
 /// Allocates a single qubit without measuring it.
-Value allocQubitNoMeasure(QCProgramBuilder& b);
+SmallVector<Value> allocQubitNoMeasure(QCProgramBuilder& b);
 
 /// Allocates a qubit register of size `1`.
 Value alloc1QubitRegister(QCProgramBuilder& b);
@@ -55,7 +55,7 @@ Value allocLargeRegister(QCProgramBuilder& b);
 Value staticQubits(QCProgramBuilder& b);
 
 /// Allocates two inline qubits without measuring them.
-Value staticQubitsNoMeasure(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsNoMeasure(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
 Value staticQubitsWithOps(QCProgramBuilder& b);
@@ -80,7 +80,7 @@ Value staticQubitsWithDuplicates(QCProgramBuilder& b);
 Value staticQubitsCanonical(QCProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a single qubit.
-Value allocDeallocPair(QCProgramBuilder& b);
+SmallVector<Value> allocDeallocPair(QCProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
@@ -144,7 +144,7 @@ SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b);
 // --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
-Value globalPhase(QCProgramBuilder& b);
+SmallVector<Value> globalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with just a global phase and a single measured qubit.
 Value globalPhaseAndMeasure(QCProgramBuilder& b);
@@ -162,23 +162,23 @@ Value nestedControlledGlobalPhase(QCProgramBuilder& b);
 Value trivialControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase gate.
-Value inverseGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> inverseGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled global
 /// phase gate.
 Value inverseMultipleControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(3.0) wrapping a global-phase gate (scales θ).
-Value powGphaseScaled(QCProgramBuilder& b);
+SmallVector<Value> powGphaseScaled(QCProgramBuilder& b);
 
 /// Creates the reference for powGphaseScaled: gphase(3*0.123).
-Value powGphaseScaledRef(QCProgramBuilder& b);
+SmallVector<Value> powGphaseScaledRef(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(-3.0) wrapping gphase (negative exponent).
-Value negPowGphase(QCProgramBuilder& b);
+SmallVector<Value> negPowGphase(QCProgramBuilder& b);
 
 /// Reference for negPowGphase: gphase(-3.0 * 0.123).
-Value negPowGphaseRef(QCProgramBuilder& b);
+SmallVector<Value> negPowGphaseRef(QCProgramBuilder& b);
 
 // --- IdOp ----------------------------------------------------------------- //
 

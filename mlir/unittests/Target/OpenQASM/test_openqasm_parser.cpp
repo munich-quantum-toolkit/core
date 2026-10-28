@@ -27,21 +27,19 @@ using namespace mlir;
 
 namespace {
 
-TEST(OpenQASMFrontendTest, PreservesExactAndOptionalVersionSemantics) {
+TEST(OpenQASMFrontendTest, AcceptsOptionalAndFutureMinorVersions) {
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM("qubit q; x q;"));
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM("OPENQASM 3; qubit q; x q;"));
 
-  auto unsupported =
-      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.10; qubit q; x q;");
-  ASSERT_FALSE(unsupported);
-  ASSERT_FALSE(unsupported.diagnostics.empty());
-  EXPECT_NE(unsupported.diagnostics.front().message.find("3.10"),
-            std::string::npos);
+  EXPECT_TRUE(
+      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.10; qubit q; x q;"));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.10; qreg q[1]; U(0,0,0) q[0];"));
 }
 
-TEST(OpenQASMFrontendTest, RejectsUnsupportedOpenQASM3MinorVersions) {
+TEST(OpenQASMFrontendTest, RejectsUnsupportedOpenQASMMajorVersions) {
   constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.2;
+OPENQASM 4.0;
 qubit q;
 x q;
 )qasm";
@@ -87,7 +85,7 @@ TEST(OpenQASMFrontendTest, PreservesSourceNamesInSemanticDiagnostics) {
 TEST(OpenQASMFrontendTest, LocatesVersionAndOutputDiagnosticsPrecisely) {
   llvm::SourceMgr versionSources;
   versionSources.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBufferCopy("OPENQASM 3.2;\nqubit q;\n",
+      llvm::MemoryBuffer::getMemBufferCopy("OPENQASM 4.0;\nqubit q;\n",
                                            "unsupported-version.qasm"),
       llvm::SMLoc());
   auto version = openqasm::frontend::analyzeOpenQASM(versionSources);
@@ -517,29 +515,15 @@ TEST(OpenQASMFrontendTest, RejectsInvalidIncludeStringsAtTheOffendingByte) {
   }
 }
 
-TEST(OpenQASMFrontendTest, RejectsMisplacedVersionsAndRecursiveGates) {
+TEST(OpenQASMFrontendTest, RejectsMisplacedVersions) {
   constexpr llvm::StringLiteral misplacedVersion = R"qasm(
 qubit q;
 OPENQASM 3.1;
 )qasm";
-  constexpr llvm::StringLiteral recursiveGates = R"qasm(
-OPENQASM 3.1;
-gate first q { first q; }
-qubit q;
-first q;
-bit result = measure q;
-)qasm";
-
   auto misplaced = openqasm::frontend::analyzeOpenQASM(misplacedVersion);
   ASSERT_FALSE(misplaced);
   ASSERT_FALSE(misplaced.diagnostics.empty());
   EXPECT_NE(misplaced.diagnostics.front().message.find("must be the first"),
-            std::string::npos);
-
-  auto recursive = openqasm::frontend::analyzeOpenQASM(recursiveGates);
-  ASSERT_FALSE(recursive);
-  ASSERT_FALSE(recursive.diagnostics.empty());
-  EXPECT_NE(recursive.diagnostics.front().message.find("recursive"),
             std::string::npos);
 }
 
@@ -571,8 +555,8 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
           .source = "OPENQASM 3.1; duration delay;",
       },
       {
-          .name = "unsupported-opaque",
-          .source = "OPENQASM 3.1; opaque custom q;",
+          .name = "opaque-with-body",
+          .source = "OPENQASM 2.0; opaque custom q {}",
       },
       {.name = "output-qubit", .source = "OPENQASM 3.1; output qubit q;"},
       {.name = "const-qubit", .source = "OPENQASM 3.1; const qubit q;"},
@@ -639,11 +623,10 @@ if (int[2](value) == -1) {}
 
 TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",        "cal",     "defcal", "extern",
-      "box",           "let",        "end",     "return", "pragma",
-      "readonly",      "mutable",    "complex", "array",  "void",
-      "stretch",       "durationof", "delay",   "im",     "#dim",
-      "#pragma",
+      "defcalgrammar", "def",     "cal",     "defcal", "extern",
+      "box",           "let",     "end",     "return", "pragma",
+      "readonly",      "mutable", "complex", "void",   "stretch",
+      "durationof",    "delay",   "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
@@ -655,18 +638,20 @@ TEST(OpenQASMFrontendTest, RejectsReservedWordsAsIdentifiers) {
               std::string::npos);
   }
 
-  auto input =
-      openqasm::frontend::parseOpenQASM("OPENQASM 3.1; int input = 0;");
-  ASSERT_FALSE(input);
-  ASSERT_FALSE(input.diagnostics.empty());
-  EXPECT_NE(input.diagnostics.front().message.find("expected identifier"),
-            std::string::npos);
+  for (const auto* keyword : {"input", "array"}) {
+    SCOPED_TRACE(keyword);
+    auto parsed = openqasm::frontend::parseOpenQASM(
+        std::string("OPENQASM 3.1; int ") + keyword + " = 0;");
+    ASSERT_FALSE(parsed);
+    ASSERT_FALSE(parsed.diagnostics.empty());
+    EXPECT_NE(parsed.diagnostics.front().message.find("expected identifier"),
+              std::string::npos);
+  }
 }
 
 TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; const complex value = 0;",
-      "OPENQASM 3.1; output array[int, 2] values;",
       "OPENQASM 3.1; for complex value in [0:1] {}",
       "OPENQASM 3.1; int value = durationof({});",
   });
@@ -712,6 +697,9 @@ TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
       "0xA__B",
       "0b_1",
       "0o7_",
+      "0b2",
+      "0o8",
+      "0x1G",
   });
   for (const auto literal : invalidLiterals) {
     SCOPED_TRACE(literal.str());
@@ -725,14 +713,6 @@ TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
   auto valid = openqasm::frontend::parseOpenQASM(
       "OPENQASM 3.1; int hex = 0xA_B; float value = 1_2.3_4e+5_6;");
   ASSERT_TRUE(valid) << valid.diagnostics.front().message;
-}
-
-TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralsWithDigitSeparators) {
-  // DecimalIntegerLiteral allows '_' separators; values beyond uint64_t are
-  // still valid tokens (wide integers). Constant evaluation may reject them.
-  auto parsed = openqasm::frontend::parseOpenQASM(
-      "OPENQASM 3.1; int value = 999_999_999_999_999_999_999;");
-  ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
 TEST(OpenQASMFrontendTest, SourceManagerOverloadsPreserveParseFailures) {

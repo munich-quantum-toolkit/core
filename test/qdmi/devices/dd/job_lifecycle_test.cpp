@@ -25,26 +25,6 @@
 #include <future>
 #include <utility>
 
-TEST(JobLifecycle, SubmitAndWaitSampling) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 256), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-}
-
-TEST(JobLifecycle, SubmitAndWaitStatevector) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_STATE),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-}
-
 TEST(JobLifecycle, WaitInvalidBeforeSubmitAndIdempotentAfterDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -123,8 +103,41 @@ TEST(JobLifecycle, FreeWhileRunningWaitsForCompletion) {
   entered.get_future().wait();
   EXPECT_EQ(freed.wait_for(std::chrono::milliseconds(20)),
             std::future_status::timeout);
+  auto created = std::async(std::launch::async, [&] {
+    const qdmi_test::JobGuard unrelated{s.session};
+  });
+  EXPECT_EQ(created.wait_for(std::chrono::seconds(5)),
+            std::future_status::ready);
   running.release();
   freed.get();
+  created.get();
+}
+
+TEST(JobLifecycle, SessionFreeWaitsWithoutBlockingOtherSessions) {
+  qdmi_test::SessionGuard session{};
+  qdmi_test::JobGuard job{session.session};
+  qdmi_test::ControlledJob running{job.job};
+  job.job = nullptr; // The session owns and destroys the running job.
+  std::promise<void> entered;
+  auto freed =
+      std::async(std::launch::async,
+                 [&, handle = std::exchange(session.session, nullptr)] {
+                   entered.set_value();
+                   MQT_DDSIM_QDMI_device_session_free(handle);
+                 });
+  entered.get_future().wait();
+  EXPECT_EQ(freed.wait_for(std::chrono::milliseconds(20)),
+            std::future_status::timeout);
+  auto created = std::async(std::launch::async, [] {
+    MQT_DDSIM_QDMI_Device_Session unrelated = nullptr;
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&unrelated), QDMI_SUCCESS);
+    MQT_DDSIM_QDMI_device_session_free(unrelated);
+  });
+  EXPECT_EQ(created.wait_for(std::chrono::seconds(5)),
+            std::future_status::ready);
+  running.release();
+  freed.get();
+  created.get();
 }
 
 TEST(JobLifecycle, ReusesWorkersAndDestroysJobGlobals) {

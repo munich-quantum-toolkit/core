@@ -12,6 +12,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -73,6 +74,7 @@
 
 namespace mlir::qco {
 
+using decomposition::countUnitary2QWeyl;
 using decomposition::decomposeUnitary2QWeyl;
 using decomposition::emitUnitary2QWeyl;
 
@@ -100,8 +102,7 @@ struct FusableTwoQubitRun {
 /// Such unitaries are handled through their shell op, so the top-level walk
 /// skips them.
 static bool isExcludedFromTopLevelUnitaryWalk(Operation* op) {
-  return op->getParentOfType<CtrlOp>() || op->getParentOfType<InvOp>() ||
-         op->getParentOfType<PowOp>();
+  return op->getParentOfType<CtrlOp, InvOp, PowOp>() != nullptr;
 }
 
 /// Whether `op` is a unitary shell the pass may rewrite at top level.
@@ -487,35 +488,24 @@ static LogicalResult verifyTopology(Operation* root,
 static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
                                          const CompilerTarget& target,
                                          RewriterBase* rewriter = nullptr) {
-  if (failed(rewriter != nullptr
-                 ? mqt::normalizeGlobalPhases(moduleOp, *rewriter)
-                 : mqt::normalizeGlobalPhases(moduleOp))) {
+  IRRewriter defaultRewriter(moduleOp.getContext());
+  auto& activeRewriter = rewriter != nullptr ? *rewriter : defaultRewriter;
+  if (failed(mqt::normalizeGlobalPhases(moduleOp, activeRewriter))) {
     return failure();
   }
-  if (target.supportsOperation("gphase", 0, 1)) {
-    return success();
+  if (!target.supportsOperation("gphase", 0, 1)) {
+    mqt::dropGlobalPhases(moduleOp, activeRewriter);
   }
-  auto entryPoint = mqt::getEntryPoint(moduleOp);
-  if (!entryPoint) {
-    return success();
-  }
-  entryPoint.walk([](GPhaseOp phase) {
-    // Each classical execution path has its own unobservable global phase.
-    // QCO modifiers must retain phases that normalization cannot extract.
-    if (!isExcludedFromTopLevelUnitaryWalk(phase)) {
-      phase.erase();
-    }
-  });
   return success();
 }
 
 static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   Operation* operation = unitary.getOperation();
-  if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp>(operation)) {
+  if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp, XXMinusYYOp>(operation)) {
     return true;
   }
-  if (auto exchange = dyn_cast<XXPlusYYOp>(operation)) {
-    return matchPattern(exchange.getBeta(), m_AnyZeroFloat());
+  if (isa<XXPlusYYOp>(operation)) {
+    return mqt::valueToConstantDouble(unitary.getParameter(1)) == 0.;
   }
   return static_cast<bool>(singleControlledGate<ZOp>(operation));
 }
@@ -564,12 +554,9 @@ NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
 ///
 /// Bitwise equality below keeps collisions, signed zeros, and non-finite
 /// numerical failures from producing false hits.
-static uint64_t matrixHash(const Matrix4x4& matrix,
-                           CompilerTarget::Entangler entangler) {
+static uint64_t matrixHash(const Matrix4x4& matrix) {
   return llvm::xxh3_64bits(reinterpret_cast<const uint8_t*>(matrix.data.data()),
-                           sizeof(matrix.data)) ^
-         static_cast<uint64_t>(entangler.gate) ^
-         (static_cast<uint64_t>(entangler.angles) << 8U);
+                           sizeof(matrix.data));
 }
 
 static bool sameMatrix(const Matrix4x4& a, const Matrix4x4& b) {
@@ -578,22 +565,25 @@ static bool sameMatrix(const Matrix4x4& a, const Matrix4x4& b) {
   return std::memcmp(aBytes.data(), bBytes.data(), aBytes.size()) == 0;
 }
 
-const std::optional<uint8_t>*
-NativeCostTable::lookup(const Matrix4x4& matrix,
-                        CompilerTarget::Entangler entangler,
-                        uint64_t hash) const {
+const std::optional<std::array<double, 3>>*
+NativeCostTable::lookup(const Matrix4x4& matrix, uint64_t hash) const {
   const auto it = index_.find(hash);
   if (it == index_.end()) {
     return nullptr;
   }
   const auto& entry = entries_[it->second];
-  return entry.entangler == entangler && sameMatrix(entry.matrix, matrix)
-             ? &entry.count
-             : nullptr;
+  return sameMatrix(entry.matrix, matrix) ? &entry.coordinates : nullptr;
 }
 
-std::unique_ptr<const NativeCostTable> NativeCostTable::precompute(
-    Operation* root, CompilerTarget::Entangler entangler, uint64_t seed) {
+static std::optional<std::array<double, 3>>
+weylCoordinates(const Matrix4x4& matrix, uint64_t seed) {
+  const auto weyl = decomposition::TwoQubitWeylDecomposition::create(
+      matrix, decomposition::WEYL_DEFAULT_FIDELITY, seed);
+  return weyl ? std::optional{weyl->coordinates()} : std::nullopt;
+}
+
+std::unique_ptr<const NativeCostTable>
+NativeCostTable::precompute(Operation* root, uint64_t seed) {
   constexpr size_t capacity = 1024;
   auto result = std::make_unique<NativeCostTable>();
   result->seed_ = seed;
@@ -601,17 +591,15 @@ std::unique_ptr<const NativeCostTable> NativeCostTable::precompute(
     if (result->entries_.size() == capacity) {
       return;
     }
-    const auto hash = matrixHash(matrix, entangler);
+    const auto hash = matrixHash(matrix);
     // Keep one entry per fingerprint; collisions remain cache misses.
     if (result->index_.contains(hash)) {
       return;
     }
-    const auto native = decomposeUnitary2QWeyl(matrix, entangler, seed);
     result->index_.try_emplace(hash, result->entries_.size());
     result->entries_.push_back({
         .matrix = matrix,
-        .entangler = entangler,
-        .count = native ? std::optional(native->numBasisUses) : std::nullopt,
+        .coordinates = weylCoordinates(matrix, seed),
     });
   };
   const auto swap = SWAPOp::getUnitaryMatrix();
@@ -645,21 +633,48 @@ std::unique_ptr<const NativeCostTable> NativeCostTable::precompute(
 
 const std::optional<decomposition::TwoQubitNativeDecomposition>&
 NativeCostAnalysis::decompose(const Matrix4x4& matrix,
-                              CompilerTarget::Entangler entangler) {
+                              CompilerTarget::Entangler entangler,
+                              function_ref<bool(size_t)> improves) {
+  std::optional<decomposition::TwoQubitWeylDecomposition> weyl;
+  return cachedDecompose(matrix, entangler, weyl, improves);
+}
+
+const std::optional<decomposition::TwoQubitNativeDecomposition>&
+NativeCostAnalysis::cachedDecompose(
+    const Matrix4x4& matrix, CompilerTarget::Entangler entangler,
+    std::optional<decomposition::TwoQubitWeylDecomposition>& weyl,
+    function_ref<bool(size_t)> improves) {
+  static const std::optional<decomposition::TwoQubitNativeDecomposition>
+      UNAVAILABLE;
+  const auto accepted = [&](const auto& native) -> const auto& {
+    return native && improves && !improves(native->numBasisUses) ? UNAVAILABLE
+                                                                 : native;
+  };
   if (!decompositions_.empty()) {
     const auto& entry = decompositions_[lastDecomposition_];
-    if (entry.entangler == entangler && entry.matrix.data == matrix.data) {
-      return entry.native;
+    if (entry.entangler == entangler && sameMatrix(entry.matrix, matrix)) {
+      return accepted(entry.native);
     }
   }
-  const auto hash = matrixHash(matrix, entangler);
+  const auto hash = matrixHash(matrix) ^ static_cast<uint64_t>(entangler.gate) ^
+                    (static_cast<uint64_t>(entangler.angles) << 8U);
   for (size_t i = 0; i < decompositionHashes_.size(); ++i) {
     const auto& entry = decompositions_[i];
     if (decompositionHashes_[i] == hash && entry.entangler == entangler &&
         sameMatrix(entry.matrix, matrix)) {
       lastDecomposition_ = i;
-      return entry.native;
+      return accepted(entry.native);
     }
+  }
+  if (improves) {
+    const auto canonical = coordinates(matrix, &weyl);
+    if (!canonical || !improves(countUnitary2QWeyl(*canonical, entangler))) {
+      return UNAVAILABLE;
+    }
+  }
+  if (!weyl) {
+    weyl = decomposition::TwoQubitWeylDecomposition::create(
+        matrix, decomposition::WEYL_DEFAULT_FIDELITY, seed_);
   }
   if (decompositions_.empty()) {
     decompositions_.reserve(CACHE_SIZE);
@@ -668,7 +683,8 @@ NativeCostAnalysis::decompose(const Matrix4x4& matrix,
   DecompositionEntry entry{
       .matrix = matrix,
       .entangler = entangler,
-      .native = decomposeUnitary2QWeyl(matrix, entangler, seed_),
+      .native =
+          weyl ? decomposeUnitary2QWeyl(*weyl, entangler, seed_) : std::nullopt,
   };
   if (decompositions_.size() < CACHE_SIZE) {
     lastDecomposition_ = decompositions_.size();
@@ -683,55 +699,130 @@ NativeCostAnalysis::decompose(const Matrix4x4& matrix,
   return decompositions_[lastDecomposition_].native;
 }
 
-std::optional<uint8_t>
-NativeCostAnalysis::count(const Matrix4x4& matrix,
-                          CompilerTarget::Entangler entangler) {
-  if (shared_ == nullptr) {
-    const auto& native = decompose(matrix, entangler);
-    return native ? std::optional{native->numBasisUses} : std::nullopt;
+std::optional<std::array<double, 3>> NativeCostAnalysis::coordinates(
+    const Matrix4x4& matrix,
+    std::optional<decomposition::TwoQubitWeylDecomposition>* computed) {
+  if (lastCoordinates_ && sameMatrix(lastCoordinates_->matrix, matrix)) {
+    return lastCoordinates_->coordinates;
   }
-  if (lastCount_ && lastCount_->entangler == entangler &&
-      lastCount_->matrix.data == matrix.data) {
-    return lastCount_->count;
-  }
-  const auto hash = matrixHash(matrix, entangler);
-  if (shared_->seed_ == seed_) {
-    if (const auto* cached = shared_->lookup(matrix, entangler, hash)) {
-      lastCount_ = {
-          .matrix = matrix,
-          .entangler = entangler,
-          .count = *cached,
-      };
+  const auto hash = matrixHash(matrix);
+  if (shared_ != nullptr && shared_->seed_ == seed_) {
+    if (const auto* cached = shared_->lookup(matrix, hash)) {
+      lastCoordinates_ = {.matrix = matrix, .coordinates = *cached};
       return *cached;
     }
   }
-  for (size_t i = 0; i < countHashes_.size(); ++i) {
-    const auto& entry = counts_[i];
-    if (countHashes_[i] == hash && entry.entangler == entangler &&
-        sameMatrix(entry.matrix, matrix)) {
-      lastCount_ = entry;
-      return entry.count;
+  for (size_t i = 0; i < coordinateHashes_.size(); ++i) {
+    const auto& entry = coordinates_[i];
+    if (coordinateHashes_[i] == hash && sameMatrix(entry.matrix, matrix)) {
+      lastCoordinates_ = entry;
+      return entry.coordinates;
     }
   }
-  const auto native = decomposeUnitary2QWeyl(matrix, entangler, seed_);
-  lastCount_ = {
+  const auto weyl = decomposition::TwoQubitWeylDecomposition::create(
+      matrix, decomposition::WEYL_DEFAULT_FIDELITY, seed_);
+  lastCoordinates_ = {
       .matrix = matrix,
-      .entangler = entangler,
-      .count = native ? std::optional(native->numBasisUses) : std::nullopt,
+      .coordinates = weyl ? std::optional{weyl->coordinates()} : std::nullopt,
   };
-  if (counts_.empty()) {
-    counts_.reserve(CACHE_SIZE);
-    countHashes_.reserve(CACHE_SIZE);
+  if (computed != nullptr) {
+    *computed = weyl;
   }
-  if (counts_.size() < CACHE_SIZE) {
-    counts_.push_back(*lastCount_);
-    countHashes_.push_back(hash);
+  if (coordinates_.empty()) {
+    coordinates_.reserve(CACHE_SIZE);
+    coordinateHashes_.reserve(CACHE_SIZE);
+  }
+  if (coordinates_.size() < CACHE_SIZE) {
+    coordinates_.push_back(*lastCoordinates_);
+    coordinateHashes_.push_back(hash);
   } else {
-    counts_[nextCount_] = *lastCount_;
-    countHashes_[nextCount_] = hash;
-    nextCount_ = (nextCount_ + 1) % CACHE_SIZE;
+    coordinates_[nextCoordinates_] = *lastCoordinates_;
+    coordinateHashes_[nextCoordinates_] = hash;
+    nextCoordinates_ = (nextCoordinates_ + 1) % CACHE_SIZE;
   }
-  return lastCount_->count;
+  return lastCoordinates_->coordinates;
+}
+
+SmallVector<NativeCostAnalysis::Selection, 9> NativeCostAnalysis::candidates(
+    const Matrix4x4& matrix, const CompilerTarget& target, Sites sites,
+    MutableArrayRef<std::optional<decomposition::TwoQubitWeylDecomposition>>
+        computed) {
+  SmallVector<Selection, 9> result;
+  for (const auto entangler : target.synthesisEntanglers()) {
+    const auto reverse = entanglerOrientation(target, entangler, sites);
+    if (!reverse) {
+      continue;
+    }
+    const auto canonical = coordinates(
+        *reverse ? matrix.reorderForQubits(1, 0) : matrix,
+        computed.empty() ? nullptr : &computed[static_cast<size_t>(*reverse)]);
+    if (canonical) {
+      result.push_back({
+          .entangler = entangler,
+          .reverse = *reverse,
+          .count = countUnitary2QWeyl(*canonical, entangler),
+      });
+    }
+  }
+  return result;
+}
+
+std::optional<NativeCostAnalysis::Selection>
+NativeCostAnalysis::select(const Matrix4x4& matrix,
+                           const CompilerTarget& target, Sites sites) {
+  const auto choices = candidates(matrix, target, sites);
+  if (choices.empty()) {
+    return std::nullopt;
+  }
+  return *llvm::min_element(
+      choices, [](const auto& a, const auto& b) { return a.count < b.count; });
+}
+
+std::optional<NativeCostAnalysis::Selection>
+NativeCostAnalysis::select(decomposition::PauliRotationCounts rotations,
+                           const CompilerTarget& target, Sites sites) {
+  std::optional<Selection> best;
+  for (const auto entangler : target.synthesisEntanglers()) {
+    const auto reverse = entanglerOrientation(target, entangler, sites);
+    if (!reverse) {
+      continue;
+    }
+    const auto count =
+        decomposition::pauliRotationEntanglerCount(rotations, entangler);
+    if (!best || count < best->count) {
+      best = Selection{
+          .entangler = entangler,
+          .reverse = *reverse,
+          .count = count,
+      };
+    }
+  }
+  return best;
+}
+
+std::optional<NativeCostAnalysis::SelectedDecomposition>
+NativeCostAnalysis::decompose(const Matrix4x4& matrix,
+                              const CompilerTarget& target, Sites sites,
+                              function_ref<bool(size_t)> improves) {
+  std::array<std::optional<decomposition::TwoQubitWeylDecomposition>, 2> weyl;
+  auto choices = candidates(matrix, target, sites, weyl);
+  while (!choices.empty()) {
+    auto* const best =
+        llvm::min_element(choices, [](const auto& a, const auto& b) {
+          return a.count < b.count;
+        });
+    if (improves && !improves(best->count)) {
+      return std::nullopt;
+    }
+    const auto& native = cachedDecompose(
+        best->reverse ? matrix.reorderForQubits(1, 0) : matrix, best->entangler,
+        weyl[static_cast<size_t>(best->reverse)]);
+    if (native) {
+      return SelectedDecomposition{.selection = *best, .native = &*native};
+    }
+    choices.erase(best);
+  }
+  return std::nullopt;
 }
 
 std::optional<size_t>
@@ -754,15 +845,11 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
     }
     return std::nullopt;
   }
-  const auto basis = *target.synthesisBasis();
-  if (!basis.entangler ||
-      !entanglerOrientation(target, *basis.entangler, sites)) {
-    return std::nullopt;
-  }
   if (const auto sequence = decomposition::getPauliRotations(operation)) {
-    if (const auto cost = decomposition::pauliRotationEntanglerCount(
-            *sequence, *basis.entangler)) {
-      return cost;
+    const auto counts = decomposition::countPauliRotations(*sequence);
+    if (const auto choice =
+            counts ? select(*counts, target, sites) : std::nullopt) {
+      return choice->count;
     }
   }
   Matrix4x4 matrix;
@@ -775,16 +862,8 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
 std::optional<size_t>
 NativeCostAnalysis::matrixCost(const Matrix4x4& matrix,
                                const CompilerTarget& target, Sites sites) {
-  const auto& basis = target.synthesisBasis();
-  if (!basis || !basis->entangler) {
-    return std::nullopt;
-  }
-  const auto reverse = entanglerOrientation(target, *basis->entangler, sites);
-  if (!reverse) {
-    return std::nullopt;
-  }
-  const auto ordered = *reverse ? matrix.reorderForQubits(1, 0) : matrix;
-  return count(ordered, *basis->entangler);
+  const auto choice = select(matrix, target, sites);
+  return choice ? std::optional{choice->count} : std::nullopt;
 }
 
 size_t NativeCostAnalysis::runCost(const Matrix4x4& matrix, size_t separateCost,
@@ -1107,40 +1186,35 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis->entangler) {
     return unsupported("the target has no usable two-qubit entangler");
   }
-  const auto direction =
-      analysis.entanglerOrientation(target, *basis->entangler, sites);
-  if (!direction) {
-    return operation->emitError()
-           << "no supported synthesis-basis placement is known for its "
-              "static sites";
-  }
-  const bool reverseEntangler = *direction;
-  if (const auto sequence = decomposition::getPauliRotations(operation);
-      sequence && decomposition::pauliRotationEntanglerCount(
-                      *sequence, *basis->entangler)) {
-    rewriter.replaceOp(operation, decomposition::emitPauliRotations(
-                                      rewriter, operation, *sequence, *basis,
-                                      reverseEntangler));
-    return success();
+  if (const auto sequence = decomposition::getPauliRotations(operation)) {
+    const auto counts = decomposition::countPauliRotations(*sequence);
+    if (const auto choice =
+            counts ? analysis.select(*counts, target, sites) : std::nullopt) {
+      basis->entangler = choice->entangler;
+      rewriter.replaceOp(operation, decomposition::emitPauliRotations(
+                                        rewriter, operation, *sequence, *basis,
+                                        choice->reverse));
+      return success();
+    }
   }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(op, matrix)) {
     return unsupported("its unitary matrix is not available at compile time");
   }
+  const auto selected = analysis.decompose(matrix, target, sites);
+  if (!selected) {
+    return unsupported("its unitary matrix could not be numerically decomposed "
+                       "in a supported placement");
+  }
+  basis->entangler = selected->selection.entangler;
+  const bool reverseEntangler = selected->selection.reverse;
   Value input0 = op.getInputQubit(0);
   Value input1 = op.getInputQubit(1);
-
   if (reverseEntangler) {
-    matrix = matrix.reorderForQubits(1, 0);
     std::swap(input0, input1);
   }
-  const auto& native = analysis.decompose(matrix, *basis->entangler);
-  if (!native) {
-    return unsupported(
-        "its unitary matrix could not be numerically decomposed");
-  }
-  const auto synthesized = emitUnitary2QWeyl(rewriter, operation->getLoc(),
-                                             input0, input1, *native, *basis);
+  const auto synthesized = emitUnitary2QWeyl(
+      rewriter, operation->getLoc(), input0, input1, *selected->native, *basis);
   decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
                                     synthesized.globalPhase);
   if (reverseEntangler) {
@@ -1187,7 +1261,7 @@ static bool reducesNativeCost(const FusableTwoQubitRun& run, size_t fusedCost,
 /// Without a target, the original operation count is a conservative bound.
 static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 const Matrix4x4& headMatrix,
-                                const CompilerTarget::SynthesisBasis& basis,
+                                CompilerTarget::SynthesisBasis basis,
                                 const CompilerTarget* target,
                                 const SiteMap* sites,
                                 NativeCostAnalysis& analysis, bool shrinkOnly) {
@@ -1195,23 +1269,42 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   if (run.ops.size() < 2) {
     return false;
   }
-  bool reverseEntangler = false;
-  if (sites != nullptr) {
-    const auto headSites = getOperationSites(head, *sites);
-    const auto direction =
-        analysis.entanglerOrientation(*target, *basis.entangler, headSites);
-    if (!direction) {
+  std::optional<size_t> acceptedCost;
+  const auto improves = [&](size_t count) {
+    if (acceptedCost == count) {
+      return true;
+    }
+    if ((shrinkOnly && count >= run.numTwoQ) ||
+        (target != nullptr
+             ? !reducesNativeCost(run, count, *target, sites, analysis)
+             : count >= run.numTwoQ)) {
       return false;
     }
-    reverseEntangler = *direction;
+    acceptedCost = count;
+    return true;
+  };
+  bool reverseEntangler = false;
+  const decomposition::TwoQubitNativeDecomposition* native = nullptr;
+  if (target != nullptr) {
+    const auto placement = sites != nullptr ? getOperationSites(head, *sites)
+                                            : SmallVector<SiteId, 2>{};
+    const auto selected = analysis.decompose(
+        run.composed, *target,
+        sites != nullptr ? std::optional<ArrayRef<SiteId>>(placement)
+                         : std::nullopt,
+        improves);
+    if (!selected) {
+      return false;
+    }
+    basis.entangler = selected->selection.entangler;
+    reverseEntangler = selected->selection.reverse;
+    native = selected->native;
+  } else {
+    const auto& cached =
+        analysis.decompose(run.composed, *basis.entangler, improves);
+    native = cached ? &*cached : nullptr;
   }
-  const auto native = analysis.decompose(
-      reverseEntangler ? run.composed.reorderForQubits(1, 0) : run.composed,
-      *basis.entangler);
-  if (!native || (shrinkOnly && native->numBasisUses >= run.numTwoQ) ||
-      (target != nullptr ? !reducesNativeCost(run, native->numBasisUses,
-                                              *target, sites, analysis)
-                         : native->numBasisUses >= run.numTwoQ)) {
+  if (native == nullptr || !improves(native->numBasisUses)) {
     return false;
   }
 
@@ -1380,11 +1473,8 @@ struct ComposePauliRotations final
     const auto operationSites = sites != nullptr
                                     ? std::optional<ArrayRef<SiteId>>(placement)
                                     : std::nullopt;
-    const auto reverse =
-        analysis.entanglerOrientation(target, *basis.entangler, operationSites);
-    return reverse ? decomposition::fusePauliRotationRun(
-                         rewriter, op, basis, *reverse, target, operationSites)
-                   : failure();
+    return decomposition::fusePauliRotationRun(rewriter, op, basis, target,
+                                               operationSites, analysis);
   }
 };
 
@@ -1414,10 +1504,14 @@ protected:
       emissionBasis->singleQubit = CompilerTarget::SingleQubitBasis::ZYZ;
     }
     // Preserve native operations outside the explicit composition patterns.
-    const auto compositionConfig = GreedyRewriteConfig{}
-                                       .setUseTopDownTraversal()
-                                       .enableFolding(false)
-                                       .enableConstantCSE(false);
+    // Gate composition does not change control flow; avoid repeated CFG
+    // cleanup.
+    const auto compositionConfig =
+        GreedyRewriteConfig{}
+            .setUseTopDownTraversal()
+            .setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled)
+            .enableFolding(false)
+            .enableConstantCSE(false);
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
@@ -1516,9 +1610,9 @@ protected:
         return;
       }
       listener.foldPending();
-    }
-    if (failed(prepareGlobalPhases(moduleOp, target))) {
-      signalPassFailure();
+      if (failed(prepareGlobalPhases(moduleOp, target))) {
+        signalPassFailure();
+      }
     }
   }
 };

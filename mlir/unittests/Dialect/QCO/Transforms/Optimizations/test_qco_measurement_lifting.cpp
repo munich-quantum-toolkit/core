@@ -113,8 +113,7 @@ TEST_F(QCOMeasurementLiftingTest, MeasuresBlockArguments) {
 // Test: Measurements on control bits can be lifted over the controlled
 // gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
@@ -131,8 +130,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   programBuilder.sink(q1);
   program = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -159,11 +157,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
 // Test: Tests that lifting also works if there are multiple controls in
 // a controlled gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
-  programBuilder.initialize({
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-      programBuilder.getI1Type(),
-  });
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -198,11 +192,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
 
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-      referenceBuilder.getI1Type(),
-  });
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -249,8 +239,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
 TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementMultipleOverOneControlledGate) {
 
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -270,8 +259,7 @@ TEST_F(QCOMeasurementLiftingTest,
   programBuilder.sink(q2);
   program = programBuilder.finalize({c1, c2});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -302,8 +290,7 @@ TEST_F(QCOMeasurementLiftingTest,
 // a parametrized gate.
 TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   const auto q0Input = programBuilder.allocQubit();
   const auto q1Input = programBuilder.allocQubit();
   auto [q0, q1] = programBuilder.crx(std::numbers::pi / 2, q0Input, q1Input);
@@ -317,8 +304,7 @@ TEST_F(QCOMeasurementLiftingTest,
   programBuilder.sink(q1);
   program = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -345,7 +331,7 @@ TEST_F(QCOMeasurementLiftingTest,
 // gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q = programBuilder.allocQubit();
   q = programBuilder.x(q);
   Value c;
@@ -354,7 +340,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
   programBuilder.sink(q);
   program = programBuilder.finalize(c);
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
   Value cr;
@@ -376,7 +362,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 // Test: Tests lifting a measurement over a single Y (anti-diagonal)
 // gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q = programBuilder.allocQubit();
   q = programBuilder.y(q);
   Value c;
@@ -384,7 +370,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   programBuilder.sink(q);
   program = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
   Value cr;
@@ -403,7 +389,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
 
 // Test: Tests lifting a measurement over different diagonal phase-gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q = programBuilder.allocQubit();
   q = programBuilder.id(q);
   q = programBuilder.z(q);
@@ -418,7 +404,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   programBuilder.sink(q);
   program = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   const auto rInput = referenceBuilder.allocQubit();
   auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
@@ -434,8 +420,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
 // Test: An RZ immediately before a measurement is removed even when the
 // measured qubit remains observable afterward.
 TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q = programBuilder.h(programBuilder.allocQubit());
   q = programBuilder.rz(0.789, q);
   Value firstOutcome;
@@ -446,8 +431,7 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
   programBuilder.sink(q);
   program = programBuilder.finalize({firstOutcome, secondOutcome});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   const auto rInput = referenceBuilder.h(referenceBuilder.allocQubit());
   auto [r, referenceFirstOutcome] = referenceBuilder.measure(rInput);
   r = referenceBuilder.h(r);
@@ -465,7 +449,7 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
 
 // Test: Tests lifting a measurement over multiple anti-diagonal gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q = programBuilder.allocQubit();
   q = programBuilder.x(q);
   q = programBuilder.y(q);
@@ -474,7 +458,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   programBuilder.sink(q);
   program = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   const auto rInput = referenceBuilder.allocQubit();
   auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
@@ -490,7 +474,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
 // Test: Tests lifting a measurement over multiple anti-diagonal and
 // controlled gates.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize();
   const auto q0Input = programBuilder.allocQubit();
   const auto q1Input = programBuilder.allocQubit();
   auto [q0, q1] = programBuilder.cy(q0Input, q1Input);
@@ -505,7 +489,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.sink(q1);
   program = programBuilder.finalize({c0});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -529,8 +513,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 
 // Test: Tests lifting a measurement over a controlled diagonal gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   const auto q0Input = programBuilder.allocQubit();
   const auto q1Input = programBuilder.allocQubit();
   auto [q0, q1] = programBuilder.cz(q0Input, q1Input);
@@ -544,8 +527,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.sink(q1);
   program = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), programBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -568,8 +550,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
 // Test: A controlled diagonal gate is preserved when lifting a target
 // measurement because it can kick phase back to the control.
 TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  programBuilder.initialize();
   const auto controlInput = programBuilder.h(programBuilder.allocQubit());
   const auto targetInput = programBuilder.x(programBuilder.allocQubit());
   auto [control, target] = programBuilder.cz(controlInput, targetInput);
@@ -583,8 +564,7 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   programBuilder.sink(target);
   program = programBuilder.finalize({targetOutcome, controlOutcome});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   const auto referenceTargetInput = referenceBuilder.allocQubit();
   auto [referenceTarget, rawTargetOutcome] =
@@ -614,8 +594,7 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
 // Test: Tests that a measurement is not lifted over a controlled
 // sequence gate if there are multiple gates inside the control block.
 TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
-  programBuilder.initialize(
-      {programBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q0S0 = programBuilder.allocQubit();
   auto q1S0 = programBuilder.allocQubit();
 
@@ -631,8 +610,7 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
   programBuilder.sink(q1S2);
   program = programBuilder.finalize({c0, c1});
 
-  referenceBuilder.initialize(
-      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
 
@@ -658,7 +636,7 @@ TEST_F(QCOMeasurementLiftingTest, dontLiftMeasurementMultipleGatesInControl) {
 
 // Test: Tests lifting a measurement over an inverted phase gate.
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
-  programBuilder.initialize({programBuilder.getI1Type()});
+  programBuilder.initialize();
   auto q = programBuilder.allocQubit();
 
   q = programBuilder.inv(
@@ -669,7 +647,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   programBuilder.sink(q);
   program = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type()});
+  referenceBuilder.initialize();
   const auto rInput = referenceBuilder.allocQubit();
   auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);

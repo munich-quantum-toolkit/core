@@ -9,14 +9,23 @@
  */
 
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 
 #include "gtest/gtest.h"
 
+#include "mlir/IR/Verifier.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/TypeID.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -37,6 +46,92 @@ static void expectCounts(const Program& program, const size_t single,
 }
 
 namespace {
+struct InspectQuantumProgramPass final
+    : mlir::PassWrapper<InspectQuantumProgramPass,
+                        mlir::OperationPass<mlir::ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InspectQuantumProgramPass)
+
+  explicit InspectQuantumProgramPass(
+      std::vector<mlir::QuantumProgramInfo>& snapshots)
+      : snapshots_(snapshots) {}
+
+protected:
+  void runOnOperation() override {
+    snapshots_.push_back(getAnalysis<mlir::QuantumProgramAnalysis>().info());
+    markAllAnalysesPreserved();
+  }
+
+private:
+  std::vector<mlir::QuantumProgramInfo>& snapshots_;
+};
+
+TEST(ProgramInspection, AnalysisPassPreservesQCAndQCO) {
+  auto qc = mlir::QCProgram::fromOpenQASMString(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[2] q;
+    h q[0]; cx q[0], q[1];
+  )");
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  auto qco = qc->copy().intoQCO();
+  ASSERT_TRUE(mlir::succeeded(qco));
+  const auto originalQC = qc->str();
+  const auto originalQCO = qco->str();
+
+  for (auto moduleOp : {qc->module(), qco->module()}) {
+    std::vector<mlir::QuantumProgramInfo> snapshots;
+    mlir::PassManager manager(moduleOp.getContext());
+    manager.addPass(std::make_unique<InspectQuantumProgramPass>(snapshots));
+    manager.addPass(std::make_unique<InspectQuantumProgramPass>(snapshots));
+    ASSERT_TRUE(mlir::succeeded(manager.run(moduleOp)));
+    ASSERT_EQ(snapshots.size(), 2);
+    for (const auto& info : snapshots) {
+      EXPECT_EQ(info.numQubits, 2);
+      EXPECT_EQ(info.numGates, 2);
+      EXPECT_EQ(info.numSingleQubitGates, 1);
+      EXPECT_EQ(info.numTwoQubitGates, 1);
+      EXPECT_EQ(info.gateCounts,
+                (std::map<std::string, size_t>{{"cx", 1}, {"h", 1}}));
+    }
+    EXPECT_EQ(snapshots[0].operationCounts, snapshots[1].operationCounts);
+    EXPECT_TRUE(mlir::succeeded(mlir::verify(moduleOp)));
+  }
+  EXPECT_EQ(qc->str(), originalQC);
+  EXPECT_EQ(qco->str(), originalQCO);
+  EXPECT_EQ(qc->inspect().gateCounts, qco->inspect().gateCounts);
+}
+
+TEST(ProgramInspection, AnalysisRefreshesAfterTransformation) {
+  auto qco = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        %a = qco.h %q : !qco.qubit
+        %b = qco.h %a : !qco.qubit
+        %c = qco.x %b : !qco.qubit
+        %out, %bit = qco.measure %c : !qco.qubit
+        qco.sink %out : !qco.qubit
+        return %bit : i1
+      }
+    }
+  )");
+  ASSERT_TRUE(static_cast<bool>(qco)) << llvm::toString(qco.takeError());
+  std::vector<mlir::QuantumProgramInfo> snapshots;
+  mlir::PassManager manager(qco->module().getContext());
+  manager.addPass(std::make_unique<InspectQuantumProgramPass>(snapshots));
+  manager.addPass(mlir::mqt::createSimplifyQuantum());
+  manager.addPass(std::make_unique<InspectQuantumProgramPass>(snapshots));
+  ASSERT_TRUE(mlir::succeeded(manager.run(qco->module())));
+  ASSERT_EQ(snapshots.size(), 2);
+  EXPECT_EQ(snapshots[0].numGates, 4);
+  EXPECT_EQ(snapshots[0].gateCounts, (std::map<std::string, size_t>{
+                                         {"h", 2}, {"measure", 1}, {"x", 1}}));
+  EXPECT_EQ(snapshots[1].numGates, 2);
+  EXPECT_EQ(snapshots[1].gateCounts,
+            (std::map<std::string, size_t>{{"measure", 1}, {"x", 1}}));
+  EXPECT_EQ(snapshots[1].numQubits, 1);
+  EXPECT_EQ(snapshots[1].gateCounts, qco->inspect().gateCounts);
+}
+
 TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
   auto qc = mlir::QCProgram::fromOpenQASMString(R"(
     OPENQASM 3.0; include "stdgates.inc";
@@ -64,7 +159,7 @@ TEST(ProgramInspection, CountCallsAndNestedModifiersOnce) {
     c = measure q[0];
     reset q[1];
   )");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   const std::map<std::string, size_t> expected{
       {"foo", 1},     {"ctrl(foo)", 1}, {"ctrl(inv(x))", 1},
       {"inv(h)", 1},  {"pow(h)", 1},    {"ctrl(2,inv(x))", 1},
@@ -116,7 +211,7 @@ TEST(ProgramInspection, CompositeAndUnusedTargetModifiersStayAtomic) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   const std::map<std::string, size_t> expected{
       {"ctrl", 2},
       {"inv", 1},
@@ -143,7 +238,7 @@ TEST(ProgramInspection, QCOCountsNativeThreeQubitGates) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(qco));
+  ASSERT_TRUE(static_cast<bool>(qco)) << llvm::toString(qco.takeError());
   expectCounts(*qco, 0, 0, {{"rccx", 1}});
 }
 
@@ -152,7 +247,7 @@ TEST(ProgramInspection, InspectSortedDistinctStaticSites) {
     OPENQASM 3.0; include "stdgates.inc";
     x $5; h $2; z $5;
   )");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   const std::vector<uint64_t> sites{2, 5};
   EXPECT_EQ(qc->inspect().numQubits, 2);
   EXPECT_EQ(qc->inspect().staticQubits, sites);
@@ -179,9 +274,11 @@ TEST(ProgramInspection, UnknownAndEmptyWidthsDiffer) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(empty));
-  ASSERT_TRUE(mlir::succeeded(library));
-  ASSERT_TRUE(mlir::succeeded(dynamic));
+  ASSERT_TRUE(static_cast<bool>(empty)) << llvm::toString(empty.takeError());
+  ASSERT_TRUE(static_cast<bool>(library))
+      << llvm::toString(library.takeError());
+  ASSERT_TRUE(static_cast<bool>(dynamic))
+      << llvm::toString(dynamic.takeError());
   EXPECT_EQ(empty->inspect().numQubits, 0);
   EXPECT_TRUE(empty->gateCounts().empty());
   EXPECT_FALSE(library->inspect().numQubits);
@@ -210,7 +307,7 @@ TEST(ProgramInspection, AllocationsAddWidthButStoredReferencesDoNot) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   EXPECT_EQ(qc->inspect().numQubits, 3);
 }
 
@@ -228,7 +325,7 @@ TEST(ProgramInspection, AllocationWidthOverflowIsUnknown) {
     auto qc = mlir::QCProgram::fromMLIRString(
         "module { func.func @main() attributes {mqt.entry_point} { " +
         allocations + " return } }");
-    ASSERT_TRUE(mlir::succeeded(qc));
+    ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
     EXPECT_FALSE(qc->inspect().numQubits);
   }
 }
@@ -242,7 +339,7 @@ TEST(ProgramInspection, QuantumInputsHaveUnknownWidthAndBranchesAreDetected) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(input));
+  ASSERT_TRUE(static_cast<bool>(input)) << llvm::toString(input.takeError());
   EXPECT_FALSE(input->inspect().numQubits);
   auto branches = mlir::QCProgram::fromMLIRString(R"(
     module {
@@ -253,7 +350,8 @@ TEST(ProgramInspection, QuantumInputsHaveUnknownWidthAndBranchesAreDetected) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(branches));
+  ASSERT_TRUE(static_cast<bool>(branches))
+      << llvm::toString(branches.takeError());
   EXPECT_TRUE(branches->inspect().hasControlFlow);
   EXPECT_EQ(branches->controlFlowCounts(),
             (std::map<std::string, size_t>{{"cf.br", 1}}));
@@ -277,7 +375,7 @@ TEST(ProgramInspection, InspectionIncludesHelpersButNotNestedModules) {
       }
     }
   )");
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   const auto info = qc->inspect();
   EXPECT_EQ(info.staticQubits, (std::vector<uint64_t>{5}));
   EXPECT_EQ(info.numQubits, 1);
@@ -322,7 +420,7 @@ switch (selector) {
 }
 )";
   auto qc = mlir::QCProgram::fromOpenQASMString(qasm);
-  ASSERT_TRUE(mlir::succeeded(qc));
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
   const std::map<std::string, size_t> expectedCounts{
       {"cx", 2}, {"measure", 1}, {"swap", 1}, {"x", 1}, {"z", 1},
   };

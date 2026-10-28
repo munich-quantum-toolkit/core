@@ -79,55 +79,34 @@ void phaseAdditionLoop(
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(loop.getBody());
   auto target = loop.getInductionVar();
-  auto scaled = arith::MulFOp::create(builder, loop.getRegionIterArg(0), half);
-  auto inputBit =
-      arith::UIToFPOp::create(builder, builder.getF64Type(), bit(target));
-  auto contribution = arith::MulFOp::create(builder, inputBit, pi);
-  auto angle = arith::AddFOp::create(builder, scaled, contribution).getResult();
+  auto angle = advancePhaseCorrection(builder, loop.getRegionIterArg(0),
+                                      bit(target), half, pi);
   body(angle, target);
   scf::YieldOp::create(builder, ValueRange{angle});
 }
 
 Value advancePhaseCorrection(qc::QCProgramBuilder& builder, Value correction,
-                             Value measuredBit, Value half, Value firstAngle) {
+                             Value inputBit, Value half, Value firstAngle) {
   auto scaled = arith::MulFOp::create(builder, correction, half);
-  auto bit =
-      arith::UIToFPOp::create(builder, builder.getF64Type(), measuredBit);
+  auto bit = arith::UIToFPOp::create(builder, builder.getF64Type(), inputBit);
   auto contribution = arith::MulFOp::create(builder, bit, firstAngle);
   return arith::AddFOp::create(builder, scaled, contribution);
 }
 
-void forwardQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
-                int64_t qubits) {
-  auto zero = builder.indexConstant(0);
-  auto one = builder.indexConstant(1);
-  auto last = builder.indexConstant(qubits - 1);
-  auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
-  auto half = builder.floatConstant(0.5);
-  builder.scfFor(0, qubits, 1, [&](Value step) {
-    auto target = arith::SubIOp::create(builder, last, step).getResult();
-    builder.h(builder.loadQubit(qubitRegister, target));
-
-    auto previous = arith::SubIOp::create(builder, target, one).getResult();
-    phaseRotationLoop(
-        builder, zero, target, one, firstAngle, half,
-        [&](Value angle, Value distance) {
-          auto control =
-              arith::SubIOp::create(builder, previous, distance).getResult();
-          builder.cp(angle, builder.loadQubit(qubitRegister, control),
-                     builder.loadQubit(qubitRegister, target));
-        });
-  });
-}
-
-void inverseQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
-                int64_t qubits) {
+void qft(qc::QCProgramBuilder& builder, Value qubitRegister, int64_t qubits,
+         bool inverse) {
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto upper = builder.indexConstant(qubits);
-  auto firstAngle = builder.floatConstant(-std::numbers::pi / 2.);
+  auto last = builder.indexConstant(qubits - 1);
+  auto firstAngle =
+      builder.floatConstant((inverse ? -1. : 1.) * std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
   builder.scfFor(zero, upper, 1, [&](Value target) {
+    if (!inverse) {
+      target = arith::SubIOp::create(builder, last, target);
+      builder.h(builder.loadQubit(qubitRegister, target));
+    }
     auto previous = arith::SubIOp::create(builder, target, one).getResult();
     phaseRotationLoop(
         builder, zero, target, one, firstAngle, half,
@@ -137,7 +116,9 @@ void inverseQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
           builder.cp(angle, builder.loadQubit(qubitRegister, control),
                      builder.loadQubit(qubitRegister, target));
         });
-    builder.h(builder.loadQubit(qubitRegister, target));
+    if (inverse) {
+      builder.h(builder.loadQubit(qubitRegister, target));
+    }
   });
 }
 

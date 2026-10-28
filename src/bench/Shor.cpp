@@ -14,17 +14,19 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/Support/Error.h"
+
 #include <algorithm>
 #include <bit>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <numeric>
 #include <optional>
 #include <random>
-#include <stdexcept>
+#include <system_error>
 
 namespace mqt::bench {
 namespace {
@@ -59,18 +61,18 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
   uint64_t beforePrevious = 1;
   while (denominator != 0) {
     const auto coefficient = numerator / denominator;
-    if (previous != 0 &&
-        coefficient > (options.number - 1 - beforePrevious) / previous) {
+    // Phase fractions have at most 62 bits, so convergents fit in uint64_t.
+    const auto candidate = (coefficient * previous) + beforePrevious;
+    if (candidate >= options.number) {
       break;
     }
-    const auto candidate = (coefficient * previous) + beforePrevious;
-    if (candidate % 2 == 0 &&
-        powerModulo(options.base, candidate, options.number) == 1) {
+    if (candidate % 2 == 0) {
       const auto halfPower =
           powerModulo(options.base, candidate / 2, options.number);
-      for (const auto residue : {halfPower - 1, halfPower + 1}) {
-        if (const auto factors =
-                factorPair(options.number, std::gcd(residue, options.number))) {
+      if ((halfPower * halfPower) % options.number == 1) {
+        // For odd N, a trivial gcd(x-1, N) also makes gcd(x+1, N) trivial.
+        if (const auto factors = factorPair(
+                options.number, std::gcd(halfPower - 1, options.number))) {
           return factors;
         }
       }
@@ -94,18 +96,6 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
   return true;
 }
 
-[[nodiscard]] uint64_t boundedPower(uint64_t base, unsigned exponent,
-                                    uint64_t limit) {
-  uint64_t result = 1;
-  for (unsigned i = 0; i < exponent; ++i) {
-    if (result > limit / base) {
-      return limit + 1;
-    }
-    result *= base;
-  }
-  return result;
-}
-
 [[nodiscard]] std::optional<FactorPair> perfectPowerFactors(uint64_t number) {
   const auto bits = static_cast<unsigned>(std::bit_width(number));
   for (unsigned exponent = 2; exponent < bits; ++exponent) {
@@ -113,7 +103,11 @@ recoverFactors(const ShorOptions& options, uint64_t numerator,
     uint64_t upper = uint64_t{1} << ((bits + exponent - 1) / exponent);
     while (lower <= upper) {
       const auto base = std::midpoint(lower, upper);
-      const auto power = boundedPower(base, exponent, number);
+      // The 31-bit input bound keeps base^exponent <= 2^60.
+      uint64_t power = 1;
+      for (unsigned i = 0; i < exponent; ++i) {
+        power *= base;
+      }
       if (power == number) {
         return factorPair(number, base);
       }
@@ -134,28 +128,35 @@ Shor::Shor(ShorOptions options)
       output_{
           .name = "result",
           .width = size_t{2} * std::bit_width(options_.number),
-      } {
-  if (options_.number < 3 || options_.number > ShorOptions::MAX_NUMBER ||
-      options_.number % 2 == 0) {
-    throw std::invalid_argument(
+      } {}
+
+llvm::Expected<Shor> Shor::create(ShorOptions options) {
+  if (options.number < 3 || options.number > ShorOptions::MAX_NUMBER ||
+      options.number % 2 == 0) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "Shor number must be odd and between 3 and 2^31 - 1");
   }
-  if (options_.base <= 1 || options_.base >= options_.number ||
-      std::gcd(options_.base, options_.number) != 1) {
-    throw std::invalid_argument(
+  if (options.base <= 1 || options.base >= options.number ||
+      std::gcd(options.base, options.number) != 1) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "Shor base must satisfy 1 < base < number and be coprime to number");
   }
+  return Shor(options);
 }
 
 const ShorOptions& Shor::options() const noexcept { return options_; }
 const Output& Shor::output() const noexcept { return output_; }
 
-ShorEvaluation Shor::evaluate(const Counts& counts) const {
-  const auto total = detail::countShots(counts);
+llvm::Expected<ShorEvaluation> Shor::evaluate(const Counts& counts) const {
+  auto total = detail::validateCounts(counts, output_.width);
+  if (!total) {
+    return total.takeError();
+  }
   size_t successes = 0;
-  ShorEvaluation result;
+  ShorEvaluation result{.shots = *total};
   for (const auto& [outcome, count] : counts) {
-    detail::validateOutcome(outcome, output_.width);
     if (count == 0) {
       continue;
     }
@@ -171,32 +172,38 @@ ShorEvaluation Shor::evaluate(const Counts& counts) const {
     }
   }
   result.successProbability =
-      static_cast<double>(successes) / static_cast<double>(total);
+      static_cast<double>(successes) / static_cast<double>(*total);
   return result;
 }
 
-FactorResult factor(uint64_t number,
-                    const std::function<Counts(const Shor&)>& run,
-                    const FactorOptions& options) {
+llvm::Expected<FactorResult>
+factor(uint64_t number,
+       llvm::function_ref<llvm::Expected<Counts>(const Shor&)> run,
+       const FactorOptions& options) {
   if (number < 2 || number > ShorOptions::MAX_NUMBER) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "factoring number must be between 2 and 2^31 - 1");
   }
   if (options.maxAttempts == 0 || !run) {
-    throw std::invalid_argument(
+    return llvm::createStringError(
+        std::errc::invalid_argument,
         "factoring requires a callback and a positive attempt limit");
   }
   if (number == 2) {
-    return {.status = FactorStatus::Prime, .factors = std::nullopt};
+    return FactorResult{.status = FactorStatus::Prime, .factors = std::nullopt};
   }
   if (number % 2 == 0) {
-    return {.status = FactorStatus::Success, .factors = factorPair(number, 2)};
+    return FactorResult{
+        .status = FactorStatus::Success,
+        .factors = factorPair(number, 2),
+    };
   }
   if (isPrime(number)) {
-    return {.status = FactorStatus::Prime, .factors = std::nullopt};
+    return FactorResult{.status = FactorStatus::Prime, .factors = std::nullopt};
   }
   if (const auto factors = perfectPowerFactors(number)) {
-    return {.status = FactorStatus::Success, .factors = factors};
+    return FactorResult{.status = FactorStatus::Success, .factors = factors};
   }
 
   std::mt19937_64 random(options.seed);
@@ -204,23 +211,31 @@ FactorResult factor(uint64_t number,
   for (size_t attempt = 0; attempt < options.maxAttempts; ++attempt) {
     const auto base = attempt == 0 ? uint64_t{2} : bases(random);
     if (const auto factors = factorPair(number, std::gcd(base, number))) {
-      return {
+      return FactorResult{
           .status = FactorStatus::Success,
           .factors = factors,
           .attempts = attempt + 1,
       };
     }
-    const Shor benchmark({.number = number, .base = base});
-    if (const auto evaluation = benchmark.evaluate(run(benchmark));
-        evaluation.factors) {
-      return {
+    const auto benchmark =
+        llvm::cantFail(Shor::create({.number = number, .base = base}));
+    auto counts = run(benchmark);
+    if (!counts) {
+      return counts.takeError();
+    }
+    auto evaluation = benchmark.evaluate(*counts);
+    if (!evaluation) {
+      return evaluation.takeError();
+    }
+    if (evaluation->factors) {
+      return FactorResult{
           .status = FactorStatus::Success,
-          .factors = evaluation.factors,
+          .factors = evaluation->factors,
           .attempts = attempt + 1,
       };
     }
   }
-  return {
+  return FactorResult{
       .status = FactorStatus::AttemptsExhausted,
       .factors = std::nullopt,
       .attempts = options.maxAttempts,

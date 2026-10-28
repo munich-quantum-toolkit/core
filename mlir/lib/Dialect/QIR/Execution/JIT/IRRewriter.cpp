@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -23,8 +24,12 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Transforms/Utils/Local.h"
 
@@ -32,9 +37,12 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
+
+using llvm::createStringError;
+using llvm::Error;
 
 namespace qir {
 
@@ -48,12 +56,12 @@ static bool isIrreversible(const llvm::CallBase& call) {
   return callee != nullptr && callee->hasFnAttribute(IRREVERSIBLE_ATTR);
 }
 
-static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
+static Error requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
   llvm::SmallPtrSet<llvm::BasicBlock*, 8> visited;
   llvm::SmallVector<llvm::BasicBlock*> pending;
 
   auto inspect = [&](llvm::BasicBlock& block,
-                     llvm::BasicBlock::iterator begin) {
+                     llvm::BasicBlock::iterator begin) -> Error {
     for (auto it = begin; it != block.end(); ++it) {
       const auto* call = llvm::dyn_cast<llvm::CallBase>(&*it);
       const auto* callee =
@@ -63,32 +71,44 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
       if (callee != nullptr &&
           callee->getName().starts_with("__quantum__qis__") &&
           !isIrreversible(*call)) {
-        throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            TERMINAL_REGION_ERROR.str());
       }
     }
 
     auto* terminator = block.getTerminator();
     if (terminator->getNumSuccessors() > 1) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          TERMINAL_REGION_ERROR.str());
     }
     for (auto* successor : llvm::successors(&block)) {
       pending.emplace_back(successor);
     }
+    return Error::success();
   };
 
   auto* boundaryBlock = boundary.getParent();
   visited.insert(boundaryBlock);
-  inspect(*boundaryBlock, boundary.getIterator());
+  if (auto error = inspect(*boundaryBlock, boundary.getIterator())) {
+    return error;
+  }
   while (!pending.empty()) {
     auto* block = pending.pop_back_val();
     if (!visited.insert(block).second) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          TERMINAL_REGION_ERROR.str());
     }
-    inspect(*block, block->begin());
+    if (auto error = inspect(*block, block->begin())) {
+      return error;
+    }
   }
+  return Error::success();
 }
 
-static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
+static Error validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
   llvm::SmallPtrSet<llvm::Function*, 8> visited;
   llvm::SmallVector<llvm::Function*> pending{&entryPoint};
   while (!pending.empty()) {
@@ -106,7 +126,8 @@ static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
             call->getCalledOperand()->stripPointerCasts());
         if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
             callee == &entryPoint) {
-          throw std::invalid_argument(
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
               "Adaptive QIR state extraction requires direct calls without "
               "entry-point recursion");
         }
@@ -127,39 +148,48 @@ static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
         if ((name == "__quantum__rt__read_result" && !outputOnlyRead) ||
             name == "__quantum__qis__reset__body" ||
             (isIrreversible(*call) && name != "__quantum__qis__mz__body")) {
-          throw std::invalid_argument(
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
               "Adaptive QIR state extraction does not support "
               "measurement-dependent computation or resets");
         }
         if (!callee->isIntrinsic() && !name.starts_with("__quantum__")) {
-          throw std::invalid_argument("Adaptive QIR state extraction cannot "
-                                      "prove external call effects");
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
+              "Adaptive QIR state extraction cannot "
+              "prove external call effects");
         }
         if (name == "__quantum__rt__initialize" &&
             &instruction != &entryPoint.getEntryBlock().front()) {
-          throw std::invalid_argument(
+          return createStringError(
+              std::make_error_code(std::errc::invalid_argument),
               "Adaptive QIR state extraction requires initialization at entry");
         }
       }
     }
   }
+  return Error::success();
 }
 
-bool prepareForStateExtraction(llvm::Function& entryPoint) {
+llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint) {
   if (!entryPoint.getReturnType()->isIntegerTy(64) || !entryPoint.arg_empty()) {
-    throw std::invalid_argument(
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
         "QIR state extraction requires an i64() entry point");
   }
 
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (profile.isStringAttribute() &&
       profile.getValueAsString().compare(ADAPTIVE_PROFILE) == 0) {
-    validateAdaptiveStateExtraction(entryPoint);
+    if (auto error = validateAdaptiveStateExtraction(entryPoint)) {
+      return error;
+    }
     return false;
   }
   if (!profile.isStringAttribute() ||
       profile.getValueAsString().compare(BASE_PROFILE) != 0) {
-    throw std::invalid_argument(
+    return createStringError(
+        std::make_error_code(std::errc::invalid_argument),
         "QIR state extraction requires a Base or Adaptive Profile entry point");
   }
 
@@ -174,7 +204,8 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
           call->getCalledOperand()->stripPointerCasts());
       if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
           !callee->isDeclaration()) {
-        throw std::invalid_argument(
+        return createStringError(
+            std::make_error_code(std::errc::invalid_argument),
             "QIR state extraction requires direct calls to declared functions");
       }
       if (isIrreversible(*call)) {
@@ -196,11 +227,15 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
   }
   for (auto* call : irreversibleCalls) {
     if (boundary != call && !dominators.dominates(boundary, call)) {
-      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          TERMINAL_REGION_ERROR.str());
     }
   }
 
-  requireTerminalIrreversibleRegion(*boundary);
+  if (auto error = requireTerminalIrreversibleRegion(*boundary)) {
+    return error;
+  }
   auto* prefix = boundary->getParent();
   prefix->splitBasicBlock(boundary, "state-extraction.discarded");
   auto* oldTerminator = prefix->getTerminator();
@@ -227,17 +262,21 @@ static std::optional<uintptr_t> staticResourceId(const llvm::Value* value) {
   return static_cast<uintptr_t>(id->getZExtValue());
 }
 
-static bool isStaticGate(const llvm::CallInst& call, llvm::StringRef name) {
-  const auto known = llvm::StringSwitch<bool>(name)
+static bool isQISGateName(llvm::StringRef name) {
+  return llvm::StringSwitch<bool>(name)
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   .Case("__quantum__qis__" #NAME "__" #SUFFIX, true)                           \
       .Case("__quantum__qis__c" #NAME "__" #SUFFIX, true)                      \
       .Case("__quantum__qis__cc" #NAME "__" #SUFFIX, true)
 #include "mqt/Conversion/GateTable.def"
-                         .Case("__quantum__qis__gphase__body", true)
-                         .Case("__quantum__qis__cnot__body", true)
-                         .Default(false);
-  return known && std::ranges::all_of(call.args(), [](const llvm::Value* arg) {
+      .Case("__quantum__qis__gphase__body", true)
+      .Case("__quantum__qis__cnot__body", true)
+      .Default(false);
+}
+
+static bool isStaticGate(const llvm::CallInst& call, llvm::StringRef name) {
+  return isQISGateName(name) &&
+         std::ranges::all_of(call.args(), [](const llvm::Value* arg) {
            if (const auto* fp = llvm::dyn_cast<llvm::ConstantFP>(arg)) {
              return fp->getValueAPF().isFinite();
            }
@@ -333,6 +372,149 @@ getStaticSamplingOutputs(const llvm::Function& entryPoint) {
     block = branch->getSuccessor();
   }
   return std::nullopt;
+}
+
+static bool isReplayMemory(const llvm::Value* pointer, bool writable = false) {
+  const auto* object = llvm::getUnderlyingObject(pointer);
+  if (llvm::isa<llvm::AllocaInst>(object)) {
+    return true;
+  }
+  const auto* global = llvm::dyn_cast<llvm::GlobalVariable>(object);
+  return !writable && global != nullptr && global->isConstant() &&
+         !global->isDeclaration();
+}
+
+static bool isReplayCall(const llvm::CallInst& call) {
+  const auto* callee = call.getCalledFunction();
+  if (callee == nullptr || !callee->isDeclaration()) {
+    return false;
+  }
+  if (const auto* memory = llvm::dyn_cast<llvm::MemIntrinsic>(&call)) {
+    if (memory->isVolatile() || !isReplayMemory(memory->getDest(), true)) {
+      return false;
+    }
+    const auto* transfer = llvm::dyn_cast<llvm::MemTransferInst>(memory);
+    return transfer == nullptr || isReplayMemory(transfer->getSource());
+  }
+  if (callee->isIntrinsic()) {
+    const auto id = callee->getIntrinsicID();
+    if (id == llvm::Intrinsic::lifetime_start ||
+        id == llvm::Intrinsic::lifetime_end) {
+      return true;
+    }
+    return !llvm::Intrinsic::isTargetIntrinsic(id) &&
+           !call.getType()->isPtrOrPtrVectorTy() &&
+           std::ranges::none_of(call.args(),
+                                [](const llvm::Value* arg) {
+                                  return arg->getType()->isPtrOrPtrVectorTy();
+                                }) &&
+           call.doesNotAccessMemory() &&
+           llvm::isSafeToSpeculativelyExecute(&call);
+  }
+  const auto name = callee->getName();
+  if (isQISGateName(name)) {
+    return true;
+  }
+  if (name == "__quantum__rt__initialize") {
+    return &call == &call.getFunction()->getEntryBlock().front();
+  }
+  const auto localOrNull = [](const llvm::Value* pointer) {
+    return llvm::isa<llvm::ConstantPointerNull>(pointer) ||
+           isReplayMemory(pointer, true);
+  };
+  if (name == "__quantum__rt__qubit_allocate" ||
+      name == "__quantum__rt__result_allocate") {
+    return localOrNull(call.getArgOperand(0));
+  }
+  if (name == "__quantum__rt__qubit_array_allocate" ||
+      name == "__quantum__rt__result_array_allocate") {
+    return isReplayMemory(call.getArgOperand(1), true) &&
+           localOrNull(call.getArgOperand(2));
+  }
+  if (name == "__quantum__rt__qubit_array_release" ||
+      name == "__quantum__rt__result_array_release" ||
+      name == "__quantum__rt__result_array_record_output") {
+    return isReplayMemory(call.getArgOperand(1));
+  }
+  return llvm::StringSwitch<bool>(name)
+      .Cases(
+          {
+              "__quantum__qis__mz__body",
+              "__quantum__qis__reset__body",
+              "__quantum__rt__qubit_release",
+              "__quantum__rt__result_release",
+              "__quantum__rt__read_result",
+              "__quantum__rt__result_record_output",
+              "__quantum__rt__bool_record_output",
+              "__quantum__rt__int_record_output",
+              "__quantum__rt__double_record_output",
+              "__quantum__rt__tuple_record_output",
+              "__quantum__rt__array_record_output",
+          },
+          true)
+      .Default(false);
+}
+
+bool canSampleBranches(const llvm::Function& entryPoint) {
+  const auto& module = *entryPoint.getParent();
+  if (entryPoint.isDeclaration() || !entryPoint.arg_empty() ||
+      module.getNamedGlobal("llvm.global_ctors") != nullptr ||
+      module.getNamedGlobal("llvm.global_dtors") != nullptr ||
+      !module.aliases().empty() || !module.ifuncs().empty() ||
+      !std::ranges::all_of(module.globals(), [](const auto& global) {
+        return global.isConstant() && !global.isDeclaration();
+      })) {
+    return false;
+  }
+  for (const auto& block : entryPoint) {
+    for (const auto& instruction : block) {
+      if (const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction)) {
+        if (!isReplayCall(*call)) {
+          return false;
+        }
+      } else if (const auto* load =
+                     llvm::dyn_cast<llvm::LoadInst>(&instruction)) {
+        if (!load->isSimple() || !isReplayMemory(load->getPointerOperand())) {
+          return false;
+        }
+      } else if (const auto* store =
+                     llvm::dyn_cast<llvm::StoreInst>(&instruction)) {
+        if (!store->isSimple() ||
+            !isReplayMemory(store->getPointerOperand(), true)) {
+          return false;
+        }
+      } else if (llvm::isa<llvm::CallBase, llvm::PtrToIntInst,
+                           llvm::IntToPtrInst, llvm::FreezeInst>(instruction) ||
+                 (llvm::isa<llvm::CmpInst>(instruction) &&
+                  instruction.getOperand(0)->getType()->isPtrOrPtrVectorTy()) ||
+                 (instruction.isTerminator() &&
+                  !llvm::isa<llvm::BranchInst, llvm::SwitchInst,
+                             llvm::ReturnInst>(instruction)) ||
+                 (!llvm::isa<llvm::AllocaInst, llvm::ReturnInst>(instruction) &&
+                  (instruction.mayReadOrWriteMemory() ||
+                   instruction.mayHaveSideEffects()))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool canDeferMeasurements(const llvm::Function& entryPoint) {
+  for (const auto& block : entryPoint) {
+    for (const auto& instruction : block) {
+      const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+      if (call == nullptr) {
+        continue;
+      }
+      const auto name = call->getCalledFunction()->getName();
+      if (name == "__quantum__rt__read_result" ||
+          name == "__quantum__qis__reset__body") {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 } // namespace qir

@@ -11,8 +11,8 @@ mystnb:
 The [Quantum Intermediate Representation (QIR)](https://www.qir-alliance.org)
 expresses quantum programs in [LLVM IR](https://llvm.org/). The MQT Compiler
 Collection compiles OpenQASM, Qiskit circuits, and its own program objects to
-QIR 2.1. The bundled DDSIM device executes the result through QDMI, with the
-same job and result API used for OpenQASM.
+QIR. The bundled DDSIM device executes the result through QDMI, with the same
+job and result API used for OpenQASM.
 
 This notebook follows that complete path: compile a program, inspect its profile
 and capability flags, choose LLVM text or bitcode, and retrieve counts or QIR
@@ -27,10 +27,26 @@ examples use the bundled simulator and need no hardware account.
 For experiments that compare static circuits with measurement feedback, continue
 with the {doc}`QIR tutorial <../tutorials/qir_execution>`.
 
+## Runtime failures
+
+The
+[QIR allocation contract](https://github.com/qir-alliance/qir-spec/blob/main/specification/Memory_Management.md)
+provides an optional error-output pointer. This runtime uses it to report
+invalid requests and qubit or result limits, releasing partial allocations.
+Without that pointer, these failures emit a diagnostic and terminate execution.
+Host-memory exhaustion and other unhandled runtime failures also terminate, even
+with an error-output pointer; C++ and Python exceptions cannot catch them. Setup
+and compilation errors remain recoverable.
+
+Use [DDSIM through QDMI](../qdmi/ddsim_device.md#multi-program-execution) to
+contain execution failures in a worker process and keep the host usable.
+
 ## Compile a Base Profile program
 
 Use the Base Profile for a circuit whose measurements do not control subsequent
-quantum operations. This Bell circuit produces the outcomes `00` and `11`.
+quantum operations and whose QIR calls use constant arguments without runtime
+storage. Native gates that pack controls into runtime arrays require the
+Adaptive Profile. This Bell circuit produces the outcomes `00` and `11`.
 
 ```{code-cell} ipython3
 from mqt.core.mlir import OutputFormat, QIRProfile, compile_program
@@ -45,20 +61,33 @@ bit[2] result = measure q;
 
 base = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)
 assert base.profile is QIRProfile.BASE
-print(base.llvm_ir)
+base_llvm = base.to_llvm_ir(copy=True)
+print(base_llvm)
 ```
 
 The returned {py:class}`~mqt.core.mlir.QIRProgram` owns the compiled program.
-Its {py:attr}`~mqt.core.mlir.QIRProgram.llvm_ir` property is an LLVM assembly
-string. The entry-point attributes identify `base_profile`, the output schema,
+Its {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir` method consumes it and
+returns LLVM assembly. Here, `copy=True` keeps the program for bitcode export
+below. The entry-point attributes identify `base_profile`, the output schema,
 and the required static qubit and result capacities. The module flags identify
-QIR 2.1 and whether dynamic resource management is used.
+the minimum required QIR version and whether dynamic resource management is
+used. By default, Base Profile programs use QIR 2.0. Adaptive programs use 2.1
+when they require dynamic qubit or result allocation, or runtime arrays; other
+Adaptive programs use 2.0. Output labels and ordinary output-array records do
+not require 2.1. A target payload can constrain accepted versions, for example
+`>=2,<3`. Compilation selects the lowest known version that satisfies the
+program and target; a range of `>=2.1,<3` therefore emits 2.1 even for a static
+program. A bare numeric target version remains a same-major upper bound.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions
-consume that program unless `copy=True` is set. The `compile_program` function
-copies program objects by default and runs the coordinated optimization
-pipeline.
+consume that program unless `copy=True` is set. They lower prepared QC without
+inlining calls, expanding modifiers, or optimizing the resulting QIR. Calls with
+quantum-register arguments must already be inlined. Base conversion requires
+straight-line quantum operations; Adaptive conversion retains loops. Use
+`compile_program` for coordinated optimization, inlining, modifier expansion,
+and bounded Base loop unrolling. It also consumes typed MLIR programs unless
+`copy=True` is set.
 
 ## Execute LLVM text or bitcode
 
@@ -76,7 +105,7 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi import open_device
 
 device = open_device("mqt.ddsim.default")
-job = device.submit_job(base.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=256, custom1=7)
+job = device.submit_job(base_llvm, ProgramFormat.QIR_BASE_STRING, num_shots=256, custom1=7)
 assert job.wait()
 counts = job.get_counts()
 assert set(counts) <= {"00", "11"} and sum(counts.values()) == 256
@@ -98,9 +127,10 @@ print(f"Bitcode: {len(bitcode)} bytes")
 print(binary_job.get_counts())
 ```
 
-To save a program, use `base.write_bitcode("bell.bc")` for bitcode or
-`Path("bell.ll").write_text(base.llvm_ir)` for LLVM text after importing `Path`
-from `pathlib`. The command-line equivalents are:
+To save these payloads, use `Path("bell.bc").write_bytes(bitcode)` or
+`Path("bell.ll").write_text(base_llvm)` after importing `Path` from `pathlib`.
+For a program that has not yet been exported, `write_bitcode(path)` consumes it
+and writes bitcode directly. The command-line equivalents are:
 
 ```console
 mqt-cc bell.qasm --emit=qir-base -o bell.ll
@@ -135,11 +165,12 @@ to write LLVM metadata yourself. Inspect the entry-point attributes and flags:
 ```{code-cell} ipython3
 :tags: [hide-input]
 
-for line in adaptive.llvm_ir.splitlines():
+adaptive_llvm = adaptive.to_llvm_ir(copy=True)
+for line in adaptive_llvm.splitlines():
     if line.startswith(("attributes #0", "!")):
         print(line)
-assert '"qir_profiles"="adaptive_profile"' in adaptive.llvm_ir
-assert '"backwards_branching"' in adaptive.llvm_ir
+assert '"qir_profiles"="adaptive_profile"' in adaptive_llvm
+assert '"backwards_branching"' in adaptive_llvm
 ```
 
 For this program, `backwards_branching` records the conditional loop, `arrays`
@@ -157,9 +188,10 @@ supported operations, program format, and control-flow capabilities. DDSIM
 supports this Adaptive program in both encodings:
 
 ```{code-cell} ipython3
+adaptive_bitcode = adaptive.to_bitcode()
 for payload, program_format in (
-    (adaptive.llvm_ir, ProgramFormat.QIR_ADAPTIVE_STRING),
-    (adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE),
+    (adaptive_llvm, ProgramFormat.QIR_ADAPTIVE_STRING),
+    (adaptive_bitcode, ProgramFormat.QIR_ADAPTIVE_MODULE),
 ):
     adaptive_job = device.submit_job(payload, program_format, num_shots=32, custom1=7)
     assert adaptive_job.wait()
@@ -209,18 +241,20 @@ print(qiskit_job.get_counts())
 ## Retrieve the QIR output stream through QDMI
 
 Counts summarize recorded measurement results and Boolean values. Adaptive
-compilation records returned CBit registers containing computed values as
-Booleans, preserving bit order and overwritten values. Registers containing only
-measurement results retain result-array recording. QIR's textual output stream
-also preserves output labels, array and tuple records, other recorded scalar
-values, and shot framing. Enable capture with DDSIM's boolean `custom2`
-parameter, then request its string result from `CustomProperty.CUSTOM1`:
+compilation records computed `i1` results and CBit registers containing computed
+values as Booleans, preserving output order and snapshots. Measurement-only
+registers use result-array recording when their stores can fuse safely and
+preserve returned measurement snapshots. Other stores use Boolean storage,
+including runtime-indexed accesses. QIR's textual output stream also preserves
+output labels, array and tuple records, other recorded scalar values, and shot
+framing. Enable capture with DDSIM's boolean `custom2` parameter, then request
+its string result from `CustomProperty.CUSTOM1`:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import CustomProperty
 
 recorded_job = device.submit_job(
-    adaptive.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=7, custom2=True
+    adaptive_bitcode, ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=2, custom1=7, custom2=True
 )
 assert recorded_job.wait()
 output = recorded_job.get_custom_result(CustomProperty.CUSTOM1, str)
@@ -235,13 +269,10 @@ The parameter and result slots are separate: **job parameter CUSTOM1** is the
 seed; **job result CUSTOM1** contains the captured text. The same capture API
 works for Base and Adaptive profiles, with text or bitcode input.
 
-Capture is off by default. Enabling it executes the program for each shot and
-retains the complete stream in memory, so start with a small shot count. The
-stream uses QIR record order; QDMI shots and counts place the highest-index bit
-first. Capture jobs still expose those normal results, but do not retain an
-uncollapsed statevector. OpenQASM jobs and zero-shot state-extraction jobs
-reject capture. See {doc}`DDSIM <../qdmi/ddsim_device>` for the C API parameter
-types.
+Capture is off by default. The stream uses QIR record order; QDMI shots and
+counts place the highest-index bit first. Capture jobs provide both results, and
+terminal sampling can also retain an uncollapsed statevector. See
+{doc}`DDSIM <../qdmi/ddsim_device>` for capture limits and the C API.
 
 ## Execution contracts
 
@@ -256,18 +287,58 @@ program parameters before lowering to either supported profile. Runtime and QIS
 declarations are checked before JIT compilation; a mismatched or unsupported
 declaration is reported with its actual and accepted LLVM function types.
 
-MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT
+QC-to-QIR conversion records direct measurement and CBit-register returns in
+source order, including repetitions, and emits exit code 0 for successful
+execution. Adaptive Profile also records computed Boolean (`i1`) results
+directly, without output-register storage. Other entry results are unsupported,
+including a constant-zero `i64`: explicit QC and QCO returns are program data,
+never exit codes. Programs without results use a void QC or QCO entry function.
+This contract applies with and without a target. Keep other classical
+temporaries local, or use OpenQASM or jeff interchange for wider scalar program
+outputs.
+
+Base Profile requires every recorded bit to come from a measurement. Static
+Result storage has no specified initial value; use Adaptive Profile for outputs
+that retain their classical zero initialization.
+
+Measurements and CBit allocations must be in the entry function. A returned
+scalar measurement can share Result storage with a register only when constant
+store indices exclude overwriting its slot. The C++ QIR builder requires dynamic
+qubits to be allocated before control flow.
+
+Authored QIR can return explicit exit codes and use scalar output-recording
+APIs. These runtime features do not extend the supported QC-to-QIR entry
+results.
+
+MQT Core implements the QIR Base and Adaptive Profile runtime APIs. The JIT
 accepts one exact LLVM type for each runtime declaration, so unsupported or
-outdated overloads fail before execution.
+outdated overloads fail before execution. Present version flags must be
+nonnegative integers with major version 2. Future minor versions are accepted
+assuming existing constructs and runtime ABIs remain compatible; unsupported
+runtime calls still fail. Authored programs without version flags retain their
+existing behavior.
+
+Classical array copies require ranked memrefs. Fixed contiguous copies use
+[LLVM array loads and stores](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#supported-llvm-array-operations);
+other layouts use loops and require the corresponding backwards-branching
+capability. Math operations such as `sqrt` lower to LLVM intrinsics. DDSIM
+executes these intrinsics, but they are outside the
+[floating-point instructions required by QIR](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/profiles/Adaptive_Profile.md#classical-instructions).
+Check the backend's extensions when using these operations.
 
 MQT Core provides dedicated QIS functions for variants with one or two control
 qubits, using the `c<gate>` and `cc<gate>` names. Operations with three or more
-controls use generic `__ctl` and `__ctladj` specializations. The control qubits
-are passed in an Array; parameterized and multi-target gates pass their original
-arguments in a Tuple, following the QIR-Runner calling convention. MQT accepts
-these functions as implementation-specific extensions to the QIR 2.1 Base and
-Adaptive profiles, so the entry point keeps its `base_profile` or
-`adaptive_profile` attribute.
+controls use generic `__ctl` and `__ctladj` specializations. A target that
+advertises only a variadic gate uses the generic form even with one or two
+controls. The control qubits are passed in an Array; parameterized and
+multi-target gates pass their original arguments in a Tuple, following the
+QIR-Runner calling convention. MQT accepts these functions as runtime extensions
+in authored QIR with either profile attribute. Compiler-generated Base QIR
+follows the
+[Base Profile instruction restrictions](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/profiles/Base_Profile.md#user-content-entry-point-definition),
+which exclude the allocation and stores used by generic controlled calls. Use
+Adaptive QIR to retain these native calls, or compile for a target with
+dedicated controlled instructions or a gate set that requires decomposition.
 
 MQT's two-angle phased-X rotation gate uses the `prx` QIS stem. The incompatible
 QIR-Runner Pauli-axis operation named `r` is not part of MQT's QIS.
@@ -296,6 +367,16 @@ binary or non-text formats. The `num_shots` argument is optional for
 device-defined formats that encode their repetition count in the program
 payload.
 
+Direct host functions called by the JIT must obey their declared ABI and must
+not throw. Host function pointers cannot be sent to a DDSIM worker because they
+belong to the host process. `JitSession::create` returns an owned session or an
+`llvm::Error`. `run` and the sampling methods return `llvm::Expected<int64_t>`:
+a completed program returns its exit code, including nonzero codes, while
+recoverable validation failures return owned errors. Unhandled QIR runtime
+failures still terminate; see [runtime failures](#runtime-failures). Textual
+output uses a borrowed `llvm::raw_ostream` that must outlive the session;
+passing null disables it.
+
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
@@ -308,27 +389,30 @@ programs eligible for terminal sampling skip this optimization. Exported QIR
 uses profile-preserving cleanup, including promotion of local classical storage
 to SSA values; host optimization applies only to the JIT's private module.
 
-QIR runtime functions do not propagate C++ exceptions. Allocations report
-invalid resource requests and runtime limits through the QIR error-output
-pointer when one is supplied. Other failures, including host-memory exhaustion,
-stop the isolated DDSIM worker and fail its assigned program; concurrent and
-later jobs remain usable.
-
 ### Sampling and state extraction
 
-Sampling supports Base and Adaptive formats. With output capture disabled, for
-either profile with an acyclic, unconditional entry path, constant gate
-arguments, terminal Z measurements and scalar result records, DDSIM prepares the
-DD once and samples it for all shots. The runtime retains repeated or reordered
-result records in program order, including after SWAPs. The QDMI device reverses
-each shot for most-significant-bit first serialization before constructing its
-histogram. Programs with classical memory accesses, helper calls, conditional
-branches, resets, dynamic resources, Boolean output records, or generic
-controlled argument arrays use ordinary per-shot execution. These inputs remain
-supported by the runner; they are not eligible for this sampling optimization,
-including when all Boolean records are constant. A fixed seed reproduces a shot
-sequence for the same execution path; sequences need not match across different
-sampling algorithms or software versions.
+Sampling supports Base and Adaptive formats. For either profile with an acyclic,
+unconditional entry path, constant gate arguments, terminal Z measurements and
+scalar result records, DDSIM prepares the DD once and samples it for all shots.
+The runtime preserves repeated or reordered results, constant numeric records,
+and tuple or array headers. Classical memory accesses, helper calls, conditional
+branches, resets, dynamic resources, global destructors, Boolean output records,
+and generic controlled argument arrays exclude this terminal optimization.
+
+With capture disabled, `JitSession::sampleCounts` can group shots by measurement
+outcomes and replay deterministic prefixes for sibling paths. After LLVM O1,
+eligible programs use only local stack memory, defined constant globals, direct
+supported QIR calls, and deterministic scalar LLVM intrinsics. Remaining helper
+calls, heap-allocated classical arrays, lifecycle hooks, native effects, and
+pointer-address observations exclude grouping. If such a program also has no
+result reads or explicit resets, a trial defers measurements and collects the
+output projection, including dynamically allocated result arrays. Gates on
+measured wires or reuse of released qubits reject the trial. Successful trials
+sample a histogram directly from the retained DD; rejected trials use ordinary
+grouped sampling. Other supported programs execute once per shot.
+
+A fixed seed reproduces outcomes for the same execution path; sequences need not
+match across different sampling algorithms or software versions.
 
 When provided for static resources, `required_num_qubits` and
 `required_num_results` specify capacities, and out-of-range IDs are rejected.

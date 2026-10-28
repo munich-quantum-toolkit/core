@@ -397,6 +397,112 @@ class MappingPassTest : public MappingPassFixture,
 
 }; // namespace
 
+TEST_F(MappingPassFixture, PreservesAliasedRegisterFeedback) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  for (const auto& [source, expected] : {
+           std::pair{R"mlir(
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %other = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.alloc : !qco.qubit
+      %q2 = qco.alloc : !qco.qubit
+      %selector = qco.x %q2 : !qco.qubit
+      %selected, %choose = qco.measure %selector : !qco.qubit
+      qco.sink %selected : !qco.qubit
+      %alias = scf.if %choose -> !cbit.reg<1> {
+        scf.yield %reg : !cbit.reg<1>
+      } else { scf.yield %other : !cbit.reg<1> }
+      %flipped = qco.x %q0 : !qco.qubit
+      %measured, %bit = qco.measure %flipped : !qco.qubit
+      cbit.store %bit, %alias[%zero] : !cbit.reg<1>
+      qco.sink %measured : !qco.qubit
+      %read = cbit.load %reg[%zero] : !cbit.reg<1>
+      %changed = qco.if %read args(%wire = %q1) -> !qco.qubit {
+        %result = qco.x %wire : !qco.qubit
+        qco.yield %result : !qco.qubit
+      } else args(%wire = %q1) { qco.yield %wire : !qco.qubit }
+      %finished, %result = qco.measure %changed : !qco.qubit
+      cbit.store %result, %out[%zero] : !cbit.reg<1>
+      qco.sink %finished : !qco.qubit
+      return %out : !cbit.reg<1>
+    }
+  )mlir",
+                     "1"},
+           std::pair{R"mlir(
+    func.func @main() -> (!cbit.reg<1>, !cbit.reg<1>, !cbit.reg<1>)
+        attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %true = arith.constant true
+      %false = arith.constant false
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %other = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      cbit.store %true, %other[%zero] : !cbit.reg<1>
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.alloc : !qco.qubit
+      %loop:3 = scf.for %i = %zero to %two step %one
+          iter_args(%alias = %reg, %a = %q0, %b = %q1)
+          -> (!cbit.reg<1>, !qco.qubit, !qco.qubit) {
+        %flipped = qco.x %a : !qco.qubit
+        %measured, %bit = qco.measure %flipped : !qco.qubit
+        cbit.store %bit, %alias[%zero] : !cbit.reg<1>
+        %read = cbit.load %reg[%zero] : !cbit.reg<1>
+        %changed = qco.if %read args(%wire = %b) -> !qco.qubit {
+          %result = qco.x %wire : !qco.qubit
+          qco.yield %result : !qco.qubit
+        } else args(%wire = %b) { qco.yield %wire : !qco.qubit }
+        %next = scf.if %bit -> !cbit.reg<1> {
+          scf.yield %other : !cbit.reg<1>
+        } else { scf.yield %reg : !cbit.reg<1> }
+        scf.yield %next, %measured, %changed
+            : !cbit.reg<1>, !qco.qubit, !qco.qubit
+      }
+      cbit.store %false, %loop#0[%zero] : !cbit.reg<1>
+      qco.sink %loop#1 : !qco.qubit
+      %finished, %result = qco.measure %loop#2 : !qco.qubit
+      cbit.store %result, %out[%zero] : !cbit.reg<1>
+      qco.sink %finished : !qco.qubit
+      return %reg, %other, %out : !cbit.reg<1>, !cbit.reg<1>, !cbit.reg<1>
+    }
+  )mlir",
+                     "000"},
+       }) {
+    SCOPED_TRACE(expected);
+    for (bool canonicalize : {false, true}) {
+      SCOPED_TRACE(canonicalize);
+      auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+      ASSERT_TRUE(moduleOp);
+      if (canonicalize) {
+        PassManager pm(context.get());
+        pm.addPass(createCanonicalizerPass());
+        ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      }
+      // Two reads of the original loop register flip the output twice. Writes
+      // through both selected handles must also reach the original storage.
+      for (bool mapped : {false, true}) {
+        SCOPED_TRACE(mapped);
+        if (mapped) {
+          ASSERT_TRUE(succeeded(
+              runMapping(*moduleOp, target, MappingPassOptions{.ntrials = 1})));
+        }
+        ASSERT_TRUE(succeeded(verify(*moduleOp)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+        const auto counts = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+        ASSERT_TRUE(succeeded(counts));
+        ASSERT_EQ(counts->size(), 1U);
+        EXPECT_EQ(counts->begin()->first, expected);
+      }
+    }
+  }
+}
+
 TEST_F(MappingPassFixture, RouteBeforeLaterClassicalControl) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, Connectivity::fromCouplings({{0, 1}, {0, 2}, {0, 3}}),
@@ -520,7 +626,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
 
   for (const bool placement : {false, true}) {
     SCOPED_TRACE(placement);
-    auto moduleOp = input->clone();
+    OwningOpRef<ModuleOp> moduleOp = input->clone();
     std::string diagnostics;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
       diagnostics += diagnostic.str();
@@ -530,7 +636,7 @@ TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
     PassManager pm(context.get());
     pm.addPass(placement ? createPlacementPass()
                          : createMappingPass(MappingPassOptions{.ntrials = 1}));
-    EXPECT_TRUE(failed(pm.run(moduleOp))) << diagnostics;
+    EXPECT_TRUE(failed(pm.run(*moduleOp))) << diagnostics;
     EXPECT_NE(diagnostics.find("expected a valid mqt.target_env"),
               std::string::npos)
         << diagnostics;
@@ -545,7 +651,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
                              NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -732,7 +838,7 @@ TEST_F(MappingPassFixture,
     for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
       for (bool measureAll : {false, true}) {
         QCOProgramBuilder builder(context.get());
-        builder.initialize({cbit::RegisterType::get(context.get(), 3)});
+        builder.initialize();
         auto bits = builder.allocClassicalBitRegister(3);
         Value tensor = builder.qtensorAlloc(3);
         SmallVector<Value> qubits(3);
@@ -895,7 +1001,7 @@ TEST_F(MappingPassFixture,
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
-  builder.initialize({cbit::RegisterType::get(context.get(), 1)});
+  builder.initialize();
   auto reg = builder.allocClassicalBitRegister(1);
   Value index = arith::ConstantIndexOp::create(builder, 0);
   auto q0 = builder.allocQubit();
@@ -936,7 +1042,7 @@ TEST_F(MappingPassFixture, RouteControlFromConsecutiveMeasurementResults) {
     for (const size_t controlIndex : {size_t{0}, numMeasurements - 1}) {
       SCOPED_TRACE(controlIndex);
       QCOProgramBuilder builder(context.get());
-      builder.initialize({cbit::RegisterType::get(context.get(), 1)});
+      builder.initialize();
       auto reg = builder.allocClassicalBitRegister(1);
       Value index = arith::ConstantIndexOp::create(builder, 0);
       auto q0 = builder.allocQubit();
@@ -1022,11 +1128,7 @@ TEST_F(MappingPassFixture, KeepOutputOnlyRegisterMeasurementsTerminal) {
   for (const bool returnRead : {false, true}) {
     SCOPED_TRACE(returnRead);
     QCOProgramBuilder builder(context.get());
-    Type resultType = builder.getI1Type();
-    if (!returnRead) {
-      resultType = cbit::RegisterType::get(context.get(), 1);
-    }
-    builder.initialize({resultType});
+    builder.initialize();
     auto reg = builder.allocClassicalBitRegister(1);
     Value index = arith::ConstantIndexOp::create(builder, 0);
     auto q0 = builder.allocQubit();
@@ -1076,7 +1178,7 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
       NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -1120,7 +1222,7 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
                              NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type()});
+  builder.initialize();
   const auto inputQubit = builder.h(builder.allocQubit());
   const auto [qubit, bit] = builder.measure(inputQubit);
   builder.sink(qubit);
@@ -1153,7 +1255,7 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
       NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type(), builder.getI1Type()});
+  builder.initialize();
   Value tensor = builder.qtensorAlloc(2);
   Value first;
   Value second;
@@ -1275,7 +1377,7 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
       NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
+  builder.initialize();
 
   SmallVector<Value> bits(2);
   const auto inputQ0 = builder.allocQubit();
@@ -1424,7 +1526,7 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
   const auto& target = GetParam();
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type()});
+  builder.initialize();
   Value q0;
   Value c0;
   q0 = builder.allocQubit();
@@ -1528,7 +1630,7 @@ TEST_P(MappingPassTest, MapProgramAfterQubitReuse) {
   const auto& target = GetParam();
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type(), builder.getI1Type()});
+  builder.initialize();
   Value q0 = builder.allocQubit();
   q0 = builder.h(q0);
   Value bit0;
@@ -1607,7 +1709,7 @@ TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
   const auto& target = GetParam();
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type()});
+  builder.initialize();
 
   Value tensor0 = builder.qtensorAlloc(1);
 
@@ -1637,7 +1739,7 @@ TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
   SmallVector<Value> qubits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   Value tensor = builder.qtensorAlloc(size);
 
@@ -1666,7 +1768,7 @@ TEST_P(MappingPassTest, MapFlatGHZ) {
   SmallVector<Value> bits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
+  builder.initialize();
 
   auto tensor = builder.qtensorAlloc(3);
   for (int64_t i = 0; i < size; ++i) {
@@ -1708,7 +1810,7 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   pm.addPass(createMappingPass(MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   Value tensor = builder.qtensorAlloc(size);
 
@@ -1745,7 +1847,7 @@ TEST_P(MappingPassTest, MapGroverLike) {
   SmallVector<Value> bits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   Value tensor = builder.qtensorAlloc(4);
   Value flagTensor = builder.qtensorAlloc(1);
@@ -1808,7 +1910,7 @@ TEST_P(MappingPassTest, MapParallelLoops) {
   SmallVector<Value> bits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   Value tensor = builder.qtensorAlloc(size);
   for (int64_t i = 0; i < size; ++i) {
@@ -2295,7 +2397,7 @@ TEST_P(MappingPassTest, MapSABRECircuit) {
   SmallVector<Value> bits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(6, builder.getI1Type()));
+  builder.initialize();
 
   Value tensorUp = builder.qtensorAlloc(4);
   Value tensorDown = builder.qtensorAlloc(2);
@@ -2367,7 +2469,7 @@ TEST_P(MappingPassTest, MapBranchingGHZ) {
   SmallVector<Value> bits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   Value tensor = builder.qtensorAlloc(size);
   for (int64_t i = 0; i < size; ++i) {
@@ -2576,7 +2678,7 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   SmallVector<Value> bits(size);
 
   QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
+  builder.initialize();
 
   for (size_t i = 0; i < size; ++i) {
     qubits[i] = builder.allocQubit();
@@ -2638,7 +2740,7 @@ TEST_F(MappingPassFixture, KeepExecutableIdentityAcrossTrialOptions) {
   for (const size_t numQubits : {size_t{0}, size_t{1}, size_t{3}}) {
     SCOPED_TRACE(numQubits);
     QCOProgramBuilder builder(context.get());
-    builder.initialize(SmallVector<Type>(numQubits, builder.getI1Type()));
+    builder.initialize();
     SmallVector<Value> qubits;
     SmallVector<Value> bits(numQubits);
     for (size_t i = 0; i < numQubits; ++i) {
@@ -2948,7 +3050,7 @@ TEST_F(MappingPassFixture, PlaceCountedLoopInteractionsWithoutRouting) {
   for (const bool nested : {false, true}) {
     SCOPED_TRACE(nested);
     QCOProgramBuilder builder(context.get());
-    builder.initialize({cbit::RegisterType::get(context.get(), 3)});
+    builder.initialize();
     auto bits = builder.allocClassicalBitRegister(3);
     SmallVector<Value> qubits;
     for (size_t i = 0; i < 3; ++i) {
@@ -3543,7 +3645,7 @@ TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
                   std::tie(qubits[control], qubits[i]) =
                       builder.cx(qubits[control], qubits[i]);
                 }
-                return builder.intConstant(0);
+                return SmallVector<Value>{};
               });
           (*input)->setAttr(COMPILATION_SEED_ATTR,
                             Builder(context.get()).getI64IntegerAttr(seed));
@@ -3724,7 +3826,7 @@ TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
                                             << ", parallel=" << parallel);
             context->enableMultithreading(parallel);
             QCOProgramBuilder builder(context.get());
-            builder.initialize({cbit::RegisterType::get(context.get(), 3)});
+            builder.initialize();
             auto bits = builder.allocClassicalBitRegister(3);
             SmallVector<Value> qubits;
             for (size_t i = 0; i < 3; ++i) {
@@ -3810,7 +3912,7 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
       NativeOperations::unrestricted()));
   for (size_t shape = 0; shape < 3; ++shape) {
     QCOProgramBuilder builder(context.get());
-    builder.initialize({cbit::RegisterType::get(context.get(), 5)});
+    builder.initialize();
     auto bits = builder.allocClassicalBitRegister(5);
     SmallVector<Value> qubits;
     for (size_t i = 0; i < 4; ++i) {
@@ -3920,7 +4022,7 @@ TEST_F(MappingPassFixture, RespectRegionBoundariesBeforeFrontierDiscovery) {
       "cz");
   for (bool hiddenRegion : {true, false}) {
     QCOProgramBuilder builder(context.get());
-    builder.initialize({cbit::RegisterType::get(context.get(), 5)});
+    builder.initialize();
     auto bits = builder.allocClassicalBitRegister(5);
     SmallVector<Value> qubits;
     for (size_t i = 0; i < 5; ++i) {

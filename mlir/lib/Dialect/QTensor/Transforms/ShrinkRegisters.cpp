@@ -147,12 +147,17 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     auto currentTensor = newAlloc.getResult();
     for (const auto& access : accesses) {
       const auto mappedIndex = newIndexByOldIndex.at(access.index);
-      if (auto extractOp = dyn_cast<ExtractOp>(access.operation)) {
-        rewriter.setInsertionPoint(extractOp);
-        auto index = arith::ConstantIndexOp::create(
-            rewriter, extractOp.getLoc(), mappedIndex);
+      auto extractOp = dyn_cast<ExtractOp>(access.operation);
+      Value index = extractOp ? extractOp.getIndex()
+                              : cast<InsertOp>(access.operation).getIndex();
+      rewriter.setInsertionPoint(access.operation);
+      if (mappedIndex != access.index) {
+        index = arith::ConstantIndexOp::create(
+            rewriter, access.operation->getLoc(), mappedIndex);
+      }
+      if (extractOp) {
         auto newExtract = ExtractOp::create(rewriter, extractOp.getLoc(),
-                                            currentTensor, index.getResult());
+                                            currentTensor, index);
         rewriter.replaceAllUsesWith(extractOp.getResult(),
                                     newExtract.getResult());
         currentTensor = newExtract.getOutTensor();
@@ -160,12 +165,9 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       }
 
       auto insertOp = cast<InsertOp>(access.operation);
-      rewriter.setInsertionPoint(insertOp);
-      auto index = arith::ConstantIndexOp::create(rewriter, insertOp.getLoc(),
-                                                  mappedIndex);
       auto newInsert =
           InsertOp::create(rewriter, insertOp.getLoc(), insertOp.getScalar(),
-                           currentTensor, index.getResult());
+                           currentTensor, index);
 
       currentTensor = newInsert.getResult();
     }
@@ -186,10 +188,20 @@ struct ShrinkQTensorToFitPass final
     : impl::ShrinkQTensorToFitPassBase<ShrinkQTensorToFitPass> {
 protected:
   void runOnOperation() override {
+    SmallVector<Operation*> candidates;
+    getOperation()->walk([&](AllocOp op) { candidates.push_back(op); });
+    if (candidates.empty()) {
+      markAllAnalysesPreserved();
+      return;
+    }
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkStaticQTensor>(&getContext());
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+    GreedyRewriteConfig config;
+    config.setScope(&getOperation().getRegion());
+    config.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
+    if (failed(
+            applyOpPatternsGreedily(candidates, std::move(patterns), config))) {
       signalPassFailure();
     }
   }

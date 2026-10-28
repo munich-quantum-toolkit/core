@@ -21,12 +21,26 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
 
+#include <cmath>
 #include <cstddef>
 #include <optional>
 
 namespace mlir::qco {
+
+/// Eliminate a rotation within the explicit optimization tolerance.
+template <typename Op>
+LogicalResult removeZeroRotation(Op op, PatternRewriter& rewriter) {
+  const auto theta = mqt::valueToDouble(op.getTheta());
+  if (!theta || !(std::abs(*theta) <= mqt::PARAMETER_COMPARISON_TOLERANCE)) {
+    return failure();
+  }
+  rewriter.replaceOp(op, op.getInputQubits());
+  return success();
+}
 
 /// Fold QCO if operations with literal conditions, without changing signatures.
 void populateFoldStaticIfPatterns(RewritePatternSet& patterns);
@@ -55,6 +69,24 @@ inline bool checkDeadGate(Operation* op) {
   const auto shapedType = dyn_cast<ShapedType>(type);
   return isa<RankedTensorType, VectorType>(type) && shapedType.getRank() == 1 &&
          isa<QubitType>(shapedType.getElementType());
+}
+
+/// Return the corresponding quantum value, ignoring classical positions.
+///
+/// Requires positional quantum signatures validated by @ref verifyLinearity.
+/// Runs in linear time in the input and output signature widths.
+[[nodiscard]] inline Value getCorrespondingQuantumValue(ValueRange inputs,
+                                                        ValueRange outputs,
+                                                        unsigned inputIndex) {
+  auto ordinal = llvm::count_if(inputs.take_front(inputIndex), [](Value value) {
+    return isLinearQubitType(value.getType());
+  });
+  for (auto output : outputs) {
+    if (isLinearQubitType(output.getType()) && ordinal-- == 0) {
+      return output;
+    }
+  }
+  llvm_unreachable("expected corresponding quantum value");
 }
 
 /// Verify linear uses, static roots, and positional quantum state flow.

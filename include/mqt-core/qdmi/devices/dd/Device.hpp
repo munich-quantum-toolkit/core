@@ -16,6 +16,9 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
+#include "llvm/ADT/ilist.h"
+#include "llvm/ADT/ilist_node.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -25,8 +28,6 @@
 #include <optional>
 #include <random>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace qdmi::dd {
 struct Execution;
@@ -39,13 +40,8 @@ class Device final : public Singleton<Device> {
   /// The number of qubits supported by the simulator.
   size_t qubitsNum_ = 0;
 
-  /// The status of the device.
-  std::atomic<QDMI_Device_Status> status_{QDMI_DEVICE_STATUS_IDLE};
-
   /// The list of device sessions.
-  std::unordered_map<MQT_DDSIM_QDMI_Device_Session,
-                     std::unique_ptr<MQT_DDSIM_QDMI_Device_Session_impl_d>>
-      sessions_;
+  llvm::iplist<MQT_DDSIM_QDMI_Device_Session_impl_d> sessions_;
   /// Mutex protecting access to sessions_.
   mutable std::mutex sessionsMutex_;
 
@@ -84,19 +80,17 @@ public:
   /// Generates a unique ID.
   auto generateUniqueID() -> int;
 
-  /// Sets the device status.
-  auto setStatus(QDMI_Device_Status status) -> void;
-
-  /// Bumps the number of running jobs and updates the status
+  /// Bumps the number of running programs.
   auto increaseRunningJobs() -> void;
 
-  /// Decreases the number of running jobs and updates the status
+  /// Decreases the number of running programs.
   auto decreaseRunningJobs() -> void;
 };
 } // namespace qdmi::dd
 
 /// Implementation of the MQT_DDSIM_QDMI_Device_Session structure.
-struct MQT_DDSIM_QDMI_Device_Session_impl_d {
+struct MQT_DDSIM_QDMI_Device_Session_impl_d
+    : llvm::ilist_node<MQT_DDSIM_QDMI_Device_Session_impl_d> {
 private:
   /// The status of the session.
   enum class Status : uint8_t {
@@ -106,9 +100,7 @@ private:
   /// The current status of the session.
   Status status_ = Status::ALLOCATED;
   /// The device jobs associated with this session.
-  std::unordered_map<MQT_DDSIM_QDMI_Device_Job,
-                     std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d>>
-      jobs_;
+  llvm::iplist<MQT_DDSIM_QDMI_Device_Job_impl_d> jobs_;
   /// Mutex protecting access to jobs_.
   mutable std::mutex jobsMutex_;
 
@@ -159,7 +151,8 @@ public:
 };
 
 /// Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
-struct MQT_DDSIM_QDMI_Device_Job_impl_d {
+struct MQT_DDSIM_QDMI_Device_Job_impl_d
+    : llvm::ilist_node<MQT_DDSIM_QDMI_Device_Job_impl_d> {
 private:
   /// The device session associated with the job.
   MQT_DDSIM_QDMI_Device_Session_impl_d* session_;
@@ -168,7 +161,6 @@ private:
   int id_ = 0;
 
   QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_MAX;
-  std::vector<std::string> programs_;
   size_t numShots_ = 1024;
   std::optional<int> seed_;
   bool captureQIROutput_ = false;

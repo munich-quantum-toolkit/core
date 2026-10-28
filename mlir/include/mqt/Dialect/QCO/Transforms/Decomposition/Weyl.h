@@ -123,6 +123,9 @@ public:
   [[nodiscard]] double a() const { return a_; }
   [[nodiscard]] double b() const { return b_; }
   [[nodiscard]] double c() const { return c_; }
+  [[nodiscard]] std::array<double, 3> coordinates() const {
+    return {a_, b_, c_};
+  }
   [[nodiscard]] double globalPhase() const { return globalPhase_; }
 
   /// Single-qubit factor on qubit 0 after the canonical gate.
@@ -220,13 +223,20 @@ public:
   /// @param targetDecomposition Weyl decomposition of the target unitary.
   /// @param numBasisGateUses Requested number of basis-gate applications in
   /// `{0, 1, 2, 3}`. Pass `std::nullopt` to pick the count that maximizes
-  /// `traceToFidelity(trace[i]) * basisFidelity^i` over `i ∈ {0, 1, 2, 3}`.
+  /// `traceToFidelity(trace[i]) * basisFidelity^i` over supported counts:
+  /// `{0, 1, 2, 3}` for a super-controlled basis and `{0, 1}` otherwise.
   /// @return A native decomposition on success, or `std::nullopt` when the
   /// requested count is unsupported (e.g. more than one basis gate for a
   /// non-super-controlled basis, or a value outside `{0, 1, 2, 3}`).
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                     std::optional<std::uint8_t> numBasisGateUses) const;
+
+  /// Selects the supported count that maximizes fidelity, as in @ref
+  /// twoQubitDecompose.
+  ///
+  /// Coordinates must come from a successful Weyl decomposition.
+  [[nodiscard]] uint8_t numBasisGates(std::array<double, 3> coordinates) const;
 
   /// Decomposes @p targetUnitary using this cached basis decomposer.
   ///
@@ -322,7 +332,7 @@ private:
   void decomp3Supercontrolled(SmallVectorImpl<Matrix2x2>& out,
                               const TwoQubitWeylDecomposition& target) const;
   [[nodiscard]] std::array<std::complex<double>, 4>
-  traces(const TwoQubitWeylDecomposition& target) const;
+  traces(std::array<double, 3> coordinates) const;
 
   TwoQubitBasisDecomposer() = default;
 
@@ -358,8 +368,10 @@ struct SynthesizedUnitary2Q {
 /// Decomposes a two-qubit unitary using @p entangler, returning `std::nullopt`
 /// if the numerical decomposition fails.
 ///
-/// All entanglers use
-/// @ref WEYL_DEFAULT_FIDELITY for the target's Weyl specialization.
+/// Requires a supported entangler: fixed CX, CZ, ECR, ISWAP, or SQRTISWAP;
+/// or RXX, RYY, RZX, or RZZ with any declared angle support.
+/// All entanglers use @ref WEYL_DEFAULT_FIDELITY for the target's Weyl
+/// specialization.
 ///
 /// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3), up to
 /// WEYL_TOLERANCE in the interaction coefficients. Unrestricted RXX/RYY/RZX/RZZ
@@ -368,6 +380,23 @@ struct SynthesizedUnitary2Q {
 decomposeUnitary2QWeyl(const Matrix4x4& target,
                        CompilerTarget::Entangler entangler,
                        uint64_t seed = 2023);
+
+/// Constructs native factors from a validated Weyl decomposition.
+///
+/// Requires a result of @ref TwoQubitWeylDecomposition::create with
+/// @ref WEYL_DEFAULT_FIDELITY and a supported native entangler. The seed
+/// applies to numerical subproblems in native factor construction.
+[[nodiscard]] std::optional<TwoQubitNativeDecomposition>
+decomposeUnitary2QWeyl(const TwoQubitWeylDecomposition& target,
+                       CompilerTarget::Entangler entangler,
+                       uint64_t seed = 2023);
+
+/// Counts entanglers from validated, specialized Weyl coordinates.
+///
+/// Requires coordinates from @ref TwoQubitWeylDecomposition::create with
+/// @ref WEYL_DEFAULT_FIDELITY and a supported native entangler.
+[[nodiscard]] uint8_t countUnitary2QWeyl(std::array<double, 3> coordinates,
+                                         CompilerTarget::Entangler entangler);
 
 /// Emits a prepared two-qubit decomposition in the selected target basis.
 ///
