@@ -66,9 +66,8 @@ Discovery opens fresh sessions without explicit authentication parameters.
 `backend.target` describes native instructions, ordered placements, parameter
 constraints, and available calibration. Qubit indices are physical site IDs; a
 disabled site leaves a hole. Devices with sparse site IDs must report explicit
-gate placements. Durations are converted to seconds using the
-device's duration unit and optional scale factor. Invalid units/scales fail
-target construction.
+gate placements. Durations are converted to seconds using the device's duration
+unit and optional scale factor. Invalid units/scales fail target construction.
 
 Compatible aliases contribute their combined placements. Conflicting gate
 variants must have distinct Target names. Control-flow operations require
