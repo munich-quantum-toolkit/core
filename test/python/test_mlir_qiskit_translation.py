@@ -26,6 +26,7 @@ import qiskit
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qpy, transpile
 from qiskit.circuit import (
     AnnotatedOperation,
+    Barrier,
     Clbit,
     ControlModifier,
     Gate,
@@ -5008,6 +5009,7 @@ def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
     """Keep physical addresses and local metadata through explicit compilation."""
     sites = (0, 1, 3, 4)
     target = Target(num_qubits=5)
+    target.add_instruction(Barrier(5))
     target.add_instruction(library.RZGate(Parameter("theta")), {(site,): None for site in sites})
     target.add_instruction(library.SXGate(), {(site,): None for site in sites})
     target.add_instruction(library.CZGate(), dict.fromkeys(((0, 1), (1, 0), (1, 3), (3, 1), (3, 4), (4, 3))))
