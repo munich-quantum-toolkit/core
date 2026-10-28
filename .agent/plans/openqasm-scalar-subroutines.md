@@ -25,21 +25,27 @@ remain separate.
 - Static empty rank-reduced views use shape-only casts because LLVM 23 subviews
   reject zero extents. Remove this workaround when upstream accepts them.
 
-## Validation
+## Validation and maintenance decision
 
-The owning binaries under `build/release/mlir/unittests/` pass: compiler (320
-passed, two expected platform skips), OpenQASM frontend (214), OpenQASM
-translation (239), jeff round-trip (167), and QCO/DD utilities (257). Coverage
-includes retained calls, one-time index evaluation, signed bulk initializers
-passed to borrowed helpers, single-cleanup promotion of constant call operands,
-QIR JIT, and serialized jeff. The compiler fixture independently constructs the
-specialized unitary reference, retaining its call, constant angle, and wire.
+Maintenance on 28 October 2026 checked this PR against main
+`66968a5f44d2b0eddb108b6c7c5c49c463c57205`. Retain the implementation and test
+scenarios: frontend type/alias checks, export round trips, DD diagnostics, QIR
+execution, serialized jeff, and the single-cleanup entry protect distinct
+contracts. The 17-element initializer crosses the bulk-emission threshold; three
+524,288-bit results cross the aggregate snapshot limit.
 
-The rebuilt package passes all 483 cases in `test/python/test_mlir.py` and
-`test/python/test_mlir_integer_interchange.py`, including the four explicit
-seed-override cases. Their exact-IR reference matches the custom pipeline's
-cleanup boundaries instead of assuming incidental constant order is unchanged.
+The current native suites passed: OpenQASM frontend 214, translation 239,
+compiler 320 with two `/dev/full` platform skips, jeff round-trip 167, QCO/DD
+utilities 257, and CBit IR 17. Logs and review evidence are in the Benchpress
+workspace under `.benchmarks/open-pr-maintenance-20261028/pr2816/`.
 
-Repository lint and `git diff --check` pass. Whole-file C++ lint remains
-unverified locally because clang-tidy 23 is unavailable. Local arrays inside
-subroutines, array-valued returns, and recursive calls remain unsupported.
+Prior validation also passed 483 Python cases across `test_mlir.py` and
+`test_mlir_integer_interchange.py`; these were not rerun for this plan-only
+maintenance. The seed-override reference retains the custom pipeline's cleanup
+boundaries. Whole-file C++ lint was not rerun; there are no C++ edits in this
+maintenance. Repository lint and the independent final review passed.
+
+No runtime optimization is retained without useful evidence. Constant array
+indices could avoid eager extent construction, but no representative array-heavy
+performance workload was available. Local arrays inside subroutines,
+array-valued returns, and recursive calls remain unsupported.
