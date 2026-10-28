@@ -11,7 +11,10 @@
 import enum
 import os
 from collections.abc import Sequence
-from typing import overload
+from typing import Annotated, overload
+
+import numpy as np
+from numpy.typing import NDArray
 
 from mqt.core.qdmi import builtin_driver as builtin_driver
 
@@ -91,11 +94,11 @@ class Job:
     def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self, program_index: int = 0) -> list[complex]:
-        """Returns the dense statevector from the job (typically only available from simulator devices)."""
+    def get_dense_statevector(self, program_index: int = 0) -> Annotated[NDArray[np.complex128], {"shape": (None,)}]:
+        """Return a one-dimensional complex128 NumPy array owning the retrieved statevector."""
 
-    def get_dense_probabilities(self, program_index: int = 0) -> list[float]:
-        """Returns the dense probabilities from the job (typically only available from simulator devices)."""
+    def get_dense_probabilities(self, program_index: int = 0) -> Annotated[NDArray[np.float64], {"shape": (None,)}]:
+        """Return a one-dimensional float64 NumPy array owning the retrieved probabilities."""
 
     def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:
         """Returns the sparse statevector from the job (typically only available from simulator devices)."""
