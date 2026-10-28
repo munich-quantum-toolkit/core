@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
@@ -274,11 +275,10 @@ TEST(CompilerQDMIAdapterTest, SerializesExactHeterogeneousPlacements) {
             .str()));
     auto compiled = mlir::CompiledProgram::serialize(
         std::move(program), device, QDMI_PROGRAM_FORMAT_QASM3,
-        mlir::SerializationProfile::IBM);
+        mlir::TerminalReadout::Measured);
     if (last == 1) {
       MQT_ASSERT_SUCCESS(compiled);
-      EXPECT_NE(compiled->payload().find("qubit[3] q;"), std::string::npos);
-      EXPECT_NE(compiled->payload().find("cz q[0], q[1];"), std::string::npos);
+      EXPECT_NE(compiled->payload().find("cz $0, $1;"), std::string::npos);
     } else {
       EXPECT_FALSE(static_cast<bool>(compiled));
       llvm::consumeError(compiled.takeError());
@@ -1175,7 +1175,6 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
 }
 
 TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
-  using Profile = mlir::SerializationProfile;
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
@@ -1187,37 +1186,40 @@ TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
   const mlir::TargetEnvironment environment(
       target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
                   QDMI_PROGRAM_FORMAT_QASM3)));
-  constexpr auto source = "OPENQASM 3; include \"stdgates.inc\"; "
-                          "bit[4] zebra = \"0000\"; bit[1] a; x $2; "
-                          "zebra[2] = measure $2; zebra[0] = measure $2; "
-                          "zebra[3] = measure $0; zebra[3] = measure $1; "
-                          "a[0] = measure $2;";
-  for (const auto profile :
-       {Profile::BraketSimulator, Profile::BraketNative, Profile::IBM}) {
-    auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(source));
-    auto compiled = mlir::CompiledProgram::serialize(std::move(program),
-                                                     environment, profile);
-    MQT_ASSERT_SUCCESS(compiled);
-    ASSERT_TRUE(compiled->resultLayout());
-    const auto& layout = *compiled->resultLayout();
-    EXPECT_EQ(layout.rawWidth, 3);
-    EXPECT_EQ(layout.bits.size(), 5);
-    EXPECT_EQ(llvm::cantFail(
-                  layout.decodeBits(profile == Profile::IBM ? "001" : "100")),
-              "10101");
-    EXPECT_EQ(compiled->payload().find("output "), std::string::npos);
-    EXPECT_EQ(compiled->payload().find("= \""), std::string::npos);
-    if (profile == Profile::BraketNative) {
-      EXPECT_NE(compiled->payload().find(
-                    "#pragma braket verbatim\nbox {\n  x $2;\n}"),
+  const auto context = mlir::createCompilerContext();
+  mlir::qc::QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0 = builder.staticQubit(0);
+  auto q1 = builder.staticQubit(1);
+  auto q2 = builder.staticQubit(2);
+  auto zebra = builder.allocClassicalBitRegister(4, "zebra");
+  auto a = builder.allocClassicalBitRegister(1, "a");
+  builder.x(q0).x(q2);
+  builder.measure(q2, zebra, 2);
+  builder.measure(q2, zebra, 0);
+  builder.measure(q2, zebra, 3);
+  builder.measure(q1, zebra, 3);
+  builder.measure(q2, a, 0);
+  auto program =
+      mlir::QCProgram::fromModule(context, builder.finalize({zebra, a}));
+  ASSERT_TRUE(mlir::succeeded(program));
+  for (const auto readout :
+       {mlir::TerminalReadout::Measured, mlir::TerminalReadout::All}) {
+    for (const auto physical : {false, true}) {
+      auto compiled = mlir::CompiledProgram::serialize(
+          program->copy(), environment, readout, physical);
+      MQT_ASSERT_SUCCESS(compiled);
+      ASSERT_TRUE(compiled->resultLayout());
+      const auto& layout = *compiled->resultLayout();
+      EXPECT_EQ(layout.rawWidth, readout == mlir::TerminalReadout::All ? 3 : 2);
+      EXPECT_EQ(layout.bits.size(), 5);
+      EXPECT_EQ(llvm::cantFail(layout.decodeBits(
+                    readout == mlir::TerminalReadout::All ? "101" : "10")),
+                "10101");
+      EXPECT_EQ(compiled->payload().find("output "), std::string::npos);
+      EXPECT_EQ(compiled->payload().find("= \""), std::string::npos);
+      EXPECT_NE(compiled->payload().find(physical ? "x $2;" : "x q[2];"),
                 std::string::npos);
-      EXPECT_NE(compiled->payload().find("c[2] = measure $2"),
-                std::string::npos);
-    } else {
-      EXPECT_NE(compiled->payload().find("qubit[3] q;"), std::string::npos);
-      EXPECT_NE(compiled->payload().find("x q[2];"), std::string::npos);
-    }
-    if (profile == Profile::IBM) {
       const auto device =
           llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
       auto job = llvm::cantFail(
@@ -1228,6 +1230,23 @@ TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
       }
     }
   }
+}
+
+TEST(CompilerQDMIAdapterTest, DefaultSerializationPreservesDynamicReadout) {
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; x $0; "
+      "c[0] = measure $0; if (c[0]) { x $1; } "
+      "reset $0; c[0] = measure $0; c[0] = measure $1;"));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
+                                                   QDMI_PROGRAM_FORMAT_QASM3);
+  MQT_ASSERT_SUCCESS(compiled);
+  EXPECT_FALSE(compiled->resultLayout());
+  auto job = llvm::cantFail(
+      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+  ASSERT_TRUE(llvm::cantFail(job.wait()));
+  EXPECT_EQ(llvm::cantFail(job.getShots()), std::vector<std::string>(8, "1"));
 }
 
 TEST(CompilerQDMIAdapterTest, RejectsNonNativeOrNonterminalSerialization) {
@@ -1250,7 +1269,7 @@ TEST(CompilerQDMIAdapterTest, RejectsNonNativeOrNonterminalSerialization) {
     auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
         std::string("OPENQASM 3; include \"stdgates.inc\"; ") + source));
     auto compiled = mlir::CompiledProgram::serialize(
-        std::move(program), environment, mlir::SerializationProfile::IBM);
+        std::move(program), environment, mlir::TerminalReadout::Measured);
     EXPECT_FALSE(static_cast<bool>(compiled));
     llvm::consumeError(compiled.takeError());
   }
@@ -1260,9 +1279,9 @@ TEST(CompilerQDMIAdapterTest, ValidatesResultLayoutSamples) {
   const mlir::ResultLayout identity{2, {size_t{0}, size_t{1}}};
   EXPECT_TRUE(identity.isIdentity());
   EXPECT_EQ(llvm::cantFail(identity.decodeBits("10")), "10");
-  const mlir::ResultLayout layout{2, {size_t{1}, false, size_t{1}, true}};
+  const mlir::ResultLayout layout{2, {size_t{1}, std::nullopt, size_t{1}}};
   EXPECT_FALSE(layout.isIdentity());
-  EXPECT_EQ(llvm::cantFail(layout.decodeBits("10")), "1101");
+  EXPECT_EQ(llvm::cantFail(layout.decodeBits("10")), "101");
   for (const auto* raw : {"", "1", "111", "0x"}) {
     EXPECT_TRUE(llvm::errorToBool(layout.decodeBits(raw).takeError()));
   }
@@ -1322,9 +1341,14 @@ TEST(CompilerQDMIAdapterTest, SnapshotsVersionedParameterConstraints) {
       }) {
     metadata = invalid;
     EXPECT_TRUE(llvm::errorToBool(
-        mlir::operationParameterConstraints(operation).takeError()));
+        mlir::parseOperationParameterConstraints(
+            llvm::StringRef(metadata.c_str(), metadata.size() + 1), 2)
+            .takeError()));
   }
   metadata = R"({"schema":"unrelated","alternatives":[]})";
   EXPECT_TRUE(
-      llvm::cantFail(mlir::operationParameterConstraints(operation)).empty());
+      llvm::cantFail(
+          mlir::parseOperationParameterConstraints(
+              llvm::StringRef(metadata.c_str(), metadata.size() + 1), 2))
+          .empty());
 }

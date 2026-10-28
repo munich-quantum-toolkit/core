@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mqt/Compiler/ResultLayout.h"
-
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
@@ -30,16 +28,16 @@ namespace qc {
 ///
 /// Non-gate helpers are inlined and array views normalized in the supplied
 /// module. Gate definitions and supported structured control flow are
-/// preserved. The module is consumed even on failure. Translation is buffered:
-/// the output stream is unchanged if the module cannot be translated.
-LogicalResult translateQCToOpenQASM3(
-    OwningOpRef<ModuleOp> moduleOp, llvm::raw_ostream& output,
-    SerializationProfile profile = SerializationProfile::Default);
+/// preserved. Static sites use physical references unless physicalQubits is
+/// false. The module is consumed even on failure. Translation is buffered: the
+/// output stream is unchanged if the module cannot be translated.
+LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                                     llvm::raw_ostream& output,
+                                     bool physicalQubits = true);
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
-FailureOr<std::string> translateQCToOpenQASM3(
-    OwningOpRef<ModuleOp> moduleOp,
-    SerializationProfile profile = SerializationProfile::Default);
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                                              bool physicalQubits = true);
 
 /// Consume a QC module and emit OpenQASM 2 with bound parameters.
 ///
@@ -50,11 +48,9 @@ FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp);
 FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
-LogicalResult translateQCToOpenQASM3(
-    ModuleOp, llvm::raw_ostream&,
-    SerializationProfile = SerializationProfile::Default) = delete;
-FailureOr<std::string> translateQCToOpenQASM3(
-    ModuleOp, SerializationProfile = SerializationProfile::Default) = delete;
+LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&,
+                                     bool = true) = delete;
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp, bool = true) = delete;
 
 } // namespace qc
 } // namespace mlir

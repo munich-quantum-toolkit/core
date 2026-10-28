@@ -19,11 +19,8 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/Matchers.h"
 
-#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -31,25 +28,19 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <system_error>
-#include <variant>
 #include <vector>
 
 namespace mlir {
 
 bool ResultLayout::isIdentity() const noexcept {
-  if (bits.size() != rawWidth) {
-    return false;
-  }
-  for (auto [index, bit] : llvm::enumerate(bits)) {
-    const auto* slot = std::get_if<size_t>(&bit);
-    if (slot == nullptr || *slot != index) {
-      return false;
-    }
-  }
-  return true;
+  return bits.size() == rawWidth &&
+         llvm::all_of(llvm::enumerate(bits), [](auto entry) {
+           return entry.value() == entry.index();
+         });
 }
 
 llvm::Expected<std::string>
@@ -60,24 +51,21 @@ ResultLayout::decodeBits(llvm::StringRef raw) const {
                                    "raw sample has an invalid width or digit");
   }
   std::string result(bits.size(), '0');
-  for (auto [index, bit] : llvm::enumerate(bits)) {
-    if (const auto* slot = std::get_if<size_t>(&bit)) {
+  for (auto [index, slot] : llvm::enumerate(bits)) {
+    if (slot) {
       if (*slot >= rawWidth) {
         return llvm::createStringError(
             std::errc::invalid_argument,
             "result layout selects an invalid raw bit");
       }
       result[bits.size() - index - 1] = raw[rawWidth - *slot - 1];
-    } else {
-      result[bits.size() - index - 1] = std::get<bool>(bit) ? '1' : '0';
     }
   }
   return result;
 }
 
 FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
-                                                 bool physicalOrder,
-                                                 bool measureAll) {
+                                                 TerminalReadout readout) {
   auto function = mqt::getEntryPoint(moduleOp);
   if (!function || !llvm::hasSingleElement(function.getBody())) {
     return moduleOp.emitError(
@@ -86,186 +74,115 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
   auto& block = function.getBody().front();
   auto returnOp = dyn_cast<func::ReturnOp>(block.getTerminator());
   if (!returnOp || returnOp.getNumOperands() == 0) {
-    return function.emitError("terminal readout requires binary outputs");
+    return function.emitError("terminal readout requires bit-register outputs");
   }
 
-  using Bit = std::variant<size_t, bool>;
-  DenseMap<Value, SmallVector<std::optional<Bit>>> registers;
-  DenseMap<Value, size_t> measurements;
-  DenseMap<size_t, Value> sites;
-  DenseSet<size_t> measured;
-  SmallVector<size_t> measurementOrder;
-  SmallVector<Operation*> oldReadout;
-  const auto bitValue = [&](Value value) -> std::optional<Bit> {
-    if (auto found = measurements.find(value); found != measurements.end()) {
-      return Bit(found->second);
-    }
-    APInt constant;
-    if (value.getType().isInteger(1) &&
-        matchPattern(value, m_ConstantInt(&constant))) {
-      return Bit(!constant.isZero());
-    }
-    return std::nullopt;
+  struct Register {
+    SmallVector<std::optional<size_t>> sites;
+    bool zeroInitialized;
   };
-
+  DenseMap<Value, Register> registers;
+  std::map<size_t, Value> measuredSites;
+  SmallVector<Operation*> oldReadout;
+  size_t addressWidth = 0;
+  bool terminal = false;
   for (auto& operation : block.without_terminator()) {
-    if (operation.getNumRegions() != 0 &&
-        !isa<qc::UnitaryOpInterface>(operation)) {
-      return operation.emitError(
-          "terminal readout does not support runtime control flow");
-    }
     if (auto qubit = dyn_cast<qc::StaticOp>(operation)) {
-      sites.try_emplace(qubit.getIndex(), qubit.getQubit());
-      continue;
-    }
-    if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
+      if (!qubit.getQubit().use_empty()) {
+        addressWidth =
+            std::max(addressWidth, static_cast<size_t>(qubit.getIndex()) + 1);
+      }
+    } else if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
       auto qubit = measurement.getQubit().getDefiningOp<qc::StaticOp>();
       if (!qubit) {
         return measurement.emitError("terminal readout requires static qubits");
       }
       const auto site = static_cast<size_t>(qubit.getIndex());
-      measurements.try_emplace(measurement.getResult(), site);
-      if (measured.insert(site).second) {
-        measurementOrder.push_back(site);
-      }
+      measuredSites.try_emplace(site, qubit.getQubit());
       oldReadout.push_back(&operation);
-      continue;
-    }
-    if (auto allocation = dyn_cast<cbit::AllocOp>(operation)) {
-      std::optional<Bit> initial;
-      if (allocation.getInitialization() == cbit::Initialization::Zero) {
-        initial = false;
-      }
-      registers.try_emplace(allocation.getResult(),
-                            allocation.getResult().getType().getWidth(),
-                            initial);
+      terminal = true;
+    } else if (auto allocation = dyn_cast<cbit::AllocOp>(operation)) {
+      registers.try_emplace(
+          allocation.getResult(),
+          Register{
+              SmallVector<std::optional<size_t>>(
+                  allocation.getResult().getType().getWidth()),
+              allocation.getInitialization() == cbit::Initialization::Zero,
+          });
       oldReadout.push_back(&operation);
-      continue;
-    }
-    if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
+    } else if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
       const auto index = getConstantIntValue(store.getIndex());
-      auto found = registers.find(store.getReg());
-      auto value = bitValue(store.getValue());
-      if (!index || found == registers.end() || *index < 0 ||
-          static_cast<size_t>(*index) >= found->second.size() || !value) {
-        return store.emitError(
-            "terminal readout requires constant destinations and measurement "
-            "or constant bit values");
+      auto reg = registers.find(store.getReg());
+      auto measurement = store.getValue().getDefiningOp<qc::MeasureOp>();
+      if (!index || *index < 0 || reg == registers.end() ||
+          static_cast<size_t>(*index) >= reg->second.sites.size() ||
+          !measurement) {
+        return store.emitError("terminal readout requires direct measurements "
+                               "at static bit destinations");
       }
-      found->second[static_cast<size_t>(*index)] = *value;
+      reg->second.sites[static_cast<size_t>(*index)] = static_cast<size_t>(
+          measurement.getQubit().getDefiningOp<qc::StaticOp>().getIndex());
       oldReadout.push_back(&operation);
+    } else if (isa<arith::ConstantOp, qc::BarrierOp>(operation) ||
+               (!terminal &&
+                isa<qc::UnitaryOpInterface, qc::ResetOp, func::CallOp>(
+                    operation))) {
       continue;
-    }
-    if (auto write = dyn_cast<cbit::WriteOp>(operation)) {
-      auto found = registers.find(write.getReg());
-      APInt constant;
-      if (found == registers.end() ||
-          !matchPattern(write.getValue(), m_ConstantInt(&constant))) {
-        return write.emitError(
-            "terminal readout requires constant register assignments");
-      }
-      for (auto [index, bit] : llvm::enumerate(found->second)) {
-        bit = constant[index];
-      }
-      oldReadout.push_back(&operation);
-      continue;
-    }
-    for (auto operand : operation.getOperands()) {
-      if (registers.contains(operand) || measurements.contains(operand)) {
-        return operation.emitError(
-            "terminal readout does not support measurement feedback or "
-            "classical computation");
-      }
-      if (auto site = operand.getDefiningOp<qc::StaticOp>();
-          site && measured.contains(site.getIndex())) {
-        return operation.emitError(
-            "terminal readout does not support qubit use after measurement");
-      }
-    }
-  }
-
-  ResultLayout layout;
-  for (auto value : returnOp.getOperands()) {
-    if (auto found = registers.find(value); found != registers.end()) {
-      for (const auto& bit : found->second) {
-        if (!bit) {
-          return returnOp.emitError(
-              "terminal readout has an undefined output bit");
-        }
-        layout.bits.push_back(*bit);
-      }
-    } else if (auto bit = bitValue(value)) {
-      layout.bits.push_back(*bit);
     } else {
-      return returnOp.emitError(
-          "terminal readout requires bit registers or binary scalar outputs");
+      return operation.emitError("terminal readout requires gates before all "
+                                 "measurements and direct bit stores");
     }
   }
-  if (measurementOrder.empty() && !measureAll) {
+  ResultLayout layout;
+  for (auto output : returnOp.getOperands()) {
+    auto reg = registers.find(output);
+    if (reg == registers.end()) {
+      return returnOp.emitError(
+          "terminal readout requires bit-register outputs");
+    }
+    for (auto site : reg->second.sites) {
+      if (!site && !reg->second.zeroInitialized) {
+        return returnOp.emitError(
+            "terminal readout has an undefined output bit");
+      }
+      layout.bits.push_back(site);
+    }
+  }
+  if (readout == TerminalReadout::All) {
+    for (size_t site = 0; site < addressWidth; ++site) {
+      measuredSites.try_emplace(site, Value{});
+    }
+  }
+  if (measuredSites.empty()) {
     return returnOp.emitError(
         "terminal readout requires at least one measured qubit");
-  }
-
-  SmallVector<size_t> ordered;
-  DenseMap<size_t, size_t> slots;
-  const auto addSite = [&](size_t site) {
-    if (slots.try_emplace(site, ordered.size()).second) {
-      ordered.push_back(site);
-    }
-  };
-  if (physicalOrder) {
-    llvm::sort(measurementOrder);
-  } else {
-    for (const auto& bit : layout.bits) {
-      if (const auto* site = std::get_if<size_t>(&bit)) {
-        addSite(*site);
-      }
-    }
-  }
-  for (const auto site : measurementOrder) {
-    addSite(site);
-  }
-  if (measureAll) {
-    size_t width = 0;
-    for (auto [site, qubit] : sites) {
-      if (!qubit.use_empty()) {
-        width = std::max(width, site + 1);
-      }
-    }
-    if (width == 0) {
-      return returnOp.emitError("terminal readout requires at least one qubit");
-    }
-    ordered.clear();
-    slots.clear();
-    for (size_t site = 0; site < width; ++site) {
-      addSite(site);
-    }
-  }
-  layout.rawWidth = ordered.size();
-  for (auto& bit : layout.bits) {
-    if (auto* site = std::get_if<size_t>(&bit)) {
-      *site = slots.at(*site);
-    }
   }
 
   OpBuilder builder(returnOp);
   auto raw = cbit::AllocOp::create(
       builder, returnOp.getLoc(),
       cbit::RegisterType::get(moduleOp.getContext(),
-                              static_cast<int64_t>(ordered.size())),
+                              static_cast<int64_t>(measuredSites.size())),
       cbit::Initialization::Undefined);
   raw->setAttr(mqt::MQTDialect::RegisterNameAttrHelper::getNameStr(),
                builder.getStringAttr("c"));
-  for (auto [index, site] : llvm::enumerate(ordered)) {
-    if (!sites.contains(site)) {
-      sites.try_emplace(site,
-                        qc::StaticOp::create(builder, returnOp.getLoc(), site));
+  DenseMap<size_t, size_t> slots;
+  for (auto [site, qubit] : measuredSites) {
+    const auto index = slots.size();
+    slots.try_emplace(site, index);
+    if (!qubit) {
+      qubit = qc::StaticOp::create(builder, returnOp.getLoc(), site);
     }
     auto offset = arith::ConstantIndexOp::create(builder, returnOp.getLoc(),
                                                  static_cast<int64_t>(index));
-    auto bit =
-        qc::MeasureOp::create(builder, returnOp.getLoc(), sites.at(site));
+    auto bit = qc::MeasureOp::create(builder, returnOp.getLoc(), qubit);
     cbit::StoreOp::create(builder, returnOp.getLoc(), bit, raw, offset);
+  }
+  layout.rawWidth = slots.size();
+  for (auto& site : layout.bits) {
+    if (site) {
+      *site = slots.at(*site);
+    }
   }
   returnOp.getOperandsMutable().assign(raw.getResult());
   function.removeResAttrsAttr();

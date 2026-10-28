@@ -1,70 +1,58 @@
 # Native QDMI payloads and logical results
 
-Status: shared Core, provider, and PennyLane integration implemented and
-published. Provider draft pins and final hosted CI validation remain.
+Status: simplifying Core #2886 and its provider/PennyLane consumers on current
+main. The previous published integration is the comparison baseline; the
+simplification is undergoing local validation and independent review.
 
-## Goal and scope
+## Contract
 
-Keep compilation explicit. A Qiskit circuit is compiled for a backend before
-submission. Native serialization produces a receiver-compatible payload and,
-when needed, a small mapping from raw samples to logical classical outputs. The
-shared job adapter restores output widths, order, repeated values, and
-constants. Quantum operations retain their compiled physical placement.
+Compilation is explicit and precedes submission. Core owns native format
+serialization and an optional terminal result mapping. Provider libraries own
+service syntax and raw column decoding. Qiskit and PennyLane restore their
+frontend output order without recompiling during submission or recovery.
 
-The compiler owns terminal readout normalization in `mlir/lib/Compiler/`.
-Provider libraries retain service column/key decoding. The Qiskit adapter in
-`python/mqt/core/plugins/qiskit/` retains each map through batching and
-recovery. PennyLane consumes this interface in its separate compiler
-integration.
+Core exposes no provider-named profiles. `terminal_readout=None` retains the
+format's ordinary semantics. `MEASURED` canonicalizes selected terminal
+measurements; `ALL` also measures gaps in the addressed range. OpenQASM's
+`physical_qubits` selects physical references or virtual indices. Provider
+helpers select these controls and, where necessary, an explicit program format.
 
-## Decisions
+Terminal normalization supports one measurement per selected qubit, direct
+writes to distinct classical slots, permutations, subsets, and untouched zero
+holes. It rejects feedback, repeated measurement, overwritten destinations, and
+classical computation. This restriction does not apply to the default dynamic
+path. A result map contains only raw indices or zero holes.
 
-- Receiver profiles express verified transport constraints. Braket simulators
-  use virtual wires; native hardware preserves physical placement. IQM uses its
-  measurement instruction/locus order. IBM uses accepted classical declarations
-  and self-contained gates.
-- A result layout contains a raw width and one raw slot or constant per logical
-  bit. Identity results need no map. Both raw validation and logical output
-  validation remain mandatory.
-- Terminal normalization supports permutations, gaps, repeated measurements, and
-  final overwrites. It rejects unsupported dynamic readout before submission.
-- Ordinary circuit payloads omit explicit `output` declarations. General exports
-  retain explicit selection when removing it would change results.
-- Direct native submissions retain provider format semantics. Recovering
-  frontend results requires the original result map and framework header.
-- No new QDMI ABI, typed-output container, automatic compilation layer, or
-  provider-side source interpreter is needed.
+IQM targets retain physical site IDs and calibrated-locus filtering. Core's
+Qiskit backend compilation preserves the full TranspileLayout on sparse sites.
+Braket QPUs submit native gates verbatim, while SV1 retains virtual contiguous
+indices. Braket's device accepts the documented flat native subset or existing
+verbatim source. IBM preserves its QPY-first path and adapts bare native QASM at
+the C++ transport boundary using its existing tokenizer.
 
-## Work remaining
+Operation CUSTOM2 retains the temporary `mqt.operation-parameters.v1` contract.
+One C++ parser serves compiler and Qiskit targets; Qiskit's own Target validator
+checks native placement and parameter variants. Test doubles expose real custom
+property bytes; the Qiskit conftest shim is removed.
 
-- [x] Native serialization and shared checked result mapping.
-- [x] Qiskit serialization, batching, result headers, and projection
-      aggregation.
-- [x] Provider integration and PennyLane consumption in their owning PRs:
-      Braket #288, IQM #321, IBM #94 (on #92 → #71 → #72), and Core #2767.
-- [ ] Refresh provider draft pins after final Core changes.
-- [ ] Validate the final published heads in hosted CI.
-- [x] Focused native/Python tests, repository lint, and rendered documentation.
+## Remaining work
+
+- Finish shared/provider/PennyLane local validation and generated stubs.
+- Inspect rendered shortened docs and resolve independent review findings.
+- Update signed Core and PennyLane commits, then provider dependency pins and PR
+  descriptions. Preserve IBM's existing cleanup-series base.
+- Remove stale experiment scaffolding from worktrees; retain evidence outside
+  the repositories. Hosted CI is not being monitored in this task.
 
 ## Validation
 
-Use asymmetric deterministic circuits with permuted destinations, unused bits,
-repeated measurement, overwritten destinations, and nonalphabetical registers.
-Compare complete samples as well as counts. Exercise routing and reject
-unsupported readout before any submission. Validate actual provider payload
-consumers; local simulator support alone does not establish cloud compatibility.
+Use asymmetric deterministic circuits and inspect complete samples as well as
+counts. Cover measured subsets, zero holes, sparse site IDs, routing layouts,
+parameter restrictions, and default feedback/reset/reused-bit execution. Reject
+unsupported terminal forms before any network submission. Verify actual provider
+payload consumers; Braket LocalSimulator is not a cloud syntax oracle.
 
-Native compiler, OpenQASM emission/frontend, and Qiskit translation suites pass.
-Repository lint, generated stubs, whole-file native lint, and executable
-documentation pass. Live integration passed SV1, Rigetti, and AQT (16 shots
-each), plus an IQM mock (8 shots independently reconstructed from raw service
-measurement columns).
-
-The live Rigetti target exposed a disabled physical site. The Qiskit adapter now
-preserves sparse physical IDs rather than inventing an unavailable site. Local
-circuit names and deep-copied metadata survive explicit compilation.
-
-Operation CUSTOM2 supplies the temporary versioned `mqt.operation-parameters.v1`
-contract. Its alternatives reuse fixed parameters and inclusive bounds already
-in the compiler target. Qiskit and direct QDMI compilation share the parser;
-providers publish constraints without introducing provider-name heuristics.
+Previous live evidence covers SV1, Rigetti, and AQT (16 shots each), plus an IQM
+mock. Those runs predate this simplification and are not fresh live validation.
+No IBM hardware run has been performed. Final local checks are recorded in
+/home/nvidia/evaluations/qdmi-results-2026-10-28/.

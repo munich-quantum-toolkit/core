@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import string
@@ -49,11 +50,8 @@ from mqt.core.plugins.qiskit import (
     register_program_serializer,
     unregister_program_serializer,
 )
-from mqt.core.plugins.qiskit import backend as backend_module
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
-
-pytestmark = pytest.mark.usefixtures("mock_parameter_constraints")
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, MutableSet, Sequence
@@ -143,6 +141,15 @@ class MockQDMIDevice:
         def parameters_num(self) -> int:
             """Return number of parameters for operation."""
             return self._params
+
+        @staticmethod
+        def query_custom_property(_property: object, _value_type: type[bytes]) -> bytes | None:
+            """Model an operation without custom metadata.
+
+            Returns:
+                None, as for an absent QDMI custom property.
+            """
+            return None
 
         def duration(self, sites: list[MockQDMIDevice.MockSite] | None = None) -> float | None:
             """Return custom duration if defined for the provided sites."""
@@ -398,11 +405,11 @@ def test_subclass_extra_gates_appear_in_target(alias: str) -> None:
         }
 
         def _add_operation_to_target(
-            self, target: Target, op: Device.Operation, seen_gate_names: MutableSet[str]
+            self, target: Target, op: Device.Operation, seen_gate_names: MutableSet[str], *, native: bool = False
         ) -> None:
             if alias == "filtered" and op.name() == "hop_alias":
                 return
-            super()._add_operation_to_target(target, op, seen_gate_names)
+            super()._add_operation_to_target(target, op, seen_gate_names, native=native)
 
     mock_device = MockQDMIDevice(
         name="Test Device with a device-native operation",
@@ -716,12 +723,15 @@ def test_builtin_serializer_rejects_excess_native_width(
 def test_native_parameter_alternatives(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fixed QDMI alternatives guide compilation and keep native gate aliases valid."""
     angles = [-pi, -pi / 2, pi / 2, pi]
-    monkeypatch.setattr(
-        backend_module,
-        "_operation_parameter_constraints",
-        lambda operation: [([angle], []) for angle in angles] if operation.name() == "rx" else [],
+    metadata = (
+        json.dumps({
+            "schema": "mqt.operation-parameters.v1",
+            "alternatives": [{"fixed": [angle]} for angle in angles],
+        }).encode()
+        + b"\0"
     )
     device = MockQDMIDevice(num_qubits=1, operations=["rx", "rz", "measure"])
+    monkeypatch.setattr(device.operations()[0], "query_custom_property", lambda *_: metadata)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
     source = QuantumCircuit(1)
     source.rx(0.31, 0)
@@ -729,6 +739,8 @@ def test_native_parameter_alternatives(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Statevector.from_instruction(native).equiv(Statevector.from_instruction(source))
     assert "rx" not in backend.target.operation_names
     backend.validate_circuit(native, native=True)
+    with pytest.raises(UnsupportedOperationError, match="parameters"):
+        backend.validate_circuit(source, native=True)
     assert all(
         instruction.operation.name == "rz" or instruction.operation.params[0] in angles for instruction in native.data
     )

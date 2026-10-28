@@ -706,13 +706,14 @@ payloadForOutput(OutputFormat output) {
     const std::optional<mlir::TargetEnvironment>& targetEnvironment,
     std::optional<OutputFormat> output, bool copy,
     const std::string& qcoPipeline, const mlir::CompilationOptions& options,
-    mlir::SerializationProfile profile) {
+    std::optional<mlir::TerminalReadout> terminalReadout, bool physicalQubits) {
   auto input = programFromInput(types, program, copy);
   if (targetEnvironment && !output) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
       return unwrap(mlir::CompiledProgram::compile(
-          std::move(input.program), *targetEnvironment, options, profile));
+          std::move(input.program), *targetEnvironment, options,
+          terminalReadout, physicalQubits));
     }();
     return nb::cast(std::move(compiled));
   }
@@ -766,11 +767,12 @@ payloadForOutput(OutputFormat output) {
   }();
   if (selected == OutputFormat::Qiskit) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
-    auto result = environment
-                      ? bindings::qiskit::exportCircuit(
-                            std::move(qc), *environment,
-                            !nb::isinstance<mlir::CompilerTarget>(target))
-                      : bindings::qiskit::exportCircuit(std::move(qc));
+    auto result =
+        environment && !nb::isinstance<mlir::CompilerTarget>(target)
+            ? bindings::qiskit::exportCircuit(std::move(qc), *environment)
+            : bindings::qiskit::exportCircuit(
+                  std::move(qc),
+                  environment ? &environment->target() : nullptr);
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
@@ -787,7 +789,7 @@ payloadForOutput(OutputFormat output) {
     std::optional<OutputFormat> output, bool copy,
     const std::string& qcoPipeline, const mlir::CompilationOptions& options,
     std::optional<QDMI_Program_Format> programFormat,
-    mlir::SerializationProfile profile) {
+    std::optional<mlir::TerminalReadout> terminalReadout, bool physicalQubits) {
   if (!target.is_none() && qcoPipeline != "mqt-qco-default") {
     throw nb::value_error(
         "A custom QCO pipeline cannot be combined with a target");
@@ -835,10 +837,10 @@ payloadForOutput(OutputFormat output) {
   const bool compilerTarget = nb::isinstance<mlir::CompilerTarget>(target);
   const bool deviceTarget =
       nb::isinstance<qdmi::Device>(target) || nb::isinstance<nb::str>(target);
-  if ((programFormat || profile != mlir::SerializationProfile::Default) &&
+  if ((programFormat || terminalReadout || !physicalQubits) &&
       (!deviceTarget || output)) {
-    throw nb::value_error(
-        "program_format and profile require a QDMI target without output");
+    throw nb::value_error("program_format and serialization options require a "
+                          "QDMI target without output");
   }
   if (deviceTarget) {
     const auto device = resolveDevice(target);
@@ -854,12 +856,14 @@ payloadForOutput(OutputFormat output) {
 
   if (!programs) {
     return compileSingleProgram(types, program, target, environment, output,
-                                copy, qcoPipeline, options, profile);
+                                copy, qcoPipeline, options, terminalReadout,
+                                physicalQubits);
   }
   nb::list_builder results(programs->size());
   for (const auto item : *programs) {
     results.put(compileSingleProgram(types, item, target, environment, output,
-                                     copy, qcoPipeline, options, profile));
+                                     copy, qcoPipeline, options,
+                                     terminalReadout, physicalQubits));
   }
   return results.commit();
 }
@@ -867,17 +871,11 @@ payloadForOutput(OutputFormat output) {
 [[nodiscard]] static mlir::CompiledProgram
 serializePythonProgram(const nb::handle program, const nb::handle target,
                        std::optional<QDMI_Program_Format> programFormat,
-                       mlir::SerializationProfile profile,
-                       const std::optional<std::vector<size_t>>& siteIndices) {
-  const bool isQC = nb::isinstance<mlir::QCProgram>(program);
-  if (isQC && siteIndices) {
-    throw nb::value_error("site_indices applies only to Qiskit circuit wires");
-  }
-  auto native = isQC ? nb::cast<const mlir::QCProgram&>(program).copy()
-                     : bindings::qiskit::importCircuit(program, true);
-  const auto indices = siteIndices
-                           ? std::optional<llvm::ArrayRef<size_t>>(*siteIndices)
-                           : std::nullopt;
+                       std::optional<mlir::TerminalReadout> terminalReadout,
+                       bool physicalQubits) {
+  auto native = nb::isinstance<mlir::QCProgram>(program)
+                    ? nb::cast<const mlir::QCProgram&>(program).copy()
+                    : bindings::qiskit::importCircuit(program, true);
   if (nb::isinstance<mlir::CompilerTarget>(target)) {
     if (!programFormat) {
       throw nb::value_error(
@@ -888,12 +886,13 @@ serializePythonProgram(const nb::handle program, const nb::handle target,
         unwrap(mlir::payloadSpecificationForProgramFormat(*programFormat)));
     const nb::gil_scoped_release release;
     return unwrap(mlir::CompiledProgram::serialize(
-        std::move(native), environment, profile, indices));
+        std::move(native), environment, terminalReadout, physicalQubits));
   }
   const auto device = resolveDevice(target);
   const nb::gil_scoped_release release;
-  return unwrap(mlir::CompiledProgram::serialize(
-      std::move(native), device, programFormat, profile, indices));
+  return unwrap(mlir::CompiledProgram::serialize(std::move(native), device,
+                                                 programFormat, terminalReadout,
+                                                 physicalQubits));
 }
 
 [[nodiscard]] static qdmi::Job
@@ -2087,14 +2086,16 @@ Args:
     copy: Export a copy of the program.)pb")
       .def(
           "to_openqasm3",
-          [](mlir::QCProgram& program, const bool copy) {
+          [](mlir::QCProgram& program, const bool physicalQubits,
+             const bool copy) {
             auto source = copiedOrConsumed(program, copy);
             const auto context = source.context();
             return withDiagnostics<nb::exception_type::runtime_error>(
-                context.get(), "cannot export QC program to OpenQASM 3",
-                [&] { return std::move(source).intoOpenQASM3(); });
+                context.get(), "cannot export QC program to OpenQASM 3", [&] {
+                  return std::move(source).intoOpenQASM3(physicalQubits);
+                });
           },
-          nb::kw_only(), "copy"_a = false,
+          nb::kw_only(), "physical_qubits"_a = true, "copy"_a = false,
           R"pb(Emit this QC program as OpenQASM 3.
 
 Classical memory and control flow are legalized for the source format. Use
@@ -2103,6 +2104,7 @@ Classical memory and control flow are legalized for the source format. Use
 The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
 Args:
+    physical_qubits: Emit static sites as physical references rather than a virtual register.
     copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_qiskit",
@@ -2737,33 +2739,35 @@ and error contracts.)pb");
 
   m.def(
       "_operation_parameter_constraints",
-      [](const qdmi::Operation& operation) {
+      [](const std::optional<nb::bytes>& metadata, size_t numParameters) {
+        const auto text =
+            metadata ? llvm::StringRef(metadata->c_str(), metadata->size())
+                     : llvm::StringRef{};
         nb::list result;
         for (const auto& alternative :
-             unwrap(mlir::operationParameterConstraints(operation))) {
+             unwrap(mlir::parseOperationParameterConstraints(text,
+                                                             numParameters))) {
           result.append(nb::make_tuple(alternative.fixed, alternative.bounds));
         }
         return result;
       },
-      "operation"_a,
+      "metadata"_a, "num_parameters"_a,
       nb::sig(
-          "def _operation_parameter_constraints(operation: "
-          "mqt.core.qdmi.Device.Operation) -> "
+          "def _operation_parameter_constraints(metadata: bytes | None, "
+          "num_parameters: int) -> "
           "list[tuple[list[float | None], list[tuple[float, float] | None]]]"),
-      "Read the temporary QDMI operation parameter constraints.");
+      "Parse the temporary QDMI operation parameter constraints.");
 
-  nb::enum_<mlir::SerializationProfile>(m, "SerializationProfile")
-      .value("DEFAULT", mlir::SerializationProfile::Default)
-      .value("BRAKET_SIMULATOR", mlir::SerializationProfile::BraketSimulator)
-      .value("BRAKET_NATIVE", mlir::SerializationProfile::BraketNative)
-      .value("IBM", mlir::SerializationProfile::IBM);
+  nb::enum_<mlir::TerminalReadout>(m, "TerminalReadout")
+      .value("MEASURED", mlir::TerminalReadout::Measured)
+      .value("ALL", mlir::TerminalReadout::All);
 
   nb::class_<mlir::ResultLayout>(
       m, "ResultLayout", "Reconstruct logical bits from receiver samples.")
       .def_ro("raw_width", &mlir::ResultLayout::rawWidth,
               "The number of bits in each raw receiver sample.")
       .def_ro("bits", &mlir::ResultLayout::bits,
-              "Raw indices or Boolean constants in LSB-first order.")
+              "Raw indices or None for zero in LSB-first order.")
       .def(
           "decode_bits",
           [](const mlir::ResultLayout& self, const std::string& raw) {
@@ -2809,7 +2813,7 @@ and error contracts.)pb");
       "output"_a = nb::none(), "copy"_a = false,
       "qco_pipeline"_a = "mqt-qco-default",
       "options"_a = mlir::CompilationOptions{}, "program_format"_a = nb::none(),
-      "profile"_a = mlir::SerializationProfile::Default,
+      "terminal_readout"_a = nb::none(), "physical_qubits"_a = true,
       R"pb(Compile a program or a homogeneous sequence for an optional hardware target.
 
 A sequence returns a list in input order, including for empty and singleton
@@ -2840,7 +2844,8 @@ Args:
         Custom pipelines require no target.
     options: Shared compilation controls.
     program_format: Exact executable format for a QDMI target without output.
-    profile: Explicit receiver dialect for a QDMI target without output.
+    terminal_readout: Canonical terminal measurements, or None to preserve outputs.
+    physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 
 Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
 (binary, text). Select an exact execution format with
@@ -2851,29 +2856,26 @@ placement.)pb");
   m.def(
       "serialize_program", &serializePythonProgram, "program"_a, nb::kw_only(),
       "target"_a, "program_format"_a = nb::none(),
-      "profile"_a = mlir::SerializationProfile::Default,
-      "site_indices"_a = nb::none(),
-      nb::sig(
-          "def serialize_program(program: QCProgram | "
-          "qiskit.circuit.QuantumCircuit, *, target: CompilerTarget | "
-          "mqt.core.qdmi.Device | str, program_format: "
-          "mqt.core.qdmi.ProgramFormat | None = None, profile: "
-          "SerializationProfile = mqt.core.mlir.SerializationProfile.DEFAULT, "
-          "site_indices: "
-          "collections.abc.Sequence[int] | None = None) -> CompiledProgram"),
+      "terminal_readout"_a = nb::none(), "physical_qubits"_a = true,
+      nb::sig("def serialize_program(program: QCProgram | "
+              "qiskit.circuit.QuantumCircuit, *, target: CompilerTarget | "
+              "mqt.core.qdmi.Device | str, program_format: "
+              "mqt.core.qdmi.ProgramFormat | None = None, terminal_readout: "
+              "TerminalReadout | None = None, physical_qubits: bool = True) -> "
+              "CompiledProgram"),
       R"pb(Serialize an already native circuit without compiling or routing it.
 
-The target validates operations, parameters, and placements. Receiver profiles
-support terminal measurements and retain a logical result layout; feedback and
-qubit operations after measurement are rejected. Inputs remain reusable.
+The caller supplies validated native operations and placements. Optional
+terminal readout retains a logical result layout and rejects feedback or gates
+after measurement. Without it, the format retains its supported classical and
+control-flow behavior. Inputs remain reusable.
 
 Args:
     program: A native Qiskit circuit or QC program with static target sites.
     target: The destination device, registered device ID, or CompilerTarget.
     program_format: Exact payload format; required for CompilerTarget.
-    profile: Explicit receiver dialect. Nondefault profiles require OpenQASM 3.
-    site_indices: Qiskit wire positions mapped to positions in target.sites.
-        By default, circuit wires and QC qubits already use physical site IDs.
+    terminal_readout: Measure only selected sites or all addressed sites.
+    physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 )pb");
 
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},

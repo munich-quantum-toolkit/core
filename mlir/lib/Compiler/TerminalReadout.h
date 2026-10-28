@@ -20,10 +20,10 @@ namespace mlir {
 
 /// Replace terminal measurements and classical stores with dense raw readout.
 ///
-/// Requires static qubits and straight-line terminal binary outputs. Physical
-/// order sorts slots by site ID; otherwise source output order is preferred.
+/// Requires static qubits and straight-line terminal CBit register outputs. Raw
+/// slots follow ascending site IDs. Unmeasured output bits must initialize to
+/// zero.
 [[nodiscard]] FailureOr<ResultLayout>
-normalizeTerminalReadout(ModuleOp moduleOp, bool physicalOrder,
-                         bool measureAll = false);
+normalizeTerminalReadout(ModuleOp moduleOp, TerminalReadout readout);
 
 } // namespace mlir

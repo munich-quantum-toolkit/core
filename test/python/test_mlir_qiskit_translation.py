@@ -56,7 +56,6 @@ from mqt.core.mlir import (
     PayloadSpecification,
     ProgramCapability,
     QCProgram,
-    SerializationProfile,
     TargetEnvironment,
     compile_program,
     sample,
@@ -4922,16 +4921,17 @@ def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool)
     assert sample(source, shots=8) == {"0111": 8}
 
 
-def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
+@pytest.mark.parametrize("physical", [False, True])
+def test_qiskit_native_export_preserves_sites_gate_names_and_phase(*, physical: bool) -> None:
     """Native export preserves idle-site holes and exact gate/global phases."""
     circuit = QuantumCircuit(4, global_phase=0.37)
     circuit.h(0)
     circuit.u(0.2, 0.3, 0.4, 2)
     circuit.cx(2, 0)
     circuit.sxdg(3)
-    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
-    assert "cx $2, $0;" in source
-    assert "sxdg $3;" in source
+    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3(physical_qubits=physical).source
+    assert ("cx $2, $0;" if physical else "cx q[2], q[0];") in source
+    assert ("sxdg $3;" if physical else "sxdg q[3];") in source
     np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
 
 
@@ -5048,7 +5048,6 @@ def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
         compiled,
         target=compiler_target,
         program_format=ProgramFormat.QASM3,
-        profile=SerializationProfile.IBM,
     )
     payload = artifact.payload
     assert isinstance(payload, str)
