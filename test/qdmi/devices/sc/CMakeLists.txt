@@ -13,7 +13,7 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-test)
   if(WIN32)
-    # Discover tests after the provider and its runtime assets have been copied.
+    # Discover tests after the device and its runtime assets have been copied.
     set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
   endif()
   # Add the test executable
@@ -33,7 +33,7 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
       IQM_GARNET_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json"
       IQM_EMERALD_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json")
 
-  # On Windows, copy the provider and its runtime assets beside the test executable.
+  # On Windows, copy the device and its runtime assets beside the test executable.
   if(WIN32)
     mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMIScDevice)
   endif()

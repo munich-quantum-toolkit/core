@@ -85,6 +85,10 @@ void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 /// RemoveDeadValues, even when those edges are unreachable.
 void populateQCExportPipeline(mlir::OpPassManager& pm);
 
+/// Lower bounded loops and quantum modifiers for flat OpenQASM 2 output.
+void populateOpenQASM2PreparationPipeline(mlir::OpPassManager& pm,
+                                          mlir::mqt::PayloadSpecAttr payload);
+
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
 /// Adds generic cleanup and qtensor shrink-to-fit. Dead-value removal may be

@@ -17,6 +17,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  llvm_update_compile_flags(${TARGET_NAME})
 
   target_link_libraries(
     ${TARGET_NAME}

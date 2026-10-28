@@ -19,6 +19,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -103,13 +104,14 @@ TEST(GenerateProgramTest, QAOAMatchesCostAndMixerEvolution) {
           {"gammas", angles.gammas},
           {"betas", angles.betas},
       })));
-      dd::Package package(0);
+      auto packageOwner = llvm::cantFail(dd::Package::create(0));
+      auto& package = *packageOwner;
       auto state = mlir::qco::simulateStatevector(
           mlir::mqt::getEntryPoint(program->module()), package);
       ASSERT_TRUE(mlir::succeeded(state));
       ASSERT_EQ(package.qubits(), qubits);
-      auto expected = dd::makeStateFromVector(
-          qaoaState(qubits, angles.gammas, angles.betas), package);
+      auto expected = llvm::cantFail(dd::makeStateFromVector(
+          qaoaState(qubits, angles.gammas, angles.betas), package));
       EXPECT_NEAR(package.fidelity(*state, expected), 1., 1e-10);
       package.decRef(expected);
       package.decRef(*state);
@@ -163,7 +165,7 @@ TEST(GenerateProgramTest, PreservesQAOAInputsThroughJeff) {
   auto jeff = std::move(*program).intoJeff();
   ASSERT_TRUE(mlir::succeeded(jeff));
   auto restored = mlir::JeffProgram::fromBytes(jeff->toBytes());
-  ASSERT_TRUE(mlir::succeeded(restored));
+  MQT_ASSERT_SUCCESS(restored);
   auto qco = std::move(*restored).intoQCO();
   ASSERT_TRUE(mlir::succeeded(qco));
   auto entry = mlir::mqt::getEntryPoint(qco->module());

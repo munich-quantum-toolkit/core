@@ -299,13 +299,15 @@ def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",
 }
 
 def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
-  let summary = "Exact payload identity";
+  let summary = "Selected payload format and accepted versions";
   let description = [{
-    Identifies a payload by format ID, exact version, optional profile ID, and
+    Identifies a payload by format ID, receiver-version constraint, optional profile ID, and
     encoding. Every field takes part in identity. An empty profile denotes a
     payload without a named profile.
     An empty version identifies an unversioned format. Nonempty versions use
-    `major[.minor[.patch]]`.
+    `major[.minor[.patch]]` for a same-major ceiling, or comma-conjoined
+    `>=`, `<`, and `<=` bounds. For example, `2.1` accepts versions from 2.0
+    through 2.1, while `>=2.1,<3` requires at least 2.1.
 
     The following identity selects binary QIR 2.1 with the base profile:
 

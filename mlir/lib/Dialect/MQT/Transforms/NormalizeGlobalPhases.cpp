@@ -308,8 +308,11 @@ private:
   normalizeBlock(Block& block, Operation* extractionBoundary) {
     SmallVector<PhaseContribution> contributions;
     SmallVector<Operation*> directPhases;
+    Operation* insertionBefore = nullptr;
 
     for (auto& op : llvm::make_early_inc_range(block.without_terminator())) {
+      auto* current = &op;
+      auto* next = op.getNextNode();
       if (extractionBoundary != nullptr &&
           !isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op)) {
         // Hoist once, in source order, across the full eager modifier nest.
@@ -319,16 +322,26 @@ private:
       std::optional<PhaseContribution> phase;
       if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
         auto angle = op.getOperand(0);
-        phase.emplace(
-            isa<qc::GPhaseOp>(op) ? PhaseDialect::QC : PhaseDialect::QCO,
-            op.getLoc(), PhaseExpression(angle, getConstantAngle(angle)));
+        const auto constant = getConstantAngle(angle);
+        // Leave invalid expressions for dead-code removal or diagnostics.
+        if (constant && !isValidGlobalPhaseAngle(*constant)) {
+          continue;
+        }
+        phase.emplace(isa<qc::GPhaseOp>(op) ? PhaseDialect::QC
+                                            : PhaseDialect::QCO,
+                      op.getLoc(), PhaseExpression(angle, constant));
         directPhases.push_back(&op);
       } else if (op.getNumRegions() != 0) {
         phase = normalizeOperation(&op, extractionBoundary);
       }
+      // A following modifier may disappear or emit a relative phase.
+      if (insertionBefore == current && next->getPrevNode() != current) {
+        insertionBefore = next;
+      }
       if (!phase) {
         continue;
       }
+      insertionBefore = next;
       contributions.push_back(std::move(*phase));
     }
 
@@ -349,9 +362,8 @@ private:
       return aggregate;
     }
 
-    // Preserve already-normalized exit phases, including dynamic angles.
-    if (contributions.size() == 1 && directPhases.size() == 1 &&
-        directPhases.front()->getNextNode() == block.getTerminator()) {
+    // Preserve a single normalized phase, including dynamic angles.
+    if (contributions.size() == 1 && directPhases.size() == 1) {
       const auto constant =
           getConstantAngle(directPhases.front()->getOperand(0));
       if (!constant ||
@@ -366,7 +378,7 @@ private:
     if (aggregate.expression.isZero()) {
       return std::nullopt;
     }
-    rewriter.setInsertionPoint(block.getTerminator());
+    rewriter.setInsertionPoint(insertionBefore);
     auto angle = aggregate.expression.materialize(rewriter, aggregate.loc);
     if (aggregate.dialect == PhaseDialect::QC) {
       qc::GPhaseOp::create(rewriter, aggregate.loc, angle);

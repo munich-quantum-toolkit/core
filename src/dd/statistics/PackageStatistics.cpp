@@ -25,7 +25,6 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <ostream>
 #include <string>
 
 namespace dd {
@@ -182,7 +181,8 @@ std::string getStatisticsString(Package& package,
   return result;
 }
 
-void printStatistics(Package& package, std::ostream& os) {
-  os << getStatisticsString(package);
+void printStatistics(Package& package, llvm::raw_ostream& os) {
+  llvm::json::OStream json(os, 2);
+  writeStatistics(json, package, false);
 }
 } // namespace dd

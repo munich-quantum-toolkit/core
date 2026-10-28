@@ -182,6 +182,9 @@ def GPhaseOp
   let assemblyFormat = "`(` $theta `)` attr-dict";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
         [[nodiscard]] static Matrix1x1 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix1x1> getUnitaryMatrix();
@@ -189,7 +192,6 @@ def GPhaseOp
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
 
-  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 
@@ -213,8 +215,6 @@ def IdOp
         [[nodiscard]] static StringRef getBaseSymbol() { return "id"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasFolder = 1;
 }
 
 def XOp
@@ -234,11 +234,12 @@ def XOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "x"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def YOp
@@ -258,11 +259,12 @@ def YOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "y"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def ZOp
@@ -282,11 +284,12 @@ def ZOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "z"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def HOp
@@ -306,11 +309,12 @@ def HOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "h"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def SOp
@@ -330,11 +334,12 @@ def SOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "s"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def SdgOp : QCOOp<"sdg",
@@ -354,11 +359,12 @@ def SdgOp : QCOOp<"sdg",
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "sdg"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def TOp
@@ -378,11 +384,12 @@ def TOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "t"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def TdgOp : QCOOp<"tdg",
@@ -402,11 +409,12 @@ def TdgOp : QCOOp<"tdg",
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "tdg"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def SXOp
@@ -426,11 +434,12 @@ def SXOp
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "sx"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
@@ -450,11 +459,12 @@ def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "sxdg"; }
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def RXOp
@@ -475,6 +485,9 @@ def RXOp
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
@@ -482,9 +495,6 @@ def RXOp
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def RYOp
@@ -505,6 +515,9 @@ def RYOp
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
@@ -512,9 +525,6 @@ def RYOp
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def RZOp
@@ -535,6 +545,9 @@ def RZOp
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
@@ -542,9 +555,6 @@ def RZOp
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def POp
@@ -565,6 +575,9 @@ def POp
   let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
@@ -572,9 +585,6 @@ def POp
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def ROp
@@ -597,6 +607,9 @@ def ROp
                        "type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta, double phi);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
@@ -605,8 +618,6 @@ def ROp
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$phi)>];
-
-  let hasCanonicalizer = 1;
 }
 
 def U2Op
@@ -629,6 +640,9 @@ def U2Op
                        "type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi, double lambda);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
@@ -637,8 +651,6 @@ def U2Op
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$phi,
       "const std::variant<double, Value>&":$lambda)>];
-
-  let hasCanonicalizer = 1;
 }
 
 def UOp
@@ -662,6 +674,9 @@ def UOp
                        "attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta, double phi,
                                                      double lambda);
@@ -672,8 +687,6 @@ def UOp
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$phi,
       "const std::variant<double, Value>&":$lambda)>];
-
-  let hasCanonicalizer = 1;
 }
 
 def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
@@ -696,11 +709,12 @@ def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
       "type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "swap"; }
         [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface,
@@ -748,11 +762,12 @@ def DCXOp : QCOOp<"dcx",
       "type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "dcx"; }
         [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def ECROp : QCOOp<"ecr",
@@ -775,11 +790,12 @@ def ECROp : QCOOp<"ecr",
       "type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "ecr"; }
         [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def RXXOp
@@ -803,6 +819,9 @@ def RXXOp
       "`,` type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
@@ -810,9 +829,6 @@ def RXXOp
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def RYYOp
@@ -836,6 +852,9 @@ def RYYOp
       "`,` type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
@@ -843,9 +862,6 @@ def RYYOp
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def RZXOp
@@ -869,6 +885,9 @@ def RZXOp
       "`,` type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
@@ -876,9 +895,6 @@ def RZXOp
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def RZZOp
@@ -902,6 +918,9 @@ def RZZOp
       "`,` type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
@@ -909,9 +928,6 @@ def RZZOp
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface,
@@ -935,6 +951,9 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface,
                        "attr-dict `:` type($qubit0_in) `,` type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta, double beta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
@@ -943,9 +962,6 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface,
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$beta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
@@ -969,6 +985,9 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
                        "attr-dict `:` type($qubit0_in) `,` type($qubit1_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta, double beta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
@@ -977,9 +996,6 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$beta)>];
-
-  let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
@@ -1005,11 +1021,12 @@ def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
       "`,` type($qubit1_in) `,` type($qubit2_in)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
         [[nodiscard]] static Matrix8x8 getUnitaryMatrix();
     }];
-
-  let hasCanonicalizer = 1;
 }
 
 def UnitaryOp
@@ -1070,7 +1087,6 @@ def UnitaryOp
   let builders = [OpBuilder<(ins "ValueRange":$qubits,
       "ElementsAttr":$matrix)>];
 
-  let hasFolder = 1;
   let hasVerifier = 1;
 }
 
@@ -1287,6 +1303,12 @@ def CtrlOp
     }];
 
   let extraClassDeclaration = [{
+    /// Populate modifier lowering without combining adjacent gates.
+    static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         size_t getNumBodyUnitaries();
         [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumControls() + getNumTargets(); }
@@ -1369,6 +1391,10 @@ def InvOp
     }];
 
   let extraClassDeclaration = [{
+    /// Populate modifier lowering without combining adjacent gates.
+    static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
+
         size_t getNumBodyUnitaries();
         [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }
@@ -1455,6 +1481,10 @@ def PowOp
     }];
 
   let extraClassDeclaration = [{
+    /// Populate modifier lowering without combining adjacent gates.
+    static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
+
         size_t getNumBodyUnitaries();
         [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }

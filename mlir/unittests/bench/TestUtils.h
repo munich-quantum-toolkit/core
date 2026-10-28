@@ -107,13 +107,15 @@ template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {
 inline void expectJeffRoundTrip(mlir::QCProgram&& program) {
   auto compiled = mlir::runDefaultPipeline(
       mlir::CompilerInput{std::move(program)}, mlir::ProgramFormat::Jeff);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   ASSERT_TRUE(std::holds_alternative<mlir::JeffProgram>(*compiled));
   auto& jeff = std::get<mlir::JeffProgram>(*compiled);
   const auto bytes = jeff.toBytes();
   ASSERT_FALSE(bytes.empty());
   auto restored = mlir::JeffProgram::fromBytes(bytes);
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   EXPECT_EQ(restored->toBytes(), bytes);
 }
 

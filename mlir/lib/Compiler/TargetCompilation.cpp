@@ -237,6 +237,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   // Fold tensor accesses before SCCP; defer liveness until after placement.
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createCombineControlledGates(target));
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
@@ -291,6 +292,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   // Placement changes region results; run liveness once afterwards.
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createCombineControlledGates(target));
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));

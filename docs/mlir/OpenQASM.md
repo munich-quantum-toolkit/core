@@ -1,7 +1,7 @@
 # OpenQASM input and output
 
 MQT Core accepts OpenQASM as a compiler input and can export structured programs
-from the QC dialect.
+from the QC dialect as OpenQASM 2 or 3.
 
 The [OpenQASM specification](https://openqasm.com/index.html) defines the
 language. This page describes the subset supported by MQT Core.
@@ -56,6 +56,12 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 
 ### Input support
 
+The frontend accepts OpenQASM 2 and 3 minor versions optimistically, assuming
+that later minor releases preserve existing constructs. Unsupported syntax still
+fails. Export uses known versions only: 2.0, 3.0, or 3.1. The OpenQASM 3 header
+uses `OPENQASM 3;` unless program features or the target's minimum accepted
+version require 3.1.
+
 | OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                          |
@@ -69,6 +75,12 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Dynamic indexing           | Classical bit and array indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                         |
 | Classical arrays           | Global, fixed-size arrays of `bool`, `int`, `uint`, `float`, and `angle`, with up to seven dimensions and the scalar widths above.                                                                                                                                 |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and other array forms are diagnosed.                                                                                                                                                                     |
+
+OpenQASM 2 `opaque` declarations become private external functions with scalar
+parameters followed by qubit operands. They cannot redeclare language primitives
+or gates from an included library. OpenQASM export preserves calls to these
+gates; the receiver must supply their definitions. External gate names must be
+unique and must not conflict with generated gate definitions.
 
 The importer recognizes custom gates containing unitary gate calls and
 constant-range `for` loops as unitary, including nested loops and their callers.
@@ -309,7 +321,7 @@ stream only after preparing the complete source.
 Use the translation API with an owned MLIR module:
 
 ```cpp
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM3.h"
+#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 
 auto source = mlir::qc::translateQCToOpenQASM3(std::move(moduleOp));
 if (mlir::failed(source)) {
@@ -355,10 +367,38 @@ mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
 The compiler-pipeline path performs target compilation when requested, runs the
 QCO optimization pipeline, converts back to QC, and then exports. Calling
 {py:meth}`~mqt.core.mlir.QCProgram.to_openqasm3` or
-{code}`mlir::QCProgram::intoOpenQASM3` applies the QC cleanup pipeline but
-bypasses that QCO optimization round trip. Both consume the input, including on
+{code}`mlir::QCProgram::intoOpenQASM3` legalizes classical memory and control
+flow for export, preserving quantum operations and register sizes. Use the
+compiler pipeline to optimize the program. Both consume the input, including on
 failure. In Python, set `copy=True` to preserve it. The low-level translation
 API also consumes its module; only the output stream is unchanged on failure.
+
+Use `to_openqasm2()`, `OutputFormat.OPENQASM2`, or `--emit=openqasm2` for
+OpenQASM 2 output. Defined gates are inlined; receiver-defined gates use
+`opaque` declarations. Parameters must be bound and indices static. Every
+classical register must be an output, in allocation order, and can only be
+written by measurement. Mid-circuit and repeated measurements, resets, and
+barriers are supported. Conditions compare a complete classical register to an
+integer: `if (c == 1) x q[0];`. Whole-register measurements remain one statement
+when they overwrite the condition register, preserving one condition evaluation.
+Register and opaque gate names must start with a lowercase letter. The output
+includes `qelib1.inc`; opaque names from that library must match its gate
+signatures. Device qubit indices become one `qreg` whose width includes unused
+lower indices. A conditional measurement that overwrites its selector must fit a
+single output statement, including a complete emitted `qreg` for a
+whole-register measurement.
+
+Explicit compilation lowers bounded constant loops and quantum modifiers using
+the existing compiler passes. Export diagnoses unsupported remaining gates and
+modifiers. Other runtime control flow and classical assignments cannot be
+represented. A conditional block can contain multiple statements only while the
+condition register remains unchanged; its final statement may overwrite that
+register. OpenQASM 2 export discards program-wide global phase after
+normalization while preserving relative phase under controls. The exported U
+decomposition uses `u1`, `ry`, and `u1` to avoid differing `U` phase conventions
+across consumers.
+
+The remaining output details below describe OpenQASM 3.
 
 ### Export and round-trip support
 
@@ -484,16 +524,17 @@ Resources must be allocated outside loops and conditionals. Unsupported scalar
 types, operations, captures, or runtime gate parameters produce a
 target-specific diagnostic without writing partial output.
 
-The exporter writes an OpenQASM 3.1 version declaration and includes
-`stdgates.inc`. Controlled gates use compact standard-library names such as
-`cx`, `cz`, and `ccx` when available, and `ctrl` modifiers otherwise. Gates in
-MQT Core's compatibility catalog, such as `r`, `rzz`, and `ecr`, receive
-definitions under their catalog names. Strict consumers use those definitions.
-MQT Core's default compatibility mode recognizes a definition with the catalog
-name and signature and imports calls directly as the corresponding native QC
-operation; the definition body is deliberately ignored. A same-name definition
-with a mismatched signature is rejected. Strict mode always analyzes the custom
-definition normally.
+The exporter emits `OPENQASM 3;` for its OpenQASM 3.0 subset and `OPENQASM 3.1;`
+when it emits a `switch`, including switches generated from indexed tables. It
+includes `stdgates.inc`. Controlled gates use compact standard-library names
+such as `cx`, `cz`, and `ccx` when available, and `ctrl` modifiers otherwise.
+Gates in MQT Core's compatibility catalog, such as `r`, `rzz`, and `ecr`,
+receive definitions under their catalog names. Strict consumers use those
+definitions. MQT Core's default compatibility mode recognizes a definition with
+the catalog name and signature and imports calls directly as the corresponding
+native QC operation; the definition body is deliberately ignored. A same-name
+definition with a mismatched signature is rejected. Strict mode always analyzes
+the custom definition normally.
 
 The compatibility spelling `u(theta, phi, lambda)` has the exact QC and Qiskit
 U-gate matrix. The standardized `U`, `u2`, `u3`, and `cu3` spellings retain
@@ -542,16 +583,16 @@ expressions emitted by the exporter, including Boolean/integer conversions.
 ### Export limitations
 
 Export requires one defined entry function whose arguments are named `f64`
-inputs. Functions that remain after helper inlining must be private, defined
-gate functions with leading `f64` parameters followed by scalar qubit arguments
-and no results. Gate functions may contain supported scalar expressions, quantum
-operations, calls, and loops. Measurement, reset, barrier, allocation, classical
-storage, conditionals, switches, and `arith.select` are rejected in gate
-functions. For-loop bounds in gate functions must remain constant. Gate while
-loops require a pure condition region and no loop-carried values.
+inputs. Functions that remain after helper inlining must be private gate
+functions with leading `f64` parameters followed by scalar qubit arguments and
+no results. Defined gate functions may contain supported scalar expressions,
+quantum operations, calls, and loops. Measurement, reset, barrier, allocation,
+classical storage, conditionals, switches, and `arith.select` are rejected in
+gate functions. For-loop bounds in gate functions must remain constant. Gate
+while loops require a pure condition region and no loop-carried values.
 
 The exporter rejects arbitrary CFGs, multi-block SCF regions, recursive or
-unresolved calls, dynamic for-loop steps, unsigned `scf.for` comparisons,
+undeclared calls, dynamic for-loop steps, unsigned `scf.for` comparisons,
 general memrefs, unsupported integer widths, unknown operations, and non-unitary
 content inside modifier regions. CBit loads, stores, whole-register reads and
 writes, fixed-width bitwise operations, dynamic bit indices, SCF results, and

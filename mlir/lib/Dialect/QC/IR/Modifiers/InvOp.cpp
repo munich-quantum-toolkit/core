@@ -382,9 +382,14 @@ LogicalResult InvOp::verify() {
   return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
+void InvOp::getLoweringPatterns(RewritePatternSet& results,
+                                MLIRContext* context) {
+  results.add<CancelNestedInv, MoveCtrlOutsideInv, InvPowToNegPow,
+              InlineSelfAdjoint, ReplaceWithKnownGates>(context);
+  getCanonicalizationPatterns(results, context);
+}
+
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutsideInv, InvPowToNegPow,
-              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv,
-              DropUnusedInvQubits>(context);
+  results.add<EraseEmptyInv, DropUnusedInvQubits>(context);
 }

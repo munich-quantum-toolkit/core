@@ -59,8 +59,8 @@ LogicalResult GPhaseOp::verify() {
   return verifyGlobalPhaseAngle(getOperation(), getTheta());
 }
 
-void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                           MLIRContext* context) {
+void GPhaseOp::getOptimizationPatterns(RewritePatternSet& results,
+                                       MLIRContext* context) {
   results.add<RemoveTrivialGPhase>(context);
 }
 

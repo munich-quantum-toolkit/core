@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
@@ -28,7 +29,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include <cstddef>
 
@@ -37,7 +37,7 @@ using namespace mlir::qco;
 
 namespace {
 
-class QCOWireCanonicalizationTest : public testing::Test {
+class QCOWireSimplificationTest : public testing::Test {
 protected:
   MLIRContext context_;
 
@@ -57,11 +57,11 @@ protected:
                                        &context_);
   }
 
-  void canonicalize(ModuleOp moduleOp) {
+  void simplify(ModuleOp moduleOp) {
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     ASSERT_TRUE(succeeded(manager.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
@@ -89,7 +89,7 @@ protected:
     ASSERT_TRUE(succeeded(verify(*original)));
     ASSERT_TRUE(succeeded(verifyLinearity(*original)));
     OwningOpRef<ModuleOp> rewritten(original->clone());
-    ASSERT_NO_FATAL_FAILURE(canonicalize(*rewritten));
+    ASSERT_NO_FATAL_FAILURE(simplify(*rewritten));
 
     size_t gateCount = 0;
     rewritten->walk([&](GateOp) { ++gateCount; });
@@ -98,23 +98,23 @@ protected:
   }
 };
 
-TEST_F(QCOWireCanonicalizationTest, XXPlusYYMergesOrderedWires) {
+TEST_F(QCOWireSimplificationTest, XXPlusYYMergesOrderedWires) {
   checkMerge<XXPlusYYOp>(false, 0.456, 1);
 }
 
-TEST_F(QCOWireCanonicalizationTest, XXPlusYYDoesNotMergeReversedWires) {
+TEST_F(QCOWireSimplificationTest, XXPlusYYDoesNotMergeReversedWires) {
   checkMerge<XXPlusYYOp>(true, 0.456, 2);
 }
 
-TEST_F(QCOWireCanonicalizationTest, XXMinusYYMergesReversedWires) {
+TEST_F(QCOWireSimplificationTest, XXMinusYYMergesReversedWires) {
   checkMerge<XXMinusYYOp>(true, 0.456, 1);
 }
 
-TEST_F(QCOWireCanonicalizationTest, XXPlusYYDoesNotMergeDifferentAxes) {
+TEST_F(QCOWireSimplificationTest, XXPlusYYDoesNotMergeDifferentAxes) {
   checkMerge<XXPlusYYOp>(false, 0.789, 2);
 }
 
-TEST_F(QCOWireCanonicalizationTest, XXMinusYYDoesNotMergeDifferentAxes) {
+TEST_F(QCOWireSimplificationTest, XXMinusYYDoesNotMergeDifferentAxes) {
   checkMerge<XXMinusYYOp>(true, 0.789, 2);
 }
 

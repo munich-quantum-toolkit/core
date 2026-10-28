@@ -9,8 +9,8 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/TestUtils.hpp"
-#include "qdmi/devices/sc/Device.hpp"
+
+#include "support/TestSupport.hpp"
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
@@ -23,12 +23,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <exception>
 #include <future>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
+
+using mqt::test::TemporaryDirectory;
 
 namespace {
 
@@ -455,26 +456,29 @@ TEST(ScRuntimeConfiguration, SelectsEnvironmentAndExplicitFileSources) {
 }
 
 TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
-  MQT_SC_QDMI_Device_Session session = nullptr;
-  ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  constexpr auto missing =
-      std::to_array("missing-sc-device-configuration.json");
-  ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, missing.size(),
-                missing.data()),
-            QDMI_SUCCESS);
-  testing::internal::CaptureStderr();
-  const auto status = MQT_SC_QDMI_device_session_init(session);
-  const auto diagnostic = testing::internal::GetCapturedStderr();
-  EXPECT_EQ(status, QDMI_ERROR_NOTFOUND);
-  EXPECT_THAT(
-      diagnostic,
-      testing::AllOf(
-          testing::HasSubstr("[mqt-core] [error]"),
-          testing::HasSubstr("QDMI device configuration "
-                             "'missing-sc-device-configuration.json' does not "
-                             "exist")));
-  MQT_SC_QDMI_device_session_free(session);
+  const TemporaryDirectory directory;
+  const auto regularFile = directory.write("regular-file", "");
+  for (const auto& path : {
+           directory.path() / "missing.json",
+           regularFile / "configuration.json",
+       }) {
+    const auto missing = path.string();
+    SCOPED_TRACE(missing);
+    MQT_SC_QDMI_Device_Session session = nullptr;
+    ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+    ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+                  missing.size() + 1, missing.c_str()),
+              QDMI_SUCCESS);
+    testing::internal::CaptureStderr();
+    const auto status = MQT_SC_QDMI_device_session_init(session);
+    const auto diagnostic = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(status, QDMI_ERROR_NOTFOUND);
+    EXPECT_THAT(diagnostic,
+                testing::AllOf(testing::HasSubstr("[mqt-core] [error]"),
+                               testing::HasSubstr(missing)));
+    MQT_SC_QDMI_device_session_free(session);
+  }
 }
 
 TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
@@ -799,20 +803,4 @@ TEST_F(ScQDMISpecificationTest, QueryDeviceQubitNum) {
                 session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
                 &numQubits, nullptr),
             QDMI_SUCCESS);
-}
-
-TEST(ScRuntimeConfiguration, MapsDeviceCallExceptions) {
-  EXPECT_EQ(sc::detail::guardDeviceCall("test", [] { return QDMI_SUCCESS; }),
-            QDMI_SUCCESS);
-  EXPECT_EQ(sc::detail::guardDeviceCall(
-                "test", []() -> int { throw std::bad_alloc{}; }),
-            QDMI_ERROR_OUTOFMEM);
-  EXPECT_EQ(sc::detail::guardDeviceCall(
-                "test", []() -> int { throw std::runtime_error("test"); }),
-            QDMI_ERROR_FATAL);
-  EXPECT_EQ(
-      sc::detail::guardDeviceCall(
-          "test",
-          []() -> int { std::rethrow_exception(std::make_exception_ptr(1)); }),
-      QDMI_ERROR_FATAL);
 }

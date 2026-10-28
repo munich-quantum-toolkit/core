@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import importlib
 import re
 import subprocess
 import sys
@@ -41,7 +42,7 @@ from qiskit.circuit import (
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
-from qiskit.quantum_info import Operator, random_unitary
+from qiskit.quantum_info import Operator, Statevector, random_unitary
 from qiskit.transpiler import Layout, TranspileLayout
 from qiskit_support import supports_qiskit_translation
 
@@ -56,6 +57,7 @@ from mqt.core.mlir import (
     TargetEnvironment,
     compile_program,
     sample,
+    simulate,
 )
 
 if TYPE_CHECKING:
@@ -2114,8 +2116,8 @@ def test_excessively_nested_parameter_expression_fails_closed_without_mutation()
     assert circuit.parameters == {theta}
 
 
-def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
-    """Bound a wide parameter expression before changing the source circuit."""
+def test_wide_parameter_expression_respects_replay_size_without_mutation() -> None:
+    """Bound a wide expression if Qiskit preserves its operation replay."""
     theta = Parameter("theta")
     level: list[ParameterExpression] = [theta]
     level.extend(theta + float(index) for index in range(1, 16385))
@@ -2128,8 +2130,16 @@ def test_oversized_parameter_expression_fails_closed_without_mutation() -> None:
     circuit.rz(level[0], 0)
     source_data = list(circuit.data)
 
-    with pytest.raises(RuntimeError, match="exceeds the supported 32768-node size"):
-        QCProgram.from_qiskit(circuit)
+    if len(level[0]._qpy_replay) >= 32768:  # ruff: ignore[private-member-access]
+        with pytest.raises(RuntimeError, match="exceeds the supported 32768-node size"):
+            QCProgram.from_qiskit(circuit)
+    else:
+        result = QCProgram.from_qiskit(circuit).to_qiskit()
+        assert result.parameters == {theta}
+        assert np.allclose(
+            Operator(result.assign_parameters({theta: 0.1})).data,
+            Operator(circuit.assign_parameters({theta: 0.1})).data,
+        )
 
     assert list(circuit.data) == source_data
     assert circuit.parameters == {theta}
@@ -4190,7 +4200,7 @@ def test_bound_parameter_names_are_unique_across_scopes() -> None:
 
 def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
     """Reject duplicate program input names when parsing QC IR."""
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="duplicate program name 'theta'"):
         _single_qubit_program(
             [
                 "qc.rx(%first) %q : !qc.qubit",
@@ -4213,7 +4223,7 @@ def test_parameter_and_register_names_must_be_unique() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="duplicate program name 'theta'"):
         QCProgram.from_mlir_str(
             """module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
@@ -4238,7 +4248,7 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="Compiler action failed"):
+    with pytest.raises(RuntimeError, match="must not contain a null character"):
         _single_qubit_program(
             ["qc.rz(%theta) %q : !qc.qubit"],
             arguments='%theta: f64 {mqt.input_name = "before\\00after"}',
@@ -4387,20 +4397,34 @@ def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> N
         program.to_qiskit(target=target)
 
 
-def test_unknown_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reject unsupported Qiskit versions."""
-    monkeypatch.setattr(qiskit, "__version__", "3.0.0")
-    with pytest.raises(RuntimeError, match=r"installed version '3\.0\.0'.*>=2\.5\.0,<2\.6\.0"):
+@pytest.mark.parametrize("version", [0x020400F0, 0x020500C1, 0x030000F0])
+def test_unknown_version_is_rejected(monkeypatch: pytest.MonkeyPatch, version: int) -> None:
+    """Reject unsupported native API versions before accessing their tables."""
+    capi = importlib.import_module("qiskit._accelerate.capi")
+
+    monkeypatch.setattr(capi, "API_VERSION", version)
+    with pytest.raises(RuntimeError, match=r"supported versions: >=2\.5\.0,<3\.0\.0"):
         QCProgram.from_qiskit(QuantumCircuit(1))
 
 
-def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reject another minor's capsule before reading it, then reuse the right one."""
-    other = "2.6.0" if qiskit.__version__.startswith("2.5.") else "2.5.0"
+@pytest.mark.parametrize("version", [-1, 2**32, None, "2.6.0", True])
+def test_invalid_native_version_is_rejected(monkeypatch: pytest.MonkeyPatch, version: object) -> None:
+    """Require a supported unsigned native version before capsule access."""
+    capi = importlib.import_module("qiskit._accelerate.capi")
+
+    monkeypatch.setattr(capi, "API_VERSION", version)
+    with pytest.raises(RuntimeError):
+        QCProgram.from_qiskit(QuantumCircuit(1))
+
+
+def test_mismatched_native_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Check the advertised API against the loaded capsule, then recover."""
+    capi = importlib.import_module("qiskit._accelerate.capi")
+
     circuit = QuantumCircuit(1)
     circuit.rx(0.25, 0)
     with monkeypatch.context() as patched:
-        patched.setattr(qiskit, "__version__", other)
+        patched.setattr(capi, "API_VERSION", capi.API_VERSION + 0x100)
         with pytest.raises(RuntimeError, match="C API capsule version does not match"):
             QCProgram.from_qiskit(circuit)
 
@@ -4408,8 +4432,18 @@ def test_mismatched_native_minor_is_rejected(monkeypatch: pytest.MonkeyPatch) ->
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
-def test_mlir_binding_import_does_not_import_qiskit() -> None:
-    """Keep Qiskit optional and allow it to be imported after MLIR."""
+def test_native_version_controls_adapter_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Python display version does not override the native ABI identity."""
+    monkeypatch.setattr(qiskit, "__version__", "2.99.0.dev0+downstream")
+    circuit = QuantumCircuit(1)
+    circuit.rx(0.25, 0)
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("first_module", ["dd", "bench", "qdmi", "mlir"])
+def test_native_binding_import_does_not_import_qiskit(first_module: str) -> None:
+    """Keep optional integrations lazy regardless of the first native module."""
     script = """
 import importlib.abc
 import sys
@@ -4422,7 +4456,11 @@ class RejectQiskit(importlib.abc.MetaPathFinder):
 
 blocker = RejectQiskit()
 sys.meta_path.insert(0, blocker)
+importlib.import_module("mqt.core." + sys.argv[1])
+if sys.argv[1] in {"dd", "bench"}:
+    assert "mqt.core._qdmi_discovery" not in sys.modules
 import mqt.core.mlir
+assert "mqt.core._qdmi_discovery" in sys.modules
 assert "qiskit" not in sys.modules
 
 sys.meta_path.remove(blocker)
@@ -4434,7 +4472,7 @@ assert sample(circuit, shots=1) == {"1": 1}
 programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
 assert sample(programs[0], shots=1) == {"1": 1}
 """
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+    subprocess.run([sys.executable, "-c", script, first_module], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 
 
 @pytest.mark.parametrize("kind", ["quantum_register", "classical_register", "gate", "loop_parameter"])
@@ -4852,3 +4890,110 @@ def test_invalid_named_qubit_register_export_is_rejected(size: int, name: str, e
     ])
     with pytest.raises(RuntimeError, match=error):
         program.to_qiskit()
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool) -> None:
+    """Block-local register membership need not partition its captured operands."""
+    selector = ClassicalRegister(2, "selector")
+    output = ClassicalRegister(2, "output")
+    circuit = QuantumCircuit(QuantumRegister(4, "q"), selector, output)
+    circuit.x(1)
+    circuit.measure([0, 1], selector)
+    with circuit.for_loop(range(1)), circuit.switch(selector) as case:
+        with case(0, 2):
+            circuit.x(2)
+            circuit.measure(2, selector[0])
+        with case(1):
+            circuit.x(3)
+            circuit.reset(0)
+            circuit.measure(0, selector[0])
+        with case(case.DEFAULT):
+            circuit.x(2)
+            circuit.x(3)
+    circuit.measure([2, 3], output)
+    source = QCProgram.from_qiskit(circuit, native=native).to_openqasm3().source
+    assert sample(source, shots=8) == {"0111": 8}
+
+
+def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
+    """Native export preserves idle-site holes and exact gate/global phases."""
+    circuit = QuantumCircuit(4, global_phase=0.37)
+    circuit.h(0)
+    circuit.u(0.2, 0.3, 0.4, 2)
+    circuit.cx(2, 0)
+    circuit.sxdg(3)
+    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
+    assert "cx $2, $0;" in source
+    assert "sxdg $3;" in source
+    np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
+
+
+def test_qiskit_native_opaque_gate_has_no_invented_definition() -> None:
+    """Receiver-defined gates retain their parameters and ordered physical sites."""
+    circuit = QuantumCircuit(4)
+    circuit.append(Gate("hop", 2, [0.125]), [3, 1])
+    with pytest.raises(RuntimeError, match="no circuit definition"):
+        QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_qiskit(circuit, native=True)
+    assert "func.func private" in program.ir
+    with pytest.raises(ValueError, match="callee must have a body"):
+        sample(program.copy(), shots=1)
+    source = program.to_openqasm3().source
+    assert "hop(0.125) $3, $1;" in source
+    assert "gate hop" not in source
+    with pytest.raises(RuntimeError):
+        sample(source, shots=1)
+
+
+@pytest.mark.parametrize("name", ["bad;gate", "if"])
+def test_qiskit_native_export_rejects_invalid_gate_names(name: str) -> None:
+    """Opaque names cannot introduce OpenQASM syntax or keywords."""
+    circuit = QuantumCircuit(1)
+    circuit.append(Gate(name, 1, []), [0])
+    with pytest.raises(RuntimeError, match="external gate name"):
+        QCProgram.from_qiskit(circuit, native=True).to_openqasm3()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [AnnotatedOperation(library.SGate(), InverseModifier()), Instruction("custom", 1, 0, [])],
+)
+def test_qiskit_native_import_rejects_unlowered_operations(operation: Instruction | AnnotatedOperation) -> None:
+    """Native import rejects instructions and modifiers before reading definitions."""
+    circuit = QuantumCircuit(1)
+    circuit.append(operation, [0])
+    with pytest.raises(RuntimeError, match="Native import requires concrete gates"):
+        QCProgram.from_qiskit(circuit, native=True)
+
+
+def test_qiskit_opaque_gate_rejects_conflicting_signatures() -> None:
+    """OpenQASM cannot overload one gate name with different arities."""
+    circuit = QuantumCircuit(2)
+    circuit.append(Gate("hop", 1, []), [0])
+    circuit.append(Gate("hop", 2, []), [0, 1])
+    with pytest.raises(RuntimeError, match="conflicting signatures"):
+        QCProgram.from_qiskit(circuit, native=True)
+
+
+@pytest.mark.parametrize("width", [0, 1])
+def test_native_import_never_reads_gate_definitions(width: int) -> None:
+    """Opaque gates use their signature; unsupported zero-qubit calls fail first."""
+
+    class DeviceGate(Gate):
+        @property
+        def definition(self) -> QuantumCircuit:
+            msg = "native import read a device gate definition"
+            raise AssertionError(msg)
+
+        @definition.setter
+        def definition(self, value: object) -> None:
+            pass
+
+    circuit = QuantumCircuit(1)
+    circuit.append(DeviceGate("device_gate", width, []), range(width))
+    if width == 0:
+        with pytest.raises(RuntimeError, match="Opaque gates must act on device qubits"):
+            QCProgram.from_qiskit(circuit, native=True)
+    else:
+        assert "device_gate $0;" in QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source

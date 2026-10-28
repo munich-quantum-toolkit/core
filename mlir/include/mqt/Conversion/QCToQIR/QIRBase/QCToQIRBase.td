@@ -10,7 +10,7 @@ include "mlir/Pass/PassBase.td"
 
 def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
   let summary = "Lower the QC dialect to the LLVM dialect compliant with the "
-                "QIR Base Profile 2.1";
+                "QIR Base Profile";
 
   let description = [{
     Lower supported QC operations to QIR Base Profile runtime calls and

@@ -55,7 +55,8 @@ struct PendingItem {
 ///
 /// Requires verified linear QCO IR. Supported operations preserve scalar
 /// qubit arity, introduce one scalar qubit, or consume qubits at wire
-/// boundaries. Tensor handles do not participate in the traversal.
+/// boundaries. Calls carrying qubits must be inlined before traversal. Tensor
+/// handles do not participate in the traversal.
 ///
 /// Depending on the template parameter, the function walks the IR in
 /// topological order in forward or backward direction, respectively. Towards
@@ -116,7 +117,8 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
         item.indices_.emplace_back(i);
 
         if (item.ready()) {
-          frontier.try_emplace(op, item.indices_);
+          frontier.try_emplace(op, std::move(item.indices_));
+          pending.erase(mapIt);
         }
       } else {
         const auto nqubits = static_cast<size_t>(
@@ -133,7 +135,8 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
         // Single-qubit operations and sources are immediately ready.
         if (nqubits <= 1) {
-          frontier.try_emplace(op, SmallVector{i});
+          frontier.try_emplace(op).first->second.emplace_back(i);
+          continue;
         }
 
         PendingItem item(nqubits);
@@ -149,15 +152,14 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
     }
 
     for (Operation* op : released) {
-      const auto mapIt = pending.find(op);
-      assert(mapIt != pending.end());
+      const auto mapIt = frontier.find(op);
+      assert(mapIt != frontier.end());
 
-      for (size_t i : mapIt->second.indices_) {
+      for (size_t i : mapIt->second) {
         std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
 
-      pending.erase(mapIt);
       frontier.erase(op);
     }
 

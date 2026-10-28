@@ -241,7 +241,7 @@ mqt\.core\.mlir\.compile_program$:
         program: _CompilerInput,
         *,
         target: _CompilerTarget | None = None,
-        output: Literal[OutputFormat.OPENQASM3],
+        output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
         **kwargs: Unpack[_CompileOptions],
     ) -> OpenQASMProgram: ...
     @overload
@@ -354,7 +354,7 @@ mqt\.core\.mlir\.compile_program$:
         program: Sequence[_CompilerInputT],
         *,
         target: _CompilerTarget | None = None,
-        output: Literal[OutputFormat.OPENQASM3],
+        output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
         **kwargs: Unpack[_CompileOptions],
     ) -> list[OpenQASMProgram]: ...
     @overload

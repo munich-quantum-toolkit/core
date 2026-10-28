@@ -29,6 +29,7 @@
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
@@ -41,7 +42,6 @@
 #include <numeric>
 #include <optional>
 #include <ranges>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -164,27 +164,25 @@ protected:
         EXPECT_NE(output.find(std::string("OUTPUT\t") + type + "\t"),
                   std::string::npos);
       }
-      std::istringstream records(output);
-      std::string line;
       std::string bits;
       size_t shot = 0;
       size_t weight = 0;
-      while (std::getline(records, line)) {
-        std::istringstream fields(line);
-        std::string record;
-        std::string type;
-        std::string value;
-        fields >> record >> type >> value;
+      for (auto line : llvm::split(output, '\n')) {
+        const auto record = line.split('\t').first;
+        line = line.split('\t').second;
+        const auto type = line.split('\t').first;
+        line = line.split('\t').second;
+        const auto value = line.split('\t').first;
         if (record == "OUTPUT") {
           if (type == "RESULT") {
-            bits += value;
+            bits += value.str();
             weight += static_cast<size_t>(value == "1");
           } else if (type == "BOOL") {
             bits += value == "true" ? '1' : '0';
           } else if (type == "INT") {
-            EXPECT_EQ(std::stoull(value), weight);
+            EXPECT_EQ(std::stoull(value.str()), weight);
           } else if (type == "DOUBLE") {
-            EXPECT_DOUBLE_EQ(std::stod(value),
+            EXPECT_DOUBLE_EQ(std::stod(value.str()),
                              static_cast<double>(weight) / 3.);
           }
         } else if (record == "END") {
@@ -618,11 +616,10 @@ declare void @__quantum__rt__bool_record_output(i1, ptr)
     if (destructor) {
       EXPECT_TRUE(output.ends_with(std::string("OUTPUT\tBOOL\ttrue\n") + '\0'));
     }
-    std::istringstream records(output);
     std::vector<std::string> recorded;
     std::string bits;
     size_t starts = 0;
-    for (std::string line; std::getline(records, line);) {
+    for (const auto line : llvm::split(output, '\n')) {
       if (line == "START") {
         ++starts;
       } else if (line.starts_with("OUTPUT\tRESULT\t")) {

@@ -84,6 +84,40 @@ TEST(QCOModifierVerificationTest, RequiresUniqueInputsAndPositionalYields) {
   EXPECT_TRUE(succeeded(qco::verifyLinearity(*module)));
 }
 
+TEST(QCOModifierVerificationTest, ChecksLinearityInsideOwnedModifierBodies) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() attributes {mqt.entry_point} {
+      %q0 = qco.static 0 : !qco.qubit
+      %inverse = qco.inv(%arg = %q0) {
+        %x = qco.x %arg : !qco.qubit
+        qco.yield %x : !qco.qubit
+      } : {!qco.qubit} -> {!qco.qubit}
+      qco.sink %inverse : !qco.qubit
+      return
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  qco::XOp gate;
+  moduleOp->walk([&](qco::XOp op) { gate = op; });
+  ASSERT_TRUE(gate);
+  auto yield = cast<qco::YieldOp>(*gate.getQubitOut().user_begin());
+  // Reusing the input leaves the gate result unused inside the modifier.
+  yield->setOperand(0, gate.getQubitIn());
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& message) {
+    diagnostic += message.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(qco::verifyLinearity(*moduleOp)));
+  EXPECT_NE(diagnostic.find("exactly one use"), std::string::npos);
+}
+
 TEST(QCOModifierVerificationTest, RequiresMatchingControlResults) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, func::FuncDialect>();

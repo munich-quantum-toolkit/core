@@ -16,10 +16,12 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <bit>
 #include <cstddef>
-#include <iostream>
-#include <stdexcept>
+#include <system_error>
 #include <vector>
 
 namespace dd {
@@ -35,18 +37,26 @@ public:
   /// Default number of buckets for the compute table
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 16384U;
 
-  /// Default constructor
-  ///
-  /// @param numBuckets Number of hash table buckets. Must be a power of two.
-  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
-    // numBuckets must be a power of two
+  ComputeTable() : ComputeTable(DEFAULT_NUM_BUCKETS) {}
+
+  [[nodiscard]] static llvm::Expected<ComputeTable>
+  create(const size_t numBuckets) {
     if (!std::has_single_bit(numBuckets)) {
-      throw std::invalid_argument("Number of buckets must be a power of two.");
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Number of buckets must be a power of two.");
     }
+    return ComputeTable(numBuckets);
+  }
+
+private:
+  friend class Package;
+  explicit ComputeTable(const size_t numBuckets) {
     stats.entrySize = sizeof(Entry);
     stats.numBuckets = numBuckets;
   }
 
+public:
   /// An entry in the compute table
   ///
   /// A triple consisting of the left operand, the right operand, and
@@ -135,20 +145,25 @@ public:
   /// Replace the bucket storage and discard cached results.
   ///
   /// The capacity must be a power of two. Invalidates lookup result pointers.
-  /// The replacement storage is allocated on its first insertion.
-  void resize(const size_t numBuckets) {
-    ComputeTable replacement(numBuckets);
-    table.swap(replacement.table);
-    valid.swap(replacement.valid);
+  /// Invalid capacity leaves the table unchanged.
+  [[nodiscard]] llvm::Error resize(const size_t numBuckets) {
+    auto replacement = create(numBuckets);
+    if (!replacement) {
+      return replacement.takeError();
+    }
+    table.swap(replacement->table);
+    valid.swap(replacement->valid);
     stats.numBuckets = numBuckets;
     stats.reset();
+    return llvm::Error::success();
   }
 
   /// Print the statistics of the compute table
   ///
   /// @param os The output stream to print to
   /// @return The output stream
-  std::ostream& printStatistics(std::ostream& os = std::cout) const {
+  llvm::raw_ostream&
+  printStatistics(llvm::raw_ostream& os = llvm::outs()) const {
     return os << stats;
   }
 

@@ -22,6 +22,7 @@
 #include "jeff/Conversion/JeffToNative/JeffToNative.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
+#include "jeff/Translation/Metadata.hpp"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -59,6 +60,33 @@ using namespace qco;
 
 #define GEN_PASS_DEF_JEFFTOQCO
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
+
+/// Restore input names from jeff text metadata.
+static LogicalResult deserializeInputNames(func::FuncOp function) {
+  const auto key = mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  for (auto argument : function.getArguments()) {
+    auto metadata = jeff::getMetadata(argument);
+    if (failed(metadata)) {
+      return failure();
+    }
+    if (!*metadata) {
+      continue;
+    }
+    for (auto entry : *metadata) {
+      auto fields = cast<DictionaryAttr>(entry);
+      if (fields.getAs<StringAttr>("name").getValue() != key) {
+        continue;
+      }
+      auto name = jeff::deserializeTextMetadata(
+          argument.getLoc(), fields.getAs<DenseI8ArrayAttr>("value"));
+      if (failed(name)) {
+        return failure();
+      }
+      function.setArgAttr(argument.getArgNumber(), key, *name);
+    }
+  }
+  return success();
+}
 
 /// Returns whether @p op carries a jeff gate modifier
 template <typename JeffOpType>
@@ -1457,6 +1485,10 @@ protected:
     RewritePatternSet patterns(context);
 
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (failed(deserializeInputNames(function))) {
+        signalPassFailure();
+        return;
+      }
       if (function == *entryPoint) {
         function.setPublic();
         mqt::setEntryPoint(function);

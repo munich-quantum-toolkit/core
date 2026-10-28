@@ -1,25 +1,30 @@
 # Superconducting QDMI device
 
-This provider supplies **compilation-only hardware models**. Use their topology,
+This device supplies **compilation-only hardware models**. Use their topology,
 native operations, and calibration for target compilation; they do not execute
 submitted quantum programs. Use {doc}`ddsim_device` for local execution.
 
-The MQT Core superconducting (SC) provider builds a session-owned runtime model
-from JSON. Separate sessions using the same provider library and prefix can
-expose different names, capacities, topology, operations, and calibration.
+The MQT Core superconducting (SC) device builds a session-owned runtime model
+from JSON. Separate sessions using the same device library and prefix can expose
+different names, capacities, topology, operations, and calibration.
+
+The device builds without C++ exceptions or RTTI. Session and job handle
+allocation failures return `QDMI_ERROR_OUTOFMEM`; memory exhaustion while
+building the runtime model is not recoverable. Sessions own their sites,
+operations, and outstanding jobs until freed.
 
 Decimal numbers in JSON configuration require the C numeric locale
 (`LC_NUMERIC=C`).
 
 ## Configuration sources
 
-The provider selects the first available source in this order:
+The device selects the first available source in this order:
 
 1. QDMI CUSTOM1 containing NUL-terminated inline JSON;
 2. QDMI CUSTOM2 containing a NUL-terminated JSON file path;
 3. `MQT_CORE_QDMI_SC_CONFIG_JSON`;
 4. `MQT_CORE_QDMI_SC_CONFIG_FILE`;
-5. `mqt-core-qdmi-sc-device.json` beside the provider shared library.
+5. `mqt-core-qdmi-sc-device.json` beside the device shared library.
 
 When direct QDMI callers populate both explicit slots, inline JSON wins. Setting
 both SC environment sources is an error. Configuration cannot be changed after
@@ -85,7 +90,7 @@ physical hardware.
 
 ## Bundled IQM models
 
-The SC provider also installs `json/sc/iqm-garnet.json` and
+The SC device also installs `json/sc/iqm-garnet.json` and
 `json/sc/iqm-emerald.json`. They model the 20-qubit, 30-edge Garnet and
 54-qubit, 90-edge Emerald architectures and expose the portable IQM operation
 set `r`, `cz`, and `measure`. Their stable registry IDs are `mqt.sc.iqm.garnet`

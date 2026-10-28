@@ -9,7 +9,6 @@
  */
 
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -34,16 +33,9 @@ void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
-OpFoldResult RYOp::fold(FoldAdaptor /*adaptor*/) {
-  if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
-    return getInputQubit(0);
-  }
-  return {};
-}
-
-void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* /*context*/) {
+void RYOp::getOptimizationPatterns(RewritePatternSet& results,
+                                   MLIRContext* /*context*/) {
+  results.add(removeZeroRotation<RYOp>);
   results.add(&mergeOneTargetOneParameter<RYOp>);
 }
 

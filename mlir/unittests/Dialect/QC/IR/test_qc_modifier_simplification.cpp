@@ -10,6 +10,7 @@
 
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -30,7 +31,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -42,7 +42,7 @@ using namespace mlir::qc;
 
 namespace {
 
-class QCModifierCanonicalizationTest : public testing::Test {
+class QCModifierSimplificationTest : public testing::Test {
 protected:
   MLIRContext context_;
 
@@ -51,7 +51,7 @@ protected:
                          arith::ArithDialect, func::FuncDialect>();
   }
 
-  OwningOpRef<ModuleOp> canonicalize(StringRef source) {
+  OwningOpRef<ModuleOp> simplify(StringRef source) {
     auto moduleOp = parseSourceString<ModuleOp>(source, &context_);
     EXPECT_TRUE(moduleOp);
     if (!moduleOp) {
@@ -59,14 +59,14 @@ protected:
     }
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     EXPECT_TRUE(succeeded(manager.run(*moduleOp)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     return moduleOp;
   }
 };
 
-TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesLargeAngles) {
+TEST_F(QCModifierSimplificationTest, InverseU2PreservesLargeAngles) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @test(%q: !qc.qubit) {
@@ -80,7 +80,7 @@ TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesLargeAngles) {
       }
     }
   )mlir";
-  auto moduleOp = canonicalize(source);
+  auto moduleOp = simplify(source);
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
   EXPECT_TRUE(function.getBody().getOps<InvOp>().empty());
@@ -98,8 +98,8 @@ TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesLargeAngles) {
   EXPECT_DOUBLE_EQ(*lambda, -1.0e16);
 }
 
-TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesDynamicAngles) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, InverseU2PreservesDynamicAngles) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %phi: f64, %lambda: f64) {
         qc.inv(%a = %q) {
@@ -126,8 +126,8 @@ TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesDynamicAngles) {
   EXPECT_TRUE(function.getBody().getOps<arith::SubFOp>().empty());
 }
 
-TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesFullUnitary) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, InverseU2PreservesFullUnitary) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit) {
         %phi = arith.constant 2.5745926535897929 : f64
@@ -161,9 +161,8 @@ TEST_F(QCModifierCanonicalizationTest, InverseU2PreservesFullUnitary) {
   ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
 }
 
-TEST_F(QCModifierCanonicalizationTest,
-       InverseControlledU2PreservesFullUnitary) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, InverseControlledU2PreservesFullUnitary) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q0: !qc.qubit, %q1: !qc.qubit, %q2: !qc.qubit) {
         %phi = arith.constant 2.5745926535897929 : f64
@@ -204,8 +203,8 @@ TEST_F(QCModifierCanonicalizationTest,
   ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 3);
 }
 
-TEST_F(QCModifierCanonicalizationTest, ControlledPhaseDropsUnusedTargets) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, ControlledPhaseDropsUnusedTargets) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%c0: !qc.qubit, %c1: !qc.qubit, %q: !qc.qubit, %angle: f64) {
         qc.ctrl(%c0, %c1) targets(%t = %q) {
@@ -232,9 +231,8 @@ TEST_F(QCModifierCanonicalizationTest, ControlledPhaseDropsUnusedTargets) {
   EXPECT_EQ(phase.getTheta(), function.getArgument(3));
 }
 
-TEST_F(QCModifierCanonicalizationTest,
-       ControlledPhaseHoistsParameterArithmetic) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, ControlledPhaseHoistsParameterArithmetic) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%c0: !qc.qubit, %c1: !qc.qubit, %angle: f64) {
         qc.ctrl(%c0, %c1) targets() {
@@ -258,8 +256,8 @@ TEST_F(QCModifierCanonicalizationTest,
   EXPECT_EQ(square.getRhs(), function.getArgument(2));
 }
 
-TEST_F(QCModifierCanonicalizationTest, ZeroControlsInlineMultipleGates) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, ZeroControlsInlineMultipleGates) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q0: !qc.qubit, %q1: !qc.qubit, %angle: f64) {
         "qc.ctrl"(%q0, %q1) <{operandSegmentSizes = array<i32: 0, 2>}> ({
@@ -284,8 +282,8 @@ TEST_F(QCModifierCanonicalizationTest, ZeroControlsInlineMultipleGates) {
   EXPECT_TRUE(rx.getTheta().getDefiningOp<arith::MulFOp>());
 }
 
-TEST_F(QCModifierCanonicalizationTest, NestedControlsHoistParameterArithmetic) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, NestedControlsHoistParameterArithmetic) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%c0: !qc.qubit, %c1: !qc.qubit, %q: !qc.qubit, %angle: f64) {
         qc.ctrl(%c0) targets(%a = %c1, %b = %q) {
@@ -315,8 +313,8 @@ TEST_F(QCModifierCanonicalizationTest, NestedControlsHoistParameterArithmetic) {
   EXPECT_EQ(square.getLhs(), function.getArgument(3));
 }
 
-TEST_F(QCModifierCanonicalizationTest, NestedControlsRetainOtherBodyGates) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, NestedControlsRetainOtherBodyGates) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%c0: !qc.qubit, %c1: !qc.qubit, %q: !qc.qubit) {
         qc.ctrl(%c0) targets(%a = %c1, %b = %q) {
@@ -340,8 +338,8 @@ TEST_F(QCModifierCanonicalizationTest, NestedControlsRetainOtherBodyGates) {
   EXPECT_TRUE(llvm::hasSingleElement(ctrl.getBody()->getOps<CtrlOp>()));
 }
 
-TEST_F(QCModifierCanonicalizationTest, DoubleInverseInlinesMultipleGates) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, DoubleInverseInlinesMultipleGates) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q0: !qc.qubit, %q1: !qc.qubit, %angle: f64) {
         qc.inv (%a = %q0, %b = %q1) {
@@ -368,8 +366,8 @@ TEST_F(QCModifierCanonicalizationTest, DoubleInverseInlinesMultipleGates) {
   EXPECT_TRUE(rx.getTheta().getDefiningOp<arith::MulFOp>());
 }
 
-TEST_F(QCModifierCanonicalizationTest, SingleInverseRetainsMultipleGates) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, SingleInverseRetainsMultipleGates) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %angle: f64) {
         qc.inv (%a = %q) {
@@ -389,8 +387,8 @@ TEST_F(QCModifierCanonicalizationTest, SingleInverseRetainsMultipleGates) {
   EXPECT_EQ(inverse.getNumBodyUnitaries(), 2U);
 }
 
-TEST_F(QCModifierCanonicalizationTest, UPowerPreservesSecondModifierTarget) {
-  auto moduleOp = canonicalize(R"mlir(
+TEST_F(QCModifierSimplificationTest, UPowerPreservesSecondModifierTarget) {
+  auto moduleOp = simplify(R"mlir(
     module {
       func.func @test(%q0: !qc.qubit, %q1: !qc.qubit) {
         %exponent = arith.constant 2.0 : f64

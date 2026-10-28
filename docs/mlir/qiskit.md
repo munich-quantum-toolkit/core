@@ -1,14 +1,10 @@
 # Qiskit compatibility
 
-MQT Core exposes two distinct Qiskit interfaces:
-
-| Interface                                                | Supported Qiskit versions | Purpose                                                          |
-| -------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------- |
-| {doc}`QDMI backend <../qdmi/qdmi_backend>`               | 2.1 and newer             | Execute circuits through device-specific serializers.            |
-| {doc}`MQT Compiler Collection <mqt_compiler_collection>` | `>=2.5.0,<2.7.0`          | Import and export circuits through the versioned native adapter. |
-
-Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
-the narrower range above; the adapter checks it before inspecting a circuit.
+Install `mqt-core[qiskit]` for Qiskit `>=2.5,<3`. The
+{doc}`QDMI backend <../qdmi/qdmi_backend>` executes circuits through
+device-specific serializers. The
+{doc}`MQT Compiler Collection <mqt_compiler_collection>` imports and exports
+circuits through its versioned native adapter.
 
 ## QPY files
 
@@ -44,7 +40,7 @@ failure, serialize to `io.BytesIO` before opening the destination.
 Pass a Qiskit `BackendV2` or `Target` to
 {py:func}`~mqt.core.mlir.compile_program` to compile for its gates, topology,
 and advertised standard control flow. The default result is a `QuantumCircuit`
-with physical qubits; its layout records placement and routing of logical input
+with device qubits; its layout records placement and routing of program input
 qubits. An explicit `output` selects another compiler representation. Omit
 `target` for target-independent optimization, which preserves the input's
 program family and may remove idle qubits. See the
@@ -90,11 +86,21 @@ this snapshot permits all control-flow forms supported by the exporter.
 
 Target-native synthesis requires a common single-qubit basis across sites and a
 common entangler across routing edges. For explicit pipelines, export with
-`program.to_qiskit(target=target)` to map compiler site IDs to physical qubits.
+`program.to_qiskit(target=target)` to map compiler site IDs to device qubits.
 
 ## Circuit translation contract
 
-The compiler imports circuit operations without changing the source circuit.
+The compiler imports circuit operations without changing the source circuit. By
+default, import allocates program qubits and translates gate definitions. For a
+circuit already compiled for a device, use
+`QCProgram.from_qiskit(circuit, native=True)`. Circuit indices then denote
+device qubits, and gate names, parameters, and ordered operands become opaque
+calls. Definitions are not inspected. The caller must validate device support
+and placements. Device gates must act on device qubits and have scalar
+parameters; lower annotated operations, matrix unitaries, and permutations
+before native import. Represent global phase with `circuit.global_phase`. Layout
+metadata does not remap circuit indices.
+
 Export creates a new circuit and preserves parameter identities across nested
 control flow. Both `QCProgram.to_qiskit()` and `QCOProgram.to_qiskit()` consume
 the source, including when export fails. Pass `copy=True` to preserve it.
@@ -120,7 +126,7 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | Free symbols and supported real parameter expressions                   | Supported            | Supported                          |
 | Parameter-vector elements                                               | Supported            | Supported                          |
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
-| Register aliases or interleaved membership                              | Rejected             | Rejected                           |
+| Empty registers, root aliases, or interleaved root membership           | Rejected             | Rejected                           |
 | Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
@@ -262,7 +268,7 @@ export. Target compilation synthesizes supported one- and two-qubit matrices to
 the target gate set. Dense unitary operations support at most eight qubits.
 Qiskit import preserves inverse, numeric power, and closed-control modifiers on
 dense-unitary operations. Export preserves inverse and closed-control modifiers.
-Other powers require canonicalization or synthesis.
+Other powers require explicit modifier lowering or synthesis.
 
 ### Transpiler layouts
 
@@ -290,8 +296,16 @@ Loop lists with jumps and switch cases with variables are supported within the
 without exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
-accepts versions in the registered {code}`>=2.5.0,<2.7.0` range and verifies the
-native API version before reading a circuit.
+accepts Qiskit {code}`>=2.5,<3` and selects the newest bundled C API adapter
+whose minimum version is satisfied by the installed native API. Qiskit 2.5 uses
+its own adapter; later minors use the 2.6 adapter until another is needed. The
+upstream test runs the shipping adapters against Qiskit main.
+
+Qiskit's
+[C API is experimental](https://quantum.cloud.ibm.com/docs/en/api/qiskit-c/index)
+and may change between minor releases. Forward minor compatibility is
+optimistic: an incompatible native ABI can crash the process. Use a tested
+Qiskit minor in environments that require a fixed compatibility baseline.
 
 Qiskit 2.6 uses borrowed C API instruction views and reads numeric gate
 parameters and global phases natively. Both adapters construct circuits,

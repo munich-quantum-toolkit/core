@@ -12,101 +12,70 @@
 
 #include "dd/Complex.hpp"
 #include "dd/ComplexNumbers.hpp"
+#include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <array>
-#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
-#include <iomanip>
-#include <iostream>
 #include <limits>
-#include <sstream>
+#include <optional>
+#include <queue>
 #include <stack>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
-#ifdef _WIN32
-#include <process.h>
-#else
-#ifdef __APPLE__
-#include <crt_externs.h>
-#endif
-#include <spawn.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
+using llvm::createStringError;
+using llvm::Error;
+using llvm::raw_ostream;
 
 namespace dd {
 
-void renderDotToSvg(const std::filesystem::path& dotFilename) {
-  const auto input = std::filesystem::absolute(dotFilename);
+Error renderDotToSvg(llvm::StringRef dotFilename) {
+  llvm::SmallString<128> input(dotFilename);
+  if (const auto error = llvm::sys::fs::make_absolute(input)) {
+    return createStringError(error, "Cannot resolve DOT filename");
+  }
   auto output = input;
-  output.replace_extension(".svg");
-
-#ifdef _WIN32
-  const auto inputName = input.wstring();
-  const auto outputName = output.wstring();
-  const std::array<const wchar_t*, 6> args = {L"dot.exe",         L"-Tsvg",
-                                              inputName.c_str(),  L"-o",
-                                              outputName.c_str(), nullptr};
-  const auto exitCode = _wspawnvp(_P_WAIT, L"dot.exe", args.data());
-  if (exitCode == -1) {
-    throw std::system_error(errno, std::generic_category(),
-                            "Cannot start Graphviz dot");
+  llvm::sys::path::replace_extension(output, ".svg");
+  auto program = llvm::sys::findProgramByName("dot");
+  if (!program) {
+    return createStringError(program.getError(), "Cannot find Graphviz dot");
   }
-#else
-  std::string command = "dot";
-  std::string format = "-Tsvg";
-  std::string inputName = input.string();
-  std::string outputFlag = "-o";
-  std::string outputName = output.string();
-  const std::array<char*, 6> args = {
-      command.data(),    format.data(),     inputName.data(),
-      outputFlag.data(), outputName.data(), nullptr,
+  const std::array<llvm::StringRef, 5> args{
+      *program, "-Tsvg", input, "-o", output,
   };
-#ifdef __APPLE__
-  const auto* const environment = *_NSGetEnviron();
-#else
-  const auto* const environment = environ;
-#endif
-  pid_t pid{};
-  const auto spawnError =
-      posix_spawnp(&pid, "dot", nullptr, nullptr, args.data(), environment);
-  if (spawnError != 0) {
-    throw std::system_error(spawnError, std::generic_category(),
-                            "Cannot start Graphviz dot");
+  std::string message;
+  const auto exitCode = llvm::sys::ExecuteAndWait(*program, args, std::nullopt,
+                                                  {}, 0, 0, &message);
+  if (exitCode < 0) {
+    return createStringError(std::make_error_code(std::errc::io_error),
+                             "Cannot run Graphviz dot: " + message);
   }
-
-  int status{};
-  while (waitpid(pid, &status, 0) == -1) {
-    if (errno != EINTR) {
-      throw std::system_error(errno, std::generic_category(),
-                              "Cannot wait for Graphviz dot");
-    }
-  }
-  // sys/wait.h supplies these macros through a libc internal header.
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  if (!WIFEXITED(status)) {
-    throw std::runtime_error("Graphviz dot terminated abnormally");
-  }
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  const auto exitCode = WEXITSTATUS(status);
-#endif
   if (exitCode != 0) {
-    throw std::runtime_error("Graphviz dot exited with code " +
-                             std::to_string(exitCode));
+    return createStringError(
+        std::make_error_code(std::errc::state_not_recoverable),
+        "Graphviz dot exited with code " + std::to_string(exitCode));
   }
+  return Error::success();
 }
 
 std::string colorFromPhase(const Complex& a) {
@@ -114,15 +83,12 @@ std::string colorFromPhase(const Complex& a) {
   if (phase < 0) {
     phase += 1.;
   }
-  std::ostringstream oss{};
-  oss << std::fixed << std::setprecision(3) << phase << " " << 0.667 << " "
-      << 0.75;
-  return oss.str();
+  return llvm::formatv("{0:F3} 0.667 0.750", phase).str();
 }
 fp thicknessFromMagnitude(const Complex& a) {
   return 3.0 * std::max(ComplexNumbers::mag(a), 0.10);
 }
-void printPhaseFormatted(std::ostream& os, fp r) {
+void printPhaseFormatted(raw_ostream& os, fp r) {
   const auto tol = RealNumber::eps;
 
   r /= PI;
@@ -185,7 +151,7 @@ void printPhaseFormatted(std::ostream& os, fp r) {
   }
 
   // default
-  os << " " << absr << ")";
+  os << " " << ComplexValue::toString(absr, 0., false) << ")";
 }
 std::string conditionalFormat(const Complex& a, const bool formatAsPolar) {
   if (!formatAsPolar) {
@@ -199,7 +165,8 @@ std::string conditionalFormat(const Complex& a, const bool formatAsPolar) {
     return "0";
   }
 
-  std::ostringstream ss{};
+  std::string result;
+  llvm::raw_string_ostream ss(result);
   // magnitude is (almost) 1
   if (RealNumber::approximatelyEquals(mag, 1.)) {
     if (RealNumber::approximatelyZero(phase)) {
@@ -215,27 +182,27 @@ std::string conditionalFormat(const Complex& a, const bool formatAsPolar) {
       return "-1";
     }
     printPhaseFormatted(ss, phase);
-    return ss.str();
+    return result;
   }
 
   if (RealNumber::approximatelyEquals(std::abs(phase), PI)) {
     ss << "-";
     ComplexValue::printFormatted(ss, mag);
-    return ss.str();
+    return result;
   }
   if (RealNumber::approximatelyZero(phase)) {
     ComplexValue::printFormatted(ss, mag);
-    return ss.str();
+    return result;
   }
 
   ComplexValue::printFormatted(ss, mag);
   ss << " ";
   printPhaseFormatted(ss, phase);
 
-  return ss.str();
+  return result;
 }
-std::ostream& modernNode(const mEdge& e, const size_t nodeId, std::ostream& os,
-                         const bool formatAsPolar) {
+raw_ostream& modernNode(const mEdge& e, const size_t nodeId, raw_ostream& os,
+                        const bool formatAsPolar) {
   os << nodeId << "[label=<";
   os << R"(<font point-size="10"><table border="1" cellspacing="0" cellpadding="2" style="rounded">)";
   os << R"(<tr><td colspan="2" rowspan="2" port="0" href="javascript:;" border="0" tooltip=")"
@@ -272,8 +239,8 @@ std::ostream& modernNode(const mEdge& e, const size_t nodeId, std::ostream& os,
      << "\"]\n";
   return os;
 }
-std::ostream& modernNode(const vEdge& e, const size_t nodeId, std::ostream& os,
-                         const bool formatAsPolar) {
+raw_ostream& modernNode(const vEdge& e, const size_t nodeId, raw_ostream& os,
+                        const bool formatAsPolar) {
   os << nodeId << "[label=<";
   os << R"(<font point-size="8"><table border="1" cellspacing="0" cellpadding="0" style="rounded">)";
   os << R"(<tr><td colspan="2" border="0" cellpadding="1"><font point-size="20">q<sub><font point-size="12">)"
@@ -297,8 +264,8 @@ std::ostream& modernNode(const vEdge& e, const size_t nodeId, std::ostream& os,
      << "\"]\n";
   return os;
 }
-std::ostream& classicNode(const mEdge& e, const size_t nodeId, std::ostream& os,
-                          const bool formatAsPolar) {
+raw_ostream& classicNode(const mEdge& e, const size_t nodeId, raw_ostream& os,
+                         const bool formatAsPolar) {
   os << nodeId << "[shape=circle, width=0.53, fixedsize=true, label=<";
   os << R"(<font point-size="6"><table border="0" cellspacing="0" cellpadding="0">)";
   os << R"(<tr><td colspan="4"><font point-size="18">q<sub><font point-size="10">)"
@@ -346,8 +313,8 @@ std::ostream& classicNode(const mEdge& e, const size_t nodeId, std::ostream& os,
      << static_cast<std::size_t>(e.p->v) << "\"]\n";
   return os;
 }
-std::ostream& classicNode(const vEdge& e, const size_t nodeId, std::ostream& os,
-                          const bool formatAsPolar) {
+raw_ostream& classicNode(const vEdge& e, const size_t nodeId, raw_ostream& os,
+                         const bool formatAsPolar) {
   os << nodeId << "[shape=circle, width=0.46, fixedsize=true, label=<";
   os << R"(<font point-size="6"><table border="0" cellspacing="0" cellpadding="0">)";
   os << R"(<tr><td colspan="2"><font point-size="18">q<sub><font point-size="10">)"
@@ -377,11 +344,11 @@ std::ostream& classicNode(const vEdge& e, const size_t nodeId, std::ostream& os,
 }
 namespace {
 template <class Node>
-std::ostream& renderEdge(const Edge<Node>& to, const size_t fromId,
-                         const size_t toId, const std::uint16_t idx,
-                         std::ostream& os, const bool colored,
-                         const bool edgeLabels, const bool classic,
-                         const bool formatAsPolar) {
+raw_ostream& renderEdge(const Edge<Node>& to, const size_t fromId,
+                        const size_t toId, const std::uint16_t idx,
+                        raw_ostream& os, const bool colored,
+                        const bool edgeLabels, const bool classic,
+                        const bool formatAsPolar) {
   os << fromId << ":" << idx << ":";
   if constexpr (IsVector<Node>) {
     os << (idx == 0 ? "sw" : "se");
@@ -427,35 +394,35 @@ std::ostream& renderEdge(const Edge<Node>& to, const size_t fromId,
 }
 } // namespace
 
-std::ostream& bwEdge(const mEdge& to, const size_t fromId, const size_t toId,
-                     const std::uint16_t idx, std::ostream& os,
-                     const bool edgeLabels, const bool classic,
-                     const bool formatAsPolar) {
+raw_ostream& bwEdge(const mEdge& to, const size_t fromId, const size_t toId,
+                    const std::uint16_t idx, raw_ostream& os,
+                    const bool edgeLabels, const bool classic,
+                    const bool formatAsPolar) {
   return renderEdge(to, fromId, toId, idx, os, false, edgeLabels, classic,
                     formatAsPolar);
 }
-std::ostream& bwEdge(const vEdge& to, const size_t fromId, const size_t toId,
-                     const std::uint16_t idx, std::ostream& os,
-                     const bool edgeLabels, const bool classic,
-                     const bool formatAsPolar) {
+raw_ostream& bwEdge(const vEdge& to, const size_t fromId, const size_t toId,
+                    const std::uint16_t idx, raw_ostream& os,
+                    const bool edgeLabels, const bool classic,
+                    const bool formatAsPolar) {
   return renderEdge(to, fromId, toId, idx, os, false, edgeLabels, classic,
                     formatAsPolar);
 }
-std::ostream& coloredEdge(const mEdge& to, const size_t fromId,
-                          const size_t toId, const std::uint16_t idx,
-                          std::ostream& os, const bool edgeLabels,
-                          const bool classic, const bool formatAsPolar) {
+raw_ostream& coloredEdge(const mEdge& to, const size_t fromId,
+                         const size_t toId, const std::uint16_t idx,
+                         raw_ostream& os, const bool edgeLabels,
+                         const bool classic, const bool formatAsPolar) {
   return renderEdge(to, fromId, toId, idx, os, true, edgeLabels, classic,
                     formatAsPolar);
 }
-std::ostream& coloredEdge(const vEdge& to, const size_t fromId,
-                          const size_t toId, const std::uint16_t idx,
-                          std::ostream& os, const bool edgeLabels,
-                          const bool classic, const bool formatAsPolar) {
+raw_ostream& coloredEdge(const vEdge& to, const size_t fromId,
+                         const size_t toId, const std::uint16_t idx,
+                         raw_ostream& os, const bool edgeLabels,
+                         const bool classic, const bool formatAsPolar) {
   return renderEdge(to, fromId, toId, idx, os, true, edgeLabels, classic,
                     formatAsPolar);
 }
-void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
+void serialize(const vEdge& basic, raw_ostream& os, const bool writeBinary) {
   if (writeBinary) {
     os.write(reinterpret_cast<const char*>(&SERIALIZATION_VERSION),
              sizeof(decltype(SERIALIZATION_VERSION)));
@@ -557,9 +524,10 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
     } while (!stack.empty());
   }
 }
+namespace {
 void serializeMatrix(const mEdge& basic, std::int64_t& idx,
                      std::unordered_map<mNode*, std::int64_t>& nodeIndex,
-                     std::unordered_set<mNode*>& visited, std::ostream& os,
+                     std::unordered_set<mNode*>& visited, raw_ostream& os,
                      const bool writeBinary) {
   if (!basic.isTerminal()) {
     for (auto const& e : basic.p->e) {
@@ -601,7 +569,9 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
     }
   }
 }
-void serialize(const mEdge& basic, std::ostream& os, const bool writeBinary) {
+} // namespace
+
+void serialize(const mEdge& basic, raw_ostream& os, const bool writeBinary) {
   if (writeBinary) {
     os.write(reinterpret_cast<const char*>(&SERIALIZATION_VERSION),
              sizeof(decltype(SERIALIZATION_VERSION)));
@@ -616,4 +586,138 @@ void serialize(const mEdge& basic, std::ostream& os, const bool writeBinary) {
   std::unordered_set<mNode*> visited{};
   serializeMatrix(basic, idx, nodeIndex, visited, os, writeBinary);
 }
+
+template <class Node>
+void toDot(const Edge<Node>& e, raw_ostream& os, bool colored, bool edgeLabels,
+           bool classic, bool memory, bool formatAsPolar) {
+  // header, root and terminal declaration
+
+  if (memory) {
+    memoryHeader(e, os, edgeLabels);
+  } else if (colored) {
+    coloredHeader(e, os, edgeLabels, formatAsPolar);
+  } else {
+    header(e, os, edgeLabels, formatAsPolar);
+  }
+
+  // Assign IDs on discovery, independent of allocation addresses.
+  std::unordered_map<const Node*, size_t> nodes{{e.p, 0}};
+  std::queue<const Edge<Node>*> q;
+  q.push(&e);
+
+  // bfs until finished
+  while (!q.empty()) {
+    auto node = q.front();
+    q.pop();
+
+    // base case
+    if (node->isTerminal()) {
+      continue;
+    }
+
+    const auto nodeId = nodes.at(node->p);
+
+    // node definition as HTML-like label (href="javascript:;" is used as
+    // workaround to make tooltips work)
+    if (memory) {
+      memoryNode(*node, nodeId, os);
+    } else if (classic) {
+      classicNode(*node, nodeId, os, formatAsPolar);
+    } else {
+      modernNode(*node, nodeId, os, formatAsPolar);
+    }
+
+    // iterate over edges in reverse to guarantee correct processing order
+    for (auto i = static_cast<std::int16_t>(node->p->e.size() - 1); i >= 0;
+         --i) {
+      const auto& edge = node->p->e[static_cast<std::size_t>(i)];
+      if ((!memory && edge.w.approximatelyZero()) || edge.w.exactlyZero()) {
+        // potentially add zero stubs here
+        continue;
+      }
+
+      size_t childId = 0;
+      if (!edge.isTerminal()) {
+        const auto [it, inserted] = nodes.try_emplace(edge.p, nodes.size());
+        childId = it->second;
+        if (inserted) {
+          q.push(&edge);
+        }
+      }
+
+      if (memory) {
+        memoryEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), os,
+                   edgeLabels);
+      } else if (colored) {
+        coloredEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), os,
+                    edgeLabels, classic, formatAsPolar);
+      } else {
+        bwEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), os,
+               edgeLabels, classic, formatAsPolar);
+      }
+    }
+  }
+  os << "}\n";
+}
+
+template <typename Node>
+void exportEdgeWeights(const Edge<Node>& edge, raw_ostream& stream) {
+  struct Priocmp {
+    bool operator()(const Edge<Node>* left, const Edge<Node>* right) {
+      if (left->p == nullptr) {
+        return right->p != nullptr;
+      }
+      if (right->p == nullptr) {
+        return false;
+      }
+      return left->p->v < right->p->v;
+    }
+  };
+  stream << llvm::format("%+g%+gi\n", RealNumber::val(edge.w.r),
+                         RealNumber::val(edge.w.i));
+
+  std::unordered_set<decltype(edge.p)> nodes{};
+
+  std::priority_queue<const Edge<Node>*, std::vector<const Edge<Node>*>,
+                      Priocmp>
+      q;
+  q.push(&edge);
+
+  // bfs until finished
+  while (!q.empty()) {
+    auto edgePtr = q.top();
+    q.pop();
+
+    // base case
+    if (edgePtr->isTerminal()) {
+      continue;
+    }
+
+    // check if edgePtr has already been processed
+    if (const auto ret = nodes.emplace(edgePtr->p); !ret.second) {
+      continue;
+    }
+
+    // iterate over edges in reverse to guarantee correct processing order
+    for (auto i = static_cast<std::int16_t>(edgePtr->p->e.size() - 1); i >= 0;
+         --i) {
+      const auto& child = edgePtr->p->e[static_cast<std::size_t>(i)];
+      if (child.w.approximatelyZero()) {
+        // potentially add zero stubs here
+        continue;
+      }
+
+      // non-zero child to be included
+      q.push(&child);
+      stream << llvm::format("%+g%+gi\n", RealNumber::val(child.w.r),
+                             RealNumber::val(child.w.i));
+    }
+  }
+}
+
+template void toDot(const vEdge&, raw_ostream&, bool, bool, bool, bool, bool);
+template void toDot(const mEdge&, raw_ostream&, bool, bool, bool, bool, bool);
+template void exportEdgeWeights(const vEdge&, raw_ostream&);
+template void exportEdgeWeights(const mEdge&, raw_ostream&);
+
 } // namespace dd

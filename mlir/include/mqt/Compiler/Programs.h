@@ -20,6 +20,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <concepts>
@@ -49,6 +50,7 @@ class OpenQASMProgram;
 class IQMJSONProgram;
 class QIRProgram;
 class TargetEnvironment;
+class CompilerTarget;
 
 /// A value for a scalar or statically sized one-dimensional f64 input.
 using ParameterValue = std::variant<std::vector<double>, double>;
@@ -122,6 +124,8 @@ enum class ProgramFormat : uint8_t {
   QIRAdaptive,
   /// An IQM circuit with physical PRX/CZ gates and terminal readout.
   IQMJSON,
+  /// OpenQASM 2 with bound parameters.
+  OpenQASM2,
 };
 
 /// A move-aware MLIR program with a shared dialect context.
@@ -197,7 +201,7 @@ public:
   [[nodiscard]] const std::string& str() const noexcept;
 
   /// Write the OpenQASM source to a file.
-  [[nodiscard]] LogicalResult write(const std::filesystem::path& path) const;
+  [[nodiscard]] llvm::Error write(const std::filesystem::path& path) const;
 
 private:
   std::string source_;
@@ -218,7 +222,7 @@ public:
   [[nodiscard]] const std::string& str() const noexcept { return source_; }
 
   /// Write the IQM JSON source to a file.
-  [[nodiscard]] LogicalResult write(const std::filesystem::path& path) const;
+  [[nodiscard]] llvm::Error write(const std::filesystem::path& path) const;
 
 private:
   std::string source_;
@@ -230,23 +234,23 @@ public:
   explicit QCProgram(Storage storage) : Program(std::move(storage)) {}
 
   /// Parse QC MLIR assembly.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromMLIRString(std::string_view source);
 
   /// Parse QC MLIR assembly from a file.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
   /// Translate supported OpenQASM source to QC.
   ///
   /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromOpenQASMString(std::string_view source);
 
   /// Translate a supported OpenQASM file to QC.
   ///
   /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
-  [[nodiscard]] static FailureOr<QCProgram>
+  [[nodiscard]] static llvm::Expected<QCProgram>
   fromOpenQASMFile(const std::filesystem::path& path);
 
   /// Take ownership of an MLIR module that contains a QC program.
@@ -291,29 +295,49 @@ public:
         std::map<std::string, ParameterValue>(values.begin(), values.end()));
   }
 
-  /// Run the standard QC cleanup passes in place.
+  /// Fold classical values and remove structural scaffolding in place.
+  ///
+  /// Preserve supplied unitary gates. Use explicit quantum optimization passes
+  /// to cancel, fuse, or specialize gates.
   [[nodiscard]] LogicalResult cleanup();
 
   /// Normalize scoped global phases in place.
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
-  /// Consume this program and translate it to portable OpenQASM 3.1.
+  /// Consume this program and translate it to portable OpenQASM 3.
   ///
-  /// Run QC cleanup before export. The program is consumed even when export
+  /// Legalize classical memory and control flow for the source format without
+  /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
   [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
+
+  /// Consume this program and emit OpenQASM 2.
+  ///
+  /// Normalize and discard program-wide phase. Keep device indices and gate
+  /// calls; reject unsupported control flow, assignments, and modifiers.
+  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM2() &&;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] FailureOr<QCOProgram> intoQCO() &&;
 
   /// Consume this program and lower it to QIR.
   ///
-  /// Entry results must be direct measurements or CBit registers. Other scalar
-  /// outputs are unsupported. The generated QIR returns a zero execution
-  /// status. Base conversion unrolls static counted loops, allowing at most
-  /// one billion cloned body operations, and rejects runtime-dependent loops.
-  /// Adaptive conversion retains loops.
+  /// Entry results may be direct measurements or CBit registers. Adaptive
+  /// Profile also supports computed Boolean results. Other scalar outputs are
+  /// unsupported. The generated QIR returns a zero execution status.
+  /// Base conversion requires straight-line quantum operations;
+  /// Adaptive conversion retains loops. Calls with quantum-register arguments
+  /// must be inlined.
+  /// Use runDefaultPipeline for compilation before export.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
+
+  /// Consume this program and serialize PRX/CZ gates and readout as IQM JSON.
+  ///
+  /// Qubits must be static target sites and every output bit must have one
+  /// terminal measurement. Normalize and discard entry-point global phases.
+  /// No routing, gate synthesis, or optimization is performed.
+  [[nodiscard]] FailureOr<IQMJSONProgram>
+  intoIQMJSON(const CompilerTarget& target) &&;
 
   /// Return the static gate count of the entry-point IR.
   ///
@@ -355,11 +379,11 @@ public:
 class QCOProgram final : public Program {
 public:
   /// Parse QCO MLIR assembly.
-  [[nodiscard]] static FailureOr<QCOProgram>
+  [[nodiscard]] static llvm::Expected<QCOProgram>
   fromMLIRString(std::string_view source);
 
   /// Parse QCO MLIR assembly from a file.
-  [[nodiscard]] static FailureOr<QCOProgram>
+  [[nodiscard]] static llvm::Expected<QCOProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
   /// Take ownership of an MLIR module that contains a QCO program.
@@ -399,7 +423,10 @@ public:
         std::map<std::string, ParameterValue>(values.begin(), values.end()));
   }
 
-  /// Run the standard QCO cleanup passes in place.
+  /// Fold classical values and remove structural scaffolding in place.
+  ///
+  /// Preserve supplied unitary gates. Use explicit quantum optimization passes
+  /// to cancel, fuse, or specialize gates.
   [[nodiscard]] LogicalResult cleanup();
 
   /// Normalize scoped global phases in place.
@@ -499,16 +526,16 @@ public:
   /// Deserialize an existing jeff message.
   ///
   /// Keep the reader's backing storage alive and unchanged until this function
-  /// returns. Return failure and emit a diagnostic if deserialization fails.
-  [[nodiscard]] static FailureOr<JeffProgram>
+  /// returns. Return an owned error if deserialization fails.
+  [[nodiscard]] static llvm::Expected<JeffProgram>
   fromMessage(::jeff::Module::Reader module);
 
   /// Deserialize a `jeff` binary buffer.
-  [[nodiscard]] static FailureOr<JeffProgram>
+  [[nodiscard]] static llvm::Expected<JeffProgram>
   fromBytes(std::span<const std::byte> bytes);
 
   /// Deserialize a `jeff` binary file.
-  [[nodiscard]] static FailureOr<JeffProgram>
+  [[nodiscard]] static llvm::Expected<JeffProgram>
   fromFile(const std::filesystem::path& path);
 
   /// Create an independent `jeff` program copy.
@@ -522,7 +549,7 @@ public:
   /// Keep the message alive and unchanged while using its root or the views
   /// returned by `getSegmentsForOutput()`. Discard the message if encoding
   /// fails.
-  void toMessage(capnp::MessageBuilder& message) const;
+  [[nodiscard]] LogicalResult toMessage(capnp::MessageBuilder& message) const;
 
   /// Serialize this program to a binary `jeff` buffer.
   ///
@@ -588,7 +615,7 @@ using CompilerProgram =
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
-[[nodiscard]] FailureOr<CompilerProgram>
+[[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    std::string_view qcoPipeline = "mqt-qco-default",
                    const CompilationOptions& options = {});
@@ -597,7 +624,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
 ///
 /// QCImport and raw QCO stop before target compilation and are not accepted.
 /// The environment must include the requested output's lowering constraints.
-[[nodiscard]] FailureOr<CompilerProgram>
+[[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
@@ -606,7 +633,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
-[[nodiscard]] FailureOr<CompilerProgram>
+[[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
 

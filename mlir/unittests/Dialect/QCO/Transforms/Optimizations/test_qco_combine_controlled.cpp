@@ -8,8 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -61,6 +63,7 @@ protected:
     PassManager pm(&context);
     pm.addPass(createCombineControlledGates());
     if (cleanup) {
+      pm.addPass(mlir::mqt::createSimplifyQuantum());
       pm.addPass(createCanonicalizerPass());
     }
     ASSERT_TRUE(succeeded(pm.run(moduleOp)));
@@ -91,6 +94,40 @@ TEST_F(CombineControlledGatesTest, DefaultPipelineMergesParameterizedBodies) {
   EXPECT_EQ(countControls(*moduleOp), 1U);
   moduleOp->walk([](CtrlOp op) { EXPECT_EQ(op.getNumBodyUnitaries(), 1U); });
   ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
+}
+
+TEST_F(CombineControlledGatesTest,
+       DefaultPipelineExposesModifiersBeforeFusion) {
+  for (bool power : {false, true}) {
+    SCOPED_TRACE(power);
+    auto moduleOp =
+        QCOProgramBuilder::build(&context, [&](QCOProgramBuilder& builder) {
+          auto q = builder.staticQubit(0);
+          if (power) {
+            q = builder.pow(0.5, q,
+                            [&](Value target) { return builder.x(target); });
+          } else {
+            q = builder.inv(q, [&](Value target) { return builder.s(target); });
+          }
+          builder.h(q);
+          return SmallVector<Value>{};
+        });
+    ASSERT_TRUE(moduleOp);
+    OwningOpRef<ModuleOp> original(moduleOp->clone());
+    PassManager pm(&context);
+    populateDefaultQCOOptimizationPipeline(pm);
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    size_t gates = 0;
+    moduleOp->walk([&](UnitaryOpInterface op) {
+      if (op.getNumTargets() != 0) {
+        ++gates;
+      }
+    });
+    EXPECT_EQ(gates, 1U);
+    ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
+  }
 }
 
 TEST_F(CombineControlledGatesTest, RespectsWireOrderPartitionAndUses) {
@@ -192,6 +229,7 @@ TEST_F(CombineControlledGatesTest, PreservesPhaseWiresAndParameterDominance) {
                                              builder.getF64FloatAttr(theta));
       func.getArgument(0).replaceAllUsesWith(value);
       PassManager fold(&context);
+      fold.addPass(mlir::mqt::createSimplifyQuantum());
       fold.addPass(createCanonicalizerPass());
       ASSERT_TRUE(succeeded(fold.run(mod)));
     }
