@@ -21,7 +21,7 @@ from qiskit.circuit import Parameter
 from qiskit.quantum_info import Operator
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import QCProgram, sample
+from mqt.core.mlir import QCProgram, build_functionality, sample
 
 
 @pytest.mark.skipif(not supports_qiskit_translation(), reason=f"No registered Qiskit adapter for {qiskit.__version__}")
@@ -174,3 +174,47 @@ def test_invalid_binding_is_atomic(array_program: QCProgram, *, qco: bool) -> No
     with pytest.raises(ValueError, match="requires a scalar"):
         program.bind_parameters({"angles": [0.0, 0.0], "offset": [0.0]})
     assert program.ir == before
+
+
+def test_parameterized_controlled_body_folds_without_quantum_optimization() -> None:
+    """Inlining resolves formal arithmetic while retaining gates and relative phase."""
+    program = QCProgram.from_openqasm_str(
+        'OPENQASM 3; include "stdgates.inc"; '
+        "gate custom(a,b,c) q,r { cu3(a,b,c) q,r; } "
+        "h $0; h $0; custom(-0.7,0.2,0.3) $1,$0;"
+    ).to_qco()
+    program.run_pass_pipeline("canonicalize")
+    assert "arith.addf" in program.ir
+    with pytest.raises(ValueError, match="compile-time constant matrix"):
+        build_functionality(program)
+    program.run_pass_pipeline("inline,canonicalize")
+    assert program.ir.count("qco.h") == 2
+    assert "arith.addf" not in program.ir
+    assert "arith.mulf" not in program.ir
+    theta, phi, lam = -0.7, 0.2, 0.3
+    c, s = np.cos(theta / 2), np.sin(theta / 2)
+    expected = np.eye(4, dtype=complex)
+    expected[2:, 2:] = np.exp(-0.25j) * np.array([
+        [c, -np.exp(1j * lam) * s],
+        [np.exp(1j * phi) * s, np.exp(1j * (phi + lam)) * c],
+    ])
+    np.testing.assert_allclose(build_functionality(program), expected, rtol=0, atol=1e-12)
+
+
+def test_classical_folding_rejects_nonfinite_gate_parameter() -> None:
+    """Explicit folding retains the verifier's finite-parameter diagnostic."""
+    program = QCProgram.from_mlir_str("""
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qc.static 0 : !qc.qubit
+        %one = arith.constant 1.0 : f64
+        %zero = arith.constant 0.0 : f64
+        %angle = arith.divf %one, %zero : f64
+        qc.rx(%angle) %q : !qc.qubit
+        return
+      }
+    }
+    """)
+    qco = program.to_qco()
+    with pytest.raises(RuntimeError, match="must be finite"):
+        qco.run_pass_pipeline("canonicalize")

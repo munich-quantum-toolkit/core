@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
@@ -35,7 +36,6 @@
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -50,7 +50,7 @@ using namespace mlir::qco;
 
 namespace {
 
-class QCOCanonicalizationTest : public testing::Test {
+class QCOSimplificationTest : public testing::Test {
 protected:
   MLIRContext context_;
 
@@ -81,11 +81,11 @@ protected:
                                        &context_);
   }
 
-  void canonicalize(ModuleOp moduleOp) {
+  void simplify(ModuleOp moduleOp) {
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
     PassManager manager(&context_);
-    manager.addPass(createCanonicalizerPass());
+    manager.addPass(mlir::mqt::createSimplifyQuantum());
     ASSERT_TRUE(succeeded(manager.run(moduleOp)));
     ASSERT_TRUE(succeeded(verify(moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(moduleOp)));
@@ -105,7 +105,7 @@ protected:
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
     RewritePatternSet patterns(&context_);
-    GateOp::getCanonicalizationPatterns(patterns, &context_);
+    GateOp::getOptimizationPatterns(patterns, &context_);
     FrozenRewritePatternSet frozen(std::move(patterns));
     PatternApplicator applicator(frozen);
     applicator.applyDefaultCostModel();
@@ -120,20 +120,20 @@ protected:
   }
 };
 
-TEST_F(QCOCanonicalizationTest, HadamardPairCancellationPreservesLinearity) {
+TEST_F(QCOSimplificationTest, HadamardPairCancellationPreservesLinearity) {
   checkPairCancellation<HOp>();
 }
-TEST_F(QCOCanonicalizationTest, PauliXPairCancellationPreservesLinearity) {
+TEST_F(QCOSimplificationTest, PauliXPairCancellationPreservesLinearity) {
   checkPairCancellation<XOp>();
 }
-TEST_F(QCOCanonicalizationTest, PauliYPairCancellationPreservesLinearity) {
+TEST_F(QCOSimplificationTest, PauliYPairCancellationPreservesLinearity) {
   checkPairCancellation<YOp>();
 }
-TEST_F(QCOCanonicalizationTest, PauliZPairCancellationPreservesLinearity) {
+TEST_F(QCOSimplificationTest, PauliZPairCancellationPreservesLinearity) {
   checkPairCancellation<ZOp>();
 }
 
-TEST_F(QCOCanonicalizationTest, PairCancellationPreservesDifferentGates) {
+TEST_F(QCOSimplificationTest, PairCancellationPreservesDifferentGates) {
   auto moduleOp = singleQubitFunction();
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -143,12 +143,12 @@ TEST_F(QCOCanonicalizationTest, PairCancellationPreservesDifferentGates) {
   auto second = XOp::create(builder, function.getLoc(), first.getResult());
   returned->setOperand(0, second.getResult());
 
-  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  ASSERT_NO_FATAL_FAILURE(simplify(*moduleOp));
   EXPECT_EQ(returned.getOperand(0), second.getResult());
   EXPECT_EQ(second.getQubitIn(), first.getResult());
 }
 
-TEST_F(QCOCanonicalizationTest, IdentityFoldsToItsInput) {
+TEST_F(QCOSimplificationTest, IdentitySimplificationRequiresOptimization) {
   auto moduleOp = singleQubitFunction();
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -161,14 +161,13 @@ TEST_F(QCOCanonicalizationTest, IdentityFoldsToItsInput) {
   ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   SmallVector<OpFoldResult> results;
-  ASSERT_TRUE(succeeded(identity->fold({Attribute{}}, results)));
-  ASSERT_EQ(results.size(), 1U);
-  EXPECT_EQ(cast<Value>(results.front()), function.getArgument(0));
-  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  EXPECT_TRUE(failed(identity->fold({Attribute{}}, results)));
+  ASSERT_NO_FATAL_FAILURE(simplify(*moduleOp));
   EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
 }
 
-TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesOperandOrder) {
+TEST_F(QCOSimplificationTest,
+       DenseIdentitySimplificationPreservesOperandOrder) {
   auto moduleOp = twoQubitFunction();
   ASSERT_TRUE(moduleOp);
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -191,16 +190,14 @@ TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesOperandOrder) {
   ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   SmallVector<OpFoldResult> results;
-  ASSERT_TRUE(succeeded(identity->fold({Attribute{}, Attribute{}}, results)));
-  ASSERT_EQ(results.size(), 2U);
-  EXPECT_EQ(cast<Value>(results[0]), function.getArgument(1));
-  EXPECT_EQ(cast<Value>(results[1]), function.getArgument(0));
-  ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
+  EXPECT_TRUE(failed(identity->fold({Attribute{}, Attribute{}}, results)));
+  ASSERT_NO_FATAL_FAILURE(simplify(*moduleOp));
   EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
   EXPECT_EQ(returned.getOperand(1), function.getArgument(1));
 }
 
-TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesNonzeroPhase) {
+TEST_F(QCOSimplificationTest,
+       DenseIdentitySimplificationPreservesNonzeroPhase) {
   const std::array<std::complex<double>, 3> phases{
       std::complex<double>{-1.0, 0.0},
       std::polar(1.0, 1e-11),
@@ -229,7 +226,7 @@ TEST_F(QCOCanonicalizationTest, DenseIdentityFoldPreservesNonzeroPhase) {
     EXPECT_TRUE(failed(phaseOp->fold({Attribute{}}, results)));
     EXPECT_TRUE(results.empty());
     OwningOpRef<ModuleOp> rewritten(original->clone());
-    ASSERT_NO_FATAL_FAILURE(canonicalize(*rewritten));
+    ASSERT_NO_FATAL_FAILURE(simplify(*rewritten));
     auto rewrittenFunction = rewritten->lookupSymbol<func::FuncOp>("main");
     auto rewrittenReturn =
         cast<func::ReturnOp>(rewrittenFunction.getBody().front().back());

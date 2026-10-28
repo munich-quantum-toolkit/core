@@ -76,13 +76,13 @@ This prints the installed package version.
 
 ## Build performance
 
-Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.2
+Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.4
 SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
 macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
 exports. Wheels include the QDMI driver and device bundles, `mqt-cc`, and
 `mqt-core-bench`. Their CMake package exposes the QDMI C interfaces and tool
-targets without requiring LLVM/MLIR. See {doc}`cpp_api` for native consumers.
+targets. Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`.
 C++ development libraries and headers are available from source installations;
 the DD library is static.
 
@@ -454,7 +454,7 @@ CMake settings control the fallback:
 | Setting                      | Default         | Effect                                               |
 | ---------------------------- | --------------- | ---------------------------------------------------- |
 | `MQT_CORE_AUTO_INSTALL_MLIR` | `ON`            | Download an SDK when none is available.              |
-| `MQT_CORE_MLIR_VERSION`      | `23.1.2`        | Select a version from the pinned installer manifest. |
+| `MQT_CORE_MLIR_VERSION`      | `23.1.4`        | Select a version from the pinned installer manifest. |
 | `MQT_CORE_MLIR_ASSERTIONS`   | Build-dependent | Select an SDK with LLVM assertions enabled.          |
 
 All automatic downloads use Release SDKs. Assertions default to `ON` for

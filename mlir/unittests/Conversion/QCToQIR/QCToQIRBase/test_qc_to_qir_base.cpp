@@ -49,13 +49,12 @@
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 
 using namespace mlir;
@@ -66,18 +65,7 @@ struct QCToQIRBaseTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QCToQIRBaseTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCToQIRBaseTestCase& info) {
-  return os << "QCToQIRBase{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCToQIRBaseTest : public testing::TestWithParam<QCToQIRBaseTestCase> {
 protected:
@@ -724,6 +712,12 @@ TEST_F(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
 }
 
 TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QCToQIRBase: {0}, original={1}, reference={2}",
+                    GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -737,6 +731,9 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  PassManager modifierLowering(context.get());
+  modifierLowering.addPass(mlir::mqt::createLowerQuantumModifiers());
+  ASSERT_TRUE(succeeded(modifierLowering.run(*program)));
   EXPECT_TRUE(succeeded(runQCToQIRBaseConversion(program.get())));
   printer.record(program.get(), "Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());

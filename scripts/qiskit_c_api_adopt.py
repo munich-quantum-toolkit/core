@@ -388,29 +388,10 @@ def write_vendor_tree(version: str, wheel: Path, artifact: JsonObject) -> Path:
         return target
 
 
-def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: bool) -> None:
+def build_and_test(build_dir: Path) -> None:
     """Build a clean binding and run the focused translation tests."""
     env = os.environ.copy()
     env["SKBUILD_BUILD_DIR"] = str(build_dir)
-    cmake_args = [
-        argument
-        for argument in env.get("SKBUILD_CMAKE_ARGS", "").split(";")
-        if argument
-        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
-        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
-    ]
-    if candidate:
-        cmake_args.extend([
-            f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include}",
-            f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
-        ])
-        env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
-    else:
-        env.pop("MQT_QISKIT_TEST_CANDIDATE_VERSION", None)
-    if cmake_args:
-        env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
-    else:
-        env.pop("SKBUILD_CMAKE_ARGS", None)
     run(
         "uv",
         "pip",
@@ -440,7 +421,7 @@ def translation_artifacts(version: Version) -> tuple[Path, str, str]:
     """Return the generated translation path, contents, and registration."""
     _, minor, patch = version.release
     suffix = f"2_{minor}"
-    supported_range = f">={version},<2.{minor + 1}.0"
+    supported_range = f">={version},<3.0.0"
     registration = f'MQT_QISKIT_VERSION({minor}, {patch}, {version}, "{supported_range}")'
     source = TRANSLATION_TEMPLATE.read_text(encoding="utf-8").replace("@QISKIT_FACTORY@", f"createQiskit{suffix}")
     return TRANSLATION_TEMPLATE.with_name(f"Qiskit{suffix}.cpp"), source, registration
@@ -597,11 +578,10 @@ def main() -> None:
         temporary_path = Path(temporary)
         wheel = temporary_path / artifact["filename"]
         download_wheel(artifact, wheel)
-        vendor = write_vendor_tree(str(parsed), wheel, artifact)
+        write_vendor_tree(str(parsed), wheel, artifact)
         run("uv", "pip", "install", "--python", sys.executable, "--reinstall", str(wheel))
-        build_and_test(str(parsed), vendor / "include", temporary_path / "candidate", candidate=True)
         register_translation(parsed)
-        build_and_test(str(parsed), vendor / "include", temporary_path / "shipping", candidate=False)
+        build_and_test(temporary_path / "shipping")
 
 
 if __name__ == "__main__":

@@ -12,11 +12,13 @@
 
 #include "dd/LinkedListBase.hpp"
 
+#include "llvm/Support/ErrorHandling.h"
+
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <memory>
-#include <stdexcept>
 #include <utility>
 
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -32,12 +34,13 @@ namespace dd {
 MemoryManager::MemoryManager(size_t entrySize,
                              const std::size_t initialAllocationSize)
     : entrySize_(entrySize), chunks(1), stats(entrySize) {
-  if (initialAllocationSize == 0) {
-    throw std::invalid_argument("Initial DD allocation size must be positive.");
+  assert(initialAllocationSize > 0 &&
+         "Initial DD allocation size must be positive");
+  if (initialAllocationSize > std::numeric_limits<size_t>::max() / entrySize) {
+    llvm::report_bad_alloc_error("DD allocation size overflow");
   }
-  chunks[0] = {std::make_unique_for_overwrite<Storage>(initialAllocationSize *
-                                                       entrySize),
-               initialAllocationSize * entrySize};
+  const auto bytes = initialAllocationSize * entrySize;
+  chunks[0] = {std::make_unique_for_overwrite<Storage>(bytes), bytes};
   // The first slab must exist before its bounds can be initialized.
   // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
   chunkIt = chunks[0].first.get();
@@ -104,12 +107,14 @@ LLBase* MemoryManager::getEntryFromAvailableList() noexcept {
 void MemoryManager::allocateNewChunk() {
   assert(!entryAvailableInChunk());
 
-  const auto numPrevEntries = chunks.back().second / entrySize_;
-  const auto numNewEntries = numPrevEntries * GROWTH_FACTOR;
+  const auto previousBytes = chunks.back().second;
+  if (previousBytes > std::numeric_limits<size_t>::max() / GROWTH_FACTOR) {
+    llvm::report_bad_alloc_error("DD allocation size overflow");
+  }
+  const auto bytes = previousBytes * GROWTH_FACTOR;
+  const auto numNewEntries = bytes / entrySize_;
 
-  chunks.emplace_back(
-      std::make_unique_for_overwrite<Storage>(numNewEntries * entrySize_),
-      numNewEntries * entrySize_);
+  chunks.emplace_back(std::make_unique_for_overwrite<Storage>(bytes), bytes);
   chunkIt = chunks.back().first.get();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   chunkEndIt = chunks.back().first.get() + chunks.back().second;

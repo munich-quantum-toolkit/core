@@ -47,10 +47,10 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 
@@ -62,18 +62,7 @@ struct QCOToQCTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const QCOToQCTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCOToQCTestCase& info) {
-  return os << "QCOToQC{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
 protected:
@@ -499,6 +488,110 @@ TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
       diagnosticText.find(
           "must return one trailing quantum value for each quantum argument"),
       std::string::npos);
+}
+
+TEST(QCOToQCRegressionTest, RejectsNonPositionalRegionResults) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      %left = qco.alloc : !qco.qubit
+      %right = qco.alloc : !qco.qubit
+      %results:2 = qco.if %condition args(%a = %left, %b = %right)
+          -> (!qco.qubit, !qco.qubit) {
+        qco.yield %b, %a : !qco.qubit, !qco.qubit
+      } else args(%a = %left, %b = %right) {
+        qco.yield %a, %b : !qco.qubit, !qco.qubit
+      }
+      qco.sink %results#0 : !qco.qubit
+      qco.sink %results#1 : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+            std::string::npos);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST(QCOToQCRegressionTest, PreservesFlatControlledGateWires) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, qco::QCODialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %left = qco.static 0 : !qco.qubit
+      %right = qco.static 1 : !qco.qubit
+      %control, %target = qco.ctrl(%left) targets(%arg = %right) {
+        %flipped = qco.z %arg : !qco.qubit
+        qco.yield %flipped : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit})
+      %flipped = qco.x %control : !qco.qubit
+      qco.sink %flipped : !qco.qubit
+      qco.sink %target : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto qubits = llvm::to_vector(function.getOps<qc::StaticOp>());
+  ASSERT_EQ(qubits.size(), 2U);
+  ASSERT_FALSE(function.getOps<qc::CtrlOp>().empty());
+  auto controlled = *function.getOps<qc::CtrlOp>().begin();
+  EXPECT_EQ(controlled.getControls().front(), qubits[0].getResult());
+  EXPECT_EQ(controlled.getTargets().front(), qubits[1].getResult());
+  ASSERT_FALSE(function.getOps<qc::XOp>().empty());
+  auto flipped = *function.getOps<qc::XOp>().begin();
+  EXPECT_EQ(flipped->getOperand(0), qubits[0].getResult());
+}
+
+TEST(QCOToQCRegressionTest, ChecksFlatTensorSlotCorrespondence) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                      arith::ArithDialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %left = qco.static 0 : !qco.qubit
+      %right = qco.static 1 : !qco.qubit
+      %tensor = qtensor.from_elements %left, %right : tensor<2x!qco.qubit>
+      %rest, %qubit = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %full = qtensor.insert %qubit into %rest[%c1] : tensor<2x!qco.qubit>
+      qtensor.dealloc %full : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  OwningOpRef<ModuleOp> original = moduleOp->clone();
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("original register slot"), std::string::npos);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
@@ -946,6 +1039,11 @@ module {
 }
 
 TEST_P(QCOToQCTest, ProgramEquivalence) {
+  SCOPED_TRACE(llvm::formatv(
+                   "QCOToQC: {0}, original={1}, reference={2}", GetParam().name,
+                   ::mqt::test::displayName(GetParam().programBuilder.name),
+                   ::mqt::test::displayName(GetParam().referenceBuilder.name))
+                   .str());
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -955,6 +1053,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -963,6 +1062,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -973,6 +1073,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

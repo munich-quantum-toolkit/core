@@ -23,8 +23,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* /*context*/) {
+void TOp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* /*context*/) {
   results.add(&removeInversePairOneTargetZeroParameter<TdgOp, TOp>);
   results.add(&mergeOneTargetZeroParameter<SOp, TOp>);
 }

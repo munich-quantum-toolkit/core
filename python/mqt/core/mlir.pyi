@@ -74,6 +74,9 @@ class OutputFormat(enum.Enum):
     QC = 3
     """QC after the optimized QCO round trip."""
 
+    OPENQASM2 = 9
+    """OpenQASM 2 with bound parameters."""
+
     OPENQASM3 = 4
     """OpenQASM 3 after the optimized QCO round trip."""
 
@@ -89,7 +92,7 @@ class OutputFormat(enum.Enum):
     QIR_ADAPTIVE = 7
     """QIR for the Adaptive Profile."""
 
-    QISKIT = 9
+    QISKIT = 10
     """A Qiskit QuantumCircuit."""
 
 class PayloadEncoding(enum.Enum):
@@ -100,7 +103,7 @@ class PayloadEncoding(enum.Enum):
     BINARY = 1
 
 class PayloadFormat:
-    """Exact payload identity."""
+    """Selected payload format and receiver-version constraint."""
 
     def __init__(
         self, format_id: str, version: str, profile: str = "", encoding: PayloadEncoding = PayloadEncoding.TEXT
@@ -177,7 +180,7 @@ class PayloadSpecification:
     ) -> None: ...
     @property
     def format(self) -> PayloadFormat:
-        """The exact selected payload format."""
+        """The selected payload format and receiver-version constraint."""
 
     @property
     def capabilities(self) -> list[ProgramCapability]:
@@ -823,25 +826,50 @@ class QCProgram(Program):
         """
 
     @staticmethod
-    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
+    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, native: bool = False) -> QCProgram:
         """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
 
         Args:
             circuit: Circuit to import. A complete transpiler layout is retained as
                 metadata.
+            native: Whether the circuit is already compiled for a device. Fixes circuit
+                indices to device qubits and preserves gate names and operands without
+                importing definitions. The caller validates device support and placements.
         """
 
     def copy(self) -> QCProgram:
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard QC cleanup pipeline in place."""
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates.
+        """
 
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
+    def to_openqasm2(self, *, copy: bool = False) -> OpenQASMProgram:
+        """Emit OpenQASM 2, discarding program-wide global phase.
+
+        Parameters must be bound, indices static, and classical storage limited to
+        output registers written by measurements. Register-equality conditions can guard
+        gates, resets, and measurements. Other runtime control flow and unsupported
+        modifiers raise an error. Use ``compile_program`` to lower static loops before
+        export.
+
+        The source is consumed, including on failure. Set ``copy=True`` to preserve it.
+
+        Args:
+            copy: Export a copy of the program.
+        """
+
     def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
-        """Clean up and emit this QC program as OpenQASM 3 without QCO optimization.
+        """Emit this QC program as OpenQASM 3.
+
+        Classical memory and control flow are legalized for the source format. Use
+        ``compile_program`` for optimization before export.
 
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
@@ -870,13 +898,24 @@ class QCProgram(Program):
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
 
+    def to_iqm_json(self, target: CompilerTarget, *, copy: bool = False) -> IQMJSONProgram:
+        """Serialize PRX/CZ gates and terminal readout as IQM JSON.
+
+        Qubits must be static target sites. Each output bit must have one terminal
+        measurement. Entry-point global phases are normalized and discarded.
+        This performs no routing, gate synthesis, or optimization.
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
     def to_qir(self, profile: QIRProfile, *, copy: bool = False) -> QIRProgram:
         """Lower this program to QIR for the requested profile.
 
         Entry results may be direct measurements or CBit registers. Adaptive Profile
         also supports computed Boolean (``i1``) results. Other scalar outputs are
         unsupported. The generated QIR returns a zero execution status.
-        Base conversion unrolls static counted loops; Adaptive conversion retains them.
+        Base conversion requires straight-line quantum operations; Adaptive retains loops.
+        Calls with quantum-register arguments must be inlined before conversion.
+        Use ``compile_program`` for inlining, modifier expansion, and Base loop unrolling.
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
 
@@ -971,7 +1010,11 @@ class QCOProgram(Program):
         """Return an independent copy of this program."""
 
     def cleanup(self) -> None:
-        """Run the standard QCO cleanup pipeline in place."""
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates.
+        """
 
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
@@ -1152,6 +1195,28 @@ class QCOProgram(Program):
         Raises:
             ValueError: When ``initial_state`` has no live reference in ``dd_package``,
                 has too few qubits, or the program is unsupported for simulation.
+        """
+
+    def expectation_values(self, observables: Sequence[Mapping[str, float]]) -> list[float]:
+        """Evaluate Pauli observables on one uncollapsed zero-state preparation.
+
+        The program is preserved. The DD package and state stay inside this call;
+        neither the state nor the observables are converted to dense arrays.
+        Terminal measurements are deferred under the same conditions as
+        ``mqt.core.mlir.simulate``. Resets and measurement-dependent evolution are rejected.
+
+        Args:
+            observables: Sequence of mappings from Pauli strings to finite real
+                coefficients. Each string spans every program wire and contains only
+                ``I``, ``X``, ``Y`` and ``Z``, with the rightmost character acting on
+                wire zero. An empty mapping represents the zero observable.
+
+        Returns:
+            Numerical expectation values in observable order.
+
+        Raises:
+            ValueError: When an observable is invalid or the program cannot prepare an
+                uncollapsed state, or an expectation is not finite.
         """
 
     def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
@@ -1358,6 +1423,23 @@ def sample(
     contracts.
     """
 
+def expectation_values(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    observables: Sequence[Mapping[str, float]],
+) -> list[float]:
+    """Evaluate Pauli observables after translating or converting an input to QCO.
+
+    An existing QCO program is used without copying. See
+    {py:meth}`QCOProgram.expectation_values` for observable, state preparation,
+    and error contracts.
+    """
+
 class CompiledProgram:
     """A compiled program ready for QDMI submission."""
 
@@ -1414,7 +1496,7 @@ def compile_program(
     program: _CompilerInput,
     *,
     target: _CompilerTarget | None = None,
-    output: Literal[OutputFormat.OPENQASM3],
+    output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
     **kwargs: Unpack[_CompileOptions],
 ) -> OpenQASMProgram: ...
 @overload
@@ -1526,7 +1608,7 @@ def compile_program(
     program: Sequence[_CompilerInputT],
     *,
     target: _CompilerTarget | None = None,
-    output: Literal[OutputFormat.OPENQASM3],
+    output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
     **kwargs: Unpack[_CompileOptions],
 ) -> list[OpenQASMProgram]: ...
 @overload

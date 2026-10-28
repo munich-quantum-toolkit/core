@@ -48,14 +48,13 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <variant>
@@ -90,17 +89,7 @@ struct QIRTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
-  return os << "QIR{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
@@ -120,6 +109,11 @@ protected:
 } // namespace
 
 TEST_P(QIRTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QIR: {0}, original={1}, reference={2}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -961,10 +955,54 @@ TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
   EXPECT_EQ(backwardsBranchingValue.getType(),
             IntegerType::get(context.get(), 32));
   const auto arrays = findModuleFlag(adaptive.get(), "arrays");
-  ASSERT_TRUE(arrays);
-  const auto arraysValue = dyn_cast<IntegerAttr>(arrays.getValue());
-  ASSERT_TRUE(arraysValue);
-  EXPECT_EQ(arraysValue.getType(), IntegerType::get(context.get(), 32));
+  EXPECT_FALSE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(
+                findModuleFlag(adaptive.get(), "qir_minor_version").getValue())
+                .getInt(),
+            0);
+}
+
+TEST_F(QIRTest, ResourceRuntimeCallsRequireQIR21) {
+  for (const auto* name : {
+           QIR_QUBIT_RELEASE,
+           QIR_RESULT_RELEASE,
+           QIR_QUBIT_ARRAY_RELEASE,
+           QIR_RESULT_ARRAY_RELEASE,
+           QIR_RESULT_ARRAY_RECORD_OUTPUT,
+       }) {
+    SCOPED_TRACE(name);
+    const auto array = StringRef(name).contains("array");
+    const auto output = StringRef(name).ends_with("record_output");
+    const auto* signature = output  ? "(i64, !llvm.ptr, !llvm.ptr)"
+                            : array ? "(i64, !llvm.ptr)"
+                                    : "(!llvm.ptr)";
+    const auto* operands = output  ? "(%zero, %pointer, %pointer)"
+                           : array ? "(%zero, %pointer)"
+                                   : "(%pointer)";
+    auto moduleOp =
+        parseSourceString<ModuleOp>(llvm::formatv(R"mlir(module {{
+          llvm.func @{0}{1}
+          llvm.func @helper(%pointer: !llvm.ptr) -> i64 {{
+            %zero = llvm.mlir.constant(0 : i64) : i64
+            llvm.call @{0}{2} : {1} -> ()
+            llvm.return %zero : i64
+          }
+          llvm.func @main() -> i64 attributes {{passthrough = ["entry_point"]} {{
+            %zero = llvm.mlir.constant(0 : i64) : i64
+            llvm.return %zero : i64
+          }
+        })mlir",
+                                                  name, signature, operands)
+                                        .str(),
+                                    context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+    EXPECT_EQ(cast<IntegerAttr>(
+                  findModuleFlag(*moduleOp, "qir_minor_version").getValue())
+                  .getInt(),
+              1);
+    EXPECT_EQ(static_cast<bool>(findModuleFlag(*moduleOp, "arrays")), array);
+  }
 }
 
 TEST_F(QIRTest, ClassicalStorageRequiresArrayAndElementCapabilities) {
@@ -1017,8 +1055,11 @@ TEST_F(QIRTest, OutputLabelPointerDoesNotRequireArrays) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
   const auto arrays = findModuleFlag(*moduleOp, "arrays");
-  ASSERT_TRUE(arrays);
-  EXPECT_EQ(cast<IntegerAttr>(arrays.getValue()).getInt(), 0);
+  EXPECT_FALSE(arrays);
+  EXPECT_EQ(cast<IntegerAttr>(
+                findModuleFlag(*moduleOp, "qir_minor_version").getValue())
+                .getInt(),
+            0);
 }
 
 TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {

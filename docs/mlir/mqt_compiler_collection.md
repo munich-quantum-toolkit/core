@@ -319,6 +319,11 @@ potentially large module. Pass {code}`copy=True` when the source must remain
 available. {code}`OpenQASMProgram` instead owns immutable source text and
 remains reusable when passed to {code}`compile_program`.
 
+`cleanup()` folds classical expressions, removes structural scaffolding and
+normalizes global phases. To cancel, combine or specialize quantum gates, use
+`simplify-quantum` or an optimization method such as
+`merge_single_qubit_rotation_gates()`.
+
 The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:
 
@@ -451,13 +456,19 @@ with TemporaryDirectory() as directory:
 assert restored.is_valid
 ```
 
+For an already compiled QC program, use
+{py:meth}`~mqt.core.mlir.QCProgram.to_iqm_json` with its target to serialize
+PRX/CZ gates and terminal readout without routing or synthesis. The exporter
+normalizes and discards entry-point global phase, uses target site names, and
+requires one terminal measurement for each output bit.
+
 To generate QIR, select a target profile. {py:class}`~mqt.core.mlir.QIRProgram`
 provides the QIR MLIR through {py:attr}`~mqt.core.mlir.Program.ir` and the
-translated LLVM IR through {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir`. Base
-conversion unrolls counted loops whose bounds and steps fold to constants and
-folds their classical expressions, with a limit of one billion cloned loop-body
-operations. Use Adaptive QIR for runtime-dependent loops or to retain structured
-iteration.
+translated LLVM IR through {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir`.
+Compilation to Base unrolls counted loops whose bounds and steps fold to
+constants and folds their classical expressions, with a limit of one billion
+cloned loop-body operations. Use Adaptive QIR for runtime-dependent loops or to
+retain structured iteration.
 
 ```{code-cell} ipython3
 qir = compile_program(bell_qasm, output=OutputFormat.QIR_BASE)

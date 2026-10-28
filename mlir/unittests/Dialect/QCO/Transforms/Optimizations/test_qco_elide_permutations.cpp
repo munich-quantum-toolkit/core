@@ -37,6 +37,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Error.h"
 
 #include <cmath>
 #include <cstddef>
@@ -110,13 +111,14 @@ protected:
       }
       return buildFunctionality(function, package, bindings);
     };
-    dd::Package package(numQubits);
-    auto expected = matrix(*original, package);
-    auto actual = matrix(program, package);
+    auto package = llvm::cantFail(dd::Package::create(numQubits));
+    auto expected = matrix(*original, *package);
+    auto actual = matrix(program, *package);
     ASSERT_TRUE(succeeded(expected));
     ASSERT_TRUE(succeeded(actual));
-    const auto expectedMatrix = dd::getMatrix(*expected, numQubits);
-    const auto actualMatrix = dd::getMatrix(*actual, numQubits);
+    const auto expectedMatrix =
+        llvm::cantFail(dd::getMatrix(*expected, numQubits));
+    const auto actualMatrix = llvm::cantFail(dd::getMatrix(*actual, numQubits));
     for (size_t row = 0; row < expectedMatrix.size(); ++row) {
       for (size_t column = 0; column < expectedMatrix[row].size(); ++column) {
         EXPECT_LE(
@@ -124,8 +126,8 @@ protected:
             1e-12);
       }
     }
-    package.decRef(*expected);
-    package.decRef(*actual);
+    package->decRef(*expected);
+    package->decRef(*actual);
     if (convertToQC) {
       PassManager conversion(program.getContext());
       conversion.addPass(createQCOToQC());
@@ -175,10 +177,10 @@ TEST_F(ElidePermutationsTest,
     ASSERT_TRUE(succeeded(counts));
     ASSERT_EQ(counts->size(), 1U);
     EXPECT_EQ(counts->begin()->first, "10");
-    dd::Package package(2);
-    auto state = simulateStatevector(function, package);
+    auto package = llvm::cantFail(dd::Package::create(2));
+    auto state = simulateStatevector(function, *package);
     ASSERT_TRUE(succeeded(state));
-    package.decRef(*state);
+    package->decRef(*state);
     PassManager conversion(&context_);
     conversion.addPass(createQCOToQC());
     EXPECT_TRUE(succeeded(conversion.run(*program)));

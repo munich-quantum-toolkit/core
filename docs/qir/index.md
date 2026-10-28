@@ -11,8 +11,8 @@ mystnb:
 The [Quantum Intermediate Representation (QIR)](https://www.qir-alliance.org)
 expresses quantum programs in [LLVM IR](https://llvm.org/). The MQT Compiler
 Collection compiles OpenQASM, Qiskit circuits, and its own program objects to
-QIR 2.1. The bundled DDSIM device executes the result through QDMI, with the
-same job and result API used for OpenQASM.
+QIR. The bundled DDSIM device executes the result through QDMI, with the same
+job and result API used for OpenQASM.
 
 This notebook follows that complete path: compile a program, inspect its profile
 and capability flags, choose LLVM text or bitcode, and retrieve counts or QIR
@@ -26,6 +26,20 @@ examples use the bundled simulator and need no hardware account.
 
 For experiments that compare static circuits with measurement feedback, continue
 with the {doc}`QIR tutorial <../tutorials/qir_execution>`.
+
+## Runtime failures
+
+The
+[QIR allocation contract](https://github.com/qir-alliance/qir-spec/blob/main/specification/Memory_Management.md)
+provides an optional error-output pointer. This runtime uses it to report
+invalid requests and qubit or result limits, releasing partial allocations.
+Without that pointer, these failures emit a diagnostic and terminate execution.
+Host-memory exhaustion and other unhandled runtime failures also terminate, even
+with an error-output pointer; C++ and Python exceptions cannot catch them. Setup
+and compilation errors remain recoverable.
+
+Use [DDSIM through QDMI](../qdmi/ddsim_device.md#multi-program-execution) to
+contain execution failures in a worker process and keep the host usable.
 
 ## Compile a Base Profile program
 
@@ -56,13 +70,24 @@ Its {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir` method consumes it and
 returns LLVM assembly. Here, `copy=True` keeps the program for bitcode export
 below. The entry-point attributes identify `base_profile`, the output schema,
 and the required static qubit and result capacities. The module flags identify
-QIR 2.1 and whether dynamic resource management is used.
+the minimum required QIR version and whether dynamic resource management is
+used. By default, Base Profile programs use QIR 2.0. Adaptive programs use 2.1
+when they require dynamic qubit or result allocation, or runtime arrays; other
+Adaptive programs use 2.0. Output labels and ordinary output-array records do
+not require 2.1. A target payload can constrain accepted versions, for example
+`>=2,<3`. Compilation selects the lowest known version that satisfies the
+program and target; a range of `>=2.1,<3` therefore emits 2.1 even for a static
+program. A bare numeric target version remains a same-major upper bound.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions
-consume that program unless `copy=True` is set. The `compile_program` function
-also consumes typed MLIR programs unless `copy=True` is set, and runs the
-coordinated optimization pipeline.
+consume that program unless `copy=True` is set. They lower prepared QC without
+inlining calls, expanding modifiers, or optimizing the resulting QIR. Calls with
+quantum-register arguments must already be inlined. Base conversion requires
+straight-line quantum operations; Adaptive conversion retains loops. Use
+`compile_program` for coordinated optimization, inlining, modifier expansion,
+and bounded Base loop unrolling. It also consumes typed MLIR programs unless
+`copy=True` is set.
 
 ## Execute LLVM text or bitcode
 
@@ -285,16 +310,20 @@ Authored QIR can return explicit exit codes and use scalar output-recording
 APIs. These runtime features do not extend the supported QC-to-QIR entry
 results.
 
-MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT
+MQT Core implements the QIR Base and Adaptive Profile runtime APIs. The JIT
 accepts one exact LLVM type for each runtime declaration, so unsupported or
-outdated overloads fail before execution.
+outdated overloads fail before execution. Present version flags must be
+nonnegative integers with major version 2. Future minor versions are accepted
+assuming existing constructs and runtime ABIs remain compatible; unsupported
+runtime calls still fail. Authored programs without version flags retain their
+existing behavior.
 
 Classical array copies require ranked memrefs. Fixed contiguous copies use
 [LLVM array loads and stores](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#supported-llvm-array-operations);
 other layouts use loops and require the corresponding backwards-branching
 capability. Math operations such as `sqrt` lower to LLVM intrinsics. DDSIM
 executes these intrinsics, but they are outside the
-[floating-point instructions required by QIR 2.1](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/profiles/Adaptive_Profile.md#classical-instructions).
+[floating-point instructions required by QIR](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/profiles/Adaptive_Profile.md#classical-instructions).
 Check the backend's extensions when using these operations.
 
 MQT Core provides dedicated QIS functions for variants with one or two control
@@ -338,6 +367,16 @@ binary or non-text formats. The `num_shots` argument is optional for
 device-defined formats that encode their repetition count in the program
 payload.
 
+Direct host functions called by the JIT must obey their declared ABI and must
+not throw. Host function pointers cannot be sent to a DDSIM worker because they
+belong to the host process. `JitSession::create` returns an owned session or an
+`llvm::Error`. `run` and the sampling methods return `llvm::Expected<int64_t>`:
+a completed program returns its exit code, including nonzero codes, while
+recoverable validation failures return owned errors. Unhandled QIR runtime
+failures still terminate; see [runtime failures](#runtime-failures). Textual
+output uses a borrowed `llvm::raw_ostream` that must outlive the session;
+passing null disables it.
+
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
@@ -349,12 +388,6 @@ classical work at the cost of additional compilation time. State extraction and
 programs eligible for terminal sampling skip this optimization. Exported QIR
 uses profile-preserving cleanup, including promotion of local classical storage
 to SSA values; host optimization applies only to the JIT's private module.
-
-QIR runtime functions do not propagate C++ exceptions. Allocations report
-invalid resource requests and runtime limits through the QIR error-output
-pointer when one is supplied. Other failures, including host-memory exhaustion,
-stop the isolated DDSIM worker and fail its assigned program; concurrent and
-later jobs remain usable.
 
 ### Sampling and state extraction
 

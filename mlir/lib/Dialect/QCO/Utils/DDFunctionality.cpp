@@ -57,6 +57,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Threading.h"
 
@@ -78,6 +79,7 @@
 #include <mutex>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -408,9 +410,8 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
          << "floating-point SSA value has no concrete QCO DD binding";
 }
 
-using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
-                                             ArrayRef<dd::Qubit>,
-                                             const dd::Controls&);
+using StandardGateFactory = llvm::Expected<dd::MatrixDD> (*)(
+    dd::Package&, ArrayRef<double>, ArrayRef<dd::Qubit>, const dd::Controls&);
 
 namespace {
 struct DecodedStandardGate {
@@ -420,10 +421,10 @@ struct DecodedStandardGate {
 } // namespace
 
 template <typename GateOp, size_t NumParams>
-static auto buildStandardGateDD(dd::Package& package,
-                                ArrayRef<double> parameters,
-                                ArrayRef<dd::Qubit> targets,
-                                const dd::Controls& controls) -> dd::MatrixDD {
+static auto
+buildStandardGateDD(dd::Package& package, ArrayRef<double> parameters,
+                    ArrayRef<dd::Qubit> targets, const dd::Controls& controls)
+    -> llvm::Expected<dd::MatrixDD> {
   assert(parameters.size() == NumParams);
   std::array<double, NumParams> values{};
   std::copy_n(parameters.begin(), NumParams, values.begin());
@@ -512,7 +513,11 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  state = walk.dd->applyOperation(makeGateDD(*walk.dd, local, wires), state);
+  auto matrix = makeGateDD(*walk.dd, local, wires);
+  if (!matrix) {
+    return op->emitError(llvm::toString(matrix.takeError()));
+  }
+  state = walk.dd->applyOperation(*matrix, state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -543,7 +548,11 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
       if (found != variants.end()) {
         matrix = found->matrix;
       } else {
-        matrix = gate.build(*walk.dd, gate.parameters, *targets, controls);
+        auto result = gate.build(*walk.dd, gate.parameters, *targets, controls);
+        if (!result) {
+          return unitary.emitError(llvm::toString(result.takeError()));
+        }
+        matrix = *result;
         // Bound gate-cache storage to eight matrices per operation.
         if (variants.size() < 8) {
           walk.dd->incRef(matrix);
@@ -559,10 +568,18 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
         }
       }
     } else {
-      matrix = gate.build(*walk.dd, gate.parameters, *targets, controls);
+      auto result = gate.build(*walk.dd, gate.parameters, *targets, controls);
+      if (!result) {
+        return unitary.emitError(llvm::toString(result.takeError()));
+      }
+      matrix = *result;
     }
   } else {
-    matrix = gate.build(*walk.dd, gate.parameters, *targets, controls);
+    auto result = gate.build(*walk.dd, gate.parameters, *targets, controls);
+    if (!result) {
+      return unitary.emitError(llvm::toString(result.takeError()));
+    }
+    matrix = *result;
   }
   state = walk.dd->applyOperation(matrix, state);
   return walk.qubits->remapUnitary(unitary);
@@ -1668,7 +1685,9 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   }
   const size_t required = walk.qubits->numQubits + count;
   if (walk.dd->qubits() < required) {
-    walk.dd->resize(required);
+    if (auto error = walk.dd->resize(required)) {
+      return op->emitError(llvm::toString(std::move(error)));
+    }
   }
 
   const size_t first = walk.qubits->numQubits;
@@ -1685,9 +1704,12 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
     walk.dd->incRef(extended);
   } else {
     auto zeros = dd::makeZeroState(count, *walk.dd, first);
-    extended = walk.dd->kronecker(zeros, state, first, /*incIdx=*/false);
+    if (!zeros) {
+      return op->emitError(llvm::toString(zeros.takeError()));
+    }
+    extended = walk.dd->kronecker(*zeros, state, first, /*incIdx=*/false);
     walk.dd->incRef(extended);
-    walk.dd->decRef(zeros);
+    walk.dd->decRef(*zeros);
   }
   walk.dd->decRef(state);
   state = extended;
@@ -1924,9 +1946,12 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             walk.qubits->bind(measureOp.getQubitOut(), *q);
             return success();
           }
-          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          auto bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          if (!bit) {
+            return op.emitError(llvm::toString(bit.takeError()));
+          }
           walk.classical->values[measureOp.getResult()] =
-              BoolAttr::get(measureOp.getContext(), bit == '1');
+              BoolAttr::get(measureOp.getContext(), *bit == '1');
           walk.qubits->bind(measureOp.getQubitOut(), *q);
           return success();
         }
@@ -1945,10 +1970,14 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return resetOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
-          if (bit == '1') {
-            state = walk.dd->applyOperation(
-                makeGateDD(*walk.dd, XOp::getUnitaryMatrix(), {*q}), state);
+          auto bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          if (!bit) {
+            return op.emitError(llvm::toString(bit.takeError()));
+          }
+          if (*bit == '1') {
+            const auto matrix = llvm::cantFail(
+                makeGateDD(*walk.dd, XOp::getUnitaryMatrix(), {*q}));
+            state = walk.dd->applyOperation(matrix, state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
           return success();
@@ -2248,7 +2277,9 @@ prepare(func::FuncOp func, dd::Package& dd,
     }
   }
   if (dd.qubits() < qubits.numQubits) {
-    dd.resize(qubits.numQubits);
+    if (auto error = dd.resize(qubits.numQubits)) {
+      return func.emitError(llvm::toString(std::move(error)));
+    }
   }
   return prepared;
 }
@@ -2450,16 +2481,42 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
   }
   DenseSet<dd::Qubit> measuredWires;
   Operation* deferredMeasurementUse = nullptr;
-  auto state = simulateImpl(
-      func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd, *prepared,
-      nullptr, options, &plan->deferredMeasurements, nullptr, &measuredWires,
-      &deferredMeasurementUse, /*validateQuantumReturn=*/false);
+  auto initial = dd::makeZeroState(prepared->qubits.numQubits, dd);
+  if (!initial) {
+    return func.emitError(llvm::toString(initial.takeError()));
+  }
+  auto state =
+      simulateImpl(func, *initial, dd, *prepared, nullptr, options,
+                   &plan->deferredMeasurements, nullptr, &measuredWires,
+                   &deferredMeasurementUse, /*validateQuantumReturn=*/false);
   if (failed(state) && deferredMeasurementUse != nullptr) {
     return deferredMeasurementUse->emitError()
            << "statevector extraction cannot use a measurement result or "
               "measured qubit before program end";
   }
   return state;
+}
+
+FailureOr<std::vector<dd::fp>>
+expectationValues(func::FuncOp func,
+                  std::span<const dd::PauliObservable> observables,
+                  const DDArgumentBindings& argumentBindings,
+                  const DDExecutionOptions& options) {
+  auto owner = dd::Package::create(0);
+  if (!owner) {
+    return func.emitError(llvm::toString(owner.takeError()));
+  }
+  auto& package = **owner;
+  auto state = simulateStatevector(func, package, argumentBindings, options);
+  if (failed(state)) {
+    return failure();
+  }
+  const auto guard = llvm::make_scope_exit([&] { package.decRef(*state); });
+  auto values = package.expectationValues(*state, observables);
+  if (!values) {
+    return func.emitError(llvm::toString(values.takeError()));
+  }
+  return std::move(*values);
 }
 
 static LogicalResult visitOutputBits(
@@ -2528,9 +2585,9 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
 }
 
 static FailureOr<std::map<std::string, size_t>>
-sampleTerminalCounts(const dd::VectorDD& state, const SamplingPlan& plan,
-                     const ClassicalEnv& classical, size_t shots,
-                     std::mt19937_64& rng) {
+sampleTerminalCounts(func::FuncOp func, const dd::VectorDD& state,
+                     const SamplingPlan& plan, const ClassicalEnv& classical,
+                     size_t shots, std::mt19937_64& rng) {
   SmallVector<dd::SamplingOutput> outputs;
   if (plan.outputs.empty()) {
     const size_t width = state.isTerminal() ? 0 : size_t{state.p->v} + 1;
@@ -2548,7 +2605,11 @@ sampleTerminalCounts(const dd::VectorDD& state, const SamplingPlan& plan,
                                     }))) {
     return failure();
   }
-  return dd::Package::sampleCounts(state, outputs, shots, rng);
+  auto counts = dd::Package::sampleCounts(state, outputs, shots, rng);
+  if (!counts) {
+    return func.emitError(llvm::toString(counts.takeError()));
+  }
+  return std::move(*counts);
 }
 
 static bool canBranchStructured(func::FuncOp func) {
@@ -2597,8 +2658,12 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     SmallVector<RegionFrame, 2> frames;
   };
   std::map<std::string, size_t> counts;
+  auto initial = dd::makeZeroState(prepared.qubits.numQubits, dd);
+  if (!initial) {
+    return func.emitError(llvm::toString(initial.takeError()));
+  }
   Group first{
-      .state = dd::makeZeroState(prepared.qubits.numQubits, dd),
+      .state = *initial,
       .qubits = prepared.qubits,
       .tensors = prepared.tensors.clone(),
       .classical = prepared.classical.clone(),
@@ -2795,7 +2860,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       const auto oneCount = group.count - zeroCount;
       auto advance = std::next(current);
       const auto collapse = [&](Group& branch, bool measuredZero,
-                                dd::fp probability) {
+                                dd::fp probability) -> LogicalResult {
         dd.performCollapsingMeasurement(branch.state, *q, probability,
                                         measuredZero);
         if (measure) {
@@ -2804,20 +2869,26 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
           branch.qubits.bind(measure.getQubitOut(), *q);
         } else {
           if (!measuredZero) {
-            branch.state = dd.applyOperation(
-                makeGateDD(dd, XOp::getUnitaryMatrix(), {*q}), branch.state);
+            const auto matrix =
+                llvm::cantFail(makeGateDD(dd, XOp::getUnitaryMatrix(), {*q}));
+            branch.state = dd.applyOperation(matrix, branch.state);
           }
           branch.qubits.bind(reset.getQubitOut(), *q);
         }
         branch.remainingWhileIterations = walk.remainingWhileIterations;
+        return success();
       };
       if (zeroCount == 0) {
-        collapse(group, false, pone);
+        if (failed(collapse(group, false, pone))) {
+          return failure();
+        }
         current = advance;
         continue;
       }
       if (oneCount == 0) {
-        collapse(group, true, pzero);
+        if (failed(collapse(group, true, pzero))) {
+          return failure();
+        }
         current = advance;
         continue;
       }
@@ -2832,8 +2903,11 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       };
       dd.incRef(other.state);
       group.count = zeroCount;
-      collapse(group, true, pzero);
-      collapse(other, false, pone);
+      if (failed(collapse(group, true, pzero)) ||
+          failed(collapse(other, false, pone))) {
+        dd.decRef(other.state);
+        return failure();
+      }
       // Equal nodes represent the same normalized state up to root phase.
       if (reset && group.state.p == other.state.p) {
         group.count += other.count;
@@ -2855,8 +2929,8 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       return failure();
     }
     if (shotResults == nullptr && collectCounts) {
-      auto sampled = sampleTerminalCounts(group.state, plan, group.classical,
-                                          group.count, rng);
+      auto sampled = sampleTerminalCounts(func, group.state, plan,
+                                          group.classical, group.count, rng);
       if (failed(sampled)) {
         return failure();
       }
@@ -2881,11 +2955,14 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     }
     for (size_t i = 0; i < group.count; ++i) {
       auto outcome = dd.measureAll(group.state, false, rng);
+      if (!outcome) {
+        return func.emitError(llvm::toString(outcome.takeError()));
+      }
       if (collectCounts) {
-        ++counts[outcome];
+        ++counts[*outcome];
       }
       if (shotResults != nullptr) {
-        shotResults->push_back(std::move(outcome));
+        shotResults->push_back(std::move(*outcome));
       }
     }
     return success();
@@ -2903,7 +2980,11 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
            std::optional<dd::VectorDD>* retainedState, const SamplingPlan& plan,
            const DDExecutionOptions& options, bool collectCounts,
            bool forceDynamic = false, bool* adaptiveFallback = nullptr) {
-  const auto in = dd::makeZeroState(prepared.qubits.numQubits, dd);
+  auto initial = dd::makeZeroState(prepared.qubits.numQubits, dd);
+  if (!initial) {
+    return func.emitError(llvm::toString(initial.takeError()));
+  }
+  const auto in = *initial;
   const auto inputGuard = llvm::scope_exit([&] { dd.decRef(in); });
   GateCache gateCache(dd);
   std::map<std::string, size_t> counts;
@@ -2937,14 +3018,18 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
       const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
       if (shotResults == nullptr && collectCounts) {
         auto sampled =
-            sampleTerminalCounts(*state, plan, classical, shots, rng);
+            sampleTerminalCounts(func, *state, plan, classical, shots, rng);
         if (failed(sampled)) {
           return failure();
         }
         counts = std::move(*sampled);
       } else {
         for (size_t i = 0; i < shots; ++i) {
-          if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+          auto outcome = dd.measureAll(*state, false, rng);
+          if (!outcome) {
+            return func.emitError(llvm::toString(outcome.takeError()));
+          }
+          if (failed(record(classical, std::move(*outcome)))) {
             return failure();
           }
         }
@@ -2974,8 +3059,14 @@ sampleImpl(func::FuncOp func, dd::Package& dd, size_t shots,
       return failure();
     }
     const auto guard = llvm::scope_exit([&] { dd.decRef(*state); });
-    std::string basis = plan.outputs.empty() ? dd.measureAll(*state, false, rng)
-                                             : std::string{};
+    std::string basis;
+    if (plan.outputs.empty()) {
+      auto outcome = dd.measureAll(*state, false, rng);
+      if (!outcome) {
+        return func.emitError(llvm::toString(outcome.takeError()));
+      }
+      basis = std::move(*outcome);
+    }
     if (failed(record(classical, std::move(basis)))) {
       return failure();
     }
@@ -3000,7 +3091,11 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   size_t grant = reserveSamplingWorkers(1, shots);
   const auto release =
       llvm::make_scope_exit([&] { releaseSamplingWorkers(grant); });
-  auto dd = std::make_unique<dd::Package>(0);
+  auto packageResult = dd::Package::create(0);
+  if (!packageResult) {
+    return func.emitError(llvm::toString(packageResult.takeError()));
+  }
+  auto dd = std::move(*packageResult);
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
   if (failed(prepared)) {
@@ -3070,7 +3165,11 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
       .shots = {},
   });
   for (size_t i = 1; i < workers; ++i) {
-    auto package = std::make_unique<dd::Package>(0);
+    auto created = dd::Package::create(0);
+    if (!created) {
+      return func.emitError(llvm::toString(created.takeError()));
+    }
+    auto package = std::move(*created);
     auto next = prepare(func, *package, argumentBindings);
     if (failed(next)) {
       return failure();

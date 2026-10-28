@@ -45,7 +45,7 @@ using namespace mlir::qco;
 
 namespace {
 
-/// Expose adjacent controlled inverse or rotation pairs to gate canonicalizers.
+/// Expose adjacent controlled inverse or rotation pairs to gate simplification.
 struct SimplifyAdjacentControls final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -354,10 +354,10 @@ LogicalResult CtrlOp::verifyRegions() {
   return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
-void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<SimplifyAdjacentControls, MergeNestedCtrl, ReduceCtrl,
-              EraseEmptyCtrl, DropUnusedTargets>(context);
+void CtrlOp::getLoweringPatterns(RewritePatternSet& results,
+                                 MLIRContext* context) {
+  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
@@ -390,4 +390,15 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   }
 
   return std::nullopt;
+}
+
+void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<EraseEmptyCtrl, DropUnusedTargets>(context);
+}
+
+void CtrlOp::getOptimizationPatterns(RewritePatternSet& results,
+                                     MLIRContext* context) {
+  getLoweringPatterns(results, context);
+  results.add<SimplifyAdjacentControls>(context);
 }

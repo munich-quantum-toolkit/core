@@ -13,7 +13,18 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 
+namespace mlir {
+class ModuleOp;
+class RewriterBase;
+} // namespace mlir
+
 namespace mlir::mqt {
+
+/// Discard entry-point QC and QCO phases outside quantum modifier bodies.
+///
+/// Preserves probabilities, not exact amplitudes. Helper functions are
+/// unchanged.
+void dropGlobalPhases(ModuleOp moduleOp, RewriterBase& rewriter);
 
 /// Propagate scoped QCO branch conditions.
 void simplifyClassicalControl(Operation* operation);

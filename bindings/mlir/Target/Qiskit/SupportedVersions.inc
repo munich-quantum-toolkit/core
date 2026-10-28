@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
-// Qiskit 2: minor, minimum patch, vendored release, supported range
-MQT_QISKIT_VERSION(5, 0, 2.5.0, ">=2.5.0,<2.6.0")
-MQT_QISKIT_VERSION(6, 0, 2.6.0, ">=2.6.0,<2.7.0")
+// Qiskit 2: minimum minor/patch, vendored release, eligible range.
+// Ranges overlap; the newest eligible adapter wins.
+MQT_QISKIT_VERSION(5, 0, 2.5.0, ">=2.5.0,<3.0.0")
+MQT_QISKIT_VERSION(6, 0, 2.6.0, ">=2.6.0,<3.0.0")

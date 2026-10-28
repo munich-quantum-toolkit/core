@@ -18,6 +18,7 @@
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "QiskitTranslation.h"
+#include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
@@ -1056,13 +1057,34 @@ public:
     return normalizeKind(qk_circuit_instruction_kind(circuit_, index));
   }
 
-  [[nodiscard]] Instruction instruction(const size_t index) const override {
+  [[nodiscard]] Instruction
+  instruction(const size_t index, const bool opaque = false) const override {
     const auto kind = instructionKind(index);
     if (kind == OperationKind::Delay) {
       return {.kind = kind, .name = "delay"};
     }
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
+    }
+    if (opaque && kind == OperationKind::Unknown) {
+      const auto operation = pythonOperation(index);
+      if (nb::isinstance(operation,
+                         nb::module_::import_("qiskit.circuit").attr("Gate"))) {
+        if (nb::cast<size_t>(operation.attr("num_qubits")) == 0U) {
+          throw std::runtime_error("Opaque gates must act on device qubits; "
+                                   "use circuit.global_phase for global phase");
+        }
+        Instruction result;
+        result.kind = OperationKind::Gate;
+        result.name = pythonStringAttribute(operation, "name",
+                                            "Qiskit gate has an invalid name");
+        result.qubits = pythonInstructionBits(index, "qubits");
+        result.clbits = pythonInstructionBits(index, "clbits");
+        for (const nb::handle parameter : nb::iter(operation.attr("params"))) {
+          result.parameters.push_back(normalizePythonParameter(parameter));
+        }
+        return result;
+      }
     }
     Instruction result;
     result.kind = kind;
@@ -2998,13 +3020,6 @@ public:
     return versionGate(gate) != nullptr;
   }
 
-  template <class T> static T takeTargetResult(llvm::Expected<T> result) {
-    if (!result) {
-      throw nb::value_error(llvm::toString(result.takeError()).c_str());
-    }
-    return std::move(*result);
-  }
-
   static nb::object targetObject(nb::handle source) {
     auto target = nb::borrow<nb::object>(source);
     if (nb::isinstance(
@@ -3162,10 +3177,10 @@ public:
         std::ranges::sort(sites);
         for (auto& tuple : sites) {
           siteTuples.push_back(
-              takeTargetResult(Target::SiteTuple::create(std::move(tuple))));
+              unwrap(Target::SiteTuple::create(std::move(tuple))));
         }
       }
-      auto capability = takeTargetResult(Target::OperationCapability::create(
+      auto capability = unwrap(Target::OperationCapability::create(
           operationName, arity, numParameters, std::move(siteTuples),
           std::nullopt, std::nullopt, std::move(fixedParameters), nativeName,
           std::move(parameterBounds)));
@@ -3175,7 +3190,7 @@ public:
       throw nb::value_error(
           "Qiskit target has no representable native operations");
     }
-    operations.push_back(takeTargetResult(Target::OperationCapability::create(
+    operations.push_back(unwrap(Target::OperationCapability::create(
         "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
     return Target::NativeOperations::fromOperations(operations);
   }
@@ -3205,7 +3220,7 @@ public:
         capabilities.push_back({.id = controlFlowCapability(kind).str()});
       }
     }
-    return takeTargetResult(mlir::PayloadSpecification::create(
+    return unwrap(mlir::PayloadSpecification::create(
         {
             .id = "qiskit",
             .version = std::to_string(QISKIT_VERSION_MAJOR) + "." +
@@ -3255,7 +3270,7 @@ public:
             ? Target::Connectivity::allToAll()
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
-    return takeTargetResult(
+    return unwrap(
         targetName ? Target::create(*targetName, numQubits, connectivity,
                                     nativeOperations)
                    : Target::create(numQubits, connectivity, nativeOperations));
@@ -3349,16 +3364,13 @@ createTranslation() {
     return qk_api_version();
   }();
   const auto major = (VERSION >> 24U) & 0xffU;
-  const auto minor = (VERSION >> 16U) & 0xffU;
   if (major != 2U ||
-      minor != QISKIT_VERSION_MINOR
-#if QISKIT_RELEASE_LEVEL != QISKIT_RELEASE_LEVEL_FINAL
-      // Development snapshots do not promise compatibility across patches.
-      // QISKIT_VERSION_HEX uses signed bitwise operations in Qiskit's header.
+      VERSION !=
+          nb::cast<uint32_t>(nb::module_::import_("qiskit._accelerate.capi")
+                                 .attr("API_VERSION")) ||
+      // Qiskit's version macro uses signed shifts.
       // NOLINTNEXTLINE(bugprone-signed-bitwise)
-      || VERSION != QISKIT_VERSION_HEX
-#endif
-  ) {
+      VERSION < static_cast<uint32_t>(QISKIT_VERSION_HEX)) {
     throw std::runtime_error("Qiskit C API capsule version does not match the "
                              "selected " QISKIT_VERSION " translation");
   }

@@ -20,6 +20,7 @@ namespace dd {
 
 /// Apply global phase to a given DD.
 ///
+/// @pre The input owns a reference in the package.
 /// @param in The input DD, with an owned reference that is replaced in place
 /// @param phase The phase to apply
 /// @param dd The DD package to use

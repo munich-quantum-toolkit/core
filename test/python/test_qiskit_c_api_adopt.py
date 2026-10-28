@@ -233,40 +233,7 @@ def test_translation_registration_preserves_patch_minimum(
 
     _, _, registration = adopt.translation_artifacts(Version("2.6.2"))
 
-    assert registration == 'MQT_QISKIT_VERSION(6, 2, 2.6.2, ">=2.6.2,<2.7.0")'
-
-
-def test_build_preserves_unrelated_cmake_arguments(
-    adopt: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Change only candidate-specific CMake arguments during validation."""
-    environments: list[dict[str, str]] = []
-
-    def record_run(
-        *_command: str,
-        env: dict[str, str] | None = None,
-        timeout: int = adopt.BUILD_TIMEOUT,
-    ) -> None:
-        assert env is not None
-        assert timeout == adopt.BUILD_TIMEOUT
-        environments.append(env)
-
-    monkeypatch.setattr(adopt, "run", record_run)
-    monkeypatch.setenv(
-        "SKBUILD_CMAKE_ARGS",
-        "-DMLIR_DIR=/toolchain;-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=old",
-    )
-
-    adopt.build_and_test("2.6.0", tmp_path / "include", tmp_path / "candidate", candidate=True)
-    candidate_args = environments[-1]["SKBUILD_CMAKE_ARGS"].split(";")
-    assert candidate_args == [
-        "-DMLIR_DIR=/toolchain",
-        f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={tmp_path / 'include'}",
-        "-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=2.6.0",
-    ]
-
-    adopt.build_and_test("2.6.0", tmp_path / "include", tmp_path / "shipping", candidate=False)
-    assert environments[-1]["SKBUILD_CMAKE_ARGS"] == "-DMLIR_DIR=/toolchain"
+    assert registration == 'MQT_QISKIT_VERSION(6, 2, 2.6.2, ">=2.6.2,<3.0.0")'
 
 
 def test_restartable_worktree_rejects_unrelated_changes(
@@ -347,11 +314,20 @@ def test_registered_minor_test_selection(monkeypatch: pytest.MonkeyPatch) -> Non
         path: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
     ) -> str:
         if path.name == "SupportedVersions.inc":
-            return 'MQT_QISKIT_VERSION(6, 0, 2.6.0, ">=2.6.0,<2.7.0")\n'
+            return 'MQT_QISKIT_VERSION(6, 0, 2.6.0, ">=2.6.0,<3.0.0")\n'
         return original_read(path, encoding=encoding, errors=errors, newline=newline)
 
     monkeypatch.setattr(Path, "read_text", read_text)
-    monkeypatch.delenv("MQT_QISKIT_TEST_CANDIDATE_VERSION", raising=False)
     assert supports_qiskit_translation("2.6.0")
     assert not supports_qiskit_translation("2.5.2")
     assert not supports_qiskit_translation("2.6.0rc1")
+    assert supports_qiskit_translation("2.7.0.dev0")
+    assert not supports_qiskit_translation("3.0.0.dev0")
+
+
+def test_shipping_adapter_test_selection() -> None:
+    """Exercise future development releases with the shipping adapters."""
+    assert supports_qiskit_translation("2.6.0rc1")
+    assert supports_qiskit_translation("2.99.0.dev0+downstream")
+    assert not supports_qiskit_translation("2.5.0rc1")
+    assert not supports_qiskit_translation("3.0.0.dev0")
