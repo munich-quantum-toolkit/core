@@ -28,7 +28,7 @@ from qiskit.primitives.containers import DataBin
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.primitives.primitive_job import PrimitiveJob
 
-from mqt.core.mlir import expectation_values
+from mqt.core.mlir import QCProgram, expectation_values
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -51,7 +51,8 @@ def _validate_precision(precision: float) -> None:
 class DDEstimator(BaseEstimatorV2):
     """Evaluate sparse Pauli observables exactly with decision diagrams.
 
-    Each bound circuit prepares one state for all its broadcast observables.
+    Each PUB is imported once. Each parameter binding prepares one
+    state for all its broadcast observables.
     Eligible terminal measurements are deferred; resets and feedback are
     rejected. The result describes the uncollapsed state before readout.
 
@@ -108,17 +109,25 @@ class DDEstimator(BaseEstimatorV2):
 
     @staticmethod
     def _run_pub(pub: EstimatorPub) -> PubResult:
-        bound_circuits = pub.parameter_values.bind_all(pub.circuit)
-        binding_indices = np.arange(bound_circuits.size).reshape(bound_circuits.shape)
+        bindings = pub.parameter_values
+        binding_indices = np.arange(bindings.size).reshape(bindings.shape)
         broadcast_bindings, broadcast_observables = np.broadcast_arrays(binding_indices, pub.observables)
         groups: dict[int, list[int]] = {}
         for output_index, binding_index in enumerate(broadcast_bindings.flat):
             groups.setdefault(int(binding_index), []).append(output_index)
 
         evs = np.empty(pub.shape, dtype=np.float64)
-        for binding_index, output_indices in groups.items():
-            observables = [broadcast_observables.flat[index] for index in output_indices]
-            evs.flat[output_indices] = expectation_values(bound_circuits.flat[binding_index], observables)
+        if groups:
+            parameters = tuple(pub.circuit.parameters)
+            names = tuple(parameter.name for parameter in parameters)
+            values = bindings.as_array(parameters).reshape(bindings.size, len(parameters))
+            program = QCProgram.from_qiskit(pub.circuit).to_qco()
+            for binding_index, output_indices in groups.items():
+                bound = program
+                if parameters:
+                    bound = program.bind_parameters(dict(zip(names, values[binding_index], strict=True)), copy=True)
+                observables = [broadcast_observables.flat[index] for index in output_indices]
+                evs.flat[output_indices] = expectation_values(bound, observables)
 
         return PubResult(
             DataBin(evs=evs, stds=np.zeros(pub.shape, dtype=np.float64), shape=pub.shape),

@@ -11,7 +11,7 @@
 import enum
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Any, Literal, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
+from typing import Annotated, Any, Literal, Self, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
@@ -978,8 +978,12 @@ class QCProgram(Program):
             | Sequence[SupportsFloat]
             | np.ndarray[tuple[int], np.dtype[np.floating[Any] | np.integer[Any]]],
         ],
-    ) -> None:
-        """Bind named scalar and array parameters in place.
+        *,
+        copy: bool = False,
+    ) -> Self:
+        """Bind named scalar and array parameters and return the bound program.
+
+        Binding modifies this program unless ``copy=True`` requests an independent copy.
 
         Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
         Supply arrays as sequences or NumPy arrays with the expected length.
@@ -989,7 +993,7 @@ class QCProgram(Program):
         without changing the program.
 
         Binding folds expressions using the bound values. Folding failures may
-        leave the program modified. Call ``copy()`` first to preserve the input.
+        leave the program modified. Use ``copy=True`` to preserve the input.
         """
 
 class QCOProgram(Program):
@@ -1150,8 +1154,12 @@ class QCOProgram(Program):
             | Sequence[SupportsFloat]
             | np.ndarray[tuple[int], np.dtype[np.floating[Any] | np.integer[Any]]],
         ],
-    ) -> None:
-        """Bind named scalar and array parameters in place.
+        *,
+        copy: bool = False,
+    ) -> Self:
+        """Bind named scalar and array parameters and return the bound program.
+
+        Binding modifies this program unless ``copy=True`` requests an independent copy.
 
         Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
         Supply arrays as sequences or NumPy arrays with the expected length.
@@ -1161,7 +1169,7 @@ class QCOProgram(Program):
         without changing the program.
 
         Binding folds expressions using the bound values. Folding failures may
-        leave the program modified. Call ``copy()`` first to preserve the input.
+        leave the program modified. Use ``copy=True`` to preserve the input.
         """
 
     def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:

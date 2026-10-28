@@ -148,7 +148,7 @@ For gate dependencies, MLIR provides `getForwardSlice` and `getBackwardSlice` in
 
 QC and QCO programs expose named f64 scalar and fixed-length, one-dimensional
 array inputs through `parameters`. Use `bind_parameters` to bind all or some
-inputs in place:
+inputs in place, or use `copy=True` to return an independent bound program:
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
@@ -158,8 +158,7 @@ circuit = QuantumCircuit(1)
 circuit.ry(Parameter("theta"), 0)
 parameterized = QCProgram.from_qiskit(circuit)
 assert parameterized.parameters == ["theta"]
-bound = parameterized.copy()
-bound.bind_parameters({"theta": 0.5})
+bound = parameterized.bind_parameters({"theta": 0.5}, copy=True)
 assert bound.parameters == []
 assert parameterized.parameters == ["theta"]
 ```

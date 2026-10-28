@@ -53,7 +53,7 @@ def test_exact_estimator_dense_oracle_and_phase() -> None:
 
 
 def test_exact_estimator_broadcast_parameter_order_and_preparation_reuse(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each binding is imported once across all observable broadcast axes."""
+    """One state per binding preserves broadcast order."""
     z, a = Parameter("z"), Parameter("a")
     circuit = QuantumCircuit(2)
     circuit.ry(z, 0)
@@ -73,13 +73,16 @@ def test_exact_estimator_broadcast_parameter_order_and_preparation_reuse(monkeyp
 
 
 def test_exact_estimator_parameter_vectors_and_keyed_expressions() -> None:
-    """Qiskit supplies vector parameter identity and expression binding."""
+    """Keyed vector parameters bind expressions in circuit parameter order."""
     theta = ParameterVector("theta", 2)
     circuit = QuantumCircuit(1)
-    circuit.ry(theta[0] + 2 * theta[1], 0)
+    circuit.global_phase = theta[1]
+    circuit.ry(theta[0].sin() + 2 * theta[1] ** 2, 0)
     values = {(theta[1], theta[0]): np.array([[0.2, 0.1], [0.4, -0.3]])}
     result = DDEstimator().run([(circuit, "Z", values)]).result()[0]
-    np.testing.assert_allclose(result.data["evs"], np.cos([0.5, 0.5]), atol=1e-12)
+    np.testing.assert_allclose(
+        result.data["evs"], np.cos([np.sin(0.1) + 2 * 0.2**2, np.sin(-0.3) + 2 * 0.4**2]), atol=1e-12
+    )
 
 
 def test_exact_estimator_precision_precedence_and_metadata() -> None:
@@ -148,4 +151,14 @@ def test_exact_estimator_compact_64_qubit_batch() -> None:
     for qubit in range(1, 64):
         circuit.cx(0, qubit)
     result = DDEstimator().run([(circuit, ["X" * 64, "Z" + "I" * 62 + "Z"])]).result()[0]
+    np.testing.assert_allclose(result.data["evs"], [1, 1], atol=1e-12)
+
+
+def test_exact_estimator_binding_preserves_qubit_width() -> None:
+    """Canceling bound rotations retain the observable's qubit space."""
+    angle = Parameter("angle")
+    circuit = QuantumCircuit(1)
+    circuit.rx(angle, 0)
+    circuit.rx(-angle, 0)
+    result = DDEstimator().run([(circuit, "Z", {angle: [0.0, 0.3]})]).result()[0]
     np.testing.assert_allclose(result.data["evs"], [1, 1], atol=1e-12)

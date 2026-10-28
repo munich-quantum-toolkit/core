@@ -263,8 +263,10 @@ static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
           "order.")
       .def(
           "bind_parameters",
-          [](T& program, const nb::typed<nb::mapping, nb::str,
-                                         mlir::ParameterValue>& values) {
+          [](T& program,
+             const nb::typed<nb::mapping, nb::str, mlir::ParameterValue>&
+                 values,
+             bool copy) -> nb::typed<nb::object, T> {
             requireValid(program);
             nb::dict snapshot;
             try {
@@ -292,12 +294,18 @@ static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
               }
               bindings.emplace(std::move(name), std::move(parameter));
             }
-            withDiagnostics(program.module().getContext(),
+            auto result = copy ? nb::cast(program.copy())
+                               : nb::cast(program, nb::rv_policy::reference);
+            auto& bound = nb::cast<T&>(result);
+            withDiagnostics(bound.module().getContext(),
                             "cannot bind parameters",
-                            [&] { return program.bindParameters(bindings); });
+                            [&] { return bound.bindParameters(bindings); });
+            return result;
           },
-          "values"_a,
-          R"pb(Bind named scalar and array parameters in place.
+          "values"_a, nb::kw_only(), "copy"_a = false,
+          R"pb(Bind named scalar and array parameters and return the bound program.
+
+Binding modifies this program unless ``copy=True`` requests an independent copy.
 
 Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
 Supply arrays as sequences or NumPy arrays with the expected length.
@@ -307,7 +315,7 @@ non-finite values, and references to the entry point raise ValueError
 without changing the program.
 
 Binding folds expressions using the bound values. Folding failures may
-leave the program modified. Call ``copy()`` first to preserve the input.)pb");
+leave the program modified. Use ``copy=True`` to preserve the input.)pb");
 }
 
 template <class T>
