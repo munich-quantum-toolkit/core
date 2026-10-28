@@ -12,6 +12,7 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
 #include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
@@ -963,6 +964,76 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   EXPECT_EQ(llvm::cantFail(sourceJob.getCounts()).at("0"), 4);
 }
 
+TEST(CompilerQDMIAdapterTest, NativeOpenQASMDeclaresStandardGates) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("rx", 1, 1)),
+      })));
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; rx(0.3) $0;"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(program),
+      mlir::TargetEnvironment(
+          target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                      QDMI_PROGRAM_FORMAT_QASM3))));
+  MQT_ASSERT_SUCCESS(compiled);
+  EXPECT_TRUE(mlir::openqasm::frontend::analyzeOpenQASM(
+      compiled->payload(), mlir::openqasm::frontend::GatePolicy::Strict));
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsNativeOpenQASMStandardGateConflicts) {
+  struct Case {
+    const char* canonical;
+    size_t arity;
+    const char* declaration;
+    const char* call;
+  };
+  for (const auto& test : {
+           Case{
+               .canonical = "y",
+               .arity = 1,
+               .declaration = "",
+               .call = "qc.y %q0 : !qc.qubit",
+           },
+           Case{
+               .canonical = "y",
+               .arity = 1,
+               .declaration = "func.func private @y(!qc.qubit)",
+               .call = "func.call @y(%q0) : (!qc.qubit) -> ()",
+           },
+           Case{
+               .canonical = "x",
+               .arity = 2,
+               .declaration = "func.func private @X(!qc.qubit, !qc.qubit)",
+               .call = "func.call @X(%q0, %q1) : (!qc.qubit, !qc.qubit) -> ()",
+           },
+       }) {
+    SCOPED_TRACE(test.call);
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        2, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(CompilerTarget::OperationCapability::create(
+                "x", test.arity, 0, {}, std::nullopt, std::nullopt, {},
+                test.canonical)),
+        })));
+    auto program = llvm::cantFail(mlir::QCProgram::fromMLIRString(
+        llvm::formatv("module {{ {0} func.func @main() attributes "
+                      "{{mqt.entry_point} {{ %q0 = qc.static 0 : !qc.qubit "
+                      "%q1 = qc.static 1 : !qc.qubit {1} return } }",
+                      test.declaration, test.call)
+            .str()));
+    auto compiled = mlir::CompiledProgram::serialize(
+        std::move(program),
+        mlir::TargetEnvironment(
+            target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                        QDMI_PROGRAM_FORMAT_QASM3))));
+    EXPECT_FALSE(static_cast<bool>(compiled));
+    llvm::consumeError(compiled.takeError());
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
   for (const auto& [single, entangler] : {
            std::pair{"u", "cnot"},
@@ -1007,7 +1078,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         EXPECT_NE(payload.find(std::string(entangler) + " $"),
                   std::string::npos);
         EXPECT_EQ(payload.find("gate "), std::string::npos);
-        EXPECT_EQ(payload.find("include "), std::string::npos);
+        EXPECT_NE(payload.find("include \"stdgates.inc\";"), std::string::npos);
         EXPECT_EQ(payload.find("gphase"), std::string::npos);
       } else {
         EXPECT_NE(

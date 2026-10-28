@@ -278,10 +278,8 @@ public:
       sourceStream << '.' << requiredMinorVersion;
     }
     sourceStream << ";\n";
-    if (version2_ || !nativeTarget_) {
-      sourceStream << (version2_ ? "include \"qelib1.inc\";\n"
-                                 : "include \"stdgates.inc\";\n");
-    }
+    sourceStream << (version2_ ? "include \"qelib1.inc\";\n"
+                               : "include \"stdgates.inc\";\n");
     sourceStream << '\n';
     if (version2_) {
       emitOpaqueDeclarations(sourceStream);
@@ -403,11 +401,22 @@ private:
   isIncludedGate(const openqasm::frontend::GateCatalogEntry& gate) const {
     using openqasm::frontend::GateAvailability;
     return gate.availability == GateAvailability::Language ||
-           ((version2_ || !nativeTarget_) &&
-            (gate.availability == GateAvailability::StandardLibraryAndQELib1 ||
-             gate.availability == (version2_
-                                       ? GateAvailability::QELib1
-                                       : GateAvailability::StandardLibrary)));
+           gate.availability == GateAvailability::StandardLibraryAndQELib1 ||
+           gate.availability == (version2_ ? GateAvailability::QELib1
+                                           : GateAvailability::StandardLibrary);
+  }
+
+  [[nodiscard]] bool hasCompatibleNativeMeaning(
+      const CompilerTarget::OperationCapability& operation) const {
+    const auto* declared = openqasm::frontend::lookupGate(operation.name());
+    if (declared == nullptr || !isIncludedGate(*declared)) {
+      return true;
+    }
+    const auto* canonical =
+        openqasm::frontend::lookupGate(operation.canonicalName());
+    return canonical != nullptr && declared->gate == canonical->gate &&
+           declared->controlCount == canonical->controlCount &&
+           declared->inverse == canonical->inverse;
   }
 
   [[nodiscard]] LogicalResult recordOpaqueGate(StringRef name,
@@ -2910,7 +2919,10 @@ private:
         }
       }
       const auto selected = nativeTarget_->findOperation(
-          call.symbol, sites.size(), parameters, sites);
+          call.symbol, sites.size(), parameters, sites, 0,
+          [this](const auto& capability) {
+            return hasCompatibleNativeMeaning(capability);
+          });
       if (selected.capability == nullptr) {
         return fail(operation, "external gate is not native for the target");
       }
@@ -2989,10 +3001,11 @@ private:
       parameters.push_back(mqt::valueToDouble(parameter));
     }
     const auto symbol = body.getBaseSymbol();
-    const auto compatibleSpelling = [symbol](const auto& operation) {
+    const auto compatibleSpelling = [this, symbol](const auto& operation) {
       // Standard U-family spellings differ from QC by a phase.
       return operation.name() != "U" && operation.name() != "u2" &&
              operation.name() != "u3" && operation.name() != "cu3" &&
+             hasCompatibleNativeMeaning(operation) &&
              (openqasm::frontend::isValidIdentifier(operation.name()) ||
               (symbol == "gphase" && operation.name() == "gphase"));
     };
@@ -3317,6 +3330,19 @@ private:
     if (version2_ && !call.modifiers.empty()) {
       return fail(operation,
                   "OpenQASM 2 requires modifiers to be lowered before export");
+    }
+    if (nativeTarget_ && !version2_) {
+      if (const auto* gate = openqasm::frontend::lookupGate(call.symbol);
+          gate != nullptr && isIncludedGate(*gate)) {
+        const auto controls = call.modifiers.empty()
+                                  ? 0
+                                  : cast<CtrlOp>(operation).getNumControls();
+        if (call.parameters.size() != gate->parameterCount ||
+            call.qubits.size() - controls != gate->qubitCount()) {
+          return fail(operation,
+                      "native gate conflicts with its OpenQASM signature");
+        }
+      }
     }
     if (version2_ && nativeTarget_ &&
         failed(recordOpaqueGate(call.symbol, call.parameters.size(),

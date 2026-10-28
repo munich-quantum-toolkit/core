@@ -2372,14 +2372,14 @@ public:
     nb::dict indices;
     for (auto [index, site] : llvm::enumerate(layout.initial)) {
       const auto bit = input[nb::int_(index)];
-      initial[bit] = nb::int_(site);
+      initial[nb::int_(site)] = bit;
       indices[bit] = nb::int_(index);
     }
     nb::object final = nb::none();
     if (layout.routing) {
       nb::dict positions;
       for (auto [site, output] : llvm::enumerate(*layout.routing)) {
-        positions[physical[site]] = nb::int_(output);
+        positions[nb::int_(output)] = physical[site];
       }
       final = transpiler.attr("Layout")(positions);
     }
@@ -3106,8 +3106,10 @@ public:
            nb::cast<size_t>(instruction.attr("num_qubits")) > 0)) {
         if (qargs.is_none()) {
           const auto width = nb::cast<size_t>(target.attr("num_qubits"));
-          for (size_t site = 0; site < width; ++site) {
-            activeSites->insert(static_cast<Target::SiteId>(site));
+          if (activeSites->size() != width) {
+            for (size_t site = 0; site < width; ++site) {
+              activeSites->insert(static_cast<Target::SiteId>(site));
+            }
           }
         } else {
           for (auto tuple : nb::borrow<nb::iterable>(qargs)) {

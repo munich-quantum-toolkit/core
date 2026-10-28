@@ -65,10 +65,12 @@ format; `output` selects an inspection or interchange representation.
 `QC_IMPORT` and raw `QCO` stop before target compilation and cannot take a
 target. Jeff output does not retain hardware placement.
 
-Targeted OpenQASM contains native calls without portable gate definitions. The
-receiver must implement them. The exporter uses the lowest required language
-version and omits explicit `output` designations when every eligible value is an
-output. See {doc}`OpenQASM` and {doc}`../qir/index` for format contracts.
+OpenQASM includes its standard gate library. Targeted output retains native
+calls; nonstandard names require receiver definitions, and standard names must
+keep their standard semantics. Provider packages adapt service syntax. The
+exporter uses the lowest required language version and omits explicit `output`
+designations when every eligible value is an output. See {doc}`OpenQASM` and
+{doc}`../qir/index` for format contracts.
 
 ### Terminal readout and results
 
