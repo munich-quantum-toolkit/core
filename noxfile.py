@@ -195,15 +195,12 @@ def catalyst_dev(session: nox.Session) -> None:
     """
     _run_tests(
         session,
-        extra_command=[
-            "uv",
-            "pip",
-            "install",
-            "--upgrade",
+        uv_run_args=[
+            "--with",
+            os.environ.get("CATALYST_WHEEL", "pennylane-catalyst>=0.16.0.dev0"),
             "--index=https://test.pypi.org/simple",
             # TestPyPI also contains stale releases of dependencies such as xdsl.
             "--index-strategy=unsafe-best-match",
-            os.environ.get("CATALYST_WHEEL", "pennylane-catalyst>=0.16.0.dev0"),
         ],
         pytest_run_args=["test/python/plugins/qdmi_pennylane"],
     )
