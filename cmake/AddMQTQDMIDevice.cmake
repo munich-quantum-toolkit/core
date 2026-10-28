@@ -214,14 +214,23 @@ function(mqt_copy_qdmi_runtime target)
         endforeach()
       endif()
     endif()
-    add_custom_target(
-      ${staging_target}
-      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
-      COMMAND
-        ${CMAKE_COMMAND} -E copy_if_different "$<REMOVE_DUPLICATES:${files}>"
-        "$<TARGET_FILE_DIR:${target}>"
-      COMMAND_EXPAND_LISTS
-      VERBATIM)
+    set(script "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${staging_target}.cmake")
+    string(
+      CONFIGURE
+      [=[
+set(destination [==[$<TARGET_FILE_DIR:@target@>]==])
+set(files [==[$<REMOVE_DUPLICATES:@files@>]==])
+file(MAKE_DIRECTORY "${destination}")
+# Consumers and separate builds can copy into the same directory concurrently.
+file(LOCK "${destination}/.mqt-qdmi-copy.lock" GUARD PROCESS)
+foreach(runtime_file IN LISTS files)
+  cmake_path(GET runtime_file FILENAME filename)
+  file(COPY_FILE "${runtime_file}" "${destination}/${filename}" ONLY_IF_DIFFERENT)
+endforeach()
+]=]
+      script_content @ONLY)
+    file(GENERATE OUTPUT "${script}" CONTENT "${script_content}")
+    add_custom_target(${staging_target} COMMAND ${CMAKE_COMMAND} -P "${script}" VERBATIM)
     if(NOT imported)
       add_dependencies(${staging_target} ${library_target})
     endif()

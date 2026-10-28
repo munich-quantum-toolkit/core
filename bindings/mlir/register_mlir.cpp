@@ -43,6 +43,7 @@
 
 #include "Array.hpp"
 #include "Result.hpp"
+#include "Target/PennyLane/PennyLane.h"
 #include "Target/Qiskit/Qiskit.h"
 
 #include "capnp/common.h"
@@ -2048,6 +2049,18 @@ Args:
     native: Whether the circuit is already compiled for a device. Fixes circuit
         indices to device qubits and preserves gate names and operands without
         importing definitions. The caller validates device support and placements.)pb")
+      .def_static(
+          "from_pennylane", &bindings::pennylane::importCircuit, "tape"_a,
+          nb::kw_only(), "wires"_a = nb::none(),
+          nb::sig("def from_pennylane(tape: pennylane.tape.QuantumScript, *, "
+                  "wires: collections.abc.Sequence[collections.abc.Hashable] | "
+                  "None = None) -> QCProgram"),
+          R"pb(Import a preprocessed PennyLane tape into QC MLIR.
+
+The tape must contain supported native gates after decomposition, measurement
+basis rotations, and mid-circuit measurement deferral. All wires are measured
+and returned in the supplied order (the tape's wire order by default).
+PennyLane's terminal measurements are evaluated from these samples by the device.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def(
@@ -2876,6 +2889,36 @@ Args:
     physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 )pb");
 
+  m.def(
+      "try_submit_programs",
+      [](const std::vector<const mlir::CompiledProgram*>& programs,
+         const nb::object& target, int64_t numShots,
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5) {
+        const auto device = resolveDevice(target);
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
+        const nb::gil_scoped_release release;
+        return unwrap(mlir::trySubmitPrograms(device, programs, numShots,
+                                              params[0], params[1], params[2],
+                                              params[3], params[4]));
+      },
+      "programs"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
+      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(),
+      R"pb(Submit compatible compiled programs together when supported.
+
+Returns ``None`` if the provider declines a multi-program job before submission.
+Programs must share a payload format. ``target`` accepts a device ID or an open
+device. Other validation or submission failures raise an exception.)pb");
+
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
         "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
         "program_format"_a = nb::none(), "custom1"_a = nb::none(),
@@ -2888,6 +2931,7 @@ Args:
 ``program_format`` selects the exact QDMI execution format, including text or
 binary QIR; omitting it selects a supported native format. A compiled program
 retains its payload and must match the destination contract.)pb");
-}
 
+  bindings::pennylane::registerBindings(m);
+}
 } // namespace mqt

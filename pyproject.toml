@@ -96,7 +96,8 @@ email = "marcel@mq.sc"
 
 [project.optional-dependencies]
 pennylane = [
-  "pennylane>=0.45.1,<0.46",
+  # Admit the next development series while excluding its first alpha and release.
+  "pennylane>=0.45.1,<0.46.0a0",
 ]
 qiskit = [
   "qiskit>=2.5,<3",
@@ -130,12 +131,13 @@ test = [
   "qirrunner~=0.9.6",
 ]
 docs = [
+  { include-group = "catalyst" },
   "furo>=2025.12.19",
   "mlir-pygments>=1",
   "myst-nb>=1.4",
   "ninja>=1.13",
   "openqasm-pygments>=0.2",
-  "pennylane>=0.45.1,<0.46",
+  "pennylane>=0.45.1,<0.46.0a0",
   "pygraphviz>=2",
   "qiskit[visualization]>=2.5,<3",
   "sphinx>=9",
@@ -152,15 +154,24 @@ build = [
   "scikit-build-core>=1.1",
   "vcs-versioning>=2.3",
 ]
+catalyst = [
+  # Catalyst and its pinned JAX wheels support these platforms on CPython 3.11-3.14.
+  """\
+  pennylane-catalyst>=0.15,<0.16.0a0; python_version<'3.15' and ((sys_platform=='linux' and \
+  (platform_machine=='x86_64' or platform_machine=='aarch64')) or (sys_platform=='darwin' and \
+  platform_machine=='arm64'))\
+  """,
+]
 cpp-lint = [
   "cpp-linter==1.15",
   "nanobind~=3.1.0",
 ]
 test-base = [
+  { include-group = "catalyst" },
   "numpy>=2.1; python_version>='3.13'",
   "numpy>=2.3.2; python_version>='3.14'",
   "numpy>=2.5.2; python_version>='3.15'",
-  "pennylane>=0.45.1,<0.46",
+  "pennylane>=0.45.1,<0.46.0a0",
   "pygraphviz>=2.0.2",
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",

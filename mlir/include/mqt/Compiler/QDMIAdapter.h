@@ -170,6 +170,21 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
     const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
 
+/// Validate and submit compiled programs together when the provider supports
+/// it.
+///
+/// Programs must use the same payload format. An empty optional means the
+/// provider declined a multi-program job before submission; other failures
+/// return an error. No job is submitted unless every target is compatible.
+[[nodiscard]] llvm::Expected<std::optional<qdmi::Job>> trySubmitPrograms(
+    const qdmi::Device& device, llvm::ArrayRef<const CompiledProgram*> programs,
+    int64_t numShots = 1024,
+    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
+
 /// Compile and submit source using one snapshot of the destination.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
     const qdmi::Device& device, CompilerInput program, int64_t numShots = 1024,

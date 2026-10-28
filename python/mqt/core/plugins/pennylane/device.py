@@ -6,56 +6,57 @@
 #
 # Licensed under the MIT License
 
-"""A modern PennyLane device backed by a gate-based QDMI device."""
+"""PennyLane execution on gate-based QDMI devices."""
 
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "mqt.core.plugins.pennylane.converter",
+    "importlib.metadata",
+    "mqt.core",
+    "mqt.core.mlir",
+    "mqt.core.mlir._pennylane",
     "mqt.core.plugins.pennylane.exceptions",
     "mqt.core.plugins.pennylane.job",
-    "mqt.core.qdmi",
     "mqt.core.qdmi.builtin_driver",
     "numbers",
     "operator",
-    "pennylane.devices.preprocess",
+    "packaging.specifiers",
     "pennylane.transforms",
     "pennylane.transforms.core",
 }
 
 import operator
+from importlib.metadata import version
 from numbers import Integral
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pennylane as qp
-from pennylane.devices import Device, DeviceCapabilities, ExecutionConfig
-from pennylane.devices.preprocess import (
-    decompose,
-    measurements_from_samples,
-    validate_device_wires,
-    validate_measurements,
-)
-from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, Shots, VarianceMP
-from pennylane.transforms import broadcast_expand, defer_measurements, split_non_commuting
+from packaging.specifiers import SpecifierSet
+from pennylane.devices import Device, ExecutionConfig
+from pennylane.transforms import defer_measurements
 from pennylane.transforms.core import CompilePipeline
 
-from mqt.core.plugins.pennylane.converter import _ProgramConverter
+from mqt.core import mlir
+from mqt.core.mlir import QCProgram, TerminalReadout, compile_program
+from mqt.core.mlir._pennylane import Context
 from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
-from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedFormatError as UnsupportedFormatError
-from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedOperationError as UnsupportedOperationError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneTranslationError as TranslationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneValidationError as ValidationError
 from mqt.core.plugins.pennylane.job import PennyLaneJob
-from mqt.core.qdmi import Device as QDMIDeviceHandle
-from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Mapping, Sequence
 
+    from pennylane.measurements import Shots
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
     from pennylane.typing import Result, ResultBatch
     from pennylane.wires import Wires
 
+    from mqt.core.mlir import CompiledProgram
+    from mqt.core.qdmi import Device as QDMIDeviceHandle
+    from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
 __all__ = ["DDSIMDevice", "QDMIDevice"]
@@ -77,7 +78,6 @@ _SESSION_PARAMETERS = frozenset({
     "custom5",
 })
 _JOB_PARAMETERS = frozenset({"custom1", "custom2", "custom3", "custom4", "custom5"})
-_SAMPLED_MEASUREMENTS = (SampleMP, CountsMP, ProbabilityMP, ExpectationMP, VarianceMP)
 
 
 def _validate_parameter_names(parameters: Mapping[str, object], allowed: frozenset[str], kind: str) -> None:
@@ -143,10 +143,26 @@ class QDMIDevice(Device):
         session_parameters: Device-session parameters for the MQT Core QDMI driver.
         job_parameters: QDMI custom job keyword arguments.
         max_retries: Maximum automatic replacements per failed entry; disabled by default.
+        program_format: Explicit QDMI execution format, or the device default.
+        terminal_readout: Optional canonical terminal measurements.
+        physical_qubits: Use physical OpenQASM site references.
     """
 
-    capabilities = DeviceCapabilities(supported_mcm_methods=[])
-    """Backend capabilities described by :class:`~pennylane.devices.capabilities.DeviceCapabilities`."""
+    config_filepath = str(Path(__file__).with_name("capabilities.toml"))
+
+    @staticmethod
+    def get_c_interface() -> tuple[str, str]:
+        """Return the Catalyst device factory name and library path.
+
+        Raises:
+            PennyLaneConfigurationError: If Catalyst uses an unsupported device ABI.
+        """
+        installed = version("pennylane-catalyst")
+        supported = SpecifierSet(">=0.15,<0.16.0a0")
+        if not supported.contains(installed, prereleases=True):
+            msg = f"Catalyst {installed} has an unsupported device ABI; requires {supported}."
+            raise ConfigurationError(msg)
+        return "MQTQDMI", mlir.__file__
 
     def __init__(
         self,
@@ -157,6 +173,9 @@ class QDMIDevice(Device):
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
         max_retries: int = 0,
+        program_format: ProgramFormat | None = None,
+        terminal_readout: TerminalReadout | None = None,
+        physical_qubits: bool = True,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
@@ -167,29 +186,32 @@ class QDMIDevice(Device):
             msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
             raise ConfigurationError(msg)
         self._max_retries = int(max_retries)
+        self._program_format = program_format
+        self._terminal_readout = terminal_readout
+        self._physical_qubits = physical_qubits
         self.last_job: PennyLaneJob | None = None
-        self._session_parameters: QDMISessionParameters = session_parameters.copy() if session_parameters else {}
-        self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
-        _validate_parameter_names(self._session_parameters, _SESSION_PARAMETERS, "session")
-        _validate_parameter_names(self._job_parameters, _JOB_PARAMETERS, "job")
+        session_parameters = session_parameters.copy() if session_parameters else {}
+        job_parameters = job_parameters.copy() if job_parameters else {}
+        _validate_parameter_names(session_parameters, _SESSION_PARAMETERS, "session")
+        _validate_parameter_names(job_parameters, _JOB_PARAMETERS, "job")
 
         if (device_id is None) == (device is None):
             msg = "Specify exactly one of device_id and device."
             raise ConfigurationError(msg)
         if device is not None:
-            if self._session_parameters:
+            if session_parameters:
                 msg = "session_parameters cannot be used with an already-open QDMI device."
                 raise ConfigurationError(msg)
             self._qdmi_device = device
         else:
             assert device_id is not None
             try:
-                self._qdmi_device = open_device(device_id, **self._session_parameters)
+                self._qdmi_device = open_device(device_id, **session_parameters)
             except (IndexError, RuntimeError, ValueError) as exc:
                 msg = f"Failed to open QDMI device '{device_id}': {exc}"
                 raise ConfigurationError(msg) from exc
         self._device_id = device_id
-        self._device_name = device_id or self._qdmi_device.name()
+        device_name = device_id or self._qdmi_device.name()
 
         num_qubits = self._qdmi_device.qubits_num()
         resolved_wires: int | Sequence[Hashable] = num_qubits if wires is None else wires
@@ -199,14 +221,23 @@ class QDMIDevice(Device):
             raise ConfigurationError(msg)
         if requested_wires > num_qubits:
             msg = (
-                f"QDMI device '{self._device_name}' exposes {num_qubits} qubits, "
-                f"but {requested_wires} wires were requested."
+                f"QDMI device '{device_name}' exposes {num_qubits} qubits, but {requested_wires} wires were requested."
             )
             raise ConfigurationError(msg)
 
         super().__init__(wires=resolved_wires)
-        self._program_format = self._select_program_format()
-        self._converter = _ProgramConverter(self._qdmi_device, self.wires, self._program_format)
+        try:
+            self._context = Context(
+                self._qdmi_device,
+                program_format=program_format,
+                terminal_readout=terminal_readout,
+                physical_qubits=physical_qubits,
+                **job_parameters,
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise ConfigurationError(str(exc)) from exc
+        self._job_parameters = job_parameters
+        self.device_kwargs = {"context": self._context.id}
         self._submitted_jobs = 0
         self._execution_time = 0.0
 
@@ -230,60 +261,37 @@ class QDMIDevice(Device):
         """Cumulative wall-clock time spent submitting and waiting for QDMI jobs."""
         return self._execution_time
 
-    def _select_program_format(self) -> ProgramFormat:
-        """Select QASM3 before QASM2 and reject all other format sets.
-
-        Returns:
-            The selected QDMI program format.
-
-        Raises:
-            PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
-        """
-        formats = set(self._qdmi_device.supported_program_formats())
-        if ProgramFormat.QASM3 in formats:
-            return ProgramFormat.QASM3
-        if ProgramFormat.QASM2 in formats:
-            return ProgramFormat.QASM2
-        msg = f"QDMI device '{self._device_name}' advertises neither OpenQASM 3 nor OpenQASM 2."
-        raise UnsupportedFormatError(msg)
-
     def preprocess_transforms(self, execution_config: ExecutionConfig | None = None) -> CompilePipeline:
-        """Build the PennyLane preprocessing pipeline for sampled QDMI execution.
-
-        Returns:
-            The transforms applied before device execution.
-        """
-        del execution_config
+        """Return transforms for finite-shot execution and deferred measurements."""
         pipeline = CompilePipeline()
         pipeline.add_transform(_validate_finite_shots)
-        pipeline.add_transform(validate_device_wires, self.wires, name=self.name)
         pipeline.add_transform(_defer_on_device_wires, self.wires)
-        pipeline.add_transform(
-            validate_measurements,
-            analytic_measurements=lambda _measurement: False,
-            sample_measurements=lambda measurement: isinstance(measurement, _SAMPLED_MEASUREMENTS),
-            name=self.name,
-        )
-        pipeline.add_transform(split_non_commuting, grouping_strategy="qwc")
-        pipeline.add_transform(measurements_from_samples)
-        pipeline.add_transform(
-            decompose,
-            stopping_condition=self._converter.supports,
-            target_gates=self._converter.target_gates,
-            skip_initial_state_prep=False,
-            device_wires=self.wires,
-            name=self.name,
-            error=UnsupportedOperationError,
-        )
-        pipeline.add_transform(broadcast_expand)
+        pipeline += super().preprocess_transforms(execution_config)
         return pipeline
+
+    def _prepare(self, tapes: Sequence[QuantumScript]) -> list[CompiledProgram]:
+        """Compile preprocessed tapes using one snapshot of the QDMI target.
+
+        Returns:
+            Programs ready for submission to this device, in input order.
+
+        Raises:
+            PennyLaneTranslationError: If an operation or target cannot be compiled.
+        """
+        try:
+            return compile_program(
+                [QCProgram.from_pennylane(tape, wires=self.wires) for tape in tapes],
+                target=self._qdmi_device,
+                program_format=self._program_format,
+                terminal_readout=self._terminal_readout,
+                physical_qubits=self._physical_qubits,
+            )
+        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            raise TranslationError(str(exc)) from exc
 
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
-        """Expand a PennyLane shot vector into individual QDMI job sizes.
-
-        Returns:
-            One positive shot count per required QDMI job.
+        """Return one shot count for each shot-vector copy.
 
         Raises:
             PennyLaneValidationError: If execution is analytic.
@@ -307,9 +315,10 @@ class QDMIDevice(Device):
         del execution_config
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
-        prepared = tuple((self._converter.convert(tape), self._shot_copies(tape.shots)) for tape in tapes)
-        if not prepared:
+        shot_copies = tuple(self._shot_copies(tape.shots) for tape in tapes)
+        if not tapes:
             return cast("ResultBatch", ())
+        prepared = tuple(zip(self._prepare(tapes), shot_copies, strict=True))
 
         if self.tracker.active:
             self.tracker.update(batches=1, batch_len=len(tapes))
@@ -318,9 +327,8 @@ class QDMIDevice(Device):
         job = PennyLaneJob(
             self,
             prepared,
-            tuple(tape.shots.has_partitioned_shots for tape in tapes),
+            tapes,
             single=single,
-            parameters=self._job_parameters,
             max_retries=self._max_retries,
         )
         self.last_job = job

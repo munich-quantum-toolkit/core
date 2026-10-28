@@ -9,3 +9,4 @@
 add_subdirectory(IQM)
 add_subdirectory(OpenQASM)
 add_subdirectory(QIR)
+add_subdirectory(Catalyst)

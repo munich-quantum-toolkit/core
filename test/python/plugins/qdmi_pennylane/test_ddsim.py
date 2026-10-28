@@ -8,37 +8,52 @@
 
 """End-to-end PennyLane tests with the DDSIM QDMI device."""
 
-# ruff: file-ignore[missing-return-type-private-function]
-
 from __future__ import annotations
 
 import gc
 from typing import TYPE_CHECKING
 
+import networkx as nx
 import numpy as np
+import pennylane as qp
 import pytest
 
+from mqt.core.mlir import QCProgram, TerminalReadout, submit_program
+from mqt.core.plugins.pennylane import (
+    DDSIMDevice,
+    PennyLaneJob,
+    PennyLaneTranslationError,
+    PennyLaneValidationError,
+    QDMIDevice,
+)
+from mqt.core.qdmi import ProgramFormat
+
 if TYPE_CHECKING:
+    from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, VarianceMP
+
     from mqt.core.qdmi import Job
-
-try:
-    import pennylane as qp
-except ImportError:
-    pytest.skip("Install the PennyLane extra to run these tests.", allow_module_level=True)
-
-import networkx as nx
-
-from mqt.core.plugins.pennylane import DDSIMDevice, PennyLaneJob, PennyLaneValidationError
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
 
 
-def test_stable_entry_point_and_wire_order() -> None:
-    """Discover the stable device ID and map QDMI bit strings to PennyLane wires."""
+@pytest.mark.parametrize(("wires", "expected"), [(None, "01"), (["idle", "spare", "active"], "100")])
+def test_public_tape_import_returns_all_declared_wires(wires: list[str] | None, expected: str) -> None:
+    """Public import preserves default or explicit wire order and reads every wire."""
+    tape = qp.tape.QuantumScript(
+        [qp.BasisState([1], "active"), qp.QubitUnitary(np.eye(2), "idle")], [qp.sample(wires=["active"])]
+    )
+    program = QCProgram.from_pennylane(tape, wires=wires)
+    job = submit_program(program, target="mqt.ddsim.default", num_shots=3)
+    assert job.wait()
+    assert job.get_shots() == [expected] * 3
+
+
+def test_plugin_registration_and_wire_order() -> None:
+    """Load the device plugin and preserve named-wire order."""
     device = qp.device("mqt.ddsim.default", wires=["first", "second"])
 
     @qp.qnode(device, shots=20)
-    def circuit():
+    def circuit() -> CountsMP:
         qp.PauliX("first")
         return qp.counts(wires=["first", "second"])
 
@@ -47,12 +62,31 @@ def test_stable_entry_point_and_wire_order() -> None:
     assert circuit() == {"10": 20}
 
 
+def test_terminal_readout_preserves_named_wire_order() -> None:
+    """Explicit receiver serialization preserves an asymmetric QNode result."""
+    wires = ["idle", "active", "spare"]
+    device = QDMIDevice(
+        "mqt.ddsim.default",
+        wires=wires,
+        program_format=ProgramFormat.QASM3,
+        terminal_readout=TerminalReadout.ALL,
+        physical_qubits=False,
+    )
+
+    @qp.qnode(device, shots=4)
+    def circuit() -> SampleMP:
+        qp.X("active")
+        return qp.sample(wires=["spare", "idle", "active"])
+
+    np.testing.assert_array_equal(circuit(), np.tile([0, 0, 1], (4, 1)))
+
+
 def test_bell_results_and_shot_vector() -> None:
     """Execute probabilities, samples, and shot-vector partitions end to end."""
     device = qp.device("mqt.ddsim.default", wires=2)
 
     @qp.qnode(device, shots=[(1000, 2), 2000])
-    def circuit():
+    def circuit() -> ProbabilityMP:
         qp.Hadamard(0)
         qp.CNOT(wires=[0, 1])
         return qp.probs(wires=[0, 1])
@@ -71,7 +105,7 @@ def test_parameter_shift_gradient() -> None:
     device = qp.device("mqt.ddsim.default", wires=1)
 
     @qp.qnode(device, shots=10_000, diff_method="parameter-shift")
-    def circuit(angle: float):
+    def circuit(angle: float) -> ExpectationMP:
         qp.RY(angle, 0)
         return qp.expval(qp.PauliZ(0))
 
@@ -91,6 +125,11 @@ def test_parameter_shift_gradient() -> None:
         [qp.SX(0), qp.adjoint(qp.SX)(1), qp.CNOT(wires=[1, 0])],
         [qp.IsingXX(0.37, wires=[0, 1])],
         [qp.IsingYY(0.37, wires=[0, 1])],
+        [qp.Hadamard(0), qp.ctrl(qp.GlobalPhase(0.73), control=0), qp.Hadamard(0)],
+        [
+            qp.Hadamard(0),
+            qp.ctrl(qp.adjoint(qp.RY(0.73, 1)), control=0, control_values=[False]),
+        ],
         [
             qp.Hadamard(0),
             qp.Hadamard(1),
@@ -101,9 +140,10 @@ def test_parameter_shift_gradient() -> None:
     ],
 )
 def test_gate_semantics_against_pennylane_reference(operations: list[qp.operation.Operator]) -> None:
-    """Match phase, inverse, parameter, and wire-order semantics."""
+    """Match gate action using interference-sensitive sampled probabilities."""
     qdmi_device = qp.device("mqt.ddsim.default", wires=2)
     reference_device = qp.device("default.qubit", wires=2)
+    operations = [qp.RY(-0.3, 0), qp.RX(0.3, 1), *operations, qp.RX(1.2, 0), qp.RY(-1.2, 1)]
     sampled_tape = qp.tape.QuantumScript(operations, [qp.probs(wires=[0, 1])], shots=20_000)
     analytic_tape = qp.tape.QuantumScript(operations, [qp.probs(wires=[0, 1])])
 
@@ -113,25 +153,51 @@ def test_gate_semantics_against_pennylane_reference(operations: list[qp.operatio
     np.testing.assert_allclose(actual, expected, atol=0.025)
 
 
+def test_invalid_native_program_prevents_batch_submission() -> None:
+    """Validate every compiled tape before accepting any job in the batch."""
+    device = DDSIMDevice(wires=1)
+    tape = qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[0])], shots=2)
+    samples = device.execute(tape)
+    previous = device.last_job
+    assert previous is not None
+    invalid = qp.tape.QuantumScript([qp.RY(np.nan, 0)], [qp.sample(wires=[0])], shots=2)
+    with pytest.raises(PennyLaneTranslationError, match="finite"):
+        device.execute((tape, invalid))
+    assert device.submitted_jobs == 1
+    assert device.last_job is None
+    np.testing.assert_array_equal(previous.result(), samples)
+
+
+@pytest.mark.parametrize("order", [None, [0, 1], [1, 0], [1]])
+def test_sample_wire_order(order: list[int] | None) -> None:
+    """Select requested wires from the compiler's logical classical readout."""
+    device = DDSIMDevice(wires=2)
+    tape = qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=order)], shots=3)
+    np.testing.assert_array_equal(
+        device.execute(tape), np.array([[1, 0]] * 3, dtype=np.int8)[:, range(2) if order is None else order]
+    )
+
+
 def test_qaoa_application() -> None:
     """Optimize one finite-shot MaxCut QAOA step through the real QDMI device."""
     graph = nx.Graph(GRAPH_EDGES)
-    cost_hamiltonian, mixer_hamiltonian = qp.qaoa.maxcut(graph)
+    cost_hamiltonian = qp.sum(*(0.5 * (qp.Z(u) @ qp.Z(v) - qp.I(u)) for u, v in graph.edges))
+    mixer_hamiltonian = qp.sum(*(qp.X(wire) for wire in graph.nodes))
     device = qp.device("mqt.ddsim.default", wires=4)
 
     def ansatz(parameters: np.ndarray) -> None:
         for wire in graph.nodes:
             qp.Hadamard(wire)
-        qp.qaoa.cost_layer(parameters[0], cost_hamiltonian)
-        qp.qaoa.mixer_layer(parameters[1], mixer_hamiltonian)
+        qp.ApproxTimeEvolution(cost_hamiltonian, parameters[0], 1)
+        qp.ApproxTimeEvolution(mixer_hamiltonian, parameters[1], 1)
 
     @qp.qnode(device, shots=200, diff_method="parameter-shift")
-    def cost(parameters: np.ndarray):
+    def cost(parameters: np.ndarray) -> ExpectationMP:
         ansatz(parameters)
         return qp.expval(cost_hamiltonian)
 
     @qp.qnode(device, shots=200)
-    def sample(parameters: np.ndarray):
+    def sample(parameters: np.ndarray) -> SampleMP:
         ansatz(parameters)
         return qp.sample(wires=range(4))
 
@@ -141,15 +207,12 @@ def test_qaoa_application() -> None:
     optimized = qp.GradientDescentOptimizer(stepsize=0.15).step(cost, parameters)
     samples = np.asarray(sample(optimized), dtype=np.int8)
     bitstrings = {"".join(str(int(bit)) for bit in row) for row in samples}
-    cuts = [sum(bitstring[first] != bitstring[second] for first, second in GRAPH_EDGES) for bitstring in bitstrings]
 
     assert np.isfinite(initial_cost)
     assert np.all(np.isfinite(gradient))
     assert not np.allclose(optimized, parameters)
     assert samples.shape == (200, 4)
-    assert bitstrings
     assert all(len(bitstring) == 4 and set(bitstring) <= {"0", "1"} for bitstring in bitstrings)
-    assert all(0 <= cut <= len(GRAPH_EDGES) for cut in cuts)
     assert device.submitted_jobs > 1
 
 
@@ -160,7 +223,7 @@ def test_deferred_measurements_reuse_spare_device_wires(wires: list[str] | list[
     control, _, target = wires
 
     @qp.qnode(device, shots=5)
-    def circuit():
+    def circuit() -> CountsMP:
         qp.X(control)
         measured = qp.measure(control, reset=True)
         qp.cond(measured, qp.X)(target)
@@ -174,7 +237,7 @@ def test_device_requires_qnode_shots() -> None:
     device = qp.device("mqt.ddsim.default", wires=1)
 
     @qp.qnode(device)
-    def circuit():
+    def circuit() -> ExpectationMP:
         return qp.expval(qp.Z(0))
 
     with pytest.raises(PennyLaneValidationError, match="finite number of shots"):
@@ -205,17 +268,21 @@ def test_postprocessor_recovers_forward_measurements(
     device = DDSIMDevice(wires=1, max_retries=3)
 
     @qp.qnode(device, shots=shots, diff_method=None)
-    def circuit(angles: np.ndarray):
+    def circuit(angles: np.ndarray) -> tuple[ExpectationMP, ProbabilityMP, VarianceMP, SampleMP]:
         qp.RY(angles, 0)
-        return qp.expval(qp.Z(0)), qp.probs(wires=[0])
+        return qp.expval(qp.Z(0)), qp.probs(wires=[0]), qp.var(2 * qp.Z(0)), qp.sample(2 * qp.Z(0))
 
     angles = np.array([0.0, np.pi])
     expected = circuit(angles)
+    for partition in expected if isinstance(shots, list) else (expected,):
+        np.testing.assert_array_equal(partition[2], [0, 0])
+        np.testing.assert_array_equal(partition[3][0], 2)
+        np.testing.assert_array_equal(partition[3][1], -2)
     tapes, postprocess = qp.workflow.construct_batch(circuit, level="device")(angles)
     original = PennyLaneJob._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
     reads = []
 
-    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int):
+    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int) -> np.ndarray:
         reads.append((job, program_index))
         if len(reads) == 2:
             raise KeyboardInterrupt
