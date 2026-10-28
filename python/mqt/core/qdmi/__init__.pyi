@@ -94,10 +94,14 @@ class Job:
     def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self, program_index: int = 0) -> Annotated[NDArray[np.complex128], {"shape": (None,)}]:
+    def get_dense_statevector(
+        self, program_index: int = 0
+    ) -> Annotated[NDArray[np.complex128], {"shape": (None,), "order": "C", "device": "cpu"}]:
         """Return a one-dimensional complex128 NumPy array owning the retrieved statevector."""
 
-    def get_dense_probabilities(self, program_index: int = 0) -> Annotated[NDArray[np.float64], {"shape": (None,)}]:
+    def get_dense_probabilities(
+        self, program_index: int = 0
+    ) -> Annotated[NDArray[np.float64], {"shape": (None,), "order": "C", "device": "cpu"}]:
         """Return a one-dimensional float64 NumPy array owning the retrieved probabilities."""
 
     def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:

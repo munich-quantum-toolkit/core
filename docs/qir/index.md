@@ -65,6 +65,18 @@ base_llvm = base.to_llvm_ir(copy=True)
 print(base_llvm)
 ```
 
+For synchronous simulation, the program provides `sample(shots=1024, seed=0)`
+and `simulate()` without consuming it. These use the bundled DDSIM worker;
+`simulate()` returns an uncollapsed NumPy statevector in QIR runtime qubit
+order, which can differ from source-circuit order after compilation. It rejects
+reset or measurement-dependent feedback. The top-level `mqt.core.mlir.sample`
+and `simulate` functions also accept compiled QIR programs.
+
+```{code-cell} ipython3
+print(base.sample(shots=32, seed=71))
+print(base.simulate())
+```
+
 The returned {py:class}`~mqt.core.mlir.QIRProgram` owns the compiled program.
 Its {py:meth}`~mqt.core.mlir.QIRProgram.to_llvm_ir` method consumes it and
 returns LLVM assembly. Here, `copy=True` keeps the program for bitcode export
@@ -90,6 +102,21 @@ and bounded Base loop unrolling. It also consumes typed MLIR programs unless
 `copy=True` is set.
 
 ## Execute LLVM text or bitcode
+
+For a synchronous result, pass LLVM text as `str` or bitcode as `bytes` to
+`sample` or `simulate`. Core reads the entry point's Base or Adaptive profile
+and the QIR version from module metadata. QIR supports seed `0` for randomness
+and positive signed 32-bit seeds. Reproducibility requires the same program,
+build, execution path, and worker configuration. A profile declaration is not
+LLVM conformance validation. Use the QDMI job API below for asynchronous
+execution and additional result types.
+
+```{code-cell} ipython3
+from mqt.core.mlir import sample, simulate
+
+print(sample(base_llvm, shots=32, seed=71))
+print(simulate(base_llvm))
+```
 
 The serialization and QDMI format must agree:
 
