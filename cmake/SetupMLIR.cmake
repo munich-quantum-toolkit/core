@@ -139,6 +139,11 @@ function(mqt_llvm_target_disable_rtti target_name)
     target_compile_options(
       ${target_name}
       PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_RTTI_DISABLE}>)
+    if(MSVC)
+      get_target_property(compile_options ${target_name} COMPILE_OPTIONS)
+      list(TRANSFORM compile_options REPLACE "/GR(>|$)" "/GR-\\1")
+      set_property(TARGET ${target_name} PROPERTY COMPILE_OPTIONS ${compile_options})
+    endif()
   endif()
 endfunction()
 

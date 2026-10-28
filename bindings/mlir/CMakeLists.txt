@@ -10,6 +10,12 @@ set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-bindings")
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS *.cpp)
 
+# LLVM feature macros must not change Cap'n Proto exception detection in unity builds.
+set_source_files_properties(
+  Target/PennyLane/PennyLane.cpp
+  TARGET_DIRECTORY ${TARGET_NAME}
+  PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
 # Qiskit's extension C API tables are translation-unit local. Each supported minor therefore gets
 # one source file with a private header snapshot.
 file(
@@ -45,6 +51,7 @@ target_link_libraries(
   PRIVATE
     MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
+    MQTCompilerCatalystAdapter
     MQTCompilerPipeline
     LLVMIRReader
     MLIRAnalysis
@@ -53,10 +60,16 @@ target_link_libraries(
     MLIRQCTranslationSupport
     MLIRQCODDFunctionality)
 
-# install the Python stub file in editable mode for better IDE support
+if(APPLE)
+  target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_MQTQDMIFactory")
+endif()
+
+# Install the Python stub package in editable mode for IDE support.
 if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
   install(
-    FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi
+    DIRECTORY ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir
     DESTINATION .
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Python
+    FILES_MATCHING
+    PATTERN "*.pyi")
 endif()

@@ -4,29 +4,47 @@ kernelspec:
   name: python3
 mystnb:
   number_source_lines: true
+  output_stderr: remove
 ---
 
 # PennyLane interface for gate-based QDMI devices
 
-The {py:mod}`mqt.core.plugins.pennylane` module implements PennyLane's device
-interface for gate-based quantum devices exposed through QDMI. PennyLane
-programs are preprocessed into executable tapes, converted to a program format
-advertised by the selected QDMI device, submitted through the QDMI bindings, and
-reconstructed from finite-shot QDMI results.
+The {py:mod}`mqt.core.plugins.pennylane` module runs PennyLane QNodes and
+Catalyst-compiled functions on gate-based QDMI devices. MQT Core compiles the
+circuits for the selected device and reconstructs finite-shot measurement
+results.
 
-Any registered gate-based QDMI device can use this integration if it advertises
-OpenQASM 3 or OpenQASM 2, accepts finite-shot jobs, and returns
-computational-basis samples. Specialized neutral-atom interfaces, pulse-level
-control, and analytic execution are unsupported. The examples below use the
-local [DD-based simulator device](ddsim_device.md) included with MQT Core and
-require no credentials or remote resources.
+The device must provide gate and topology metadata usable by MQT Core's
+compiler, accept QIR, OpenQASM 3, or IQM JSON, and return computational-basis
+samples or counts. OpenQASM 2-only devices are unsupported. The examples use the
+local [DD-based simulator device](ddsim_device.md) and require no credentials or
+remote resources.
 
-Install MQT Core with the optional PennyLane dependency into the active
-environment:
+Install MQT Core with the optional PennyLane dependency:
 
 ```bash
 uv pip install "mqt-core[pennylane]"
 ```
+
+For compilation with `qp.qjit`, also install Catalyst:
+
+```bash
+uv pip install "pennylane-catalyst>=0.15,<0.16.0a0"
+```
+
+The integration supports Catalyst 0.15.x and 0.16 development builds on Linux
+x86_64/aarch64, and Catalyst 0.15.x on macOS arm64. Development builds on macOS
+currently
+[normalize library suffixes before loading](https://github.com/PennyLaneAI/catalyst/pull/2904),
+replacing the Python extension's `.so` with `.dylib`; use the released Catalyst
+version there. Ordinary QNodes do not require Catalyst. See the
+[Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
+for platform requirements.
+
+The version range admits 0.16 development builds when prereleases are enabled or
+an official development wheel is installed explicitly. Keep the PennyLane
+version required by that Catalyst wheel; development releases pin matching
+PennyLane and Lightning builds.
 
 ## Quickstart
 
@@ -55,247 +73,165 @@ print({str(key): int(value) for key, value in sorted(bell_counts.items())})
 Only the computational-basis states $00$ and $11$ have nonzero probability, up
 to finite-shot fluctuations in their relative frequencies.
 
+Add `qp.qjit` to compile a QNode with Catalyst:
+
+```{code-cell} ipython3
+compiled_device = qp.device("mqt.ddsim.default", wires=2)
+
+
+@qp.qjit
+@qp.qnode(compiled_device, shots=1000, diff_method="parameter-shift")
+def compiled_expectation(angle):
+    qp.RY(angle, 0)
+    qp.CNOT(wires=[0, 1])
+    return qp.expval(qp.Z(0))
+
+
+value = compiled_expectation(0.4)
+```
+
+The default `qp.qjit` mode applies PennyLane preprocessing and supports
+parameter-shift gradients. Catalyst also offers experimental program capture;
+its current preprocessing and differentiation limits are described under
+[Supported gate-level scope](#supported-gate-level-scope).
+
 ## Program conversion
 
-PennyLane first preprocesses every quantum tape. The preprocessing pipeline
-validates the execution request, decomposes higher-level operations, maps
-measurements to computational-basis sampling, and reconstructs the requested
-finite-shot results from the samples returned through QDMI.
+PennyLane preprocesses ordinary QNode tapes by decomposing unsupported
+operations, splitting incompatible measurements, changing measurement bases, and
+expanding parameter broadcasts. MQT Core then synthesizes gates and routes the
+circuits for the selected QDMI target. Programs need not use the provider's
+native gate names or physical qubit placement. Invalid target metadata and
+unsupported target configurations fail before submission; all programs in an
+ordinary QNode batch are prepared before any jobs are submitted.
 
-MQT Core selects the program format in the following order:
+The compiler selects an advertised format in this order: Adaptive QIR
+binary/text, OpenQASM 3, IQM JSON, then Base QIR binary/text. IQM targets must
+provide physical site names and supported gate metadata; the compiler emits
+terminal readout keys in logical output order. Results follow PennyLane's wire
+order regardless of physical placement. If the provider returns only counts,
+samples are reconstructed without temporal shot order. Terminal measurements of
+a compiled circuit share one provider readout.
 
-1. OpenQASM 3 if the QDMI device advertises it.
-2. OpenQASM 2 only if OpenQASM 3 is unavailable.
-3. A format error before job creation if neither format is available.
+Select receiver-specific OpenQASM syntax explicitly with
+`QDMIDevice(..., profile=SerializationProfile.BRAKET_SIMULATOR)`,
+`BRAKET_NATIVE`, or `IBM` from {py:mod}`mqt.core.mlir`. Nondefault profiles use
+OpenQASM 3. Both ordinary QNodes and Catalyst apply the compiled result layout
+before selecting PennyLane wires, including constant outputs and repeated
+readout destinations. The default profile retains the format preference above.
 
-The OpenQASM 3 converter selects operation spellings advertised by the QDMI
-device and validates the program against its topology. If conversion fails, MQT
-Core reports the OpenQASM 3 error rather than retrying with OpenQASM 2. A device
-that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm` serializer
-after device preprocessing.
+Hardware parameter constraints come from the provider's QDMI operation metadata.
+Both execution modes use the same compiler target, including fixed angles and
+bounded parameters when the provider advertises them.
 
-The converter reuses successful capability checks for each gate and wire
-location within its device session. Every circuit still validates its own
-parameters and wire arguments. Open a new device session to use changed
-capabilities or topology.
+Catalyst compiles the host control flow ahead of time. MQT Core records and
+compiles the quantum program at execution time using the current parameter
+values. Include this device compilation cost when measuring repeated calls.
 
-QDMI waits and sample/count retrieval release the Python GIL, allowing unrelated
-Python threads to run while a provider waits or downloads results.
+To inspect or transform a circuit without opening a device session, import a
+preprocessed tape with {py:meth}`~mqt.core.mlir.QCProgram.from_pennylane`:
+
+```{code-cell} ipython3
+from mqt.core.mlir import QCProgram
+
+tape = qp.tape.QuantumScript(
+    [qp.Hadamard("a"), qp.CNOT(wires=["a", "b"])],
+    [qp.sample(wires=["a", "b"])],
+)
+program = QCProgram.from_pennylane(tape, wires=["a", "b"])
+print(program.to_openqasm3())
+```
+
+The importer expects supported gates and terminal measurements. It appends
+computational-basis readout in the supplied wire order. Use PennyLane's device
+preprocessing for decomposition, basis changes, and deferred measurements. The
+resulting {py:class}`~mqt.core.mlir.QCProgram` supports compiler transformations
+and export; {py:func}`~mqt.core.mlir.compile_program` prepares it for a QDMI
+target.
 
 ## End-to-end use case: finite-shot MaxCut QAOA
 
-Consider MaxCut on the fixed graph with $E=\{(0,1),(0,2),(1,2),(2,3)\}$.
+This example uses Hamiltonian evolution and Catalyst to optimize MaxCut on a
+four-node graph. The cost Hamiltonian is the negative cut size. Each layer
+evolves under that Hamiltonian and an X mixer.
 
 ```{code-cell} ipython3
-from collections import Counter
-import time
-
-import matplotlib.pyplot as plt
+import catalyst
+import jax.numpy as jnp
 import networkx as nx
 import numpy as np
-```
-
-```{code-cell} ipython3
-:tags: [remove-input]
-
-%config InlineBackend.figure_formats = ['svg']
-
-plt.rcParams.update(
-    {
-        "axes.facecolor": "#f8f9fb",
-        "figure.facecolor": "#f8f9fb",
-        "savefig.facecolor": "#f8f9fb",
-        "text.color": "#202124",
-        "axes.labelcolor": "#202124",
-        "axes.edgecolor": "#5f6368",
-        "xtick.color": "#3c4043",
-        "ytick.color": "#3c4043",
-    }
-)
-```
-
-```{code-cell} ipython3
-:tags: [hide-input]
-:mystnb: {image: {alt: "Four-node MaxCut graph with edges 01, 02, 12, and 23."}}
 
 graph = nx.Graph([(0, 1), (0, 2), (1, 2), (2, 3)])
-positions = {
-    0: (-1.0, 0.75),
-    1: (-1.0, -0.75),
-    2: (0.25, 0.0),
-    3: (1.35, 0.0),
-}
-
-figure, axis = plt.subplots(figsize=(5.5, 3.3))
-nx.draw_networkx(
-    graph,
-    pos=positions,
-    ax=axis,
-    node_color="#4c78a8",
-    edge_color="#5f6368",
-    font_color="white",
-    node_size=850,
-    width=2,
+cost_hamiltonian = qp.sum(
+    *(0.5 * (qp.Z(u) @ qp.Z(v) - qp.I(u)) for u, v in graph.edges)
 )
-axis.set_title("Four-node MaxCut instance")
-axis.set_axis_off()
-figure.tight_layout()
-```
-
-PennyLane constructs the cost and mixer Hamiltonians. The ansatz applies
-Hadamard gates followed by one QAOA cost layer and one mixer layer,
-parameterized by $\gamma$ and $\beta$.
-
-```{code-cell} ipython3
-cost_hamiltonian, mixer_hamiltonian = qp.qaoa.maxcut(graph)
+mixer_hamiltonian = qp.sum(*(qp.X(wire) for wire in graph.nodes))
+qaoa_device = qp.device(
+    "mqt.ddsim.default", wires=4, job_parameters={"custom1": 7}
+)
 
 
 def ansatz(parameters):
     for wire in graph.nodes:
         qp.Hadamard(wire)
-    qp.qaoa.cost_layer(parameters[0], cost_hamiltonian)
-    qp.qaoa.mixer_layer(parameters[1], mixer_hamiltonian)
-
-
-qaoa_device = qp.device("mqt.ddsim.default", wires=4, job_parameters={"custom1": 7})
+    qp.ApproxTimeEvolution(cost_hamiltonian, parameters[0], 1)
+    qp.ApproxTimeEvolution(mixer_hamiltonian, parameters[1], 1)
 
 
 @qp.qnode(qaoa_device, shots=1000, diff_method="parameter-shift")
-def cost(parameters):
+def correlations(parameters):
     ansatz(parameters)
-    return qp.expval(cost_hamiltonian)
+    return tuple(
+        qp.expval(qp.Z(first) @ qp.Z(second)) for first, second in graph.edges
+    )
 
 
+def cost(parameters):
+    return (
+        0.5 * jnp.sum(jnp.asarray(correlations(parameters)))
+        - 0.5 * graph.number_of_edges()
+    )
+
+
+@qp.qjit
+def step(parameters):
+    return parameters - 0.15 * catalyst.grad(cost)(parameters)
+
+
+@qp.qjit
 @qp.qnode(qaoa_device, shots=1000)
 def sample(parameters):
     ansatz(parameters)
     return qp.sample(wires=range(4))
-```
 
-The calculation below evaluates the initial parameter-shift gradient and
-performs four gradient-descent updates. Each objective value is an independent
-finite-shot estimate; the resulting sequence is therefore not expected to be
-monotonic.
 
-```{code-cell} ipython3
-parameters = qp.numpy.array([0.5, 0.5], requires_grad=True)
-optimizer = qp.GradientDescentOptimizer(stepsize=0.15)
-jobs_before = qaoa_device.submitted_jobs
-started = time.monotonic()
-
-objective_values = [float(cost(parameters))]
-initial_gradient = np.asarray(qp.grad(cost)(parameters), dtype=float)
-
+compiled_cost = qp.qjit(cost)
+parameters = jnp.array([0.5, 0.5])
+objective_values = [float(compiled_cost(parameters))]
 for _ in range(4):
-    parameters = optimizer.step(cost, parameters)
-    objective_values.append(float(cost(parameters)))
+    parameters = step(parameters)
+    objective_values.append(float(compiled_cost(parameters)))
 
 samples = np.asarray(sample(parameters), dtype=np.int8)
-submitted_jobs = qaoa_device.submitted_jobs - jobs_before
-elapsed = time.monotonic() - started
-
-print(f"Initial gradient: {initial_gradient}")
-print(f"Final parameters: {np.asarray(parameters)}")
-print(f"QDMI jobs submitted: {submitted_jobs}")
-print(f"Elapsed time: {elapsed:.3f} s")
+cut_sizes = sum(
+    samples[:, first] != samples[:, second] for first, second in graph.edges
+)
+best = samples[np.argmax(cut_sizes)]
+print(f"Objective estimates: {np.round(objective_values, 3)}")
+print(f"Final parameters: {parameters}")
+print(f"Best sampled partition: {best}, cut size: {max(cut_sizes)}")
 ```
 
-Parameter-shift expands one gradient evaluation into several shifted tapes. Each
-executable tape is submitted as a distinct QDMI job. The device submits all jobs
-in one PennyLane batch before it waits for their ordered results, which lets
-asynchronous QDMI implementations execute them concurrently.
+The QNode measures edge correlations; the classical `cost` function combines
+them into the MaxCut objective. Keeping this sum outside the QNode lets Catalyst
+differentiate the objective with parameter-shift. Parameter-shift gradients
+evaluate shifted circuits through QDMI. Finite-shot objective estimates need not
+decrease at every step. Each compiled QNode uses the device's existing session
+and compiles its quantum circuit for that target.
 
-The sampled bit strings determine candidate bipartitions. The cut value is the
-number of graph edges whose endpoints have different bit values.
-
-```{code-cell} ipython3
-def bitstring(sample_row):
-    return "".join(str(int(bit)) for bit in sample_row)
-
-
-def cut_value(candidate):
-    return sum(
-        candidate[first] != candidate[second] for first, second in graph.edges
-    )
-
-
-sample_counts = Counter(bitstring(row) for row in samples)
-best_bitstring = max(
-    sample_counts,
-    key=lambda candidate: (cut_value(candidate), sample_counts[candidate], candidate),
-)
-best_cut = cut_value(best_bitstring)
-
-print(f"Best sampled partition: {best_bitstring}")
-print(f"Cut edges: {best_cut} of {graph.number_of_edges()}")
-```
-
-The following panels show the noisy objective estimates, the empirical
-bit-string distribution, and the highest-cut partition observed in the final
-sample. Orange edges cross that partition.
-
-```{code-cell} ipython3
-:tags: [hide-input]
-:mystnb: {image: {alt: "QAOA objective estimates, final counts, and best sampled graph partition."}}
-
-figure, axes = plt.subplots(3, 1, figsize=(7, 10))
-
-axes[0].plot(
-    range(len(objective_values)),
-    objective_values,
-    marker="o",
-    color="#4c78a8",
-)
-axes[0].set(
-    xlabel="Optimizer update",
-    ylabel=r"$\langle H_C \rangle$",
-    title="Noisy finite-shot objective estimates",
-    xticks=range(len(objective_values)),
-)
-axes[0].grid(alpha=0.25)
-
-ordered_bitstrings = sorted(sample_counts)
-axes[1].bar(
-    ordered_bitstrings,
-    [sample_counts[candidate] for candidate in ordered_bitstrings],
-    color="#4c78a8",
-)
-axes[1].set(
-    xlabel="Bit string",
-    ylabel="Observed count",
-    title="Final sampled distribution",
-)
-axes[1].tick_params(axis="x", rotation=60)
-
-node_colors = [
-    "#4c78a8" if best_bitstring[node] == "0" else "#e45756"
-    for node in graph.nodes
-]
-edge_colors = [
-    "#f28e2b"
-    if best_bitstring[first] != best_bitstring[second]
-    else "#9aa0a6"
-    for first, second in graph.edges
-]
-edge_widths = [
-    3.2 if best_bitstring[first] != best_bitstring[second] else 1.5
-    for first, second in graph.edges
-]
-nx.draw_networkx(
-    graph,
-    pos=positions,
-    ax=axes[2],
-    node_color=node_colors,
-    edge_color=edge_colors,
-    width=edge_widths,
-    font_color="white",
-    node_size=850,
-)
-axes[2].set_title(f"Best sampled cut: {best_cut} edges")
-axes[2].set_axis_off()
-
-figure.tight_layout()
-```
+The terms within each Hamiltonian commute, so one Trotter step implements each
+layer exactly. PennyLane decomposes these evolutions into gates before device
+execution.
 
 ## Direct generic construction
 
@@ -348,46 +284,116 @@ device = QDMIDevice(
 )
 ```
 
-Arbitrary PennyLane wire labels map deterministically to contiguous QASM
-indices. The converter validates fixed-arity loci and finite parameters for both
-OpenQASM formats against the QDMI capabilities but does not route circuits. A
-topology-incompatible program therefore fails before submission. Shot vectors,
-batches, and parameter-shift tapes are submitted in order before their results
-are collected in the same order. The PennyLane call remains synchronous, and
-every execution requires finite shots. Set shots on the QNode or use
-`qp.set_shots` to override them. Devices do not accept a `shots` argument or
-provide a default shot count. Omitting finite shots fails before submission.
+Ordinary QNodes accept arbitrary PennyLane wire labels. Compiled QNodes require
+contiguous integer labels starting at zero. Every execution requires finite
+shots: set them on the QNode or override them with `qp.set_shots`. Devices do
+not accept a `shots` argument or provide a default shot count.
 
-Use `with qp.Tracker(device) as tracker:` to record submitted jobs
+Ordinary QNode execution groups tapes and shot partitions with the same program
+format and shot count into native QDMI jobs. Providers that decline a program
+list receive independent submissions. All jobs are submitted before waiting for
+results, which retain the input tape and shot-partition order. `submitted_jobs`
+counts QDMI jobs.
+
+Use `with qp.Tracker(device) as tracker:` to record accepted program executions
 (`executions`), requested shots, batches, and the number of tapes in each batch
-(`batch_len`). Shot-vector copies count as separate jobs. Tracking records
-accepted submissions, including jobs whose execution subsequently fails.
+(`batch_len`). Shot-vector copies count as separate executions even when grouped
+in one native job. Tracking includes accepted jobs whose execution later fails.
 
-Mid-circuit measurements use PennyLane's deferred-measurement transform. Reset
-and feedback may require unused device wires; custom wire labels are supported.
-The plugin rejects programs requiring more wires than are available and rejects
-postselection. Explicit `one-shot` and `tree-traversal` requests are
-unsupported; the plugin does not infer native dynamic-circuit support from gate
-names.
+Keep the device alive while using compiled functions. They use its open QDMI
+session and job parameters; saved executables cannot restore that session in
+another process. Compiled calls are synchronous and do not use the Python
+tracker. Catalyst's `async_qnodes=True` schedules separate QNodes without
+combining them into one QDMI job. Concurrent calls require a provider that
+supports them on the shared session; see the
+[QDMI thread-safety contract](driver.md#python-bindings). QDMI waits and result
+retrieval release the Python GIL.
 
 ## Supported gate-level scope
 
-The OpenQASM 3 path covers identity and Pauli gates; H, S, T, SX and supported
-adjoints; RX, RY, RZ, and phase shift; controlled Pauli and phase gates;
-Toffoli, SWAP, and CSWAP; ISWAP, PSWAP, and ECR; and Ising XX, XY, YY, and ZZ
-rotations. PennyLane decomposes higher-level operations when their
-decompositions reach operations advertised by the QDMI device. Enabling
-`qp.decomposition.enable_graph()` also lets PennyLane choose registered graph
-decompositions targeting those operations. The target set reflects the selected
-OpenQASM serializer and advertised operation names; it does not imply native
-hardware gates or provide routing.
+Supported gates include identity and Pauli gates; H, S, T, SX; RX, RY, RZ, phase
+shift, global phase, and U gates; controlled Pauli, rotation, and phase gates;
+Toffoli, SWAP, CSWAP, ISWAP, ECR; and Ising XX, YY, and ZZ rotations. Adjoints
+and controls, including negative controls, are supported. PennyLane decomposes
+higher-level operations, and MQT Core lowers the circuit to the target's
+operations and topology.
 
-The interface does not implement pulse programming, device-specific non-gate
-properties, routing, or analytic execution.
+Probabilities, counts, expectations, and variances are finite-shot estimates.
+Ordinary QNodes support scalar products of observables, including sampled values
+and variances. PennyLane splits incompatible observables into separate circuits
+and applies the required measurement-basis changes. Pulse programming, arbitrary
+Hermitian observables, and analytic execution are unsupported.
+
+Ordinary QNodes use PennyLane's deferred-measurement transform for mid-circuit
+measurements by default; `mcm_method="deferred"` also selects it explicitly.
+Reset and feedback may require unused device wires; custom labels are supported.
+Programs that need more wires than the device exposes, postselection, and
+`one-shot` or `tree-traversal` execution are unsupported. Deferred measurements
+do not require a native method in `supported_mcm_methods`.
+
+Catalyst's measurement callback requires an immediate result for host control
+flow, whereas this backend submits a complete program to QDMI. Core's support
+for measurement and feedback within a compiled program does not provide that
+callback contract. Catalyst mid-circuit measurements and `mcm_method="deferred"`
+are therefore unsupported.
+
+With Catalyst, `BasisState` accepts runtime bit arrays and reordered wire
+subsets. It must precede every other operation; repeated preparation and resets
+are unsupported. `QubitUnitary` accepts runtime matrices on at most two wires,
+including controls, and supports adjoints and negative controls. Both operations
+support `capture=True`. Larger matrices and general `StatePrep` require
+PennyLane decomposition.
+
+Both capture modes support computational-basis samples, counts, probabilities,
+and Z/product expectations and variances. Under `capture=True`, apply explicit
+basis changes and observable splitting for other measurements:
+
+```python
+import catalyst
+
+
+@qp.qjit(capture=True, skip_preprocess=True)
+@catalyst.passes.diagonalize_measurements
+@qp.transform(pass_name="split-non-commuting")
+@qp.qnode(compiled_device, shots=1000)
+def captured_expectation(angle):
+    qp.Hadamard(0)
+    qp.S(0)
+    qp.RY(angle, 1)
+    return qp.expval(0.5 * qp.Y(0) + qp.Z(1))
+
+
+value = captured_expectation(0.4)
+```
+
+`skip_preprocess=True` selects the explicit transforms above instead of the tape
+preprocessing pipeline. The splitting pass supports expectations only; use
+diagonalization alone for a variance. For gate decomposition under capture, load
+Catalyst's capabilities with
+`qp.devices.DeviceCapabilities.from_toml_file(device.config_filepath, "qjit")`
+and pass `set(capabilities.operations)` as the `gate_set` of
+`qp.transforms.decompose` on the QNode.
+
+ECR, SX, U1, U2, and U3 use native Core gates in ordinary QNodes. Catalyst
+lowers them through decomposition; program capture currently requires the
+explicit transform. The default `qp.qjit` mode applies decomposition
+automatically.
+
+Catalyst counts return arrays rather than dictionaries. Non-capture shot vectors
+support samples only; capture does not support shot vectors or QNode
+differentiation. Native device gradients and variance gradients are unsupported.
+Parameter broadcasting requires an explicit supported transform. Compiled counts
+and probabilities allocate $2^{n}$ entries for $n$ measured wires; use samples
+for large registers. Catalyst-level random seeds are unsupported; use
+provider-specific job parameters where available. See
+[Catalyst's limitations](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/sharp_bits.html).
 
 ## Recovering results after a failure
 
-If execution fails, the device keeps accepted jobs and successful results.
+For ordinary QNodes, the device keeps accepted jobs and successful results after
+a failure. Compiled QNodes do not use this recovery or automatic retry
+interface.
+
 Retrieve the batch handle from `error.job` on a
 {py:class}`~mqt.core.plugins.pennylane.exceptions.PennyLaneExecutionError`, or
 from `device.last_job` after an interruption inside `device.execute()`. Each
@@ -401,8 +407,8 @@ PennyLane's
 
 ```{code-cell} ipython3
 tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
-samples = bell_device.execute(tapes)
-counts = postprocess(samples)[0]
+results = bell_device.execute(tapes)
+counts = postprocess(results)[0]
 ```
 
 If this execution stops, keep the same Python session. After resolving a
@@ -426,12 +432,3 @@ submissions and explicit cancellation.
 This workflow recovers forward measurements, including broadcasts and shot
 vectors. It does not restore arbitrary QNode return containers or resume an
 interrupted gradient or optimizer.
-
-### Native multi-program jobs
-
-The device groups tapes and shot partitions with the same program format and
-shot count into native QDMI jobs. Devices that reject a program list use
-independent submissions without waiting between them. Results retain the
-original tape and shot-partition order. `submitted_jobs` counts native jobs;
-PennyLane's execution tracker counts individual program executions and shots.
-Recovery retains successful programs and retries only confirmed failures.

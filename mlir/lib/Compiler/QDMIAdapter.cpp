@@ -1131,4 +1131,52 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
                        custom4, custom5);
 }
 
+llvm::Expected<std::optional<qdmi::Job>>
+trySubmitPrograms(const qdmi::Device& device,
+                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
+                  const std::optional<qdmi::CustomJobParameter>& custom1,
+                  const std::optional<qdmi::CustomJobParameter>& custom2,
+                  const std::optional<qdmi::CustomJobParameter>& custom3,
+                  const std::optional<qdmi::CustomJobParameter>& custom4,
+                  const std::optional<qdmi::CustomJobParameter>& custom5) {
+  if (numShots < 0 || programs.empty() ||
+      llvm::is_contained(programs, nullptr)) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "A program batch requires non-null programs and nonnegative num_shots");
+  }
+  const auto format = programs.front()->programFormat();
+  auto destination = snapshotTargetEnvironment(device, format, false, false);
+  if (!destination) {
+    return destination.takeError();
+  }
+  for (const auto* program : programs) {
+    if (program->programFormat() != format) {
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "A program batch must use the same payload format");
+    }
+    if (auto error =
+            validateTargetCompatibility(program->environment(), *destination)) {
+      return error;
+    }
+  }
+  if (qdmi::isBinaryProgramFormat(format)) {
+    std::vector<std::span<const std::byte>> payloads;
+    payloads.reserve(programs.size());
+    for (const auto* program : programs) {
+      payloads.push_back(std::as_bytes(std::span(program->payload())));
+    }
+    return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
+                               custom1, custom2, custom3, custom4, custom5);
+  }
+  std::vector<std::string> payloads;
+  payloads.reserve(programs.size());
+  for (const auto* program : programs) {
+    payloads.push_back(program->payload());
+  }
+  return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
+                             custom1, custom2, custom3, custom4, custom5);
+}
+
 } // namespace mlir

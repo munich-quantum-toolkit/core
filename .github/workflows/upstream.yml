@@ -1,4 +1,4 @@
-name: Qiskit Upstream Tests
+name: Upstream Tests
 on:
   schedule:
     # Run every Monday at 00:00 UTC
@@ -15,6 +15,18 @@ concurrency:
 permissions: {}
 
 jobs:
+  catalyst-upstream-tests:
+    name: Catalyst development
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@a4b4977405c7685f95e127cdb6db396bbadce787 # v2.5.5
+    with:
+      runs-on: ubuntu-26.04
+      sessions: '["catalyst-dev"]'
+      draft-sessions: '["catalyst-dev"]'
+      setup-mlir: true
+      llvm-version: 23.1.2
+    permissions:
+      contents: read
+
   qiskit-upstream-tests:
     name: 🐍⚛️
     strategy:

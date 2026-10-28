@@ -1,0 +1,73 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+schema = 3
+
+[operators.gates]
+Identity = { properties = ["invertible", "controllable"] }
+PauliX = { properties = ["invertible", "controllable"] }
+PauliY = { properties = ["invertible", "controllable"] }
+PauliZ = { properties = ["invertible", "controllable"] }
+Hadamard = { properties = ["invertible", "controllable"] }
+S = { properties = ["invertible", "controllable"] }
+T = { properties = ["invertible", "controllable"] }
+RX = { properties = ["invertible", "controllable"] }
+RY = { properties = ["invertible", "controllable"] }
+RZ = { properties = ["invertible", "controllable"] }
+PhaseShift = { properties = ["invertible", "controllable"] }
+GlobalPhase = { properties = ["invertible", "controllable"] }
+SWAP = { properties = ["invertible", "controllable"] }
+ISWAP = { properties = ["invertible", "controllable"] }
+IsingXX = { properties = ["invertible", "controllable"] }
+IsingYY = { properties = ["invertible", "controllable"] }
+IsingZZ = { properties = ["invertible", "controllable"] }
+CNOT = { properties = ["invertible", "controllable"] }
+CY = { properties = ["invertible", "controllable"] }
+CZ = { properties = ["invertible", "controllable"] }
+Toffoli = { properties = ["invertible", "controllable"] }
+CSWAP = { properties = ["invertible", "controllable"] }
+ControlledPhaseShift = { properties = ["invertible", "controllable"] }
+CRX = { properties = ["invertible", "controllable"] }
+CRY = { properties = ["invertible", "controllable"] }
+CRZ = { properties = ["invertible", "controllable"] }
+
+[pennylane.operators.gates]
+SX = { properties = ["invertible", "controllable"] }
+ECR = { properties = ["invertible", "controllable"] }
+U1 = { properties = ["invertible", "controllable"] }
+U2 = { properties = ["invertible", "controllable"] }
+U3 = { properties = ["invertible", "controllable"] }
+
+[qjit.operators.gates]
+# Eager execution retains PennyLane's decomposition of larger matrices.
+QubitUnitary = { properties = ["invertible", "controllable"] }
+
+[operators.observables]
+Identity = {}
+PauliZ = {}
+Prod = {}
+
+[pennylane.operators.observables]
+SProd = {}
+
+[measurement_processes]
+SampleMP = { conditions = ["finiteshots"] }
+CountsMP = { conditions = ["finiteshots"] }
+ExpectationMP = { conditions = ["finiteshots"] }
+VarianceMP = { conditions = ["finiteshots"] }
+ProbabilityMP = { conditions = ["finiteshots"] }
+
+[compilation]
+qjit_compatible = true
+runtime_code_generation = true
+dynamic_qubit_management = false
+non_commuting_observables = false
+overlapping_observables = true
+initial_state_prep = false
+# PennyLane supplies deferred MCM; Catalyst requires immediate runtime results.
+supported_mcm_methods = []

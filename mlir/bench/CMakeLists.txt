@@ -22,6 +22,10 @@ if(WIN32)
 endif()
 target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchGenerate MLIRSupport)
 mqt_mlir_target_use_project_options(mqt-core-bench)
+unset(LLVM_REQUIRES_EH)
+unset(LLVM_REQUIRES_RTTI)
+# LLVM's command-line parser derives from types in the RTTI-free SDK.
+mqt_llvm_target_disable_rtti(mqt-core-bench)
 mlir_check_all_link_libraries(mqt-core-bench)
 
 if(MQT_CORE_INSTALL)
