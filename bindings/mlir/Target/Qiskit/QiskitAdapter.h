@@ -1036,10 +1036,11 @@ public:
       throw std::runtime_error("Qiskit initial layout must cover every qubit");
     }
     const auto count = metadata.attr("_input_qubit_count");
-    if (count.is_none()) {
-      throw std::runtime_error("Qiskit layout requires an input qubit count");
-    }
-    result.inputCount = nb::cast<int64_t>(count);
+    // Physical OpenQASM imports leave the count unset: every mapped qubit is
+    // an input, with no separately identified transpiler workspace.
+    result.inputCount = count.is_none()
+                            ? static_cast<int64_t>(result.initial.size())
+                            : nb::cast<int64_t>(count);
     if (const auto final = metadata.attr("final_layout"); !final.is_none()) {
       if (metadata.attr("_output_qubit_list").is_none()) {
         throw std::runtime_error(

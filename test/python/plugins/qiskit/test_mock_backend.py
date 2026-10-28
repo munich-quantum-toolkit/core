@@ -762,6 +762,18 @@ def test_native_sparse_site_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
         backend.validate_circuit(circuit, native=True)
 
 
+@pytest.mark.parametrize("operation", ["x", "cx"])
+def test_sparse_devices_require_explicit_placements(monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
+    """Global Target instructions would otherwise admit disabled physical sites."""
+    device = MockQDMIDevice(num_qubits=2, operations=[operation, "measure"])
+    monkeypatch.setattr(device, "sites", lambda: [MockQDMIDevice.MockSite(0), MockQDMIDevice.MockSite(2)])
+    monkeypatch.setattr(device, "coupling_map", lambda: None)
+    monkeypatch.setattr(device.operations()[0], "sites", lambda: None)
+    monkeypatch.setattr(device.operations()[0], "site_pairs", lambda: None)
+    with pytest.raises(UnsupportedOperationError, match=r"explicit placements.*sparse"):
+        QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+
+
 def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Preprocessing may widen a logical circuit to a site hidden from the Target."""
 

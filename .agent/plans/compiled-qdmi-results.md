@@ -1,8 +1,9 @@
 # Native QDMI payloads and logical results
 
-Status: simplifying Core #2886 and its provider/PennyLane consumers on current
-main. The previous published integration is the comparison baseline; the
-simplification is undergoing local validation and independent review.
+Status: shared Core simplification implemented on refreshed main. Independent
+review converged after fixing sparse placements, terminal classical calls, and
+Qiskit physical-layout boundaries. Provider and PennyLane consumers use the
+same generic controls.
 
 ## Contract
 
@@ -17,11 +18,11 @@ measurements; `ALL` also measures gaps in the addressed range. OpenQASM's
 `physical_qubits` selects physical references or virtual indices. Provider
 helpers select these controls and, where necessary, an explicit program format.
 
-Terminal normalization supports one measurement per selected qubit, direct
-writes to distinct classical slots, permutations, subsets, and untouched zero
-holes. It rejects feedback, repeated measurement, overwritten destinations, and
-classical computation. This restriction does not apply to the default dynamic
-path. A result map contains only raw indices or zero holes.
+Terminal normalization supports direct measurement stores, permutations,
+subsets, and untouched zero holes. It coalesces repeated terminal measurements
+and keeps the final write to each classical slot. It rejects feedback, gates
+after measurement, and classical computation. This restriction does not apply to
+the default dynamic path. A result map contains only raw indices or zero holes.
 
 IQM targets retain physical site IDs and calibrated-locus filtering. Core's
 Qiskit backend compilation preserves the full TranspileLayout on sparse sites.
@@ -34,15 +35,6 @@ Operation CUSTOM2 retains the temporary `mqt.operation-parameters.v1` contract.
 One C++ parser serves compiler and Qiskit targets; Qiskit's own Target validator
 checks native placement and parameter variants. Test doubles expose real custom
 property bytes; the Qiskit conftest shim is removed.
-
-## Remaining work
-
-- Finish shared/provider/PennyLane local validation and generated stubs.
-- Inspect rendered shortened docs and resolve independent review findings.
-- Update signed Core and PennyLane commits, then provider dependency pins and PR
-  descriptions. Preserve IBM's existing cleanup-series base.
-- Remove stale experiment scaffolding from worktrees; retain evidence outside
-  the repositories. Hosted CI is not being monitored in this task.
 
 ## Validation
 

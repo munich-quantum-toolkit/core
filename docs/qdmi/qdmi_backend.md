@@ -9,8 +9,8 @@ mystnb:
 
 # Qiskit Backend Integration
 
-{py:class}`~mqt.core.plugins.qiskit.QDMIBackend` exposes a QDMI device as a
-Qiskit `BackendV2`. Compile circuits for that backend before calling `run`.
+{py:class}`~mqt.core.plugins.qiskit.backend.QDMIBackend` exposes a QDMI device
+as a Qiskit `BackendV2`. Compile circuits for that backend before calling `run`.
 
 ## Installation
 
@@ -65,7 +65,8 @@ Discovery opens fresh sessions without explicit authentication parameters.
 
 `backend.target` describes native instructions, ordered placements, parameter
 constraints, and available calibration. Qubit indices are physical site IDs; a
-disabled site leaves a hole. Durations are converted to seconds using the
+disabled site leaves a hole. Devices with sparse site IDs must report explicit
+gate placements. Durations are converted to seconds using the
 device's duration unit and optional scale factor. Invalid units/scales fail
 target construction.
 
@@ -132,16 +133,17 @@ cancellation.
 ## Qiskit Primitives
 
 The factories return Qiskit's `BackendSamplerV2` and `BackendEstimatorV2` with
-Qiskit's own options and PUB broadcasting:
+Qiskit's own options and PUB broadcasting. The Bell circuit above already uses
+DDSIM's native gates:
 
 ```{code-cell} ipython3
 from qiskit.quantum_info import SparsePauliOp
 
 sampler = backend.sampler(default_shots=128)
-samples = sampler.run([native]).result()[0]
+samples = sampler.run([qc]).result()[0]
 assert sum(samples.data.meas.get_counts().values()) == 128
 
-circuit = native.remove_final_measurements(inplace=False)
+circuit = qc.remove_final_measurements(inplace=False)
 estimator = backend.estimator(default_precision=0.1)
 estimate = estimator.run([(circuit, SparsePauliOp("ZZ"))]).result()[0]
 assert float(estimate.data.evs) == 1.0
