@@ -203,7 +203,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The entry function and supported structured-control-flow regions must each
     contain one block. Calls that carry qubits must be inlined before mapping.
-    Classical side effects must use CBit operations or MemRef operations with
+    Classical side effects must use CBit operations, MemRef operations, or
+    `bufferization.materialize_in_destination` with
     value-associated memory effects. The pass preserves their source order
     across potentially aliased handles and includes their measurement feedback
     in routing dependencies. Opaque calls and other memory effects must be

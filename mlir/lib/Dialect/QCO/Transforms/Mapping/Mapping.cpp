@@ -31,6 +31,7 @@
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -239,15 +240,17 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
                 op->getDialect()) &&
             !isMemoryEffectFree(op)) {
           const auto effects = getEffectsRecursively(op);
-          if (!isa<memref::MemRefDialect>(op->getDialect()) || !effects ||
-              llvm::any_of(*effects, [](const auto& effect) {
+          if ((!isa<memref::MemRefDialect>(op->getDialect()) &&
+               !isa<bufferization::MaterializeInDestinationOp>(op)) ||
+              !effects || llvm::any_of(*effects, [](const auto& effect) {
                 auto value = effect.getValue();
                 return !value || !isa<BaseMemRefType>(value.getType());
               })) {
             op->emitError(
                 "mapping supports classical side effects only through CBit "
-                "operations or value-associated MemRef effects; lower other "
-                "side effects before mapping");
+                "operations, MemRef operations, or tensor initializers with "
+                "value-associated MemRef effects; lower other side effects "
+                "before mapping");
             return WalkResult::interrupt();
           }
         }
