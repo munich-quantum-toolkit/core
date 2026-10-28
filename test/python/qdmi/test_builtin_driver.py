@@ -120,3 +120,16 @@ def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
     assert inline.qubits_num() == device.qubits_num()
     with pytest.raises(ValueError, match="Expected object key"):
         builtin_driver.open_device("mqt.sc.default", device_config="{")
+
+
+def test_ddsim_session_width_scopes_fresh_devices() -> None:
+    """Session capacity must not leak into other sessions or site lists."""
+    small = builtin_driver.open_device("mqt.ddsim.default", custom1="2")
+    wider = builtin_driver.open_device("mqt.ddsim.default", custom1="7")
+    assert small.qubits_num() == 2
+    assert len(small.sites()) == 2
+    assert wider.qubits_num() == 7
+    assert len(wider.sites()) == 7
+    assert builtin_driver.open_device("mqt.ddsim.default").qubits_num() == 65535
+    with pytest.raises(ValueError, match="Invalid argument"):
+        builtin_driver.open_device("mqt.ddsim.default", custom1="65536")

@@ -100,8 +100,8 @@ template <typename T, std::size_t N> constexpr std::array<T, N> iotaArray() {
   return result;
 }
 
-constexpr std::array<uintptr_t, std::numeric_limits<dd::Qubit>::max()> SITES =
-    iotaArray<uintptr_t, std::numeric_limits<dd::Qubit>::max()>();
+constexpr size_t MAX_QUBITS = std::numeric_limits<dd::Qubit>::max();
+constexpr auto SITES = iotaArray<uintptr_t, MAX_QUBITS>();
 
 struct OperationInfo {
   const char* name{};
@@ -381,9 +381,7 @@ Executor& executor() {
 } // namespace qdmi::dd
 
 namespace qdmi::dd {
-Device::Device()
-    : name_("MQT Core DDSIM QDMI Device"),
-      qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
+Device::Device() : name_("MQT Core DDSIM QDMI Device") {}
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {
   if (session == nullptr) {
@@ -422,8 +420,6 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                             runningJobs_.load() == 0 ? QDMI_DEVICE_STATUS_IDLE
                                                      : QDMI_DEVICE_STATUS_BUSY,
                             prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
-                            prop, size, value, sizeRet)
   // Expose default length and time units
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LENGTHUNIT, "um", prop, size, value,
                       sizeRet)
@@ -433,8 +429,6 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                       value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, double,
                             1.0, prop, size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_DDSIM_QDMI_Site, SITES,
-                    prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     OPERATION_ADDRESSES, prop, size, value, sizeRet)
   // Target facts that QDMI v1.3 cannot encode compactly.
@@ -458,6 +452,9 @@ auto Device::decreaseRunningJobs() -> void { --runningJobs_; }
 
 } // namespace qdmi::dd
 
+MQT_DDSIM_QDMI_Device_Session_impl_d::MQT_DDSIM_QDMI_Device_Session_impl_d()
+    : qubitsNum_(MAX_QUBITS) {}
+
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::init() -> QDMI_STATUS {
   if (status_ != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
@@ -467,7 +464,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::init() -> QDMI_STATUS {
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter param, const size_t size,
-    const void* value) const -> QDMI_STATUS {
+    const void* value) -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
       QDMI_IS_INVALID_ENUM_VALUE(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -475,7 +472,25 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
   if (status_ != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return QDMI_ERROR_NOTSUPPORTED;
+  if (param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  if (value == nullptr) {
+    return size == 0 ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
+  }
+  const std::span bytes{static_cast<const char*>(value), size};
+  if (bytes.back() != '\0') {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  size_t width = 0;
+  const auto* end = &bytes.back();
+  const auto parsed = std::from_chars(bytes.data(), end, width);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || width == 0 ||
+      width > MAX_QUBITS) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  qubitsNum_ = width;
+  return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::createDeviceJob(
     // NOLINTNEXTLINE(readability-non-const-parameter)
@@ -508,6 +523,15 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
+  if ((value != nullptr && size == 0) ||
+      QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_DEVICE_PROPERTY)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
+                            prop, size, value, sizeRet)
+  const auto sites = std::span(SITES).first(qubitsNum_);
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_DDSIM_QDMI_Site, sites,
+                    prop, size, value, sizeRet)
   return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
@@ -521,6 +545,9 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto id = reinterpret_cast<uintptr_t>(site) - OFFSET;
+  if (id >= qubitsNum_) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
   static_assert(sizeof(uintptr_t) == sizeof(size_t));
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, id, prop, size,
                             value, sizeRet)
@@ -538,6 +565,12 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) ||
       QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_OPERATION_PROPERTY)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (sites != nullptr &&
+      std::ranges::any_of(std::span(sites, numSites), [&](auto site) {
+        return reinterpret_cast<uintptr_t>(site) - OFFSET >= qubitsNum_;
+      })) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto& [operationName, operationNumSites, operationNumParams, isVariadic,
@@ -788,6 +821,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           .captureOutput = captureQIROutput_,
           .maxWorkers = desired,
           .automaticWorkers = maxWorkers_ == 0,
+          .maxQubits = session_->qubitsNum(),
       };
       executor.threads.async([pending = std::weak_ptr(execution), index,
                               request, &executor]() mutable {

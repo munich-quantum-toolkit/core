@@ -80,6 +80,7 @@ TEST(WorkerProtocol, PreservesExactPayloadAndResultMetadata) {
       .captureOutput = true,
       .maxWorkers = 3,
       .automaticWorkers = false,
+      .maxQubits = 13,
   };
   const auto frame = encode(request);
   WorkerRequest decoded;
@@ -91,6 +92,7 @@ TEST(WorkerProtocol, PreservesExactPayloadAndResultMetadata) {
   EXPECT_EQ(decoded.captureOutput, request.captureOutput);
   EXPECT_EQ(decoded.maxWorkers, request.maxWorkers);
   EXPECT_EQ(decoded.automaticWorkers, request.automaticWorkers);
+  EXPECT_EQ(decoded.maxQubits, request.maxQubits);
 
   WorkerResponse response;
   response.succeeded = true;
@@ -220,7 +222,7 @@ TEST(WorkerProtocol, RejectsTruncationTrailingBytesAndInvalidResults) {
   EXPECT_FALSE(decode(grant + "x", slots));
   EXPECT_FALSE(decode(encode(WorkerSlots{0}), slots));
   auto invalidWorkers = request;
-  invalidWorkers.back() = 2;
+  invalidWorkers[invalidWorkers.size() - sizeof(uint64_t) - 1] = 2;
   EXPECT_FALSE(decode(invalidWorkers, parsed));
 }
 } // namespace qdmi::dd

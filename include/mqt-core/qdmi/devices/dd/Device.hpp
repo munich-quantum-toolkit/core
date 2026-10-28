@@ -37,9 +37,6 @@ class Device final : public Singleton<Device> {
   /// Provides access to the device name.
   std::string name_;
 
-  /// The number of qubits supported by the simulator.
-  size_t qubitsNum_ = 0;
-
   /// The list of device sessions.
   llvm::iplist<MQT_DDSIM_QDMI_Device_Session_impl_d> sessions_;
   /// Mutex protecting access to sessions_.
@@ -99,12 +96,17 @@ private:
   };
   /// The current status of the session.
   Status status_ = Status::ALLOCATED;
+  /// Session capacity; fixed before initialization.
+  size_t qubitsNum_;
   /// The device jobs associated with this session.
   llvm::iplist<MQT_DDSIM_QDMI_Device_Job_impl_d> jobs_;
   /// Mutex protecting access to jobs_.
   mutable std::mutex jobsMutex_;
 
 public:
+  MQT_DDSIM_QDMI_Device_Session_impl_d();
+  [[nodiscard]] auto qubitsNum() const -> size_t { return qubitsNum_; }
+
   /// Initializes the device session.
   ///
   /// @see MQT_DDSIM_QDMI_device_session_init
@@ -114,7 +116,7 @@ public:
   ///
   /// @see MQT_DDSIM_QDMI_device_session_set_parameter
   auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
-                    const void* value) const -> QDMI_STATUS;
+                    const void* value) -> QDMI_STATUS;
 
   /// Create a new device job.
   ///

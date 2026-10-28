@@ -22,6 +22,7 @@
 #include <complex>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -29,11 +30,18 @@
 
 namespace qdmi_test {
 
-SessionGuard::SessionGuard() {
+SessionGuard::SessionGuard(std::optional<size_t> qubits) {
   auto rc = MQT_DDSIM_QDMI_device_initialize();
   EXPECT_EQ(rc, QDMI_SUCCESS);
   rc = MQT_DDSIM_QDMI_device_session_alloc(&session);
   EXPECT_EQ(rc, QDMI_SUCCESS);
+  if (qubits) {
+    const auto width = std::to_string(*qubits);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                  width.size() + 1, width.c_str()),
+              QDMI_SUCCESS);
+  }
   rc = MQT_DDSIM_QDMI_device_session_init(session);
   EXPECT_EQ(rc, QDMI_SUCCESS);
 }

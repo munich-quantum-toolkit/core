@@ -37,6 +37,7 @@ struct WorkerRequest {
   bool captureOutput = false;
   uint64_t maxWorkers = 1;
   bool automaticWorkers = true;
+  uint64_t maxQubits = 0;
 };
 /// One optional request/grant exchange before parallel sampling.
 ///

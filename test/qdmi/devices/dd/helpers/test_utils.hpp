@@ -17,6 +17,7 @@
 
 #include <complex>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -26,7 +27,7 @@ namespace qdmi_test {
 
 struct SessionGuard {
   MQT_DDSIM_QDMI_Device_Session session{nullptr};
-  SessionGuard();
+  explicit SessionGuard(std::optional<size_t> qubits = std::nullopt);
   ~SessionGuard();
   SessionGuard(const SessionGuard&) = delete;
   SessionGuard& operator=(const SessionGuard&) = delete;
