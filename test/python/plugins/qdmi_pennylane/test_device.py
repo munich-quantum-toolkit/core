@@ -135,7 +135,7 @@ def test_retry_shot_copies_preserves_order_and_tracking(monkeypatch: pytest.Monk
     )
     assert program.result_layout is not None
     # Inject an equivalent prepared program with shared readout and a zero slot.
-    monkeypatch.setattr(device, "_prepare", lambda _tape: program)
+    monkeypatch.setattr(device, "_prepare", lambda tapes: [program] * len(tapes))
     tape = qp.tape.QuantumScript(
         [qp.X("left"), qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4]
     )

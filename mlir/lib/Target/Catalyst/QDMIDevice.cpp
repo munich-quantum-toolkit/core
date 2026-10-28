@@ -133,26 +133,24 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
                        const std::optional<mlir::ResultLayout>& layout) {
   validateShots(shots);
   Readout result;
-  std::string shotsError;
-  try {
-    auto samples = unwrap(job.getShots(programIndex));
-    result.reserve(samples.size());
-    for (auto& bits : samples) {
+  auto samples = job.getShots(programIndex);
+  if (samples && !samples->empty()) {
+    result.reserve(samples->size());
+    for (auto& bits : *samples) {
       result.emplace_back(std::move(bits), 1);
     }
-  } catch (const std::exception& error) {
-    shotsError = error.what();
-  }
-  if (result.empty()) {
-    try {
-      for (const auto& [bits, count] : unwrap(job.getCounts(programIndex))) {
-        if (count != 0) {
-          result.emplace_back(bits, count);
-        }
+  } else {
+    const auto shotsError = samples ? "" : llvm::toString(samples.takeError());
+    auto counts = job.getCounts(programIndex);
+    if (!counts) {
+      throw std::runtime_error(
+          "Cannot read QDMI samples; shots: " + shotsError +
+          "; counts: " + llvm::toString(counts.takeError()));
+    }
+    for (const auto& [bits, count] : *counts) {
+      if (count != 0) {
+        result.emplace_back(bits, count);
       }
-    } catch (const std::exception& error) {
-      throw std::runtime_error("Cannot read QDMI samples; shots: " +
-                               shotsError + "; counts: " + error.what());
     }
   }
   size_t total = 0;

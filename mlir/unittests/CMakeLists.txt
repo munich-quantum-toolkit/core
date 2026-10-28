@@ -59,8 +59,6 @@ function(mqt_mlir_configure_unittest_target target_name)
     set(LLVM_REQUIRES_RTTI ON)
   endif()
   mqt_mlir_target_use_project_options(${target_name})
-  # Test passes and rewriters derive from types in the RTTI-free SDK.
-  mqt_llvm_target_disable_rtti(${target_name})
 endfunction()
 
 add_subdirectory(bench)

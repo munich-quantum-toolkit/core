@@ -259,19 +259,18 @@ class QDMIDevice(Device):
         pipeline += super().preprocess_transforms(execution_config)
         return pipeline
 
-    def _prepare(self, tape: QuantumScript) -> CompiledProgram:
-        """Compile a preprocessed tape for the selected QDMI target.
+    def _prepare(self, tapes: Sequence[QuantumScript]) -> list[CompiledProgram]:
+        """Compile preprocessed tapes using one snapshot of the QDMI target.
 
         Returns:
-            A program ready for submission to this device.
+            Programs ready for submission to this device, in input order.
 
         Raises:
             PennyLaneTranslationError: If an operation or target cannot be compiled.
         """
         try:
-            program = QCProgram.from_pennylane(tape, wires=self.wires)
             return compile_program(
-                program,
+                [QCProgram.from_pennylane(tape, wires=self.wires) for tape in tapes],
                 target=self._qdmi_device,
                 profile=self._profile,
                 program_format=ProgramFormat.QASM3 if self._profile != SerializationProfile.DEFAULT else None,
@@ -306,9 +305,9 @@ class QDMIDevice(Device):
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
         shot_copies = tuple(self._shot_copies(tape.shots) for tape in tapes)
-        prepared = tuple((self._prepare(tape), shots) for tape, shots in zip(tapes, shot_copies, strict=True))
-        if not prepared:
+        if not tapes:
             return cast("ResultBatch", ())
+        prepared = tuple(zip(self._prepare(tapes), shot_copies, strict=True))
 
         if self.tracker.active:
             self.tracker.update(batches=1, batch_len=len(tapes))

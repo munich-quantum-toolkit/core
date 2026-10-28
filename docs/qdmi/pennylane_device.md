@@ -103,7 +103,8 @@ expanding parameter broadcasts. MQT Core then synthesizes gates and routes the
 circuits for the selected QDMI target. Programs need not use the provider's
 native gate names or physical qubit placement. Invalid target metadata and
 unsupported target configurations fail before submission; all programs in an
-ordinary QNode batch are prepared before any jobs are submitted.
+ordinary QNode batch use one snapshot of the target and are prepared before any
+jobs are submitted.
 
 The compiler selects an advertised format in this order: Adaptive QIR
 binary/text, OpenQASM 3, IQM JSON, then Base QIR binary/text. IQM targets must

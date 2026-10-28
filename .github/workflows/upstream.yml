@@ -23,7 +23,7 @@ jobs:
       sessions: '["catalyst-dev"]'
       draft-sessions: '["catalyst-dev"]'
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
     permissions:
       contents: read
 

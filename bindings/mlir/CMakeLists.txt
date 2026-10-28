@@ -60,10 +60,6 @@ target_link_libraries(
     MLIRQCTranslationSupport
     MLIRQCODDFunctionality)
 
-if(APPLE)
-  target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_MQTQDMIFactory")
-endif()
-
 # Install the Python stub package in editable mode for IDE support.
 if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
   install(

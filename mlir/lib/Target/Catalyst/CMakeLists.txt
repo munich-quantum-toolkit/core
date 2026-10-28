@@ -18,12 +18,7 @@ target_include_directories(
 target_link_libraries(
   MQTCompilerCatalystAdapter
   PUBLIC MQTCompilerQDMIAdapter MQT::CoreQDMI
-  PRIVATE MLIRQCProgramBuilder MLIRQCTranslationSupport)
-set(LLVM_REQUIRES_EH ON)
-set(LLVM_REQUIRES_RTTI ON)
-mqt_mlir_target_use_project_options(MQTCompilerCatalystAdapter)
-unset(LLVM_REQUIRES_EH)
-unset(LLVM_REQUIRES_RTTI)
+  PRIVATE MQT::ProjectOptions MLIRQCProgramBuilder MLIRQCTranslationSupport)
 
 if(MQT_CORE_INSTALL)
   install(
