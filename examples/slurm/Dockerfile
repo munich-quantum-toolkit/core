@@ -45,9 +45,9 @@ FROM build-tools AS core-build
 ARG TARGETARCH
 
 RUN mkdir -p /tmp/setup-mlir \
-    && curl -fLsS https://github.com/munich-quantum-software/setup-mlir/archive/8d3eae73d0f0196fd30c787d91ebd2018cb6c709.tar.gz \
+    && curl -fLsS https://github.com/munich-quantum-software/setup-mlir/archive/246aa0c70414109aa55fa19a5370739519833512.tar.gz \
         | tar -xz -C /tmp/setup-mlir --strip-components=1 \
-    && bash /tmp/setup-mlir/installation/setup-mlir.sh -v 23.1.2 -p /opt/llvm -a OFF \
+    && bash /tmp/setup-mlir/installation/setup-mlir.sh -v 23.1.4 -p /opt/llvm -a OFF \
     && rm -rf /tmp/setup-mlir
 # Source snapshots omit Git metadata; give the private wheel an explicit version.
 RUN --mount=type=bind,from=core-source,source=/core,target=/core,rw \

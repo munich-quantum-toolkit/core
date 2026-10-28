@@ -52,7 +52,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -79,7 +79,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -106,7 +106,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -119,7 +119,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@a4b4977405c7685f95e127cdb6db396bbadce787 # v2.5.5
     with:
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
     permissions:
       contents: read
       id-token: write
@@ -142,7 +142,7 @@ jobs:
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
     permissions:
       contents: read
       pull-requests: write # Needed to post review comments
@@ -160,7 +160,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       sessions: ${{ matrix.runs-on == 'ubuntu-26.04' && '["minimums", "tests", "qiskit-compat"]' || '["minimums", "tests"]' }}
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
     permissions:
       contents: read
 
@@ -183,7 +183,7 @@ jobs:
       enable-ty: true
       enable-mypy: false
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
@@ -217,7 +217,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 23.1.2
+      llvm-version: 23.1.4
     permissions:
       contents: read
 
