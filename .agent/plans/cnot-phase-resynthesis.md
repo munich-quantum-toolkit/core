@@ -26,36 +26,39 @@ QCO optimization unit tests. No default pipeline or frontend basis changes.
   CNOT budget. Keep a candidate only when it reduces the CNOT count. Replay its
   parity network and final linear map before changing IR.
 - Compute the residual map by replaying recorded CNOTs as column XORs on the
-  desired map. This avoids a duplicate matrix and explicit matrix inversion;
-  Gaussian elimination and the independent candidate checker remain.
+  desired map, then restore it with Gaussian elimination.
 - Insert at the region's end so captured angle definitions dominate all new
   uses. Verify QCO linearity at the pass boundary.
 
 ## Validation
 
-The release optimization test executable passes all 218 tests. Its 17 new tests
-include 150 deterministic generated circuits, full matrix comparisons, symbolic
-and extreme angles, nested controls, tensor transfers, effects, resource limits,
-and invalid input. Run from the repository root:
+The resynthesis tests cover 150 deterministic generated circuits, full matrix
+comparisons, symbolic and extreme angles, nested controls, tensor transfers,
+effects, resource limits, and invalid input. These contracts remain distinct;
+none of the 17 tests was removed. Run from the repository root:
 
 ```sh
 cmake --build --preset release --target mqt-core-mlir-unittest-optimizations
 build/release/mlir/unittests/Dialect/QCO/Transforms/Optimizations/mqt-core-mlir-unittest-optimizations
 ```
 
-The `mqt-cc` CLI also runs the registered pass successfully. Direct residual-map
-construction produces identical output on all six benchmark circuits below.
-`uvx nox -s cpp-lint` passes with no findings across all three changed C++
-files. `uvx nox -s lint` passes for the full repository. The final diff contains
-only the pass, its registration and tests, documentation, and a
-spelling-dictionary entry for the C++20 bit-counting function.
+At PR head `8a40779b1`, the 17 resynthesis tests passed before maintenance. The
+limit test now checks the qubit and gate bounds independently and requires
+unchanged IR when either bound prevents resynthesis. Final validation is
+pending.
+
+A proposed one-CNOT early exit was not retained: 31 alternating CLI pairs on
+`vbe_adder_3`, `qcla_adder_10`, `hwb6`, and `qft_n18` produced identical output
+but no consistent runtime benefit. These measurements include CLI startup and
+I/O and do not isolate the pass. The algorithm and its tests remain otherwise
+unchanged.
 
 ## Measurements and limits
 
 The three-gadget regression reduces eight CNOTs to four while keeping its three
-phase gates. A release build on macOS arm64, using LLVM/MLIR 23.1.0 and
-AppleClang 21, also processed six QASM benchmark inputs. The baseline imports
-QASM to QCO and runs `decompose-multi-controlled,canonicalize,cse`; the
+phase gates. Historical measurements used a release build on macOS arm64 with
+LLVM/MLIR 23.1.0 and AppleClang 21 on six QASM benchmark inputs. The baseline
+imports QASM to QCO and runs `decompose-multi-controlled,canonicalize,cse`; the
 comparison adds one `resynthesize-cnot-phase` invocation with default limits.
 
 | Circuit                      | Baseline CNOTs | After resynthesis |

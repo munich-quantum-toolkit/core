@@ -282,13 +282,18 @@ TEST_F(CNOTPhaseResynthesisTest, BoundedBlocks) {
   auto qubits = staticQubits(builder, 3);
   threeGadgets(builder, qubits);
   auto moduleOp = builder.finalize();
-  OwningOpRef<ModuleOp> original = moduleOp->clone();
-  ResynthesizeCNOTPhaseOptions options;
-  options.maxQubits = 2;
-  options.maxGates = 3;
-  ASSERT_TRUE(succeeded(run(*moduleOp, options)));
-  EXPECT_LE(countOps<CtrlOp>(*moduleOp), 8U);
-  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 3);
+  for (const auto limitQubits : {true, false}) {
+    SCOPED_TRACE(limitQubits);
+    OwningOpRef<ModuleOp> limited = moduleOp->clone();
+    ResynthesizeCNOTPhaseOptions options;
+    if (limitQubits) {
+      options.maxQubits = 1;
+    } else {
+      options.maxGates = 1;
+    }
+    ASSERT_TRUE(succeeded(run(*limited, options)));
+    EXPECT_TRUE(areModulesStructurallyEquivalent(*moduleOp, *limited));
+  }
 }
 
 TEST_F(CNOTPhaseResynthesisTest, RejectsInvalidOptions) {
