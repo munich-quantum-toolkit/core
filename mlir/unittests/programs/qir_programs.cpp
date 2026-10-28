@@ -11,8 +11,11 @@
 #include "qir_programs.h"
 
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Value.h"
 
@@ -236,10 +239,25 @@ Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-Value measurementWithoutRegisters(QIRProgramBuilder& b) {
+Value measurementWithoutRegistersBase(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.measure(q, 0);
   return b.intConstant(0);
+}
+
+static Value measureStaticScalar(QIRProgramBuilder& b, Value qubit) {
+  auto result = b.staticResult(0);
+  auto signature =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(b.getContext()),
+                                  {qubit.getType(), result.getType()});
+  auto declaration = getOrCreateFunctionDeclaration(
+      b, b.getInsertionBlock()->getParentOp(), QIR_MEASURE, signature);
+  LLVM::CallOp::create(b, declaration, ValueRange{qubit, result});
+  return b.intConstant(0);
+}
+
+Value measurementWithoutRegisters(QIRProgramBuilder& b) {
+  return measureStaticScalar(b, b.allocQubit());
 }
 
 template <bool IntoRegister> Value resetQubitWithoutOp(QIRProgramBuilder& b) {
@@ -438,10 +456,16 @@ template <bool IntoRegister> Value multipleControlledH(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
-Value hWithoutRegister(QIRProgramBuilder& b) {
+Value hWithoutRegisterBase(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
   return measureAndRecord(b, {q}, false);
+}
+
+Value hWithoutRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  return measureStaticScalar(b, q);
 }
 
 template <bool IntoRegister> Value s(QIRProgramBuilder& b) {
