@@ -414,7 +414,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     }
     auto result = *registerResult;
     if (!result) {
-      result = getResultPtr(state, op.getOperation(), rewriter, false);
+      result = getResultPtr(state, op.getOperation(), rewriter);
     }
 
     if (auto it = state.measuredResults.find(op);
