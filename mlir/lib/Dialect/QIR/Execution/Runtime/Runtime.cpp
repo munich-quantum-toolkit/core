@@ -97,7 +97,7 @@ auto Runtime::reset() -> void {
 
 Error Runtime::configureStaticResources(std::optional<size_t> qubits,
                                         std::optional<size_t> results) {
-  if (qubits && *qubits > dd::Package::MAX_POSSIBLE_QUBITS) {
+  if (qubits && *qubits > maxQubits_) {
     return createStringError(
         std::errc::result_out_of_range,
         "Static QIR qubit capacity exceeds the supported range");
@@ -124,8 +124,7 @@ Runtime::Runtime(const uint64_t randomSeed)
       currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), mt(randomSeed) {}
 
 auto Runtime::enlargeState(size_t maxQubit) -> Error {
-  if (maxQubit >= dd::Package::MAX_POSSIBLE_QUBITS ||
-      (staticQubits_ && maxQubit >= *staticQubits_)) {
+  if (maxQubit >= maxQubits_ || (staticQubits_ && maxQubit >= *staticQubits_)) {
     return createStringError(std::errc::result_out_of_range,
                              "QIR qubit ID exceeds the supported qubit range");
   }
@@ -140,7 +139,7 @@ auto Runtime::enlargeState(size_t maxQubit) -> Error {
   if (capacity < numQubits) {
     // Unknown resources grow geometrically; declared resources fit exactly.
     const auto newCapacity = staticQubits_.value_or(std::min(
-        dd::Package::MAX_POSSIBLE_QUBITS,
+        maxQubits_,
         std::max({numQubits, dd::Package::DEFAULT_QUBITS, 2 * capacity})));
     if (!qState.dd) {
       auto package = dd::Package::create(newCapacity);
@@ -452,8 +451,7 @@ auto Runtime::qAlloc() -> Expected<Qubit*> {
         "Cannot dynamically allocate qubits after using static qubit IDs");
   }
   qubitMode = ResourceMode::DYNAMIC;
-  if ((freeQubits_.empty() &&
-       currentMaxQubitId >= dd::Package::MAX_POSSIBLE_QUBITS) ||
+  if ((freeQubits_.empty() && currentMaxQubitId >= maxQubits_) ||
       currentMaxQubitAddress == std::numeric_limits<uintptr_t>::max()) {
     return createStringError(std::errc::result_out_of_range,
                              "QIR runtime exceeds the supported qubit range");

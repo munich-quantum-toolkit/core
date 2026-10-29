@@ -22,7 +22,6 @@ from numpy.typing import NDArray
 import mqt.core.dd
 import mqt.core.qdmi
 from mqt.core.qdmi import Device
-from mqt.core.typing import QDMISessionParameters
 
 _CompilerInput: TypeAlias = (
     str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
@@ -558,8 +557,23 @@ class CompilerTarget:
         """
 
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
-        """Open a client-visible device and snapshot its compiler target."""
+    def from_device_id(
+        device_id: str,
+        *,
+        driver_path: str | os.PathLike[str] | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike[str] | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> CompilerTarget:
+        """Open a device through :func:`mqt.core.qdmi.open_device` and snapshot its compiler target."""
 
     @property
     def name(self) -> str | None:

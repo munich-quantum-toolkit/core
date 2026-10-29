@@ -150,7 +150,8 @@ The `custom1` through `custom5` arguments of
 {py:meth}`mqt.core.qdmi.Device.submit_job` and
 {py:func}`mqt.core.mlir.submit_program` use the device's documented types.
 Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
-`int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
+`int`, and `double`. Integers outside the C++ `int` range raise `TypeError`. For
+a device-defined binary payload, pass nonempty `bytes`:
 
 ```python
 job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")

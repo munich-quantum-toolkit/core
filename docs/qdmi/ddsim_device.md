@@ -11,6 +11,29 @@ mystnb:
 DDSIM executes quantum programs locally through QDMI using
 [decision diagrams](../dd_package.md).
 
+## Session width
+
+DDSIM supports up to 65,535 qubits. Set the optional device-session `CUSTOM1`
+parameter to a decimal string from `"1"` to `"65535"` before initialization:
+
+```python
+from mqt.core.qdmi.builtin_driver import open_device
+
+device = open_device("mqt.ddsim.default", custom1="12")
+```
+
+The same argument works with `QDMIBackend.from_device_id`. The compiler sees 12
+sites instead of the simulator's maximum. Compile for that device before
+submission. The default remains the full simulator capacity.
+
+The width is fixed for the session and independent of other sessions. The C ABI
+expects a NUL-terminated string, with its terminator included in the buffer
+size. Invalid strings and values outside this range return
+`QDMI_ERROR_INVALIDARGUMENT`. Programs that exceed the width fail during
+execution, including dynamic QIR allocations. The bound counts DD wires: QCO
+lifetimes do not reclaim wires. Simulation packages grow only as needed. This
+session parameter is separate from job `CUSTOM1`, which sets the random seed.
+
 ## Capabilities
 
 The simulator device accepts OpenQASM 2, OpenQASM 3, and textual or binary QIR

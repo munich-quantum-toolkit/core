@@ -358,6 +358,7 @@ struct WalkState {
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
   DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr;
   size_t remainingWhileIterations;
+  size_t maxQubits;
   DenseSet<Operation*> activeCalls;
   SymbolTableCollection symbols;
 };
@@ -1680,7 +1681,7 @@ static FailureOr<Block*> selectBranch(Operation* op, WalkState& walk) {
 static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
                                                  dd::VectorDD& state,
                                                  Operation* op) {
-  if (count > dd::Package::MAX_POSSIBLE_QUBITS - walk.qubits->numQubits) {
+  if (count > walk.maxQubits - walk.qubits->numQubits) {
     return op->emitError() << "QCO function exceeds the supported qubit range";
   }
   const size_t required = walk.qubits->numQubits + count;
@@ -2184,13 +2185,14 @@ struct PreparedState {
 
 static FailureOr<PreparedState>
 prepare(func::FuncOp func, dd::Package& dd,
-        const DDArgumentBindings& argumentBindings,
+        const DDArgumentBindings& argumentBindings, size_t maxQubits,
         bool bindEntryAllocations = false) {
   if (func.isDeclaration() || !func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD execution requires a one-block function body";
   }
 
+  maxQubits = std::min(maxQubits, dd::Package::MAX_POSSIBLE_QUBITS);
   PreparedState prepared;
   if (failed(
           applyArgumentBindings(func, argumentBindings, prepared.classical))) {
@@ -2199,7 +2201,7 @@ prepare(func::FuncOp func, dd::Package& dd,
   QubitMap& qubits = prepared.qubits;
   for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
     const auto index = static_cast<size_t>(staticOp.getIndex());
-    if (index >= dd::Package::MAX_POSSIBLE_QUBITS) {
+    if (index >= maxQubits) {
       return staticOp.emitError()
              << "static qubit index exceeds the supported qubit range";
     }
@@ -2211,7 +2213,7 @@ prepare(func::FuncOp func, dd::Package& dd,
     size_t next = 0;
     for (Value arg : func.getArguments()) {
       if (isa<QubitType>(arg.getType())) {
-        if (next >= dd::Package::MAX_POSSIBLE_QUBITS) {
+        if (next >= maxQubits) {
           return func.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2232,7 +2234,7 @@ prepare(func::FuncOp func, dd::Package& dd,
           }
         }
         const auto count = static_cast<size_t>(size);
-        if (count > dd::Package::MAX_POSSIBLE_QUBITS - next) {
+        if (count > maxQubits - next) {
           return func.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2250,7 +2252,7 @@ prepare(func::FuncOp func, dd::Package& dd,
   if (bindEntryAllocations) {
     for (Operation& operation : func.getBody().front()) {
       if (auto alloc = dyn_cast<AllocOp>(operation)) {
-        if (qubits.numQubits >= dd::Package::MAX_POSSIBLE_QUBITS) {
+        if (qubits.numQubits >= maxQubits) {
           return alloc.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2262,7 +2264,7 @@ prepare(func::FuncOp func, dd::Package& dd,
           continue;
         }
         const auto count = static_cast<size_t>(type.getDimSize(0));
-        if (count > dd::Package::MAX_POSSIBLE_QUBITS - qubits.numQubits) {
+        if (count > maxQubits - qubits.numQubits) {
           return tensorAlloc.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2288,8 +2290,8 @@ FailureOr<dd::MatrixDD>
 buildFunctionality(func::FuncOp func, dd::Package& dd,
                    const DDArgumentBindings& argumentBindings,
                    const DDExecutionOptions& options) {
-  auto prepared =
-      prepare(func, dd, argumentBindings, /*bindEntryAllocations=*/true);
+  auto prepared = prepare(func, dd, argumentBindings, options.maxQubits,
+                          /*bindEntryAllocations=*/true);
   if (failed(prepared)) {
     return failure();
   }
@@ -2303,6 +2305,8 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
       .dd = &dd,
       .rng = nullptr,
       .remainingWhileIterations = options.maxWhileIterations,
+      .maxQubits =
+          std::min(options.maxQubits, dd::Package::MAX_POSSIBLE_QUBITS),
   };
   walkState.activeCalls.insert(func.getOperation());
 
@@ -2326,6 +2330,10 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              GateCache* gateCache = nullptr) {
   const size_t inputQubits =
       in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
+  if (inputQubits > options.maxQubits) {
+    dd.decRef(in);
+    return func.emitError() << "input state exceeds the supported qubit range";
+  }
   if (inputQubits < prepared.qubits.numQubits) {
     dd.decRef(in);
     return func.emitError()
@@ -2347,6 +2355,8 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       .deferredMeasurements = deferredMeasurements,
       .deferredMeasuredWires = deferredMeasuredWires,
       .remainingWhileIterations = options.maxWhileIterations,
+      .maxQubits =
+          std::min(options.maxQubits, dd::Package::MAX_POSSIBLE_QUBITS),
   };
   walkState.activeCalls.insert(func.getOperation());
 
@@ -2368,7 +2378,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  dd::Package& dd, std::mt19937_64& rng,
                                  const DDArgumentBindings& argumentBindings,
                                  const DDExecutionOptions& options) {
-  auto prepared = prepare(func, dd, argumentBindings);
+  auto prepared = prepare(func, dd, argumentBindings, options.maxQubits);
   if (failed(prepared)) {
     dd.decRef(in);
     return failure();
@@ -2465,7 +2475,7 @@ FailureOr<dd::VectorDD>
 simulateStatevector(func::FuncOp func, dd::Package& dd,
                     const DDArgumentBindings& argumentBindings,
                     const DDExecutionOptions& options) {
-  auto prepared = prepare(func, dd, argumentBindings);
+  auto prepared = prepare(func, dd, argumentBindings, options.maxQubits);
   if (failed(prepared)) {
     return failure();
   }
@@ -2693,6 +2703,8 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         .gates = &gateCache,
         .rng = &rng,
         .remainingWhileIterations = group.remainingWhileIterations,
+        .maxQubits =
+            std::min(options.maxQubits, dd::Package::MAX_POSSIBLE_QUBITS),
     };
     walk.activeCalls.insert(func.getOperation());
     while (!group.frames.empty() ||
@@ -3097,7 +3109,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   }
   auto dd = std::move(*packageResult);
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
-  auto prepared = prepare(func, *dd, argumentBindings);
+  auto prepared = prepare(func, *dd, argumentBindings, options.maxQubits);
   if (failed(prepared)) {
     return failure();
   }
@@ -3170,7 +3182,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
       return func.emitError(llvm::toString(created.takeError()));
     }
     auto package = std::move(*created);
-    auto next = prepare(func, *package, argumentBindings);
+    auto next = prepare(func, *package, argumentBindings, options.maxQubits);
     if (failed(next)) {
       return failure();
     }

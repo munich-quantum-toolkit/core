@@ -56,6 +56,17 @@ def test_device_ids() -> None:
     assert device_ids() == Session().device_ids
 
 
+@pytest.mark.parametrize("parameter", [2**31, -(2**31) - 1])
+def test_custom_integer_overflow_preserves_type(ddsim_device: Device, parameter: int) -> None:
+    """Reject oversized integers instead of reinterpreting them as double bytes."""
+    source = "OPENQASM 3.0; qubit q;"
+    for submit in (ddsim_device.submit_job, ddsim_device.try_submit_job):
+        with pytest.raises(TypeError, match="incompatible"):
+            submit(source, ProgramFormat.QASM3, 1, custom3=parameter)
+    with pytest.raises(TypeError, match="incompatible"):
+        submit_program(source, target=ddsim_device, custom3=parameter)
+
+
 @pytest.fixture(params=_get_devices())
 def device(request: pytest.FixtureRequest) -> Device:
     """Fixture to provide a device for testing.

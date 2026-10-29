@@ -29,11 +29,17 @@
 
 namespace qdmi_test {
 
-SessionGuard::SessionGuard() {
+SessionGuard::SessionGuard(const char* qubits) {
   auto rc = MQT_DDSIM_QDMI_device_initialize();
   EXPECT_EQ(rc, QDMI_SUCCESS);
   rc = MQT_DDSIM_QDMI_device_session_alloc(&session);
   EXPECT_EQ(rc, QDMI_SUCCESS);
+  if (qubits != nullptr) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                  std::strlen(qubits) + 1, qubits),
+              QDMI_SUCCESS);
+  }
   rc = MQT_DDSIM_QDMI_device_session_init(session);
   EXPECT_EQ(rc, QDMI_SUCCESS);
 }
