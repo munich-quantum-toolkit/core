@@ -26,7 +26,8 @@
 namespace mlir::qir {
 
 LogicalResult validateCapabilities(ModuleOp moduleOp,
-                                   const PayloadSpecification& payload) {
+                                   const PayloadSpecification& payload,
+                                   bool checkedCountedIterationConstraints) {
   const auto capabilities = payload.capabilities();
   const auto requireCapability =
       [&](llvm::StringRef id, bool allowConstraints = false) -> LogicalResult {
@@ -67,7 +68,8 @@ LogicalResult validateCapabilities(ModuleOp moduleOp,
         const auto branches =
             cast<IntegerAttr>(flag.getValue()).getValue().getZExtValue();
         if (((branches & 1U) != 0U &&
-             failed(requireCapability(ProgramCapability::COUNTED_ITERATION))) ||
+             failed(requireCapability(ProgramCapability::COUNTED_ITERATION,
+                                      checkedCountedIterationConstraints))) ||
             ((branches & 2U) != 0U &&
              failed(requireCapability(ProgramCapability::CONDITIONAL_LOOP)))) {
           return failure();

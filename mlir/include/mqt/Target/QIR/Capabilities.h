@@ -36,10 +36,12 @@ inline constexpr std::array OPTIONAL_CAPABILITIES{
 /// Check emitted QIR requirements against the selected payload version and
 /// capabilities.
 ///
-/// Required loop capabilities must be unconstrained because lowered QIR does
-/// not retain a proof of their bounds.
-LogicalResult validateCapabilities(ModuleOp moduleOp,
-                                   const PayloadSpecification& payload);
+/// Lowered QIR does not retain a proof of counted-loop bounds. Set
+/// \p checkedCountedIterationConstraints only after checking them before
+/// lowering and confirming no while loop remains.
+LogicalResult
+validateCapabilities(ModuleOp moduleOp, const PayloadSpecification& payload,
+                     bool checkedCountedIterationConstraints = false);
 
 } // namespace qir
 } // namespace mlir
