@@ -23,6 +23,7 @@ set(BENCH_SOURCES
     register_repeat_until_success.cpp
     register_shor.cpp
     register_teleportation.cpp
+    register_vqe_ansatz.cpp
     register_w_state.cpp)
 
 target_sources(${MQT_CORE_TARGET_NAME}-bindings PRIVATE ${BENCH_SOURCES})
