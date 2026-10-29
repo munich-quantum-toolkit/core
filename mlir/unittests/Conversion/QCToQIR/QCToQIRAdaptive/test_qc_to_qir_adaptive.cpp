@@ -457,7 +457,7 @@ TEST_F(QCToQIRAdaptiveNativeTest,
   }
 }
 
-TEST_F(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
+TEST_F(QCToQIRAdaptiveNativeTest, AssignsStaticResultIdsToArrays) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   SmallVector<Value> registers;
@@ -470,17 +470,17 @@ TEST_F(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  SmallVector<Value> allocated;
-  SmallVector<Value> released;
-  moduleOp->walk([&](LLVM::CallOp call) {
-    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
-      allocated.push_back(call.getOperand(1));
-    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
-      released.push_back(call.getOperand(1));
+  DenseSet<Value> results;
+  moduleOp->walk([&](LLVM::StoreOp store) {
+    if (store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
+      results.insert(store.getValue());
     }
   });
-  ASSERT_EQ(allocated.size(), 12);
-  EXPECT_EQ(released, allocated);
+  EXPECT_EQ(results.size(), 12U);
+  moduleOp->walk([&](LLVM::CallOp call) {
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_ALLOC);
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_RELEASE);
+  });
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
@@ -925,25 +925,12 @@ TEST_F(QCToQIRAdaptiveNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
     ASSERT_TRUE(code);
     EXPECT_EQ(cast<IntegerAttr>(code.getValue()).getInt(), 0);
   });
-  SmallVector<Value> allocatedScalars;
-  SmallVector<Value> releasedScalars;
-  SmallVector<Value> allocatedArrays;
-  SmallVector<Value> releasedArrays;
   module->walk([&](LLVM::CallOp call) {
-    if (call.getCallee() == qir::QIR_RESULT_ALLOC) {
-      allocatedScalars.push_back(call.getResult());
-    } else if (call.getCallee() == qir::QIR_RESULT_RELEASE) {
-      releasedScalars.push_back(call.getOperand(0));
-    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
-      allocatedArrays.push_back(call.getOperand(1));
-    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
-      releasedArrays.push_back(call.getOperand(1));
-    }
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ALLOC);
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_RELEASE);
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_ALLOC);
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_RELEASE);
   });
-  EXPECT_EQ(allocatedScalars.size(), 1U);
-  EXPECT_EQ(allocatedArrays.size(), 3U);
-  EXPECT_EQ(releasedScalars, allocatedScalars);
-  EXPECT_EQ(releasedArrays, allocatedArrays);
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, MaterializesBooleanOutputsBeforeRecording) {
@@ -1197,10 +1184,52 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
-                                    qir::QIRProgramBuilder::Profile::Adaptive);
+  auto reference = ::mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder,
+      qir::QIRProgramBuilder::Profile::Adaptive, true);
   ASSERT_TRUE(reference);
+  // The converter reserves IDs for returned arrays before scalar results.
+  SmallVector<LLVM::IntToPtrOp> resultPointers;
+  DenseSet<Operation*> arrayPointers;
+  DenseSet<Operation*> scalarPointers;
+  reference->walk([&](LLVM::StoreOp store) {
+    if (!store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
+      return;
+    }
+    if (auto pointer = store.getValue().getDefiningOp<LLVM::IntToPtrOp>()) {
+      resultPointers.push_back(pointer);
+      arrayPointers.insert(pointer.getOperation());
+    }
+  });
+  reference->walk([&](LLVM::CallOp call) {
+    if (!call.getCallee()) {
+      return;
+    }
+    Value result;
+    if (call.getCallee() == qir::QIR_MEASURE && call.getNumOperands() > 1) {
+      result = call.getOperand(1);
+    } else if (call.getCallee() == qir::QIR_RECORD_OUTPUT ||
+               call.getCallee() == qir::QIR_READ_RESULT) {
+      result = call.getOperand(0);
+    }
+    if (result) {
+      if (auto pointer = result.getDefiningOp<LLVM::IntToPtrOp>()) {
+        scalarPointers.insert(pointer.getOperation());
+      }
+    }
+  });
+  reference->walk([&](LLVM::IntToPtrOp pointer) {
+    if (scalarPointers.contains(pointer.getOperation()) &&
+        !arrayPointers.contains(pointer.getOperation())) {
+      resultPointers.push_back(pointer);
+    }
+  });
+  for (auto [index, pointer] : llvm::enumerate(resultPointers)) {
+    auto constant = pointer.getArg().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(constant);
+    constant.setValueAttr(
+        IntegerAttr::get(constant.getType(), static_cast<int64_t>(index)));
+  }
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 

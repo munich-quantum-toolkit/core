@@ -654,15 +654,13 @@ TEST(CompilerQDMIAdapterTest,
                                 restrictedEnvironment))
           .takeError());
   EXPECT_FALSE(diagnostics.empty());
-  EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
-            std::string::npos);
+  EXPECT_NE(diagnostics.find("qir.arrays"), std::string::npos);
   diagnostics.clear();
   diagnostics = llvm::toString(
       mlir::CompiledProgram::compile(input->copy(), restrictedEnvironment)
           .takeError());
   EXPECT_FALSE(diagnostics.empty());
-  EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
-            std::string::npos);
+  EXPECT_NE(diagnostics.find("qir.arrays"), std::string::npos);
 
   auto mapped = std::move(*input).intoQCO();
   ASSERT_TRUE(mlir::succeeded(mapped));
@@ -671,15 +669,13 @@ TEST(CompilerQDMIAdapterTest,
   ASSERT_TRUE(mlir::succeeded(qc));
   diagnostics.clear();
   EXPECT_TRUE(mlir::failed(qc->copy().intoQIR(mlir::QIRProfile::Adaptive)));
-  EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
-            std::string::npos);
+  EXPECT_NE(diagnostics.find("qir.arrays"), std::string::npos);
   diagnostics.clear();
   diagnostics = llvm::toString(
       (mlir::runDefaultPipeline(qc->copy(), mlir::ProgramFormat::QIRAdaptive))
           .takeError());
   EXPECT_FALSE(diagnostics.empty());
-  EXPECT_NE(diagnostics.find("qir.dynamic-result-management"),
-            std::string::npos);
+  EXPECT_NE(diagnostics.find("qir.arrays"), std::string::npos);
 
   for (const mlir::PayloadFormat& format : {
            mlir::PayloadFormat{

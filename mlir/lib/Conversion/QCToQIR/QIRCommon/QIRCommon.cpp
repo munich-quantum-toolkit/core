@@ -596,27 +596,16 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 }
 
 Value getResultPtr(LoweringState& state, Operation* op,
-                   ConversionPatternRewriter& rewriter, bool dynamic) {
+                   ConversionPatternRewriter& rewriter) {
   OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-  const auto index = static_cast<int64_t>(state.scalarResults.size());
+  const auto index = state.staticRegisterResults +
+                     static_cast<int64_t>(state.scalarResults.size());
   if (auto it = state.measuredResults.find(op);
       it != state.measuredResults.end()) {
     it->second.label = "__unnamed__" + std::to_string(index);
   }
-  Value result;
-  if (dynamic) {
-    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-    auto signature = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
-    auto declaration = getOrCreateFunctionDeclaration(
-        rewriter, op, QIR_RESULT_ALLOC, signature);
-    auto zero = LLVM::ZeroOp::create(rewriter, op->getLoc(), ptrType);
-    result = LLVM::CallOp::create(rewriter, op->getLoc(), declaration,
-                                  zero.getResult())
-                 .getResult();
-  } else {
-    result = createPointerFromIndex(rewriter, op->getLoc(), index);
-  }
+  auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
   state.scalarResults.push_back(result);
   return result;
 }

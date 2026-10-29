@@ -1074,11 +1074,12 @@ public:
   /// properly initialized before calling this function, and the resulting
   /// module will be finalized and returned after this function completes.
   /// @param profile The profile to use for the program. Defaults to Adaptive.
+  /// @param staticResults Use statically assigned result IDs in Adaptive QIR.
   /// @return The module containing the quantum program built by buildFunc.
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<Value(QIRProgramBuilder&)>& buildFunc,
-        Profile profile = Profile::Adaptive);
+        Profile profile = Profile::Adaptive, bool staticResults = false);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
@@ -1155,6 +1156,7 @@ private:
 
   /// Track whether Base or Adaptive Profile is used.
   Profile profile = Profile::Adaptive;
+  bool staticResults = false;
 
   /// Reject use after finalization or moving the program to another builder.
   void checkFinalized() const;

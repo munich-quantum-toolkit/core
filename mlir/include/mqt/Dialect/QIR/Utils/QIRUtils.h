@@ -52,6 +52,9 @@ inline constexpr auto QIR_QUBIT_ARG_ATTR = "qir.qubit";
 /// Marks stores of qubit pointers into compiler-emitted control arrays/tuples.
 inline constexpr auto QIR_QUBIT_STORE_ATTR = "qir.qubit_store";
 
+/// Marks stores of static result pointers into compiler-emitted arrays.
+inline constexpr auto QIR_RESULT_STORE_ATTR = "qir.result_store";
+
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
 /// MLIR translates integer-valued `llvm.module_flags` attributes to i32
@@ -209,6 +212,8 @@ struct ClassicalRegister {
   bool booleanStorage = false;
   /// Number of bits in the register.
   std::variant<int64_t, Value> size = int64_t{0};
+  /// Adaptive Profile: first static result ID for a returned register.
+  int64_t resultOffset = 0;
   /// Base Profile: Pre-allocated result pointer for each bit.
   SmallVector<Value> results;
   /// Adaptive Profile: The backing array of Result pointers or i1 values.

@@ -173,7 +173,7 @@ protected:
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
     auto moduleOp = ::mqt::test::buildMLIRProgram(
-        context.get(), builder, QIRProgramBuilder::Profile::Adaptive);
+        context.get(), builder, QIRProgramBuilder::Profile::Adaptive, true);
     EXPECT_TRUE(runQIRCleanupPipeline(moduleOp.get(), true).succeeded());
     return moduleOp;
   }
@@ -1984,7 +1984,7 @@ result = measure q;
     if (profile == QIRProfile::Adaptive) {
       EXPECT_NE(llvmIR->find("!\"dynamic_qubit_management\", i1 true"),
                 std::string::npos);
-      EXPECT_NE(llvmIR->find("!\"dynamic_result_management\", i1 true"),
+      EXPECT_NE(llvmIR->find("!\"dynamic_result_management\", i1 false"),
                 std::string::npos);
       EXPECT_NE(llvmIR->find("!\"backwards_branching\", i2 0"),
                 std::string::npos);
