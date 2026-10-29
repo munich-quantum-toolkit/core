@@ -21,14 +21,15 @@ confirms support. Other targets retain Boolean storage.
   clears its deferred wire without measuring or changing a qubit.
 - Keep separately returned measurement snapshots in their own result slots.
   Preserve direct measurement/store fusion for other returned-register writes.
+- Test result writes end to end. Keep direct checks for merged registers, static
+  result capacity, deferred measurements, and stale metadata.
 
 ## Validation
 
 - The release build and `mlir-doc` reference generation passed.
-- `ctest --preset release --parallel 4`: 4,166 passed, 3 skipped on macOS. DDSIM
+- `ctest --preset release --parallel 4`: 4,163 passed, 3 skipped on macOS. DDSIM
   worker tests require permission to bind local sockets.
-- `uvx nox -s cpp-lint --force-python 3.14 -- HEAD` checked all 13 changed C++
-  source and test files with clang-tidy 23.1.2. The final test-context edit also
-  passed a separate full-file clang-tidy check.
+- Whole-file C++ lint passed for the changed source and test files with
+  clang-tidy 23.1.2.
 - `uvx nox -s lint` passed. No Python bindings changed; Python tests and the
   full executable documentation build were not run.

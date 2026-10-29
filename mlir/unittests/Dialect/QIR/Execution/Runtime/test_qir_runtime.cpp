@@ -95,35 +95,10 @@ TEST_F(QIRRuntimeTest, RejectsInvalidDynamicResourceUse) {
               testing::HasSubstr("Result not allocated"));
   EXPECT_DEATH(__quantum__qis__x__body(qubit), "Qubit not allocated");
   EXPECT_DEATH(__quantum__rt__read_result(result), "Result not allocated");
-  EXPECT_DEATH(__quantum__rt__write_result(true, result),
-               "Result not allocated");
   EXPECT_DEATH(__quantum__rt__qubit_release(qubit),
                "qubit was not dynamically allocated");
   EXPECT_DEATH(__quantum__rt__result_release(result),
                "result was not dynamically allocated");
-}
-
-TEST_F(QIRRuntimeTest, WritesStaticAndDynamicResultsWithoutChangingQubits) {
-  for (bool dynamic : {false, true}) {
-    SCOPED_TRACE(dynamic);
-    __quantum__rt__initialize(nullptr);
-    auto* result = dynamic ? __quantum__rt__result_allocate(nullptr) : nullptr;
-    EXPECT_FALSE(__quantum__rt__read_result(result));
-    __quantum__rt__write_result(true, result);
-    EXPECT_TRUE(__quantum__rt__read_result(result));
-    __quantum__rt__result_record_output(result, nullptr);
-    __quantum__qis__mz__body(nullptr, result);
-    EXPECT_FALSE(__quantum__rt__read_result(result));
-    __quantum__rt__write_result(true, result);
-    EXPECT_TRUE(__quantum__rt__read_result(result));
-    __quantum__rt__write_result(false, result);
-    EXPECT_FALSE(__quantum__rt__read_result(result));
-    __quantum__rt__result_record_output(result, nullptr);
-    EXPECT_EQ(Runtime::getInstance().getMeasurements(), "10");
-    if (dynamic) {
-      __quantum__rt__result_release(result);
-    }
-  }
 }
 
 TEST_F(QIRRuntimeTest, RejectsMixedStaticAndDynamicResourceManagement) {

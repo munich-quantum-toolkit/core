@@ -438,43 +438,6 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
   EXPECT_EQ(session.runtime().getMeasurements(), "1");
 }
 
-TEST_F(JitSessionTest, WritesDefaultsAndComputedValuesIntoResultArrays) {
-  constexpr llvm::StringRef ir = R"(
-define i64 @main() #0 {
-  call void @__quantum__rt__initialize(ptr null)
-  %results = alloca [2 x ptr]
-  call void @__quantum__rt__result_array_allocate(i64 2, ptr %results, ptr null)
-  %first = load ptr, ptr %results
-  %address = getelementptr ptr, ptr %results, i64 1
-  %second = load ptr, ptr %address
-  call void @__quantum__rt__write_result(i1 true, ptr %first)
-  call void @__quantum__qis__mz__body(ptr null, ptr %second)
-  %bit = call i1 @__quantum__rt__read_result(ptr %second)
-  %corrected = xor i1 %bit, true
-  call void @__quantum__rt__write_result(i1 %corrected, ptr %second)
-  call void @__quantum__rt__result_array_record_output(i64 2, ptr %results, ptr null)
-  call void @__quantum__rt__result_array_release(i64 2, ptr %results)
-  ret i64 0
-}
-declare void @__quantum__rt__initialize(ptr)
-declare void @__quantum__rt__result_array_allocate(i64, ptr, ptr)
-declare void @__quantum__rt__result_array_release(i64, ptr)
-declare void @__quantum__rt__write_result(i1, ptr)
-declare i1 @__quantum__rt__read_result(ptr)
-declare void @__quantum__qis__mz__body(ptr, ptr)
-declare void @__quantum__rt__result_array_record_output(i64, ptr, ptr)
-attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
-!llvm.module.flags = !{!0}
-!0 = !{i32 1, !"writable_results", i1 true}
-)";
-  auto session = value(qir::JitSession::create(
-      ir, "writable-array", qir::Execution::Sampling, 17, &sink));
-  std::vector<std::string> shots;
-  ASSERT_EQ(value(session->sample(8, shots)), 0);
-  EXPECT_EQ(shots, std::vector<std::string>(8, "11"));
-  EXPECT_THAT(sinkText, testing::HasSubstr("OUTPUT\tRESULT_ARRAY\t11"));
-}
-
 TEST_F(JitSessionTest, WritableResultsReplaceDeferredMeasurements) {
   constexpr llvm::StringRef ir = R"(
 define i64 @main() #0 {
