@@ -127,6 +127,13 @@ static llvm::cl::opt<std::string>
 static llvm::cl::opt<uint64_t>
     compilationSeedOption("seed",
                           llvm::cl::desc("Override all compiler random seeds"));
+static llvm::cl::opt<uint64_t> ancillaBudgetOption(
+    "ancilla-budget",
+    llvm::cl::desc(
+        "Maximum existing live helpers per controlled Pauli, phase, rotation, "
+        "or SWAP gate; zero "
+        "disables borrowing (default: available helpers; no new "
+        "qubits are allocated)"));
 static llvm::cl::opt<size_t> mappingTrials(
     "mapping-trials",
     llvm::cl::desc(
@@ -445,6 +452,10 @@ static int runCompiler(int argc, char** argv) {
               .lookahead = mappingLookahead,
               .searchMemoryLimit = mappingSearchMemoryLimit,
           },
+      .ancillaBudget =
+          ancillaBudgetOption.getNumOccurrences() == 0
+              ? std::nullopt
+              : std::optional<uint64_t>{ancillaBudgetOption.getValue()},
   };
 
   const bool isolated = runIsolatedPipeline || runReproducer;
@@ -739,7 +750,8 @@ static int runCompiler(int argc, char** argv) {
     if (failed(runPasses(
             [&](OpPassManager& pm) {
               populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                                options.mapping);
+                                                options.mapping,
+                                                options.ancillaBudget);
               return success();
             },
             true)) ||
@@ -751,7 +763,11 @@ static int runCompiler(int argc, char** argv) {
                    *parsedOutputFormat == OutputFormat::QIRAdaptive) {
                  pm.addPass(createInlinerPass());
                }
-               populateQCOCleanupPipeline(pm);
+               const bool borrowHelpers =
+                   enableDecomposeMultiControlled && options.ancillaBudget != 0;
+               populateQCOCleanupPipeline(pm,
+                                          /*removeDeadValues=*/!borrowHelpers,
+                                          /*shrinkQTensor=*/!borrowHelpers);
                if (passPipeline.getNumOccurrences() != 0) {
                  if (failed(parseCustomPipeline(pm))) {
                    return failure();
@@ -759,7 +775,8 @@ static int runCompiler(int argc, char** argv) {
                } else {
                  if (enableDecomposeMultiControlled) {
                    populateDecomposeMultiControlledPipeline(
-                       pm, decomposeMultiControlledMinQubits.getValue());
+                       pm, decomposeMultiControlledMinQubits.getValue(),
+                       options.ancillaBudget);
                  }
                  populateDefaultQCOOptimizationPipeline(pm);
                }

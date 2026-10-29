@@ -721,6 +721,7 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
+        ancilla_budget: int | None = None,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -738,6 +739,12 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
+    @property
+    def ancilla_budget(self) -> int | None:
+        """Maximum existing live helpers per controlled Pauli, phase, rotation, or SWAP gate in built-in target pipelines. None uses available helpers, zero disables borrowing. Never allocates additional qubits. Custom textual pipelines use the pass's ancilla-budget option."""
+
+    @ancilla_budget.setter
+    def ancilla_budget(self, arg: int | None, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.
@@ -1059,11 +1066,18 @@ class QCOProgram(Program):
     def run_qubit_reuse_pipeline(self) -> None:
         """Prepare the program for qubit reuse and reuse eligible qubits."""
 
-    def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
+    def decompose_multi_controlled(self, *, min_qubits: int = 3, ancilla_budget: int | None = None) -> None:
         """Decompose gates that act on at least min_qubits qubits.
 
-        Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-        at least 3; default 3 means wider than two-qubit.
+        Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+        at least 3; default 3 means wider than two-qubit. ancilla_budget caps existing
+        live helpers per controlled Pauli, phase, rotation, or SWAP gate; None (the default)
+        uses available helpers and zero disables borrowing. General phases and rotations
+        can use clean helpers or a dirty ladder of controls minus two helpers. Their
+        ancilla-free plans may use original controls as temporary workspace even at zero budget.
+        Only candidates with a lower estimated entangling count are selected. Helpers
+        are restored, including their phase and entanglement; no new qubits are allocated.
+        Unavailable or non-improving helpers use the existing lowering.
         """
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:

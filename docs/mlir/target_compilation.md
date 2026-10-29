@@ -124,6 +124,28 @@ gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
 requires the same build, input, target, seed, and mapping controls, including an
 explicit trial count. Layouts may change between releases.
 
+Controlled X/Y/Z/P/RX/RY/RZ/SWAP decomposition uses available live ancillas by
+default. `CompilationOptions(ancilla_budget=None)` selects this policy;
+`ancilla_budget=1` caps borrowing at one helper per original gate, and zero
+disables external borrowing. The standalone `decompose_multi_controlled` method
+accepts the same option. The CLI uses `--ancilla-budget`. Custom textual
+pipelines instead set `decompose-multi-controlled{ancilla-budget=0}`.
+
+Borrowing uses same-block scalar wires or provably occupied constant-index
+tensor slots, never fresh qubits or spare device capacity. Allocation and reset
+prove a clean zero; measurement alone does not. Clean and dirty helpers are
+restored with their phases and entanglement intact. Gate operands, ambiguous
+occupancy, and unavailable lifetimes are excluded. Target-aware decomposition
+also requires declared allocations to fit the target, leaving unused slots
+removable even when that conservative check forgoes possible helpers.
+
+Insufficient helpers or a non-improving pre-routing CX-equivalent estimate
+retain ancilla-free lowering. Zero budget still permits the original controls as
+internal workspace. General phases and rotations can use clean helpers or a
+complete dirty ladder of `controls - 2` helpers; a single dirty helper does not
+improve their fallback. Final native gate counts and routing costs can differ
+from the estimate.
+
 For explicit native gate sets with a usable entangler basis, routing ranks its
 candidates by estimated native two-qubit gate count, using qubit-dependency
 depth to break ties. A lower gate count can therefore win even when depth

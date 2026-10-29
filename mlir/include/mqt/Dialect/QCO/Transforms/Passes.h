@@ -19,7 +19,9 @@
 #include "llvm/Support/Threading.h"
 
 #include <cstdint>
+#include <limits> // IWYU pragma: keep (Passes.h.inc)
 #include <memory>
+#include <optional>
 
 namespace mlir {
 class OpPassManager;
@@ -61,9 +63,9 @@ createFuseTwoQubitGates(const CompilerTarget& target);
 ///
 /// Supported operations remain native on all-to-all targets and on static
 /// programs. Other operations use the target-independent decomposition.
-[[nodiscard]] std::unique_ptr<Pass>
-createDecomposeMultiControlled(const CompilerTarget& target,
-                               uint64_t minQubits = 3);
+[[nodiscard]] std::unique_ptr<Pass> createDecomposeMultiControlled(
+    const CompilerTarget& target, uint64_t minQubits = 3,
+    std::optional<uint64_t> ancillaBudget = std::nullopt);
 
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 ///

@@ -638,6 +638,198 @@ def test_mapping_options_defaults() -> None:
     assert options.search_memory_limit == 256 * 1024 * 1024
 
 
+def test_mcx_ancilla_budget_options() -> None:
+    """Use available helpers by default, with explicit caps and an opt-out."""
+    options = CompilationOptions()
+    assert options.ancilla_budget is None
+    options.ancilla_budget = 2
+    assert options.ancilla_budget == 2
+    assert CompilationOptions(ancilla_budget=1).ancilla_budget == 1
+    assert CompilationOptions(ancilla_budget=0).ancilla_budget == 0
+    options.ancilla_budget = None
+    assert options.ancilla_budget is None
+    with pytest.raises(TypeError):
+        CompilationOptions(ancilla_budget=-1)
+    with pytest.raises(TypeError):
+        options.ancilla_budget = -1
+
+
+def _ancilla_test_gate(family: str) -> Gate:
+    return {
+        "x": library.XGate(),
+        "y": library.YGate(),
+        "z": library.ZGate(),
+        "swap": library.SwapGate(),
+        "p": library.PhaseGate(0.73),
+        "p_pi": library.PhaseGate(np.pi),
+        "rx": library.RXGate(0.73),
+        "ry": library.RYGate(0.73),
+        "rz": library.RZGate(0.73),
+    }[family]
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize(
+    ("method", "family"),
+    [("compile_for_target", family) for family in ("x", "y", "z", "swap", "p", "p_pi", "rx", "ry", "rz")]
+    + [(method, "x") for method in ("synthesize_for_target", "decompose_multi_controlled", "run_pass_pipeline")],
+)
+@pytest.mark.parametrize("dirty", [False, True])
+@pytest.mark.parametrize("measured", [False, True])
+def test_mc_ancilla_budget_target_round_trip(method: str, family: str, *, dirty: bool, measured: bool) -> None:
+    """Cover each gate family and each API's budget/default handling."""
+    source = QuantumCircuit(7)
+    source.h(range(5))
+    source.ry(0.43, 5)
+    if dirty:
+        source.cx(0, 6)  # Helper entangled with a control, not a clean zero.
+    gate = _ancilla_test_gate(family)
+    source.append(gate.control(6 - gate.num_qubits, annotated=False), range(6))
+    source.rz(0.29, 3)
+    expected = Operator(source).data[:, :64]
+    if measured:
+        source.measure_all()
+    target = CompilerTarget(
+        7,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    counts = []
+    for budget in (0, 1, None):
+        program = QCProgram.from_qiskit(source).to_qco()
+        if method in {"decompose_multi_controlled", "run_pass_pipeline"}:
+            if method == "decompose_multi_controlled":
+                if budget is None:
+                    program.decompose_multi_controlled()
+                else:
+                    program.decompose_multi_controlled(ancilla_budget=budget)
+            else:
+                option = "" if budget is None else f"{{ancilla-budget={budget}}}"
+                program.run_pass_pipeline(f"decompose-multi-controlled{option}")
+            program.synthesize_for_target(
+                _test_target_environment(target), options=CompilationOptions(seed=7, ancilla_budget=0)
+            )
+        else:
+            options = (
+                CompilationOptions(seed=7) if budget is None else CompilationOptions(seed=7, ancilla_budget=budget)
+            )
+            getattr(program, method)(_test_target_environment(target), options=options)
+        result = program.to_qiskit(target=target)
+        assert result.num_qubits == 7
+        assert result.count_ops().get("measure", 0) == (7 if measured else 0)
+        result.remove_final_measurements()
+        # Top-level global phase may change; relative helper/data phases may not.
+        actual = Operator(result).data[:, :64]
+        phase = np.vdot(expected.ravel(), actual.ravel()) / 64
+        np.testing.assert_allclose(actual, phase * expected, atol=1e-10)
+        assert abs(abs(phase) - 1) < 1e-10
+        counts.append(result.count_ops()["cz"])
+    if dirty and family in {"p", "rx", "ry", "rz"}:
+        assert counts[1] == counts[0]  # Opposite controls suffice; no helper needed.
+    else:
+        assert counts[1] < counts[0]
+    assert counts[2] == counts[1]  # This circuit has exactly one safe helper.
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+@pytest.mark.parametrize("capacity", [6, 7])
+def test_mc_ancilla_budget_preserves_target_capacity(method: str, capacity: int) -> None:
+    """Unused declared slots must remain removable on a smaller target."""
+    source = QuantumCircuit(8)
+    source.h(range(5))
+    source.append(library.XGate().control(5, annotated=False), range(6))
+    target = CompilerTarget(
+        capacity,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+        ]),
+    )
+    outputs = []
+    for budget in (0, 1, None):
+        program = QCProgram.from_qiskit(source).to_qco()
+        getattr(program, method)(
+            _test_target_environment(target), options=CompilationOptions(seed=7, ancilla_budget=budget)
+        )
+        outputs.append(program.to_qiskit(target=target))
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert outputs[2].num_qubits <= capacity
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("family", ["x", "y", "z", "swap", "p", "p_pi", "rx", "ry", "rz"])
+def test_mc_ancilla_budget_default_falls_back_without_helpers(family: str) -> None:
+    """Default borrowing cannot use controls or the target as external helpers."""
+    source = QuantumCircuit(6)
+    source.h(range(5))
+    gate = _ancilla_test_gate(family)
+    controlled = gate.control(6 - gate.num_qubits, annotated=False)
+    wires = [5, 4, 3, 1, 0, 2]
+    source.ry(0.31, 2)
+    source.append(controlled, wires)
+    source.h(3)
+    source.rz(-0.27, 2)
+    source.append(controlled.inverse(), wires)
+    expected = Operator(source).data
+    source.measure_all()
+    outputs = []
+    for budget in (0, None):
+        program = QCProgram.from_qiskit(source).to_qco()
+        program.decompose_multi_controlled(ancilla_budget=budget)
+        outputs.append(program.to_qc().to_qiskit())
+    assert outputs[0] == outputs[1]
+    assert outputs[1].num_qubits == 6
+    assert outputs[1].count_ops()["measure"] == 6
+    outputs[1].remove_final_measurements()
+    # Standalone decomposition preserves exact phase, not only the |0> output.
+    np.testing.assert_allclose(Operator(outputs[1]).data, expected, atol=1e-10, rtol=0)
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("family", ["x", "y", "z", "swap"])
+@pytest.mark.parametrize("central_controls", [23, 24])
+@pytest.mark.parametrize("method", ["decompose_multi_controlled", "synthesize_for_target"])
+def test_mc_ancilla_budget_wide_measured_roundtrip(family: str, central_controls: int, method: str) -> None:
+    """Check wide no-helper exports; native compact-DD tests check phases."""
+    width = central_controls + 1
+    source = QuantumCircuit(width)
+    gate = _ancilla_test_gate(family)
+    source.h(0)
+    source.ry(0.31, width - 1)
+    source.append(gate.control(width - gate.num_qubits, annotated=False), range(width - 1, -1, -1))
+    source.rz(-0.27, 0)
+    source.measure_all()
+    target = CompilerTarget(
+        width,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    outputs = []
+    for budget in (0, 1, None):
+        program = QCProgram.from_qiskit(source).to_qco()
+        if method == "decompose_multi_controlled":
+            program.decompose_multi_controlled(ancilla_budget=budget)
+            outputs.append(program.to_qc().to_qiskit())
+        else:
+            program.synthesize_for_target(
+                _test_target_environment(target), options=CompilationOptions(seed=7, ancilla_budget=budget)
+            )
+            outputs.append(program.to_qiskit(target=target))
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert outputs[0].num_qubits == width
+    assert outputs[0].count_ops()["measure"] == width
+
+
 @pytest.mark.parametrize(
     ("method", "all_to_all"),
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],

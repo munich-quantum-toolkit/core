@@ -41,6 +41,13 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
+  /// Cap existing live helpers per controlled Pauli, phase, rotation, or SWAP
+  /// gate.
+  ///
+  /// Built-in target pipelines use available helpers on omission; zero disables
+  /// borrowing. Custom textual pipelines use the pass's ancilla-budget option.
+  /// Helpers are restored; no new qubits are allocated.
+  std::optional<uint64_t> ancillaBudget;
 };
 
 } // namespace mlir

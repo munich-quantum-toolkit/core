@@ -1855,14 +1855,21 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(
-          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
-          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
+      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
+                    std::optional<uint64_t>>(),
+           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
+           "ancilla_budget"_a = nb::none())
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping);
+      .def_rw("mapping", &mlir::CompilationOptions::mapping)
+      .def_rw("ancilla_budget", &mlir::CompilationOptions::ancillaBudget,
+              "Maximum existing live helpers per controlled Pauli, phase, "
+              "rotation, or SWAP gate in built-in target pipelines. "
+              "None uses available helpers, zero disables borrowing. Never "
+              "allocates additional qubits. Custom textual pipelines use the "
+              "pass's ancilla-budget option.");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
@@ -2125,11 +2132,18 @@ cancel, fuse, or specialize gates.)pb")
       .def("decompose_multi_controlled",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
-           nb::kw_only(), "min_qubits"_a = 3,
+           nb::kw_only(), "min_qubits"_a = 3, "ancilla_budget"_a = nb::none(),
            R"pb(Decompose gates that act on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-at least 3; default 3 means wider than two-qubit.)pb")
+Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+at least 3; default 3 means wider than two-qubit. ancilla_budget caps existing
+live helpers per controlled Pauli, phase, rotation, or SWAP gate; None (the default)
+uses available helpers and zero disables borrowing. General phases and rotations
+can use clean helpers or a dirty ladder of controls minus two helpers. Their
+ancilla-free plans may use original controls as temporary workspace even at zero budget.
+Only candidates with a lower estimated entangling count are selected. Helpers
+are restored, including their phase and entanglement; no new qubits are allocated.
+Unavailable or non-improving helpers use the existing lowering.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,

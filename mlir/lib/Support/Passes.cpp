@@ -39,6 +39,7 @@
 #include <bit>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace mlir;
@@ -154,10 +155,14 @@ bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {
   return minQubits >= 3;
 }
 
-void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
-                                              const uint64_t minQubits) {
+void populateDecomposeMultiControlledPipeline(
+    OpPassManager& pm, const uint64_t minQubits,
+    const std::optional<uint64_t> ancillaBudget) {
   qco::DecomposeMultiControlledOptions options;
   options.minQubits = minQubits;
+  if (ancillaBudget) {
+    options.ancillaBudget = *ancillaBudget;
+  }
   pm.addPass(qco::createDecomposeMultiControlled(options));
 }
 
@@ -222,7 +227,8 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
+void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues,
+                                bool shrinkQTensor) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(mqt::createNormalizeGlobalPhases());
@@ -231,7 +237,9 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
           .enableCSEBetweenIterations()
           .setUseTopDownTraversal()
           .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  if (shrinkQTensor) {
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  }
   pm.addPass(createSymbolDCEPass());
   if (removeDeadValues) {
     pm.addPass(createRemoveDeadValuesPass());

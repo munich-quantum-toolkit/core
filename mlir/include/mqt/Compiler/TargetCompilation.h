@@ -12,6 +12,9 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 
+#include <cstdint>
+#include <optional>
+
 namespace mlir {
 
 class TargetEnvironment;
@@ -33,9 +36,10 @@ class OpPassManager;
 /// The environment must remain unchanged during pipeline execution.
 /// Use runWithCompilationOptions to apply compilation-wide seed and
 /// instrumentation settings when running this pipeline.
-void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment,
-                                       const MappingOptions& mapping = {});
+void populateTargetCompilationPipeline(
+    OpPassManager& pm, const TargetEnvironment& environment,
+    const MappingOptions& mapping = {},
+    std::optional<uint64_t> ancillaBudget = std::nullopt);
 
 /// Populate target-native block synthesis without routing.
 ///
@@ -48,8 +52,9 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// Explicit native-operation targets must provide a single-qubit synthesis
 /// basis. Use runWithCompilationOptions to apply compilation-wide seed and
 /// instrumentation settings when running this pipeline.
-void populateTargetSynthesisPipeline(OpPassManager& pm,
-                                     const TargetEnvironment& environment,
-                                     const MappingOptions& mapping = {});
+void populateTargetSynthesisPipeline(
+    OpPassManager& pm, const TargetEnvironment& environment,
+    const MappingOptions& mapping = {},
+    std::optional<uint64_t> ancillaBudget = std::nullopt);
 
 } // namespace mlir

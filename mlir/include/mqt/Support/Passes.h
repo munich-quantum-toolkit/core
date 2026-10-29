@@ -15,6 +15,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace mlir {
 class ModuleOp;
@@ -66,8 +67,9 @@ void populateQubitReusePipeline(mlir::OpPassManager& pm);
 [[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minQubits);
 
 /// Populate the multi-controlled decomposition pass sequence.
-void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
-                                              uint64_t minQubits);
+void populateDecomposeMultiControlledPipeline(
+    mlir::OpPassManager& pm, uint64_t minQubits,
+    std::optional<uint64_t> ancillaBudget = std::nullopt);
 
 /// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult
@@ -93,8 +95,11 @@ void populateOpenQASM2PreparationPipeline(mlir::OpPassManager& pm,
 ///
 /// Adds generic cleanup and qtensor shrink-to-fit. Dead-value removal may be
 /// deferred when a later pipeline stage changes region or function signatures.
+/// Disable tensor shrinking while unused initialized slots can serve as
+/// helpers.
 void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
-                                bool removeDeadValues = true);
+                                bool removeDeadValues = true,
+                                bool shrinkQTensor = true);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///
