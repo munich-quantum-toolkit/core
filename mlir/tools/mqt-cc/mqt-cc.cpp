@@ -19,13 +19,16 @@
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
+#include "mqt/Target/QIR/Capabilities.h"
 #include "mqt/Target/QIR/Export.h"
 
 #include "jeff/Translation/Deserialize.hpp"
@@ -33,6 +36,7 @@
 
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -44,6 +48,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -793,6 +798,27 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
+  const bool checkCountedIterationConstraints =
+      targetEnvironment && *parsedOutputFormat == OutputFormat::QIRAdaptive &&
+      llvm::any_of(targetEnvironment->payloadSpecification().capabilities(),
+                   [](const auto& capability) {
+                     return capability.id ==
+                                ProgramCapability::COUNTED_ITERATION &&
+                            !capability.constraints.empty();
+                   });
+  if (checkCountedIterationConstraints &&
+      (failed(prepareQIRClassicalMemory(*program.mod)) ||
+       failed(runPasses([](OpPassManager& pm) {
+         pm.addPass(mqt::createPromoteClassicalMemory());
+         pm.addPass(qco::createLegalizeControlFlow());
+         return success();
+       })))) {
+    return 1;
+  }
+  const bool checkedCountedIterationConstraints =
+      checkCountedIterationConstraints &&
+      !program.mod->walk([](scf::WhileOp) { return WalkResult::interrupt(); })
+           .wasInterrupted();
   if ((*parsedOutputFormat == OutputFormat::QIRBase ||
        *parsedOutputFormat == OutputFormat::QIRAdaptive ||
        *parsedOutputFormat == OutputFormat::IQMJSON) &&
@@ -807,6 +833,15 @@ static int runCompiler(int argc, char** argv) {
         populateQIRCleanupPipeline(pm, adaptive);
         return success();
       }))) {
+    return 1;
+  }
+
+  if (targetEnvironment &&
+      (*parsedOutputFormat == OutputFormat::QIRBase ||
+       *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
+      failed(qir::validateCapabilities(
+          *program.mod, targetEnvironment->payloadSpecification(),
+          checkedCountedIterationConstraints))) {
     return 1;
   }
 

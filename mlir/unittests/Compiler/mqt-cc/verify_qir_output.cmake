@@ -128,6 +128,42 @@ run_command("llvm-as target text validation" "${LLVM_AS}" "${target_text_file}" 
             "${target_assembled_file}")
 require_profile("${target_text_file}" "base_profile")
 
+set(adaptive_target
+    "#mqt.compilation_target<sites = [<id = 0>, <id = 1>], connectivity = all_to_all, couplings = [], native_operations = explicit, operations = [<name = \"u\", arity = <kind = fixed, value = 1>, num_parameters = 3, site_tuples = []>, <name = \"cz\", arity = <kind = fixed, value = 2>, num_parameters = 0, site_tuples = []>, <name = \"measure\", arity = <kind = fixed, value = 1>, num_parameters = 0, site_tuples = []>, <name = \"reset\", arity = <kind = fixed, value = 1>, num_parameters = 0, site_tuples = []>]>"
+)
+set(adaptive_payload
+    "#mqt.payload_spec<format = <id = \"qir\", version = \">=2.0.0,<3.0.0\", profile = \"adaptive\", encoding = text>, capabilities = [<id = \"forward-branching\", value = 0, constraints = []>, <id = \"counted-iteration\", value = 0, constraints = []>, <id = \"qir.dynamic-result-management\", value = 0, constraints = []>, <id = \"qir.arrays\", value = 0, constraints = []>, <id = \"qir.int-computations\", value = 0, constraints = []>], optional_capabilities_known = false>"
+)
+string(REPLACE "<id = \"qir.arrays\", value = 0, constraints = []>, " "" unsupported_payload
+       "${adaptive_payload}")
+run_command_expect_failure(
+  "mqt-cc rejects unsupported result arrays"
+  "requires capability 'qir.arrays'"
+  "${MQT_CC}"
+  "${INPUT_FILE}"
+  "--target=${adaptive_target}"
+  "--payload-spec=${unsupported_payload}"
+  -o
+  "${OUTPUT_DIR}/unsupported.ll")
+
+file(WRITE "${OUTPUT_DIR}/bounded.qasm"
+     "OPENQASM 3.1;\ninclude \"stdgates.inc\";\nqubit[2] q;\nfor int i in [0:2] { x q[0]; }\n")
+string(REPLACE "<id = \"counted-iteration\", value = 0, constraints = []>"
+       "<id = \"counted-iteration\", value = 0, constraints = [<id = \"max-iteration-count\", value = 3>]>"
+       bounded_payload "${adaptive_payload}")
+run_command(
+  "mqt-cc accepts a proved counted-loop bound"
+  "${MQT_CC}"
+  "${OUTPUT_DIR}/bounded.qasm"
+  "--target=${adaptive_target}"
+  "--payload-spec=${bounded_payload}"
+  -o
+  "${OUTPUT_DIR}/bounded.ll")
+file(READ "${OUTPUT_DIR}/bounded.ll" bounded_qir)
+if(NOT bounded_qir MATCHES "backwards_branching\", i2 1")
+  message(FATAL_ERROR "The bounded loop was not retained in QIR")
+endif()
+
 foreach(profile IN ITEMS base adaptive)
   set(expected_profile "${profile}_profile")
   set(text_file "${OUTPUT_DIR}/${profile}.ll")

@@ -187,22 +187,11 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   if (checkLoopConstraints && failed(prepareQIRClassicalMemory(moduleOp))) {
     return failure();
   }
-  if (checkLoopConstraints &&
+  // A while loop can require counted iteration after dependence analysis.
+  const bool checkedCountedIterationConstraints =
+      checkLoopConstraints &&
       !moduleOp.walk([](scf::WhileOp) { return WalkResult::interrupt(); })
-           .wasInterrupted()) {
-    // A while loop can require counted iteration after dependence analysis.
-    std::vector<ProgramCapability> capabilities(
-        checkedPayload->capabilities().begin(),
-        checkedPayload->capabilities().end());
-    for (auto& capability : capabilities) {
-      if (capability.id == ProgramCapability::COUNTED_ITERATION) {
-        capability.constraints.clear();
-      }
-    }
-    checkedPayload = llvm::cantFail(PayloadSpecification::create(
-        checkedPayload->format(), std::move(capabilities),
-        checkedPayload->optionalCapabilitiesKnown()));
-  }
+           .wasInterrupted();
   if (failed(runWithPassManager(
           moduleOp,
           [&](OpPassManager& pm) {
@@ -224,7 +213,8 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
     return failure();
   }
   if (checkedPayload &&
-      failed(qir::validateCapabilities(moduleOp, *checkedPayload))) {
+      failed(qir::validateCapabilities(moduleOp, *checkedPayload,
+                                       checkedCountedIterationConstraints))) {
     return failure();
   }
   return QIRProgram(std::move(storage), profile);
