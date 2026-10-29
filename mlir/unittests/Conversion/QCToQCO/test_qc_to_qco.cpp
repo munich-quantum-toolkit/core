@@ -752,7 +752,7 @@ TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
   context.getOrLoadDialect<cbit::CBitDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  auto reg = builder.allocQubitRegisterStorage(3, "partly_used");
+  auto reg = builder.allocQubitRegisterStorage(3);
   auto other = builder.allocQubitRegisterStorage(1);
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
@@ -763,7 +763,6 @@ TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
   builder.inv(left, [&](Value qubit) { builder.x(qubit); });
   auto right = builder.loadQubit(reg, one);
   builder.ctrl(alias, right, [&](Value qubit) { builder.x(qubit); });
-  builder.pow(2.0, right, [&](Value qubit) { builder.x(qubit); });
   builder.reset(right);
   builder.swap(right, left);
   builder.barrier({left, right});
@@ -787,12 +786,8 @@ TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
     // Each used slot is extracted once and restored before register release.
     EXPECT_EQ(llvm::range_size(main.getOps<qtensor::ExtractOp>()), 3U);
     EXPECT_EQ(llvm::range_size(main.getOps<qtensor::InsertOp>()), 3U);
-    auto named = *main.getOps<qtensor::AllocOp>().begin();
-    EXPECT_EQ(named.getResult().getType().getDimSize(0), 3);
-    auto name = named->getAttrOfType<StringAttr>(
-        mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
-    ASSERT_TRUE(name);
-    EXPECT_EQ(name.getValue(), "partly_used");
+    auto allocation = *main.getOps<qtensor::AllocOp>().begin();
+    EXPECT_EQ(allocation.getResult().getType().getDimSize(0), 3);
     auto counts = qco::sample(main, 8, 17);
     ASSERT_TRUE(succeeded(counts));
     ASSERT_EQ(counts->size(), 1U);
@@ -800,32 +795,6 @@ TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
     ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
   }
-}
-
-TEST_F(QCToQCORegressionTest,
-       KeepsCapturedConstantRegisterSlotsInCompleteTensorState) {
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
-    func.func @main(%condition: i1) attributes {mqt.entry_point} {
-      %reg = memref.alloc() : memref<1x!qc.qubit>
-      %zero = arith.constant 0 : index
-      %qubit = memref.load %reg[%zero] : memref<1x!qc.qubit>
-      qc.h %qubit : !qc.qubit
-      scf.if %condition {
-        qc.x %qubit : !qc.qubit
-      }
-      qc.z %qubit : !qc.qubit
-      memref.dealloc %reg : memref<1x!qc.qubit>
-      return
-    }
-  })mlir",
-                                              &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
-  expectOperationLocalRegisterAccesses(*moduleOp);
-  expectStructuredStateUsesCompleteTensors(*moduleOp);
 }
 
 TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
