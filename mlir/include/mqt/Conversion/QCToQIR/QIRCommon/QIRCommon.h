@@ -90,9 +90,11 @@ struct LoweringState {
   /// Measurement stores kept as SSA users across structural conversion.
   DenseMap<Operation*, Operation*> deferredMeasurementStores;
 
-  /// Owned scalar results in allocation order; array elements are owned
-  /// separately.
+  /// Scalar result pointers in allocation order; array elements are separate.
   SmallVector<Value> scalarResults;
+
+  /// Adaptive results use one allocation mode, matching returned Result arrays.
+  bool dynamicResults = false;
 
   /// Reusable Adaptive measurement result, owned by `scalarResults`.
   Value scratchResult;

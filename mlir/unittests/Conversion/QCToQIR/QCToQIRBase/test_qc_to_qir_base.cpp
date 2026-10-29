@@ -829,7 +829,7 @@ INSTANTIATE_TEST_SUITE_P(
                             MQT_NAMED_BUILDER(qir::multipleControlledH<true>)},
         QCToQIRBaseTestCase{"HWithoutRegister",
                             MQT_NAMED_BUILDER(qc::hWithoutRegister),
-                            MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
+                            MQT_NAMED_BUILDER(qir::hWithoutRegisterBase)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/IdOp.cpp
@@ -1254,7 +1254,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegistersBase)}));
 /// @}
 
 /// \name QCToQIRBase/QubitManagement/QubitManagement.cpp
