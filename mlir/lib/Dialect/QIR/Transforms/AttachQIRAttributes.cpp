@@ -73,6 +73,7 @@ struct Metadata {
   bool useDynamicQubit{false};
   /// Whether the module uses dynamic result management
   bool useDynamicResult{false};
+  /// Whether the module writes classical values to results
   bool useWritableResults{false};
   /// Whether the module uses arrays
   bool useArrays{false};

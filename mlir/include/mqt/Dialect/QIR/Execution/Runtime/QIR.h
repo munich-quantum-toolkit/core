@@ -208,7 +208,7 @@ void __quantum__rt__initialize(char*) MQT_QIR_NOEXCEPT;
 /// value.
 bool __quantum__rt__read_result(Result*) MQT_QIR_NOEXCEPT;
 
-/// Writes a Boolean value into a result without measuring a qubit.
+/// Writes a boolean value into a result without measuring a qubit.
 void __quantum__rt__write_result(bool, Result*) MQT_QIR_NOEXCEPT;
 
 /// Adds a measurement result to the generated output.

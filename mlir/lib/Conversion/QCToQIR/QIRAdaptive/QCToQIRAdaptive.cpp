@@ -354,9 +354,8 @@ struct ConvertCBitStoreOp final : StatefulOpConversionPattern<cbit::StoreOp> {
                                       {rewriter.getI1Type(), ptrType});
       auto declaration = getOrCreateFunctionDeclaration(
           rewriter, op, QIR_WRITE_RESULT, signature);
-      LLVM::CallOp::create(rewriter, op.getLoc(), declaration,
-                           ValueRange{adaptor.getValue(), result});
-      rewriter.eraseOp(op);
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+          op, declaration, ValueRange{adaptor.getValue(), result});
       return success();
     }
     if (getState().resultArrays.contains(adaptor.getReg())) {

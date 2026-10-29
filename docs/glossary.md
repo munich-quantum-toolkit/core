@@ -170,11 +170,6 @@ Quantum Intermediate Representation
   [LLVM-based representation and runtime interface](https://www.qir-alliance.org/)
   for exchanging and executing quantum programs.
 
-writable results
-  **Preferred term:** writable results. An optional QIR Adaptive Profile
-  extension that lets classical code initialize or overwrite a result slot
-  without measuring a qubit. See the {doc}`QIR guide <qir/index>`.
-
 TUM
 Technical University of Munich
   **Preferred term:** Technical University of Munich. **Accepted abbreviation:**

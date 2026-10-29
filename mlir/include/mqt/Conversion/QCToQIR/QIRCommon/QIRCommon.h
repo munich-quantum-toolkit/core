@@ -47,6 +47,10 @@ enum class AllocationMode : std::uint8_t {
 /// State object for tracking lowering information during QIR conversion
 struct LoweringState {
   std::optional<CompilerTarget> nativeTarget;
+
+  /// Whether the target confirms support for classical result writes.
+  ///
+  /// Selects register storage before calls and metadata exist.
   bool useWritableResults = false;
 
   /// Select the advertised name using converted physical qubits and parameters.

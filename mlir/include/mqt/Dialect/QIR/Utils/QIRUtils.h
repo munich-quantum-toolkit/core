@@ -162,8 +162,8 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op);
 ///
 /// For QIR functions that are irreversible (measurement and reset), the
 /// "irreversible" attribute is added automatically. Result parameters of
-/// measurement and write_result are writeonly; read_result parameters are
-/// readonly.
+/// measurement and write_result are write-only; read_result parameters are
+/// read-only.
 ///
 /// @param builder The builder to use for creating operations
 /// @param op The operation requesting the function (for context)

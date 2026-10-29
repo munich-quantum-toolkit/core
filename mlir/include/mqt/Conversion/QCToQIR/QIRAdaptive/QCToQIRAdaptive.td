@@ -23,16 +23,16 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - The entry function must be marked with `mqt.entry_point` and have a single return.
     - Measurements and CBit allocations must be in the entry function.
       Returns may contain direct measurements, direct CBit allocations, and
-      Boolean scalar values. Other scalar program outputs are not supported.
+      boolean scalar values. Other scalar program outputs are not supported.
 
     Behavior:
 
     - Outputs retain return order and repetitions. Every record has a unique label.
-      Computed Boolean scalars use Boolean output records without register storage.
-    - Returned registers use Result arrays when measurement stores can fuse safely
+      Computed boolean scalars use boolean output records without register storage.
+    - Returned registers use result arrays when measurement stores can fuse safely
       and preserve returned measurement snapshots. With writable results enabled,
-      other stores write Boolean values into Result slots. Otherwise they use Boolean storage,
-      including runtime-indexed accesses. Boolean output loads precede all output recording.
+      other stores write boolean values into result slots. Otherwise they use boolean storage,
+      including runtime-indexed accesses. Loads of boolean outputs precede output recording.
       A target with complete optional capability metadata also enables writable
       results when it permits `qir.writable-results` without constraints.
     - The entry function returns an `i64` zero execution status after output recording.
