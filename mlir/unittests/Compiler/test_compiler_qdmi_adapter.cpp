@@ -368,7 +368,10 @@ TEST(CompilerQDMIAdapterTest,
   const auto adaptive =
       llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
-  ASSERT_EQ(adaptive.capabilities().size(), 11);
+  ASSERT_EQ(adaptive.capabilities().size(), 12);
+  EXPECT_TRUE(llvm::any_of(adaptive.capabilities(), [](const auto& capability) {
+    return capability.id == "qir.writable-results";
+  }));
   EXPECT_EQ(adaptive.capabilities().front().id, "forward-branching");
   const auto qasm = llvm::cantFail(
       mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));

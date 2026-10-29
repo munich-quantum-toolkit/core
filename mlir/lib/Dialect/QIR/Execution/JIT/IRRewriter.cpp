@@ -444,6 +444,7 @@ static bool isReplayCall(const llvm::CallInst& call) {
               "__quantum__rt__qubit_release",
               "__quantum__rt__result_release",
               "__quantum__rt__read_result",
+              "__quantum__rt__write_result",
               "__quantum__rt__result_record_output",
               "__quantum__rt__bool_record_output",
               "__quantum__rt__int_record_output",

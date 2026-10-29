@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -54,6 +56,7 @@
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include <array>
@@ -759,8 +762,11 @@ TEST_F(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
   EXPECT_EQ(resultReads, 3);
 }
 
-TEST_F(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
+TEST_F(QCToQIRAdaptiveNativeTest,
+       WritesThroughReturnedRegisterMergeWhenEnabled) {
+  for (bool writable : {false, true}) {
+    SCOPED_TRACE(writable);
+    auto module = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main() -> (!cbit.reg<1>, !cbit.reg<1>)
           attributes {mqt.entry_point} {
@@ -777,12 +783,29 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
       }
     }
   )mlir",
-                                            &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+                                              &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
 
-  expectConversionFailure(*module, "does not support non-measurement "
-                                   "writes to returned CBit registers");
+    if (!writable) {
+      expectConversionFailure(*module, "does not support non-measurement "
+                                       "writes to returned CBit registers");
+      continue;
+    }
+    context.loadDialect<mlir::mqt::MQTDialect>();
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        1, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::unrestricted()));
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "qir", .version = "2.1", .profile = "adaptive"},
+        {{.id = "qir.writable-results"}}, true));
+    attachTargetEnvironment(*module, TargetEnvironment(target, payload));
+    PassManager manager(&context);
+    manager.addPass(createQCToQIRAdaptive());
+    ASSERT_TRUE(succeeded(manager.run(*module)));
+    EXPECT_TRUE(succeeded(verify(*module)));
+    EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_WRITE_RESULT));
+  }
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, RejectsHelperLocalClassicalResources) {

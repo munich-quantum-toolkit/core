@@ -603,6 +603,14 @@ TEST_F(QIRTest, MetadataCountsResourceRolesAcrossCalls) {
            },
            Case{
                .instruction =
+                   "%bit = llvm.mlir.constant(true) : i1\n"
+                   "llvm.call @__quantum__rt__write_result(%bit, %r9) : "
+                   "(i1, !llvm.ptr) -> ()",
+               .qubits = "0",
+               .results = "10",
+           },
+           Case{
+               .instruction =
                    "llvm.call @__quantum__rt__result_record_output(%r9, %zero) "
                    ": "
                    "(!llvm.ptr, !llvm.ptr) -> ()",
@@ -657,6 +665,7 @@ TEST_F(QIRTest, MetadataCountsResourceRolesAcrossCalls) {
       llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
       llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
       llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @__quantum__rt__write_result(i1, !llvm.ptr)
       llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
       llvm.func @helper(%q: !llvm.ptr, %r: !llvm.ptr) {
         llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
@@ -960,6 +969,46 @@ TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
                 findModuleFlag(adaptive.get(), "qir_minor_version").getValue())
                 .getInt(),
             0);
+}
+
+TEST_F(QIRTest, WritableResultsMetadataTracksRuntimeCalls) {
+  registerBuiltinDialectTranslation(*context);
+  registerLLVMDialectTranslation(*context);
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__rt__write_result(i1, !llvm.ptr)
+    llvm.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      %bit = llvm.mlir.constant(true) : i1
+      %id = llvm.mlir.constant(9 : i64) : i64
+      %result = llvm.inttoptr %id : i64 to !llvm.ptr
+      llvm.call @__quantum__rt__write_result(%bit, %result) : (i1, !llvm.ptr) -> ()
+      %zero = llvm.mlir.constant(0 : i64) : i64
+      llvm.return %zero : i64
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  const auto flag = findModuleFlag(*moduleOp, "writable_results");
+  ASSERT_TRUE(flag);
+  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 1);
+  llvm::LLVMContext llvmContext;
+  auto translated = translateModuleToLLVMIR(*moduleOp, llvmContext);
+  ASSERT_TRUE(translated);
+  normalizeQIRModuleFlags(*translated);
+  const auto* value = llvm::mdconst::dyn_extract<llvm::ConstantInt>(
+      translated->getModuleFlag("writable_results"));
+  ASSERT_NE(value, nullptr);
+  EXPECT_EQ(value->getBitWidth(), 1);
+  EXPECT_TRUE(value->isOne());
+  moduleOp->walk([](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_WRITE_RESULT) {
+      call.erase();
+    }
+  });
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  EXPECT_FALSE(findModuleFlag(*moduleOp, "writable_results"));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST_F(QIRTest, ResourceRuntimeCallsRequireQIR21) {

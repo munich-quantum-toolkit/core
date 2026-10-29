@@ -30,8 +30,11 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - Outputs retain return order and repetitions. Every record has a unique label.
       Computed Boolean scalars use Boolean output records without register storage.
     - Returned registers use Result arrays when measurement stores can fuse safely
-      and preserve returned measurement snapshots. Other stores use Boolean storage,
+      and preserve returned measurement snapshots. With writable results enabled,
+      other stores write Boolean values into Result slots. Otherwise they use Boolean storage,
       including runtime-indexed accesses. Boolean output loads precede all output recording.
+      A target with complete optional capability metadata also enables writable
+      results when it permits `qir.writable-results` without constraints.
     - The entry function returns an `i64` zero execution status after output recording.
     - Each QC quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
     - Operations from the scf dialect are lowered into the cf dialect before they are lowered to the LLVM dialect.

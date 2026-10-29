@@ -208,6 +208,17 @@ carry `int_computations`, `float_computations`, `ir_functions`,
 `multiple_target_branching`, and `multiple_return_points` flags when their
 lowered instructions require those capabilities.
 
+The runtime also supports the optional
+[writable results extension](https://github.com/qir-alliance/qir-spec/blob/main/specification/profiles/Adaptive_Profile.md#bullet-12-writable-measurement-results).
+Its `__quantum__rt__write_result(i1, ptr)` call initializes or overwrites a
+result slot with a Boolean value without measuring a qubit. The compiler uses it
+for returned bit registers when the selected Adaptive payload reports complete
+optional capability metadata and permits `qir.writable-results` without
+constraints. These registers retain result-array output records after classical
+writes. Other targets keep the existing Boolean-storage lowering. The metadata
+pass emits `writable_results` only when the program calls the runtime function,
+as it does for dynamic allocation.
+
 A profile name alone does not describe every device's capabilities. When
 compiling for a device, use the
 {doc}`target-compilation API <../mlir/target_compilation>` to select its

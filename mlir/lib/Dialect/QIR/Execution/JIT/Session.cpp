@@ -364,6 +364,8 @@ static auto createRuntimeRegistry() -> RuntimeRegistry {
             {AbiType::Pointer}, &__quantum__rt__initialize);
   addSymbol(registry, "__quantum__rt__read_result", AbiType::I1,
             {AbiType::Pointer}, &__quantum__rt__read_result);
+  addSymbol(registry, "__quantum__rt__write_result", AbiType::Void,
+            {AbiType::I1, AbiType::Pointer}, &__quantum__rt__write_result);
   addSymbol(registry, "__quantum__rt__result_record_output", AbiType::Void,
             {AbiType::Pointer, AbiType::Pointer},
             &__quantum__rt__result_record_output);

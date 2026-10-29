@@ -82,6 +82,7 @@ inline constexpr auto QIR_RESULT_RELEASE = "__quantum__rt__result_release";
 inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
+inline constexpr auto QIR_WRITE_RESULT = "__quantum__rt__write_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_BOOL_RECORD_OUTPUT =
     "__quantum__rt__bool_record_output";
@@ -160,8 +161,9 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op);
 /// found, creates a new function declaration at the end of the module.
 ///
 /// For QIR functions that are irreversible (measurement and reset), the
-/// "irreversible" attribute is added automatically. Measurement result
-/// parameters are writeonly; read_result parameters are readonly.
+/// "irreversible" attribute is added automatically. Result parameters of
+/// measurement and write_result are writeonly; read_result parameters are
+/// readonly.
 ///
 /// @param builder The builder to use for creating operations
 /// @param op The operation requesting the function (for context)
