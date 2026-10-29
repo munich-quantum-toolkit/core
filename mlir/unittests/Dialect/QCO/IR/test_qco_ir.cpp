@@ -336,6 +336,124 @@ TEST_F(QCOTest, BuilderDisposesScalarsInDefinitionOrder) {
   EXPECT_EQ(sunk, qubits);
 }
 
+TEST_F(QCOTest, ChecksOutstandingConstantRegisterSlots) {
+  for (const int64_t secondIndex : {0, 1}) {
+    SCOPED_TRACE(secondIndex);
+    const auto source = llvm::formatv(R"mlir(
+      module {{
+        func.func @main() attributes {{mqt.entry_point} {{
+          %c0 = arith.constant 0 : index
+          %other = arith.constant {0} : index
+          %c2 = arith.constant 2 : index
+          %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          %t1, %left = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %t2, %right = qtensor.extract %t1[%other] : tensor<2x!qco.qubit>
+          %changed = qco.h %left : !qco.qubit
+          %restored = arith.addi %c0, %c0 : index
+          %t3 = qtensor.insert %changed into %t2[%restored] : tensor<2x!qco.qubit>
+          %t4 = qtensor.insert %right into %t3[%other] : tensor<2x!qco.qubit>
+          %t5, %again = qtensor.extract %t4[%c0] : tensor<2x!qco.qubit>
+          %t6 = qtensor.insert %again into %t5[%c0] : tensor<2x!qco.qubit>
+          qtensor.dealloc %t6 : tensor<2x!qco.qubit>
+          return
+        }
+      }
+    )mlir",
+                                      secondIndex)
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_EQ(succeeded(qco::verifyLinearity(*moduleOp)), secondIndex != 0);
+    if (secondIndex == 0) {
+      EXPECT_NE(diagnostics.find("register slot that is already extracted"),
+                std::string::npos);
+    }
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
+TEST_F(QCOTest, KeepsRegisterSlotsDistinctAcrossRegistersAndBranches) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c2 = arith.constant 2 : index
+        %left = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %right = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %l1, %lq = qtensor.extract %left[%c0] : tensor<2x!qco.qubit>
+        %r1, %rq = qtensor.extract %right[%c0] : tensor<2x!qco.qubit>
+        %l2 = qtensor.insert %lq into %l1[%c0] : tensor<2x!qco.qubit>
+        %r2 = qtensor.insert %rq into %r1[%c0] : tensor<2x!qco.qubit>
+        qtensor.dealloc %r2 : tensor<2x!qco.qubit>
+        %result = qco.if %condition args(%tensor = %l2)
+            -> tensor<2x!qco.qubit> {
+          %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %updated = qco.h %q : !qco.qubit
+          %full = qtensor.insert %updated into %rest[%c0] : tensor<2x!qco.qubit>
+          qco.yield %full : tensor<2x!qco.qubit>
+        } else args(%tensor = %l2) {
+          %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %updated = qco.x %q : !qco.qubit
+          %full = qtensor.insert %updated into %rest[%c0] : tensor<2x!qco.qubit>
+          qco.yield %full : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %result : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QCOTest, KeepsSlotsOutstandingAfterMismatchedInsertion) {
+  for (const bool anotherRegister : {false, true}) {
+    SCOPED_TRACE(anotherRegister);
+    const auto source = llvm::formatv(R"mlir(
+      module {{
+        func.func @main() attributes {{mqt.entry_point} {{
+          %c0 = arith.constant 0 : index
+          %c1 = arith.constant 1 : index
+          %c2 = arith.constant 2 : index
+          %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          %other = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %wrong = qtensor.insert %q into {0}[{1}] : tensor<2x!qco.qubit>
+          %remaining, %again = qtensor.extract {2}[%c0] : tensor<2x!qco.qubit>
+          qco.sink %again : !qco.qubit
+          qtensor.dealloc %remaining : tensor<2x!qco.qubit>
+          qtensor.dealloc {3} : tensor<2x!qco.qubit>
+          return
+        }
+      }
+    )mlir",
+                                      anotherRegister ? "%other" : "%rest",
+                                      anotherRegister ? "%c0" : "%c1",
+                                      anotherRegister ? "%rest" : "%wrong",
+                                      anotherRegister ? "%wrong" : "%other")
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(qco::verifyLinearity(*moduleOp)));
+    EXPECT_NE(diagnostics.find("register slot that is already extracted"),
+              std::string::npos);
+  }
+}
+
 TEST_F(QCOTest, BuilderReinsertsAndDisposesTensorsInStableOrder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();

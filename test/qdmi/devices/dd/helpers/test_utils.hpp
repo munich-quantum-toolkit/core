@@ -26,7 +26,7 @@ namespace qdmi_test {
 
 struct SessionGuard {
   MQT_DDSIM_QDMI_Device_Session session{nullptr};
-  SessionGuard();
+  explicit SessionGuard(const char* qubits = nullptr);
   ~SessionGuard();
   SessionGuard(const SessionGuard&) = delete;
   SessionGuard& operator=(const SessionGuard&) = delete;

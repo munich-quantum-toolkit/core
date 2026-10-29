@@ -94,6 +94,8 @@ inline bool checkDeadGate(Operation* op) {
 /// Requires ordinary MLIR verification first. Every linear QCO value has
 /// exactly one use, static indices are unique in the entry block, and function
 /// and structured-control-flow results continue quantum arguments in order.
+/// In SSA regions, constant register slots cannot be extracted again before
+/// reinsertion.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
 /// Maximum dense modifier matrix width.

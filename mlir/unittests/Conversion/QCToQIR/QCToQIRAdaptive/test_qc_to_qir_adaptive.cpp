@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 
@@ -55,6 +56,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -1137,7 +1139,7 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   });
   ASSERT_EQ(measurements.size(), 3U);
   ASSERT_EQ(reads.size(), 2U);
-  EXPECT_EQ(allocated.size(), 2U);
+  EXPECT_TRUE(allocated.empty());
   EXPECT_EQ(released, allocated);
   EXPECT_EQ(measurements[0].getOperand(1), measurements[1].getOperand(1));
   EXPECT_NE(measurements[0].getOperand(1), measurements[2].getOperand(1));
@@ -1154,6 +1156,24 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
     EXPECT_TRUE(measurements.back()->isBeforeInBlock(op));
   });
   EXPECT_EQ(combinations, 1U);
+
+  PassManager metadata(&context);
+  metadata.addPass(qir::createQIRSetAttributesAndMetadata({true}));
+  ASSERT_TRUE(succeeded(metadata.run(*module)));
+  bool staticResults = false;
+  module->walk([&](LLVM::ModuleFlagsOp flags) {
+    for (const auto flag :
+         flags.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
+      if (flag.getKey().getValue() == "dynamic_result_management") {
+        staticResults = cast<IntegerAttr>(flag.getValue()).getInt() == 0;
+      }
+    }
+  });
+  EXPECT_TRUE(staticResults);
+  auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_results", "2"})));
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, RejectsClassicalMemrefOutput) {

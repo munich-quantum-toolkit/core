@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <random>
@@ -43,6 +44,8 @@ using DDArgumentBindings = DenseMap<Value, Attribute>;
 /// Counted loops and the total number of gates are not bounded by this budget.
 struct DDExecutionOptions {
   size_t maxWhileIterations = 1'000'000'000;
+  /// Maximum number of DD wires, including wires whose lifetimes have ended.
+  size_t maxQubits = std::numeric_limits<size_t>::max();
 };
 
 /// An uncollapsed sampling state and the package that owns its DD nodes.

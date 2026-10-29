@@ -652,8 +652,8 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
 ///
 /// For measurements with register information, a result array is allocated and
 /// all result pointers are loaded.
-/// For measurements without register information, a dynamic result pointer is
-/// used.
+/// Scalar measurements use static result IDs unless returned Result arrays
+/// require dynamic result management.
 /// If the operation has an user, a read result call operation is created to
 /// convert the result !llvm.ptr to an i1 value.
 ///
@@ -682,12 +682,13 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
         resolveRegisterMeasurement(state, op.getOperation(), rewriter);
     if (!result) {
       if (returnedResult != state.measuredResults.end()) {
-        result = getResultPtr(state, op.getOperation(), rewriter, true);
+        result = getResultPtr(state, op.getOperation(), rewriter,
+                              state.dynamicResults);
       } else {
         // Non-output results are read into SSA values before the next measure.
         if (!state.scratchResult) {
-          state.scratchResult =
-              getResultPtr(state, op.getOperation(), rewriter, true);
+          state.scratchResult = getResultPtr(state, op.getOperation(), rewriter,
+                                             state.dynamicResults);
         }
         result = state.scratchResult;
       }
@@ -811,7 +812,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
     builder.setInsertionPoint(state->outputBlock->getTerminator());
 
-    if (!state->scalarResults.empty()) {
+    if (state->dynamicResults && !state->scalarResults.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_RESULT_RELEASE, sig);
@@ -877,6 +878,10 @@ protected:
       signalPassFailure();
       return;
     }
+
+    state.dynamicResults = llvm::any_of(state.cregs, [](const auto& reg) {
+      return reg.record && !reg.booleanStorage;
+    });
 
     // Stage 1: Convert scf dialect to cf
     {

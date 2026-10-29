@@ -95,9 +95,11 @@ struct LoweringState {
   /// Measurement stores kept as SSA users across structural conversion.
   DenseMap<Operation*, Operation*> deferredMeasurementStores;
 
-  /// Owned scalar results in allocation order; array elements are owned
-  /// separately.
+  /// Scalar result pointers in allocation order; array elements are separate.
   SmallVector<Value> scalarResults;
+
+  /// Adaptive results use one allocation mode, matching returned Result arrays.
+  bool dynamicResults = false;
 
   /// Reusable Adaptive measurement result, owned by `scalarResults`.
   Value scratchResult;
@@ -117,6 +119,9 @@ struct LoweringState {
   [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
+
+/// Bufferize classical tensors and expose strided-copy loops before lowering.
+[[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);
 
 /// Lower remaining classical dialects and reconcile casts for either profile.
 [[nodiscard]] LogicalResult

@@ -21,9 +21,11 @@
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/RegionKindInterface.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/WalkResult.h"
@@ -199,6 +201,7 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
 
 LogicalResult mlir::qco::collectWireOrigins(Operation* root,
                                             DenseMap<Value, Value>& origins) {
+  DenseMap<Value, DenseSet<int64_t>> extractedSlots;
   const auto origin = [&](Value value) {
     auto known = origins.lookup(value);
     return known ? known : value;
@@ -302,8 +305,29 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
     } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
       tie(ValueRange{reset.getQubitIn()}, ValueRange{reset.getQubitOut()});
     } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-      origins[extract->getResult(0)] = origin(extract.getTensor());
+      auto tensor = origin(extract.getTensor());
+      // Graph regions need not place definitions before uses.
+      if (mayHaveSSADominance(*extract->getParentRegion())) {
+        if (auto index = getConstantIntValue(extract.getIndex());
+            index && !extractedSlots[tensor].insert(*index).second) {
+          extract.emitOpError("cannot extract a register slot that is already "
+                              "extracted");
+          return WalkResult::interrupt();
+        }
+      }
+      origins[extract->getResult(0)] = tensor;
     } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      auto extract =
+          origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
+      if (extract && mayHaveSSADominance(*insert->getParentRegion()) &&
+          origin(extract.getTensor()) == origin(insert.getDest())) {
+        const auto source = getConstantIntValue(extract.getIndex());
+        const auto dest = getConstantIntValue(insert.getIndex());
+        // Equality of dynamic slot indices remains a program precondition.
+        if (source && (!dest || *source == *dest)) {
+          extractedSlots[origin(extract.getTensor())].erase(*source);
+        }
+      }
       origins[insert.getResult()] = origin(insert.getDest());
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
       auto arguments = getQuantumArgumentIndices(call.getOperandTypes());
@@ -343,15 +367,16 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
   }
 
   DenseSet<uint64_t> staticIndices;
-  bool needsPositionalChecks = false;
+  bool needsWireChecks = false;
   const auto walkResult = root->walk([&](Operation* op) {
-    if (!needsPositionalChecks) {
+    if (!needsWireChecks) {
       if (auto function = dyn_cast<func::FuncOp>(op)) {
-        needsPositionalChecks =
+        needsWireChecks =
             !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
       } else {
-        needsPositionalChecks =
-            op->getNumRegions() != 0 && !isa<ModuleOp, UnitaryOpInterface>(op);
+        needsWireChecks = isa<qtensor::ExtractOp, qtensor::InsertOp>(op) ||
+                          (op->getNumRegions() != 0 &&
+                           !isa<ModuleOp, UnitaryOpInterface>(op));
       }
     }
     if (auto staticOp = dyn_cast<StaticOp>(op)) {
@@ -391,8 +416,8 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
   if (walkResult.wasInterrupted()) {
     return failure();
   }
-  // Flat owned circuits have no positional signatures to check.
-  if (!needsPositionalChecks) {
+  // Flat owned circuits without register accesses have no wire checks.
+  if (!needsWireChecks) {
     return success();
   }
   DenseMap<Value, Value> origins;

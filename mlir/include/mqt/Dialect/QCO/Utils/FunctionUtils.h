@@ -20,8 +20,8 @@
 #include "llvm/ADT/SmallVector.h"
 
 namespace mlir::qco {
-/// Collect quantum wire roots and verify positional function and region
-/// results.
+/// Collect quantum wire roots and verify positional results and constant
+/// register-slot ownership in SSA regions.
 ///
 /// Requires ordinary MLIR verification first. Region arguments remain local
 /// roots; verified region results continue their corresponding inputs.

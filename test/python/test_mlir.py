@@ -51,7 +51,7 @@ from mqt.core.mlir import (
     simulate,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat, open_device
+from mqt.core.qdmi import Device, ProgramFormat, open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not supports_qiskit_translation(),
@@ -2022,18 +2022,29 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
     }
 
 
-def test_compiler_target_from_device_id_matches_opened_device() -> None:
-    """Stable-ID construction produces the same detached DDSIM target."""
-    direct = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
-    by_id = CompilerTarget.from_device_id("mqt.ddsim.default", custom1="value")
+def test_compiler_target_from_device_id_matches_opened_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forward driver-session options and produce the same detached target."""
+    device = open_device("mqt.ddsim.default")
+    calls = []
 
-    assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
+    def capture_open(device_id: str, **parameters: str) -> Device:
+        calls.append((device_id, parameters))
+        return device
+
+    monkeypatch.setattr("mqt.core.qdmi.open_device", capture_open)
+    by_id = CompilerTarget.from_device_id("mqt.ddsim.default", project_id="test", custom1="value")
+
+    assert calls == [("mqt.ddsim.default", {"project_id": "test", "custom1": "value"})]
+    assert _compiler_target_metadata(by_id) == _compiler_target_metadata(CompilerTarget.from_device(device))
 
 
 def test_compiler_target_from_device_id_preserves_open_errors() -> None:
     """Stable-ID construction retains Client lookup errors."""
     with pytest.raises(IndexError, match="has no device with ID"):
         CompilerTarget.from_device_id("unknown.device")
+    unknown_parameters = {"unknown": "value"}
+    with pytest.raises(TypeError, match="incompatible"):
+        CompilerTarget.from_device_id("mqt.ddsim.default", **unknown_parameters)
 
 
 def test_qco_program_runs_textual_pipeline(capfd: pytest.CaptureFixture[str]) -> None:

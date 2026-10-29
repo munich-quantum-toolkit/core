@@ -45,7 +45,9 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - Quantum releases retain their original control-flow positions.
     - Local qubit-reference buffers support loads, stores, and shape casts without
       allocating qubits.
-    - Measurement results are dynamically allocated and released after output recording.
+    - Scalar measurements use static result IDs, with one reusable scratch ID
+      for non-output measurements. Programs with returned Result arrays use
+      dynamic results throughout and release them after output recording.
     - Measurement results may be used as classical values to drive conditional branches.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
     - Constant classical tensors and element reads are lowered to constant LLVM arrays and loads, including reads with runtime indices.
