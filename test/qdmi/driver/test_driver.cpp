@@ -48,6 +48,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -1393,7 +1394,7 @@ TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   EXPECT_NE(first, second);
 }
 
-TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
+TEST(DeviceRegistrationTest, CustomParametersPreserveNativeRepresentations) {
   registerSessionTestDevice();
   const auto device =
       value(qdmi::Session::openDevice("test.session-overrides"));
@@ -1901,23 +1902,27 @@ TEST(DeviceSessionConfigTest, PreservesCustomParameterTypesAndOwnership) {
   const auto nativeBytes = [](const auto& scalar) {
     return std::string(reinterpret_cast<const char*>(&scalar), sizeof(scalar));
   };
-  const std::array<std::pair<qdmi::CustomSessionParameter, std::string>, 5>
-      cases{
+  const std::array<std::pair<qdmi::CustomParameter, std::string>, 5> cases{
+      {
+          {std::string{}, std::string(1, '\0')},
+          {false, nativeBytes(false)},
+          {42, nativeBytes(42)},
+          {1.0, nativeBytes(1.0)},
           {
-              {std::string{}, std::string(1, '\0')},
-              {false, nativeBytes(false)},
-              {42, nativeBytes(42)},
-              {1.0, nativeBytes(1.0)},
-              {
-                  std::vector{std::byte{0}, std::byte{255}},
-                  std::string("\0\xff", 2),
-              },
+              std::vector{std::byte{0}, std::byte{255}},
+              std::string("\0\xff", 2),
           },
+      },
   };
   for (const auto& [parameter, expected] : cases) {
     const auto library = std::make_shared<ChildDeviceAPI>();
-    const auto config = qdmi::detail::mergeSessionConfig(
-        {}, qdmi::DeviceSessionConfig{.custom1 = parameter});
+    qdmi::DeviceSessionConfig overrides{.custom1 = parameter};
+    const auto config = qdmi::detail::mergeSessionConfig({}, overrides);
+    if (auto* bytes =
+            std::get_if<std::vector<std::byte>>(&*overrides.custom1)) {
+      std::ranges::fill(*bytes, std::byte{42});
+    }
+    overrides = {};
     const auto device = value(QDMI_Device_impl_d::create(*library, config));
     EXPECT_THAT(library->custom1Bytes,
                 testing::ElementsAre(expected, expected, expected));

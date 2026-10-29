@@ -281,13 +281,16 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
     return value ? setParameter(param, value->size() + 1, value->data())
                  : Error::success();
   };
-  if (auto error =
-          setString(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL)) {
-    return error;
-  }
-  if (auto error =
-          setString(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN)) {
-    return error;
+  for (const auto& [value, parameter] : std::array{
+           std::pair{&config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL},
+           std::pair{&config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN},
+           std::pair{&config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL},
+           std::pair{&config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME},
+           std::pair{&config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD},
+       }) {
+    if (auto error = setString(*value, parameter)) {
+      return error;
+    }
   }
   if (config.authFile) {
     auto filename = qdmi::detail::pathToString(*config.authFile);
@@ -298,18 +301,6 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
             setString(*filename, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE)) {
       return error;
     }
-  }
-  if (auto error =
-          setString(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL)) {
-    return error;
-  }
-  if (auto error =
-          setString(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME)) {
-    return error;
-  }
-  if (auto error =
-          setString(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD)) {
-    return error;
   }
   if (config.deviceConfiguration && (config.custom1 || config.custom2)) {
     return qdmi::makeError(

@@ -49,7 +49,7 @@ using bindings::bindResult;
 using bindings::invoke;
 using bindings::makeDriverSessionConfig;
 using bindings::PythonCustomParameter;
-using bindings::toCustomJobParameter;
+using bindings::toCustomParameter;
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -131,7 +131,7 @@ auto withProgramPayload(const PythonProgram& program, Submit submit) {
           setString(key, *text);
           return;
         }
-        const auto parameter = toCustomJobParameter(value);
+        const auto parameter = toCustomParameter(value);
         const auto [size, data] = qdmi::detail::parameterBuffer(*parameter);
         if (size == 0) {
           throw nb::value_error("Custom parameter bytes must not be empty");
@@ -237,9 +237,11 @@ void registerQDMI(nb::module_& qdmiModule) {
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
           "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
           "password"_a = std::nullopt, "project_id"_a = std::nullopt,
-          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-          "custom5"_a = std::nullopt)
+          "custom1"_a.noconvert() = std::nullopt,
+          "custom2"_a.noconvert() = std::nullopt,
+          "custom3"_a.noconvert() = std::nullopt,
+          "custom4"_a.noconvert() = std::nullopt,
+          "custom5"_a.noconvert() = std::nullopt)
       .def_prop_ro("devices", bindResult(&qdmi::Session::getDevices),
                    nb::call_guard<nb::gil_scoped_release>(),
                    "The devices visible to this authenticated session.")
@@ -277,9 +279,11 @@ void registerQDMI(nb::module_& qdmiModule) {
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
       "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
       "password"_a = std::nullopt, "project_id"_a = std::nullopt,
-      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-      "custom5"_a = std::nullopt,
+      "custom1"_a.noconvert() = std::nullopt,
+      "custom2"_a.noconvert() = std::nullopt,
+      "custom3"_a.noconvert() = std::nullopt,
+      "custom4"_a.noconvert() = std::nullopt,
+      "custom5"_a.noconvert() = std::nullopt,
       "Open a client-visible device by stable ID in a fresh session.");
 
   qdmiModule.def(
@@ -669,9 +673,9 @@ when the custom slot is unsupported.)pb");
          const std::optional<PythonCustomParameter>& custom4,
          const std::optional<PythonCustomParameter>& custom5) {
         const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
+            toCustomParameter(custom1), toCustomParameter(custom2),
+            toCustomParameter(custom3), toCustomParameter(custom4),
+            toCustomParameter(custom5),
         };
         return withProgramPayload(program, [&](const auto& payload) {
           const nb::gil_scoped_release release;
@@ -682,9 +686,11 @@ when the custom slot is unsupported.)pb");
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
+      nb::kw_only(), "custom1"_a.noconvert() = nb::none(),
+      "custom2"_a.noconvert() = nb::none(),
+      "custom3"_a.noconvert() = nb::none(),
+      "custom4"_a.noconvert() = nb::none(),
+      "custom5"_a.noconvert() = nb::none(),
       "Submit one program or an ordered list with common parameters.");
 
   device.def(
@@ -697,9 +703,9 @@ when the custom slot is unsupported.)pb");
          const std::optional<PythonCustomParameter>& custom4,
          const std::optional<PythonCustomParameter>& custom5) {
         const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
+            toCustomParameter(custom1), toCustomParameter(custom2),
+            toCustomParameter(custom3), toCustomParameter(custom4),
+            toCustomParameter(custom5),
         };
         return withProgramPayload(program, [&](const auto& payload) {
           const nb::gil_scoped_release release;
@@ -711,9 +717,11 @@ when the custom slot is unsupported.)pb");
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
+      nb::kw_only(), "custom1"_a.noconvert() = nb::none(),
+      "custom2"_a.noconvert() = nb::none(),
+      "custom3"_a.noconvert() = nb::none(),
+      "custom4"_a.noconvert() = nb::none(),
+      "custom5"_a.noconvert() = nb::none(),
       "Return no job only when the device rejects the program before "
       "submission.");
 
@@ -985,9 +993,11 @@ The first call fixes the MQT Core QDMI driver configuration.)pb");
       "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
       "username"_a = std::nullopt, "password"_a = std::nullopt,
       "device_config"_a = std::nullopt, "device_config_file"_a = std::nullopt,
-      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-      "custom5"_a = std::nullopt,
+      "custom1"_a.noconvert() = std::nullopt,
+      "custom2"_a.noconvert() = std::nullopt,
+      "custom3"_a.noconvert() = std::nullopt,
+      "custom4"_a.noconvert() = std::nullopt,
+      "custom5"_a.noconvert() = std::nullopt,
       "Open an independent device session with the MQT Core QDMI driver.");
 }
 

@@ -145,21 +145,41 @@ TEST(DeviceRegistry, RejectsInvalidCStringAndPathFields) {
   }
 }
 
-TEST(DeviceRegistry, PreservesCustomSessionBytes) {
+TEST(DeviceRegistry, ParsesCustomParameterValues) {
   constexpr std::string_view json =
-      R"({"custom3":"x\u0000y","custom4":[0,255]})";
+      R"({"custom1":12,"custom2":false,"custom3":"x\u0000y","custom4":[0,255],"custom5":0.5})";
   qdmi::DeviceSessionConfig config;
 
   ASSERT_EQ(
       qdmi::detail::parseDeviceSessionJson(json.data(), json.size(), config),
       QDMI_SUCCESS);
   ASSERT_TRUE(config.custom3.has_value());
+  EXPECT_EQ(std::get<int>(*config.custom1), 12);
+  EXPECT_FALSE(std::get<bool>(*config.custom2));
   EXPECT_EQ(std::get<std::string>(*config.custom3), std::string("x\0y", 3));
 
   EXPECT_EQ(std::get<std::vector<std::byte>>(*config.custom4),
             (std::vector{std::byte{0}, std::byte{255}}));
-  for (const std::string_view invalid :
-       {"[]", "[-1]", "[256]", "[1.5]", "[true]", "null", "42"}) {
+  EXPECT_EQ(std::get<double>(*config.custom5), 0.5);
+  constexpr std::string_view integral = R"({"custom1":1.0,"custom2":-2})";
+  ASSERT_EQ(qdmi::detail::parseDeviceSessionJson(integral.data(),
+                                                 integral.size(), config),
+            QDMI_SUCCESS);
+  EXPECT_EQ(std::get<int>(*config.custom1), 1);
+  EXPECT_EQ(std::get<int>(*config.custom2), -2);
+  for (const std::string_view invalid : {
+           "[]",
+           "[-1]",
+           "[256]",
+           "[1.5]",
+           "[true]",
+           "[1e100]",
+           "null",
+           "2147483648",
+           "-2147483649",
+           "1e100",
+           "NaN",
+       }) {
     const auto document = "{\"custom1\":" + std::string(invalid) + "}";
     SCOPED_TRACE(document);
     EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(document.data(),

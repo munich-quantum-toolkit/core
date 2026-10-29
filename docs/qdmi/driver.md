@@ -150,7 +150,8 @@ The `custom1` through `custom5` arguments of `Session`, `open_device`,
 `builtin_driver.open_device`, `CompilerTarget.from_device_id`,
 `Device.submit_job`, and `submit_program` use the receiving driver or device's
 documented types. `None` leaves a slot unset. Strings include a null terminator;
-`bool`, `int`, and `float` use C++ `bool`, `int`, and `double`. For a
+`bool`, `int`, and `float` use C++ `bool`, `int`, and `double`. Integers must
+fit the native `int` range; implicit scalar conversions are rejected. For a
 device-defined binary payload, pass nonempty `bytes`:
 
 ```python
@@ -158,9 +159,9 @@ job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
 ```
 
 QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.
-In C++, job parameters borrow a `std::span<const std::byte>` until submission
-returns; session parameters own a `std::vector<std::byte>`. The bytes describe a
-local QDMI ABI value, not a network encoding.
+C++ jobs and sessions use the same owning `qdmi::CustomParameter` type, with
+`std::vector<std::byte>` for binary values. Device documentation defines each
+custom parameter's native type.
 
 ## Usage
 

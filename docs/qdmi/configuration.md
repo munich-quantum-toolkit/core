@@ -66,9 +66,21 @@ child IDs.
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through
-`custom5`. Custom values are strings (sent with a null terminator) or nonempty
-arrays of byte values from 0 to 255 (sent unchanged). Byte arrays encode the
-local QDMI ABI; their layout and byte order depend on the device and host.
+`custom5`. Custom values use these native types:
+
+| JSON value                               | QDMI payload                   |
+| ---------------------------------------- | ------------------------------ |
+| String                                   | Null-terminated string         |
+| Boolean                                  | C++ `bool`                     |
+| Whole-valued number, including `1.0`     | C++ `int` (must fit its range) |
+| Finite fractional number                 | C++ `double`                   |
+| Nonempty array of integers from 0 to 255 | Exact bytes                    |
+
+For example, `"session": {"custom1": 12}` sets a DDSIM device's width to 12. Use
+byte arrays when the device requires another native type or an integral
+floating-point value such as `double{1.0}`. Their layout and byte order depend
+on the device and host. Python custom parameters preserve their Python type; the
+binding encodes scalar values as exact bytes when using this JSON interface.
 
 `device-config` selects exactly one device configuration source:
 

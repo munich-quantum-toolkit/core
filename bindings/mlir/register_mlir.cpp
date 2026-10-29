@@ -109,7 +109,7 @@ using namespace nb::literals;
 using bindings::bindResult;
 using bindings::makeDriverSessionConfig;
 using bindings::PythonCustomParameter;
-using bindings::toCustomJobParameter;
+using bindings::toCustomParameter;
 using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
@@ -819,9 +819,9 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
   }
   const auto device = resolveDevice(target);
   const auto params = std::array{
-      toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-      toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-      toCustomJobParameter(custom5),
+      toCustomParameter(custom1), toCustomParameter(custom2),
+      toCustomParameter(custom3), toCustomParameter(custom4),
+      toCustomParameter(custom5),
   };
   if (nb::isinstance<mlir::CompiledProgram>(program)) {
     if (options) {
@@ -971,7 +971,7 @@ template <class Payload>
   }
   const nb::gil_scoped_release release;
   auto device = unwrap(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
-  std::optional<qdmi::CustomJobParameter> randomSeed;
+  std::optional<qdmi::CustomParameter> randomSeed;
   if (seed != 0) {
     randomSeed = static_cast<int>(seed);
   }
@@ -1732,9 +1732,11 @@ Raises:
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
           "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
           "password"_a = std::nullopt, "project_id"_a = std::nullopt,
-          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-          "custom5"_a = std::nullopt,
+          "custom1"_a.noconvert() = std::nullopt,
+          "custom2"_a.noconvert() = std::nullopt,
+          "custom3"_a.noconvert() = std::nullopt,
+          "custom4"_a.noconvert() = std::nullopt,
+          "custom5"_a.noconvert() = std::nullopt,
           "Open a client-visible device and snapshot its compiler target.")
       .def_prop_ro(
           "name",
@@ -2716,10 +2718,11 @@ placement.)pb");
 
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
         "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
-        "program_format"_a = nb::none(), "custom1"_a = nb::none(),
-        "custom2"_a = nb::none(), "custom3"_a = nb::none(),
-        "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-        "options"_a = nb::none(),
+        "program_format"_a = nb::none(), "custom1"_a.noconvert() = nb::none(),
+        "custom2"_a.noconvert() = nb::none(),
+        "custom3"_a.noconvert() = nb::none(),
+        "custom4"_a.noconvert() = nb::none(),
+        "custom5"_a.noconvert() = nb::none(), "options"_a = nb::none(),
         R"pb(Compile source or submit a compiled program to a device.
 
 ``target`` accepts a registered device ID or an open device. For source input,

@@ -78,6 +78,10 @@ TEST(SessionParameters, WidthValidationAndImmutability) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
   constexpr int width = std::numeric_limits<uint16_t>::max();
   for (const auto size : {size_t{0}, sizeof(uint16_t)}) {
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_session_set_parameter(
+            session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, size, nullptr),
+        QDMI_SUCCESS);
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
                   session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, size, &width),
               QDMI_ERROR_INVALIDARGUMENT);

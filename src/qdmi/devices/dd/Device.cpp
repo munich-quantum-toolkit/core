@@ -94,14 +94,7 @@ constexpr dd::DDPackageConfig RESULT_PACKAGE_CONFIG{
 };
 
 constexpr uintptr_t OFFSET = 0x10000U;
-template <typename T, std::size_t N> constexpr std::array<T, N> iotaArray() {
-  std::array<T, N> result{};
-  std::iota(result.begin(), result.end(), OFFSET);
-  return result;
-}
-
 constexpr auto MAX_QUBITS = std::numeric_limits<dd::Qubit>::max();
-constexpr auto SITES = iotaArray<uintptr_t, MAX_QUBITS>();
 
 struct OperationInfo {
   const char* name{};
@@ -235,17 +228,6 @@ constexpr std::array OPERATIONS{
         .isVariadic = true,
     },
 };
-
-template <std::size_t N>
-constexpr std::array<const OperationInfo*, N>
-makeOperationAddresses(const std::array<OperationInfo, N>& ops) {
-  std::array<const OperationInfo*, N> addresses{};
-  for (std::size_t i = 0; i < N; ++i) {
-    addresses[i] = &ops[i];
-  }
-  return addresses;
-}
-constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
 constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
     QDMI_PROGRAM_FORMAT_QASM2,
@@ -457,6 +439,15 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::init() -> QDMI_STATUS {
   if (status_ != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
+  sites_.resize(qubitsNum_);
+  std::iota(sites_.begin(), sites_.end(), OFFSET);
+  operations_.clear();
+  operations_.reserve(OPERATIONS.size());
+  for (const auto& operation : OPERATIONS) {
+    if (operation.numSites <= qubitsNum_) {
+      operations_.push_back(&operation);
+    }
+  }
   status_ = Status::INITIALIZED;
   return QDMI_SUCCESS;
 }
@@ -474,7 +465,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
     return QDMI_ERROR_NOTSUPPORTED;
   }
   if (value == nullptr) {
-    return size == 0 ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
+    return QDMI_SUCCESS;
   }
   if (size != sizeof(int)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -524,17 +515,10 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
                             prop, size, value, sizeRet)
-  const auto sites = std::span(SITES).first(qubitsNum_);
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_DDSIM_QDMI_Site, sites,
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_DDSIM_QDMI_Site, sites_,
                     prop, size, value, sizeRet)
-  if (prop == QDMI_DEVICE_PROPERTY_OPERATIONS) {
-    auto operations = OPERATION_ADDRESSES;
-    const auto removed = std::ranges::remove_if(
-        operations, [&](const auto* op) { return op->numSites > qubitsNum_; });
-    const auto supported = std::span(operations.begin(), removed.begin());
-    ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
-                      supported, prop, size, value, sizeRet)
-  }
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
+                    operations_, prop, size, value, sizeRet)
   return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
@@ -1402,7 +1386,7 @@ int MQT_DDSIM_QDMI_device_session_init(MQT_DDSIM_QDMI_Device_Session session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return session->init();
+  return guardDeviceCall([&] { return session->init(); });
 }
 
 void MQT_DDSIM_QDMI_device_session_free(MQT_DDSIM_QDMI_Device_Session session) {

@@ -908,11 +908,11 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
 static Expected<qdmi::Job>
 submitPayload(const qdmi::Device& device, const CompiledProgram& program,
               int64_t numShots,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5) {
+              const std::optional<qdmi::CustomParameter>& custom1,
+              const std::optional<qdmi::CustomParameter>& custom2,
+              const std::optional<qdmi::CustomParameter>& custom3,
+              const std::optional<qdmi::CustomParameter>& custom4,
+              const std::optional<qdmi::CustomParameter>& custom5) {
   if (qdmi::isBinaryProgramFormat(program.programFormat())) {
     const auto payload = std::as_bytes(std::span(program.payload()));
     return device.submitJob(payload, program.programFormat(),
@@ -928,11 +928,11 @@ submitPayload(const qdmi::Device& device, const CompiledProgram& program,
 Expected<qdmi::Job>
 submitProgram(const qdmi::Device& device, const CompiledProgram& program,
               int64_t numShots,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5) {
+              const std::optional<qdmi::CustomParameter>& custom1,
+              const std::optional<qdmi::CustomParameter>& custom2,
+              const std::optional<qdmi::CustomParameter>& custom3,
+              const std::optional<qdmi::CustomParameter>& custom4,
+              const std::optional<qdmi::CustomParameter>& custom5) {
   if (numShots < 0) {
     return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "num_shots must be nonnegative");
@@ -953,11 +953,11 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
 Expected<qdmi::Job>
 submitProgram(const qdmi::Device& device, CompilerInput input, int64_t numShots,
               std::optional<QDMI_Program_Format> format,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5,
+              const std::optional<qdmi::CustomParameter>& custom1,
+              const std::optional<qdmi::CustomParameter>& custom2,
+              const std::optional<qdmi::CustomParameter>& custom3,
+              const std::optional<qdmi::CustomParameter>& custom4,
+              const std::optional<qdmi::CustomParameter>& custom5,
               const CompilationOptions& options) {
   if (numShots < 0) {
     return createStringError(std::make_error_code(std::errc::invalid_argument),

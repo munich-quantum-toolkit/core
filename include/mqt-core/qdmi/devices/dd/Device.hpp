@@ -28,6 +28,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <vector>
 
 namespace qdmi::dd {
 struct Execution;
@@ -98,6 +99,9 @@ private:
   Status status_ = Status::ALLOCATED;
   /// Session capacity; fixed before initialization.
   uint16_t qubitsNum_;
+  /// Site and operation handles fixed during initialization.
+  std::vector<uintptr_t> sites_;
+  std::vector<const void*> operations_;
   /// The device jobs associated with this session.
   llvm::iplist<MQT_DDSIM_QDMI_Device_Job_impl_d> jobs_;
   /// Mutex protecting access to jobs_.

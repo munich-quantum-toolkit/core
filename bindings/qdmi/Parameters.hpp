@@ -29,31 +29,13 @@ namespace mqt::bindings {
 using PythonCustomParameter =
     std::variant<std::string, bool, int, double, nanobind::bytes>;
 
-[[nodiscard]] inline std::optional<qdmi::CustomJobParameter>
-toCustomJobParameter(const std::optional<PythonCustomParameter>& parameter) {
+[[nodiscard]] inline std::optional<qdmi::CustomParameter>
+toCustomParameter(const std::optional<PythonCustomParameter>& parameter) {
   if (!parameter) {
     return std::nullopt;
   }
   return std::visit(
-      [](const auto& value) -> qdmi::CustomJobParameter {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     nanobind::bytes>) {
-          return std::as_bytes(std::span(value.c_str(), value.size()));
-        } else {
-          return value;
-        }
-      },
-      *parameter);
-}
-
-[[nodiscard]] inline std::optional<qdmi::CustomSessionParameter>
-toCustomSessionParameter(
-    const std::optional<PythonCustomParameter>& parameter) {
-  if (!parameter) {
-    return std::nullopt;
-  }
-  return std::visit(
-      [](const auto& value) -> qdmi::CustomSessionParameter {
+      [](const auto& value) -> qdmi::CustomParameter {
         if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
                                      nanobind::bytes>) {
           const auto bytes =
@@ -85,11 +67,11 @@ inline qdmi::SessionConfig makeDriverSessionConfig(
       .username = std::move(username),
       .password = std::move(password),
       .projectId = std::move(projectId),
-      .custom1 = toCustomSessionParameter(custom1),
-      .custom2 = toCustomSessionParameter(custom2),
-      .custom3 = toCustomSessionParameter(custom3),
-      .custom4 = toCustomSessionParameter(custom4),
-      .custom5 = toCustomSessionParameter(custom5),
+      .custom1 = toCustomParameter(custom1),
+      .custom2 = toCustomParameter(custom2),
+      .custom3 = toCustomParameter(custom3),
+      .custom4 = toCustomParameter(custom4),
+      .custom5 = toCustomParameter(custom5),
   };
 }
 

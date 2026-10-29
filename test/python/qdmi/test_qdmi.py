@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from mqt.core.mlir import (
+    CompilerTarget,
     OutputFormat,
     compile_program,
     submit_program,
@@ -31,6 +32,7 @@ from mqt.core.qdmi import (
     Job,
     ProgramFormat,
     Session,
+    builtin_driver,
     device_ids,
     is_binary_program_format,
     open_device,
@@ -54,6 +56,22 @@ def _get_devices() -> list[Device]:
 def test_device_ids() -> None:
     """List the default session's client-visible stable IDs."""
     assert device_ids() == Session().device_ids
+
+
+@pytest.mark.parametrize("parameter", [2**31, -(2**31) - 1])
+def test_custom_integer_overflow_preserves_type(ddsim_device: Device, parameter: int) -> None:
+    """Reject oversized integers instead of reinterpreting them as double bytes."""
+    with pytest.raises(TypeError, match="incompatible"):
+        Session(custom1=parameter)
+    for factory in (open_device, builtin_driver.open_device, CompilerTarget.from_device_id):
+        with pytest.raises(TypeError, match="incompatible"):
+            factory("mqt.ddsim.default", custom1=parameter)
+    source = "OPENQASM 3.0; qubit q;"
+    for submit in (ddsim_device.submit_job, ddsim_device.try_submit_job):
+        with pytest.raises(TypeError, match="incompatible"):
+            submit(source, ProgramFormat.QASM3, 1, custom3=parameter)
+    with pytest.raises(TypeError, match="incompatible"):
+        submit_program(source, target=ddsim_device, custom3=parameter)
 
 
 @pytest.fixture(params=_get_devices())

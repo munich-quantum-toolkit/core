@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -33,22 +32,15 @@
 #include <vector>
 
 namespace qdmi {
-/// Custom scalars use their native C++ representation.
-///
-/// Byte spans borrow an exact, nonempty payload until the synchronous
-/// submission call returns.
-using CustomJobParameter =
-    std::variant<std::string, bool, int, double, std::span<const std::byte>>;
-/// Session configuration owns its bytes across storage, copies, and merges.
-using CustomSessionParameter =
+/// Custom parameters own their values and use their native C++ representation.
+using CustomParameter =
     std::variant<std::string, bool, int, double, std::vector<std::byte>>;
 /// Preserve a provider status in an owned LLVM error.
 [[nodiscard]] llvm::Error makeError(int status, const llvm::Twine& message);
 
 namespace detail {
 /// Borrow the native ABI representation until the parameter is modified.
-template <class Parameter>
-auto parameterBuffer(const Parameter& parameter)
+inline auto parameterBuffer(const CustomParameter& parameter)
     -> std::pair<size_t, const void*> {
   return std::visit(
       []<class T>(const T& value) -> std::pair<size_t, const void*> {

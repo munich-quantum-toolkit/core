@@ -77,15 +77,15 @@ struct DeviceSessionConfig {
   /// Typed runtime device-description source.
   std::optional<DeviceConfigurationSource> deviceConfiguration;
   /// Custom configuration parameter 1
-  std::optional<CustomSessionParameter> custom1;
+  std::optional<CustomParameter> custom1;
   /// Custom configuration parameter 2
-  std::optional<CustomSessionParameter> custom2;
+  std::optional<CustomParameter> custom2;
   /// Custom configuration parameter 3
-  std::optional<CustomSessionParameter> custom3;
+  std::optional<CustomParameter> custom3;
   /// Custom configuration parameter 4
-  std::optional<CustomSessionParameter> custom4;
+  std::optional<CustomParameter> custom4;
   /// Custom configuration parameter 5
-  std::optional<CustomSessionParameter> custom5;
+  std::optional<CustomParameter> custom5;
 };
 
 /// Stable registration for a QDMI device.
