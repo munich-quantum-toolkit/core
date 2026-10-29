@@ -36,6 +36,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Support/RandomSeed.h"
+#include "mqt/Target/QIR/Capabilities.h"
 
 #include "ExactUnitaryTest.h"
 #include "Support/IRVerification.h"
@@ -1081,6 +1082,73 @@ result = measure q;
   });
   EXPECT_TRUE(hasRuntimeStorage);
   EXPECT_TRUE(succeeded(std::move(*qir).intoLLVMIR()));
+}
+
+TEST_F(CompilerPipelineTest, WritableResultsRequireConfirmedTargetSupport) {
+  for (bool writable : {false, true}) {
+    for (bool known : {false, true}) {
+      SCOPED_TRACE(testing::Message()
+                   << "writable=" << writable << ", known=" << known);
+      QCProgramBuilder builder(context.get());
+      builder.initialize();
+      auto qubit = builder.allocQubit();
+      auto bits = builder.allocClassicalBitRegister(3);
+      builder.storeClassicalBit(builder.boolConstant(true), bits, 0);
+      auto first = builder.measure(qubit, bits, 0);
+      builder.x(qubit);
+      auto last = builder.measure(qubit, bits, 1);
+      auto corrected = arith::XOrIOp::create(builder, first, last);
+      auto index =
+          arith::IndexCastUIOp::create(builder, builder.getIndexType(), first);
+      builder.storeClassicalBit(corrected, bits, index.getResult());
+      auto input =
+          QCProgram::fromModule(context, builder.finalize({bits, first}));
+      MQT_ASSERT_SUCCESS(input);
+      const auto supported = llvm::cantFail(
+          PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+      std::vector<ProgramCapability> capabilities(
+          supported.capabilities().begin(), supported.capabilities().end());
+      if (!writable) {
+        llvm::erase_if(capabilities, [](const auto& capability) {
+          return capability.id == "qir.writable-results";
+        });
+      }
+      auto payload = llvm::cantFail(PayloadSpecification::create(
+          supported.format(), capabilities, known));
+      attachTargetEnvironment(
+          input->module(),
+          TargetEnvironment(makeUnrestrictedTarget(), std::move(payload)));
+      auto output = std::move(*input).intoQIR(QIRProfile::Adaptive);
+      MQT_ASSERT_SUCCESS(output);
+      if (writable && known) {
+        llvm::erase_if(capabilities, [](const auto& capability) {
+          return capability.id == "qir.writable-results";
+        });
+        const auto unsupported = llvm::cantFail(PayloadSpecification::create(
+            supported.format(), std::move(capabilities), true));
+        const ScopedDiagnosticHandler handler(
+            context.get(), [](Diagnostic&) { return success(); });
+        EXPECT_TRUE(failed(
+            mlir::qir::validateCapabilities(output->module(), unsupported)));
+      }
+      EXPECT_TRUE(succeeded(output->cleanup()));
+      auto ir = std::move(*output).intoLLVMIR();
+      MQT_ASSERT_SUCCESS(ir);
+      EXPECT_EQ(ir->find("!\"writable_results\", i1 true") != std::string::npos,
+                writable && known);
+      std::string sinkText;
+      llvm::raw_string_ostream sink(sinkText);
+      auto session = value(::qir::JitSession::create(
+          *ir, "computed-output", ::qir::Execution::Sampling, 17, &sink));
+      std::vector<std::string> shots;
+      ASSERT_EQ(value(session->sample(8, shots)), 0);
+      EXPECT_EQ(shots, std::vector<std::string>(8, "1100"));
+      if (writable && known) {
+        EXPECT_NE(sinkText.find("OUTPUT\tRESULT_ARRAY\t110"),
+                  std::string::npos);
+      }
+    }
+  }
 }
 
 TEST_F(CompilerPipelineTest, BaseUnrollsBoundArrayLoops) {

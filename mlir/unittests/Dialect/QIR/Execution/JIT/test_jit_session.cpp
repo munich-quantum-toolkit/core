@@ -438,6 +438,43 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
   EXPECT_EQ(session.runtime().getMeasurements(), "1");
 }
 
+TEST_F(JitSessionTest, WritableResultsReplaceDeferredMeasurements) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__initialize(ptr null)
+  call void @__quantum__qis__h__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__rt__write_result(i1 true, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__write_result(i1 false, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__write_result(i1, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="1" "required_num_results"="1" }
+)";
+  auto session = value(qir::JitSession::create(
+      ir, "overwritten-measurement", qir::Execution::Sampling, 17, &sink));
+  std::vector<std::string> shots;
+  ASSERT_EQ(value(session->sample(16, shots)), 0);
+  EXPECT_EQ(shots, std::vector<std::string>(16, "10"));
+  std::map<std::string, size_t> counts;
+  bool retained = false;
+  ASSERT_EQ(value(session->sampleCounts(16, counts, &retained)), 0);
+  EXPECT_EQ(counts, (std::map<std::string, size_t>{{"10", 16}}));
+  EXPECT_TRUE(retained);
+  const auto state = value(session->runtime().takeState());
+  const auto amplitudes = value(dd::getVector(state.edge));
+  ASSERT_EQ(amplitudes.size(), 2);
+  for (const auto amplitude : amplitudes) {
+    EXPECT_NEAR(std::abs(amplitude), std::sqrt(0.5), 1e-12);
+  }
+}
+
 TEST_F(JitSessionTest, SupportsNativeOneAndTwoControlExtensions) {
   constexpr std::string_view ir = R"(
 define i64 @native_controls() #0 {

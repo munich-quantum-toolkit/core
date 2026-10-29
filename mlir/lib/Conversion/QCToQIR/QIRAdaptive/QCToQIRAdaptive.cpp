@@ -148,7 +148,7 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
           "registers");
       hasInvalidAccess = true;
     } else if (representation == RETURNED_CBIT_REGISTER) {
-      state.returnedCBitReads.insert(operation);
+      state.returnedCBitAccesses.insert(operation);
     }
   };
   moduleOp->walk(
@@ -164,6 +164,10 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
           "registers");
       hasInvalidAccess = true;
     } else if (representation == RETURNED_CBIT_REGISTER) {
+      if (state.useWritableResults) {
+        state.returnedCBitAccesses.insert(storeOp);
+        return;
+      }
       storeOp.emitOpError(
           "adaptive QIR conversion does not support non-measurement writes "
           "to returned CBit registers");
@@ -171,6 +175,14 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
     }
   });
   return success(!hasInvalidAccess);
+}
+
+static Value loadRegisterResult(Operation* op, Value reg, Value index,
+                                ConversionPatternRewriter& rewriter) {
+  auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+  auto address = LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType, ptrType,
+                                     reg, ValueRange{index});
+  return LLVM::LoadOp::create(rewriter, op->getLoc(), ptrType, address);
 }
 
 /// Returns the result pointer the `qc::MeasureOp` @p op writes to, or
@@ -184,13 +196,8 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
   auto [registerIndex, index] = it->second;
   auto& reg = state.cregs[registerIndex];
   assert(reg.array && "result array must be allocated");
-  auto loc = op->getLoc();
-  auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-  auto remappedIndex = rewriter.getRemappedValue(index);
-  auto elementptr = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType,
-                                        reg.array, ValueRange{remappedIndex})
-                        .getResult();
-  return LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
+  return loadRegisterResult(op, reg.array, rewriter.getRemappedValue(index),
+                            rewriter);
 }
 
 /// Converts qubit-register `memref.alloc` to `llvm.alloca`
@@ -308,14 +315,11 @@ static Value loadCBit(Operation* op, Value reg, Value index,
     return LLVM::LoadOp::create(rewriter, op->getLoc(), rewriter.getI1Type(),
                                 elementptr);
   }
-  auto elementptr = LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType,
-                                        ptrType, reg, ValueRange{index});
-  auto result =
-      LLVM::LoadOp::create(rewriter, op->getLoc(), ptrType, elementptr);
+  auto result = loadRegisterResult(op, reg, index, rewriter);
   auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
   auto fnDec =
       getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
-  return LLVM::CallOp::create(rewriter, op->getLoc(), fnDec, result.getResult())
+  return LLVM::CallOp::create(rewriter, op->getLoc(), fnDec, result)
       .getResult();
 }
 
@@ -328,7 +332,7 @@ struct ConvertCBitLoadOp final : StatefulOpConversionPattern<cbit::LoadOp> {
   matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     const auto returnedRegister =
-        getState().returnedCBitReads.contains(op.getOperation());
+        getState().returnedCBitAccesses.contains(op.getOperation());
     rewriter.replaceOp(op, loadCBit(op, adaptor.getReg(), adaptor.getIndex(),
                                     rewriter, returnedRegister));
     return success();
@@ -341,6 +345,19 @@ struct ConvertCBitStoreOp final : StatefulOpConversionPattern<cbit::StoreOp> {
   LogicalResult
   matchAndRewrite(cbit::StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (getState().returnedCBitAccesses.contains(op.getOperation())) {
+      const auto ptrType = LLVM::LLVMPointerType::get(getContext());
+      auto result = loadRegisterResult(op, adaptor.getReg(), adaptor.getIndex(),
+                                       rewriter);
+      auto signature =
+          LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(getContext()),
+                                      {rewriter.getI1Type(), ptrType});
+      auto declaration = getOrCreateFunctionDeclaration(
+          rewriter, op, QIR_WRITE_RESULT, signature);
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+          op, declaration, ValueRange{adaptor.getValue(), result});
+      return success();
+    }
     if (getState().resultArrays.contains(adaptor.getReg())) {
       return op.emitError(
           "non-measurement stores to returned CBit registers are not "

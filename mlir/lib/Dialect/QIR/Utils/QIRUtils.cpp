@@ -46,6 +46,7 @@ void normalizeQIRModuleFlags(llvm::Module& moduleOp) {
   for (const StringRef key : {
            "dynamic_qubit_management",
            "dynamic_result_management",
+           "writable_results",
            "arrays",
            "ir_functions",
            "multiple_target_branching",
@@ -248,7 +249,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
   }
 
   auto function = cast<LLVM::LLVMFuncOp>(fnDecl);
-  if (fnName == QIR_MEASURE) {
+  if (fnName == QIR_MEASURE || fnName == QIR_WRITE_RESULT) {
     function.setArgAttr(1, LLVM::LLVMDialect::getWriteOnlyAttrName(),
                         builder.getUnitAttr());
   } else if (fnName == QIR_READ_RESULT) {

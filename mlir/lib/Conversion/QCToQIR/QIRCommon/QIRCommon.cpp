@@ -765,6 +765,17 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
           CompilerTarget::NativeOperations::Kind::Explicit) {
     state.nativeTarget = environment.environment().target();
   }
+  if (allowComputedOutputs && environment) {
+    const auto& payload = environment.environment().payloadSpecification();
+    state.useWritableResults =
+        payload.format().id == "qir" &&
+        payload.format().profile == "adaptive" &&
+        payload.optionalCapabilitiesKnown() &&
+        llvm::any_of(payload.capabilities(), [](const auto& capability) {
+          return capability.id == "qir.writable-results" &&
+                 capability.value == 0 && capability.constraints.empty();
+        });
+  }
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
     operation->removeAttr(qir::QIR_NATIVE_NAME_ATTR);
@@ -871,7 +882,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
   }
 
-  if (allowComputedOutputs) {
+  if (allowComputedOutputs && !state.useWritableResults) {
     funcOp.walk([&](cbit::StoreOp storeOp) {
       auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
       if (allocOp && !storeOp.getValue().getDefiningOp<MeasureOp>()) {
@@ -881,11 +892,13 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     });
   }
 
-  const auto useBooleanStorage = [&](size_t registerIndex) {
+  const auto preserveStore = [&](size_t registerIndex) {
     if (!allowComputedOutputs) {
       return false;
     }
-    state.cregs[registerIndex].booleanStorage = true;
+    if (!state.useWritableResults) {
+      state.cregs[registerIndex].booleanStorage = true;
+    }
     return true;
   };
 
@@ -909,10 +922,17 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
     auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
     if (!measureOp) {
+      if (state.useWritableResults) {
+        return;
+      }
       storeOp.emitError(
           "QIR conversion does not support non-measurement stores to "
           "returned CBit registers");
       hasInvalidMemory = true;
+      return;
+    }
+    // Writable registers can overwrite a separately returned measurement.
+    if (state.useWritableResults && state.measuredResults.contains(measureOp)) {
       return;
     }
     bool canFuse = measureOp->getBlock() == storeOp->getBlock();
@@ -929,7 +949,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                                measureOp, dominance));
     }
     if (!canFuse) {
-      if (useBooleanStorage(registerIndex)) {
+      if (preserveStore(registerIndex)) {
         return;
       }
       storeOp.emitError("QIR output cannot fuse this measurement/store pair: "
@@ -944,7 +964,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     const auto [it, inserted] = state.cregMeasurements.try_emplace(
         measureOp.getOperation(), destination);
     if (!inserted && it->second != destination) {
-      if (useBooleanStorage(registerIndex)) {
+      if (preserveStore(registerIndex)) {
         return;
       }
       storeOp.emitError("a measurement result cannot be stored in multiple "
@@ -992,7 +1012,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       if (!index || dynamicStores.contains(destination.first) ||
           storedMeasurements.lookup({destination.first, *index}) !=
               measurement) {
-        if (useBooleanStorage(destination.first)) {
+        if (preserveStore(destination.first)) {
           continue;
         }
         measurement->emitError(

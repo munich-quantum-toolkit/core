@@ -536,6 +536,10 @@ bool __quantum__rt__read_result(Result* result) noexcept {
   return requireValue(qir::Runtime::getInstance().deref(result))->r;
 }
 
+void __quantum__rt__write_result(bool value, Result* result) noexcept {
+  *requireValue(qir::Runtime::getInstance().deref(result)) = {.r = value};
+}
+
 void __quantum__rt__result_record_output(Result* result,
                                          const char* label) noexcept {
   auto& runtime = qir::Runtime::getInstance();

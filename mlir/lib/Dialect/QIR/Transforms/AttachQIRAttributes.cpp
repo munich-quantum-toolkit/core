@@ -73,6 +73,8 @@ struct Metadata {
   bool useDynamicQubit{false};
   /// Whether the module uses dynamic result management
   bool useDynamicResult{false};
+  /// Whether the module writes classical values to results
+  bool useWritableResults{false};
   /// Whether the module uses arrays
   bool useArrays{false};
   /// Whether the module uses backward branching (0 = none, 1 = iteration based,
@@ -231,6 +233,10 @@ private:
         flags.emplace_back(
             createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays", true));
       }
+      if (metadata.useWritableResults) {
+        flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
+                                          "writable_results", true));
+      }
       if (metadata.usesIRFunctions) {
         flags.emplace_back(
             createBoolFlag(LLVM::ModFlagBehavior::Error, "ir_functions", true));
@@ -266,8 +272,8 @@ private:
     return key == "qir_major_version" || key == "qir_minor_version" ||
            key == "dynamic_qubit_management" ||
            key == "dynamic_result_management" || key == "backwards_branching" ||
-           key == "arrays" || key == "ir_functions" ||
-           key == "multiple_target_branching" ||
+           key == "writable_results" || key == "arrays" ||
+           key == "ir_functions" || key == "multiple_target_branching" ||
            key == "multiple_return_points" || key == "int_computations" ||
            key == "float_computations";
   }
@@ -442,7 +448,8 @@ private:
       if ((callee == QIR_RECORD_OUTPUT || callee == QIR_READ_RESULT) &&
           !call.getArgOperands().empty()) {
         results.insert(call.getArgOperands()[0]);
-      } else if (callee == QIR_MEASURE && call.getArgOperands().size() > 1) {
+      } else if ((callee == QIR_MEASURE || callee == QIR_WRITE_RESULT) &&
+                 call.getArgOperands().size() > 1) {
         results.insert(call.getArgOperands()[1]);
       }
     });
@@ -558,6 +565,7 @@ private:
       function.walk([&](Operation* operation) {
         if (auto call = dyn_cast<LLVM::CallOp>(operation)) {
           const auto name = call.getCallee();
+          metadata.useWritableResults |= name == QIR_WRITE_RESULT;
           metadata.useDynamicQubit |=
               name == QIR_QUBIT_ALLOC || name == QIR_QUBIT_RELEASE ||
               name == QIR_QUBIT_ARRAY_ALLOC || name == QIR_QUBIT_ARRAY_RELEASE;

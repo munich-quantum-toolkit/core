@@ -478,8 +478,12 @@ TEST_F(QIRTest, PreservesUnrelatedMetadataIdempotently) {
   const auto staleQIR = LLVM::ModuleFlagAttr::get(
       context.get(), LLVM::ModFlagBehavior::Error,
       builder.getStringAttr("qir_major_version"), builder.getI32IntegerAttr(1));
-  LLVM::ModuleFlagsOp::create(builder, location,
-                              builder.getArrayAttr({unrelated, staleQIR}));
+  const auto staleWritable = LLVM::ModuleFlagAttr::get(
+      context.get(), LLVM::ModFlagBehavior::Error,
+      builder.getStringAttr("writable_results"), builder.getI32IntegerAttr(1));
+  LLVM::ModuleFlagsOp::create(
+      builder, location,
+      builder.getArrayAttr({unrelated, staleQIR, staleWritable}));
   const auto functionType =
       LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
   auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
@@ -502,6 +506,7 @@ TEST_F(QIRTest, PreservesUnrelatedMetadataIdempotently) {
   const auto qirMajor = findModuleFlag(module, "qir_major_version");
   ASSERT_TRUE(qirMajor);
   EXPECT_EQ(cast<IntegerAttr>(qirMajor.getValue()).getInt(), 2);
+  EXPECT_FALSE(findModuleFlag(module, "writable_results"));
 
   const auto passthrough = main.getPassthroughAttr();
   ASSERT_TRUE(passthrough);
@@ -603,6 +608,14 @@ TEST_F(QIRTest, MetadataCountsResourceRolesAcrossCalls) {
            },
            Case{
                .instruction =
+                   "%bit = llvm.mlir.constant(true) : i1\n"
+                   "llvm.call @__quantum__rt__write_result(%bit, %r9) : "
+                   "(i1, !llvm.ptr) -> ()",
+               .qubits = "0",
+               .results = "10",
+           },
+           Case{
+               .instruction =
                    "llvm.call @__quantum__rt__result_record_output(%r9, %zero) "
                    ": "
                    "(!llvm.ptr, !llvm.ptr) -> ()",
@@ -657,6 +670,7 @@ TEST_F(QIRTest, MetadataCountsResourceRolesAcrossCalls) {
       llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
       llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
       llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @__quantum__rt__write_result(i1, !llvm.ptr)
       llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
       llvm.func @helper(%q: !llvm.ptr, %r: !llvm.ptr) {
         llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
