@@ -520,6 +520,23 @@ TEST(ProgramInspection, DepthWithBlockControlFlow) {
                             3);
 }
 
+TEST(ProgramInspection, DepthCountsBothIfBranchesAsOneLayer) {
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[3] q;
+    bit[2] c;
+    h q[0];
+    c[0] = measure q[0];
+    if (c[0]) {
+      x q[1];
+    } else {
+      x q[2];
+    }
+    c[1] = measure q[2];
+  )",
+                            4);
+}
+
 TEST(ProgramInspection, DepthWithSwitchControlFlow) {
   expectDepthInBothDialects(R"(OPENQASM 3.0;
     include "stdgates.inc";

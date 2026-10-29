@@ -18,17 +18,20 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
+#include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -37,7 +40,6 @@
 #include <cstdint>
 #include <limits>
 #include <map>
-#include <mlir/Interfaces/LoopLikeInterface.h>
 #include <optional>
 #include <string>
 #include <utility>
@@ -213,6 +215,31 @@ static void increaseDepthMeasurement(Value qubitIn, Value qubitOut,
   bumpLayer(keys, true, depthOf);
 }
 
+// Add the keys of the classical bits that a condition depends on. Frontends may
+// derive the condition from loaded bits, for example with `arith.cmpi`.
+static LogicalResult addConditionKeys(Value cond, SmallVectorImpl<Key>& keys,
+                                      const llvm::DenseMap<Value, Key>& keyOf) {
+  if (auto it = keyOf.find(cond); it != keyOf.end()) {
+    keys.push_back(it->second);
+    return success();
+  }
+  llvm::SetVector<Operation*> slice;
+  if (failed(getBackwardSlice(cond, &slice))) {
+    return failure();
+  }
+  const size_t numKeys = keys.size();
+  for (Operation* op : slice) {
+    if (auto load = dyn_cast<cbit::LoadOp>(op)) {
+      auto it = keyOf.find(load.getResult());
+      if (it == keyOf.end()) {
+        return failure();
+      }
+      keys.push_back(it->second);
+    }
+  }
+  return success(keys.size() > numKeys);
+}
+
 // Function to compute the depth of a QCProgram or QCOProgram.
 static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
@@ -295,44 +322,52 @@ static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
     else if (isControlFlow(op)) {
       if (auto ifop = dyn_cast<scf::IfOp>(op)) {
         SmallVector<Key> keys;
-        Value cond = ifop.getCondition();
-        Key condKey = keyOf.lookup(cond);
-        keys.push_back(condKey);
+        if (failed(addConditionKeys(ifop.getCondition(), keys, keyOf))) {
+          return WalkResult::interrupt();
+        }
 
-        ifop.getThenRegion().walk([&](Operation* inner) {
-          for (Value operand : inner->getOperands()) {
-            if (auto load = operand.getDefiningOp<memref::LoadOp>()) {
-              if (auto index = getConstantIntValue(load.getIndices().front())) {
-                keys.push_back(std::make_pair(load.getMemRef(), *index));
+        for (Region& region : ifop->getRegions()) {
+          region.walk([&](Operation* inner) {
+            for (Value operand : inner->getOperands()) {
+              if (auto load = operand.getDefiningOp<memref::LoadOp>()) {
+                if (auto index =
+                        getConstantIntValue(load.getIndices().front())) {
+                  keys.push_back(std::make_pair(load.getMemRef(), *index));
+                }
               }
             }
-          }
-        });
+          });
+        }
 
         bumpLayer(keys, true, depthOf);
       } else if (auto ifop = dyn_cast<qco::IfOp>(op)) {
         SmallVector<Key> keys;
-        keys.push_back(keyOf.lookup(ifop.getCondition()));
+        if (failed(addConditionKeys(ifop.getCondition(), keys, keyOf))) {
+          return WalkResult::interrupt();
+        }
 
         // The block arguments and the results continue the registers passed in.
-        for (auto [in, arg, out] :
-             llvm::zip_equal(ifop.getQubits(), ifop.thenBlock()->getArguments(),
-                             ifop.getLinearResults())) {
-          registerOf[arg] = rootOf(in);
+        for (auto [in, thenArg, elseArg, out] : llvm::zip_equal(
+                 ifop.getQubits(), ifop.thenBlock()->getArguments(),
+                 ifop.elseBlock()->getArguments(), ifop.getLinearResults())) {
+          registerOf[thenArg] = rootOf(in);
+          registerOf[elseArg] = rootOf(in);
           registerOf[out] = rootOf(in);
         }
 
-        ifop.getThenRegion().walk([&](Operation* inner) {
-          if (auto extract = dyn_cast<qtensor::ExtractOp>(inner)) {
-            Value reg = rootOf(extract.getTensor());
-            registerOf[extract.getOutTensor()] = reg;
-            if (auto index = getConstantIntValue(extract.getIndex())) {
-              keys.push_back(std::make_pair(reg, *index));
+        for (Region& region : ifop->getRegions()) {
+          region.walk([&](Operation* inner) {
+            if (auto extract = dyn_cast<qtensor::ExtractOp>(inner)) {
+              Value reg = rootOf(extract.getTensor());
+              registerOf[extract.getOutTensor()] = reg;
+              if (auto index = getConstantIntValue(extract.getIndex())) {
+                keys.push_back(std::make_pair(reg, *index));
+              }
+            } else if (auto insert = dyn_cast<qtensor::InsertOp>(inner)) {
+              registerOf[insert.getResult()] = rootOf(insert.getDest());
             }
-          } else if (auto insert = dyn_cast<qtensor::InsertOp>(inner)) {
-            registerOf[insert.getResult()] = rootOf(insert.getDest());
-          }
-        });
+          });
+        }
 
         bumpLayer(keys, true, depthOf);
       } else {

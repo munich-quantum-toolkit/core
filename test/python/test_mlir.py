@@ -17,6 +17,7 @@ from functools import partial
 from gc import collect
 from pathlib import Path
 from threading import Event, Thread
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -47,6 +48,9 @@ from mqt.core.mlir import (
     submit_program,
 )
 from mqt.core.qdmi import ProgramFormat, open_device
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 requires_qiskit_translation = pytest.mark.skipif(
     not (
@@ -1982,6 +1986,70 @@ def test_program_inspection_matches_qiskit(frontend: str) -> None:
         assert info.num_qubits == circuit.num_qubits  # Includes the idle qubit.
         assert not info.has_control_flow
         assert info.static_qubits == []
+        assert info.depth == representation.depth() == circuit.depth()
+
+
+def _circuit_feed_forward_same_qubit() -> QuantumCircuit:
+    circuit = QuantumCircuit(1, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], 1)):
+        circuit.x(0)
+    circuit.measure(0, 0)
+    return circuit
+
+
+def _circuit_feed_forward_other_qubit() -> QuantumCircuit:
+    # Only the measured bit orders the conditional gate after the measurement.
+    circuit = QuantumCircuit(2, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], 1)):
+        circuit.x(1)
+    return circuit
+
+
+def _circuit_feed_forward_else_branch() -> QuantumCircuit:
+    # The else branch orders the final measurement after the conditional.
+    circuit = QuantumCircuit(3, 2)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], 1)) as else_:
+        circuit.x(1)
+    with else_:
+        circuit.x(2)
+    circuit.measure(2, 1)
+    return circuit
+
+
+def _circuit_measurements_into_same_bit() -> QuantumCircuit:
+    circuit = QuantumCircuit(2, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    circuit.measure(1, 0)
+    circuit.measure(1, 0)
+    return circuit
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("frontend", ["qiskit", "openqasm"])
+@pytest.mark.parametrize(
+    "get_circuit",
+    [
+        _circuit_feed_forward_same_qubit,
+        _circuit_feed_forward_other_qubit,
+        _circuit_feed_forward_else_branch,
+        _circuit_measurements_into_same_bit,
+    ],
+)
+def test_program_inspection_depth_matches_qiskit(frontend: str, get_circuit: Callable[[], QuantumCircuit]) -> None:
+    """Match Qiskit's depth for feed-forward and classical-bit ordering."""
+    circuit = get_circuit()
+    program = (
+        QCProgram.from_qiskit(circuit) if frontend == "qiskit" else QCProgram.from_openqasm_str(qasm3.dumps(circuit))
+    )
+    for representation in (program, program.to_qco(copy=True)):
+        info = representation.inspect()
         assert info.depth == representation.depth() == circuit.depth()
 
 
