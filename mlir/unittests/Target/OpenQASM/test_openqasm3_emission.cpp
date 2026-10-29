@@ -37,6 +37,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
@@ -76,12 +77,43 @@ static void expectOneSample(ModuleOp moduleOp, StringRef expected = "1") {
   PassManager manager(moduleOp.getContext());
   manager.addPass(createQCToQCO());
   ASSERT_TRUE(succeeded(manager.run(moduleOp)));
-  auto entry = moduleOp.lookupSymbol<func::FuncOp>("main");
+  auto entry = mlir::mqt::getEntryPoint(moduleOp);
   ASSERT_TRUE(entry);
   const auto samples = qco::sample(entry, 1, 1);
   ASSERT_TRUE(succeeded(samples));
   ASSERT_EQ(samples->size(), 1U);
   EXPECT_EQ(samples->begin()->first, expected);
+}
+
+static void expectSubroutineRoundTrip(StringRef source,
+                                      bool expectNoArrayCopies) {
+  SCOPED_TRACE(source.str());
+  MLIRContext context;
+  auto original = qc::translateOpenQASMToQC(
+      std::string("OPENQASM 3.1; ") + source.str(), &context);
+  ASSERT_TRUE(original);
+  size_t calls = 0;
+  original->walk([&](func::CallOp) { ++calls; });
+  EXPECT_GT(calls, 0);
+  if (expectNoArrayCopies) {
+    original->walk([](memref::CopyOp) {
+      ADD_FAILURE() << "array arguments must borrow storage, not copy it";
+    });
+  }
+
+  // Function boundaries and argument semantics survive both conversions.
+  expectOneSample(*original);
+  PassManager manager(&context);
+  manager.addPass(createQCOToQC());
+  ASSERT_TRUE(succeeded(manager.run(*original)));
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
+  ASSERT_TRUE(succeeded(emitted));
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  size_t restoredCalls = 0;
+  restored->walk([&](func::CallOp) { ++restoredCalls; });
+  EXPECT_EQ(restoredCalls, calls);
+  expectOneSample(*restored);
 }
 
 namespace {
@@ -93,6 +125,324 @@ h q[0];
 ctrl @ x q[0], q[1];
 bit[2] c = measure q;
 )qasm";
+
+TEST(OpenQASM3EmissionTest, RoundTripsClassicalSubroutines) {
+  constexpr std::array sources{
+      R"qasm(
+const int offset = 1;
+def increment(int[8] x) -> int[8] {
+  x += int[8](offset);
+  return x;
+}
+def sum(int n) -> int {
+  int total = 0;
+  for int i in [0:n-1] { total += int(increment(int[8](i))); }
+  return total;
+}
+def negative(float x, bool enabled) -> float {
+  float value = x;
+  if (enabled) { value = -value; }
+  return value;
+}
+def ignore(int x) { x += 1; return; }
+def equal(int x, int y) -> bool { return x == y; }
+ignore(4);
+sum(0);
+output bool correct;
+correct = equal(sum(4), 10) &&
+    increment(int[8](127)) == int[8](-128) && negative(2.5, true) == -2.5;
+)qasm",
+      R"qasm(
+def invert(bit[65] value) -> bit[65] { value = ~value; return value; }
+def set(bit[1] value) -> bit[1] { value[0] = true; return value; }
+bit[65] original = 0;
+bit[65] changed = invert(original);
+bit[1] single = 0;
+bit[1] changedSingle = set(single);
+int changedInteger = set(single);
+output bool correct;
+correct = popcount(original) == 0 && popcount(changed) == 65 &&
+    !bool(single) && bool(changedSingle) && changedInteger == 1;
+)qasm",
+      R"qasm(
+int global = 9;
+def identity(uint[1] value) -> uint[1] { return value; }
+def countdown(int value) -> int {
+  int global = 0;
+  while (value > 0) {
+    value -= 1;
+    if (value == 2) { continue; }
+    global += 1;
+  }
+  return global;
+}
+output bool correct;
+correct = identity(uint[1](1)) == 1 && countdown(4) == 3 && global == 9;
+)qasm",
+      R"qasm(
+def main(bit value) -> bool { return bool(value); }
+def under(int value) -> bool { return value < 3; }
+def flag() -> bit { return true; }
+def truth(bool value) -> bool { return value; }
+def nonzero() -> bool { return 2; }
+def scalarBit(bit value) -> bit { return value; }
+def nonzeroBit() -> bit { return 2; }
+bit[8] bits = 2;
+int count = 0;
+while (under(count)) { count += 1; }
+if (flag()) { count += 1; }
+output bool correct;
+correct = main(true) && count == 4 && truth(2) && nonzero() &&
+    scalarBit(bits) && nonzeroBit();
+)qasm",
+      R"qasm(
+def total(readonly array[int[8], 3] values) -> int {
+  const uint length = sizeof(values);
+  int result = 0;
+  for int i in [0:length-1] { result += int(values[i]); }
+  return result;
+}
+def update(mutable array[int[8], 3] values, int[8] delta) -> int {
+  values[1] += delta;
+  return total(values);
+}
+def next(mutable array[int, 1] counter) -> int {
+  int old = counter[0];
+  counter[0] += 1;
+  return old;
+}
+array[int[8], 3] values = {1, 2, 3};
+array[int, 1] counter = {0};
+int result = update(values, int[8](4));
+values[next(counter)] += int[8](10);
+output bool correct;
+correct = result == 10 && counter[0] == 1 &&
+    values[0] == 11 && values[1] == 6 && values[2] == 3;
+)qasm",
+      R"qasm(
+def add(mutable array[int, #dim = 1] row, int delta) {
+  for int i in [0:sizeof(row)-1] { row[i] += delta; }
+}
+def update(mutable array[int, #dim = 2] values, int row, int stride) -> uint {
+  add(values[row, 3:-stride:0], 10);
+  return sizeof(values, 1) + sizeof(values[row]);
+}
+array[int, 2, 4] values = {{1, 2, 3, 4}, {5, 6, 7, 8}};
+int row = 1;
+uint dimensions = update(values, row, 2);
+add(values[0, 0:2:3], 20);
+add(values[0, 1:1], 30);
+output bool correct;
+correct = dimensions == 8 && values[0, 0] == 21 && values[0, 1] == 32 &&
+    values[0, 2] == 23 && values[0, 3] == 4 && values[1, 0] == 5 &&
+    values[1, 1] == 16 && values[1, 2] == 7 && values[1, 3] == 18;
+)qasm",
+      R"qasm(
+def enabled(readonly array[bool, #dim = 1] flags) -> bool {
+  return flags[0] && !flags[sizeof(flags)-1];
+}
+def scale(mutable array[float, #dim = 1] values,
+          readonly array[bool, 2] flags, float factor) {
+  if (enabled(flags)) {
+    for int i in [0:sizeof(values)-1] { values[i] *= factor; }
+  }
+}
+array[float, 2] values = {0.5, 1.5};
+array[bool, 2] flags = {true, false};
+scale(values, flags, 2.0);
+output bool correct;
+correct = values[0] == 1.0 && values[1] == 3.0 && flags[0] && !flags[1];
+)qasm",
+      R"qasm(
+def size(readonly array[int, #dim = 1] row) -> uint { return sizeof(row); }
+def forwardedSize(readonly array[int, #dim = 1] row) -> uint {
+  return size(row);
+}
+def endpoints(readonly array[uint[8], #dim = 1] values, uint index) -> bool {
+  return values[uint(0)] == 2 && values[index] == 4 && values[-1] == 6;
+}
+array[int, 2, 0] empty = {{}, {}};
+array[uint[8], 3] values = {2, 4, 6};
+output bool correct;
+correct = forwardedSize(empty[1]) == 0 && endpoints(values, 1);
+)qasm",
+      R"qasm(
+def set(mutable array[angle[8], 2] angles) { angles[0] = angle[8](pi); }
+def valid(readonly array[angle[8], #dim = 1] angles) -> bool {
+  return angles[0] == angle[8](pi) && angles[1] == angle[8](pi / 2);
+}
+array[angle[8], 2] angles = {angle[8](0.0), angle[8](pi / 2)};
+set(angles);
+output bool correct;
+correct = valid(angles);
+)qasm",
+      R"qasm(
+def last(readonly array[int[8], #dim = 1] values) -> int {
+  return values[sizeof(values)-1];
+}
+array[int[8], 17] values = {0, 1, 2, 3, 4, 5, 6, 7, 8,
+                           9, 10, 11, 12, 13, 14, -1, -128};
+output bool correct;
+correct = last(values) == -128 && values[15] == -1;
+)qasm",
+  };
+  for (const auto* source : sources) {
+    expectSubroutineRoundTrip(source, /*expectNoArrayCopies=*/true);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, RoundTripsBorrowedArrayAssignments) {
+  constexpr std::array sources{
+      R"qasm(
+def shift(mutable array[int, 4] values) {
+  values[1:3] = values[0:2];
+  values = values[3:3] ++ values[0:2];
+}
+array[int, 4] values = {1, 2, 3, 4};
+shift(values);
+output bool correct;
+correct = values[0] == 3 && values[1] == 1 && values[2] == 1 && values[3] == 2;
+)qasm",
+      R"qasm(
+def reverse(mutable array[int, #dim = 1] values) {
+  values = values[:-1:];
+}
+def rotate(mutable array[int, #dim = 1] values) {
+  uint last = sizeof(values) - 1;
+  values = values[last:last] ++ values[:last-1];
+}
+def copy(mutable array[int, #dim = 1] target,
+         readonly array[int, #dim = 1] source) {
+  target = source;
+}
+array[int, 2, 4] values = {{1, 2, 3, 4}, {5, 6, 7, 8}};
+reverse(values[0]);
+reverse(values[1, 0:2:3]);
+rotate(values[0]);
+copy(values[0, 0:1], values[1, 1:2]);
+output bool correct;
+correct = values[0, 0] == 6 && values[0, 1] == 5 && values[0, 2] == 3 &&
+    values[0, 3] == 2 && values[1, 0] == 7 && values[1, 1] == 6 &&
+    values[1, 2] == 5 && values[1, 3] == 8;
+)qasm",
+  };
+  for (const auto* source : sources) {
+    expectSubroutineRoundTrip(source, /*expectNoArrayCopies=*/false);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, RenamesSubroutinesThatCollideWithBuiltins) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @sin() { return }
+    func.func private @ordinary() { return }
+    func.func @main() attributes {mqt.entry_point} {
+      func.call @sin() : () -> ()
+      func.call @ordinary() : () -> ()
+      return
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto original = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(original);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(original));
+  ASSERT_TRUE(succeeded(emitted));
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  EXPECT_TRUE(succeeded(verify(*restored)));
+  EXPECT_TRUE(restored->lookupSymbol<func::FuncOp>("ordinary"));
+}
+
+TEST(OpenQASM3EmissionTest, PreservesScalarHelpersOnlyInVersionThree) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @identity(%value: f64) -> f64 { return %value : f64 }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 0 : !qc.qubit
+      %value = arith.constant 0.125 : f64
+      %angle = func.call @identity(%value) : (f64) -> f64
+      qc.rx(%angle) %q : !qc.qubit
+      return
+    }
+  })mlir";
+  for (const bool version2 : {false, true}) {
+    SCOPED_TRACE(version2);
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    FailureOr<std::string> emitted = failure();
+    if (version2) {
+      emitted = qc::translateQCToOpenQASM2(std::move(moduleOp));
+    } else {
+      emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+    }
+    ASSERT_TRUE(succeeded(emitted));
+    if (version2) {
+      EXPECT_EQ(emitted->find("def "), std::string::npos);
+      EXPECT_NE(emitted->find("rx(0.125)"), std::string::npos);
+    }
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+    ASSERT_TRUE(restored) << *emitted;
+    EXPECT_EQ(
+        static_cast<bool>(restored->lookupSymbol<func::FuncOp>("identity")),
+        !version2);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, RenamesSubroutinesThatCollideWithOpaqueGates) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @external(!qc.qubit) attributes {mqt.source_name = "helper"}
+    func.func private @helper() { return }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 0 : !qc.qubit
+      func.call @helper() : () -> ()
+      func.call @external(%q) : (!qc.qubit) -> ()
+      return
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("def helper("), std::string::npos);
+  EXPECT_NE(emitted->find("helper "), std::string::npos);
+  const auto declarations = emitted->find("def ");
+  ASSERT_NE(declarations, std::string::npos);
+  // Supply the external gate as the receiving environment would.
+  emitted->insert(declarations, "gate helper q { x q; }\n");
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  EXPECT_TRUE(succeeded(verify(*restored)));
+}
+
+TEST(OpenQASM3EmissionTest, SelectsVersionForSwitchInsideSubroutine) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @choose(%value: i8) -> i1 {
+      %index = arith.index_castui %value : i8 to index
+      %yes = arith.constant true
+      %no = arith.constant false
+      %result = scf.index_switch %index -> i1
+      case 0 { scf.yield %yes : i1 }
+      default { scf.yield %no : i1 }
+      return %result : i1
+    }
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : i8
+      %result = func.call @choose(%zero) : (i8) -> i1
+      return %result : i1
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;"));
+  EXPECT_NE(emitted->find("switch ("), std::string::npos);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  EXPECT_TRUE(restored->lookupSymbol<func::FuncOp>("choose"));
+  expectOneSample(*restored);
+}
 
 TEST(OpenQASM3EmissionTest, PreservesOpaqueGateSignatureAndOperands) {
   MLIRContext context(emissionDialects());
@@ -1812,6 +2162,25 @@ TEST(OpenQASM3EmissionTest, DropsUnreachableGateFunctions) {
 TEST(OpenQASM3EmissionTest, InlinesNonGateBodies) {
   constexpr std::array sources{
       llvm::StringLiteral{R"mlir(module {
+        func.func private @partly_dynamic(%values: memref<?x1xi1>) -> i1 {
+          %zero = arith.constant 0 : index
+          %value = memref.load %values[%zero, %zero] : memref<?x1xi1>
+          return %value : i1
+        }
+        func.func @main() attributes {mqt.entry_point} {
+          %zero = arith.constant 0 : index
+          %true = arith.constant true
+          %values = memref.alloca() : memref<1x1xi1>
+          memref.store %true, %values[%zero, %zero] : memref<1x1xi1>
+          %view = memref.cast %values : memref<1x1xi1> to memref<?x1xi1>
+          %value = func.call @partly_dynamic(%view) : (memref<?x1xi1>) -> i1
+          %qubit = qc.alloc : !qc.qubit
+          scf.if %value { qc.x %qubit : !qc.qubit }
+          qc.dealloc %qubit : !qc.qubit
+          return
+        }
+      })mlir"},
+      llvm::StringLiteral{R"mlir(module {
         func.func private @condition_effect(%qubit: !qc.qubit) {
           scf.while : () -> () {
             qc.x %qubit : !qc.qubit
@@ -1909,7 +2278,7 @@ TEST(OpenQASM3EmissionTest, InlinesNonGateBodies) {
         }
       })mlir"},
   };
-  constexpr std::array expected{"1", "0", "1", "1", "1", "1"};
+  constexpr std::array expected{"1", "1", "0", "1", "1", "1", "1"};
   for (size_t index = 0; index < sources.size(); ++index) {
     SCOPED_TRACE(index);
     MLIRContext context(emissionDialects());
@@ -2794,6 +3163,36 @@ TEST(OpenQASM3EmissionTest, RejectsExcessiveClassicalRegisterWidth) {
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
 }
 
+TEST(OpenQASM3EmissionTest, LimitsWideSubroutineResultSnapshots) {
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @wide() -> i524288 {
+      %zero = arith.constant 0 : i524288
+      return %zero : i524288
+    }
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %a = func.call @wide() : () -> i524288
+      %b = func.call @wide() : () -> i524288
+      %c = func.call @wide() : () -> i524288
+      %ab = arith.cmpi eq, %a, %b : i524288
+      %ac = arith.cmpi eq, %a, %c : i524288
+      %equal = arith.andi %ab, %ac : i1
+      return %equal : i1
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("classical snapshots exceed") !=
+                 std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
+  EXPECT_TRUE(diagnosed);
+}
+
 TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
@@ -2917,6 +3316,19 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
         func.func @main() {
           %memory = memref.alloc() : memref<1xi64>
           return
+        }
+      })mlir",
+      },
+      Fixture{
+          .name = "asserting-array-cast",
+          .source = R"mlir(module {
+        func.func @main() -> index {
+          %zero = arith.constant 0 : index
+          %memory = memref.alloca() : memref<2xi1>
+          %dynamic = memref.cast %memory : memref<2xi1> to memref<?xi1>
+          %narrow = memref.cast %dynamic : memref<?xi1> to memref<3xi1>
+          %size = memref.dim %narrow, %zero : memref<3xi1>
+          return %size : index
         }
       })mlir",
       },

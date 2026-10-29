@@ -39,6 +39,168 @@ using namespace mlir::openqasm::test;
 
 namespace {
 
+TEST(OpenQASMFrontendTest, RejectsInvalidScalarSubroutines) {
+  for (const auto* source : {
+           "def f(int x) -> int {}",
+           "def f() -> int { return; }",
+           "def f() { return 1; }",
+           "def f(int x) -> int { return x; } int y = f();",
+           "def f(int x) -> int { return x; } int y = f(1, 2);",
+           "def f(int x) -> int { return x; } int x; int y = f(x);",
+           "def f() {} int y = f();",
+           "def f() -> int { return f(); }",
+           R"(def f() -> int { return 1; }
+              def g() -> int { int f = 2; return f(); })",
+           "def f() -> int { return g(); } def g() -> int { return 1; }",
+           "int x = 1; def f() -> int { return x; }",
+           "bit[2] x = 0; def f() -> bit[2] { return x; }",
+           "array[int, 1] x = {1}; def f() -> int { return x[0]; }",
+           "def f(int x, int x) {}",
+           "def f() {} def f() {}",
+           "def f() { def g() {} }",
+           "def f() { array[int, 1] x; }",
+           "def f() { qubit q; }",
+           "def f(qubit q) {}",
+           "def f(angle x) {}",
+           "def f() -> angle { return pi; }",
+           "def f(float[32] x) {}",
+           "def f(bit[0] x) {}",
+           "def f(bit[2] x) {} bit[3] x = 0; f(x);",
+           "def f(bit[1] x) {} f(2);",
+           "def f() -> bit[1] { return 2; }",
+           "def f() -> int { return 1; } if (f()) {}",
+           "def f() -> float { return 1.0; } if (f()) {}",
+           "def f() -> bit[2] { return \"01\"; } if (f()) {}",
+           "def f(bool x) -> int { if (x) { return 1; } return 0; }",
+           "def f() -> int { for int i in [0:1] { return i; } return 0; }",
+           "def f() { return; int x = 1; }",
+           "def f() { for int i in [0:1] { break; return; } }",
+           "def f() { for int i in [0:1] { break; gphase(pi); } }",
+           "return;",
+       }) {
+    SCOPED_TRACE(source);
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 3.1; ") + source);
+    EXPECT_FALSE(analyzed);
+    EXPECT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
+TEST(OpenQASMFrontendTest, ResolvesBorrowedArraySubroutines) {
+  using namespace openqasm::frontend;
+  auto analyzed = analyzeOpenQASM(R"(OPENQASM 3.1;
+    def read(readonly array[int[8], #dim = 1] a) -> int[8] {
+      return a[sizeof(a) - 1];
+    }
+    def update(mutable array[int[8], #dim = 2] a) -> int[8] {
+      a[0, 0] = read(a[1, :]);
+      return a[0, 0];
+    }
+    array[int[8], 2, 3] a = {{1, 2, 3}, {4, 5, 6}};
+    int[8] result = update(a);
+  )");
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_EQ(analyzed.program->subroutines.size(), 2);
+  const auto& read = analyzed.program->subroutines[0];
+  ASSERT_TRUE(read.parameters[0].type.array);
+  EXPECT_TRUE(read.parameters[0].type.array->readonly);
+  EXPECT_EQ(read.parameters[0].type.array->shape, std::vector<int64_t>({-1}));
+  const auto& update = analyzed.program->subroutines[1];
+  EXPECT_FALSE(update.parameters[0].type.array->readonly);
+  EXPECT_EQ(update.parameters[0].type.array->shape,
+            std::vector<int64_t>({-1, -1}));
+  ASSERT_EQ(analyzed.program->calls.size(), 2);
+  ASSERT_TRUE(analyzed.program->calls[0].arguments[0].array);
+  const auto& selected = *analyzed.program->calls[0].arguments[0].array;
+  EXPECT_EQ(selected.array, update.parameters[0].symbol);
+  EXPECT_TRUE(selected.indices[0].isScalar());
+  EXPECT_TRUE(selected.indices[1].runtime);
+  ASSERT_EQ(analyzed.program->arraySizeQueries.size(), 1);
+  EXPECT_EQ(analyzed.program->arraySizeQueries[0].extent, -1);
+  EXPECT_EQ(analyzed.program->arraySizeQueries[0].array,
+            read.parameters[0].symbol);
+}
+
+TEST(OpenQASMFrontendTest, ValidatesArrayReferenceArguments) {
+  using namespace openqasm::frontend;
+  for (const auto* source : {
+           R"(def f(readonly array[int, 2] a, readonly array[int, 2] b) {}
+              array[int, 2] a = {1, 2}; f(a, a);)",
+           R"(def f(mutable array[int, 2] a, mutable array[int, 2] b) {}
+              array[int, 4] a = {1, 2, 3, 4}; f(a[0:2:3], a[1:2:3]);)",
+           R"(def f(mutable array[int, 1] a, readonly array[int, 1] b) {}
+              array[int, 2] a = {1, 2}; f(a[0:0], a[1:1]);)",
+           R"(def f(readonly array[int, 1] a) {}
+              array[int, 2] a; a[1] = 1; f(a[1:1]);)",
+           R"(def f(mutable array[int, 1] a) { a[0] = 2; }
+              array[int, 2] a; a[1] = 1; f(a[1:1]); int x = a[1];)",
+           R"(def f(readonly array[bool, #dim = 1] a) -> bool { return a[0]; }
+              def g(mutable array[bool, 1] a) { a[0] = f(a); }
+              array[bool, 1] a = {true}; g(a);)",
+           R"(def f(mutable array[angle[32], #dim = 1] a) { a[0] = pi; }
+              array[angle[32], 1] a = {0.0}; f(a);)",
+           R"(def f(mutable array[int, 0] a, mutable array[int, 0] b) {}
+              array[int, 0] a = {}; f(a, a);)",
+       }) {
+    SCOPED_TRACE(source);
+    auto analyzed = analyzeOpenQASM(std::string("OPENQASM 3.1; ") + source);
+    EXPECT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  }
+
+  for (const auto* source : {
+           "def f(array[int, 1] a) {}",
+           "def f(readonly array[int, #dim = 0] a) {}",
+           "def f(readonly array[int, #dim = 8] a) {}",
+           "input int n; def f(readonly array[int, #dim = n] a) {}",
+           "def f() -> readonly array[int, 1] {}",
+           "def f(readonly array[int, 1] a) -> int { return a; }",
+           "def f(readonly array[int, 1] a) { a[0] = 1; }",
+           "def f(readonly array[int, 1] a) { a[:] = a[:]; }",
+           R"(def f(mutable array[int, #dim = 1] a) {}
+              def g(readonly array[int, 1] a) { f(a); })",
+           R"(def f(readonly array[int, 1] a) {}
+              array[uint, 1] a = {1}; f(a);)",
+           R"(def f(readonly array[int[8], 1] a) {}
+              array[int[16], 1] a = {1}; f(a);)",
+           R"(def f(readonly array[int, 1] a) {}
+              array[int, 1, 1] a = {{1}}; f(a);)",
+           R"(def f(readonly array[int, 1] a) {}
+              array[int, 2] a = {1, 2}; f(a);)",
+           R"(def f(readonly array[int, 1] a) {}
+              def g(readonly array[int, #dim = 1] a) { f(a); })",
+           "def f(readonly array[int, 1] a) {} f(1);",
+           R"(def f(readonly array[int, 1] a) {}
+              array[int, 1] a; f(a);)",
+           R"(def f(mutable array[int, 1] a) { a[0] = 1; }
+              array[int, 1] a; f(a);)",
+           R"(def f(readonly array[int, 1] a) {}
+              array[int, 2] a; a[1] = 1; f(a[0:0]);)",
+           R"(def f(mutable array[int, #dim = 1] a) {}
+              array[int, 2] a; a[1] = 1; int i = 1; f(a[i:i]);)",
+           R"(def f(mutable array[int, 1] a) { a[0] = 2; }
+              array[int, 2] a; a[1] = 1; f(a[1:1]); int x = a[0];)",
+           R"(def f(mutable array[int, 2] a, mutable array[int, 2] b) {}
+              array[int, 2] a = {1, 2}; f(a, a);)",
+           R"(def f(readonly array[int, 2] a, mutable array[int, 2] b) {}
+              array[int, 2] a = {1, 2}; f(a, a);)",
+           R"(def f(mutable array[int, #dim = 1] a,
+                    mutable array[int, #dim = 1] b) {}
+              def g(mutable array[int, #dim = 1] a, int i) {
+                f(a[:i], a[i:]);
+              })",
+           R"(def f(mutable array[int, #dim = 1] a,
+                    mutable array[int, #dim = 1] b) {}
+              def g(mutable array[int, #dim = 2] a) {
+                f(a[-1, :], a[0, :]);
+              })",
+       }) {
+    SCOPED_TRACE(source);
+    auto analyzed = analyzeOpenQASM(std::string("OPENQASM 3.1; ") + source);
+    EXPECT_FALSE(analyzed);
+    EXPECT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
 TEST(OpenQASMFrontendTest, OpaqueGateDeclarations) {
   auto result = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 2.0; opaque hop(theta) a,b; qreg q[2]; hop(0.125) q[1],q[0];");
@@ -242,6 +404,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
           {"array[int, 1] a = {1}; for int x in a[0] {}", "one-dimensional"},
           {"int a = 1; for int x in a {}", "one-dimensional"},
           {"array[int, 1] a; for int x in a {}", "uninitialized"},
+          {"array[int, 1] a; a[0] += 1;", "uninitialized"},
           {
               "array[int, 2] a; a[0] = 1; int i = 0; for int x in a[:i] {}",
               "uninitialized",
@@ -1068,12 +1231,12 @@ TEST(OpenQASMFrontendTest, AcceptsLogAndRejectsLnBuiltInSpelling) {
       "OPENQASM 2.0; qreg q[1]; U(ln(2.0),0,0) q[0];");
   ASSERT_TRUE(qasm2Ln) << qasm2Ln.diagnostics.front().message;
 
-  auto nonstandardLn = openqasm::frontend::parseOpenQASM(
-      "OPENQASM 3.1; const float value = ln(2.0);");
+  auto nonstandardLn = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; float value = ln(2.0);");
   ASSERT_FALSE(nonstandardLn);
   ASSERT_FALSE(nonstandardLn.diagnostics.empty());
   EXPECT_NE(
-      nonstandardLn.diagnostics.front().message.find("unknown function 'ln'"),
+      nonstandardLn.diagnostics.front().message.find("unknown subroutine 'ln'"),
       std::string::npos);
 }
 

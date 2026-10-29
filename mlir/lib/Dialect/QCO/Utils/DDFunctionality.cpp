@@ -1892,6 +1892,39 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .Case([&](memref::SubViewOp subview) {
         return applyMemRefSubview(subview, *walk.classical);
       })
+      .Case([&](memref::ReinterpretCastOp castOp) -> LogicalResult {
+        const auto type = castOp.getType();
+        if (!type.hasStaticShape() ||
+            !llvm::is_contained(type.getShape(), int64_t{0}) ||
+            !castOp.getOffsets().empty() || !castOp.getSizes().empty() ||
+            !castOp.getStrides().empty()) {
+          return castOp.emitError()
+                 << "QCO DD simulation requires statically empty memref "
+                    "reinterpret casts";
+        }
+        const auto source = walk.classical->memrefs.find(castOp.getSource());
+        if (source == walk.classical->memrefs.end()) {
+          return castOp.emitError()
+                 << "classical memref is not mapped for QCO DD simulation";
+        }
+        auto view = std::make_shared<ClassicalEnv::MemRefState>();
+        view->storage = source->second->storage;
+        view->shape.assign(type.getShape().begin(), type.getShape().end());
+        view->strides.assign(castOp.getStaticStrides().begin(),
+                             castOp.getStaticStrides().end());
+        view->offset = castOp.getStaticOffsets().front();
+        walk.classical->memrefs[castOp.getResult()] = std::move(view);
+        return success();
+      })
+      .Case([&](memref::CastOp castOp) -> LogicalResult {
+        if (!memref::CastOp::canFoldIntoConsumerOp(castOp)) {
+          return castOp.emitError()
+                 << "QCO DD simulation requires memref casts that only erase "
+                    "shape and layout information";
+        }
+        return bindValuePairs(castOp.getSource(), castOp.getDest(), walk,
+                              castOp);
+      })
       .Case([&](memref::DimOp dim) -> LogicalResult {
         const auto storage = walk.classical->memrefs.find(dim.getSource());
         auto index = lookupIndex(dim.getIndex(), *walk.classical, dim);

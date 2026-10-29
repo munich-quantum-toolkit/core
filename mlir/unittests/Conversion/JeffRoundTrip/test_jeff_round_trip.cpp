@@ -545,6 +545,30 @@ TEST(JeffRoundTripRegressionTest, PreservesArrayFunctionInterfaces) {
             type);
 }
 
+TEST(JeffRoundTripRegressionTest, RejectsBorrowedHelpersThatCannotInline) {
+  MLIRContext context;
+  context.loadDialect<func::FuncDialect, memref::MemRefDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @borrow(%array: memref<?xi8>) attributes {no_inline} {
+      return
+    }
+    func.func @main(%array: memref<?xi8>) attributes {mqt.entry_point} {
+      func.call @borrow(%array) : (memref<?xi8>) -> ()
+      return
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& error) {
+    diagnostic += error.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(convertQCOToJeff(*program)));
+  EXPECT_NE(diagnostic.find("borrowed array helper signatures"),
+            std::string::npos);
+}
+
 TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
   for (const auto* body : {
            "%s = qco.s %a : !qco.qubit\n"

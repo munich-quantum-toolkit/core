@@ -666,6 +666,41 @@ TEST_F(QCToQIRAdaptiveNativeTest, PreservesScalarCalls) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
+TEST_F(QCToQIRAdaptiveNativeTest, RejectsUnpreparedClassicalArrayHelpers) {
+  const auto sources = {
+      R"mlir(module {
+        func.func private @consume(%array: memref<1xi8>) { return }
+        func.func @main() attributes {mqt.entry_point} {
+          %array = memref.alloca() : memref<1xi8>
+          func.call @consume(%array) : (memref<1xi8>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @unused() -> memref<1xi8> {
+          %array = memref.alloc() : memref<1xi8>
+          return %array : memref<1xi8>
+        }
+        func.func @main() attributes {mqt.entry_point} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @invoke(%callee: (memref<1xi8>) -> ()) {
+          %array = memref.alloca() : memref<1xi8>
+          func.call_indirect %callee(%array) : (memref<1xi8>) -> ()
+          return
+        }
+        func.func @main() attributes {mqt.entry_point} { return }
+      })mlir",
+  };
+  for (const auto* source : sources) {
+    SCOPED_TRACE(source);
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    expectConversionFailure(*moduleOp, "classical-array helpers to be inlined");
+  }
+}
+
 TEST_F(QCToQIRAdaptiveNativeTest,
        RejectsMixedClassicalRegisterRepresentations) {
   for (const auto* forwarding : {

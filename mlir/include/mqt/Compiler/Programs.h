@@ -326,8 +326,8 @@ public:
   /// Profile also supports computed Boolean results. Other scalar outputs are
   /// unsupported. The generated QIR returns a zero execution status.
   /// Base conversion requires straight-line quantum operations;
-  /// Adaptive conversion retains loops. Calls with quantum-register arguments
-  /// must be inlined.
+  /// Adaptive conversion retains loops. Calls passing or returning quantum
+  /// registers or ranked classical memrefs must be inlined.
   /// Use runDefaultPipeline for compilation before export.
   [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
 

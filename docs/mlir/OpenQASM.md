@@ -44,10 +44,10 @@ mqt-cc program.qasm
 mqt-cc --input-format=openqasm program.txt
 ```
 
-The generated entry function is named `main`, or `mqt.entry` when a source gate
-is named `main`. It is identified by `mqt.entry_point`, not by its name. The dot
-keeps the fallback name outside OpenQASM's identifier syntax. Export preserves
-legal custom gate names, including names beginning `_mqt_`.
+The generated entry function is named `main`, or `mqt.entry` when a source
+function is named `main`. It is identified by `mqt.entry_point`, not by its
+name. The dot keeps the fallback name outside OpenQASM's identifier syntax.
+Export preserves legal custom gate names, including names beginning `_mqt_`.
 
 The default output checkpoint is `--emit=qc`, which emits QC MLIR after the
 default compiler pipeline. Use `--emit=qc-import` to inspect the imported QC
@@ -74,7 +74,35 @@ version require 3.1.
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                             |
 | Dynamic indexing           | Classical bit and array indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                         |
 | Classical arrays           | Global, fixed-size arrays of `bool`, `int`, `uint`, `float`, and `angle`, with up to seven dimensions and the scalar widths above.                                                                                                                                 |
-| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, and other array forms are diagnosed.                                                                                                                                                                     |
+| Unsupported language areas | Quantum subroutines, `extern`, calibration and timing constructs, and other array forms are diagnosed.                                                                                                                                                             |
+
+Classical `def` subroutines support by-value `bool`, `int[N]`, `uint[N]`,
+`float[64]`, and `bit[N]` parameters and one optional result. For example,
+`def increment(int x) -> int { return x + 1; }` can be called as
+`int value = increment(4);`. Definitions must precede calls; recursion is
+unsupported. Bodies can use local classical variables, structured control flow,
+global constants, and earlier subroutines, but cannot capture mutable globals or
+contain quantum statements. Bit arguments are independent local copies. A
+value-returning function must end with a top-level `return`; void functions can
+omit it. Early or nested returns and runtime scalar `angle` signatures are
+diagnosed.
+
+Array parameters borrow caller storage with `readonly array[int, 3] values` or
+`mutable array[int, #dim = 1] values`. Explicit dimensions must match at compile
+time; `#dim` fixes the rank while lengths can vary at runtime. Both forms retain
+slice strides and rank reductions, and support `sizeof` and nested calls.
+References cannot escape through returns. Array declarations remain global-only;
+passing a reference does not copy its elements. The supported element types and
+widths are the same as for global arrays, including `angle`. Statically empty
+slices require all retained lengths to be known at compile time.
+
+All selected elements must be initialized before a call, including mutable
+arguments. Calls preserve these initialization facts; they do not establish new
+facts for uninitialized storage. Readonly references cannot be written or passed
+to mutable parameters. Arguments involving a mutable reference must be provably
+disjoint; unresolved overlap is rejected conservatively. Runtime indices and
+slices must remain in bounds, and array assignments require matching runtime
+shapes, as outside subroutines.
 
 OpenQASM 2 `opaque` declarations become private external functions with scalar
 parameters followed by qubit operands. They cannot redeclare language primitives
@@ -414,10 +442,11 @@ The remaining output details below describe OpenQASM 3.
 | Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                                                           |
 
 DD simulation and Adaptive QIR support array storage. Adaptive QIR uses native
-stack storage, bounded by the frontend element limit to 800,000 bytes of array
-payload per invocation, or 1,600,000 bytes including copy scratch storage.
-Targets must support arrays and their element types; dynamic indices also
-require loop support. See the
+stack storage. The frontend element limit bounds global owned-array payload to
+800,000 bytes per invocation. Copy scratch needs additional storage, including
+snapshots in nested or inlined helper calls; that limit does not bound total
+stack use. Targets must support arrays and their element types; dynamic indices
+also require loop support. See the
 [QIR conversion contracts](Conversions.md#qir-conversions).
 
 OpenQASM export supports fixed-size stack arrays, strided and overlapping
@@ -456,16 +485,26 @@ choose zero for those values. Whole-register reads preserve snapshots, and
 returned registers preserve their names and bit order. The promotion bound does
 not limit output register widths.
 
-Export retains private gate-shaped helper functions. Other defined helpers,
-including functions with integer or register arguments or classical results, are
-inlined using MLIR's inliner. Their control flow remains structured. Recursive
-calls, non-gate helpers marked `no_inline`, and constructs outside the export
-subset still produce diagnostics. Retained gates forward their `f64` parameters
+Export retains private gate-shaped helpers and supported classical subroutines,
+including borrowed array parameters. Scalar values use canonical `bool`,
+`uint[N]`, `bit[N]` (above 64 bits), or `float[64]` signatures; casts preserve
+signed operations and bit patterns. Other defined helpers are inlined using
+MLIR's inliner. Their control flow remains structured. Recursive calls,
+unsupported helpers marked `no_inline`, and constructs outside the export subset
+still produce diagnostics. Retained gates forward their `f64` parameters
 directly to gates or other retained helpers. Helpers that compute with these
 parameters, including `pow` exponents, are inlined because OpenQASM gate
 parameters are angles. Constant expressions and calculations using loop indices
-remain supported in retained gates. The exporter does not emit OpenQASM `def`
-subroutines.
+remain supported in retained gates.
+
+Array parameters use fixed dimensions or `#dim`, with canonical element types.
+Export infers readonly parameters from their uses, including nested calls. QIR
+uses its existing helper inlining and memref lowering; runtime borrows need the
+Adaptive profile unless static reduction removes them. jeff retains scalar
+helpers but inlines borrowed-array helpers to preserve writes under its array
+value semantics. Its existing static-storage and guard restrictions still apply;
+a borrow that cannot be inlined is diagnosed. Neither backend adds a new host
+array-result ABI.
 
 Signed and unsigned index casts preserve sign extension, zero extension, and
 truncation, including truncation to one bit. Indices use 64 bits. Addition,
@@ -582,13 +621,15 @@ expressions emitted by the exporter, including Boolean/integer conversions.
 ### Export limitations
 
 Export requires one defined entry function whose arguments are named `f64`
-inputs. Functions that remain after helper inlining must be private gate
-functions with leading `f64` parameters followed by scalar qubit arguments and
-no results. Defined gate functions may contain supported scalar expressions,
-quantum operations, calls, and loops. Measurement, reset, barrier, allocation,
-classical storage, conditionals, switches, and `arith.select` are rejected in
-gate functions. For-loop bounds in gate functions must remain constant. Gate
-while loops require a pure condition region and no loop-carried values.
+inputs. Functions that remain after helper inlining must be private classical
+subroutines or gate functions. Classical subroutines must be defined. Gate
+functions take leading `f64` parameters followed by scalar qubit arguments and
+have no results. Defined gate functions may contain supported scalar
+expressions, quantum operations, calls, and loops. Measurement, reset, barrier,
+allocation, classical storage, conditionals, switches, and `arith.select` are
+rejected in gate functions. For-loop bounds in gate functions must remain
+constant. Gate while loops require a pure condition region and no loop-carried
+values.
 
 The exporter rejects arbitrary CFGs, multi-block SCF regions, recursive or
 undeclared calls, dynamic for-loop steps, unsigned `scf.for` comparisons,

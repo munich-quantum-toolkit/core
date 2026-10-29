@@ -356,6 +356,15 @@ constexpr llvm::StringLiteral QCO_INDEX_SWITCH_SOURCE = R"mlir(
   }
 )mlir";
 
+static Value specializedUnitaryFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{qubit.getType()},
+      [&](ValueRange arguments) { b.rx(b.floatConstant(0.5), arguments[0]); });
+  b.call(rotate, qubit);
+  return b.measure(qubit);
+}
+
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   SCOPED_TRACE(
       llvm::formatv("CompilerPipeline: {0}, original={1}, qcReference={2}, "
@@ -1807,6 +1816,195 @@ TEST_F(CompilerPipelineTest, BaseRejectsResidualClassicalArrayStorage) {
   })mlir");
   MQT_ASSERT_SUCCESS(qc);
   EXPECT_TRUE(mlir::failed(std::move(*qc).intoQIR(QIRProfile::Base)));
+}
+
+TEST_F(CompilerPipelineTest, ScalarSubroutinesMapToQIRAndJeff) {
+  auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
+    def check(bool flag, int[8] signedValue, uint[8] unsignedValue,
+              bit[3] bits, float[64] value) -> bool {
+      bits[0] = false;
+      return flag && signedValue == -3 && unsignedValue == 255 &&
+             bits == 0b100 && value == 1.5;
+    }
+    qubit q;
+    output bit result;
+    if (check(true, -3, 255, 0b101, 1.5)) { U(pi, 0, 0) q; }
+    result = measure q;
+  )qasm");
+  MQT_ASSERT_SUCCESS(qc);
+  auto qco = qc->copy().intoQCO();
+  ASSERT_TRUE(mlir::succeeded(qco));
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(mlir::succeeded(jeff));
+  ASSERT_TRUE(jeff->module().lookupSymbol<func::FuncOp>("check"));
+  auto restored = JeffProgram::fromBytes(jeff->toBytes());
+  MQT_ASSERT_SUCCESS(restored);
+  auto roundTripped = std::move(*restored).intoQCO();
+  ASSERT_TRUE(mlir::succeeded(roundTripped));
+  const auto outcomes =
+      qco::sample(mlir::mqt::getEntryPoint(roundTripped->module()), 1, 42);
+  ASSERT_TRUE(succeeded(outcomes));
+  EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{"1", 1}}));
+  for (auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto input = qc->copy();
+    const auto payload = llvm::cantFail(PayloadSpecification::forProgramFormat(
+        profile == QIRProfile::Base ? ProgramFormat::QIRBase
+                                    : ProgramFormat::QIRAdaptive));
+    ASSERT_TRUE(succeeded(runWithPassManager(
+        input.module(),
+        [&](OpPassManager& pm) {
+          populateQIRPreparationPipeline(
+              pm, payload.materialize(*input.module().getContext()));
+        },
+        "failed to prepare scalar subroutines for QIR")));
+    auto qir = std::move(input).intoQIR(profile);
+    ASSERT_TRUE(mlir::succeeded(qir));
+    auto llvmIR = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(mlir::succeeded(llvmIR));
+    auto session = value(::qir::JitSession::create(
+        *llvmIR, "scalar-subroutines", ::qir::Execution::Sampling, 42));
+    std::vector<std::string> samples;
+    ASSERT_EQ(value(session->sample(1, samples)), 0);
+    EXPECT_EQ(samples, (std::vector<std::string>{"1"}));
+  }
+}
+
+TEST_F(CompilerPipelineTest, ConstantSubroutineConditionsSurviveDefaultExport) {
+  for (const auto& [value, expected] :
+       std::array{std::pair{"true", "1"}, std::pair{"false", "0"}}) {
+    SCOPED_TRACE(value);
+    auto input = QCProgram::fromOpenQASMString(
+        std::string(R"qasm(OPENQASM 3.0;
+          def enabled(bool value) -> bool { return value; }
+          qubit q;
+          output bit result;
+          if (enabled()qasm") +
+        value + ")) { U(pi, 0, 0) q; } result = measure q;");
+    MQT_ASSERT_SUCCESS(input);
+    auto exported = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                       ProgramFormat::OpenQASM3);
+    MQT_ASSERT_SUCCESS(exported);
+    auto reimported = QCProgram::fromOpenQASMString(
+        std::get<OpenQASMProgram>(*exported).source());
+    MQT_ASSERT_SUCCESS(reimported);
+    auto program = std::move(*reimported).intoQCO();
+    ASSERT_TRUE(mlir::succeeded(program));
+    auto outcomes =
+        qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+    ASSERT_TRUE(succeeded(outcomes));
+    EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{expected, 1}}));
+  }
+}
+
+TEST_F(CompilerPipelineTest, SingleCleanupFoldsPromotedSubroutineConditions) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func private @enabled(%value: i1) -> i1 { return %value : i1 }
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %false = arith.constant false
+      %storage = memref.alloca() : memref<1xi1>
+      memref.store %false, %storage[%zero] : memref<1xi1>
+      %value = memref.load %storage[%zero] : memref<1xi1>
+      %condition = func.call @enabled(%value) : (i1) -> i1
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+        %q2 = qco.x %arg0 : !qco.qubit
+        qco.yield %q2 : !qco.qubit
+      } else args(%arg0 = %q0) {
+        qco.yield %arg0 : !qco.qubit
+      }
+      %q2, %result = qco.measure %q1 : !qco.qubit
+      qco.sink %q2 : !qco.qubit
+      return %result : i1
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(program);
+  ASSERT_TRUE(succeeded(program->cleanup()));
+  const auto outcomes =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 42);
+  ASSERT_TRUE(succeeded(outcomes));
+  EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{"0", 1}}));
+}
+
+TEST_F(CompilerPipelineTest, BorrowedArrayViewsPreserveAliasesInQIRAndJeff) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func private @twice(%value: i8) -> i8 {
+      %sum = arith.addi %value, %value : i8
+      return %sum : i8
+    }
+    func.func private @update(
+        %left: memref<?xi8, strided<[?], offset: ?>>,
+        %right: memref<?xi8, strided<[?], offset: ?>>) {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %seven = arith.constant 7 : i8
+      memref.store %seven, %left[%zero] : memref<?xi8, strided<[?], offset: ?>>
+      %value = memref.load %right[%zero] : memref<?xi8, strided<[?], offset: ?>>
+      %sum = func.call @twice(%value) : (i8) -> i8
+      memref.store %sum, %right[%one] : memref<?xi8, strided<[?], offset: ?>>
+      return
+    }
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %two = arith.constant 2 : index
+      %seven = arith.constant 7 : i8
+      %fourteen = arith.constant 14 : i8
+      %q = qco.alloc : !qco.qubit
+      %h = qco.h %q : !qco.qubit
+      %out, %bit = qco.measure %h : !qco.qubit
+      qco.sink %out : !qco.qubit
+      %offset = arith.index_castui %bit : i1 to index
+      %array = memref.alloca() : memref<4xi8>
+      %view = memref.subview %array[%offset] [2] [2]
+        : memref<4xi8> to memref<2xi8, strided<[2], offset: ?>>
+      %borrowed = memref.cast %view
+        : memref<2xi8, strided<[2], offset: ?>> to memref<?xi8, strided<[?], offset: ?>>
+      func.call @update(%borrowed, %borrowed)
+        : (memref<?xi8, strided<[?], offset: ?>>,
+           memref<?xi8, strided<[?], offset: ?>>) -> ()
+      %last = arith.addi %offset, %two : index
+      %first = memref.load %array[%offset] : memref<4xi8>
+      %second = memref.load %array[%last] : memref<4xi8>
+      %firstMatches = arith.cmpi eq, %first, %seven : i8
+      %secondMatches = arith.cmpi eq, %second, %fourteen : i8
+      %ok = arith.andi %firstMatches, %secondMatches : i1
+      return %ok : i1
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(program);
+  auto jeff = program->copy().intoJeff();
+  ASSERT_TRUE(mlir::succeeded(jeff));
+  EXPECT_FALSE(jeff->module().lookupSymbol<func::FuncOp>("update"));
+  auto scalarHelper = jeff->module().lookupSymbol<func::FuncOp>("twice");
+  ASSERT_TRUE(scalarHelper);
+  EXPECT_FALSE(scalarHelper.getNoInline());
+  auto restored = JeffProgram::fromBytes(jeff->toBytes());
+  MQT_ASSERT_SUCCESS(restored);
+  auto roundTripped = std::move(*restored).intoQCO();
+  ASSERT_TRUE(mlir::succeeded(roundTripped));
+  const auto outcomes =
+      qco::sample(mlir::mqt::getEntryPoint(roundTripped->module()), 4, 42);
+  ASSERT_TRUE(succeeded(outcomes));
+  EXPECT_EQ(*outcomes, (std::map<std::string, size_t>{{"1", 4}}));
+  auto qc = std::move(*program).intoQC();
+  ASSERT_TRUE(mlir::succeeded(qc));
+  const auto payload = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+  ASSERT_TRUE(succeeded(runWithPassManager(
+      qc->module(),
+      [&](OpPassManager& pm) {
+        populateQIRPreparationPipeline(
+            pm, payload.materialize(*qc->module().getContext()));
+      },
+      "failed to prepare borrowed arrays for QIR")));
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(mlir::succeeded(qir));
+  auto llvmIR = std::move(*qir).intoLLVMIR();
+  ASSERT_TRUE(mlir::succeeded(llvmIR));
+  auto session = value(::qir::JitSession::create(
+      *llvmIR, "borrowed-array-views", ::qir::Execution::Sampling, 42));
+  std::vector<std::string> samples;
+  ASSERT_EQ(value(session->sample(4, samples)), 0);
+  EXPECT_EQ(samples, (std::vector<std::string>(4, "1")));
 }
 
 TEST_F(CompilerPipelineTest, ArrayRangesCheckMemrefBoundsAndShapesInDD) {
@@ -6811,8 +7009,7 @@ INSTANTIATE_TEST_SUITE_P(
         CompilerPipelineTestCase{
             "ReusableUnitaryFunction",
             MQT_NAMED_BUILDER(mlir::qc::reusableUnitaryFunction),
-            MQT_NAMED_BUILDER(mlir::qc::reusableUnitaryFunction), nullptr,
-            false},
+            MQT_NAMED_BUILDER(specializedUnitaryFunction), nullptr, false},
         CompilerPipelineTestCase{
             "ReusableResetFunction",
             MQT_NAMED_BUILDER(mlir::qc::reusableResetFunction),

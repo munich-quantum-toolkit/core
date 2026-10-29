@@ -58,6 +58,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
@@ -773,6 +774,28 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       operation->emitError("QIR conversion requires measurements and CBit "
                            "allocations in the entry function");
       hasInvalidMemory = true;
+    }
+    if (isa<func::FuncOp, func::CallOp, func::CallIndirectOp>(operation)) {
+      TypeRange inputs = operation->getOperandTypes();
+      TypeRange results = operation->getResultTypes();
+      if (auto function = dyn_cast<func::FuncOp>(operation)) {
+        inputs = function.getArgumentTypes();
+        // Entry results are checked below against the output ABI.
+        if (function != funcOp) {
+          results = function.getResultTypes();
+        }
+      }
+      const auto isClassicalArray = [](Type type) {
+        auto memref = dyn_cast<MemRefType>(type);
+        return memref && !isa<QubitType>(memref.getElementType());
+      };
+      if (llvm::any_of(inputs, isClassicalArray) ||
+          llvm::any_of(results, isClassicalArray)) {
+        operation->emitError(
+            "QIR conversion requires classical-array helpers "
+            "to be inlined; compile the program before export");
+        hasInvalidMemory = true;
+      }
     }
     if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
       return;

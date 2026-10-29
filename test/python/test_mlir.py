@@ -2323,13 +2323,17 @@ def test_compilation_seed_overrides_custom_pass_seed(seed: int) -> None:
     actual.run_pass_pipeline("pauli-twirl-2q-gates{seed=99}", options=CompilationOptions(seed=seed))
     assert actual.ir == expected.ir
     assert "mqt.compilation_seed" not in actual.ir
+    # Match the custom pipeline's cleanup boundaries, including constant order.
+    expected = source.copy()
+    expected.cleanup()
+    expected.run_pass_pipeline(f"pauli-twirl-2q-gates{{seed={seed}}}")
+    expected.cleanup()
     compiled = compile_program(
         source,
         output=OutputFormat.QCO_OPTIMIZED,
         qco_pipeline="pauli-twirl-2q-gates{seed=99}",
         options=CompilationOptions(seed=seed),
     )
-    expected.cleanup()
     assert compiled.ir == expected.ir
 
 

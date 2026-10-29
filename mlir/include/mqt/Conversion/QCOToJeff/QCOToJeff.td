@@ -25,7 +25,9 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     Fixed-size contiguous classical stack arrays become flat jeff arrays in
     row-major order. Views and copies are normalized before conversion;
     residual runtime safety assertions are rejected. Array lengths must fit
-    signed i32. Mutable array arguments in helpers remain unsupported.
+    signed i32. Helpers that borrow ranked arrays are inlined before view
+    normalization to preserve aliases and writes. Borrowed helper signatures
+    that remain after inlining are rejected; jeff has no reference-array ABI.
 
     `qco.static` exports as `jeff.qubit_alloc`; static site indices are not
     preserved. Exchange logical programs before device mapping.
