@@ -413,6 +413,7 @@ extend-ignore-re = [
 MemCpyOptPass = "MemCpyOptPass"
 
 [tool.typos.default.extend-words]
+countr = "countr"  # C++20 std::countr_zero
 wille = "wille"
 anc = "anc"
 braket = "braket"
