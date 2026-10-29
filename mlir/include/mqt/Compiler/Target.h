@@ -500,7 +500,7 @@ public:
                 llvm::function_ref<bool(const OperationCapability&)> filter =
                     nullptr) const;
 
-  /// Return whether a QCO operation is supported.
+  /// Return whether a QCO operation is supported without knowing its sites.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
 
   /// Return whether a QCO operation is supported on ordered target sites.
@@ -516,6 +516,9 @@ public:
   /// Return whether a recognized gate is supported on ordered target sites.
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> sites) const;
+
+  /// Check the entangler's synthesis domain without knowing its sites.
+  [[nodiscard]] bool supports(Entangler entangler) const;
 
   /// Check the entangler's synthesis domain on ordered sites.
   [[nodiscard]] bool supports(Entangler entangler,

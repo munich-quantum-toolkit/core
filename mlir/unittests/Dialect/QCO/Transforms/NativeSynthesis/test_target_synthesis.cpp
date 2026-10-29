@@ -915,6 +915,7 @@ TEST_F(TargetSynthesisTest, NativeCostSelectsCheapestAvailableEntangler) {
         EXPECT_FALSE(
             analysis.decompose(matrix, target, sites,
                                [count](size_t cost) { return cost < count; }));
+        EXPECT_FALSE(analysis.select(matrix, target, std::nullopt));
         const auto selected = analysis.select(matrix, target, sites);
         ASSERT_TRUE(selected);
         EXPECT_EQ(selected->entangler.gate, entangler);

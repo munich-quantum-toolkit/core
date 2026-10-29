@@ -1535,7 +1535,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
       valid(Target::create(std::move(sites), Connectivity::allToAll(),
                            NativeOperations::fromOperations(operations)));
   EXPECT_TRUE(target.supports(x));
-  EXPECT_TRUE(target.supports(cx));
+  EXPECT_FALSE(target.supports(cx));
   EXPECT_TRUE(target.supports(cz));
   EXPECT_TRUE(target.supports(measure));
   EXPECT_TRUE(target.supports(reset));
