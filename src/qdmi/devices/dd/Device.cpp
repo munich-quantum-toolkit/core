@@ -467,15 +467,17 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
   if (value == nullptr) {
     return QDMI_SUCCESS;
   }
-  if (size != sizeof(int)) {
+  const std::span bytes{static_cast<const char*>(value), size};
+  if (bytes.back() != '\0') {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  int width = 0;
-  std::memcpy(&width, value, sizeof(width));
-  if (width <= 0 || std::cmp_greater(width, MAX_QUBITS)) {
+  uint16_t width = 0;
+  const auto* end = &bytes.back();
+  const auto parsed = std::from_chars(bytes.data(), end, width);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || width == 0) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  qubitsNum_ = static_cast<uint16_t>(width);
+  qubitsNum_ = width;
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::createDeviceJob(

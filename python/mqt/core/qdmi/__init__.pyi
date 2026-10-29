@@ -31,11 +31,11 @@ class Session:
         username: str | None = None,
         password: str | None = None,
         project_id: str | None = None,
-        custom1: str | bool | float | bytes | None = None,
-        custom2: str | bool | float | bytes | None = None,
-        custom3: str | bool | float | bytes | None = None,
-        custom4: str | bool | float | bytes | None = None,
-        custom5: str | bool | float | bytes | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
     ) -> None: ...
     @property
     def devices(self) -> list[Device]:
@@ -58,11 +58,11 @@ def open_device(
     username: str | None = None,
     password: str | None = None,
     project_id: str | None = None,
-    custom1: str | bool | float | bytes | None = None,
-    custom2: str | bool | float | bytes | None = None,
-    custom3: str | bool | float | bytes | None = None,
-    custom4: str | bool | float | bytes | None = None,
-    custom5: str | bool | float | bytes | None = None,
+    custom1: str | None = None,
+    custom2: str | None = None,
+    custom3: str | None = None,
+    custom4: str | None = None,
+    custom5: str | None = None,
 ) -> Device:
     """Open a client-visible device by stable ID in a fresh session."""
 

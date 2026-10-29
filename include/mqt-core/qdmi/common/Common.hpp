@@ -23,38 +23,24 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <type_traits>
 #include <utility>
 #include <variant>
-#include <vector>
 
 namespace qdmi {
-/// Custom parameters own their values and use their native C++ representation.
-using CustomParameter =
-    std::variant<std::string, bool, int, double, std::vector<std::byte>>;
+/// Custom scalars use their native C++ representation.
+///
+/// Byte spans borrow an exact, nonempty payload until the synchronous
+/// submission call returns.
+using CustomJobParameter =
+    std::variant<std::string, bool, int, double, std::span<const std::byte>>;
 /// Preserve a provider status in an owned LLVM error.
 [[nodiscard]] llvm::Error makeError(int status, const llvm::Twine& message);
 
 namespace detail {
-/// Borrow the native ABI representation until the parameter is modified.
-inline auto parameterBuffer(const CustomParameter& parameter)
-    -> std::pair<size_t, const void*> {
-  return std::visit(
-      []<class T>(const T& value) -> std::pair<size_t, const void*> {
-        if constexpr (std::is_same_v<T, std::string>) {
-          return {value.size() + 1, value.c_str()};
-        } else if constexpr (std::is_arithmetic_v<T>) {
-          return {sizeof(T), &value};
-        } else {
-          return {value.size(), value.data()};
-        }
-      },
-      parameter);
-}
-
 /// Encode a native path for LLVM's UTF-8 Windows filesystem APIs.
 [[nodiscard]] llvm::Expected<std::string>
 pathToString(const std::filesystem::path& path);

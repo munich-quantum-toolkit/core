@@ -107,9 +107,8 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 using bindings::bindResult;
-using bindings::makeDriverSessionConfig;
-using bindings::PythonCustomParameter;
-using bindings::toCustomParameter;
+using bindings::PythonCustomJobParameter;
+using bindings::toCustomJobParameter;
 using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
@@ -808,20 +807,20 @@ payloadForOutput(OutputFormat output) {
 submitProgram(PythonInputTypes& types, const nb::handle program,
               const nb::handle target, int64_t numShots,
               std::optional<QDMI_Program_Format> programFormat,
-              const std::optional<PythonCustomParameter>& custom1,
-              const std::optional<PythonCustomParameter>& custom2,
-              const std::optional<PythonCustomParameter>& custom3,
-              const std::optional<PythonCustomParameter>& custom4,
-              const std::optional<PythonCustomParameter>& custom5,
+              const std::optional<PythonCustomJobParameter>& custom1,
+              const std::optional<PythonCustomJobParameter>& custom2,
+              const std::optional<PythonCustomJobParameter>& custom3,
+              const std::optional<PythonCustomJobParameter>& custom4,
+              const std::optional<PythonCustomJobParameter>& custom5,
               std::optional<mlir::CompilationOptions> options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
   }
   const auto device = resolveDevice(target);
   const auto params = std::array{
-      toCustomParameter(custom1), toCustomParameter(custom2),
-      toCustomParameter(custom3), toCustomParameter(custom4),
-      toCustomParameter(custom5),
+      toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+      toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+      toCustomJobParameter(custom5),
   };
   if (nb::isinstance<mlir::CompiledProgram>(program)) {
     if (options) {
@@ -971,7 +970,7 @@ template <class Payload>
   }
   const nb::gil_scoped_release release;
   auto device = unwrap(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
-  std::optional<qdmi::CustomParameter> randomSeed;
+  std::optional<qdmi::CustomJobParameter> randomSeed;
   if (seed != 0) {
     randomSeed = static_cast<int>(seed);
   }
@@ -1702,42 +1701,19 @@ Raises:
     ValueError: If the selected operations or connectivity cannot be represented.)pb")
       .def_static(
           "from_device_id",
-          [](const std::string& deviceId,
-             std::optional<std::filesystem::path> driverPath,
-             std::optional<std::string> token,
-             std::optional<std::filesystem::path> authFile,
-             std::optional<std::string> authUrl,
-             std::optional<std::string> username,
-             std::optional<std::string> password,
-             std::optional<std::string> projectId,
-             const std::optional<PythonCustomParameter>& custom1,
-             const std::optional<PythonCustomParameter>& custom2,
-             const std::optional<PythonCustomParameter>& custom3,
-             const std::optional<PythonCustomParameter>& custom4,
-             const std::optional<PythonCustomParameter>& custom5) {
-            const auto config = makeDriverSessionConfig(
-                std::move(driverPath), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(projectId), custom1, custom2, custom3, custom4,
-                custom5);
-            auto target = [&] {
+          [](const std::string& deviceId, const nb::kwargs& sessionParameters) {
+            const auto device = nb::cast<qdmi::Device>(
+                nb::module_::import_("mqt.core.qdmi")
+                    .attr("open_device")(deviceId, **sessionParameters));
+            auto target = [&device] {
               const nb::gil_scoped_release release;
-              const auto device =
-                  unwrap(qdmi::Session::openDevice(deviceId, config));
               return mlir::compilerTargetFromDevice(device);
             }();
             return unwrap(std::move(target));
           },
-          "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
-          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
-          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-          "password"_a = std::nullopt, "project_id"_a = std::nullopt,
-          "custom1"_a.noconvert() = std::nullopt,
-          "custom2"_a.noconvert() = std::nullopt,
-          "custom3"_a.noconvert() = std::nullopt,
-          "custom4"_a.noconvert() = std::nullopt,
-          "custom5"_a.noconvert() = std::nullopt,
-          "Open a client-visible device and snapshot its compiler target.")
+          "device_id"_a, "session_parameters"_a,
+          "Open a device through :func:`mqt.core.qdmi.open_device` and "
+          "snapshot its compiler target.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

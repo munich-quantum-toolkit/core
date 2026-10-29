@@ -29,7 +29,6 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -250,19 +249,20 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
     return qdmi::makeError(QDMI_ERROR_FATAL,
                            "Device returned a null session handle");
   }
-  const auto setParameter = [&](QDMI_Device_Session_Parameter param,
-                                size_t size, const void* data) -> Error {
-    if (size == 0) {
-      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                             "Custom parameter bytes must not be empty");
+  // All views borrow NUL-terminated strings for this synchronous call.
+  const auto setParameter =
+      [&](const std::optional<std::string_view> value,
+          const QDMI_Device_Session_Parameter param) -> Error {
+    if (!value) {
+      return Error::success();
     }
     if (api_->device_session_set_parameter == nullptr) {
       return strict ? qdmi::makeError(QDMI_ERROR_NOTSUPPORTED,
                                       "Device has no session parameter setter")
                     : Error::success();
     }
-    const auto status =
-        api_->device_session_set_parameter(deviceSession_, param, size, data);
+    const auto status = api_->device_session_set_parameter(
+        deviceSession_, param, value->size() + 1, value->data());
     if (status == QDMI_ERROR_NOTSUPPORTED && !strict) {
       qdmi::diagnostics::info(
           "Device session parameter {0} not supported by device (skipped)",
@@ -276,21 +276,13 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
     }
     return Error::success();
   };
-  const auto setString = [&](std::optional<std::string_view> value,
-                             QDMI_Device_Session_Parameter param) -> Error {
-    return value ? setParameter(param, value->size() + 1, value->data())
-                 : Error::success();
-  };
-  for (const auto& [value, parameter] : std::array{
-           std::pair{&config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL},
-           std::pair{&config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN},
-           std::pair{&config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL},
-           std::pair{&config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME},
-           std::pair{&config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD},
-       }) {
-    if (auto error = setString(*value, parameter)) {
-      return error;
-    }
+  if (auto error =
+          setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN)) {
+    return error;
   }
   if (config.authFile) {
     auto filename = qdmi::detail::pathToString(*config.authFile);
@@ -298,9 +290,21 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
       return filename.takeError();
     }
     if (auto error =
-            setString(*filename, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE)) {
+            setParameter(*filename, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE)) {
       return error;
     }
+  }
+  if (auto error =
+          setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL)) {
+    return error;
+  }
+  if (auto error = setParameter(config.username,
+                                QDMI_DEVICE_SESSION_PARAMETER_USERNAME)) {
+    return error;
+  }
+  if (auto error = setParameter(config.password,
+                                QDMI_DEVICE_SESSION_PARAMETER_PASSWORD)) {
+    return error;
   }
   if (config.deviceConfiguration && (config.custom1 || config.custom2)) {
     return qdmi::makeError(
@@ -314,14 +318,15 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
           using Source = std::decay_t<decltype(source)>;
           if constexpr (std::is_same_v<Source,
                                        qdmi::InlineDeviceConfiguration>) {
-            return setString(source.json,
-                             QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+            return setParameter(source.json,
+                                QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
           } else {
             auto filename = qdmi::detail::pathToString(source.path);
             if (!filename) {
               return filename.takeError();
             }
-            return setString(*filename, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+            return setParameter(*filename,
+                                QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
           }
         },
         *config.deviceConfiguration);
@@ -329,19 +334,25 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
       return error;
     }
   }
-  for (const auto& [value, parameter] : std::array{
-           std::pair{&config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1},
-           std::pair{&config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2},
-           std::pair{&config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3},
-           std::pair{&config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4},
-           std::pair{&config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5},
-       }) {
-    if (*value) {
-      const auto [size, data] = qdmi::detail::parameterBuffer(**value);
-      if (auto error = setParameter(parameter, size, data)) {
-        return error;
-      }
-    }
+  if (auto error =
+          setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4)) {
+    return error;
+  }
+  if (auto error =
+          setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5)) {
+    return error;
   }
   if ((childDevice != nullptr)) {
     if (auto error = qdmi::checkError(

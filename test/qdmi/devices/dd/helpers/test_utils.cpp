@@ -22,7 +22,6 @@
 #include <complex>
 #include <cstring>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -30,15 +29,15 @@
 
 namespace qdmi_test {
 
-SessionGuard::SessionGuard(std::optional<int> qubits) {
+SessionGuard::SessionGuard(const char* qubits) {
   auto rc = MQT_DDSIM_QDMI_device_initialize();
   EXPECT_EQ(rc, QDMI_SUCCESS);
   rc = MQT_DDSIM_QDMI_device_session_alloc(&session);
   EXPECT_EQ(rc, QDMI_SUCCESS);
-  if (qubits) {
+  if (qubits != nullptr) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
                   session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                  sizeof(*qubits), &*qubits),
+                  std::strlen(qubits) + 1, qubits),
               QDMI_SUCCESS);
   }
   rc = MQT_DDSIM_QDMI_device_session_init(session);

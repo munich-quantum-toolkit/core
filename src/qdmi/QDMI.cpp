@@ -39,7 +39,9 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -917,11 +919,11 @@ Expected<std::vector<Device>> Device::getChildDevices() const {
 Expected<Job>
 Device::submitJob(const std::string& program, const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
-                  const std::optional<CustomParameter>& custom1,
-                  const std::optional<CustomParameter>& custom2,
-                  const std::optional<CustomParameter>& custom3,
-                  const std::optional<CustomParameter>& custom4,
-                  const std::optional<CustomParameter>& custom5) const {
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   return submitJob(std::span{&program, 1}, format, numShots, custom1, custom2,
                    custom3, custom4, custom5);
 }
@@ -930,11 +932,11 @@ Expected<Job>
 Device::submitJob(const std::span<const std::byte> program,
                   const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
-                  const std::optional<CustomParameter>& custom1,
-                  const std::optional<CustomParameter>& custom2,
-                  const std::optional<CustomParameter>& custom3,
-                  const std::optional<CustomParameter>& custom4,
-                  const std::optional<CustomParameter>& custom5) const {
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   return submitJob(std::span{&program, 1}, format, numShots, custom1, custom2,
                    custom3, custom4, custom5);
 }
@@ -943,11 +945,11 @@ Expected<std::optional<Job>>
 Device::trySubmitJob(const std::string& program,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
-                     const std::optional<CustomParameter>& custom1,
-                     const std::optional<CustomParameter>& custom2,
-                     const std::optional<CustomParameter>& custom3,
-                     const std::optional<CustomParameter>& custom4,
-                     const std::optional<CustomParameter>& custom5) const {
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const {
   return trySubmitJob(std::span{&program, 1}, format, numShots, custom1,
                       custom2, custom3, custom4, custom5);
 }
@@ -956,11 +958,11 @@ Expected<std::optional<Job>>
 Device::trySubmitJob(const std::span<const std::byte> program,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
-                     const std::optional<CustomParameter>& custom1,
-                     const std::optional<CustomParameter>& custom2,
-                     const std::optional<CustomParameter>& custom3,
-                     const std::optional<CustomParameter>& custom4,
-                     const std::optional<CustomParameter>& custom5) const {
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const {
   return trySubmitJob(std::span{&program, 1}, format, numShots, custom1,
                       custom2, custom3, custom4, custom5);
 }
@@ -969,11 +971,11 @@ Expected<Job>
 Device::submitJob(const std::span<const std::string> programs,
                   const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
-                  const std::optional<CustomParameter>& custom1,
-                  const std::optional<CustomParameter>& custom2,
-                  const std::optional<CustomParameter>& custom3,
-                  const std::optional<CustomParameter>& custom4,
-                  const std::optional<CustomParameter>& custom5) const {
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   auto job = trySubmitJob(programs, format, numShots, custom1, custom2, custom3,
                           custom4, custom5);
   if (!job) {
@@ -989,11 +991,11 @@ Expected<std::optional<Job>>
 Device::trySubmitJob(const std::span<const std::string> programs,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
-                     const std::optional<CustomParameter>& custom1,
-                     const std::optional<CustomParameter>& custom2,
-                     const std::optional<CustomParameter>& custom3,
-                     const std::optional<CustomParameter>& custom4,
-                     const std::optional<CustomParameter>& custom5) const {
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const {
   if (isBinaryProgramFormat(format)) {
     return qdmi::makeError(
         QDMI_ERROR_INVALIDARGUMENT,
@@ -1021,11 +1023,11 @@ Expected<Job>
 Device::submitJob(const std::span<const std::span<const std::byte>> programs,
                   const QDMI_Program_Format format,
                   const std::optional<size_t> numShots,
-                  const std::optional<CustomParameter>& custom1,
-                  const std::optional<CustomParameter>& custom2,
-                  const std::optional<CustomParameter>& custom3,
-                  const std::optional<CustomParameter>& custom4,
-                  const std::optional<CustomParameter>& custom5) const {
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   auto job = trySubmitJob(programs, format, numShots, custom1, custom2, custom3,
                           custom4, custom5);
   if (!job) {
@@ -1041,11 +1043,11 @@ Expected<std::optional<Job>>
 Device::trySubmitJob(const std::span<const std::span<const std::byte>> programs,
                      const QDMI_Program_Format format,
                      const std::optional<size_t> numShots,
-                     const std::optional<CustomParameter>& custom1,
-                     const std::optional<CustomParameter>& custom2,
-                     const std::optional<CustomParameter>& custom3,
-                     const std::optional<CustomParameter>& custom4,
-                     const std::optional<CustomParameter>& custom5) const {
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const {
   std::vector<size_t> sizes;
   std::vector<const void*> pointers;
   sizes.reserve(programs.size());
@@ -1063,11 +1065,11 @@ Device::submitJobImpl(const QDMI_Program_Format format,
                       const std::span<const size_t> sizes,
                       const std::span<const void* const> programs,
                       const std::optional<size_t> numShots,
-                      const std::optional<CustomParameter>& custom1,
-                      const std::optional<CustomParameter>& custom2,
-                      const std::optional<CustomParameter>& custom3,
-                      const std::optional<CustomParameter>& custom4,
-                      const std::optional<CustomParameter>& custom5) const {
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   if (auto error = qdmi::checkError(api().device_create_job(device_, &job),
                                     "Creating job")) {
@@ -1129,8 +1131,20 @@ Expected<Job> Device::retrieveJobById(const std::string_view jobId) const {
 }
 
 Error Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
-                                const CustomParameter& value) const {
-  const auto [size, data] = detail::parameterBuffer(value);
+                                const CustomJobParameter& value) const {
+  const auto [size, data] = std::visit(
+      []<typename T>(const T& payload) -> std::pair<size_t, const void*> {
+        if constexpr (std::is_same_v<T, std::string>) {
+          return {payload.size() + 1, payload.c_str()};
+        } else if constexpr (std::is_same_v<T, std::span<const std::byte>>) {
+          return {payload.size(), payload.data()};
+        } else {
+          static_assert(std::is_trivially_copyable_v<T>,
+                        "Custom job parameters must be trivially copyable");
+          return {sizeof(T), &payload};
+        }
+      },
+      value);
   if (size == 0) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            "Custom parameter bytes must not be empty");
@@ -1474,14 +1488,14 @@ Expected<Session> Session::create(const SessionConfig& config) {
   }
   Session session;
   session.session_ = std::move(*allocated);
-  const auto setParameter = [&](QDMI_Session_Parameter param, size_t size,
-                                const void* data) -> Error {
-    if (size == 0) {
-      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                             "Custom parameter bytes must not be empty");
+  const auto setParameter = [&session](const std::optional<std::string>& value,
+                                       QDMI_Session_Parameter param) -> Error {
+    if (!value) {
+      return Error::success();
     }
     const auto status = session.api().session_set_parameter(
-        session.session_->handle.get(), param, size, data);
+        session.session_->handle.get(), param, value->size() + 1U,
+        value->c_str());
     if (status == QDMI_ERROR_NOTSUPPORTED) {
       llvm::errs() << llvm::formatv(
           "[mqt-core] [info] Session parameter {0} not supported (skipped)\n",
@@ -1491,34 +1505,20 @@ Expected<Session> Session::create(const SessionConfig& config) {
     return qdmi::checkError(status, llvm::Twine("Setting session parameter ") +
                                         qdmi::toString(param));
   };
-  const auto setString = [&](const std::optional<std::string>& value,
-                             QDMI_Session_Parameter param) -> Error {
-    return value ? setParameter(param, value->size() + 1, value->c_str())
-                 : Error::success();
-  };
   for (const auto& [value, parameter] : std::array{
            std::pair{&config.token, QDMI_SESSION_PARAMETER_TOKEN},
            std::pair{&config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL},
            std::pair{&config.username, QDMI_SESSION_PARAMETER_USERNAME},
            std::pair{&config.password, QDMI_SESSION_PARAMETER_PASSWORD},
            std::pair{&config.projectId, QDMI_SESSION_PARAMETER_PROJECTID},
-       }) {
-    if (auto error = setString(*value, parameter)) {
-      return error;
-    }
-  }
-  for (const auto& [value, parameter] : std::array{
            std::pair{&config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1},
            std::pair{&config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2},
            std::pair{&config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3},
            std::pair{&config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4},
            std::pair{&config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5},
        }) {
-    if (*value) {
-      const auto [size, data] = detail::parameterBuffer(**value);
-      if (auto error = setParameter(parameter, size, data)) {
-        return error;
-      }
+    if (auto error = setParameter(*value, parameter)) {
+      return error;
     }
   }
   if (config.authFile) {
@@ -1526,7 +1526,7 @@ Expected<Session> Session::create(const SessionConfig& config) {
     if (!filename) {
       return filename.takeError();
     }
-    if (auto error = setString(*filename, QDMI_SESSION_PARAMETER_AUTHFILE)) {
+    if (auto error = setParameter(*filename, QDMI_SESSION_PARAMETER_AUTHFILE)) {
       return error;
     }
   }

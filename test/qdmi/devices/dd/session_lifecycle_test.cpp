@@ -21,9 +21,9 @@
 #include "gtest/gtest.h"
 
 #include <cstddef>
-#include <cstdint>
-#include <limits>
+#include <cstring>
 #include <string>
+#include <string_view>
 #include <utility>
 
 using testing::AnyOf;
@@ -73,39 +73,41 @@ TEST(SessionParameters, SetParameterBehaviors) {
 }
 
 TEST(SessionParameters, WidthValidationAndImmutability) {
-  const qdmi_test::SessionGuard initialized{2};
+  const qdmi_test::SessionGuard initialized{"2"};
   MQT_DDSIM_QDMI_Device_Session session = nullptr;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  constexpr int width = std::numeric_limits<uint16_t>::max();
-  for (const auto size : {size_t{0}, sizeof(uint16_t)}) {
+  for (const auto size : {size_t{0}, size_t{2}}) {
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_session_set_parameter(
             session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, size, nullptr),
         QDMI_SUCCESS);
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, size, &width),
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, size, "123"),
               QDMI_ERROR_INVALIDARGUMENT);
   }
-  for (const int invalid : {-1, 0, width + 1}) {
+  for (const auto* invalid :
+       {"", "-1", "0", "65536", "999999999999999999999", "2x", " 2"}) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
                   session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                  sizeof(invalid), &invalid),
-              QDMI_ERROR_INVALIDARGUMENT);
+                  std::strlen(invalid) + 1, invalid),
+              QDMI_ERROR_INVALIDARGUMENT)
+        << invalid;
   }
+  constexpr std::string_view width = "65535";
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, sizeof(width),
-                &width),
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                width.size() + 1, width.data()),
             QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
                 initialized.session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                sizeof(width), &width),
+                width.size() + 1, width.data()),
             QDMI_ERROR_BADSTATE);
   MQT_DDSIM_QDMI_device_session_free(session);
 }
 
 TEST(SessionParameters, WidthScopesSitesIndependently) {
-  const qdmi_test::SessionGuard first{1};
-  const qdmi_test::SessionGuard second{3};
+  const qdmi_test::SessionGuard first{"1"};
+  const qdmi_test::SessionGuard second{"3"};
   const auto sites = qdmi_test::querySites(second.session);
   ASSERT_EQ(sites.size(), 3);
   EXPECT_EQ(qdmi_test::querySites(first.session).size(), 1);
@@ -128,7 +130,7 @@ TEST(SessionParameters, WidthScopesSitesIndependently) {
 
 TEST(SessionParameters, WidthBoundsQASMAndStaticAndDynamicQIR) {
   for (const auto width : {1, 2}) {
-    const qdmi_test::SessionGuard session{width};
+    const qdmi_test::SessionGuard session{std::to_string(width).c_str()};
     for (const auto shots : {0U, 8U}) {
       for (const auto& [format, code] : {
                std::pair{QDMI_PROGRAM_FORMAT_QASM3,

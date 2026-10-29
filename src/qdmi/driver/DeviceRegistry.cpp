@@ -30,12 +30,9 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
-#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -139,49 +136,6 @@ resolvePath(std::filesystem::path path, const std::filesystem::path& base) {
   return path.lexically_normal();
 }
 
-[[nodiscard]] Expected<CustomParameter>
-parseCustomParameter(const Json& value, const std::string_view source,
-                     const std::string& path) {
-  if (const auto text = value.getAsString()) {
-    return text->str();
-  }
-  if (const auto boolean = value.getAsBoolean()) {
-    return *boolean;
-  }
-  if (const auto number = value.getAsNumber();
-      number && std::isfinite(*number)) {
-    if (std::trunc(*number) != *number) {
-      return *number;
-    }
-    if (*number >= std::numeric_limits<int>::min() &&
-        *number <= std::numeric_limits<int>::max()) {
-      return static_cast<int>(*number);
-    }
-  }
-  if (const auto* bytes = value.getAsArray();
-      bytes != nullptr && !bytes->empty()) {
-    std::vector<std::byte> payload;
-    payload.reserve(bytes->size());
-    for (const auto& byte : *bytes) {
-      const auto number = byte.getAsNumber();
-      if (!number || *number < 0 || *number > 255 ||
-          std::trunc(*number) != *number) {
-        return qdmi::makeError(
-            QDMI_ERROR_INVALIDARGUMENT,
-            sourceLabel(source, path) +
-                " byte values must be integers from 0 to 255");
-      }
-      payload.push_back(static_cast<std::byte>(*number));
-    }
-    return payload;
-  }
-  return qdmi::makeError(
-      QDMI_ERROR_INVALIDARGUMENT,
-      sourceLabel(source, path) +
-          " must be a string, boolean, native int, finite fractional number, "
-          "or nonempty byte array");
-}
-
 [[nodiscard]] Expected<DeviceSessionConfig>
 parseSessionPatch(const Json& value, const std::string_view source,
                   const std::string& path, const std::filesystem::path& base) {
@@ -207,7 +161,7 @@ parseSessionPatch(const Json& value, const std::string_view source,
     return error;
   }
   DeviceSessionConfig patch;
-  const std::array<std::pair<const char*, std::optional<std::string>*>, 5>
+  const std::array<std::pair<const char*, std::optional<std::string>*>, 10>
       fields = {
           {
               {"base-url", &patch.baseUrl},
@@ -215,6 +169,11 @@ parseSessionPatch(const Json& value, const std::string_view source,
               {"auth-url", &patch.authUrl},
               {"username", &patch.username},
               {"password", &patch.password},
+              {"custom1", &patch.custom1},
+              {"custom2", &patch.custom2},
+              {"custom3", &patch.custom3},
+              {"custom4", &patch.custom4},
+              {"custom5", &patch.custom5},
           },
   };
   for (const auto& [key, destination] : fields) {
@@ -223,23 +182,6 @@ parseSessionPatch(const Json& value, const std::string_view source,
       return result.takeError();
     }
     *destination = std::move(*result);
-  }
-  for (const auto& [key, destination] : std::array{
-           std::pair{"custom1", &patch.custom1},
-           std::pair{"custom2", &patch.custom2},
-           std::pair{"custom3", &patch.custom3},
-           std::pair{"custom4", &patch.custom4},
-           std::pair{"custom5", &patch.custom5},
-       }) {
-    const auto* parameter = value.getAsObject()->get(key);
-    if (parameter == nullptr) {
-      continue;
-    }
-    auto parsed = parseCustomParameter(*parameter, source, path + "." + key);
-    if (!parsed) {
-      return parsed.takeError();
-    }
-    *destination = std::move(*parsed);
   }
   if (const auto* const config = value.getAsObject()->get("device-config");
       config != nullptr) {

@@ -16,7 +16,6 @@
 #include "qdmi/constants.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -93,7 +92,7 @@ TEST(DeviceRegistry, ParsesEnvironmentConfigurationWithoutLoadingLibraries) {
   EXPECT_EQ(std::filesystem::weakly_canonical(*definition->session.authFile),
             std::filesystem::weakly_canonical(directory.path()) /
                 "secret.json");
-  EXPECT_EQ(std::get<std::string>(*definition->session.custom1), "value");
+  EXPECT_EQ(definition->session.custom1, "value");
 }
 
 TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
@@ -145,47 +144,15 @@ TEST(DeviceRegistry, RejectsInvalidCStringAndPathFields) {
   }
 }
 
-TEST(DeviceRegistry, ParsesCustomParameterValues) {
-  constexpr std::string_view json =
-      R"({"custom1":12,"custom2":false,"custom3":"x\u0000y","custom4":[0,255],"custom5":0.5})";
+TEST(DeviceRegistry, PreservesEmbeddedNullInLengthDelimitedSessionValues) {
+  constexpr std::string_view json = R"({"custom3":"x\u0000y"})";
   qdmi::DeviceSessionConfig config;
 
   ASSERT_EQ(
       qdmi::detail::parseDeviceSessionJson(json.data(), json.size(), config),
       QDMI_SUCCESS);
   ASSERT_TRUE(config.custom3.has_value());
-  EXPECT_EQ(std::get<int>(*config.custom1), 12);
-  EXPECT_FALSE(std::get<bool>(*config.custom2));
-  EXPECT_EQ(std::get<std::string>(*config.custom3), std::string("x\0y", 3));
-
-  EXPECT_EQ(std::get<std::vector<std::byte>>(*config.custom4),
-            (std::vector{std::byte{0}, std::byte{255}}));
-  EXPECT_EQ(std::get<double>(*config.custom5), 0.5);
-  constexpr std::string_view integral = R"({"custom1":1.0,"custom2":-2})";
-  ASSERT_EQ(qdmi::detail::parseDeviceSessionJson(integral.data(),
-                                                 integral.size(), config),
-            QDMI_SUCCESS);
-  EXPECT_EQ(std::get<int>(*config.custom1), 1);
-  EXPECT_EQ(std::get<int>(*config.custom2), -2);
-  for (const std::string_view invalid : {
-           "[]",
-           "[-1]",
-           "[256]",
-           "[1.5]",
-           "[true]",
-           "[1e100]",
-           "null",
-           "2147483648",
-           "-2147483649",
-           "1e100",
-           "NaN",
-       }) {
-    const auto document = "{\"custom1\":" + std::string(invalid) + "}";
-    SCOPED_TRACE(document);
-    EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(document.data(),
-                                                   document.size(), config),
-              QDMI_ERROR_INVALIDARGUMENT);
-  }
+  EXPECT_EQ(*config.custom3, std::string("x\0y", 3));
 
   constexpr std::string_view malformed = "{";
   EXPECT_EQ(qdmi::detail::parseDeviceSessionJson(malformed.data(),
@@ -220,8 +187,8 @@ TEST(DeviceRegistry, MergesEnvironmentJsonOverExplicitFile) {
   ASSERT_NE(definition, nullptr);
   EXPECT_EQ(definition->library, directory.path() / "file.so");
   EXPECT_EQ(definition->prefix, "FILE");
-  EXPECT_EQ(std::get<std::string>(*definition->session.custom1), "from-json");
-  EXPECT_EQ(std::get<std::string>(*definition->session.custom2), "preserved");
+  EXPECT_EQ(definition->session.custom1, "from-json");
+  EXPECT_EQ(definition->session.custom2, "preserved");
 }
 
 TEST(DeviceRegistry, DeviceConfigurationSourceReplacesAtomically) {
@@ -497,8 +464,7 @@ TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
   EXPECT_EQ(definition->library,
             directory.path() / "user" / "mqt-core" / "user.so");
   EXPECT_EQ(definition->prefix, "PROJECT");
-  EXPECT_EQ(std::get<std::string>(*definition->session.custom1),
-            "user-default");
+  EXPECT_EQ(definition->session.custom1, "user-default");
 }
 
 #ifndef _WIN32

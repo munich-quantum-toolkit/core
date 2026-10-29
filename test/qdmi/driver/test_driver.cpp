@@ -9,7 +9,6 @@
  */
 
 #include "qdmi/QDMI.hpp"
-#include "qdmi/common/Common.hpp"
 #include "qdmi/driver/DriverExtension.hpp"
 
 #include "Driver.hpp"
@@ -48,7 +47,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -138,8 +136,6 @@ class ChildDeviceAPI final : public qdmi::DeviceAPI {
     auto* const fakeSession = asSession(session);
     if (parameter == QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) {
       fakeSession->library->custom1Data.emplace_back(value);
-      fakeSession->library->custom1Bytes.emplace_back(
-          static_cast<const char*>(value), size);
       return fakeSession->library->successStatus;
     }
     if (parameter != QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE) {
@@ -247,7 +243,6 @@ public:
   bool childDeviceQueryFails = false;
   std::vector<QDMI_Child_Device> selectedChildren;
   std::vector<const void*> custom1Data;
-  std::vector<std::string> custom1Bytes;
 
   ChildDeviceAPI() {
     activeLibrary = this;
@@ -1394,7 +1389,7 @@ TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   EXPECT_NE(first, second);
 }
 
-TEST(DeviceRegistrationTest, CustomParametersPreserveNativeRepresentations) {
+TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
   registerSessionTestDevice();
   const auto device =
       value(qdmi::Session::openDevice("test.session-overrides"));
@@ -1898,43 +1893,6 @@ TEST(DeviceSessionConfigTest, MovesAndBorrowsInlineConfiguration) {
   EXPECT_THAT(library->custom1Data, testing::ElementsAre(data, data, data));
 }
 
-TEST(DeviceSessionConfigTest, PreservesCustomParameterTypesAndOwnership) {
-  const auto nativeBytes = [](const auto& scalar) {
-    return std::string(reinterpret_cast<const char*>(&scalar), sizeof(scalar));
-  };
-  const std::array<std::pair<qdmi::CustomParameter, std::string>, 5> cases{
-      {
-          {std::string{}, std::string(1, '\0')},
-          {false, nativeBytes(false)},
-          {42, nativeBytes(42)},
-          {1.0, nativeBytes(1.0)},
-          {
-              std::vector{std::byte{0}, std::byte{255}},
-              std::string("\0\xff", 2),
-          },
-      },
-  };
-  for (const auto& [parameter, expected] : cases) {
-    const auto library = std::make_shared<ChildDeviceAPI>();
-    qdmi::DeviceSessionConfig overrides{.custom1 = parameter};
-    const auto config = qdmi::detail::mergeSessionConfig({}, overrides);
-    if (auto* bytes =
-            std::get_if<std::vector<std::byte>>(&*overrides.custom1)) {
-      std::ranges::fill(*bytes, std::byte{42});
-    }
-    overrides = {};
-    const auto device = value(QDMI_Device_impl_d::create(*library, config));
-    EXPECT_THAT(library->custom1Bytes,
-                testing::ElementsAre(expected, expected, expected));
-  }
-  const auto library = std::make_shared<ChildDeviceAPI>();
-  EXPECT_EQ(errorStatus([&] {
-              return QDMI_Device_impl_d::create(
-                  *library, {.custom1 = std::vector<std::byte>{}});
-            }),
-            QDMI_ERROR_INVALIDARGUMENT);
-}
-
 TEST(DeviceSessionConfigTest, OpenWithBaseUrl) {
   qdmi::DeviceSessionConfig config;
   config.baseUrl = "http://localhost:8080";
@@ -1960,6 +1918,30 @@ TEST(DeviceSessionConfigTest, ReportsSkippedUnsupportedParameter) {
           testing::HasSubstr("[mqt-core] [info]"),
           testing::HasSubstr("Device session parameter BASE URL not supported "
                              "by device (skipped)")));
+}
+
+TEST(DeviceSessionConfigTest, OpenWithCustomParameters) {
+  qdmi::DeviceSessionConfig config;
+  config.custom3 = "RESONANCE_COCOS_V1";
+  config.custom4 = "test_value";
+  config.baseUrl = "http://localhost:9090";
+
+  for (const auto& [lib, prefix] : TEST_DEVICE_LIBRARIES) {
+    // Custom parameters may fail with validation errors or succeed/return false
+    try {
+      static_cast<void>(openTestDevice(lib, prefix, config));
+      SUCCEED() << "Library loaded or already loaded";
+    } catch (const std::runtime_error& e) {
+      // Custom parameters may be rejected with INVALIDARGUMENT
+      const std::string msg = e.what();
+      if (msg.find("CUSTOM") != std::string::npos &&
+          msg.find("Invalid argument") != std::string::npos) {
+        SUCCEED() << "Custom parameter validation error (expected): " << msg;
+      } else {
+        throw; // Re-throw unexpected errors
+      }
+    }
+  }
 }
 
 TEST(DeviceSessionConfigTest, OpenWithAuthToken) {
