@@ -45,6 +45,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <limits>
 #include <utility>
 
 namespace mlir {
@@ -251,7 +252,6 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
     auto loc = op.getLoc();
     auto* ctx = op.getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
-    auto voidType = LLVM::LLVMVoidType::get(ctx);
 
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
@@ -277,15 +277,18 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
       return success();
     }
 
-    auto fnSig = LLVM::LLVMFunctionType::get(
-        voidType, {rewriter.getI64Type(), ptrType, ptrType});
-    auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
-                                                QIR_RESULT_ARRAY_ALLOC, fnSig);
-
     auto array = LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size)
                      .getResult();
-    auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
-    LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
+    for (int64_t index = 0; index < op.getType().getWidth(); ++index) {
+      auto result =
+          createPointerFromIndex(rewriter, loc, reg.resultOffset + index);
+      auto position = LLVM::ConstantOp::create(
+          rewriter, loc, rewriter.getI64IntegerAttr(index));
+      auto element = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType, array,
+                                         ValueRange{position});
+      auto store = LLVM::StoreOp::create(rewriter, loc, result, element);
+      store->setAttr(QIR_RESULT_STORE_ATTR, rewriter.getUnitAttr());
+    }
 
     state.resultArrays.insert(array);
     reg.array = array;
@@ -665,13 +668,12 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
         resolveRegisterMeasurement(state, op.getOperation(), rewriter);
     if (!result) {
       if (returnedResult != state.measuredResults.end()) {
-        result = getResultPtr(state, op.getOperation(), rewriter,
-                              state.dynamicResults);
+        result = getResultPtr(state, op.getOperation(), rewriter);
       } else {
         // Non-output results are read into SSA values before the next measure.
         if (!state.scratchResult) {
-          state.scratchResult = getResultPtr(state, op.getOperation(), rewriter,
-                                             state.dynamicResults);
+          state.scratchResult =
+              getResultPtr(state, op.getOperation(), rewriter);
         }
         result = state.scratchResult;
       }
@@ -786,37 +788,6 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     }
   }
 
-  /// Releases all result pointers and arrays in the output block
-  static void releaseResults(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
-                             LoweringState* state) {
-    OpBuilder builder(ctx);
-    auto ptrType = LLVM::LLVMPointerType::get(ctx);
-    auto voidType = LLVM::LLVMVoidType::get(ctx);
-
-    builder.setInsertionPoint(state->outputBlock->getTerminator());
-
-    if (state->dynamicResults && !state->scalarResults.empty()) {
-      auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
-      auto dec = getOrCreateFunctionDeclaration(builder, main,
-                                                QIR_RESULT_RELEASE, sig);
-      for (auto result : state->scalarResults) {
-        LLVM::CallOp::create(builder, main->getLoc(), dec, result);
-      }
-    }
-
-    if (!state->resultArrays.empty()) {
-      auto sig = LLVM::LLVMFunctionType::get(voidType,
-                                             {builder.getI64Type(), ptrType});
-      auto dec = getOrCreateFunctionDeclaration(builder, main,
-                                                QIR_RESULT_ARRAY_RELEASE, sig);
-      for (auto array : state->resultArrays) {
-        auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-        LLVM::CallOp::create(builder, main->getLoc(), dec,
-                             ValueRange{size, array});
-      }
-    }
-  }
-
 protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
@@ -862,9 +833,19 @@ protected:
       return;
     }
 
-    state.dynamicResults = llvm::any_of(state.cregs, [](const auto& reg) {
-      return reg.record && !reg.booleanStorage;
-    });
+    for (auto& reg : state.cregs) {
+      if (reg.record && !reg.booleanStorage) {
+        reg.resultOffset = state.staticRegisterResults;
+        const auto width = std::get<int64_t>(reg.size);
+        if (width >
+            std::numeric_limits<int64_t>::max() - state.staticRegisterResults) {
+          moduleOp.emitError("static result IDs exceed the supported range");
+          signalPassFailure();
+          return;
+        }
+        state.staticRegisterResults += width;
+      }
+    }
 
     // Stage 1: Convert scf dialect to cf
     {
@@ -940,7 +921,6 @@ protected:
       }
 
       addOutputRecording(main, ctx, state);
-      releaseResults(main, ctx, &state);
     }
 
     if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {

@@ -57,7 +57,7 @@ struct LoweringState {
   [[nodiscard]] LogicalResult nameNativeCall(LLVM::CallOp call, StringRef name,
                                              ValueRange qubits) const;
 
-  /// Result-array pointers to be deallocated at the end of the program
+  /// Returned result-register arrays that reject non-measurement stores.
   llvm::SmallSetVector<Value, 4> resultArrays;
 
   /// CBit read operations whose register is backed by a result array.
@@ -90,13 +90,13 @@ struct LoweringState {
   /// Measurement stores kept as SSA users across structural conversion.
   DenseMap<Operation*, Operation*> deferredMeasurementStores;
 
-  /// Scalar result pointers in allocation order; array elements are separate.
+  /// Scalar result pointers in ID order; array elements are separate.
   SmallVector<Value> scalarResults;
 
-  /// Adaptive results use one allocation mode, matching returned Result arrays.
-  bool dynamicResults = false;
+  /// Number of static IDs reserved for returned result registers.
+  int64_t staticRegisterResults = 0;
 
-  /// Reusable Adaptive measurement result, owned by `scalarResults`.
+  /// Reusable Adaptive measurement result, tracked by `scalarResults`.
   Value scratchResult;
 
   /// Converted controls associated with their specific body unitary.
@@ -209,6 +209,6 @@ void finalizeClassicalResults(LoweringState& state);
 /// Returns a result pointer for a measurement that does not write into a
 /// returned classical bit register
 Value getResultPtr(LoweringState& state, Operation* op,
-                   ConversionPatternRewriter& rewriter, bool dynamic);
+                   ConversionPatternRewriter& rewriter);
 
 } // namespace mlir

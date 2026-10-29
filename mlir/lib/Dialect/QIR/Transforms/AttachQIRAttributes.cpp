@@ -421,6 +421,11 @@ private:
           store->hasAttr(QIR_QUBIT_STORE_ATTR)) {
         qubits.insert(store.getValue());
       }
+      if (auto store = dyn_cast<LLVM::StoreOp>(operation);
+          store && !metadata.useDynamicResult &&
+          store->hasAttr(QIR_RESULT_STORE_ATTR)) {
+        results.insert(store.getValue());
+      }
       auto call = dyn_cast<LLVM::CallOp>(operation);
       if (!call || !call.getCallee()) {
         return;
