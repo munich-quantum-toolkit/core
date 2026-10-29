@@ -541,10 +541,11 @@ std::optional<bool>
 NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
                                          CompilerTarget::Entangler entangler,
                                          Sites sites) {
-  if (!sites || target.supports(entangler, *sites)) {
+  if (sites ? target.supports(entangler, *sites) : target.supports(entangler)) {
     return false;
   }
-  if (target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
+  if (sites &&
+      target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
     return true;
   }
   return std::nullopt;
