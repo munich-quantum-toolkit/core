@@ -748,6 +748,86 @@ TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
+TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
+  context.getOrLoadDialect<cbit::CBitDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto reg = builder.allocQubitRegisterStorage(3, "partly_used");
+  auto other = builder.allocQubitRegisterStorage(1);
+  auto zero = builder.indexConstant(0);
+  auto one = builder.indexConstant(1);
+  auto left = builder.loadQubit(reg, zero);
+  builder.x(left);
+  auto alias = builder.loadQubit(reg, builder.indexConstant(0));
+  builder.x(alias);
+  builder.inv(left, [&](Value qubit) { builder.x(qubit); });
+  auto right = builder.loadQubit(reg, one);
+  builder.ctrl(alias, right, [&](Value qubit) { builder.x(qubit); });
+  builder.pow(2.0, right, [&](Value qubit) { builder.x(qubit); });
+  builder.reset(right);
+  builder.swap(right, left);
+  builder.barrier({left, right});
+  auto separate = builder.loadQubit(other, zero);
+  builder.x(separate);
+  auto classicalRegister = builder.allocClassicalBitRegister(4);
+  std::ignore = builder.measure(right, classicalRegister, 0);
+  std::ignore = builder.measure(alias, classicalRegister, 1);
+  builder.reset(right);
+  std::ignore = builder.measure(right, classicalRegister, 2);
+  std::ignore = builder.measure(separate, classicalRegister, 3);
+  auto moduleOp = builder.finalize(classicalRegister);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  for (unsigned round = 0; round < 2; ++round) {
+    ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    auto main = mlir::mqt::getEntryPoint(*moduleOp);
+    // Each used slot is extracted once and restored before register release.
+    EXPECT_EQ(llvm::range_size(main.getOps<qtensor::ExtractOp>()), 3U);
+    EXPECT_EQ(llvm::range_size(main.getOps<qtensor::InsertOp>()), 3U);
+    auto named = *main.getOps<qtensor::AllocOp>().begin();
+    EXPECT_EQ(named.getResult().getType().getDimSize(0), 3);
+    auto name = named->getAttrOfType<StringAttr>(
+        mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+    ASSERT_TRUE(name);
+    EXPECT_EQ(name.getValue(), "partly_used");
+    auto counts = qco::sample(main, 8, 17);
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(counts->size(), 1U);
+    EXPECT_EQ(counts->at("1001"), 8U);
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       KeepsCapturedConstantRegisterSlotsInCompleteTensorState) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      %reg = memref.alloc() : memref<1x!qc.qubit>
+      %zero = arith.constant 0 : index
+      %qubit = memref.load %reg[%zero] : memref<1x!qc.qubit>
+      qc.h %qubit : !qc.qubit
+      scf.if %condition {
+        qc.x %qubit : !qc.qubit
+      }
+      qc.z %qubit : !qc.qubit
+      memref.dealloc %reg : memref<1x!qc.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  expectOperationLocalRegisterAccesses(*moduleOp);
+  expectStructuredStateUsesCompleteTensors(*moduleOp);
+}
+
 TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
@@ -1267,8 +1347,17 @@ module {
     inserts += isa<qtensor::InsertOp>(operation);
   });
   EXPECT_EQ(calls, 2);
-  EXPECT_EQ(extracts, 2);
-  EXPECT_EQ(inserts, 2);
+  EXPECT_EQ(extracts, 1);
+  EXPECT_EQ(inserts, 1);
+  auto main = mlir::mqt::getEntryPoint(*moduleOp);
+  ASSERT_FALSE(main.getOps<qco::CallOp>().empty());
+  ASSERT_FALSE(main.getOps<qco::PowOp>().empty());
+  ASSERT_FALSE(main.getOps<qtensor::InsertOp>().empty());
+  auto call = *main.getOps<qco::CallOp>().begin();
+  auto power = *main.getOps<qco::PowOp>().begin();
+  EXPECT_EQ(power.getQubitsIn().front(), call.getOutputQubits().front());
+  auto restore = *main.getOps<qtensor::InsertOp>().begin();
+  EXPECT_EQ(restore.getScalar(), power.getQubitsOut().front());
 }
 
 TEST_F(QCToQCORegressionTest, PreflightRejectsAliasedAndDuplicateQubitResults) {

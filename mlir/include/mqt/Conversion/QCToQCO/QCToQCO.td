@@ -32,6 +32,10 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     dynamic store indices are program preconditions; this pass diagnoses known
     violations without inserting runtime checks. See the shared
     [quantum resource contract](index.md#quantum-resource-contract).
+    Local fixed-size registers used only by constant-index quantum operations
+    in one block can keep accessed slots as scalar SSA values until
+    deallocation. Other registers retain per-operation extraction and
+    reinsertion.
     Static qubit references are hoisted and coalesced when needed. General
     classical folding and common subexpression elimination are not guaranteed
     by this conversion; use the corresponding simplification passes when needed.
