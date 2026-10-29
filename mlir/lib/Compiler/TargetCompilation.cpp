@@ -117,6 +117,13 @@ public:
 
 protected:
   void runOnOperation() override {
+    if (getOperation()->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+      getOperation().emitError(
+          "target compilation requires input without a pending source output "
+          "permutation");
+      signalPassFailure();
+      return;
+    }
     if (getOperation()->hasAttr("mqt.layout")) {
       getOperation().emitError("discard existing layout metadata before target "
                                "compilation");
@@ -216,7 +223,11 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
-  pm.addPass(qco::createElideTerminalSwapsPass());
+  qco::ElidePermutationsOptions permutationOptions;
+  permutationOptions.trackOutputPermutation = true;
+  permutationOptions.terminalOnly =
+      target.connectivityKind() == CompilerTarget::Connectivity::Kind::Explicit;
+  pm.addPass(qco::createElidePermutations(permutationOptions));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   // U fusion shrinks runs before routing. Other bases can expand symbolic
   // runs, so emit them once during native synthesis, after cleanup.
@@ -260,7 +271,9 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
-  pm.addPass(qco::createElideTerminalSwapsPass());
+  qco::ElidePermutationsOptions permutationOptions;
+  permutationOptions.trackOutputPermutation = true;
+  pm.addPass(qco::createElidePermutations(permutationOptions));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   if (const auto basis = target.synthesisBasis();
       basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {

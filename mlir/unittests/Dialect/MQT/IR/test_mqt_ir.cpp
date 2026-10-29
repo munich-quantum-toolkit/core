@@ -136,6 +136,27 @@ TEST_F(MQTIRTest, SourceQubitIndicesMatchAllocationSlots) {
     SCOPED_TRACE(indices);
     EXPECT_FALSE(parse(source(indices)));
   }
+
+  const auto prepared = [](const char* index) {
+    return std::string(R"mlir(module attributes {
+        mqt.source_qubit_count = 4 : i64
+      } {
+      func.func @main() attributes {mqt.entry_point} {
+        %c2 = arith.constant 2 : index
+        %tensor = qtensor.alloc(%c2) {
+          mqt.source_qubit_indices = array<i64: 0, 1>
+        } : tensor<2x!qco.qubit>
+        %scalar = qco.alloc {mqt.source_qubit_indices = array<i64: )mlir") +
+           index + R"mlir(>} : !qco.qubit
+        qco.sink %scalar : !qco.qubit
+        qtensor.dealloc %tensor : tensor<2x!qco.qubit>
+        return
+      }
+    })mlir";
+  };
+  EXPECT_TRUE(parse(prepared("3")));
+  EXPECT_FALSE(parse(prepared("0")));
+  EXPECT_FALSE(parse(prepared("4")));
 }
 
 TEST_F(MQTIRTest, RoundTripsLayoutMetadata) {

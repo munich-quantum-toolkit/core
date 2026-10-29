@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Layout.h"
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
@@ -140,7 +141,8 @@ public:
         llvm::append_range(circuitSources_, indices.asArrayRef());
       }
     }
-    valid_ &= !circuit.contains("sites") && circuitRouting_ &&
+    valid_ &= !module_->hasAttr(mqt::kSourceOutputPermutationAttr) &&
+              !circuit.contains("sites") && circuitRouting_ &&
               llvm::equal(initial.asArrayRef(),
                           llvm::seq<int64_t>(0, static_cast<int64_t>(
                                                     circuitSources_.size()))) &&
@@ -205,6 +207,15 @@ public:
         const auto destination = circuitSources_[circuitRouting_[wire]];
         routing[layout_->initial[source]] = layout_->initial[destination];
       }
+    }
+    if (auto permutation = module_->getAttrOfType<DenseI64ArrayAttr>(
+            mqt::kSourceOutputPermutationAttr)) {
+      auto& routing = layout_->routing.emplace(layout_->initial.size());
+      std::iota(routing.begin(), routing.end(), int64_t{0});
+      for (auto [output, source] : llvm::enumerate(permutation.asArrayRef())) {
+        routing[layout_->initial[output]] = layout_->initial[source];
+      }
+      module_->removeAttr(mqt::kSourceOutputPermutationAttr);
     }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
     return success();
@@ -535,6 +546,11 @@ protected:
     }
 
     if (!needsPlacement(func)) {
+      if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+        moduleOp.emitError(
+            "source output permutation requires dynamic placement");
+        signalPassFailure();
+      }
       return;
     }
 
@@ -1017,6 +1033,11 @@ protected:
     }
 
     if (!needsPlacement(func)) {
+      if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+        moduleOp.emitError(
+            "source output permutation requires dynamic placement");
+        signalPassFailure();
+      }
       return;
     }
 
@@ -1088,14 +1109,6 @@ private:
       return a->isBeforeInBlock(b);
     }
     return b->isBeforeInBlock(a);
-  }
-
-  /// Return values carried by a supported region terminator.
-  static ValueRange yieldedValues(Block& block) {
-    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
-        .Case([](scf::YieldOp op) { return op.getResults(); })
-        .Case([](scf::ConditionOp op) { return op.getArgs(); })
-        .Case([](YieldOp op) { return op.getTargets(); });
   }
 
   /// Return the qubit values in `values`, preserving their relative order.
@@ -2179,9 +2192,10 @@ private:
       auto& child = children.emplace_back(Wires(env.target.numSites()),
                                           parent.layout, env);
 
-      auto roots = getQubitValues(Direction == WireDirection::Forward
-                                      ? region.front().getArguments()
-                                      : yieldedValues(region.front()));
+      auto roots =
+          getQubitValues(Direction == WireDirection::Forward
+                             ? ValueRange(region.front().getArguments())
+                             : getYieldedValues(region.front()));
       for (auto [site, root] : zip_equal(sites, roots)) {
         child.wires[site] = WireIterator(root);
       }
@@ -2243,7 +2257,7 @@ private:
       if constexpr (Mode == RoutingMode::Hot) {
         auto* terminator = region.front().getTerminator();
         auto values =
-            realignQubitValues(yieldedValues(region.front()), sites, child);
+            realignQubitValues(getYieldedValues(region.front()), sites, child);
 
         rewriter->modifyOpInPlace(terminator, [&] {
           if (auto condition = dyn_cast<scf::ConditionOp>(terminator)) {

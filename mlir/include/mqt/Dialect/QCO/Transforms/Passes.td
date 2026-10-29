@@ -189,6 +189,45 @@ def LegalizeControlFlow : PayloadControlFlowPass<"legalize-control-flow"> {
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Elide virtual SWAPs before placement";
+  let description = [{
+    Tracks wire permutations through QCO and structured control flow, removing
+    unconditional SWAPs and retargeting later operations. Materializes
+    permutations where resource identity or region interfaces require them.
+    The default mode preserves physical output order and reconciles
+    permutations before measurements. Fixed physical qubits, regions with
+    nonpositional quantum yields, and unstructured function bodies retain their
+    wiring. Dynamic tensor accesses reconcile pending permutations on that
+    tensor.
+
+    With `track-output-permutation` and source labels from target preparation,
+    terminal output permutations may remain virtual through final observations
+    and disposal. Placement consumes the recorded source permutation into the
+    published qubit layout before the compiled program is returned.
+
+    With `terminal-only`, elides only SWAPs in a straight-line suffix of the
+    entry block after its last non-SWAP multi-qubit operation, reset, region,
+    or opaque quantum boundary. Intermediate measurements and disposal also
+    end the suffix. Single-qubit gates may follow those SWAPs.
+    Target compilation uses this mode for explicit coupling graphs to preserve
+    source routing structure before later interactions.
+
+    Run after inlining and cleanup, before fusion and placement.
+  }];
+  let options =
+      [Option<
+           "trackOutputPermutation", "track-output-permutation", "bool",
+           "false",
+           "Record final source permutations for target layout publication.">,
+       Option<"terminalOnly", "terminal-only", "bool", "false",
+              "Preserve source SWAPs before later interactions or region "
+              "boundaries.">];
+}
+
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Place and route a program for an explicit target topology";

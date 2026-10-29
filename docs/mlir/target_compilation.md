@@ -320,6 +320,12 @@ the same one-qubit gate family on every site. Its entangler is optional:
 one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
 on every routing edge in at least one direction.
 
+On explicit coupling graphs, source SWAPs before later interactions are kept:
+they can already provide useful routing. Only terminal straight-line SWAP
+permutations are removed, with output order recorded in the qubit layout.
+All-to-all targets also elide nonterminal permutations through supported tensor
+accesses and structured control flow.
+
 Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `ntrials` value overrides this default. Set both `ntrials` and `seed` on the
