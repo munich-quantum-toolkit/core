@@ -256,7 +256,12 @@ public:
   /// Uses the rules of numGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
-  /// Calculate the depth
+  /// Compute the circuit depth of the entry point.
+  ///
+  /// Supports straight-line programs including measurements, resets, barriers
+  /// (adding no layer), feed-forward dependencies, gate modifiers and simple
+  /// ``if`` control flow. Returns ``None`` for loops, function calls, and other
+  /// unsupported control flow.
   [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.
@@ -389,7 +394,12 @@ public:
   /// Uses the rules of QCProgram::numTwoQubitGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
-  /// Calculate the depth
+  /// Compute the circuit depth of the entry point.
+  ///
+  /// Supports straight-line programs including measurements, resets, barriers
+  /// (adding no layer), feed-forward dependencies, gate modifiers and simple
+  /// ``if`` control flow. Returns ``None`` for loops, function calls, and other
+  /// unsupported control flow.
   [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.

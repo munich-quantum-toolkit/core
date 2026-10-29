@@ -763,9 +763,9 @@ class QuantumProgramInfo:
 
     @property
     def depth(self) -> int | None:
-        """Depth.
+        """Depth of the program, or ``None`` if unsupported.
 
-        See :meth:``.
+        See :meth:`QCProgram.depth`.
         """
 
 class QCProgram(Program):
@@ -890,9 +890,11 @@ class QCProgram(Program):
         """
 
     def depth(self) -> int | None:
-        """Depth.
+        """Compute depth of the entry-point IR.
 
-        TBD
+        Supports straight-line programs including measurements, resets, barriers (adding no layer),
+        feed-forward dependencies, gate modifiers and simple ``if`` control flow.
+        Returns ``None`` for loops, function calls, and other unsupported control flow.
         """
 
     @property
@@ -1049,9 +1051,11 @@ class QCOProgram(Program):
         """
 
     def depth(self) -> int | None:
-        """Depth.
+        """Compute depth of the entry-point IR.
 
-        TBD
+        Supports straight-line programs including measurements, resets, barriers (adding no layer),
+        feed-forward dependencies, gate modifiers and simple ``if`` control flow.
+        Returns ``None`` for loops, function calls, and other unsupported control flow.
         """
 
     @property

@@ -346,9 +346,11 @@ such as ``scf.yield`` are excluded.)pb")
             requireValid(program);
             return program.depth();
           },
-          R"pb(Depth.
+          R"pb(Compute depth of the entry-point IR.
 
-TBD)pb");
+Supports straight-line programs including measurements, resets, barriers (adding no layer),
+feed-forward dependencies, gate modifiers and simple ``if`` control flow.
+Returns ``None`` for loops, function calls, and other unsupported control flow.)pb");
 }
 
 [[nodiscard]] static qdmi::Device openQDMIDevice(
@@ -1559,8 +1561,8 @@ excludes nested modules.)pb")
               "Full module operation histogram.\n\n"
               "See :meth:`Program.operation_counts`.")
       .def_ro("depth", &mlir::QuantumProgramInfo::depth,
-              "Depth.\n\n"
-              "See :meth:``.");
+              "Depth of the program, or ``None`` if unsupported.\n\n"
+              "See :meth:`QCProgram.depth`.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.

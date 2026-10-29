@@ -87,15 +87,17 @@ print("Two-qubit gates:", info.num_two_qubit_gates)
 print("Gates by operation:", info.gate_counts)
 print("Entry-point control flow:", info.control_flow_counts)
 print("All MLIR operations:", info.operation_counts)
+print("Depth:", info.depth)
 
 qco = compiled.to_qco(copy=True)
 print("QCO two-qubit gates:", qco.inspect().num_two_qubit_gates)
 ```
 
 For an individual count, use `num_gates()`, `num_single_qubit_gates()`,
-`num_two_qubit_gates()`, `gate_counts()`, `control_flow_counts()`, or
-`operation_counts()` directly on the program. These methods compute only the
-requested count. `operation_counts()` is available on every MLIR program type.
+`num_two_qubit_gates()`, `gate_counts()`, `control_flow_counts()`,
+`operation_counts()` or `depth()` directly on the program. These methods compute
+only the requested count. `operation_counts()` is available on every MLIR
+program type.
 
 Gate counts describe the static entry-point IR. Each gate in a structured
 control-flow region counts once, regardless of runtime paths or loop iterations.

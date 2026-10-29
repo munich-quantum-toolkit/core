@@ -350,8 +350,8 @@ static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
   });
 
   size_t depth = 0;
-  for (const auto& [key, _depth] : depthOf) {
-    depth = std::max(depth, _depth);
+  for (const auto& [key, nodeDepth] : depthOf) {
+    depth = std::max(depth, nodeDepth);
   }
 
   if (result.wasInterrupted()) {
