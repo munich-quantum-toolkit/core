@@ -205,18 +205,8 @@ records the result array, and `dynamic_qubit_management` and
 `dynamic_result_management` describe resource allocation. LLVM prints the
 conditional-loop bit pattern as `i2 -2` (binary `10`). Other programs can also
 carry `int_computations`, `float_computations`, `ir_functions`,
-`multiple_target_branching`, and `multiple_return_points` flags when their
-lowered instructions require those capabilities. The runtime also supports the
-optional
-[writable results extension](https://github.com/qir-alliance/qir-spec/blob/main/specification/profiles/Adaptive_Profile.md#bullet-12-writable-measurement-results).
-Its `__quantum__rt__write_result(i1, ptr)` call initializes or overwrites a
-result slot with a boolean value without measuring a qubit. The compiler uses it
-for returned bit registers when the selected Adaptive payload reports complete
-optional capability metadata and permits `qir.writable-results` without
-constraints. These registers retain result-array output records after classical
-writes. Other targets keep the existing boolean-storage lowering. The metadata
-pass emits `writable_results` only when the program calls the runtime function,
-as it does for dynamic allocation.
+`multiple_target_branching`, `multiple_return_points`, and `writable_results`
+flags when their lowered instructions require those capabilities.
 
 A profile name alone does not describe every device's capabilities. When
 compiling for a device, use the
