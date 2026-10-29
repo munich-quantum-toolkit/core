@@ -47,20 +47,20 @@ using CustomSessionParameter =
 
 namespace detail {
 /// Borrow the native ABI representation until the parameter is modified.
-template <class T>
-auto parameterBuffer(const T& value) -> std::pair<size_t, const void*> {
-  if constexpr (std::is_same_v<T, std::string> ||
-                std::is_same_v<T, std::string_view>) {
-    return {value.size() + 1, value.data()};
-  } else if constexpr (std::is_arithmetic_v<T>) {
-    return {sizeof(T), &value};
-  } else if constexpr (std::is_same_v<T, std::span<const std::byte>> ||
-                       std::is_same_v<T, std::vector<std::byte>>) {
-    return {value.size(), value.data()};
-  } else {
-    return std::visit(
-        [](const auto& payload) { return parameterBuffer(payload); }, value);
-  }
+template <class Parameter>
+auto parameterBuffer(const Parameter& parameter)
+    -> std::pair<size_t, const void*> {
+  return std::visit(
+      []<class T>(const T& value) -> std::pair<size_t, const void*> {
+        if constexpr (std::is_same_v<T, std::string>) {
+          return {value.size() + 1, value.c_str()};
+        } else if constexpr (std::is_arithmetic_v<T>) {
+          return {sizeof(T), &value};
+        } else {
+          return {value.size(), value.data()};
+        }
+      },
+      parameter);
 }
 
 /// Encode a native path for LLVM's UTF-8 Windows filesystem APIs.

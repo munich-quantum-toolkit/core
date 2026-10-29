@@ -1908,8 +1908,10 @@ TEST(DeviceSessionConfigTest, PreservesCustomParameterTypesAndOwnership) {
               {false, nativeBytes(false)},
               {42, nativeBytes(42)},
               {1.0, nativeBytes(1.0)},
-              {std::vector{std::byte{0}, std::byte{255}},
-               std::string("\0\xff", 2)},
+              {
+                  std::vector{std::byte{0}, std::byte{255}},
+                  std::string("\0\xff", 2),
+              },
           },
   };
   for (const auto& [parameter, expected] : cases) {

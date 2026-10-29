@@ -147,10 +147,11 @@ device access.
 ### Custom parameter types
 
 The `custom1` through `custom5` arguments of `Session`, `open_device`,
-`builtin_driver.open_device`, `Device.submit_job`, and `submit_program` use the
-receiving driver or device's documented types. `None` leaves a slot unset.
-Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
-`int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
+`builtin_driver.open_device`, `CompilerTarget.from_device_id`,
+`Device.submit_job`, and `submit_program` use the receiving driver or device's
+documented types. `None` leaves a slot unset. Strings include a null terminator;
+`bool`, `int`, and `float` use C++ `bool`, `int`, and `double`. For a
+device-defined binary payload, pass nonempty `bytes`:
 
 ```python
 job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")

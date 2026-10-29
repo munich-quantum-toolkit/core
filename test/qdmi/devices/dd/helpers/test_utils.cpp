@@ -20,7 +20,6 @@
 
 #include <cassert>
 #include <complex>
-#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <optional>
@@ -31,7 +30,7 @@
 
 namespace qdmi_test {
 
-SessionGuard::SessionGuard(std::optional<uint16_t> qubits) {
+SessionGuard::SessionGuard(std::optional<int> qubits) {
   auto rc = MQT_DDSIM_QDMI_device_initialize();
   EXPECT_EQ(rc, QDMI_SUCCESS);
   rc = MQT_DDSIM_QDMI_device_session_alloc(&session);

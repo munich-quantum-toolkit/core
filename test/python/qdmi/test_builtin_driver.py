@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import json
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -126,10 +125,10 @@ def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
 
 def test_ddsim_session_width_scopes_fresh_devices() -> None:
     """Session capacity must not leak into other sessions or site lists."""
-    small = builtin_driver.open_device("mqt.ddsim.default", custom1=struct.pack("@H", 2))
+    small = builtin_driver.open_device("mqt.ddsim.default", custom1=2)
     assert small.qubits_num() == 2
     assert len(small.sites()) == 2
     assert CompilerTarget.from_device(small).num_sites == 2
     assert builtin_driver.open_device("mqt.ddsim.default").qubits_num() == 65535
     with pytest.raises(ValueError, match="Invalid argument"):
-        builtin_driver.open_device("mqt.ddsim.default", custom1=2)
+        builtin_driver.open_device("mqt.ddsim.default", custom1=65536)
