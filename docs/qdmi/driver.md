@@ -144,11 +144,11 @@ the GIL. Concurrent calls into a shared device or job must satisfy the device
 implementation's thread safety contract; releasing the GIL does not serialize
 device access.
 
-### Custom job parameter types
+### Custom parameter types
 
-The `custom1` through `custom5` arguments of
-{py:meth}`mqt.core.qdmi.Device.submit_job` and
-{py:func}`mqt.core.mlir.submit_program` use the device's documented types.
+The `custom1` through `custom5` arguments of `Session`, `open_device`,
+`builtin_driver.open_device`, `Device.submit_job`, and `submit_program` use the
+receiving driver or device's documented types. `None` leaves a slot unset.
 Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
 `int`, and `double`. For a device-defined binary payload, pass nonempty `bytes`:
 
@@ -157,9 +157,9 @@ job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
 ```
 
 QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.
-The device defines their meaning and size. In C++, pass a
-`std::span<const std::byte>` whose buffer stays valid until submission returns.
-The bytes describe a local QDMI ABI value, not a network encoding.
+In C++, job parameters borrow a `std::span<const std::byte>` until submission
+returns; session parameters own a `std::vector<std::byte>`. The bytes describe a
+local QDMI ABI value, not a network encoding.
 
 ## Usage
 

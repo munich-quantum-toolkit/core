@@ -33,10 +33,10 @@ def open_device(
     password: str | None = None,
     device_config: str | None = None,
     device_config_file: str | os.PathLike | None = None,
-    custom1: str | None = None,
-    custom2: str | None = None,
-    custom3: str | None = None,
-    custom4: str | None = None,
-    custom5: str | None = None,
+    custom1: str | bool | float | bytes | None = None,
+    custom2: str | bool | float | bytes | None = None,
+    custom3: str | bool | float | bytes | None = None,
+    custom4: str | bool | float | bytes | None = None,
+    custom5: str | bool | float | bytes | None = None,
 ) -> mqt.core.qdmi.Device:
     """Open an independent device session with the MQT Core QDMI driver."""

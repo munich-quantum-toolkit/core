@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
@@ -161,7 +162,7 @@ parseSessionPatch(const Json& value, const std::string_view source,
     return error;
   }
   DeviceSessionConfig patch;
-  const std::array<std::pair<const char*, std::optional<std::string>*>, 10>
+  const std::array<std::pair<const char*, std::optional<std::string>*>, 5>
       fields = {
           {
               {"base-url", &patch.baseUrl},
@@ -169,11 +170,6 @@ parseSessionPatch(const Json& value, const std::string_view source,
               {"auth-url", &patch.authUrl},
               {"username", &patch.username},
               {"password", &patch.password},
-              {"custom1", &patch.custom1},
-              {"custom2", &patch.custom2},
-              {"custom3", &patch.custom3},
-              {"custom4", &patch.custom4},
-              {"custom5", &patch.custom5},
           },
   };
   for (const auto& [key, destination] : fields) {
@@ -182,6 +178,41 @@ parseSessionPatch(const Json& value, const std::string_view source,
       return result.takeError();
     }
     *destination = std::move(*result);
+  }
+  for (const auto& [key, destination] : std::array{
+           std::pair{"custom1", &patch.custom1},
+           std::pair{"custom2", &patch.custom2},
+           std::pair{"custom3", &patch.custom3},
+           std::pair{"custom4", &patch.custom4},
+           std::pair{"custom5", &patch.custom5},
+       }) {
+    const auto* parameter = value.getAsObject()->get(key);
+    if (parameter == nullptr) {
+      continue;
+    }
+    if (const auto text = parameter->getAsString()) {
+      *destination = text->str();
+      continue;
+    }
+    const auto* bytes = parameter->getAsArray();
+    if (bytes == nullptr || bytes->empty()) {
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             sourceLabel(source, path + "." + key) +
+                                 " must be a string or a nonempty byte array");
+    }
+    std::vector<std::byte> payload;
+    payload.reserve(bytes->size());
+    for (const auto& byte : *bytes) {
+      const auto number = byte.getAsInteger();
+      if (!number || *number < 0 || *number > 255) {
+        return qdmi::makeError(
+            QDMI_ERROR_INVALIDARGUMENT,
+            sourceLabel(source, path + "." + key) +
+                " byte values must be integers from 0 to 255");
+      }
+      payload.push_back(static_cast<std::byte>(*number));
+    }
+    *destination = std::move(payload);
   }
   if (const auto* const config = value.getAsObject()->get("device-config");
       config != nullptr) {

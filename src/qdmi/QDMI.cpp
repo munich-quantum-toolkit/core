@@ -39,9 +39,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #ifdef _WIN32
@@ -1132,19 +1130,7 @@ Expected<Job> Device::retrieveJobById(const std::string_view jobId) const {
 
 Error Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                 const CustomJobParameter& value) const {
-  const auto [size, data] = std::visit(
-      []<typename T>(const T& payload) -> std::pair<size_t, const void*> {
-        if constexpr (std::is_same_v<T, std::string>) {
-          return {payload.size() + 1, payload.c_str()};
-        } else if constexpr (std::is_same_v<T, std::span<const std::byte>>) {
-          return {payload.size(), payload.data()};
-        } else {
-          static_assert(std::is_trivially_copyable_v<T>,
-                        "Custom job parameters must be trivially copyable");
-          return {sizeof(T), &payload};
-        }
-      },
-      value);
+  const auto [size, data] = detail::parameterBuffer(value);
   if (size == 0) {
     return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
                            "Custom parameter bytes must not be empty");
@@ -1488,14 +1474,14 @@ Expected<Session> Session::create(const SessionConfig& config) {
   }
   Session session;
   session.session_ = std::move(*allocated);
-  const auto setParameter = [&session](const std::optional<std::string>& value,
-                                       QDMI_Session_Parameter param) -> Error {
-    if (!value) {
-      return Error::success();
+  const auto setParameter = [&](QDMI_Session_Parameter param, size_t size,
+                                const void* data) -> Error {
+    if (size == 0) {
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             "Custom parameter bytes must not be empty");
     }
     const auto status = session.api().session_set_parameter(
-        session.session_->handle.get(), param, value->size() + 1U,
-        value->c_str());
+        session.session_->handle.get(), param, size, data);
     if (status == QDMI_ERROR_NOTSUPPORTED) {
       llvm::errs() << llvm::formatv(
           "[mqt-core] [info] Session parameter {0} not supported (skipped)\n",
@@ -1505,20 +1491,34 @@ Expected<Session> Session::create(const SessionConfig& config) {
     return qdmi::checkError(status, llvm::Twine("Setting session parameter ") +
                                         qdmi::toString(param));
   };
+  const auto setString = [&](const std::optional<std::string>& value,
+                             QDMI_Session_Parameter param) -> Error {
+    return value ? setParameter(param, value->size() + 1, value->c_str())
+                 : Error::success();
+  };
   for (const auto& [value, parameter] : std::array{
            std::pair{&config.token, QDMI_SESSION_PARAMETER_TOKEN},
            std::pair{&config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL},
            std::pair{&config.username, QDMI_SESSION_PARAMETER_USERNAME},
            std::pair{&config.password, QDMI_SESSION_PARAMETER_PASSWORD},
            std::pair{&config.projectId, QDMI_SESSION_PARAMETER_PROJECTID},
+       }) {
+    if (auto error = setString(*value, parameter)) {
+      return error;
+    }
+  }
+  for (const auto& [value, parameter] : std::array{
            std::pair{&config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1},
            std::pair{&config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2},
            std::pair{&config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3},
            std::pair{&config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4},
            std::pair{&config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5},
        }) {
-    if (auto error = setParameter(*value, parameter)) {
-      return error;
+    if (*value) {
+      const auto [size, data] = detail::parameterBuffer(**value);
+      if (auto error = setParameter(parameter, size, data)) {
+        return error;
+      }
     }
   }
   if (config.authFile) {
@@ -1526,7 +1526,7 @@ Expected<Session> Session::create(const SessionConfig& config) {
     if (!filename) {
       return filename.takeError();
     }
-    if (auto error = setParameter(*filename, QDMI_SESSION_PARAMETER_AUTHFILE)) {
+    if (auto error = setString(*filename, QDMI_SESSION_PARAMETER_AUTHFILE)) {
       return error;
     }
   }

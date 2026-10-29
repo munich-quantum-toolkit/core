@@ -32,12 +32,12 @@ namespace qdmi::dd {
 namespace {
 using namespace llvm::orc::shared;
 constexpr uint32_t MAGIC = 0x4d515444;
-constexpr uint32_t VERSION = 5;
+constexpr uint32_t VERSION = 4;
 // Distinct from the response success byte (0 or 1).
 constexpr uint8_t SLOTS = 2;
 using Header = SPSArgList<uint32_t, uint32_t, uint64_t>;
 using Request = SPSArgList<int32_t, SPSString, uint64_t, SPSOptional<uint64_t>,
-                           uint8_t, uint64_t, uint8_t, uint64_t>;
+                           uint8_t, uint64_t, uint8_t, uint16_t>;
 using Response = SPSArgList<uint8_t, SPSOptional<SPSString>, uint32_t,
                             SPSOptional<SPSString>>;
 
@@ -167,7 +167,7 @@ bool decode(llvm::StringRef bytes, WorkerRequest& request) {
   if (!SPSArgList<int32_t, SPSString, uint64_t>::deserialize(
           buffer, request.format, request.program, request.shots) ||
       !readOptional<uint64_t>(buffer, request.seed) ||
-      !SPSArgList<uint8_t, uint64_t, uint8_t, uint64_t>::deserialize(
+      !SPSArgList<uint8_t, uint64_t, uint8_t, uint16_t>::deserialize(
           buffer, capture, request.maxWorkers, automatic, request.maxQubits) ||
       capture > 1 || automatic > 1 || request.maxWorkers == 0 ||
       buffer.data() != bytes.end()) {

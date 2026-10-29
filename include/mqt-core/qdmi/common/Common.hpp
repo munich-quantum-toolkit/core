@@ -27,8 +27,10 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace qdmi {
 /// Custom scalars use their native C++ representation.
@@ -37,10 +39,30 @@ namespace qdmi {
 /// submission call returns.
 using CustomJobParameter =
     std::variant<std::string, bool, int, double, std::span<const std::byte>>;
+/// Session configuration owns its bytes across storage, copies, and merges.
+using CustomSessionParameter =
+    std::variant<std::string, bool, int, double, std::vector<std::byte>>;
 /// Preserve a provider status in an owned LLVM error.
 [[nodiscard]] llvm::Error makeError(int status, const llvm::Twine& message);
 
 namespace detail {
+/// Borrow the native ABI representation until the parameter is modified.
+template <class T>
+auto parameterBuffer(const T& value) -> std::pair<size_t, const void*> {
+  if constexpr (std::is_same_v<T, std::string> ||
+                std::is_same_v<T, std::string_view>) {
+    return {value.size() + 1, value.data()};
+  } else if constexpr (std::is_arithmetic_v<T>) {
+    return {sizeof(T), &value};
+  } else if constexpr (std::is_same_v<T, std::span<const std::byte>> ||
+                       std::is_same_v<T, std::vector<std::byte>>) {
+    return {value.size(), value.data()};
+  } else {
+    return std::visit(
+        [](const auto& payload) { return parameterBuffer(payload); }, value);
+  }
+}
+
 /// Encode a native path for LLVM's UTF-8 Windows filesystem APIs.
 [[nodiscard]] llvm::Expected<std::string>
 pathToString(const std::filesystem::path& path);

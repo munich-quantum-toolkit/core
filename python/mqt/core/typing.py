@@ -30,11 +30,11 @@ class QDMISessionParameters(TypedDict, total=False):
     password: str | None
     device_config: str | None
     device_config_file: str | os.PathLike[str] | None
-    custom1: str | None
-    custom2: str | None
-    custom3: str | None
-    custom4: str | None
-    custom5: str | None
+    custom1: str | bool | float | bytes | None
+    custom2: str | bool | float | bytes | None
+    custom3: str | bool | float | bytes | None
+    custom4: str | bool | float | bytes | None
+    custom5: str | bool | float | bytes | None
 
 
 class QDMIJobParameters(TypedDict, total=False):

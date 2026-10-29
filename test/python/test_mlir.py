@@ -2025,7 +2025,7 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
 def test_compiler_target_from_device_id_matches_opened_device() -> None:
     """Stable-ID construction produces the same detached DDSIM target."""
     direct = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
-    by_id = CompilerTarget.from_device_id("mqt.ddsim.default", custom1="value")
+    by_id = CompilerTarget.from_device_id("mqt.ddsim.default", custom1=42)
 
     assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
 

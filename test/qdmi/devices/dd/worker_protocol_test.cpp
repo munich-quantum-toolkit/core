@@ -222,7 +222,7 @@ TEST(WorkerProtocol, RejectsTruncationTrailingBytesAndInvalidResults) {
   EXPECT_FALSE(decode(grant + "x", slots));
   EXPECT_FALSE(decode(encode(WorkerSlots{0}), slots));
   auto invalidWorkers = request;
-  invalidWorkers[invalidWorkers.size() - sizeof(uint64_t) - 1] = 2;
+  invalidWorkers[invalidWorkers.size() - sizeof(uint16_t) - 1] = 2;
   EXPECT_FALSE(decode(invalidWorkers, parsed));
 }
 } // namespace qdmi::dd

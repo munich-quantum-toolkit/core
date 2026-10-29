@@ -97,7 +97,7 @@ private:
   /// The current status of the session.
   Status status_ = Status::ALLOCATED;
   /// Session capacity; fixed before initialization.
-  size_t qubitsNum_;
+  uint16_t qubitsNum_;
   /// The device jobs associated with this session.
   llvm::iplist<MQT_DDSIM_QDMI_Device_Job_impl_d> jobs_;
   /// Mutex protecting access to jobs_.
@@ -105,7 +105,7 @@ private:
 
 public:
   MQT_DDSIM_QDMI_Device_Session_impl_d();
-  [[nodiscard]] auto qubitsNum() const -> size_t { return qubitsNum_; }
+  [[nodiscard]] auto qubitsNum() const -> uint16_t { return qubitsNum_; }
 
   /// Initializes the device session.
   ///

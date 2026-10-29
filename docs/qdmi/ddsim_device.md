@@ -14,26 +14,27 @@ DDSIM executes quantum programs locally through QDMI using
 ## Session width
 
 DDSIM supports up to 65,535 qubits. Set the optional device-session `CUSTOM1`
-parameter to a null-terminated decimal string from 1 to 65,535 to choose a
-smaller capacity before initialization. In Python:
+parameter to a `uint16_t` from 1 to 65,535 before initialization. Python callers
+pack this native ABI value explicitly:
 
 ```python
+import struct
+
 from mqt.core.qdmi.builtin_driver import open_device
 
-device = open_device("mqt.ddsim.default", custom1="12")
+device = open_device("mqt.ddsim.default", custom1=struct.pack("@H", 12))
 ```
 
-The same `custom1="12"` argument works with
-`QDMIBackend.from_device_id("mqt.ddsim.default", custom1="12")`. The compiler
-then sees 12 sites instead of the simulator's maximum. Compile for that device
-before submission. The default remains the full simulator capacity.
+The same argument works with `QDMIBackend.from_device_id`. The compiler sees 12
+sites instead of the simulator's maximum. Compile for that device before
+submission. The default remains the full simulator capacity.
 
-The width is fixed for the session and independent of other sessions. Invalid
-values or widths above the maximum return `QDMI_ERROR_INVALIDARGUMENT`. Programs
-that exceed the width fail during execution, including dynamic QIR allocations.
-The bound counts DD wires: QCO lifetimes do not reclaim wires. Simulation
-packages grow only as needed. This session parameter is separate from job
-`CUSTOM1`, which sets the random seed.
+The width is fixed for the session and independent of other sessions. Zero and
+payloads with the wrong size return `QDMI_ERROR_INVALIDARGUMENT`. Programs that
+exceed the width fail during execution, including dynamic QIR allocations. The
+bound counts DD wires: QCO lifetimes do not reclaim wires. Simulation packages
+grow only as needed. This session parameter is separate from job `CUSTOM1`,
+which sets the random seed.
 
 ## Capabilities
 

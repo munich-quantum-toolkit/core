@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <complex>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <optional>
@@ -30,16 +31,15 @@
 
 namespace qdmi_test {
 
-SessionGuard::SessionGuard(std::optional<size_t> qubits) {
+SessionGuard::SessionGuard(std::optional<uint16_t> qubits) {
   auto rc = MQT_DDSIM_QDMI_device_initialize();
   EXPECT_EQ(rc, QDMI_SUCCESS);
   rc = MQT_DDSIM_QDMI_device_session_alloc(&session);
   EXPECT_EQ(rc, QDMI_SUCCESS);
   if (qubits) {
-    const auto width = std::to_string(*qubits);
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
                   session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                  width.size() + 1, width.c_str()),
+                  sizeof(*qubits), &*qubits),
               QDMI_SUCCESS);
   }
   rc = MQT_DDSIM_QDMI_device_session_init(session);

@@ -39,6 +39,7 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/bench/Generate.h"
+#include "qdmi/Parameters.hpp"
 #include "qdmi/QDMI.hpp"
 
 #include "Array.hpp"
@@ -106,6 +107,9 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 using bindings::bindResult;
+using bindings::makeDriverSessionConfig;
+using bindings::PythonCustomParameter;
+using bindings::toCustomJobParameter;
 using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
@@ -114,26 +118,6 @@ using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
                                 nb::c_contig, nb::device::cpu>;
 using JeffSegment = nb::ndarray<nb::memview, const uint8_t, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
-
-using PythonCustomJobParameter =
-    std::variant<std::string, bool, int, double, nb::bytes>;
-
-[[nodiscard]] static std::optional<qdmi::CustomJobParameter>
-toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
-  if (!parameter) {
-    return std::nullopt;
-  }
-  return std::visit(
-      [](const auto& value) -> qdmi::CustomJobParameter {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     nb::bytes>) {
-          return std::as_bytes(std::span(value.c_str(), value.size()));
-        } else {
-          return value;
-        }
-      },
-      *parameter);
-}
 
 template <class T>
 static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
@@ -385,33 +369,6 @@ Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
 Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
 visited once, without expanding calls. Region terminators
 such as ``scf.yield`` are excluded.)pb");
-}
-
-[[nodiscard]] static qdmi::Device openQDMIDevice(
-    const std::string& deviceId,
-    std::optional<std::filesystem::path> driverPath,
-    std::optional<std::string> token,
-    std::optional<std::filesystem::path> authFile,
-    std::optional<std::string> authUrl, std::optional<std::string> username,
-    std::optional<std::string> password, std::optional<std::string> projectId,
-    std::optional<std::string> custom1, std::optional<std::string> custom2,
-    std::optional<std::string> custom3, std::optional<std::string> custom4,
-    std::optional<std::string> custom5) {
-  return unwrap(qdmi::Session::openDevice(
-      deviceId, {
-                    .driverPath = std::move(driverPath),
-                    .token = std::move(token),
-                    .authFile = std::move(authFile),
-                    .authUrl = std::move(authUrl),
-                    .username = std::move(username),
-                    .password = std::move(password),
-                    .projectId = std::move(projectId),
-                    .custom1 = std::move(custom1),
-                    .custom2 = std::move(custom2),
-                    .custom3 = std::move(custom3),
-                    .custom4 = std::move(custom4),
-                    .custom5 = std::move(custom5),
-                }));
 }
 
 template <class ProgramType>
@@ -851,11 +808,11 @@ payloadForOutput(OutputFormat output) {
 submitProgram(PythonInputTypes& types, const nb::handle program,
               const nb::handle target, int64_t numShots,
               std::optional<QDMI_Program_Format> programFormat,
-              const std::optional<PythonCustomJobParameter>& custom1,
-              const std::optional<PythonCustomJobParameter>& custom2,
-              const std::optional<PythonCustomJobParameter>& custom3,
-              const std::optional<PythonCustomJobParameter>& custom4,
-              const std::optional<PythonCustomJobParameter>& custom5,
+              const std::optional<PythonCustomParameter>& custom1,
+              const std::optional<PythonCustomParameter>& custom2,
+              const std::optional<PythonCustomParameter>& custom3,
+              const std::optional<PythonCustomParameter>& custom4,
+              const std::optional<PythonCustomParameter>& custom5,
               std::optional<mlir::CompilationOptions> options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
@@ -1753,19 +1710,20 @@ Raises:
              std::optional<std::string> username,
              std::optional<std::string> password,
              std::optional<std::string> projectId,
-             std::optional<std::string> custom1,
-             std::optional<std::string> custom2,
-             std::optional<std::string> custom3,
-             std::optional<std::string> custom4,
-             std::optional<std::string> custom5) {
+             const std::optional<PythonCustomParameter>& custom1,
+             const std::optional<PythonCustomParameter>& custom2,
+             const std::optional<PythonCustomParameter>& custom3,
+             const std::optional<PythonCustomParameter>& custom4,
+             const std::optional<PythonCustomParameter>& custom5) {
+            const auto config = makeDriverSessionConfig(
+                std::move(driverPath), std::move(token), std::move(authFile),
+                std::move(authUrl), std::move(username), std::move(password),
+                std::move(projectId), custom1, custom2, custom3, custom4,
+                custom5);
             auto target = [&] {
               const nb::gil_scoped_release release;
-              auto device = openQDMIDevice(
-                  deviceId, std::move(driverPath), std::move(token),
-                  std::move(authFile), std::move(authUrl), std::move(username),
-                  std::move(password), std::move(projectId), std::move(custom1),
-                  std::move(custom2), std::move(custom3), std::move(custom4),
-                  std::move(custom5));
+              const auto device =
+                  unwrap(qdmi::Session::openDevice(deviceId, config));
               return mlir::compilerTargetFromDevice(device);
             }();
             return unwrap(std::move(target));

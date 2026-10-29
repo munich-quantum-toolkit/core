@@ -13,6 +13,7 @@
 #include "qdmi/common/Common.hpp"
 
 #include "Array.hpp"
+#include "Parameters.hpp"
 #include "Result.hpp"
 
 #include "nanobind/nanobind.h"
@@ -38,7 +39,6 @@
 #include <optional>
 #include <span>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -46,13 +46,14 @@
 namespace mqt {
 using bindings::bindResult;
 using bindings::invoke;
+using bindings::makeDriverSessionConfig;
+using bindings::PythonCustomParameter;
+using bindings::toCustomJobParameter;
 
 namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace {
-using PythonCustomJobParameter =
-    std::variant<std::string, bool, int, double, nb::bytes>;
 using PythonProgram =
     std::variant<std::string, nb::bytes, std::vector<std::string>,
                  std::vector<nb::bytes>>;
@@ -80,48 +81,6 @@ auto withProgramPayload(const PythonProgram& program, Submit submit) {
       program);
 }
 
-[[nodiscard]] std::optional<qdmi::CustomJobParameter>
-toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
-  if (!parameter) {
-    return std::nullopt;
-  }
-  return std::visit(
-      [](const auto& value) -> qdmi::CustomJobParameter {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     nb::bytes>) {
-          return std::as_bytes(std::span(value.c_str(), value.size()));
-        } else {
-          return value;
-        }
-      },
-      *parameter);
-}
-
-qdmi::SessionConfig makeDriverSessionConfig(
-    std::optional<std::filesystem::path> driverPath,
-    std::optional<std::string> token,
-    std::optional<std::filesystem::path> authFile,
-    std::optional<std::string> authUrl, std::optional<std::string> username,
-    std::optional<std::string> password, std::optional<std::string> projectId,
-    std::optional<std::string> custom1, std::optional<std::string> custom2,
-    std::optional<std::string> custom3, std::optional<std::string> custom4,
-    std::optional<std::string> custom5) {
-  return {
-      .driverPath = std::move(driverPath),
-      .token = std::move(token),
-      .authFile = std::move(authFile),
-      .authUrl = std::move(authUrl),
-      .username = std::move(username),
-      .password = std::move(password),
-      .projectId = std::move(projectId),
-      .custom1 = std::move(custom1),
-      .custom2 = std::move(custom2),
-      .custom3 = std::move(custom3),
-      .custom4 = std::move(custom4),
-      .custom5 = std::move(custom5),
-  };
-}
-
 [[nodiscard]] auto makeDeviceSessionJson(
     const std::optional<std::string>& baseUrl,
     const std::optional<std::string>& token,
@@ -131,11 +90,11 @@ qdmi::SessionConfig makeDriverSessionConfig(
     const std::optional<std::string>& password,
     const std::optional<std::string>& deviceConfig,
     const std::optional<std::filesystem::path>& deviceConfigFile,
-    const std::optional<std::string>& custom1,
-    const std::optional<std::string>& custom2,
-    const std::optional<std::string>& custom3,
-    const std::optional<std::string>& custom4,
-    const std::optional<std::string>& custom5) -> std::string {
+    const std::optional<PythonCustomParameter>& custom1,
+    const std::optional<PythonCustomParameter>& custom2,
+    const std::optional<PythonCustomParameter>& custom3,
+    const std::optional<PythonCustomParameter>& custom4,
+    const std::optional<PythonCustomParameter>& custom5) -> std::string {
   if (deviceConfig && deviceConfigFile) {
     throw nb::value_error(
         "device_config and device_config_file are mutually exclusive");
@@ -162,11 +121,32 @@ qdmi::SessionConfig makeDriverSessionConfig(
   setString("auth-url", authUrl);
   setString("username", username);
   setString("password", password);
-  setString("custom1", custom1);
-  setString("custom2", custom2);
-  setString("custom3", custom3);
-  setString("custom4", custom4);
-  setString("custom5", custom5);
+  const auto setCustom =
+      [&](const char* key, const std::optional<PythonCustomParameter>& value) {
+        if (!value) {
+          return;
+        }
+        if (const auto* text = std::get_if<std::string>(&*value)) {
+          setString(key, *text);
+          return;
+        }
+        const auto parameter = toCustomJobParameter(value);
+        const auto [size, data] = qdmi::detail::parameterBuffer(*parameter);
+        if (size == 0) {
+          throw nb::value_error("Custom parameter bytes must not be empty");
+        }
+        llvm::json::Array bytes;
+        for (const auto byte :
+             std::span(static_cast<const unsigned char*>(data), size)) {
+          bytes.push_back(byte);
+        }
+        session[key] = std::move(bytes);
+      };
+  setCustom("custom1", custom1);
+  setCustom("custom2", custom2);
+  setCustom("custom3", custom3);
+  setCustom("custom4", custom4);
+  setCustom("custom5", custom5);
   if (deviceConfig) {
     auto parsed = llvm::json::parse(*deviceConfig);
     if (!parsed) {
@@ -238,19 +218,19 @@ void registerQDMI(nb::module_& qdmiModule) {
              std::optional<std::string> username,
              std::optional<std::string> password,
              std::optional<std::string> projectId,
-             std::optional<std::string> custom1,
-             std::optional<std::string> custom2,
-             std::optional<std::string> custom3,
-             std::optional<std::string> custom4,
-             std::optional<std::string> custom5) {
+             const std::optional<PythonCustomParameter>& custom1,
+             const std::optional<PythonCustomParameter>& custom2,
+             const std::optional<PythonCustomParameter>& custom3,
+             const std::optional<PythonCustomParameter>& custom4,
+             const std::optional<PythonCustomParameter>& custom5) {
+            const auto config = makeDriverSessionConfig(
+                std::move(driverPath), std::move(token), std::move(authFile),
+                std::move(authUrl), std::move(username), std::move(password),
+                std::move(projectId), custom1, custom2, custom3, custom4,
+                custom5);
             const nb::gil_scoped_release release;
-            new (self) qdmi::Session(invoke([&] {
-              return qdmi::Session::create(makeDriverSessionConfig(
-                  std::move(driverPath), std::move(token), std::move(authFile),
-                  std::move(authUrl), std::move(username), std::move(password),
-                  std::move(projectId), std::move(custom1), std::move(custom2),
-                  std::move(custom3), std::move(custom4), std::move(custom5)));
-            }));
+            new (self) qdmi::Session(
+                invoke([&] { return qdmi::Session::create(config); }));
           },
           nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -279,19 +259,18 @@ void registerQDMI(nb::module_& qdmiModule) {
          std::optional<std::string> username,
          std::optional<std::string> password,
          std::optional<std::string> projectId,
-         std::optional<std::string> custom1, std::optional<std::string> custom2,
-         std::optional<std::string> custom3, std::optional<std::string> custom4,
-         std::optional<std::string> custom5) {
+         const std::optional<PythonCustomParameter>& custom1,
+         const std::optional<PythonCustomParameter>& custom2,
+         const std::optional<PythonCustomParameter>& custom3,
+         const std::optional<PythonCustomParameter>& custom4,
+         const std::optional<PythonCustomParameter>& custom5) {
+        const auto config = makeDriverSessionConfig(
+            std::move(driverPath), std::move(token), std::move(authFile),
+            std::move(authUrl), std::move(username), std::move(password),
+            std::move(projectId), custom1, custom2, custom3, custom4, custom5);
         const nb::gil_scoped_release release;
-        return invoke([&] {
-          return qdmi::Session::openDevice(
-              deviceId,
-              makeDriverSessionConfig(
-                  std::move(driverPath), std::move(token), std::move(authFile),
-                  std::move(authUrl), std::move(username), std::move(password),
-                  std::move(projectId), std::move(custom1), std::move(custom2),
-                  std::move(custom3), std::move(custom4), std::move(custom5)));
-        });
+        return invoke(
+            [&] { return qdmi::Session::openDevice(deviceId, config); });
       },
       "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -683,11 +662,11 @@ when the custom slot is unsupported.)pb");
       "submit_job",
       [](const qdmi::Device& self, const PythonProgram& program,
          QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
+         const std::optional<PythonCustomParameter>& custom1,
+         const std::optional<PythonCustomParameter>& custom2,
+         const std::optional<PythonCustomParameter>& custom3,
+         const std::optional<PythonCustomParameter>& custom4,
+         const std::optional<PythonCustomParameter>& custom5) {
         const auto params = std::array{
             toCustomJobParameter(custom1), toCustomJobParameter(custom2),
             toCustomJobParameter(custom3), toCustomJobParameter(custom4),
@@ -711,11 +690,11 @@ when the custom slot is unsupported.)pb");
       "try_submit_job",
       [](const qdmi::Device& self, const PythonProgram& program,
          QDMI_Program_Format format, std::optional<size_t> numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
+         const std::optional<PythonCustomParameter>& custom1,
+         const std::optional<PythonCustomParameter>& custom2,
+         const std::optional<PythonCustomParameter>& custom3,
+         const std::optional<PythonCustomParameter>& custom4,
+         const std::optional<PythonCustomParameter>& custom5) {
         const auto params = std::array{
             toCustomJobParameter(custom1), toCustomJobParameter(custom2),
             toCustomJobParameter(custom3), toCustomJobParameter(custom4),
@@ -987,11 +966,11 @@ The first call fixes the MQT Core QDMI driver configuration.)pb");
          const std::optional<std::string>& password,
          const std::optional<std::string>& deviceConfig,
          const std::optional<std::filesystem::path>& deviceConfigFile,
-         const std::optional<std::string>& custom1,
-         const std::optional<std::string>& custom2,
-         const std::optional<std::string>& custom3,
-         const std::optional<std::string>& custom4,
-         const std::optional<std::string>& custom5) {
+         const std::optional<PythonCustomParameter>& custom1,
+         const std::optional<PythonCustomParameter>& custom2,
+         const std::optional<PythonCustomParameter>& custom3,
+         const std::optional<PythonCustomParameter>& custom4,
+         const std::optional<PythonCustomParameter>& custom5) {
         const auto config = makeDeviceSessionJson(
             baseUrl, token, authFile, authUrl, username, password, deviceConfig,
             deviceConfigFile, custom1, custom2, custom3, custom4, custom5);

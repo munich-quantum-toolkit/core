@@ -100,7 +100,7 @@ template <typename T, std::size_t N> constexpr std::array<T, N> iotaArray() {
   return result;
 }
 
-constexpr size_t MAX_QUBITS = std::numeric_limits<dd::Qubit>::max();
+constexpr auto MAX_QUBITS = std::numeric_limits<dd::Qubit>::max();
 constexpr auto SITES = iotaArray<uintptr_t, MAX_QUBITS>();
 
 struct OperationInfo {
@@ -429,8 +429,6 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                       value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, double,
                             1.0, prop, size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
-                    OPERATION_ADDRESSES, prop, size, value, sizeRet)
   // Target facts that QDMI v1.3 cannot encode compactly.
   // TODO(#2093): Remove this compatibility marker when QDMI standardizes
   // explicit unrestricted connectivity and operation applicability.
@@ -478,15 +476,12 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
   if (value == nullptr) {
     return size == 0 ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
   }
-  const std::span bytes{static_cast<const char*>(value), size};
-  if (bytes.back() != '\0') {
+  if (size != sizeof(uint16_t)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  size_t width = 0;
-  const auto* end = &bytes.back();
-  const auto parsed = std::from_chars(bytes.data(), end, width);
-  if (parsed.ec != std::errc{} || parsed.ptr != end || width == 0 ||
-      width > MAX_QUBITS) {
+  uint16_t width = 0;
+  std::memcpy(&width, value, sizeof(width));
+  if (width == 0) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   qubitsNum_ = width;
@@ -532,6 +527,14 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   const auto sites = std::span(SITES).first(qubitsNum_);
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_DDSIM_QDMI_Site, sites,
                     prop, size, value, sizeRet)
+  if (prop == QDMI_DEVICE_PROPERTY_OPERATIONS) {
+    auto operations = OPERATION_ADDRESSES;
+    const auto removed = std::ranges::remove_if(
+        operations, [&](const auto* op) { return op->numSites > qubitsNum_; });
+    const auto supported = std::span(operations.begin(), removed.begin());
+    ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
+                      supported, prop, size, value, sizeRet)
+  }
   return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(

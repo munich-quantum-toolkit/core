@@ -21,8 +21,9 @@
 #include "gtest/gtest.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
-#include <string_view>
 #include <utility>
 
 using testing::AnyOf;
@@ -75,34 +76,25 @@ TEST(SessionParameters, WidthValidationAndImmutability) {
   const qdmi_test::SessionGuard initialized{2};
   MQT_DDSIM_QDMI_Device_Session session = nullptr;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
-  for (const std::string_view width : {
-           "",
-           "0",
-           "-1",
-           "+2",
-           "2x",
-           " 2",
-           "65536",
-           "999999999999999999999999999999999",
-       }) {
+  constexpr uint16_t zero = 0;
+  constexpr uint16_t width = std::numeric_limits<uint16_t>::max();
+  for (const auto size : {size_t{0}, sizeof(uint32_t)}) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
-                  width.size() + 1, width.data()),
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, size, &width),
               QDMI_ERROR_INVALIDARGUMENT);
   }
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 1, "2"),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 4, "2\0x"),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
-                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 6, "65535"),
-            QDMI_SUCCESS);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_session_set_parameter(
-          initialized.session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 2, "3"),
-      QDMI_ERROR_BADSTATE);
+          session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, sizeof(zero), &zero),
+      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, sizeof(width),
+                &width),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                initialized.session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                sizeof(width), &width),
+            QDMI_ERROR_BADSTATE);
   MQT_DDSIM_QDMI_device_session_free(session);
 }
 

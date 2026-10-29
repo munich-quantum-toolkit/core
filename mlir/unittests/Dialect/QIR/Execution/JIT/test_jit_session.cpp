@@ -1193,18 +1193,17 @@ TEST(QIRBatchSampling, SharesCompiledCodeWithPrivateConcurrentRuntimes) {
 
 TEST(QIRBatchSampling, RuntimeAndWorkersBoundUnusedDynamicAllocations) {
   const auto ir = getProgram("BellPairAdaptive.ll");
-  for (const size_t width : {0U, 2U}) {
-    auto session = value(qir::JitSession::create(
-        ir, "bounded", qir::Execution::Sampling, 17, nullptr, width));
-    ASSERT_TRUE(session->canShareCompiledCode());
-    auto worker = value(session->makeWorkerRuntime(21));
-    for (auto* runtime : {&session->runtime(), worker.get()}) {
-      for (size_t i = 0; i < width; ++i) {
-        auto allocated = runtime->qAlloc();
-        MQT_ASSERT_SUCCESS(allocated);
-      }
-      EXPECT_FALSE(llvm::toString(runtime->qAlloc().takeError()).empty());
+  constexpr size_t width = 2;
+  auto session = value(qir::JitSession::create(
+      ir, "bounded", qir::Execution::Sampling, 17, nullptr, width));
+  ASSERT_TRUE(session->canShareCompiledCode());
+  auto worker = value(session->makeWorkerRuntime(21));
+  for (auto* runtime : {&session->runtime(), worker.get()}) {
+    for (size_t i = 0; i < width; ++i) {
+      auto allocated = runtime->qAlloc();
+      MQT_ASSERT_SUCCESS(allocated);
     }
+    EXPECT_FALSE(llvm::toString(runtime->qAlloc().takeError()).empty());
   }
 }
 

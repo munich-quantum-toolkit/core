@@ -81,7 +81,7 @@ struct Execution {
   bool captureQIROutput_;
   size_t maxWorkers_;
   bool automaticWorkers_;
-  size_t maxQubits_;
+  uint16_t maxQubits_;
   std::optional<std::string> qirOutput_;
   std::optional<qdmi::dd::OutputTemplate> outputTemplate_;
   std::string shots_;
@@ -348,7 +348,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
       .captureQIROutput_ = request.captureOutput,
       .maxWorkers_ = static_cast<size_t>(request.maxWorkers),
       .automaticWorkers_ = request.automaticWorkers,
-      .maxQubits_ = static_cast<size_t>(request.maxQubits),
+      .maxQubits_ = request.maxQubits,
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;
