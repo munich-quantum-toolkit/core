@@ -4248,6 +4248,35 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
   EXPECT_TRUE(StringRef(program->str()).contains("scf.for"));
   EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
 
+  auto whileProgram = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main(%continue: i1) attributes {mqt.entry_point} {
+      %a = qco.static 0 : !qco.qubit
+      %b = qco.static 1 : !qco.qubit
+      %c = qco.static 2 : !qco.qubit
+      %result:3 = scf.while (%u = %a, %v = %b, %w = %c)
+          : (!qco.qubit, !qco.qubit, !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %x, %y, %z = qco.rccx %u, %v, %w : !qco.qubit, !qco.qubit, !qco.qubit
+        scf.condition(%continue) %x, %y, %z
+            : !qco.qubit, !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit, %w: !qco.qubit):
+        %x, %y, %z = qco.rccx %u, %v, %w : !qco.qubit, !qco.qubit, !qco.qubit
+        scf.yield %x, %y, %z : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+      qco.sink %result#0 : !qco.qubit
+      qco.sink %result#1 : !qco.qubit
+      qco.sink %result#2 : !qco.qubit
+      return
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(whileProgram);
+  ASSERT_TRUE(mlir::succeeded(whileProgram->compileForTarget(TargetEnvironment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::QIRAdaptive))))));
+  EXPECT_TRUE(StringRef(whileProgram->str()).contains("scf.while"));
+  EXPECT_NE(StringRef(whileProgram->str()).count("qco.rccx"), 0U);
+
   const auto allocatedTarget = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
