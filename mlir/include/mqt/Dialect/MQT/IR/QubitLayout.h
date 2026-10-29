@@ -32,6 +32,10 @@ inline constexpr llvm::StringLiteral kSourceQubitCountAttr =
 inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
     "mqt.source_qubit_indices";
 
+/// Logical router indices mapped to dense target vertices between passes.
+inline constexpr llvm::StringLiteral kPlacementOrderAttr =
+    "mqt.placement_order";
+
 /// Layout metadata; see the MQT dialect reference for the schema.
 ///
 /// initial maps program qubits to device positions. routing maps those

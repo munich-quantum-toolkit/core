@@ -636,6 +636,11 @@ struct CompilerTarget::Storage {
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
   mutable std::once_flag distancesOnce;
+  mutable SmallVector<TopologyPatterns::Group, 0> topologyPatterns;
+  mutable std::once_flag topologyPatternsOnce;
+  mutable std::array<std::optional<TopologyPatterns::Group>, 6>
+      extendedTopologyPatterns;
+  mutable std::array<std::once_flag, 6> extendedTopologyPatternsOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<OperationCapability> operations;
@@ -1310,6 +1315,259 @@ CompilerTarget::connectivityKind() const noexcept {
 
 ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
+}
+
+CompilerTarget::TopologyPatterns::Group::Group(Type type, size_t arity,
+                                               ArrayRef<Edge> edges)
+    : type_(type), edges_(edges), neighbours_(arity) {
+  for (const auto& [a, b] : edges_) {
+    neighbours_[a].push_back(b);
+    neighbours_[b].push_back(a);
+  }
+}
+
+CompilerTarget::TopologyPatterns::Type
+CompilerTarget::TopologyPatterns::Group::type() const noexcept {
+  return type_;
+}
+
+size_t CompilerTarget::TopologyPatterns::Group::arity() const noexcept {
+  return neighbours_.size();
+}
+
+ArrayRef<CompilerTarget::TopologyPatterns::Group::Edge>
+CompilerTarget::TopologyPatterns::Group::edges() const noexcept {
+  return edges_;
+}
+
+ArrayRef<size_t>
+CompilerTarget::TopologyPatterns::Group::neighbours(size_t vertex) const {
+  assert(vertex < arity() && "Topology pattern vertex is out of range");
+  return neighbours_[vertex];
+}
+
+size_t CompilerTarget::TopologyPatterns::Group::size() const noexcept {
+  assert(arity() != 0 && "Topology patterns require at least one vertex");
+  return vertices_.size() / arity();
+}
+
+ArrayRef<size_t>
+CompilerTarget::TopologyPatterns::Group::operator[](size_t index) const {
+  assert(index < size() && "Topology pattern occurrence index is out of range");
+  return ArrayRef<size_t>(vertices_).slice(index * arity(), arity());
+}
+
+std::optional<ArrayRef<CompilerTarget::TopologyPatterns::Group>>
+CompilerTarget::topologyPatterns() const {
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
+    return std::nullopt;
+  }
+  std::call_once(storage_->topologyPatternsOnce, [&] {
+    using Edge = TopologyPatterns::Group::Edge;
+    static constexpr std::array<Edge, 4> CYCLE{
+        {{0, 1}, {1, 2}, {2, 3}, {3, 0}},
+    };
+    static constexpr std::array<Edge, 1> PAIR{{{0, 1}}};
+    static constexpr std::array<Edge, 3> STAR{{{0, 1}, {0, 2}, {0, 3}}};
+    TopologyPatterns::Group cycles(TopologyPatterns::Type::FourCycle, 4, CYCLE);
+    TopologyPatterns::Group pairs(TopologyPatterns::Type::QubitPair, 2, PAIR);
+    TopologyPatterns::Group stars(TopologyPatterns::Type::Star, 4, STAR);
+    const auto& adjacency = storage_->adjacency;
+    for (size_t a = 0; a < numSites(); ++a) {
+      const auto& neighbours = adjacency[a];
+      for (size_t i = 0; i + 2 < neighbours.size(); ++i) {
+        for (size_t j = i + 1; j + 1 < neighbours.size(); ++j) {
+          for (size_t k = j + 1; k < neighbours.size(); ++k) {
+            stars.vertices_.append(
+                {a, neighbours[i], neighbours[j], neighbours[k]});
+          }
+        }
+      }
+      for (const auto* b = std::ranges::upper_bound(neighbours, a);
+           b != neighbours.end(); ++b) {
+        pairs.vertices_.append({a, *b});
+        if (adjacency[*b].size() < 2) {
+          continue;
+        }
+        for (const auto* d = b + 1; d != neighbours.end(); ++d) {
+          const auto& left = adjacency[*b];
+          const auto& right = adjacency[*d];
+          if (right.size() < 2) {
+            continue;
+          }
+          // Common neighbours close a-b-c-d-a; a is the smallest vertex.
+          const auto* l = std::ranges::upper_bound(left, a);
+          const auto* r = std::ranges::upper_bound(right, a);
+          while (l != left.end() && r != right.end()) {
+            if (*l < *r) {
+              ++l;
+            } else if (*r < *l) {
+              ++r;
+            } else {
+              cycles.vertices_.append({a, *b, *l, *d});
+              ++l;
+              ++r;
+            }
+          }
+        }
+      }
+    }
+    SmallVector<TopologyPatterns::Group, 0> groups;
+    groups.push_back(std::move(cycles));
+    groups.push_back(std::move(pairs));
+    groups.push_back(std::move(stars));
+    storage_->topologyPatterns = std::move(groups);
+  });
+  return ArrayRef<TopologyPatterns::Group>(storage_->topologyPatterns);
+}
+
+const CompilerTarget::TopologyPatterns::Group*
+CompilerTarget::topologyPattern(TopologyPatterns::Type type) const {
+  using Type = TopologyPatterns::Type;
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
+    return nullptr;
+  }
+  const auto typeIndex = static_cast<size_t>(type);
+  if (typeIndex < 3) {
+    return &(*topologyPatterns())[typeIndex];
+  }
+  const auto index = typeIndex - 3;
+  assert(index < storage_->extendedTopologyPatterns.size() &&
+         "Unknown topology pattern type");
+  std::call_once(storage_->extendedTopologyPatternsOnce[index], [&] {
+    using Edge = TopologyPatterns::Group::Edge;
+    static constexpr std::array<Edge, 3> CHAIN4{{{0, 1}, {1, 2}, {2, 3}}};
+    static constexpr std::array<Edge, 5> CHAIN6{
+        {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}},
+    };
+    static constexpr std::array<Edge, 6> CYCLE6{
+        {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 0}},
+    };
+    static constexpr std::array<Edge, 8> CYCLE8{
+        {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 0}},
+    };
+    static constexpr std::array<Edge, 7> GRID2X3{
+        {{0, 1}, {1, 2}, {3, 4}, {4, 5}, {0, 3}, {1, 4}, {2, 5}},
+    };
+    static constexpr std::array<Edge, 10> GRID2X4{
+        {
+            {0, 1},
+            {1, 2},
+            {2, 3},
+            {4, 5},
+            {5, 6},
+            {6, 7},
+            {0, 4},
+            {1, 5},
+            {2, 6},
+            {3, 7},
+        },
+    };
+    static constexpr std::array<size_t, 6> ARITIES{4, 6, 6, 8, 6, 8};
+    static constexpr std::array<ArrayRef<Edge>, 6> EDGES{
+        CHAIN4, CHAIN6, CYCLE6, CYCLE8, GRID2X3, GRID2X4,
+    };
+    TopologyPatterns::Group group(type, ARITIES[index], EDGES[index]);
+    const auto arity = group.arity();
+    if (arity > numSites()) {
+      storage_->extendedTopologyPatterns[index] = std::move(group);
+      return;
+    }
+    const auto isChain = type == Type::Chain4 || type == Type::Chain6;
+    const auto isCycle = type == Type::SixCycle || type == Type::EightCycle;
+    const auto& adjacency = storage_->adjacency;
+    SmallVector<size_t, 8> order{0};
+    // Start at vertex zero so template symmetries prune partial embeddings.
+    while (order.size() < arity) {
+      size_t best = arity;
+      std::pair<size_t, size_t> bestScore{};
+      for (size_t vertex = 1; vertex < arity; ++vertex) {
+        if (llvm::is_contained(order, vertex)) {
+          continue;
+        }
+        auto neighbours = group.neighbours(vertex);
+        const auto assigned =
+            static_cast<size_t>(llvm::count_if(neighbours, [&](size_t other) {
+              return llvm::is_contained(order, other);
+            }));
+        const auto score = std::pair{assigned, neighbours.size()};
+        if (best == arity || score > bestScore) {
+          best = vertex;
+          bestScore = score;
+        }
+      }
+      order.push_back(best);
+    }
+    SmallVector<size_t, 8> mapping(arity, numSites());
+    constexpr size_t maxProbes = 2'000'000;
+    constexpr size_t maxOccurrences = 65'536;
+    size_t probes = 0;
+    const auto enumerate = [&](const auto& self, size_t depth) -> bool {
+      if (depth == arity) {
+        if (group.size() == maxOccurrences) {
+          return false;
+        }
+        group.vertices_.append(mapping);
+        return true;
+      }
+      const auto vertex = order[depth];
+      const SmallVector<size_t, 4>* candidates = nullptr;
+      for (const auto other : group.neighbours(vertex)) {
+        if (mapping[other] != numSites() &&
+            (candidates == nullptr ||
+             adjacency[mapping[other]].size() < candidates->size())) {
+          candidates = &adjacency[mapping[other]];
+        }
+      }
+      const auto count =
+          candidates == nullptr ? numSites() : candidates->size();
+      for (size_t i = 0; i < count; ++i) {
+        if (probes == maxProbes) {
+          return false;
+        }
+        ++probes;
+        const auto candidate = candidates == nullptr ? i : (*candidates)[i];
+        if (adjacency[candidate].size() < group.neighbours(vertex).size() ||
+            llvm::is_contained(mapping, candidate)) {
+          continue;
+        }
+        if (llvm::any_of(group.neighbours(vertex), [&](size_t other) {
+              return mapping[other] != numSites() &&
+                     !std::ranges::binary_search(adjacency[candidate],
+                                                 mapping[other]);
+            })) {
+          continue;
+        }
+        mapping[vertex] = candidate;
+        bool canonical = true;
+        if (isChain) {
+          canonical =
+              mapping.back() == numSites() || mapping.front() < mapping.back();
+        } else if (isCycle) {
+          canonical =
+              (vertex == 0 || candidate > mapping.front()) &&
+              (mapping[1] == numSites() || mapping.back() == numSites() ||
+               mapping[1] < mapping.back());
+        } else {
+          // The four grid reflections move vertex zero to each corner once.
+          for (const auto corner : {arity / 2 - 1, arity / 2, arity - 1}) {
+            canonical &= mapping[corner] == numSites() ||
+                         mapping.front() < mapping[corner];
+          }
+        }
+        if (canonical && !self(self, depth + 1)) {
+          return false;
+        }
+        mapping[vertex] = numSites();
+      }
+      return true;
+    };
+    if (enumerate(enumerate, 0)) {
+      storage_->extendedTopologyPatterns[index] = std::move(group);
+    }
+  });
+  auto& group = storage_->extendedTopologyPatterns[index];
+  return group ? &*group : nullptr;
 }
 
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {

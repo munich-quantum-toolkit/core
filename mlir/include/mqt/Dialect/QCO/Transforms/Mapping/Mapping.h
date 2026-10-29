@@ -20,9 +20,6 @@ namespace mlir {
 
 namespace qco {
 
-/// Create a deterministic placement pass for a compiler target.
-std::unique_ptr<Pass> createPlacementPass();
-
 /// Elide terminal SWAPs in prepared straight-line programs before placement.
 ///
 /// Accepts owned scalar qubits and flat, static tensor unpack/pack chains.

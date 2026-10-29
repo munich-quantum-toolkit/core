@@ -45,6 +45,53 @@ public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
 
+  /// Topology patterns grouped by type, independent of native gate support.
+  class TopologyPatterns {
+  public:
+    enum class Type : uint8_t {
+      FourCycle,
+      QubitPair,
+      Star,
+      Chain4,
+      Chain6,
+      SixCycle,
+      EightCycle,
+      Grid2x3,
+      Grid2x4,
+    };
+
+    /// Packed rows of dense compiler vertices, without per-occurrence
+    /// allocation.
+    class Group {
+    public:
+      using Edge = std::pair<size_t, size_t>;
+
+      /// Return the topology pattern type shared by all occurrences in this
+      /// group.
+      [[nodiscard]] Type type() const noexcept;
+      /// Return the number of vertices per occurrence (four for a four-cycle).
+      [[nodiscard]] size_t arity() const noexcept;
+      /// Return undirected template edges, each listed once in local indices.
+      [[nodiscard]] llvm::ArrayRef<Edge> edges() const noexcept;
+      /// Return template neighbours of a local vertex; vertex < arity().
+      [[nodiscard]] llvm::ArrayRef<size_t> neighbours(size_t vertex) const;
+      /// Return the number of stored occurrences, not the number of vertices.
+      [[nodiscard]] size_t size() const noexcept;
+      /// Return the dense vertex indices of occurrence index; index < size().
+      [[nodiscard]] llvm::ArrayRef<size_t> operator[](size_t index) const;
+
+    private:
+      friend class CompilerTarget;
+      Group(Type type, size_t arity, llvm::ArrayRef<Edge> edges);
+      Type type_;
+      llvm::ArrayRef<Edge> edges_;
+      // Templates have at most eight vertices, each with at most three
+      // neighbours.
+      llvm::SmallVector<llvm::SmallVector<size_t, 3>, 4> neighbours_;
+      llvm::SmallVector<size_t, 0> vertices_;
+    };
+  };
+
   /// Target connectivity.
   class Connectivity {
   public:
@@ -429,6 +476,41 @@ public:
 
   /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
+
+  /// Return four-cycle, qubit-pair, and star groups in that order.
+  ///
+  /// Occurrence order is deterministic. Pairs store each edge once, smaller
+  /// vertex first. Each four-cycle starts at its smallest vertex and its second
+  /// vertex is smaller than its last. Chords are allowed; distinct cycles on
+  /// the same four vertices remain distinct. Stars store their center followed
+  /// by three sorted neighbors; edges between those neighbors are allowed. No
+  /// architecture classification is performed.
+  ///
+  /// All-to-all connectivity returns nullopt, representing topology patterns
+  /// implicitly. Explicit topologies retain a group for each selected type,
+  /// even if empty. They enumerate lazily, with storage proportional to the
+  /// number of occurrences. The thread-safe cache is shared by copies; the
+  /// returned view stays valid while any copy of this target lives.
+  [[nodiscard]] std::optional<llvm::ArrayRef<TopologyPatterns::Group>>
+  topologyPatterns() const;
+
+  /// Return one complete topology-pattern group, prepared lazily by type.
+  ///
+  /// In addition to topologyPatterns(), this supports four- and six-vertex
+  /// chains, six- and eight-vertex cycles, and full 2×3 and 2×4 grids. Chains
+  /// and cycles use consecutive template vertices; grids use row-major
+  /// vertices. Extra target edges are allowed. Occurrences are unique up to
+  /// template automorphisms and use deterministic order, without assuming
+  /// hardware coordinates.
+  ///
+  /// Each additional type stops preparation after 2,000,000 candidate probes
+  /// or 65,536 occurrences. Exceeding either limit discards the entire group;
+  /// nullptr means unavailable, never a complete empty group. Callers can use
+  /// smaller patterns instead. All-to-all connectivity also returns nullptr.
+  /// Existing types retain their uncapped topologyPatterns() behavior. Cache
+  /// ownership and view lifetime are the same as for topologyPatterns().
+  [[nodiscard]] const TopologyPatterns::Group*
+  topologyPattern(TopologyPatterns::Type type) const;
 
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;

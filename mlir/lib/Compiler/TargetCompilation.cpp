@@ -103,6 +103,35 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
 
 namespace {
 
+class RoutePlacedQubitsPass
+    : public PassWrapper<RoutePlacedQubitsPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RoutePlacedQubitsPass)
+
+  explicit RoutePlacedQubitsPass(qco::MappingPassOptions options)
+      : options_(options) {}
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    qco::createMappingPass(options_)->getDependentDialects(registry);
+  }
+
+protected:
+  void runOnOperation() override {
+    // Preplaced input keeps its sites and target-native higher-arity gates.
+    if (!getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
+      return;
+    }
+    OpPassManager pipeline(ModuleOp::getOperationName());
+    pipeline.addPass(qco::createMappingPass(options_));
+    if (failed(runPipeline(pipeline, getOperation()))) {
+      signalPassFailure();
+    }
+  }
+
+private:
+  qco::MappingPassOptions options_;
+};
+
 class PrepareTargetCompilationPass
     : public PassWrapper<PrepareTargetCompilationPass,
                          OperationPass<ModuleOp>> {
@@ -117,7 +146,8 @@ public:
 
 protected:
   void runOnOperation() override {
-    if (getOperation()->hasAttr("mqt.layout")) {
+    if (getOperation()->hasAttr("mqt.layout") ||
+        getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
       getOperation().emitError("discard existing layout metadata before target "
                                "compilation");
       signalPassFailure();
@@ -235,7 +265,13 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     mappingOptions.niterations = mapping.iterations;
     mappingOptions.nlookahead = mapping.lookahead;
     mappingOptions.searchMemoryLimit = mapping.searchMemoryLimit;
-    pm.addPass(qco::createMappingPass(mappingOptions));
+    qco::PlacementPassOptions placementOptions;
+    placementOptions.ntrials = mappingOptions.ntrials;
+    placementOptions.niterations = mappingOptions.niterations;
+    placementOptions.nlookahead = mappingOptions.nlookahead;
+    placementOptions.searchMemoryLimit = mappingOptions.searchMemoryLimit;
+    pm.addPass(qco::createPlacementPass(placementOptions));
+    pm.addPass(std::make_unique<RoutePlacedQubitsPass>(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:

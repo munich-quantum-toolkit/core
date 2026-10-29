@@ -46,6 +46,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,32 @@ TEST_F(MQTIRTest, CompilationSeedHasModuleScopeAnd64Bits) {
   EXPECT_FALSE(parse("module attributes {mqt.compilation_seed = \"7\"} {}"));
   EXPECT_FALSE(parse(R"(module {
     func.func @main() attributes {mqt.compilation_seed = 7 : i64} { return }
+  })"));
+}
+
+TEST_F(MQTIRTest, PlacementOrderIsModulePermutation) {
+  auto moduleOp =
+      parse("module attributes {mqt.placement_order = array<i64: 2, 0, 1>} {}");
+  ASSERT_TRUE(moduleOp);
+  auto restored = roundTrip(*moduleOp);
+  ASSERT_TRUE(restored);
+  EXPECT_EQ((*restored)->getAttr(mqt::kPlacementOrderAttr),
+            (*moduleOp)->getAttr(mqt::kPlacementOrderAttr));
+  EXPECT_TRUE(parse("module attributes {mqt.placement_order = array<i64>} {}"));
+  for (const auto* order : {
+           "array<i32: 0>",
+           "0 : i64",
+           "array<i64: -1>",
+           "array<i64: 0, 0>",
+           "array<i64: 0, 2>",
+       }) {
+    SCOPED_TRACE(order);
+    EXPECT_FALSE(
+        parse(std::string("module attributes {mqt.placement_order = ") + order +
+              "} {}"));
+  }
+  EXPECT_FALSE(parse(R"(module {
+    func.func @main() attributes {mqt.placement_order = array<i64: 0>} { return }
   })"));
 }
 
@@ -192,9 +219,14 @@ TEST_F(MQTIRTest, RejectsUnsupportedLayoutOwners) {
   })mlir");
   ASSERT_TRUE(moduleOp);
   auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
-  helper->setAttr(
-      "mqt.layout",
-      mqt::QubitLayout{.initial = {0}, .inputCount = 1}.toAttr(context.get()));
+  helper->setAttr("mqt.layout",
+                  mqt::QubitLayout{
+                      .initial = {0},
+                      .routing = std::nullopt,
+                      .inputCount = 1,
+                      .sites = std::nullopt,
+                  }
+                      .toAttr(context.get()));
   EXPECT_TRUE(failed(verify(*moduleOp)));
 }
 

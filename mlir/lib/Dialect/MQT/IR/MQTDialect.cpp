@@ -500,6 +500,21 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
+  if (attribute.getName() == kPlacementOrderAttr) {
+    auto order = dyn_cast<DenseI64ArrayAttr>(attribute.getValue());
+    if (!isa<ModuleOp>(operation) || !order) {
+      return operation->emitError(
+          "placement order requires a dense i64 array on a module");
+    }
+    llvm::SmallDenseSet<int64_t> seen;
+    for (const auto vertex : order.asArrayRef()) {
+      if (vertex < 0 || vertex >= order.size() || !seen.insert(vertex).second) {
+        return operation->emitError(
+            "placement order must be a permutation of dense target vertices");
+      }
+    }
+    return success();
+  }
   if (attribute.getName() == "mqt.layout") {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError("qubit layout belongs on a program module");

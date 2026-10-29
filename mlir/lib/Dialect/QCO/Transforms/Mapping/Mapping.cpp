@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Mapping/Placement.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
@@ -63,6 +64,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <algorithm>
 #include <array>
@@ -88,6 +90,7 @@ namespace mlir::qco {
 
 using namespace mlir::qtensor;
 
+#define GEN_PASS_DEF_PLACEMENTPASS
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
@@ -295,7 +298,7 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
         })
         .Case([&](qtensor::AllocOp alloc) {
           computation.tensorAllocations.emplace_back(
-              TensorAllocation{.allocation = alloc});
+              TensorAllocation{.allocation = alloc, .operations = {}});
         });
   }
 
@@ -510,67 +513,7 @@ static bool needsPlacement(func::FuncOp func) {
 
 namespace {
 
-struct PlacementPass final
-    : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, qtensor::QTensorDialect>();
-  }
-
-protected:
-  void runOnOperation() override {
-    auto moduleOp = getOperation();
-    if (failed(verifyLinearity(moduleOp)) ||
-        failed(mqt::verifyQuantumAllocations(moduleOp))) {
-      signalPassFailure();
-      return;
-    }
-
-    auto func = mqt::getEntryPoint(moduleOp);
-    if (!func) {
-      moduleOp.emitError() << "does not contain an entry point function";
-      signalPassFailure();
-      return;
-    }
-
-    if (!needsPlacement(func)) {
-      return;
-    }
-
-    const auto& targetAnalysis = getAnalysis<TargetEnvironmentAnalysis>();
-    if (!targetAnalysis) {
-      moduleOp.emitError() << "expected a valid mqt.target_env: "
-                           << targetAnalysis.error();
-      signalPassFailure();
-      return;
-    }
-
-    IRRewriter rewriter(&getContext());
-    const auto& target = targetAnalysis.environment().target();
-    if (targetAnalysis.environment().supportsIndexedQubits()) {
-      if (failed(placeIndexedAllocations(func, target, rewriter))) {
-        signalPassFailure();
-      }
-      return;
-    }
-
-    const auto computation = discoverComputation(func);
-    if (failed(computation) ||
-        failed(checkCapacity(func, target, *computation))) {
-      signalPassFailure();
-      return;
-    }
-
-    const auto layout = Layout<QubitIndex>::identity(computation->wires.size());
-    if (failed(applyPlacement(func.getFunctionBody(), target, layout,
-                              *computation, rewriter))) {
-      signalPassFailure();
-    }
-  }
-};
-
-struct MappingPass : impl::MappingPassBase<MappingPass> {
+class Mapping {
 private:
   using Window = SmallVector<QubitIndexPair>;
   using Score = std::pair<size_t, size_t>;
@@ -970,98 +913,81 @@ private:
   };
 
 public:
-  /// Construct default mapping pass.
-  MappingPass() = default;
+  Mapping(MLIRContext& context, const MappingPassOptions& options,
+          StringRef patterns = "none")
+      : context_(context), options_(options), patterns_(patterns) {}
 
-  /// Construct default mapping pass with options.
-  explicit MappingPass(const MappingPassOptions& options)
-      : MappingPassBase(options) {}
+  LogicalResult place(func::FuncOp func, const CompilerTarget& target) {
+    Environment env{
+        .target = target,
+        .seed =
+            compilationSeed(func->getParentOfType<ModuleOp>(), options_.seed),
+        .nativeCosts = nullptr,
+        .nativeSwapCost = std::nullopt,
+    };
+    IRRewriter rewriter(&context_);
+    auto placed = preparePlacement(func, env, rewriter);
+    if (failed(placed)) {
+      return failure();
+    }
+    // Keep logical tie-breaking stable across separate and serialized passes.
+    const auto order =
+        llvm::map_to_vector(llvm::seq<size_t>(0, target.numSites()),
+                            [&](size_t program) -> int64_t {
+                              return placed->layout.getHardwareIndex(program);
+                            });
+    func->getParentOfType<ModuleOp>()->setAttr(
+        mqt::kPlacementOrderAttr, rewriter.getDenseI64ArrayAttr(order));
+    return success();
+  }
 
-protected:
-  void runOnOperation() override {
-    auto moduleOp = getOperation();
-    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || ntrials == 0) {
-      moduleOp.emitError("mapping requires finite alpha > 0, niterations >= 0, "
-                         "and ntrials > 0");
-      signalPassFailure();
-      return;
+  FailureOr<size_t> map(func::FuncOp func, const CompilerTarget& target) {
+    auto moduleOp = func->getParentOfType<ModuleOp>();
+    Environment env{
+        .target = target,
+        .seed = compilationSeed(moduleOp, options_.seed),
+        .nativeCosts = nullptr,
+        .nativeSwapCost = std::nullopt,
+    };
+    IRRewriter rewriter(&context_);
+    FailureOr<PlacedComputation> placed = failure();
+    if (needsPlacement(func)) {
+      placed = preparePlacement(func, env, rewriter);
+    } else {
+      placed = readPlacement(func, target, rewriter);
+      if (succeeded(placed)) {
+        DenseMap<QubitIndexPair, size_t> weights;
+        if (!collectInteractionWeights(placed->wires, weights, 1, 1) ||
+            !llvm::all_of(weights, [&](const auto& interaction) {
+              return target.areAdjacent(interaction.first.first,
+                                        interaction.first.second);
+            })) {
+          env.prepareNativeCosts(func);
+        }
+      }
+    }
+    if (failed(placed)) {
+      return failure();
     }
 
-    if (failed(verifyLinearity(moduleOp)) ||
-        failed(mqt::verifyQuantumAllocations(moduleOp))) {
-      signalPassFailure();
-      return;
-    }
-
-    const auto& targetAnalysis = getAnalysis<TargetEnvironmentAnalysis>();
-    if (!targetAnalysis) {
-      moduleOp.emitError() << "expected a valid mqt.target_env: "
-                           << targetAnalysis.error();
-      signalPassFailure();
-      return;
-    }
-
-    const auto& target = targetAnalysis.environment().target();
-    if (target.connectivityKind() !=
-        CompilerTarget::Connectivity::Kind::Explicit) {
-      moduleOp.emitError() << "expected an explicit target topology";
-      signalPassFailure();
-      return;
-    }
-
-    auto func = mqt::getEntryPoint(moduleOp);
-    if (!func) {
-      moduleOp.emitError() << "does not contain an entry point function";
-      signalPassFailure();
-      return;
-    }
-
-    if (!needsPlacement(func)) {
-      return;
-    }
-
-    if (failed(validateRoutingOperations(func))) {
-      signalPassFailure();
-      return;
-    }
-
-    auto computation = discoverComputation(func);
-    if (failed(computation) ||
-        failed(checkCapacity(func, target, *computation))) {
-      signalPassFailure();
-      return;
-    }
-
-    Environment env{.target = target, .seed = compilationSeed(moduleOp, seed)};
-    const auto [layout, expectedScore] =
-        generateLayout(computation->wires, func, env);
-
-    IRRewriter rewriter(&getContext());
-    Arena arena(target.numSites(), searchMemoryLimit);
-    auto wires = applyPlacement(func.getFunctionBody(), target, layout,
-                                *computation, rewriter);
-    if (failed(wires)) {
-      signalPassFailure();
-      return;
-    }
-
-    RoutingState state(std::move(*wires), layout, env);
+    Arena arena(target.numSites(), options_.searchMemoryLimit);
+    RoutingState state(std::move(placed->wires), placed->layout, env);
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
         func.getFunctionBody().front(), state, arena, env, &rewriter);
 
-    assert((!expectedScore ||
+    assert((!placed->expectedScore ||
             (state.costs ? state.costs->score() : std::nullopt)
                     .value_or(std::pair{std::numeric_limits<size_t>::max(),
-                                        stats.nswaps}) == *expectedScore) &&
+                                        stats.nswaps}) ==
+                *placed->expectedScore) &&
            "cold scoring and hot routing must agree");
 
     if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
-      const auto permutation = sitePermutation(layout, state.layout);
+      const auto permutation = sitePermutation(placed->layout, state.layout);
       auto previous = attr.getAs<DenseI64ArrayAttr>("routing");
       if (previous && std::cmp_not_equal(previous.size(), permutation.size())) {
         moduleOp.emitError("routing layout width does not match the target");
-        signalPassFailure();
-        return;
+        return failure();
       }
       const auto routing =
           map_to_vector(llvm::seq<size_t>(0, permutation.size()),
@@ -1070,17 +996,131 @@ protected:
                         });
       NamedAttrList fields(attr);
       fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
-      moduleOp->setAttr("mqt.layout", fields.getDictionary(&getContext()));
+      moduleOp->setAttr("mqt.layout", fields.getDictionary(&context_));
     }
-
-    // Collect statistics.
-    numSwaps += stats.nswaps;
-
-    // Fix SSA dominance errors.
+    moduleOp->removeAttr(mqt::kPlacementOrderAttr);
     reorderTopologically(func.getFunctionBody().front(), rewriter);
+    return stats.nswaps;
   }
 
 private:
+  struct PlacedComputation {
+    Wires wires;
+    Layout<QubitIndex> layout;
+    std::optional<Score> expectedScore;
+  };
+
+  FailureOr<PlacedComputation>
+  preparePlacement(func::FuncOp func, Environment& env, IRRewriter& rewriter) {
+    auto moduleOp = func->getParentOfType<ModuleOp>();
+    if (moduleOp->hasAttr(mqt::kPlacementOrderAttr)) {
+      return func.emitError("placement order requires already placed qubits");
+    }
+    auto computation = discoverComputation(func);
+    if (failed(computation) ||
+        failed(checkCapacity(func, env.target, *computation))) {
+      return failure();
+    }
+    auto [layout, expectedScore] =
+        generateLayout(computation->wires, func, env);
+    auto wires = applyPlacement(func.getFunctionBody(), env.target, layout,
+                                *computation, rewriter);
+    if (failed(wires)) {
+      return failure();
+    }
+    return PlacedComputation{
+        .wires = std::move(*wires),
+        .layout = std::move(layout),
+        .expectedScore = expectedScore,
+    };
+  }
+
+  static FailureOr<PlacedComputation>
+  readPlacement(func::FuncOp func, const CompilerTarget& target,
+                IRRewriter& rewriter) {
+    if (failed(checkCapacity(func, target, Computation{}))) {
+      return failure();
+    }
+    auto moduleOp = func->getParentOfType<ModuleOp>();
+    if (auto provenance =
+            moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
+      auto initial = provenance.getAs<DenseI64ArrayAttr>("initial");
+      auto sites = provenance.getAs<DenseI64ArrayAttr>("sites");
+      if (std::cmp_not_equal(initial.size(), target.numSites()) || !sites ||
+          !llvm::equal(sites.asArrayRef(), target.siteIds())) {
+        return func.emitError(
+            "routing layout must cover the target in target site order");
+      }
+    }
+    auto layout = Layout<QubitIndex>::identity(target.numSites());
+    if (auto attribute = moduleOp->getAttr(mqt::kPlacementOrderAttr)) {
+      auto order = dyn_cast<DenseI64ArrayAttr>(attribute);
+      llvm::SmallBitVector used(target.numSites());
+      if (!order || std::cmp_not_equal(order.size(), target.numSites()) ||
+          llvm::any_of(order.asArrayRef(), [&](int64_t vertex) {
+            if (vertex < 0 ||
+                std::cmp_greater_equal(vertex, target.numSites()) ||
+                used[vertex]) {
+              return true;
+            }
+            used[vertex] = true;
+            return false;
+          })) {
+        return func.emitError(
+            "placement order must be a permutation of the target vertices");
+      }
+      const auto mapping =
+          llvm::map_to_vector(order.asArrayRef(), [](int64_t v) {
+            return static_cast<QubitIndex>(v);
+          });
+      layout = Layout<QubitIndex>::fromMapping(mapping);
+    }
+
+    Wires wires(target.numSites());
+    const auto result = func.walk([&](Operation* operation) {
+      if (auto qubit = dyn_cast<StaticOp>(operation)) {
+        const auto vertex = target.vertexForSite(qubit.getIndexAttr().getInt());
+        if (!vertex || qubit->getBlock() != &func.getBody().front() ||
+            wires[*vertex] != std::default_sentinel) {
+          qubit.emitError(
+              "routing requires distinct target sites in the entry block");
+          return WalkResult::interrupt();
+        }
+        wires[*vertex] = WireIterator(qubit.getQubit());
+      }
+      if (isa<qtensor::QTensorDialect>(operation->getDialect())) {
+        operation->emitError("routing placed qubits requires scalar wires; "
+                             "lower qtensors first");
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted()) {
+      return failure();
+    }
+
+    for (size_t vertex = 0; vertex < target.numSites(); ++vertex) {
+      if (wires[vertex] != std::default_sentinel) {
+        continue;
+      }
+      rewriter.setInsertionPointToStart(&func.getBody().front());
+      auto qubit = StaticOp::create(rewriter, func.getLoc(),
+                                    target.siteForVertex(vertex));
+      wires[vertex] = WireIterator(qubit.getQubit());
+      rewriter.setInsertionPoint(func.getBody().front().getTerminator());
+      SinkOp::create(rewriter, func.getLoc(), qubit.getQubit());
+    }
+    return PlacedComputation{
+        .wires = std::move(wires),
+        .layout = std::move(layout),
+        .expectedScore = std::nullopt,
+    };
+  }
+
+  MLIRContext& context_;
+  MappingPassOptions options_;
+  StringRef patterns_;
+
   /// Return true, if a precedes b (or b precedes a for backwards iteration).
   template <WireDirection Direction>
   static bool precedes(Operation* a, Operation* b) {
@@ -1295,7 +1335,7 @@ private:
   /// Counted scalar loops contribute weighted interactions. Other regions use
   /// identity and random starts.
   [[nodiscard]] std::optional<std::pair<Layout<QubitIndex>, bool>>
-  generateGreedyLayout(const Wires& wires, const Environment& env) const {
+  generateGreedyLayout(const Wires& wires, const Environment& env) {
     DenseMap<QubitIndexPair, size_t> weights;
     // Bound both sums over neighbors and their distance-weighted costs.
     const size_t maximumWeight = std::numeric_limits<size_t>::max() /
@@ -1390,6 +1430,47 @@ private:
       }
     }
 
+    Graph interactions(llvm::to_vector(llvm::seq(nprogram)));
+    for (const auto& [pair, weight] : weights) {
+      interactions.addEdge(pair.first, pair.second);
+      interactions.addEdge(pair.second, pair.first);
+    }
+    // Bound failed embedding searches before falling back to routed placement.
+    std::optional<SmallVector<size_t>> embedded;
+    if (patterns_ == "none") {
+      embedded = findTopologyLayout(interactions, env.target, context_, 100000);
+    } else {
+      using Type = CompilerTarget::TopologyPatterns::Type;
+      SmallVector<Type> selected{Type::FourCycle, Type::QubitPair, Type::Star};
+      if (patterns_ == "extended") {
+        selected.append({
+            Type::Chain4,
+            Type::Chain6,
+            Type::SixCycle,
+            Type::EightCycle,
+            Type::Grid2x3,
+            Type::Grid2x4,
+        });
+      }
+      embedded = findTopologyPatternLayout(interactions, env.target, context_,
+                                           100000, selected);
+    }
+    if (embedded) {
+      auto mapping = llvm::map_to_vector(*embedded, [](size_t vertex) {
+        return static_cast<QubitIndex>(vertex);
+      });
+      SmallVector<bool> used(nhardware, false);
+      for (const auto vertex : mapping) {
+        used[vertex] = true;
+      }
+      for (size_t vertex = 0; vertex < nhardware; ++vertex) {
+        if (!used[vertex]) {
+          mapping.push_back(static_cast<QubitIndex>(vertex));
+        }
+      }
+      return std::pair{Layout<QubitIndex>::fromMapping(mapping), true};
+    }
+
     SmallVector<size_t> centrality(nhardware, 0);
     SmallVector<size_t> hardwareDegree(nhardware, 0);
     for (size_t hw = 0; hw < nhardware; ++hw) {
@@ -1475,31 +1556,31 @@ private:
 
     // Avoid embedding a layout in the vector object.
     SmallVector<Trial, 0> trials;
-    trials.reserve(ntrials);
+    trials.reserve(options_.ntrials);
 
     if (greedy) {
       trials.emplace_back(greedy->first);
     }
 
-    if (trials.size() < ntrials) {
+    if (trials.size() < options_.ntrials) {
       trials.emplace_back(Layout<QubitIndex>::identity(env.target.numSites()));
 
       auto rng = makeMt19937(env.seed);
-      for (size_t i = trials.size(); i < ntrials; ++i) {
+      for (size_t i = trials.size(); i < options_.ntrials; ++i) {
         trials.emplace_back(Layout<QubitIndex>::random(
             env.target.numSites(), env.target.numSites(), rng()));
       }
     }
 
-    assert(ntrials == trials.size());
+    assert(options_.ntrials == trials.size());
 
     Block& block = func.getFunctionBody().front();
-    parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      Arena arena(env.target.numSites(), searchMemoryLimit);
+    parallelForEach(&context_, trials, [&, this](Trial& t) {
+      Arena arena(env.target.numSites(), options_.searchMemoryLimit);
 
       {
         auto state = RoutingState::fromLayout(wires, t.layout, env);
-        for (size_t i = 0; i < niterations; ++i) {
+        for (size_t i = 0; i < options_.niterations; ++i) {
           route<WireDirection::Forward>(block, state, arena, env);
           route<WireDirection::Backward>(block, state, arena, env);
         }
@@ -1530,7 +1611,7 @@ private:
   [[nodiscard]] SmallVector<QubitIndexPair>
   search(ArrayRef<QubitIndexPair> window, RoutingState& state, Arena& arena,
          const Environment& env) const {
-    const Parameters params{.alpha = alpha, .lambda = lambda};
+    const Parameters params{.alpha = options_.alpha, .lambda = options_.lambda};
 
     arena.reset();
     Node* root = arena.allocate();
@@ -1613,7 +1694,7 @@ private:
     if (from == to) {
       return {};
     }
-    Layout curr(from);
+    Layout<QubitIndex> curr(from);
     TokenSwapGraph f(env.target);
     SmallVector<QubitIndexPair> swaps;
 
@@ -1658,7 +1739,7 @@ private:
       return {lhs, {}, {}};
     }
 
-    std::array layouts{Layout(lhs), Layout(rhs)};
+    std::array layouts{Layout<QubitIndex>(lhs), Layout<QubitIndex>(rhs)};
     std::array graphs{
         TokenSwapGraph(env.target),
         TokenSwapGraph(env.target),
@@ -1666,7 +1747,7 @@ private:
     std::array<SmallVector<QubitIndexPair>, 2> swaps{};
 
     auto gen = makeMt19937(env.seed);
-    std::uniform_int_distribution coin(0, 1);
+    std::uniform_int_distribution<int> coin(0, 1);
 
     while (true) {
       size_t i = 0;
@@ -1722,7 +1803,7 @@ private:
     assert(!layouts.empty() && "expected at least one layout");
 
     TokenSwapGraph f(env.target);
-    Layout curr(*layouts.begin());
+    Layout<QubitIndex> curr(*layouts.begin());
 
     // Nudge curr towards target by applying a happy SWAP chain.
     const auto merge = [&](const Layout<QubitIndex>& target) {
@@ -1780,7 +1861,7 @@ private:
 
                 if (!is_contained(prev, gate)) {
                   window.emplace_back(gate);
-                  if (window.size() - 1 == nlookahead) {
+                  if (window.size() - 1 == options_.nlookahead) {
                     return WalkResult::interrupt();
                   }
                 }
@@ -2336,8 +2417,158 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass> createPlacementPass() {
-  return std::make_unique<PlacementPass>();
+static FailureOr<func::FuncOp> validatePlacementInput(ModuleOp moduleOp) {
+  if (failed(verifyLinearity(moduleOp)) ||
+      failed(mqt::verifyQuantumAllocations(moduleOp))) {
+    return failure();
+  }
+  auto func = mqt::getEntryPoint(moduleOp);
+  if (!func) {
+    return moduleOp.emitError("does not contain an entry point function");
+  }
+  return func;
 }
+
+static LogicalResult validateMappingOptions(ModuleOp moduleOp,
+                                            const MappingPassOptions& options) {
+  if (!std::isfinite(options.alpha) || options.alpha <= 0 ||
+      options.ntrials == 0) {
+    return moduleOp.emitError(
+        "mapping requires finite alpha > 0, niterations >= 0, and ntrials > 0");
+  }
+  return success();
+}
+
+namespace {
+
+struct PlacementPass final : impl::PlacementPassBase<PlacementPass> {
+  using PlacementPassBase::PlacementPassBase;
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    const auto& selectedPatterns = patterns.getValue();
+    if (selectedPatterns != "none" && selectedPatterns != "small" &&
+        selectedPatterns != "extended") {
+      moduleOp.emitError("placement patterns must be none, small, or extended");
+      signalPassFailure();
+      return;
+    }
+    const MappingPassOptions options{
+        .nlookahead = nlookahead,
+        .alpha = alpha,
+        .lambda = lambda,
+        .niterations = niterations,
+        .ntrials = ntrials,
+        .seed = seed,
+        .searchMemoryLimit = searchMemoryLimit,
+    };
+    if (failed(validateMappingOptions(moduleOp, options))) {
+      signalPassFailure();
+      return;
+    }
+    auto func = validatePlacementInput(moduleOp);
+    if (failed(func)) {
+      signalPassFailure();
+      return;
+    }
+    if (!needsPlacement(*func)) {
+      return;
+    }
+    const auto& targetAnalysis = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!targetAnalysis) {
+      moduleOp.emitError() << "expected a valid mqt.target_env: "
+                           << targetAnalysis.error();
+      signalPassFailure();
+      return;
+    }
+    const auto& target = targetAnalysis.environment().target();
+    if (target.connectivityKind() ==
+        CompilerTarget::Connectivity::Kind::Explicit) {
+      if (failed(validateRoutingOperations(*func)) ||
+          failed(Mapping(getContext(), options, selectedPatterns)
+                     .place(*func, target))) {
+        signalPassFailure();
+      }
+      return;
+    }
+
+    IRRewriter rewriter(&getContext());
+    if (targetAnalysis.environment().supportsIndexedQubits()) {
+      if (failed(placeIndexedAllocations(*func, target, rewriter))) {
+        signalPassFailure();
+      }
+      return;
+    }
+    const auto computation = discoverComputation(*func);
+    if (failed(computation) ||
+        failed(checkCapacity(*func, target, *computation))) {
+      signalPassFailure();
+      return;
+    }
+    const auto layout = Layout<QubitIndex>::identity(computation->wires.size());
+    if (failed(applyPlacement(func->getFunctionBody(), target, layout,
+                              *computation, rewriter))) {
+      signalPassFailure();
+    }
+  }
+};
+
+struct MappingPass final : impl::MappingPassBase<MappingPass> {
+  using MappingPassBase::MappingPassBase;
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    const MappingPassOptions options{
+        .nlookahead = nlookahead,
+        .alpha = alpha,
+        .lambda = lambda,
+        .niterations = niterations,
+        .ntrials = ntrials,
+        .seed = seed,
+        .searchMemoryLimit = searchMemoryLimit,
+    };
+    if (failed(validateMappingOptions(moduleOp, options))) {
+      signalPassFailure();
+      return;
+    }
+    auto func = validatePlacementInput(moduleOp);
+    if (failed(func)) {
+      signalPassFailure();
+      return;
+    }
+    const auto& targetAnalysis = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!targetAnalysis) {
+      moduleOp.emitError() << "expected a valid mqt.target_env: "
+                           << targetAnalysis.error();
+      signalPassFailure();
+      return;
+    }
+    const auto& target = targetAnalysis.environment().target();
+    if (target.connectivityKind() !=
+        CompilerTarget::Connectivity::Kind::Explicit) {
+      moduleOp.emitError("expected an explicit target topology");
+      signalPassFailure();
+      return;
+    }
+    if (!needsPlacement(*func) && func->getOps<StaticOp>().empty() &&
+        !moduleOp->hasAttr(mqt::kPlacementOrderAttr)) {
+      return;
+    }
+    if (failed(validateRoutingOperations(*func))) {
+      signalPassFailure();
+      return;
+    }
+    auto swaps = Mapping(getContext(), options).map(*func, target);
+    if (failed(swaps)) {
+      signalPassFailure();
+      return;
+    }
+    numSwaps += *swaps;
+  }
+};
+
+} // namespace
 
 } // namespace mlir::qco
