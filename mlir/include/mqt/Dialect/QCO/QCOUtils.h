@@ -14,6 +14,7 @@
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h" // IWYU pragma: export
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/IR/Block.h"
@@ -88,15 +89,6 @@ inline bool checkDeadGate(Operation* op) {
   }
   llvm_unreachable("expected corresponding quantum value");
 }
-
-/// Verify linear uses, static roots, and positional quantum state flow.
-///
-/// Requires ordinary MLIR verification first. Every linear QCO value has
-/// exactly one use, static indices are unique in the entry block, and function
-/// and structured-control-flow results continue quantum arguments in order.
-/// In SSA regions, constant register slots cannot be extracted again before
-/// reinsertion.
-[[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
 /// Maximum dense modifier matrix width.
 ///

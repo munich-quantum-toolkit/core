@@ -29,6 +29,7 @@
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"

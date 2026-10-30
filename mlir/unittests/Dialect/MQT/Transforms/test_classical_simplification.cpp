@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 
 #include "gtest/gtest.h"
 
@@ -275,8 +276,8 @@ TEST_F(ClassicalSimplificationTest, PromotesWideSnapshotComparisons) {
             reversed ? constant : snapshot, reversed ? snapshot : constant);
         auto position = arith::ConstantIndexOp::create(
             builder, returned.getLoc(),
-            static_cast<int64_t>(20 * boundaryIndex + 2 * index +
-                                 (reversed ? 1 : 0)));
+            20 * static_cast<int64_t>(boundaryIndex) +
+                2 * static_cast<int64_t>(index) + (reversed ? 1 : 0));
         cbit::StoreOp::create(builder, returned.getLoc(), result,
                               returned.getOperand(0), position);
       }
