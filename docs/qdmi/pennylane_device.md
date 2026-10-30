@@ -398,8 +398,8 @@ interface.
 Retrieve the batch handle from `error.job` on a
 {py:class}`~mqt.core.plugins.pennylane.exceptions.PennyLaneExecutionError`, or
 from `device.last_job` after an interruption inside `device.execute()`. Each
-`execute()` call clears this attribute until its batch is prepared. QNode
-preprocessing happens before `execute()` and does not update it.
+`submit()` or `execute()` call clears this attribute until its batch is
+prepared. QNode preprocessing happens before `execute()` and does not update it.
 
 To recover a QNode's measurement values, save its executable tapes and
 postprocessor **before execution**. For the Bell-state QNode above, use
@@ -408,9 +408,15 @@ PennyLane's
 
 ```{code-cell} ipython3
 tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
-results = bell_device.execute(tapes)
-counts = postprocess(results)[0]
+job = bell_device.submit(tapes)
+# Accepted QDMI handles are available before waiting for results.
+job_ids = [attempt.handle.id for entry in job.entries for attempt in entry.attempts if attempt.handle is not None]
+counts = postprocess(job.result())[0]
 ```
+
+`submit()` accepts the same preprocessed tapes and execution configuration as
+`execute()`, which submits and collects in one call. Job IDs identify provider
+work; their availability does not guarantee retrieval after process termination.
 
 If this execution stops, keep the same Python session. After resolving a
 connection or result-read problem, recover the measurement values from the
@@ -418,7 +424,7 @@ retained jobs:
 
 ```{code-cell} ipython3
 job = bell_device.last_job
-assert job is not None  # A batch was prepared by execute().
+assert job is not None  # A batch was prepared by submit().
 entries = job.collect()
 counts = postprocess(job.result())[0]
 ```
