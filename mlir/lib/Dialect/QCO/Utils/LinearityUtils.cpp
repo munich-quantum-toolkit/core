@@ -239,7 +239,7 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
           origin(extract.getTensor()) == origin(insert.getDest())) {
         const auto source = getConstantIntValue(extract.getIndex());
         const auto dest = getConstantIntValue(insert.getIndex());
-        // Unknown index equality remains a program precondition.
+        // Unknown index equality is a program precondition.
         if (!source || !dest || *source == *dest) {
           auto& slots = extractedSlots[origin(extract.getTensor())];
           if (source) {

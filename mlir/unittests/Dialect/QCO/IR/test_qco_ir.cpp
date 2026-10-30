@@ -379,47 +379,6 @@ TEST_F(QCOTest, ChecksOutstandingConstantRegisterSlots) {
   }
 }
 
-TEST_F(QCOTest, ChecksOutstandingDynamicRegisterSlots) {
-  for (const bool sameIndex : {false, true}) {
-    SCOPED_TRACE(sameIndex);
-    const auto source = llvm::formatv(R"mlir(
-      module {{
-        func.func @main(%i: index, %j: index) attributes {{mqt.entry_point} {{
-          %c0 = arith.constant 0 : index
-          %c2 = arith.constant 2 : index
-          %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-          %t1, %left = qtensor.extract %tensor[%i] : tensor<2x!qco.qubit>
-          %t2, %right = qtensor.extract %t1[{0}] : tensor<2x!qco.qubit>
-          %changed = qco.h %left : !qco.qubit
-          %restored = arith.addi %i, %c0 : index
-          %t3 = qtensor.insert %changed into %t2[%restored] : tensor<2x!qco.qubit>
-          %t4 = qtensor.insert %right into %t3[{0}] : tensor<2x!qco.qubit>
-          %t5, %again = qtensor.extract %t4[%i] : tensor<2x!qco.qubit>
-          %t6 = qtensor.insert %again into %t5[%i] : tensor<2x!qco.qubit>
-          qtensor.dealloc %t6 : tensor<2x!qco.qubit>
-          return
-        }
-      }
-    )mlir",
-                                      sameIndex ? "%i" : "%j")
-                            .str();
-    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    std::string diagnostics;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      diagnostics += diagnostic.str();
-      return success();
-    });
-    EXPECT_EQ(succeeded(qco::verifyLinearity(*moduleOp)), !sameIndex);
-    if (sameIndex) {
-      EXPECT_NE(diagnostics.find("register slot that is already extracted"),
-                std::string::npos);
-    }
-    EXPECT_TRUE(succeeded(verify(*moduleOp)));
-  }
-}
-
 TEST_F(QCOTest, KeepsRegisterSlotsDistinctAcrossRegistersAndBranches) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {

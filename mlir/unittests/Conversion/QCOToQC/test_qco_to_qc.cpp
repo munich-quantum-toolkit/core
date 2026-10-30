@@ -654,7 +654,9 @@ TEST(QCOToQCRegressionTest, ProvesDynamicRestorationBeforeRewriting) {
       %same = arith.addi %indices#0, %c0 : index
       %t3 = qtensor.insert %flipped into %t2[%same] : tensor<2x!qco.qubit>
       %t4 = qtensor.insert %right into %t3[%indices#1] : tensor<2x!qco.qubit>
-      qtensor.dealloc %t4 : tensor<2x!qco.qubit>
+      %t5, %again = qtensor.extract %t4[%indices#0] : tensor<2x!qco.qubit>
+      %t6 = qtensor.insert %again into %t5[%indices#0] : tensor<2x!qco.qubit>
+      qtensor.dealloc %t6 : tensor<2x!qco.qubit>
       return
     }
   })mlir";
@@ -687,10 +689,11 @@ TEST(QCOToQCRegressionTest, ProvesDynamicRestorationBeforeRewriting) {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     auto function = *moduleOp->getOps<func::FuncOp>().begin();
     auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
-    ASSERT_EQ(loads.size(), 2U);
+    ASSERT_EQ(loads.size(), 3U);
     auto indices = *function.getOps<scf::IfOp>().begin();
     EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
     EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
+    EXPECT_EQ(loads[2].getIndices().front(), indices.getResult(0));
     EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
   }
 }
