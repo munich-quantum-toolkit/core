@@ -22,7 +22,6 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
-#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
@@ -166,8 +165,6 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
             } else {
               pm.addPass(createQCToQIRBase());
             }
-            pm.addPass(qir::createQIRSetAttributesAndMetadata(
-                {profile == QIRProfile::Adaptive}));
           },
           "failed to convert QC to QIR"))) {
     return failure();

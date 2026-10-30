@@ -14,9 +14,8 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
   let description = [{
     Lower supported QC operations to QIR Base Profile runtime calls and
-    LLVM dialect operations. With a matching attached target payload, attach
-    QIR attributes and module flags and validate the emitted requirements.
-    Without a matching target, run `set-qir-attributes-and-metadata` separately.
+    LLVM dialect operations. Attach QIR attributes and module flags, then
+    validate the emitted requirements against a matching attached target payload.
 
     Requirements:
 

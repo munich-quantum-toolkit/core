@@ -202,19 +202,16 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
 }
 
 LogicalResult
-validateQIRTarget(ModuleOp moduleOp,
-                  const std::optional<PayloadSpecification>& payload,
-                  function_ref<LogicalResult(OpPassManager&)> runPipeline) {
-  if (!payload) {
-    return success();
-  }
+finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
+                    const std::optional<PayloadSpecification>& payload,
+                    function_ref<LogicalResult(OpPassManager&)> runPipeline) {
   OpPassManager metadata(ModuleOp::getOperationName());
-  metadata.addPass(qir::createQIRSetAttributesAndMetadata(
-      {payload->format().profile == "adaptive"}));
+  metadata.addPass(
+      qir::createQIRSetAttributesAndMetadata({profile == "adaptive"}));
   if (failed(runPipeline(metadata))) {
     return failure();
   }
-  return qir::validateCapabilities(moduleOp, *payload);
+  return payload ? qir::validateCapabilities(moduleOp, *payload) : success();
 }
 
 LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp) {

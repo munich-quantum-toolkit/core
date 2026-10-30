@@ -130,13 +130,13 @@ struct LoweringState {
 prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline);
 
-/// Attach metadata and validate emitted requirements for a checked target.
+/// Attach QIR metadata and validate emitted requirements for a matching target.
 ///
-/// Without a matching target payload, leave metadata generation to the caller.
+/// The profile is the payload identifier, "base" or "adaptive".
 [[nodiscard]] LogicalResult
-validateQIRTarget(ModuleOp moduleOp,
-                  const std::optional<PayloadSpecification>& payload,
-                  function_ref<LogicalResult(OpPassManager&)> runPipeline);
+finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
+                    const std::optional<PayloadSpecification>& payload,
+                    function_ref<LogicalResult(OpPassManager&)> runPipeline);
 
 /// Bufferize classical tensors and expose strided-copy loops before lowering.
 [[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);

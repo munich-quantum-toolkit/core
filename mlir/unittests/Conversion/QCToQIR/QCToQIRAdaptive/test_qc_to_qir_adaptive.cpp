@@ -19,7 +19,6 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 
@@ -1183,9 +1182,6 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   });
   EXPECT_EQ(combinations, 1U);
 
-  PassManager metadata(&context);
-  metadata.addPass(qir::createQIRSetAttributesAndMetadata({true}));
-  ASSERT_TRUE(succeeded(metadata.run(*module)));
   bool staticResults = false;
   module->walk([&](LLVM::ModuleFlagsOp flags) {
     for (const auto flag :
@@ -1197,6 +1193,9 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   });
   EXPECT_TRUE(staticResults);
   auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"qir_profiles", "adaptive_profile"})));
   EXPECT_TRUE(llvm::is_contained(
       main.getPassthroughAttr(),
       builder.getStrArrayAttr({"required_num_results", "2"})));

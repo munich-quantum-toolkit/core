@@ -635,7 +635,7 @@ protected:
     PassManager cleanup(ctx);
     cleanup.addPass(createCanonicalizerPass());
     if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main)) ||
-        failed(validateQIRTarget(moduleOp, *payload, run))) {
+        failed(finalizeQIRMetadata(moduleOp, "base", *payload, run))) {
       signalPassFailure();
     }
   }

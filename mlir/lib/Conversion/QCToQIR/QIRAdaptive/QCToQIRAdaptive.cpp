@@ -956,7 +956,7 @@ protected:
     }
 
     if (failed(finalizeQIRConversion(moduleOp, target, typeConverter)) ||
-        failed(validateQIRTarget(moduleOp, *payload, run))) {
+        failed(finalizeQIRMetadata(moduleOp, "adaptive", *payload, run))) {
       signalPassFailure();
     }
   }
