@@ -23,11 +23,12 @@ namespace mlir::qco {
 /// Requires ordinary MLIR verification first. Every linear QCO value has
 /// exactly one use, static indices are unique in the entry block, and function
 /// and structured-control-flow results continue quantum arguments in order.
-/// In SSA regions, constant register slots cannot be extracted again before
-/// reinsertion.
+/// In SSA regions, equal constant indices or the same dynamic SSA index cannot
+/// extract an outstanding register slot. Other dynamic aliasing remains a
+/// program precondition.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
-/// Collect quantum wire roots and verify positional results and constant
+/// Collect quantum wire roots and verify positional results and known
 /// register-slot ownership in SSA regions.
 ///
 /// Requires ordinary MLIR verification first. Region arguments remain local

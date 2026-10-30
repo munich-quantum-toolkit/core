@@ -581,6 +581,14 @@ TEST(QCOToQCRegressionTest, RejectsInvalidTensorSlotsBeforeRewriting) {
       qtensor.dealloc %missing : tensor<2x!qco.qubit>
     )mlir",
                      "already extracted"},
+           std::pair{R"mlir(
+      %rest, %left_out = qtensor.extract %tensor[%index] : tensor<2x!qco.qubit>
+      %missing, %right_out = qtensor.extract %rest[%index] : tensor<2x!qco.qubit>
+      qco.sink %left_out : !qco.qubit
+      qco.sink %right_out : !qco.qubit
+      qtensor.dealloc %missing : tensor<2x!qco.qubit>
+    )mlir",
+                     "already extracted"},
        }) {
     for (const bool graphRegion : {false, true}) {
       // Duplicate-slot tracking requires SSA order; insertion preflight does
@@ -593,7 +601,8 @@ TEST(QCOToQCRegressionTest, RejectsInvalidTensorSlotsBeforeRewriting) {
       const auto source =
           std::string("module {\n") +
           (graphRegion ? ""
-                       : "func.func @main() attributes {mqt.entry_point} {\n") +
+                       : "func.func @main(%index: index) attributes "
+                         "{mqt.entry_point} {\n") +
           R"mlir(
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
