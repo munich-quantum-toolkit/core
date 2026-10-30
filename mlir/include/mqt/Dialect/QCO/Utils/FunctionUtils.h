@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mqt/Dialect/QCO/Utils/LinearityUtils.h" // IWYU pragma: export
-
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/TypeRange.h"
