@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -56,6 +58,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include <array>
@@ -131,6 +134,52 @@ static void expectConversionFailure(
       });
   EXPECT_TRUE(failed(convert(moduleOp)));
   EXPECT_TRUE(diagnosed) << expected.str();
+}
+
+TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedCountedLoopConstraints) {
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  for (uint64_t maximum : {2U, 3U}) {
+    SCOPED_TRACE(maximum);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %three = arith.constant 3 : index
+        %q = qc.static 0 : !qc.qubit
+        scf.for %i = %zero to %three step %one {
+          qc.h %q : !qc.qubit
+        }
+        return
+      }
+    })mlir",
+                                                &context);
+    ASSERT_TRUE(moduleOp);
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "qir", .version = "2.1", .profile = "adaptive"},
+        {
+            {
+                .id = ProgramCapability::COUNTED_ITERATION.str(),
+                .constraints =
+                    {
+                        {
+                            .id = "max-iteration-count",
+                            .value = maximum,
+                        },
+                    },
+            },
+            {.id = "qir.int-computations"},
+        }));
+    attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
+    if (maximum == 2U) {
+      expectConversionFailure(*moduleOp, "scf.for");
+    } else {
+      ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+      EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    }
+  }
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {

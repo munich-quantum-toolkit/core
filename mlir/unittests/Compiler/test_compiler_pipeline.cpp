@@ -1899,6 +1899,10 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
            std::pair{"for int i in [0:2] { h q; }", true},
            std::pair{"for int i in [0:3] { h q; }", false},
            std::pair{"int i = 0; while (i < 4) { h q; i += 1; }", false},
+           std::pair{"output bit result; for int i in [0:2] { h q; } "
+                     "int j = 0; while (j < 2) { h q; j += 1; } "
+                     "result = measure q;",
+                     false},
            std::pair{"bit b = 0; while (!b) { h q; b = measure q; }", false},
            std::pair{"array[int, 8] a = {0, 1, 2, 3, 4, 5, 6, 7}; "
                      "array[int, 4] b = a[0:2:6]; rx(b[3]) q;",
@@ -1915,6 +1919,7 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
         " bit c = measure q;");
     MQT_ASSERT_SUCCESS(input);
     attachTargetEnvironment(input->module(), environment);
+    auto target = input->module()->getAttr(mlir::mqt::TargetEnvAttr::name);
     auto output = [&] {
       ScopedDiagnosticHandler handler(input->module().getContext(),
                                       [](Diagnostic&) { return success(); });
@@ -1924,6 +1929,8 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
     if (!permitted) {
       continue;
     }
+    EXPECT_EQ(output->module()->getAttr(mlir::mqt::TargetEnvAttr::name),
+              target);
     auto llvmIR = std::move(*output).intoLLVMIR();
     ASSERT_TRUE(succeeded(llvmIR));
     EXPECT_TRUE(StringRef(*llvmIR).contains("backwards_branching"));
@@ -1934,6 +1941,68 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
     auto qc = std::move(*qco).intoQC();
     ASSERT_TRUE(succeeded(qc));
     EXPECT_TRUE(succeeded(std::move(*qc).intoQIR(QIRProfile::Adaptive)));
+  }
+}
+
+TEST_F(CompilerPipelineTest, BoundedQIRSupportsQuantumStorage) {
+  const auto supported = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+  std::vector<ProgramCapability> capabilities(supported.capabilities().begin(),
+                                              supported.capabilities().end());
+  for (auto& capability : capabilities) {
+    if (capability.id == ProgramCapability::COUNTED_ITERATION) {
+      capability.constraints = {{.id = "max-iteration-count", .value = 3}};
+    }
+  }
+  const TargetEnvironment environment(
+      makeUnrestrictedTarget(),
+      llvm::cantFail(PayloadSpecification::create(supported.format(),
+                                                  std::move(capabilities))));
+  for (bool classicalHeap : {false, true}) {
+    SCOPED_TRACE(classicalHeap);
+    auto input = QCProgram::fromMLIRString(
+        std::string("module { ") +
+        (classicalHeap ? "func.func private @consume(memref<1xi64>) " : "") +
+        "func.func @main() -> i1 attributes {mqt.entry_point} { " +
+        (classicalHeap ? "%scratch = memref.alloc() : memref<1xi64> "
+                         "func.call @consume(%scratch) : (memref<1xi64>) -> () "
+                       : "") +
+        R"mlir(
+          %one = arith.constant 1 : index
+          %zero = arith.constant 0 : index
+          %reg = memref.alloc() : memref<1x!qc.qubit>
+          %refs = memref.alloca(%one) : memref<?x!qc.qubit>
+          %q = memref.load %reg[%zero] : memref<1x!qc.qubit>
+          memref.store %q, %refs[%zero] : memref<?x!qc.qubit>
+          %ref = memref.load %refs[%zero] : memref<?x!qc.qubit>
+          qc.x %ref : !qc.qubit
+          %result = qc.measure %ref : !qc.qubit -> i1
+          memref.dealloc %reg : memref<1x!qc.qubit>
+          return %result : i1
+        } })mlir");
+    MQT_ASSERT_SUCCESS(input);
+    attachTargetEnvironment(input->module(), environment);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(input->module().getContext(),
+                                    [&](Diagnostic& diagnostic) {
+                                      diagnostics += diagnostic.str();
+                                      return success();
+                                    });
+    auto output = input->copy().intoQIR(QIRProfile::Adaptive);
+    if (classicalHeap) {
+      EXPECT_TRUE(failed(output));
+      EXPECT_TRUE(StringRef(diagnostics).contains("requires stack allocation"))
+          << diagnostics;
+      continue;
+    }
+    ASSERT_TRUE(succeeded(output)) << diagnostics;
+    auto llvmIR = std::move(*output).intoLLVMIR();
+    ASSERT_TRUE(succeeded(llvmIR));
+    auto session = value(::qir::JitSession::create(
+        *llvmIR, "quantum-storage", ::qir::Execution::Sampling, 42));
+    std::vector<std::string> samples;
+    ASSERT_EQ(value(session->sample(4, samples)), 0);
+    EXPECT_EQ(samples, std::vector<std::string>(4, "1"));
   }
 }
 

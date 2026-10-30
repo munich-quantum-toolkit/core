@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -22,8 +23,10 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -33,6 +36,8 @@
 #include <variant>
 
 namespace mlir {
+
+class OpPassManager;
 
 /// Register dialects and bufferization interfaces for constant tensor reads.
 void registerQIRClassicalTensorDialects(DialectRegistry& registry);
@@ -114,6 +119,24 @@ struct LoweringState {
   [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
+
+/// Check a target payload matching the requested QIR profile before lowering.
+///
+/// The profile is the payload identifier, "base" or "adaptive".
+/// Return no payload when the module has no matching QIR target. Otherwise,
+/// return a copy with proved counted-loop constraints discharged. Run child
+/// passes through the caller to preserve instrumentation and reproducers.
+[[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
+                 function_ref<LogicalResult(OpPassManager&)> runPipeline);
+
+/// Attach metadata and validate emitted requirements for a checked target.
+///
+/// Without a matching target payload, leave metadata generation to the caller.
+[[nodiscard]] LogicalResult
+validateQIRTarget(ModuleOp moduleOp,
+                  const std::optional<PayloadSpecification>& payload,
+                  function_ref<LogicalResult(OpPassManager&)> runPipeline);
 
 /// Bufferize classical tensors and expose strided-copy loops before lowering.
 [[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);

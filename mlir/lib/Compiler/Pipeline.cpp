@@ -16,7 +16,6 @@
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -27,7 +26,6 @@
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
-#include "mqt/Target/QIR/Capabilities.h"
 #include "mqt/Target/QIR/Export.h"
 
 #include "Diagnostics.h"
@@ -38,14 +36,11 @@
 #include "kj/array.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -59,7 +54,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -162,57 +156,12 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
 FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
-  std::optional<PayloadSpecification> checkedPayload;
-  bool checkLoopConstraints = false;
-  if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
-    const TargetEnvironmentAnalysis environment(moduleOp);
-    if (!environment) {
-      moduleOp.emitError(environment.error());
-      return failure();
-    }
-    const auto& payload = environment.environment().payloadSpecification();
-    const auto& format = payload.format();
-    if (format.id == "qir" &&
-        format.profile ==
-            (profile == QIRProfile::Adaptive ? "adaptive" : "base")) {
-      checkedPayload = payload;
-      checkLoopConstraints =
-          profile == QIRProfile::Adaptive &&
-          llvm::any_of(payload.capabilities(), [](const auto& capability) {
-            return capability.id == ProgramCapability::COUNTED_ITERATION &&
-                   !capability.constraints.empty();
-          });
-    }
-  }
-  if (checkLoopConstraints && failed(prepareQIRClassicalMemory(moduleOp))) {
-    return failure();
-  }
-  if (checkLoopConstraints &&
-      !moduleOp.walk([](scf::WhileOp) { return WalkResult::interrupt(); })
-           .wasInterrupted()) {
-    // A while loop can require counted iteration after dependence analysis.
-    std::vector<ProgramCapability> capabilities(
-        checkedPayload->capabilities().begin(),
-        checkedPayload->capabilities().end());
-    for (auto& capability : capabilities) {
-      if (capability.id == ProgramCapability::COUNTED_ITERATION) {
-        capability.constraints.clear();
-      }
-    }
-    checkedPayload = llvm::cantFail(PayloadSpecification::create(
-        checkedPayload->format(), std::move(capabilities),
-        checkedPayload->optionalCapabilitiesKnown()));
-  }
   if (failed(runWithPassManager(
           moduleOp,
-          [&](OpPassManager& pm) {
+          [profile](OpPassManager& pm) {
             pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
-              // Check bounds before SCF lowering discards their structure.
-              if (checkLoopConstraints) {
-                pm.addPass(qco::createLegalizeControlFlow());
-              }
               pm.addPass(createQCToQIRAdaptive());
             } else {
               pm.addPass(createQCToQIRBase());
@@ -221,10 +170,6 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
                 {profile == QIRProfile::Adaptive}));
           },
           "failed to convert QC to QIR"))) {
-    return failure();
-  }
-  if (checkedPayload &&
-      failed(qir::validateCapabilities(moduleOp, *checkedPayload))) {
     return failure();
   }
   return QIRProgram(std::move(storage), profile);

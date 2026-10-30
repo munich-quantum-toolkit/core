@@ -456,7 +456,7 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
 namespace {
 /// Lower supported QC operations to QIR Base runtime calls and LLVM IR.
 ///
-/// QIR attributes and module flags are attached by the separate metadata pass.
+/// Matching target payloads are checked before and after lowering.
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
 
@@ -545,6 +545,14 @@ protected:
       signalPassFailure();
       return;
     }
+    const auto run = [&](OpPassManager& pm) {
+      return runPipeline(pm, moduleOp);
+    };
+    auto payload = prepareQIRTarget(moduleOp, "base", run);
+    if (failed(payload)) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
 
@@ -626,7 +634,8 @@ protected:
     // Discard folded descriptor operations before enforcing Base's subset.
     PassManager cleanup(ctx);
     cleanup.addPass(createCanonicalizerPass());
-    if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main))) {
+    if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main)) ||
+        failed(validateQIRTarget(moduleOp, *payload, run))) {
       signalPassFailure();
     }
   }
