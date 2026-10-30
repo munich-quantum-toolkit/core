@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pennylane as qp
@@ -26,6 +26,9 @@ from mqt.core.plugins.pennylane import (
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
+
+if TYPE_CHECKING:
+    from pennylane.typing import Result, ResultBatch
 
 
 @pytest.mark.parametrize("installed", ["0.14.1", "0.16.0"])
@@ -88,6 +91,41 @@ def test_native_groups_preserve_heterogeneous_shot_partitions() -> None:
     assert device.shots.total_shots is None
 
 
+def test_submit_exposes_native_jobs_before_collection() -> None:
+    """Retain real provider handles without waiting or decoding the batch."""
+    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    tapes = (
+        qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[1, 0])], shots=[2, 3]),
+        qp.tape.QuantumScript([qp.X(1)], [qp.sample(wires=[1, 0])], shots=3),
+    )
+    with qp.Tracker(device) as tracker:
+        job = device.submit(tapes)
+        assert device.last_job is job
+        assert len(job.entries) == 3
+        assert all(entry.result is None for entry in job.entries)
+        for entry in job.entries:
+            handle = entry.attempts[0].handle
+            assert handle is not None
+            assert handle.id
+        assert device.submitted_jobs == 2
+        results = job.result()
+    assert tracker.totals == {"batches": 1, "batch_len": 2, "executions": 3, "shots": 8}
+    for result, shots, expected in zip((*results[0], results[1]), (2, 3, 3), ([0, 1], [0, 1], [1, 0]), strict=True):
+        np.testing.assert_array_equal(result, np.tile(expected, (shots, 1)))
+
+
+def test_empty_batch_keeps_execution_state() -> None:
+    """Empty execution does not compile, submit, or record a batch."""
+    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    with qp.Tracker(device) as tracker:
+        assert device.execute(()) == ()
+    assert device.last_job is None
+    assert device.submitted_jobs == 0
+    assert device.execution_time == 0
+    assert tracker.totals == {}
+    assert device.submit(()).result() == ()
+
+
 def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """Count overlapping execution once per submit/collect phase."""
     readings = iter([0.0, 0.5, 0.5, 1.5, 10.0, 11.0, 11.0, 12.25])
@@ -101,7 +139,10 @@ def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize("max_retries", [0, 3])
-def test_retry_shot_copies_preserves_order_and_tracking(monkeypatch: pytest.MonkeyPatch, max_retries: int) -> None:
+@pytest.mark.parametrize("defer_collection", [False, True])
+def test_retry_shot_copies_preserves_order_and_tracking(
+    monkeypatch: pytest.MonkeyPatch, max_retries: int, *, defer_collection: bool
+) -> None:
     """Inject one failed job while retaining real compiled programs and jobs."""
     original_check = QDMIJobHandle.check
     original_program_status = QDMIJobHandle.get_program_status
@@ -145,12 +186,16 @@ def test_retry_shot_copies_preserves_order_and_tracking(monkeypatch: pytest.Monk
     # Inject an equivalent prepared program with permuted readout and a zero slot.
     monkeypatch.setattr(device, "_prepare", lambda tapes: [program] * len(tapes))
     tape = qp.tape.QuantumScript([qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4])
+
+    def execute() -> Result | ResultBatch:
+        return device.submit(tape).result() if defer_collection else device.execute(tape)
+
     with qp.Tracker(device) as tracker:
         if max_retries:
-            result = device.execute(tape)
+            result = execute()
         else:
             with pytest.raises(PennyLaneExecutionError) as caught:
-                device.execute(tape)
+                execute()
             assert caught.value.job is device.last_job
             assert device.last_job is not None
             device.last_job.resubmit([0])

@@ -29,7 +29,7 @@ import operator
 from importlib.metadata import version
 from numbers import Integral
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import pennylane as qp
 from packaging.specifiers import SpecifierSet
@@ -301,26 +301,28 @@ class QDMIDevice(Device):
             raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
-    def execute(
+    def submit(
         self,
         circuits: QuantumScriptOrBatch,
         execution_config: ExecutionConfig | None = None,
-    ) -> Result | ResultBatch:
-        """Submit a batch to QDMI before collecting its ordered results.
+    ) -> PennyLaneJob:
+        """Submit preprocessed tapes without waiting for their results.
+
+        Accepted handles are available through the returned job's ``entries``.
+        Submission failures retain the job on ``last_job``; uncertain
+        submissions are never retried automatically.
 
         Returns:
-            One result for every preprocessed input tape.
+            The submitted batch, with the same result shape as ``execute()``.
         """
         self.last_job = None
         del execution_config
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
         shot_copies = tuple(self._shot_copies(tape.shots) for tape in tapes)
-        if not tapes:
-            return cast("ResultBatch", ())
-        prepared = tuple(zip(self._prepare(tapes), shot_copies, strict=True))
+        prepared = tuple(zip(self._prepare(tapes), shot_copies, strict=True)) if tapes else ()
 
-        if self.tracker.active:
+        if tapes and self.tracker.active:
             self.tracker.update(batches=1, batch_len=len(tapes))
             self.tracker.record()
 
@@ -332,8 +334,24 @@ class QDMIDevice(Device):
             max_retries=self._max_retries,
         )
         self.last_job = job
-        job.submit()
-        return job.result()
+        if tapes:
+            job.submit()
+        return job
+
+    def execute(
+        self,
+        circuits: QuantumScriptOrBatch,
+        execution_config: ExecutionConfig | None = None,
+    ) -> Result | ResultBatch:
+        """Submit preprocessed tapes and collect their ordered results.
+
+        Returns:
+            One result for every preprocessed input tape.
+        """
+        if not isinstance(circuits, qp.tape.QuantumScript) and not circuits:
+            self.last_job = None
+            return ()
+        return self.submit(circuits, execution_config).result()
 
 
 class DDSIMDevice(QDMIDevice):
