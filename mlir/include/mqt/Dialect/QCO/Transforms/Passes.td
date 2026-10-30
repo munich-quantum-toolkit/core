@@ -153,7 +153,7 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
     preserving enclosing loops. This analysis stays within nested loop chains.
     The `max-operations` option limits cloned body operations to one billion by default.
     Run constant propagation and QCO cleanup again after this pass, then
-    `legalize-control-flow` to check the remaining branches and loops.
+    `legalize-qco-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
@@ -163,12 +163,12 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
                              "Maximum number of cloned loop-body operations.">];
 }
 
-def LegalizeControlFlow : PayloadControlFlowPass<"legalize-control-flow"> {
+def LegalizeControlFlow : PayloadControlFlowPass<"legalize-qco-control-flow"> {
   let options = payloadOptions;
   let dependentDialects = ["mlir::mqt::MQTDialect", "mlir::qco::QCODialect",
                            "mlir::scf::SCFDialect",
                            "mlir::arith::ArithDialect"];
-  let summary = "Legalize control flow for the selected payload";
+  let summary = "Legalize QCO and SCF control flow for the selected payload";
   let description = [{
     Uses an explicit `payload-spec` attribute when set, otherwise reads
     `mqt.target_env`. Explicit payloads do not require hardware metadata. The pass

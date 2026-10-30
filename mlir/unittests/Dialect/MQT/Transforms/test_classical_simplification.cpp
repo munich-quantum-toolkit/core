@@ -9,7 +9,7 @@
  */
 
 /// @file
-/// Tests for classical memory promotion and scoped condition simplification.
+/// Tests classical memory promotion and structured control-flow simplification.
 
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -25,12 +25,14 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
@@ -39,6 +41,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <bitset>
@@ -66,6 +69,66 @@ protected:
     return manager.run(moduleOp);
   }
 };
+
+TEST_F(ClassicalSimplificationTest, PayloadControlPreservesSwitchSelection) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64 attributes {mqt.entry_point} {
+        %result = scf.index_switch %selector -> i64
+        default {
+          %nested = scf.index_switch %selector -> i64
+          case 0 {
+            %zero = arith.constant 0 : i64
+            scf.yield %zero : i64
+          }
+          case 1 {
+            %one = arith.constant 1 : i64
+            scf.yield %one : i64
+          }
+          default {
+            %two = arith.constant 2 : i64
+            scf.yield %two : i64
+          }
+          scf.yield %nested : i64
+        }
+        return %result : i64
+      }
+    }
+  )mlir";
+  for (int64_t selector : {0, 1, 99}) {
+    SCOPED_TRACE(selector);
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context_);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    mlir::mqt::LegalizeControlFlowOptions options;
+    options.payloadSpec = R"mlir(#mqt.payload_spec<
+      format = <id = "openqasm", version = "3.0.0", profile = "", encoding = text>,
+      capabilities = [<id = "forward-branching", value = 0, constraints = []>],
+      optional_capabilities_known = false>)mlir";
+    PassManager manager(&context_);
+    manager.addPass(mlir::mqt::createLegalizeControlFlow(options));
+    ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    bool hasSwitch = false;
+    moduleOp->walk([&](scf::IndexSwitchOp) { hasSwitch = true; });
+    EXPECT_FALSE(hasSwitch);
+
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+    OpBuilder builder(&context_);
+    builder.setInsertionPointToStart(&function.front());
+    auto value =
+        arith::ConstantIndexOp::create(builder, function.getLoc(), selector);
+    function.getArgument(0).replaceAllUsesWith(value.getResult());
+    PassManager cleanup(&context_);
+    cleanup.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(cleanup.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    auto returned = cast<func::ReturnOp>(function.front().getTerminator());
+    IntegerAttr result;
+    ASSERT_TRUE(matchPattern(returned.getOperand(0), m_Constant(&result)));
+    EXPECT_EQ(result.getInt(), selector == 99 ? 2 : selector);
+  }
+}
 
 TEST_F(ClassicalSimplificationTest, ConditionsRemainScopedToTheirBranches) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
@@ -275,8 +338,8 @@ TEST_F(ClassicalSimplificationTest, PromotesWideSnapshotComparisons) {
             reversed ? constant : snapshot, reversed ? snapshot : constant);
         auto position = arith::ConstantIndexOp::create(
             builder, returned.getLoc(),
-            static_cast<int64_t>(20 * boundaryIndex + 2 * index +
-                                 (reversed ? 1 : 0)));
+            20 * static_cast<int64_t>(boundaryIndex) +
+                2 * static_cast<int64_t>(index) + (reversed ? 1 : 0));
         cbit::StoreOp::create(builder, returned.getLoc(), result,
                               returned.getOperand(0), position);
       }

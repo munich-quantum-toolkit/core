@@ -19,7 +19,6 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
@@ -739,7 +738,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     QCToQIRAdaptiveBase::getDependentDialects(registry);
     registerQIRClassicalTensorDialects(registry);
     mqt::createPromoteClassicalMemory()->getDependentDialects(registry);
-    qco::createLegalizeControlFlow()->getDependentDialects(registry);
+    mqt::createLegalizeControlFlow()->getDependentDialects(registry);
   }
 
   /// Ensures proper block structure for QIR Adaptive Profile

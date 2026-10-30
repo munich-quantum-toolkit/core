@@ -11,6 +11,7 @@ add_mlir_library(
   SimplifyQuantum.cpp
   DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
+  PayloadControlFlow.cpp
   PromoteClassicalMemory.cpp
   SimplifyClassicalControl.cpp
   UnrollModifiers.cpp
@@ -18,7 +19,9 @@ add_mlir_library(
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/Transforms
   LINK_LIBS
   PRIVATE
+  MQTCompilerTarget
   MLIRArithDialect
+  MLIRAsmParser
   MLIRCBitDialect
   MLIRFuncInlinerExtension
   MLIRIR
@@ -29,6 +32,7 @@ add_mlir_library(
   MLIRPass
   MLIRQCDialect
   MLIRQCODialect
+  MLIRSCFDialect
   MLIRSideEffectInterfaces
   MLIRTransforms
   MLIRTransformUtils

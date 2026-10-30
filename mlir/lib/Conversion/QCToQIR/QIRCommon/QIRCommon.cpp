@@ -19,7 +19,6 @@
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Target/QIR/Capabilities.h"
@@ -180,7 +179,7 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
     }
     OpPassManager preparation(ModuleOp::getOperationName());
     preparation.addPass(mqt::createPromoteClassicalMemory());
-    preparation.addPass(qco::createLegalizeControlFlow());
+    preparation.addPass(mqt::createLegalizeControlFlow());
     if (failed(runPipeline(preparation))) {
       return failure();
     }

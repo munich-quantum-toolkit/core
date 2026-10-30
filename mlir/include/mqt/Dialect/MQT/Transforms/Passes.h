@@ -13,6 +13,8 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 
+#include <string>
+
 namespace mlir {
 class ModuleOp;
 class RewriterBase;

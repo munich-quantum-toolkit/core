@@ -17,7 +17,6 @@ add_mlir_library(
   PUBLIC
   MQTCompilerTarget
   MLIRMQTTransforms
-  MLIRQCOTransforms
   MLIRQIRTransforms
   MLIRQIRTranslation
   MLIRIR

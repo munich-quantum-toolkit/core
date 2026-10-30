@@ -463,7 +463,9 @@ branches must normalize them before target compilation. The pipeline removes
 unused symbols, propagates constants, and runs QCO cleanup before deciding which
 loops need expansion. It then specializes loops required by the selected payload
 or by placement, cleans up the resulting IR, and checks the remaining control
-flow with `legalize-control-flow`:
+flow with `legalize-qco-control-flow`. For QC programs containing SCF control
+flow, use `legalize-control-flow`; QCO state checks and QCO switch lowering
+belong to the QCO pass:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
