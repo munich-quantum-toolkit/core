@@ -109,7 +109,11 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
 
 LogicalResult mlir::qco::collectWireOrigins(Operation* root,
                                             DenseMap<Value, Value>& origins) {
-  DenseMap<Value, DenseSet<int64_t>> extractedSlots;
+  struct ExtractedSlots {
+    DenseSet<int64_t> constants;
+    DenseSet<Value> dynamicValues;
+  };
+  DenseMap<Value, ExtractedSlots> extractedSlots;
   const auto origin = [&](Value value) {
     auto known = origins.lookup(value);
     return known ? known : value;
@@ -216,8 +220,12 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
       auto tensor = origin(extract.getTensor());
       // Graph regions need not place definitions before uses.
       if (mayHaveSSADominance(*extract->getParentRegion())) {
-        if (auto index = getConstantIntValue(extract.getIndex());
-            index && !extractedSlots[tensor].insert(*index).second) {
+        auto& slots = extractedSlots[tensor];
+        const auto index = getConstantIntValue(extract.getIndex());
+        const bool inserted =
+            index ? slots.constants.insert(*index).second
+                  : slots.dynamicValues.insert(extract.getIndex()).second;
+        if (!inserted) {
           extract.emitOpError("cannot extract a register slot that is already "
                               "extracted");
           return WalkResult::interrupt();
@@ -231,9 +239,14 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
           origin(extract.getTensor()) == origin(insert.getDest())) {
         const auto source = getConstantIntValue(extract.getIndex());
         const auto dest = getConstantIntValue(insert.getIndex());
-        // Equality of dynamic slot indices remains a program precondition.
-        if (source && (!dest || *source == *dest)) {
-          extractedSlots[origin(extract.getTensor())].erase(*source);
+        // Unknown index equality is a program precondition.
+        if (!source || !dest || *source == *dest) {
+          auto& slots = extractedSlots[origin(extract.getTensor())];
+          if (source) {
+            slots.constants.erase(*source);
+          } else {
+            slots.dynamicValues.erase(extract.getIndex());
+          }
         }
       }
       origins[insert.getResult()] = origin(insert.getDest());

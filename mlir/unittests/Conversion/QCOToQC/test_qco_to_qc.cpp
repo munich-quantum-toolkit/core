@@ -581,6 +581,14 @@ TEST(QCOToQCRegressionTest, RejectsInvalidTensorSlotsBeforeRewriting) {
       qtensor.dealloc %missing : tensor<2x!qco.qubit>
     )mlir",
                      "already extracted"},
+           std::pair{R"mlir(
+      %rest, %left_out = qtensor.extract %tensor[%index] : tensor<2x!qco.qubit>
+      %missing, %right_out = qtensor.extract %rest[%index] : tensor<2x!qco.qubit>
+      qco.sink %left_out : !qco.qubit
+      qco.sink %right_out : !qco.qubit
+      qtensor.dealloc %missing : tensor<2x!qco.qubit>
+    )mlir",
+                     "already extracted"},
        }) {
     for (const bool graphRegion : {false, true}) {
       // Duplicate-slot tracking requires SSA order; insertion preflight does
@@ -593,7 +601,8 @@ TEST(QCOToQCRegressionTest, RejectsInvalidTensorSlotsBeforeRewriting) {
       const auto source =
           std::string("module {\n") +
           (graphRegion ? ""
-                       : "func.func @main() attributes {mqt.entry_point} {\n") +
+                       : "func.func @main(%index: index) attributes "
+                         "{mqt.entry_point} {\n") +
           R"mlir(
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
@@ -645,7 +654,9 @@ TEST(QCOToQCRegressionTest, ProvesDynamicRestorationBeforeRewriting) {
       %same = arith.addi %indices#0, %c0 : index
       %t3 = qtensor.insert %flipped into %t2[%same] : tensor<2x!qco.qubit>
       %t4 = qtensor.insert %right into %t3[%indices#1] : tensor<2x!qco.qubit>
-      qtensor.dealloc %t4 : tensor<2x!qco.qubit>
+      %t5, %again = qtensor.extract %t4[%indices#0] : tensor<2x!qco.qubit>
+      %t6 = qtensor.insert %again into %t5[%indices#0] : tensor<2x!qco.qubit>
+      qtensor.dealloc %t6 : tensor<2x!qco.qubit>
       return
     }
   })mlir";
@@ -678,10 +689,11 @@ TEST(QCOToQCRegressionTest, ProvesDynamicRestorationBeforeRewriting) {
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     auto function = *moduleOp->getOps<func::FuncOp>().begin();
     auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
-    ASSERT_EQ(loads.size(), 2U);
+    ASSERT_EQ(loads.size(), 3U);
     auto indices = *function.getOps<scf::IfOp>().begin();
     EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
     EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
+    EXPECT_EQ(loads[2].getIndices().front(), indices.getResult(0));
     EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
   }
 }
