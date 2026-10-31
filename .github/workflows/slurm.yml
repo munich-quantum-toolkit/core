@@ -75,4 +75,4 @@ jobs:
 
       - name: Test Slurm admission and QDMI execution
         timeout-minutes: 40
-        run: uv run --no-project --python 3.15 test/slurm/run_integration.py --nodes 3
+        run: uv run --no-project --python 3.15 test/slurm/run_integration.py --nodes 3 --monitoring

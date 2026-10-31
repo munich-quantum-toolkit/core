@@ -83,7 +83,7 @@ FROM python AS runtime
 ENV container=docker
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-        libcurl4t64 dbus munge slurm-wlm slurmdbd systemd \
+        libcurl4t64 dbus munge nginx slurm-wlm slurmdbd slurmrestd systemd \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=environment /opt/venv /opt/venv
 COPY --chmod=755 start.sh /usr/local/sbin/mqt-slurm-start
@@ -94,7 +94,7 @@ COPY --chmod=755 accounting.sh /usr/local/sbin/mqt-slurm-accounting
 COPY node.conf qan.conf slurmdbd.conf /usr/local/share/mqt-slurm/
 COPY profile.sh /etc/profile.d/mqt-qdmi.sh
 RUN useradd --uid 10000 --user-group --create-home mqt-dev \
-    && systemctl disable slurmctld.service slurmd.service slurmdbd.service
+    && systemctl disable slurmctld.service slurmd.service slurmdbd.service slurmrestd.service nginx.service
 
 STOPSIGNAL SIGRTMIN+3
 CMD ["/usr/local/sbin/mqt-slurm-start", "node"]
