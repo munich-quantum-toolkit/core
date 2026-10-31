@@ -222,7 +222,8 @@ foreach(profile IN ITEMS qir-base qir-adaptive)
   file(REMOVE "${qir_reproducer}")
   reject_compiler("no main function with mqt.entry_point found" "${reduced}" "--emit=${profile}"
                   --mlir-disable-threading "--mlir-pass-pipeline-crash-reproducer=${qir_reproducer}")
-  reject_compiler("no main function with mqt.entry_point found" "${qir_reproducer}" --run-reproducer)
+  reject_compiler(
+    "no main function with mqt.entry_point found" "${qir_reproducer}" --run-reproducer)
 endforeach()
 
 # Register the named shrink and QIR cleanup passes for isolated pipelines too.

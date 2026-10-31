@@ -17,8 +17,10 @@ add_mlir_library(
   DEPENDS
   MLIRQCTransformsIncGen)
 
-file(GLOB_RECURSE PASSES_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Transforms/*.h)
-file(GLOB_RECURSE PASSES_HEADERS_BUILD ${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QC/Transforms/*.inc)
+file(
+  GLOB_RECURSE PASSES_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Transforms/*.h)
+file(
+  GLOB_RECURSE PASSES_HEADERS_BUILD ${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QC/Transforms/*.inc)
 
 target_sources(
   MLIRQCTransforms
