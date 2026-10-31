@@ -65,7 +65,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 using namespace mlir;
 
@@ -135,13 +137,17 @@ static void expectConversionFailure(
   EXPECT_TRUE(diagnosed) << expected.str();
 }
 
-TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedCountedLoopConstraints) {
+TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedTargetRequirements) {
   context.loadDialect<mlir::mqt::MQTDialect>();
   const auto target = llvm::cantFail(
       CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
-  for (uint64_t maximum : {2U, 3U}) {
-    SCOPED_TRACE(maximum);
+  for (const auto& [maximum, integers, diagnostic] : {
+           std::tuple{2U, true, "scf.for"},
+           std::tuple{3U, true, ""},
+           std::tuple{3U, false, "qir.int-computations"},
+       }) {
+    SCOPED_TRACE(diagnostic);
     auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
       func.func @main() attributes {mqt.entry_point} {
         %zero = arith.constant 0 : index
@@ -156,24 +162,21 @@ TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedCountedLoopConstraints) {
     })mlir",
                                                 &context);
     ASSERT_TRUE(moduleOp);
+    std::vector<ProgramCapability> capabilities{
+        {
+            .id = ProgramCapability::COUNTED_ITERATION.str(),
+            .constraints = {{.id = "max-iteration-count", .value = maximum}},
+        },
+    };
+    if (integers) {
+      capabilities.push_back({.id = "qir.int-computations"});
+    }
     const auto payload = llvm::cantFail(PayloadSpecification::create(
         {.id = "qir", .version = "2.1", .profile = "adaptive"},
-        {
-            {
-                .id = ProgramCapability::COUNTED_ITERATION.str(),
-                .constraints =
-                    {
-                        {
-                            .id = "max-iteration-count",
-                            .value = maximum,
-                        },
-                    },
-            },
-            {.id = "qir.int-computations"},
-        }));
+        std::move(capabilities)));
     attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
-    if (maximum == 2U) {
-      expectConversionFailure(*moduleOp, "scf.for");
+    if (!StringRef(diagnostic).empty()) {
+      expectConversionFailure(*moduleOp, diagnostic);
     } else {
       ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
       EXPECT_TRUE(succeeded(verify(*moduleOp)));

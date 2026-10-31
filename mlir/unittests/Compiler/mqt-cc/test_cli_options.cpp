@@ -8,10 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Compiler/Programs.h"
-#include "mqt/Compiler/TargetEnvironment.h"
-#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
-
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/SmallString.h"
@@ -26,12 +22,8 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <algorithm>
 #include <optional>
 #include <string>
-#include <system_error>
-#include <utility>
-#include <vector>
 
 TEST(CompilerCLI, ValidatesMappingOptionArguments) {
   struct InvalidOptions {
@@ -216,76 +208,23 @@ TEST(CompilerCLI, CompilesForExplicitTarget) {
   ASSERT_TRUE(output);
   EXPECT_TRUE((*output)->getBuffer().contains("mqt.target_env"));
   EXPECT_TRUE((*output)->getBuffer().contains("mqt.layout"));
-}
 
-TEST(CompilerCLI, ValidatesQIRFeaturesAfterCountedLoopChecks) {
-  llvm::SmallString<128> inputPath;
-  ASSERT_FALSE(
-      llvm::sys::fs::createTemporaryFile("mqt-cc-qir", "qasm", inputPath));
-  const llvm::FileRemover removeInput(inputPath);
-  {
-    std::error_code error;
-    llvm::raw_fd_ostream input(inputPath, error);
-    ASSERT_FALSE(error);
-    input << "OPENQASM 3; include \"stdgates.inc\"; qubit q; "
-             "for int i in [0:2] { h q; } bit c = measure q;";
-  }
-  auto context = mlir::createCompilerContext();
-  const auto supported =
-      llvm::cantFail(mlir::PayloadSpecification::forProgramFormat(
-          mlir::ProgramFormat::QIRAdaptive));
-  for (bool permitIntegers : {true, false}) {
-    SCOPED_TRACE(permitIntegers);
-    llvm::SmallString<128> outputPath;
-    llvm::SmallString<128> stderrPath;
-    ASSERT_FALSE(
-        llvm::sys::fs::createTemporaryFile("mqt-cc-qir", "ll", outputPath));
-    const llvm::FileRemover removeOutput(outputPath);
-    ASSERT_FALSE(
-        llvm::sys::fs::createTemporaryFile("mqt-cc-qir", "err", stderrPath));
-    const llvm::FileRemover removeStderr(stderrPath);
-    std::vector<mlir::ProgramCapability> capabilities(
-        supported.capabilities().begin(), supported.capabilities().end());
-    if (!permitIntegers) {
-      std::erase_if(capabilities, [](const auto& capability) {
-        return capability.id == "qir.int-computations";
-      });
-    }
-    for (auto& capability : capabilities) {
-      if (capability.id == mlir::ProgramCapability::COUNTED_ITERATION) {
-        capability.constraints = {{.id = "max-iteration-count", .value = 3}};
-      }
-    }
-    const auto payload = llvm::cantFail(mlir::PayloadSpecification::create(
-        supported.format(), std::move(capabilities)));
-    std::string payloadArgument = "--payload-spec=";
-    llvm::raw_string_ostream(payloadArgument) << payload.materialize(*context);
-    llvm::SmallVector<llvm::StringRef> args{
-        MQT_CORE_MQT_CC,
-        inputPath,
-        "--target=#mqt.compilation_target<sites = [<id = 0>], "
-        "connectivity = all_to_all, couplings = [], "
-        "native_operations = unrestricted, operations = []>",
-        payloadArgument,
-    };
-    EXPECT_EQ(llvm::sys::ExecuteAndWait(
-                  MQT_CORE_MQT_CC, args, std::nullopt,
-                  {std::nullopt, outputPath.str(), stderrPath.str()}, 10),
-              permitIntegers ? 0 : 1);
-    auto output = llvm::MemoryBuffer::getFile(outputPath);
-    auto diagnostics = llvm::MemoryBuffer::getFile(stderrPath);
-    ASSERT_TRUE(output);
-    ASSERT_TRUE(diagnostics);
-    if (permitIntegers) {
-      EXPECT_TRUE((*output)->getBuffer().contains("backwards_branching"))
-          << (*diagnostics)->getBuffer().str();
-    } else {
-      EXPECT_TRUE((*output)->getBuffer().empty())
-          << (*output)->getBuffer().str();
-      EXPECT_TRUE((*diagnostics)->getBuffer().contains("qir.int-computations"))
-          << (*diagnostics)->getBuffer().str();
-    }
-  }
+  args = {
+      MQT_CORE_MQT_CC,
+      MQT_CORE_MQT_CC_INPUT,
+      target,
+      "--payload-spec=#mqt.payload_spec<format = <id = \"qir\", "
+      "version = \"2.1\", profile = \"adaptive\", encoding = text>, "
+      "capabilities = [], optional_capabilities_known = false>",
+  };
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(
+                MQT_CORE_MQT_CC, args, std::nullopt,
+                {std::nullopt, std::nullopt, outputPath.str()}, 10),
+            1);
+  auto diagnostics = llvm::MemoryBuffer::getFile(outputPath);
+  ASSERT_TRUE(diagnostics);
+  EXPECT_TRUE((*diagnostics)->getBuffer().contains("requires capability"))
+      << (*diagnostics)->getBuffer().str();
 }
 
 TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {

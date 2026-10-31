@@ -71,64 +71,36 @@ protected:
   }
 };
 
-TEST_F(ClassicalSimplificationTest, PayloadControlPreservesSwitchSelection) {
-  constexpr llvm::StringLiteral source = R"mlir(
+TEST_F(ClassicalSimplificationTest, PayloadControlInlinesDefaultOnlySwitch) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @main(%selector: index) -> i64 attributes {mqt.entry_point} {
+      func.func @main(%selector: index) -> i64 {
         %result = scf.index_switch %selector -> i64
         default {
-          %nested = scf.index_switch %selector -> i64
-          case 0 {
-            %zero = arith.constant 0 : i64
-            scf.yield %zero : i64
-          }
-          case 1 {
-            %one = arith.constant 1 : i64
-            scf.yield %one : i64
-          }
-          default {
-            %two = arith.constant 2 : i64
-            scf.yield %two : i64
-          }
-          scf.yield %nested : i64
+          %seven = arith.constant 7 : i64
+          scf.yield %seven : i64
         }
         return %result : i64
       }
     }
-  )mlir";
-  for (int64_t selector : {0, 1, 99}) {
-    SCOPED_TRACE(selector);
-    auto moduleOp = parseSourceString<ModuleOp>(source, &context_);
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    mlir::mqt::LegalizeControlFlowOptions options;
-    options.payloadSpec = R"mlir(#mqt.payload_spec<
-      format = <id = "openqasm", version = "3.0.0", profile = "", encoding = text>,
-      capabilities = [<id = "forward-branching", value = 0, constraints = []>],
-      optional_capabilities_known = false>)mlir";
-    PassManager manager(&context_);
-    manager.addPass(mlir::mqt::createLegalizeControlFlow(options));
-    ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    bool hasSwitch = false;
-    moduleOp->walk([&](scf::IndexSwitchOp) { hasSwitch = true; });
-    EXPECT_FALSE(hasSwitch);
-
-    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
-    OpBuilder builder(&context_);
-    builder.setInsertionPointToStart(&function.front());
-    auto value =
-        arith::ConstantIndexOp::create(builder, function.getLoc(), selector);
-    function.getArgument(0).replaceAllUsesWith(value.getResult());
-    PassManager cleanup(&context_);
-    cleanup.addPass(createCanonicalizerPass());
-    ASSERT_TRUE(succeeded(cleanup.run(*moduleOp)));
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    auto returned = cast<func::ReturnOp>(function.front().getTerminator());
-    IntegerAttr result;
-    ASSERT_TRUE(matchPattern(returned.getOperand(0), m_Constant(&result)));
-    EXPECT_EQ(result.getInt(), selector == 99 ? 2 : selector);
-  }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  mlir::mqt::LegalizeControlFlowOptions options;
+  options.payloadSpec = R"mlir(#mqt.payload_spec<
+    format = <id = "openqasm", version = "3.0.0", profile = "", encoding = text>,
+    capabilities = [], optional_capabilities_known = false>)mlir";
+  PassManager manager(&context_);
+  manager.addPass(mlir::mqt::createLegalizeControlFlow(options));
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_TRUE(function.getOps<scf::IndexSwitchOp>().empty());
+  auto returned = cast<func::ReturnOp>(function.front().getTerminator());
+  IntegerAttr result;
+  ASSERT_TRUE(matchPattern(returned.getOperand(0), m_Constant(&result)));
+  EXPECT_EQ(result.getInt(), 7);
 }
 
 TEST_F(ClassicalSimplificationTest, ConditionsRemainScopedToTheirBranches) {

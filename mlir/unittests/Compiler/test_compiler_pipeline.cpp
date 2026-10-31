@@ -315,6 +315,24 @@ makeControlPayloadSpecification(std::vector<ProgramCapability> capabilities,
                              CompilerTarget::NativeOperations::unrestricted()));
 }
 
+[[nodiscard]] static TargetEnvironment makeBoundedQIREnvironment() {
+  const auto supported = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+  std::vector<ProgramCapability> capabilities(supported.capabilities().begin(),
+                                              supported.capabilities().end());
+  for (auto& capability : capabilities) {
+    if (capability.id == ProgramCapability::COUNTED_ITERATION) {
+      capability.constraints = {
+          {.id = "max-iteration-count", .value = 3},
+          {.id = "max-control-flow-nesting-depth", .value = 1},
+      };
+    }
+  }
+  return {makeUnrestrictedTarget(),
+          llvm::cantFail(PayloadSpecification::create(
+              supported.format(), std::move(capabilities)))};
+}
+
 [[nodiscard]] static bool
 compileForTargetWithDiagnostics(QCOProgram& program,
                                 const PayloadSpecification& payload,
@@ -1883,22 +1901,7 @@ TEST_F(CompilerPipelineTest, QIRTargetVersionBoundsEmittedRequirements) {
 }
 
 TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
-  const auto supported = llvm::cantFail(
-      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
-  std::vector<ProgramCapability> capabilities(supported.capabilities().begin(),
-                                              supported.capabilities().end());
-  for (auto& capability : capabilities) {
-    if (capability.id == ProgramCapability::COUNTED_ITERATION) {
-      capability.constraints = {
-          {.id = "max-iteration-count", .value = 3},
-          {.id = "max-control-flow-nesting-depth", .value = 1},
-      };
-    }
-  }
-  const TargetEnvironment environment(
-      makeUnrestrictedTarget(),
-      llvm::cantFail(PayloadSpecification::create(supported.format(),
-                                                  std::move(capabilities))));
+  const auto environment = makeBoundedQIREnvironment();
   for (const auto& [body, permitted] : {
            std::pair{"for int i in [0:2] { h q; }", true},
            std::pair{"for int i in [0:3] { h q; }", false},
@@ -1949,19 +1952,7 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
 }
 
 TEST_F(CompilerPipelineTest, BoundedQIRSupportsQuantumStorage) {
-  const auto supported = llvm::cantFail(
-      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
-  std::vector<ProgramCapability> capabilities(supported.capabilities().begin(),
-                                              supported.capabilities().end());
-  for (auto& capability : capabilities) {
-    if (capability.id == ProgramCapability::COUNTED_ITERATION) {
-      capability.constraints = {{.id = "max-iteration-count", .value = 3}};
-    }
-  }
-  const TargetEnvironment environment(
-      makeUnrestrictedTarget(),
-      llvm::cantFail(PayloadSpecification::create(supported.format(),
-                                                  std::move(capabilities))));
+  const auto environment = makeBoundedQIREnvironment();
   for (bool classicalHeap : {false, true}) {
     SCOPED_TRACE(classicalHeap);
     auto input = QCProgram::fromMLIRString(
