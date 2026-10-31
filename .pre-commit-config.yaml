@@ -166,7 +166,7 @@ repos:
 
   ## Format CMake files with cmakefmt
   - repo: https://github.com/cmakefmt/cmakefmt
-    rev: v2.2.0
+    rev: v2.3.0
     hooks:
       - id: cmakefmt-fix
         types: [file]
