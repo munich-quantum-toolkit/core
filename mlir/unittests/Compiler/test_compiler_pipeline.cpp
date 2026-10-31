@@ -4222,22 +4222,120 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
               CompilerTarget::OperationCapability::create("u", 1, 3)),
       })));
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} {
+    func.func @main(%limit: index) attributes {mqt.entry_point} {
       %a = qco.static 0 : !qco.qubit
       %b = qco.static 1 : !qco.qubit
       %c = qco.static 2 : !qco.qubit
-      %x, %y, %z = qco.rccx %a, %b, %c : !qco.qubit, !qco.qubit, !qco.qubit
-      qco.sink %x : !qco.qubit
-      qco.sink %y : !qco.qubit
-      qco.sink %z : !qco.qubit
+      %h = qco.h %a : !qco.qubit
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %loop:3 = scf.for %i = %zero to %limit step %one
+          iter_args(%u = %h, %v = %b, %w = %c)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %x, %y, %z = qco.rccx %u, %v, %w : !qco.qubit, !qco.qubit, !qco.qubit
+        scf.yield %x, %y, %z : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+      qco.sink %loop#0 : !qco.qubit
+      qco.sink %loop#1 : !qco.qubit
+      qco.sink %loop#2 : !qco.qubit
       return
     }
   })mlir");
   MQT_ASSERT_SUCCESS(program);
-  ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification()))));
+  ASSERT_TRUE(mlir::succeeded(program->compileForTarget(TargetEnvironment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::QIRAdaptive))))));
   EXPECT_TRUE(program->str().find("qco.rccx") != std::string::npos);
+  EXPECT_TRUE(StringRef(program->str()).contains("scf.for"));
   EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
+
+  auto whileProgram = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main(%continue: i1) attributes {mqt.entry_point} {
+      %a = qco.static 0 : !qco.qubit
+      %b = qco.static 1 : !qco.qubit
+      %c = qco.static 2 : !qco.qubit
+      %result:3 = scf.while (%u = %a, %v = %b, %w = %c)
+          : (!qco.qubit, !qco.qubit, !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %x, %y, %z = qco.rccx %u, %v, %w : !qco.qubit, !qco.qubit, !qco.qubit
+        scf.condition(%continue) %x, %y, %z
+            : !qco.qubit, !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit, %w: !qco.qubit):
+        %x, %y, %z = qco.rccx %u, %v, %w : !qco.qubit, !qco.qubit, !qco.qubit
+        scf.yield %x, %y, %z : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+      qco.sink %result#0 : !qco.qubit
+      qco.sink %result#1 : !qco.qubit
+      qco.sink %result#2 : !qco.qubit
+      return
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(whileProgram);
+  ASSERT_TRUE(mlir::succeeded(whileProgram->compileForTarget(TargetEnvironment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::QIRAdaptive))))));
+  EXPECT_TRUE(StringRef(whileProgram->str()).contains("scf.while"));
+  EXPECT_NE(StringRef(whileProgram->str()).count("qco.rccx"), 0U);
+
+  const auto allocatedTarget = llvm::cantFail(CompilerTarget::create(
+      3, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(CompilerTarget::OperationCapability::create(
+              "rccx", 3, 0,
+              {
+                  llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1, 2})),
+                  llvm::cantFail(CompilerTarget::SiteTuple::create({1, 0, 2})),
+              })),
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("u", 1, 3)),
+      })));
+  const TargetEnvironment allocatedEnvironment(
+      allocatedTarget, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                           ProgramFormat::QIRAdaptive)));
+  EXPECT_FALSE(allocatedEnvironment.supportsIndexedQubits());
+  auto allocated = QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; qubit[3] q; "
+      "h q[0]; for int i in [0:1] { rccx q[i], q[1-i], q[2]; h q[2]; }");
+  MQT_ASSERT_SUCCESS(allocated);
+  auto allocatedQCO = std::move(*allocated).intoQCO();
+  ASSERT_TRUE(succeeded(allocatedQCO));
+  ASSERT_TRUE(succeeded(allocatedQCO->compileForTarget(allocatedEnvironment)));
+  size_t nativeGates = 0;
+  allocatedQCO->module().walk([&](qco::RCCXOp) { ++nativeGates; });
+  EXPECT_EQ(nativeGates, 2U);
+  EXPECT_FALSE(StringRef(allocatedQCO->str()).contains("scf.for"));
+}
+
+TEST_F(CompilerPipelineTest, RestrictedNativeExtraDoesNotBlockDecomposition) {
+  using Capability = CompilerTarget::OperationCapability;
+  using Connectivity = CompilerTarget::Connectivity;
+  const auto native = llvm::cantFail(Capability::create(
+      "rccx", 3, 0,
+      {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1, 2}))}));
+  for (const auto& connectivity : {
+           Connectivity::allToAll(),
+           Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+       }) {
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        3, connectivity,
+        CompilerTarget::NativeOperations::fromOperations({
+            native,
+            llvm::cantFail(Capability::create("u", 1, 3)),
+            llvm::cantFail(Capability::create("cz", 2, 0)),
+            llvm::cantFail(Capability::create("measure", 1, 0)),
+        })));
+    auto result = runDefaultPipeline(
+        CompilerInput{OpenQASMProgram(
+            "OPENQASM 3; include \"stdgates.inc\"; qubit[3] q; bit[3] c; "
+            "h q[0]; rccx q[2], q[1], q[0]; c = measure q;")},
+        TargetEnvironment(target,
+                          llvm::cantFail(PayloadSpecification::forProgramFormat(
+                              ProgramFormat::OpenQASM3))));
+    MQT_ASSERT_SUCCESS(result);
+    EXPECT_FALSE(StringRef(std::get<OpenQASMProgram>(*result).source())
+                     .contains("rccx"));
+  }
 }
 
 TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {

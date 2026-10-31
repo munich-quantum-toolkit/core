@@ -619,10 +619,11 @@ struct CompilerTarget::Storage {
       function_ref<std::optional<double>(size_t)> parameterAt = nullptr,
       function_ref<bool(const OperationCapability&)> capabilityFilter =
           nullptr) const;
-  [[nodiscard]] bool
-  supportsGate(GateKind gate,
-               std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
-               AngleSupport angles = AngleSupport::Fixed) const;
+  [[nodiscard]] bool supportsGate(
+      GateKind gate,
+      std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
+      AngleSupport angles = AngleSupport::Fixed,
+      function_ref<bool(const OperationCapability&)> filter = nullptr) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis();
 
   std::optional<std::string> name;
@@ -860,13 +861,17 @@ matchesSynthesisParameters(const CompilerTarget::OperationCapability& operation,
 
 bool CompilerTarget::Storage::supportsGate(
     GateKind gate, std::optional<ArrayRef<SiteId>> orderedSites,
-    AngleSupport angles) const {
+    AngleSupport angles,
+    function_ref<bool(const OperationCapability&)> filter) const {
   if ((gate == GateKind::CX &&
-       supportsOperation("x", 2, 0, orderedSites, /*variadicOnly=*/true)) ||
+       supportsOperation("x", 2, 0, orderedSites, /*variadicOnly=*/true,
+                         nullptr, filter)) ||
       (gate == GateKind::CZ &&
-       supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true)) ||
+       supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true,
+                         nullptr, filter)) ||
       (gate == GateKind::SQRTISWAP &&
-       supportsOperation("sqrt_iswap", 2, 0, orderedSites))) {
+       supportsOperation("sqrt_iswap", 2, 0, orderedSites, false, nullptr,
+                         filter))) {
     return true;
   }
   // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
@@ -876,8 +881,9 @@ bool CompilerTarget::Storage::supportsGate(
          "unknown compiler target gate");
   return supportsOperation(
       specification->name, specification->arity, specification->numParameters,
-      orderedSites, false, nullptr, [gate, angles](const auto& operation) {
-        return matchesSynthesisParameters(operation, gate, angles);
+      orderedSites, false, nullptr, [=](const auto& operation) {
+        return (!filter || filter(operation)) &&
+               matchesSynthesisParameters(operation, gate, angles);
       });
 }
 
@@ -1465,6 +1471,18 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
     return false;
   }
 
+  const auto supports =
+      [&](StringRef name, size_t arity, size_t parameters,
+          bool variadicOnly = false,
+          function_ref<std::optional<double>(size_t)> parameterAt = nullptr) {
+        return storage_->supportsOperation(
+            name, arity, parameters, sites, variadicOnly, nullptr,
+            [&](const auto& capability) {
+              return (sites || capability.siteTuples().empty()) &&
+                     matchesParameters(capability, parameterAt);
+            });
+      };
+
   if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation)) {
     if (isa<qco::BarrierOp>(operation)) {
       return true;
@@ -1478,25 +1496,24 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       if (!body || body.getNumQubits() != controlled.getNumTargets()) {
         return false;
       }
-      if (storage_->supportsOperation(
-              body.getBaseSymbol(), controlled.getNumQubits(),
-              body.getNumParams(), sites,
-              /*variadicOnly=*/true, [&](size_t index) {
-                return mqt::valueToDouble(body.getParameter(index));
-              })) {
+      if (supports(body.getBaseSymbol(), controlled.getNumQubits(),
+                   body.getNumParams(),
+                   /*variadicOnly=*/true, [&](size_t index) {
+                     return mqt::valueToDouble(body.getParameter(index));
+                   })) {
         return true;
       }
       if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {
         return false;
       }
       if (isa<qco::XOp>(body.getOperation())) {
-        return storage_->supportsOperation("cx", 2, 0, sites);
+        return supports("cx", 2, 0);
       }
       if (isa<qco::YOp>(body.getOperation())) {
-        return storage_->supportsOperation("cy", 2, 0, sites);
+        return supports("cy", 2, 0);
       }
       if (isa<qco::ZOp>(body.getOperation())) {
-        return storage_->supportsOperation("cz", 2, 0, sites);
+        return supports("cz", 2, 0);
       }
       return false;
     }
@@ -1507,21 +1524,20 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
           std::abs(*theta + std::numbers::pi / 2.) <=
               mqt::PARAMETER_COMPARISON_TOLERANCE &&
           std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE &&
-          storage_->supportsOperation("sqrt_iswap", 2, 0, sites)) {
+          supports("sqrt_iswap", 2, 0)) {
         return true;
       }
     }
-    return storage_->supportsOperation(
-        unitary.getBaseSymbol(), unitary.getNumQubits(), unitary.getNumParams(),
-        sites, false, [&](size_t index) {
-          return mqt::valueToDouble(unitary.getParameter(index));
-        });
+    return supports(unitary.getBaseSymbol(), unitary.getNumQubits(),
+                    unitary.getNumParams(), false, [&](size_t index) {
+                      return mqt::valueToDouble(unitary.getParameter(index));
+                    });
   }
   if (isa<qco::MeasureOp>(operation)) {
-    return storage_->supportsOperation("measure", 1, 0, sites);
+    return supports("measure", 1, 0);
   }
   if (isa<qco::ResetOp>(operation)) {
-    return storage_->supportsOperation("reset", 1, 0, sites);
+    return supports("reset", 1, 0);
   }
   return false;
 }
@@ -1532,6 +1548,12 @@ bool CompilerTarget::supports(GateKind gate) const {
 
 bool CompilerTarget::supports(GateKind gate, ArrayRef<SiteId> sites) const {
   return storage_->supportsGate(gate, sites);
+}
+
+bool CompilerTarget::supports(Entangler entangler) const {
+  return storage_->supportsGate(
+      entangler.gate, std::nullopt, entangler.angles,
+      [](const auto& operation) { return operation.siteTuples().empty(); });
 }
 
 bool CompilerTarget::supports(Entangler entangler,
