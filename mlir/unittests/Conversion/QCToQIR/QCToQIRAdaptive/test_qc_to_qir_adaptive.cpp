@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -17,7 +19,6 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 
@@ -56,6 +57,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include <array>
@@ -63,7 +65,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 using namespace mlir;
 
@@ -131,6 +135,53 @@ static void expectConversionFailure(
       });
   EXPECT_TRUE(failed(convert(moduleOp)));
   EXPECT_TRUE(diagnosed) << expected.str();
+}
+
+TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedTargetRequirements) {
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  for (const auto& [maximum, integers, diagnostic] : {
+           std::tuple{2U, true, "scf.for"},
+           std::tuple{3U, true, ""},
+           std::tuple{3U, false, "qir.int-computations"},
+       }) {
+    SCOPED_TRACE(diagnostic);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %three = arith.constant 3 : index
+        %q = qc.static 0 : !qc.qubit
+        scf.for %i = %zero to %three step %one {
+          qc.h %q : !qc.qubit
+        }
+        return
+      }
+    })mlir",
+                                                &context);
+    ASSERT_TRUE(moduleOp);
+    std::vector<ProgramCapability> capabilities{
+        {
+            .id = ProgramCapability::COUNTED_ITERATION.str(),
+            .constraints = {{.id = "max-iteration-count", .value = maximum}},
+        },
+    };
+    if (integers) {
+      capabilities.push_back({.id = "qir.int-computations"});
+    }
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "qir", .version = "2.1", .profile = "adaptive"},
+        std::move(capabilities)));
+    attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
+    if (!StringRef(diagnostic).empty()) {
+      expectConversionFailure(*moduleOp, diagnostic);
+    } else {
+      ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+      EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    }
+  }
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {
@@ -1134,9 +1185,6 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   });
   EXPECT_EQ(combinations, 1U);
 
-  PassManager metadata(&context);
-  metadata.addPass(qir::createQIRSetAttributesAndMetadata({true}));
-  ASSERT_TRUE(succeeded(metadata.run(*module)));
   bool staticResults = false;
   module->walk([&](LLVM::ModuleFlagsOp flags) {
     for (const auto flag :
@@ -1148,6 +1196,9 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   });
   EXPECT_TRUE(staticResults);
   auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"qir_profiles", "adaptive_profile"})));
   EXPECT_TRUE(llvm::is_contained(
       main.getPassthroughAttr(),
       builder.getStrArrayAttr({"required_num_results", "2"})));

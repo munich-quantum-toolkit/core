@@ -9,7 +9,7 @@
  */
 
 /// @file
-/// Tests for classical memory promotion and scoped condition simplification.
+/// Tests classical memory promotion and structured control-flow simplification.
 
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -26,12 +26,14 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
@@ -40,6 +42,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <bitset>
@@ -67,6 +70,38 @@ protected:
     return manager.run(moduleOp);
   }
 };
+
+TEST_F(ClassicalSimplificationTest, PayloadControlInlinesDefaultOnlySwitch) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64 {
+        %result = scf.index_switch %selector -> i64
+        default {
+          %seven = arith.constant 7 : i64
+          scf.yield %seven : i64
+        }
+        return %result : i64
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  mlir::mqt::LegalizeControlFlowOptions options;
+  options.payloadSpec = R"mlir(#mqt.payload_spec<
+    format = <id = "openqasm", version = "3.0.0", profile = "", encoding = text>,
+    capabilities = [], optional_capabilities_known = false>)mlir";
+  PassManager manager(&context_);
+  manager.addPass(mlir::mqt::createLegalizeControlFlow(options));
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_TRUE(function.getOps<scf::IndexSwitchOp>().empty());
+  auto returned = cast<func::ReturnOp>(function.front().getTerminator());
+  IntegerAttr result;
+  ASSERT_TRUE(matchPattern(returned.getOperand(0), m_Constant(&result)));
+  EXPECT_EQ(result.getInt(), 7);
+}
 
 TEST_F(ClassicalSimplificationTest, ConditionsRemainScopedToTheirBranches) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(

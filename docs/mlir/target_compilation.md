@@ -463,7 +463,9 @@ branches must normalize them before target compilation. The pipeline removes
 unused symbols, propagates constants, and runs QCO cleanup before deciding which
 loops need expansion. It then specializes loops required by the selected payload
 or by placement, cleans up the resulting IR, and checks the remaining control
-flow with `legalize-control-flow`:
+flow with `legalize-qco-control-flow`. For QC programs containing SCF control
+flow, use `legalize-control-flow`; QCO state checks and QCO switch lowering
+belong to the QCO pass:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -544,12 +546,12 @@ its signed arithmetic. The scaled step must also fit the loop induction-variable
 type. A zero, unknown, or misapplied constraint makes that capability group
 unusable. A capability absent from the selected specification is unsupported.
 
-This stage checks structural control flow. Final QIR output also checks its
-emitted feature requirements: dynamic qubit and result management, arrays, IR
-functions, multiple return points, integer and floating-point computations,
-multiway branching, and counted or conditional loops. The check applies to both
-typed QIR and submission payloads. QIR loop bounds are not re-proved after
-lowering; a loop capability required by emitted QIR must be unconstrained.
+QIR profile conversion attaches metadata and validates the emitted capabilities
+and receiver version against a matching target payload. Adaptive conversion
+checks counted-loop bounds before lowering, including loops introduced by
+classical copies. Residual `scf.while` operations require unconstrained emitted
+loop capabilities because QIR classifies loops by data dependence. See
+{doc}`Conversions` for profile requirements.
 
 An explicit output combines the output format's capabilities with the target's
 contract. Matching language versions and profiles retain only capabilities

@@ -16,6 +16,7 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
@@ -37,6 +38,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Region.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/WalkPatternRewriteDriver.h"
@@ -728,13 +730,15 @@ namespace {
 
 /// Lower supported QC operations to QIR Adaptive runtime calls and LLVM IR.
 ///
-/// QIR attributes and module flags are attached by the separate metadata pass.
+/// Matching target payloads are checked before and after lowering.
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
 
   void getDependentDialects(DialectRegistry& registry) const override {
     QCToQIRAdaptiveBase::getDependentDialects(registry);
     registerQIRClassicalTensorDialects(registry);
+    mqt::createPromoteClassicalMemory()->getDependentDialects(registry);
+    mqt::createLegalizeControlFlow()->getDependentDialects(registry);
   }
 
   /// Ensures proper block structure for QIR Adaptive Profile
@@ -843,6 +847,14 @@ protected:
       signalPassFailure();
       return;
     }
+    const auto run = [&](OpPassManager& pm) {
+      return runPipeline(pm, moduleOp);
+    };
+    auto payload = prepareQIRTarget(moduleOp, "adaptive", run);
+    if (failed(payload)) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
     LoweringState state;
@@ -943,7 +955,8 @@ protected:
       releaseResults(main, ctx, &state);
     }
 
-    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {
+    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter)) ||
+        failed(finalizeQIRMetadata(moduleOp, "adaptive", *payload, run))) {
       signalPassFailure();
     }
   }

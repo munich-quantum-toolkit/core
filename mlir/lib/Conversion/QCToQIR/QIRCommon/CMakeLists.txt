@@ -16,6 +16,9 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MQTCompilerTarget
+  MLIRMQTTransforms
+  MLIRQIRTransforms
+  MLIRQIRTranslation
   MLIRIR
   MLIRPass
   MLIRTransforms
