@@ -24,6 +24,7 @@
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Layout.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"

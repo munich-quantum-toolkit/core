@@ -23,6 +23,7 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
