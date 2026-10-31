@@ -8,10 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
+
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
-#include "mqt/Dialect/MQT/Transforms/PayloadControlFlow.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -455,7 +456,8 @@ protected:
     target.addDynamicallyLegalOp<IndexSwitchOp>(
         [&](IndexSwitchOp operation) { return isLegal(operation, *support); });
     RewritePatternSet patterns(&getContext());
-    mqt::populateSCFPayloadControlFlowLegalization(target, patterns, *support);
+    mqt::populatePayloadControlFlowPatternsAndLegality(target, patterns,
+                                                       *support);
     patterns.add<LowerQCOIndexSwitch>(&getContext(), *support);
     if (failed(applyPartialConversion(getOperation(), target,
                                       std::move(patterns)))) {

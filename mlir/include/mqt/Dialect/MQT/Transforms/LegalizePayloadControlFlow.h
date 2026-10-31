@@ -96,7 +96,7 @@ getExactConstantTripCount(scf::ForOp loop);
 /// Reject other branch interfaces except scf.execute_region. Callers can add
 /// dialect-specific rules and patterns before applying partial conversion.
 /// The support object must outlive the target and patterns.
-void populateSCFPayloadControlFlowLegalization(
+void populatePayloadControlFlowPatternsAndLegality(
     ConversionTarget& target, RewritePatternSet& patterns,
     const PayloadControlSupport& support);
 

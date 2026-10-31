@@ -11,7 +11,7 @@ add_mlir_library(
   SimplifyQuantum.cpp
   DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
-  PayloadControlFlow.cpp
+  LegalizePayloadControlFlow.cpp
   PromoteClassicalMemory.cpp
   SimplifyClassicalControl.cpp
   UnrollModifiers.cpp

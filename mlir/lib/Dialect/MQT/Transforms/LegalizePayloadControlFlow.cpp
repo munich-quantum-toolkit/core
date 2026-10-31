@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/Transforms/PayloadControlFlow.h"
+#include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
@@ -314,7 +314,7 @@ private:
 
 } // namespace
 
-void populateSCFPayloadControlFlowLegalization(
+void populatePayloadControlFlowPatternsAndLegality(
     ConversionTarget& target, RewritePatternSet& patterns,
     const PayloadControlSupport& support) {
   target.addDynamicallyLegalOp<scf::IfOp>(
@@ -352,7 +352,7 @@ protected:
     }
     ConversionTarget target(getContext());
     RewritePatternSet patterns(&getContext());
-    populateSCFPayloadControlFlowLegalization(target, patterns, *support);
+    populatePayloadControlFlowPatternsAndLegality(target, patterns, *support);
     if (failed(applyPartialConversion(getOperation(), target,
                                       std::move(patterns)))) {
       signalPassFailure();
