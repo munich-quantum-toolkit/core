@@ -49,6 +49,9 @@ class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
     options: CompilationOptions
+    program_format: mqt.core.qdmi.ProgramFormat | None
+    terminal_readout: TerminalReadout | None
+    physical_qubits: bool
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -880,7 +883,7 @@ class QCProgram(Program):
             copy: Export a copy of the program.
         """
 
-    def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
+    def to_openqasm3(self, *, physical_qubits: bool = True, copy: bool = False) -> OpenQASMProgram:
         """Emit this QC program as OpenQASM 3.
 
         Classical memory and control flow are legalized for the source format. Use
@@ -889,6 +892,7 @@ class QCProgram(Program):
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
         Args:
+            physical_qubits: Emit static sites as physical references rather than a virtual register.
             copy: Preserve the source program by exporting a copy.
         """
 
@@ -1480,8 +1484,36 @@ def expectation_values(
     and error contracts.
     """
 
+def _operation_parameter_constraints(
+    metadata: bytes | None, num_parameters: int
+) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
+    """Parse the temporary QDMI operation parameter constraints."""
+
+class TerminalReadout(enum.Enum):
+    MEASURED = 0
+
+    ALL = 1
+
+class ResultLayout:
+    """Reconstruct logical bits from receiver samples."""
+
+    @property
+    def raw_width(self) -> int:
+        """The number of bits in each raw receiver sample."""
+
+    @property
+    def bits(self) -> list[int | None]:
+        """Raw indices or None for zero in LSB-first order."""
+
+    def decode_bits(self, raw: str) -> str:
+        """Decode one MSB-first binary sample to logical output order."""
+
 class CompiledProgram:
     """A compiled program ready for QDMI submission."""
+
+    @property
+    def result_layout(self) -> ResultLayout | None:
+        """Logical output reconstruction, or None for an identity layout."""
 
     @property
     def program_format(self) -> mqt.core.qdmi.ProgramFormat:
@@ -1752,12 +1784,38 @@ def compile_program(
         qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
             Custom pipelines require no target.
         options: Shared compilation controls.
+        program_format: Exact executable format for a QDMI target without output.
+        terminal_readout: Canonical terminal measurements, or None to preserve outputs.
+        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 
     Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
     (binary, text). Select an exact execution format with
-    :func:`submit_program` and its ``program_format`` argument. An explicit output
+    the ``program_format`` argument. An explicit output
     need not be a device's execution format. Jeff output does not retain hardware
     placement.
+    """
+
+def serialize_program(
+    program: QCProgram | qiskit.circuit.QuantumCircuit,
+    *,
+    target: CompilerTarget | mqt.core.qdmi.Device | str,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    terminal_readout: TerminalReadout | None = None,
+    physical_qubits: bool = True,
+) -> CompiledProgram:
+    """Serialize an already native circuit without compiling or routing it.
+
+    The caller supplies validated native operations and placements. Optional
+    terminal readout retains a logical result layout and rejects feedback or gates
+    after measurement. Without it, the format retains its supported classical and
+    control-flow behavior. Inputs remain reusable.
+
+    Args:
+        program: A native Qiskit circuit or QC program with static target sites.
+        target: The destination device, registered device ID, or CompilerTarget.
+        program_format: Exact payload format; required for CompilerTarget.
+        terminal_readout: Measure only selected sites or all addressed sites.
+        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
     """
 
 def submit_program(

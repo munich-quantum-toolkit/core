@@ -18,6 +18,11 @@ A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
 kind a format carries.
 
+A serializer can instead return :class:`~mqt.core.mlir.CompiledProgram` to retain
+an output mapping alongside its payload. Use :func:`~mqt.core.mlir.serialize_program`
+for native circuits that need receiver-specific readout. Serialization does not
+compile or route the input; callers must do that before submission.
+
 MQT Core provides OpenQASM 2/3, QPY, IQM JSON, and Base/Adaptive QIR serializers.
 Device packages can advertise their serializers through the ``mqt.core.qiskit.program_serializers``
 entry point group. The entry point name is the
@@ -50,7 +55,7 @@ from importlib.metadata import entry_points
 from io import BytesIO
 from typing import TYPE_CHECKING, Protocol
 
-from mqt.core.mlir import CompilerTarget, QCProgram, QIRProfile
+from mqt.core.mlir import CompiledProgram, CompilerTarget, QCProgram, QIRProfile
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
@@ -85,7 +90,7 @@ ENTRY_POINT_GROUP = "mqt.core.qiskit.program_serializers"
 class TextProgramSerializer(Protocol):
     """Serializes a circuit into a program format whose payload is text."""
 
-    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> str:
+    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> str | CompiledProgram:
         """Serialize a circuit into a program string.
 
         Args:
@@ -95,7 +100,7 @@ class TextProgramSerializer(Protocol):
                 ``target`` property provides the supported operations.
 
         Returns:
-            The program in the serializer's format.
+            The program in the serializer's format, optionally with an output map.
 
         Raises:
             UnsupportedOperationError: If the circuit contains an operation the
@@ -108,7 +113,7 @@ class TextProgramSerializer(Protocol):
 class BinaryProgramSerializer(Protocol):
     """Serializes a circuit into a program format whose payload is binary."""
 
-    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> bytes:
+    def __call__(self, circuit: QuantumCircuit, backend: QDMIBackend, /) -> bytes | CompiledProgram:
         """Serialize a circuit into program bytes.
 
         Args:
@@ -118,7 +123,7 @@ class BinaryProgramSerializer(Protocol):
                 ``target`` property provides the supported operations.
 
         Returns:
-            The program in the serializer's format.
+            The program in the serializer's format, optionally with an output map.
 
         Raises:
             UnsupportedOperationError: If the circuit contains an operation the
@@ -129,7 +134,7 @@ class BinaryProgramSerializer(Protocol):
 
 
 #: A serializer for one program format, text or binary.
-ProgramSerializer = Callable[["QuantumCircuit", "QDMIBackend"], str | bytes]
+ProgramSerializer = Callable[["QuantumCircuit", "QDMIBackend"], "str | bytes | CompiledProgram"]
 
 #: Preferred formats, in descending order: device-native formats first, then
 #: QPY and OpenQASM 3 preserve device gate names. Adaptive QIR precedes
@@ -155,7 +160,7 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     """Export validated native operations and device sites through MQT Core.
 
     Returns:
-        OpenQASM 3 with explicit classical outputs.
+        OpenQASM 3 preserving the circuit's classical outputs.
     """
     backend.validate_circuit(circuit, native=True)
     return QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source

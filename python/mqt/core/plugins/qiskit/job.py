@@ -17,6 +17,7 @@ __lazy_modules__ = {
     "collections",
     "copy",
     "datetime",
+    "mqt.core.mlir",
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.qdmi",
@@ -35,6 +36,7 @@ from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
+from mqt.core.mlir import CompiledProgram
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -44,6 +46,7 @@ if TYPE_CHECKING:
 
     from qiskit.circuit import QuantumCircuit
 
+    from mqt.core.mlir import ResultLayout
     from mqt.core.plugins.qiskit.backend import QDMIBackend
     from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters
@@ -55,7 +58,7 @@ def __dir__() -> list[str]:
     return __all__
 
 
-def _encode_bits(bits: str, width: int) -> str:
+def _encode_bits(bits: str, width: int, layout: ResultLayout | None = None) -> str:
     """Validate a QDMI bitstring and encode it as Qiskit result data.
 
     Returns:
@@ -64,6 +67,8 @@ def _encode_bits(bits: str, width: int) -> str:
     Raises:
         JobError: If the bitstring has the wrong width or contains nonbinary digits.
     """
+    if layout is not None:
+        bits = layout.decode_bits(bits)
     if len(bits) != width or bits.strip("01"):
         msg = f"Invalid QDMI bitstring {bits!r}: expected {width} binary digits in classical-bit order."
         raise JobError(msg)
@@ -101,6 +106,7 @@ class QDMIJob(JobV1):
 
         Raises:
             ValueError: If circuits are empty.
+            JobError: If a serialized result layout has the wrong logical width.
         """
         if not circuits:
             msg = "QDMIJob requires at least one circuit."
@@ -121,15 +127,26 @@ class QDMIJob(JobV1):
         self._job_parameters = job_parameters.copy() if job_parameters is not None else {}
         self._result: Result | None = None
         formats = backend.device.supported_program_formats()
-        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] = tuple(
+        serialized = tuple(
             backend._serialize_circuit(circuit, formats)  # ruff:ignore[private-member-access] Use the backend's serializer selection.
             for circuit in circuits
         )
+        self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] = tuple(
+            (program.payload if isinstance(program, CompiledProgram) else program, program_format)
+            for program, program_format in serialized
+        )
+        self._result_layouts = tuple(
+            program.result_layout if isinstance(program, CompiledProgram) else None for program, _ in serialized
+        )
+        for header, layout in zip(self._headers, self._result_layouts, strict=True):
+            if layout is not None and len(layout.bits) != header["memory_slots"]:
+                msg = "Serialized result layout does not match the circuit's classical width."
+                raise JobError(msg)
         self._batch: Batch[ExperimentResult] = Batch(
             [BatchEntry(i) for i in range(len(circuits))],
             submit=self._submit_entry,
             decode=lambda index, handle, program_index: self._collect_result(
-                handle, self._headers[index], program_index
+                handle, self._headers[index], program_index, self._result_layouts[index]
             ),
             submit_programs=self._submit_programs,
             group_by=[program_format for _, program_format in self._programs],
@@ -234,7 +251,13 @@ class QDMIJob(JobV1):
             raise JobExecutionError(msg, job=self) from exc
         return self._result
 
-    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any], program_index: int = 0) -> ExperimentResult:
+    def _collect_result(
+        self,
+        job: QDMIJobHandle,
+        header: dict[str, Any],
+        program_index: int = 0,
+        layout: ResultLayout | None = None,
+    ) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
@@ -253,7 +276,7 @@ class QDMIJob(JobV1):
             if len(shots) != self._shots:
                 msg = f"Invalid QDMI SHOTS result: expected {self._shots} shots, got {len(shots)}."
                 raise JobError(msg)
-            memory = [_encode_bits(bits, width) for bits in shots]
+            memory = [_encode_bits(bits, width, layout) for bits in shots]
             data = {"memory": memory, "counts": dict(Counter(memory))}
         elif not width:
             data = {"counts": {}}
@@ -265,7 +288,10 @@ class QDMIJob(JobV1):
             if sum(counts.values()) != self._shots:
                 msg = f"Invalid QDMI histogram: expected {self._shots} total shots."
                 raise JobError(msg)
-            data = {"counts": {_encode_bits(bits, width): count for bits, count in counts.items()}}
+            encoded: Counter[str] = Counter()
+            for bits, count in counts.items():
+                encoded[_encode_bits(bits, width, layout)] += count
+            data = {"counts": dict(encoded)}
         return ExperimentResult.from_dict({
             "success": True,
             "shots": self._shots,

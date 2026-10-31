@@ -2467,7 +2467,7 @@ bit[2] c = measure q;
   EXPECT_FALSE(directQC->isValid());
   EXPECT_TRUE(direct->source().starts_with("OPENQASM 3;\n"));
   EXPECT_EQ(direct->str(), direct->source());
-  EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
+  EXPECT_NE(direct->source().find("bit[2] c;"), std::string::npos);
   EXPECT_TRUE(llvm::errorToBool(
       direct->write(std::filesystem::path(testing::TempDir()) / "missing" /
                     "typed_program_output.qasm")));

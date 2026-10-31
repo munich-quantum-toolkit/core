@@ -100,7 +100,7 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
-FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
+FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3(bool physicalQubits) && {
   auto storage = std::move(*this).releaseStorage();
   if (failed(runWithPassManager(
           *storage.mod,
@@ -111,7 +111,8 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
           "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
-  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
+  auto source =
+      qc::translateQCToOpenQASM3(std::move(storage.mod), physicalQubits);
   if (failed(source)) {
     return failure();
   }

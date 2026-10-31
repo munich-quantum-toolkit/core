@@ -26,11 +26,13 @@ import qiskit
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qpy, transpile
 from qiskit.circuit import (
     AnnotatedOperation,
+    Barrier,
     Clbit,
     ControlModifier,
     Gate,
     Instruction,
     InverseModifier,
+    Measure,
     Parameter,
     ParameterExpression,
     ParameterVector,
@@ -43,11 +45,13 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, Statevector, random_unitary
-from qiskit.transpiler import Layout, TranspileLayout
+from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
+    CompilationOptions,
     CompilerTarget,
+    MappingOptions,
     OutputFormat,
     PayloadEncoding,
     PayloadFormat,
@@ -55,10 +59,13 @@ from mqt.core.mlir import (
     ProgramCapability,
     QCProgram,
     TargetEnvironment,
+    TerminalReadout,
     compile_program,
     sample,
+    serialize_program,
     simulate,
 )
+from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -362,6 +369,7 @@ from qiskit.circuit import (
     AnnotatedOperation,
     ControlModifier,
     InverseModifier,
+    Measure,
     PowerModifier,
 )
 from qiskit.circuit.library import UnitaryGate
@@ -4635,6 +4643,23 @@ def test_layout_output_order_round_trip() -> None:
     np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
 
 
+def test_physical_qasm_layout_without_input_count() -> None:
+    """Physical OpenQASM retains its layout and classical output order."""
+    circuit = QuantumCircuit(5, 3)
+    circuit.x(4)
+    circuit.measure([4, 1], [2, 0])
+    vars(circuit)["_layout"] = TranspileLayout(
+        Layout.from_qubit_list(circuit.qubits),
+        dict(zip(circuit.qubits, range(5), strict=True)),
+    )
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert circuit.layout is not None
+    assert restored.layout is not None
+    assert restored.layout.initial_index_layout() == circuit.layout.initial_index_layout()
+    assert restored.layout.final_index_layout() == list(range(5))
+    assert sample(circuit, shots=8, seed=1) == sample(restored, shots=8, seed=1) == {"100": 8}
+
+
 def test_transform_clears_layout() -> None:
     """Cleanup removes mapping metadata when qubit identity may change."""
     circuit = transpile(QuantumCircuit(2), initial_layout=[1, 0], optimization_level=0)
@@ -4806,7 +4831,7 @@ result = measure flag;
         assert "syndrome" in [register.name for register in restored.cregs]
         assert "qubit flag;" in emitted
     assert emitted.index("for ") < emitted.index("\n  bit ")
-    assert "output bit[1] result;" in emitted
+    assert "bit[1] result;" in emitted
     assert sample(emitted, shots=8, seed=1) == {"0": 8}
 
 
@@ -4854,7 +4879,7 @@ result[2] = measure q[0];
     assert [parameter.name for parameter in circuit.parameters] == ["theta"]
     emitted = program.to_openqasm3().source
     assert "qubit[1] q;" in emitted
-    assert "output bit[3] result;" in emitted
+    assert "bit[3] result;" in emitted
     assert QCProgram.from_openqasm_str(emitted).to_qiskit().num_qubits == 3
 
 
@@ -4916,16 +4941,17 @@ def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool)
     assert sample(source, shots=8) == {"0111": 8}
 
 
-def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
+@pytest.mark.parametrize("physical", [False, True])
+def test_qiskit_native_export_preserves_sites_gate_names_and_phase(*, physical: bool) -> None:
     """Native export preserves idle-site holes and exact gate/global phases."""
     circuit = QuantumCircuit(4, global_phase=0.37)
     circuit.h(0)
     circuit.u(0.2, 0.3, 0.4, 2)
     circuit.cx(2, 0)
     circuit.sxdg(3)
-    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
-    assert "cx $2, $0;" in source
-    assert "sxdg $3;" in source
+    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3(physical_qubits=physical).source
+    assert ("cx $2, $0;" if physical else "cx q[2], q[0];") in source
+    assert ("sxdg $3;" if physical else "sxdg q[3];") in source
     np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
 
 
@@ -4997,3 +5023,88 @@ def test_native_import_never_reads_gate_definitions(width: int) -> None:
             QCProgram.from_qiskit(circuit, native=True)
     else:
         assert "device_gate $0;" in QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
+
+
+def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
+    """Keep physical addresses and local metadata through explicit compilation."""
+    sites = (0, 1, 3, 4)
+    target = Target(num_qubits=5)
+    target.add_instruction(Barrier(5))
+    target.add_instruction(library.RZGate(Parameter("theta")), {(site,): None for site in sites})
+    target.add_instruction(library.SXGate(), {(site,): None for site in sites})
+    target.add_instruction(library.CZGate(), dict.fromkeys(((0, 1), (1, 0), (1, 3), (3, 1), (3, 4), (4, 3))))
+    target.add_instruction(Measure(), {(site,): None for site in sites})
+    compiler_target = CompilerTarget.from_qiskit(target)
+    assert [site.id for site in compiler_target.sites] == list(sites)
+    circuit = QuantumCircuit(4, 4, name="source-header", metadata={"nested": [1]})
+    circuit.x(3)
+    circuit.cx(3, 0)
+    circuit.measure(range(4), range(4))
+
+    compiled = compile_program(circuit, target=target)
+
+    assert isinstance(compiled, QuantumCircuit)
+    assert compiled.num_qubits == 5
+    assert all(compiled.find_bit(qubit).index in sites for item in compiled.data for qubit in item.qubits)
+    assert compiled.layout is not None
+    assert sorted(compiled.layout.initial_index_layout()) == list(range(5))
+    assert sample(compiled, shots=8) == {"1001": 8}
+    logical = circuit.copy()
+    logical.remove_final_measurements()
+    physical = compiled.copy()
+    physical.remove_final_measurements()
+    expected = QuantumCircuit(5)
+    expected.compose(logical, range(4), inplace=True)
+    np.testing.assert_allclose(
+        Operator.from_circuit(physical).data,
+        Operator(expected).data,
+        atol=1e-12,
+    )
+    assert compiled.name == circuit.name
+    assert compiled.metadata == circuit.metadata
+    compiled.metadata["nested"].append(2)
+    assert circuit.metadata == {"nested": [1]}
+    artifact = serialize_program(
+        compiled,
+        target=compiler_target,
+        program_format=ProgramFormat.QASM3,
+    )
+    payload = artifact.payload
+    assert isinstance(payload, str)
+    raw_counts = sample(payload, shots=8)
+    assert artifact.result_layout is None
+    assert raw_counts == {"1001": 8}
+
+
+@pytest.mark.parametrize("rotation", ["rx", "prx"])
+def test_compiler_target_qiskit_output_preserves_physical_sites(rotation: str) -> None:
+    """Explicit compiler targets retain native addresses for later serialization."""
+    target = CompilerTarget(
+        "sparse native target",
+        [CompilerTarget.Site(site) for site in (1, 2, 5)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(rotation, 1, 1 if rotation == "rx" else 2),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    circuit = QuantumCircuit(2)
+    circuit.rx(1.0, 0)
+    circuit.cz(0, 1)
+    circuit.measure_all()
+    native = compile_program(
+        circuit, target=target, options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1))
+    )
+    assert native.num_qubits == 6
+    assert native.layout is not None
+    artifact = serialize_program(
+        native, target=target, program_format=ProgramFormat.QASM3, terminal_readout=TerminalReadout.MEASURED
+    )
+    assert isinstance(artifact.payload, str)
+    parameters = "1.0" if rotation == "rx" else "1.0, 0.0"
+    assert f"{rotation}({parameters}) $1;" in artifact.payload
+    assert "cz $1, $2;" in artifact.payload
+    assert "c[0] = measure $1;" in artifact.payload
+    assert "c[1] = measure $2;" in artifact.payload
