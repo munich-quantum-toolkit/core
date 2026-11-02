@@ -892,9 +892,14 @@ class QCProgram(Program):
     def depth(self) -> int | None:
         """Compute depth of the entry-point IR.
 
-        Supports straight-line programs including measurements, resets, barriers (adding no layer),
-        feed-forward dependencies, gate modifiers and simple ``if`` control flow.
-        Returns ``None`` for loops, function calls, and other unsupported control flow.
+        Gates, measurements, and resets add one layer. Measurements include the bit
+        they are stored to. Barriers align their qubits without adding a layer. A gate
+        modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+        regardless of the depth of its body.
+
+        Returns ``None`` for loops, calls, other control flow, qubits without a known
+        wire, and an ``if`` nested in a modifier or ``if`` body. The same applies to
+        qubit stores in an ``if`` body, as the branch may not run.
         """
 
     @property
@@ -1053,9 +1058,14 @@ class QCOProgram(Program):
     def depth(self) -> int | None:
         """Compute depth of the entry-point IR.
 
-        Supports straight-line programs including measurements, resets, barriers (adding no layer),
-        feed-forward dependencies, gate modifiers and simple ``if`` control flow.
-        Returns ``None`` for loops, function calls, and other unsupported control flow.
+        Gates, measurements, and resets add one layer. Measurements include the bit
+        they are stored to. Barriers align their qubits without adding a layer. A gate
+        modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+        regardless of the depth of its body.
+
+        Returns ``None`` for loops, calls, other control flow, qubits without a known
+        wire, and an ``if`` nested in a modifier or ``if`` body. The same applies to
+        qubit stores in an ``if`` body, as the branch may not run.
         """
 
     @property

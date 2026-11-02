@@ -66,7 +66,7 @@ struct QuantumProgramInfo {
   std::map<std::string, size_t> controlFlowCounts;
   /// All operations in the module, as in Program::operationCounts().
   std::map<std::string, size_t> operationCounts;
-  /// Depth of the program
+  /// Circuit depth, as in QCProgram::depth().
   std::optional<size_t> depth;
 };
 
@@ -258,10 +258,15 @@ public:
 
   /// Compute the circuit depth of the entry point.
   ///
-  /// Supports straight-line programs including measurements, resets, barriers
-  /// (adding no layer), feed-forward dependencies, gate modifiers and simple
-  /// ``if`` control flow. Returns ``None`` for loops, function calls, and other
-  /// unsupported control flow.
+  /// Gates, measurements, and resets add one layer. Measurements include the
+  /// bit they are stored to. Barriers align their qubits without adding a
+  /// layer. A gate modifier or an ``if`` adds exactly one layer over every
+  /// qubit and bit it uses, regardless of the depth of its body.
+  ///
+  /// Returns `std::nullopt` for loops, calls, other control flow, qubits
+  /// without a known wire, and an ``if`` nested in a modifier or ``if`` body.
+  /// The same applies to qubit stores in an ``if`` body, as the branch may not
+  /// run.
   [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.
@@ -396,10 +401,7 @@ public:
 
   /// Compute the circuit depth of the entry point.
   ///
-  /// Supports straight-line programs including measurements, resets, barriers
-  /// (adding no layer), feed-forward dependencies, gate modifiers and simple
-  /// ``if`` control flow. Returns ``None`` for loops, function calls, and other
-  /// unsupported control flow.
+  /// Uses the rules of QCProgram::depth().
   [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.

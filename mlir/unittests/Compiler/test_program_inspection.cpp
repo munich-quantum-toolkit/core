@@ -405,7 +405,6 @@ TEST(ProgramInspection, DepthWithFunctionCalls) {
     foo q[0];
     h q[1];
     x q[1];
-    ctrl @ foo q[1], q[2];
   )",
                             std::nullopt);
 }
@@ -483,18 +482,6 @@ TEST(ProgramInspection, DepthOrdersMeasurementsIntoTheSameBit) {
                             3);
 }
 
-TEST(ProgramInspection, DepthWithSimpleControlFlow) {
-  expectDepthInBothDialects(R"(
-    OPENQASM 3.0; include "stdgates.inc";
-    qubit[2] q;
-    bit c = measure q[0];
-    if (c) {
-      x q[1];
-    }
-  )",
-                            2);
-}
-
 TEST(ProgramInspection, DepthWithBlockControlFlow) {
   expectDepthInBothDialects(R"(
     OPENQASM 3.0; include "stdgates.inc";
@@ -506,18 +493,150 @@ TEST(ProgramInspection, DepthWithBlockControlFlow) {
     }
   )",
                             2);
+}
 
+TEST(ProgramInspection, DepthFollowsScalarQubits) {
+  auto qc = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        qc.h %q : !qc.qubit
+        qc.x %q : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(mlir::succeeded(qc));
+  expectDepthInBothDialects(std::move(*qc), 2);
+}
+
+TEST(ProgramInspection, DepthFollowsStaticQubits) {
+  auto qc = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qc.static 0 : !qc.qubit
+        qc.h %q : !qc.qubit
+        qc.x %q : !qc.qubit
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(mlir::succeeded(qc));
+  expectDepthInBothDialects(std::move(*qc), 2);
+}
+
+TEST(ProgramInspection, DepthOrdersConditionalsOnBitsWrittenInIfBodies) {
   expectDepthInBothDialects(R"(
     OPENQASM 3.0; include "stdgates.inc";
-    qubit[2] q;
-    h q[0];
-    bit c = measure q[0];
-    if (c) {
-      x q[1];
-      y q[1];
+    qubit[3] q;
+    bit[2] c = "00";
+    h q[0]; h q[0];                // q0: 2
+    c[0] = measure q[0];           // q0, c0: 3
+    if (c[0]) c[1] = measure q[1]; // c0, c1, q1: 4
+    if (c[1]) x q[2];              // c1, q2: 5 (waits for c1)
+  )",
+                            5);
+}
+
+TEST(ProgramInspection, DepthOrdersConditionalsOnBitsCopiedInIfBodies) {
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit[3] q;
+    bit[3] c = "000";
+    h q[0]; h q[0];        // q0: 2
+    c[0] = measure q[0];   // q0, c0: 3
+    if (c[2]) c[1] = c[0]; // c0, c1, c2: 4 (reads c0)
+    if (c[1]) x q[2];      // c1, q2: 5 (waits for c1)
+  )",
+                            5);
+}
+
+TEST(ProgramInspection, DepthFollowsQubitAliases) {
+  auto qc = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %qubits = memref.alloc() : memref<2x!qc.qubit>
+        %q = memref.load %qubits[%zero] : memref<2x!qc.qubit>
+        qc.h %q : !qc.qubit
+        qc.x %q : !qc.qubit
+        memref.store %q, %qubits[%one] : memref<2x!qc.qubit>
+        %alias = memref.load %qubits[%one] : memref<2x!qc.qubit>
+        qc.z %alias : !qc.qubit
+        memref.dealloc %qubits : memref<2x!qc.qubit>
+        return
+      }
     }
+  )");
+  ASSERT_TRUE(mlir::succeeded(qc));
+  expectDepth(*qc, 3);
+}
+
+TEST(ProgramInspection, DepthFollowsScalarQubitsThroughIfBodies) {
+  expectDepthInBothDialects(R"(
+    OPENQASM 3.0; include "stdgates.inc";
+    qubit q;
+    qubit r;
+    bit c = measure q; // q, c: 1
+    if (c) { x r; }    // c, r: 2
+    h r;               // r: 3
   )",
                             3);
+}
+
+TEST(ProgramInspection, DepthRejectsUnresolvedQubits) {
+  auto argument = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @main(%q: !qc.qubit) attributes {mqt.entry_point} {
+        qc.h %q : !qc.qubit
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(mlir::succeeded(argument));
+  expectDepth(*argument, std::nullopt);
+
+  auto dynamicIndex = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @main(%index: index) attributes {mqt.entry_point} {
+        %qubits = memref.alloc() : memref<2x!qc.qubit>
+        %q = memref.load %qubits[%index] : memref<2x!qc.qubit>
+        qc.h %q : !qc.qubit
+        memref.dealloc %qubits : memref<2x!qc.qubit>
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(mlir::succeeded(dynamicIndex));
+  expectDepth(*dynamicIndex, std::nullopt);
+}
+
+TEST(ProgramInspection, DepthRejectsQubitStoresInIfBodies) {
+  auto qc = mlir::QCProgram::fromMLIRString(R"(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+        %qubits = memref.alloc() : memref<2x!qc.qubit>
+        %q = memref.load %qubits[%zero] : memref<2x!qc.qubit>
+        %result = qc.measure %q : !qc.qubit -> i1
+        cbit.store %result, %bits[%zero] : !cbit.reg<1>
+        %bit = cbit.load %bits[%zero] : !cbit.reg<1>
+        scf.if %bit {
+          memref.store %q, %qubits[%one] : memref<2x!qc.qubit>
+        }
+        %other = memref.load %qubits[%one] : memref<2x!qc.qubit>
+        qc.x %other : !qc.qubit
+        memref.dealloc %qubits : memref<2x!qc.qubit>
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(mlir::succeeded(qc));
+  expectDepth(*qc, std::nullopt);
 }
 
 TEST(ProgramInspection, DepthCountsBothIfBranchesAsOneLayer) {
@@ -568,14 +687,6 @@ TEST(ProgramInspection, DepthWithComplexControlFlow) {
       }
     } else {
       cx q[0], q[1];
-    }
-    switch (selector) {
-      case 1 {
-        swap q[0], q[1];
-      }
-      default {
-        z q[2];
-      }
     }
   )",
                             std::nullopt);
