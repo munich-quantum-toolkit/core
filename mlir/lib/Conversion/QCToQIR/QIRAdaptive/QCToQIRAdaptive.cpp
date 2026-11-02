@@ -636,23 +636,11 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
   }
 };
 
-/// Converts qc.measure to QIR measurement
+/// Lowers measurements to static result IDs.
 ///
-/// For measurements with register information, a result array is allocated and
-/// all result pointers are loaded.
-/// Scalar measurements use static result IDs unless returned Result arrays
-/// require dynamic result management.
-/// If the operation has an user, a read result call operation is created to
-/// convert the result !llvm.ptr to an i1 value.
-///
-/// @par Example (with register):
-/// ```mlir
-/// %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
-/// ```
+/// Returned measurements use scalar IDs or pointers loaded from result arrays.
+/// Non-output measurements share a scratch result. Remaining SSA users receive
+/// the measured bit through a read-result call.
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -750,7 +738,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   /// 1. **Entry block**: Contains constant operations and initialization
   /// 2. **Intermediate blocks**: Original function structure containing
   /// quantum operations
-  /// 3. **Output block**: Contains output recording and result release calls.
+  /// 3. **Output block**: Contains output recording calls.
   /// Quantum releases remain at their source locations.
   ///
   /// @param main The main LLVM function to restructure

@@ -95,13 +95,13 @@ struct LoweringState {
   /// Measurement stores kept as SSA users across structural conversion.
   DenseMap<Operation*, Operation*> deferredMeasurementStores;
 
-  /// Scalar result pointers in ID order; array elements are separate.
-  SmallVector<Value> scalarResults;
+  /// Number of static results assigned after the reserved register IDs.
+  size_t numScalarResults = 0;
 
   /// Number of static IDs reserved for returned result registers.
   int64_t staticRegisterResults = 0;
 
-  /// Reusable Adaptive measurement result, tracked by `scalarResults`.
+  /// Reusable Adaptive measurement result.
   Value scratchResult;
 
   /// Converted controls associated with their specific body unitary.

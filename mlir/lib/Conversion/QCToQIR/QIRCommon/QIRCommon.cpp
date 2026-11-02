@@ -681,14 +681,12 @@ Value getResultPtr(LoweringState& state, Operation* op,
   OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(state.entryBlock->getTerminator());
   const auto index = state.staticRegisterResults +
-                     static_cast<int64_t>(state.scalarResults.size());
+                     static_cast<int64_t>(state.numScalarResults++);
   if (auto it = state.measuredResults.find(op);
       it != state.measuredResults.end()) {
     it->second.label = "__unnamed__" + std::to_string(index);
   }
-  auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
-  state.scalarResults.push_back(result);
-  return result;
+  return createPointerFromIndex(rewriter, op->getLoc(), index);
 }
 
 /// Summarize the interference before each store in one block traversal.

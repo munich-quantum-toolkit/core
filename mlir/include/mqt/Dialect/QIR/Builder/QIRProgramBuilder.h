@@ -208,6 +208,9 @@ public:
 
   /// Allocate a classical bit register
   ///
+  /// Adaptive registers contain dynamic result pointers unless `build` enables
+  /// static results. Base registers always use static result IDs.
+  ///
   /// @param size Number of bits (must be positive)
   /// @param record Whether the register should be recorded in the output
   /// @return A `ClassicalRegister` structure
@@ -245,8 +248,9 @@ public:
   /// Base uses static result IDs and inserts the call in the measurements
   /// block. Adaptive allocates result slots once in the entry block and
   /// measures at the current insertion point. Finalization records selected
-  /// results and releases dynamic slots. Adaptive measurements cannot be mixed
-  /// with explicit `staticResult()` calls.
+  /// results and releases dynamic slots. With `build`'s `staticResults` option,
+  /// Adaptive uses static IDs and permits explicit `staticResult()` calls.
+  /// Mixing static and dynamic result allocation is a usage error.
   ///
   /// @param qubit The qubit to measure
   /// @param index Non-negative result slot index

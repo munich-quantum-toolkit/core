@@ -203,13 +203,10 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
     reg.results.reserve(static_cast<size_t>(*size));
-    const auto base = static_cast<int64_t>(state.scalarResults.size());
     for (int64_t i = 0; i < *size; ++i) {
-      const auto index = base + i;
+      const auto index = static_cast<int64_t>(state.numScalarResults++);
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
       reg.results.push_back(result);
-      // The results are recorded as part of the register
-      state.scalarResults.push_back(result);
     }
 
     rewriter.eraseOp(op);

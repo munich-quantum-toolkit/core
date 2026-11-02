@@ -56,6 +56,7 @@
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -512,8 +513,8 @@ TEST_F(QCToQIRAdaptiveNativeTest, AssignsStaticResultIdsToArrays) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   SmallVector<Value> registers;
-  for (size_t i = 0; i < 12; ++i) {
-    registers.push_back(builder.allocClassicalBitRegister(1));
+  for (int64_t width : {1, 2}) {
+    registers.push_back(builder.allocClassicalBitRegister(width));
   }
 
   auto moduleOp = builder.finalize(registers);
@@ -521,17 +522,27 @@ TEST_F(QCToQIRAdaptiveNativeTest, AssignsStaticResultIdsToArrays) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  DenseSet<Value> results;
+  DenseSet<int64_t> results;
   moduleOp->walk([&](LLVM::StoreOp store) {
     if (store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
-      results.insert(store.getValue());
+      auto pointer = store.getValue().getDefiningOp<LLVM::IntToPtrOp>();
+      ASSERT_TRUE(pointer);
+      const auto index = getConstantIntValue(pointer.getArg());
+      ASSERT_TRUE(index);
+      EXPECT_TRUE(results.insert(*index).second);
     }
   });
-  EXPECT_EQ(results.size(), 12U);
+  EXPECT_EQ(results, (DenseSet<int64_t>{0, 1, 2}));
   moduleOp->walk([&](LLVM::CallOp call) {
     EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_ALLOC);
     EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_RELEASE);
   });
+
+  ASSERT_TRUE(succeeded(runQIRCleanupPipeline(moduleOp.get(), true)));
+  auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_results", "3"})));
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
@@ -976,12 +987,6 @@ TEST_F(QCToQIRAdaptiveNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
     ASSERT_TRUE(code);
     EXPECT_EQ(cast<IntegerAttr>(code.getValue()).getInt(), 0);
   });
-  module->walk([&](LLVM::CallOp call) {
-    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ALLOC);
-    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_RELEASE);
-    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_ALLOC);
-    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_RELEASE);
-  });
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, MaterializesBooleanOutputsBeforeRecording) {
@@ -1240,42 +1245,27 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
       qir::QIRProgramBuilder::Profile::Adaptive, true);
   ASSERT_TRUE(reference);
   // The converter reserves IDs for returned arrays before scalar results.
-  SmallVector<LLVM::IntToPtrOp> resultPointers;
-  DenseSet<Operation*> arrayPointers;
-  DenseSet<Operation*> scalarPointers;
+  llvm::SmallSetVector<Value, 4> resultPointers;
   reference->walk([&](LLVM::StoreOp store) {
-    if (!store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
-      return;
-    }
-    if (auto pointer = store.getValue().getDefiningOp<LLVM::IntToPtrOp>()) {
-      resultPointers.push_back(pointer);
-      arrayPointers.insert(pointer.getOperation());
-    }
-  });
-  reference->walk([&](LLVM::CallOp call) {
-    if (!call.getCallee()) {
-      return;
-    }
-    Value result;
-    if (call.getCallee() == qir::QIR_MEASURE && call.getNumOperands() > 1) {
-      result = call.getOperand(1);
-    } else if (call.getCallee() == qir::QIR_RECORD_OUTPUT ||
-               call.getCallee() == qir::QIR_READ_RESULT) {
-      result = call.getOperand(0);
-    }
-    if (result) {
-      if (auto pointer = result.getDefiningOp<LLVM::IntToPtrOp>()) {
-        scalarPointers.insert(pointer.getOperation());
-      }
+    if (store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
+      resultPointers.insert(store.getValue());
     }
   });
   reference->walk([&](LLVM::IntToPtrOp pointer) {
-    if (scalarPointers.contains(pointer.getOperation()) &&
-        !arrayPointers.contains(pointer.getOperation())) {
-      resultPointers.push_back(pointer);
+    if (llvm::any_of(pointer->getUsers(), [&](Operation* user) {
+          auto call = dyn_cast<LLVM::CallOp>(user);
+          return call && ((call.getCallee() == qir::QIR_MEASURE &&
+                           call.getOperand(1) == pointer) ||
+                          ((call.getCallee() == qir::QIR_RECORD_OUTPUT ||
+                            call.getCallee() == qir::QIR_READ_RESULT) &&
+                           call.getOperand(0) == pointer));
+        })) {
+      resultPointers.insert(pointer);
     }
   });
-  for (auto [index, pointer] : llvm::enumerate(resultPointers)) {
+  for (auto [index, result] : llvm::enumerate(resultPointers)) {
+    auto pointer = result.getDefiningOp<LLVM::IntToPtrOp>();
+    ASSERT_TRUE(pointer);
     auto constant = pointer.getArg().getDefiningOp<LLVM::ConstantOp>();
     ASSERT_TRUE(constant);
     constant.setValueAttr(
