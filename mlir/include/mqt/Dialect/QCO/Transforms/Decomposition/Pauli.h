@@ -117,10 +117,25 @@ pauliRotationEntanglerCount(PauliRotationCounts rotations,
 ///
 /// Hoists supporting scalar operations from a recognized control body; the
 /// caller replaces the original operation with the one or two returned qubits.
+/// With @p allowRuntimeApproximation, branches may omit small runtime rotations
+/// within one cumulative WEYL_DEFAULT_FIDELITY bound. The explicit global phase
+/// remains. This requires at most three distinct rotations with one entangling
+/// term; other sequences use exact emission. The caller must permit
+/// unrestricted forward branching.
 [[nodiscard]] SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
-                   const CompilerTarget::SynthesisBasis& basis, bool reverse);
+                   const CompilerTarget::SynthesisBasis& basis, bool reverse,
+                   bool allowRuntimeApproximation = false);
+
+/// Synthesize diagonal fanout loops with a shared fixed-slot basis change.
+///
+/// Requires indexed U/CZ synthesis and unrestricted forward branching. A
+/// pre-loop H must access the invariant slot. Retained local Z rotations share
+/// a loop-carried angle normalized modulo 4π; omission bounds remain
+/// source-local.
+void synthesizePhaseFanoutLoops(RewriterBase& rewriter, ModuleOp moduleOp,
+                                const CompilerTarget& target);
 
 /// Compose adjacent commuting Pauli operations with runtime parameters when
 /// their native two-qubit count decreases.

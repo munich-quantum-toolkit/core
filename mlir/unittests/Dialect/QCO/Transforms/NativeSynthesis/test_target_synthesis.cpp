@@ -12,12 +12,14 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
@@ -27,6 +29,7 @@
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "ExactUnitaryTest.h"
 
@@ -36,6 +39,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Utils/Utils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -66,9 +70,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -2684,6 +2690,383 @@ TEST_F(TargetSynthesisTest, SingleQubitFusionPreservesNativeSymbolicRuns) {
     EXPECT_EQ(countOps<UOp>(*moduleOp), useTarget ? 2U : 1U);
     if (useTarget) {
       EXPECT_EQ(printModule(*moduleOp), printModule(*original));
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, SingleQubitFusionComposesNativePhaseFactors) {
+  for (const bool phaseFirst : {false, true}) {
+    for (const double offset : {0., .42}) {
+      SCOPED_TRACE(testing::Message() << phaseFirst << " " << offset);
+      auto original = build([&](QCOProgramBuilder& builder) {
+        auto qubit = builder.staticQubit(0);
+        qubit = phaseFirst ? builder.u(0., 0., .41, qubit)
+                           : builder.u(.73, offset, .42, qubit);
+        qubit = phaseFirst ? builder.u(.73, -.19, offset, qubit)
+                           : builder.u(0., .41, 0., qubit);
+        builder.sink(qubit);
+        return llvm::SmallVector<Value>{};
+      });
+      auto function = mainFunction(*original);
+      ASSERT_TRUE(mlir::succeeded(function.insertArgument(
+          0, mlir::Float64Type::get(context.get()), {}, function.getLoc())));
+      auto gates = llvm::to_vector(function.getOps<UOp>());
+      if (phaseFirst) {
+        gates.front().getLambdaMutable().assign(function.getArgument(0));
+      } else {
+        gates.back().getPhiMutable().assign(function.getArgument(0));
+      }
+      auto rotation = gates[phaseFirst ? 1 : 0];
+      mlir::OpBuilder builder(rotation);
+      auto theta = mlir::arith::NegFOp::create(builder, rotation.getLoc(),
+                                               function.getArgument(0));
+      rotation.getThetaMutable().assign(theta.getResult());
+      OwningOpRef<ModuleOp> actual = original->clone();
+      ASSERT_TRUE(mlir::succeeded(runPass(
+          *actual,
+          mlir::qco::createFuseSingleQubitUnitaryRuns(makeUCxTarget()))));
+      EXPECT_EQ(countOps<UOp>(*actual), offset == 0. ? 1U : 2U);
+      EXPECT_EQ(countOps<mlir::math::TanOp>(*actual), 0U);
+      EXPECT_EQ(countOps<mlir::math::AtanOp>(*actual), 0U);
+      EXPECT_TRUE(mlir::succeeded(mlir::verify(*actual)));
+      EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*actual)));
+      for (double angle : {-9.2, 0., .37, 2. * std::numbers::pi, 1e20, 1e308}) {
+        SCOPED_TRACE(angle);
+        OwningOpRef<ModuleOp> expected = original->clone();
+        OwningOpRef<ModuleOp> boundActual = actual->clone();
+        for (auto moduleOp : {expected.get(), boundActual.get()}) {
+          auto entry = mainFunction(moduleOp);
+          mlir::OpBuilder builder(context.get());
+          builder.setInsertionPointToStart(&entry.getBody().front());
+          auto constant = mlir::arith::ConstantOp::create(
+              builder, entry.getLoc(), builder.getF64FloatAttr(angle));
+          entry.getArgument(0).replaceAllUsesWith(constant.getResult());
+          ASSERT_TRUE(mlir::succeeded(
+              runPass(moduleOp, mlir::createCanonicalizerPass())));
+        }
+        expectEquivalent(expected, boundActual);
+      }
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, SingleQubitFusionKeepsControlledPhaseFactors) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%phase: f64, %theta: f64) {
+      %zero = arith.constant 0. : f64
+      %c = qco.static 0 : !qco.qubit
+      %t = qco.static 1 : !qco.qubit
+      %c1, %t1 = qco.ctrl(%c) targets(%q = %t) {
+        %p = qco.u(%zero, %zero, %phase) %q : !qco.qubit
+        %r = qco.u(%theta, %zero, %zero) %p : !qco.qubit
+        qco.yield %r : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit})
+      qco.sink %c1 : !qco.qubit
+      qco.sink %t1 : !qco.qubit
+      return
+    }
+  })mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*moduleOp,
+              mlir::qco::createFuseSingleQubitUnitaryRuns(makeUCxTarget()))));
+  EXPECT_EQ(countOps<UOp>(*moduleOp), 2U);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(TargetSynthesisTest,
+       RuntimePauliApproximationPreservesFidelityAndPhase) {
+  using Capability = mlir::ProgramCapability;
+  for (const bool controlledPhase : {false, true}) {
+    auto original = build([&](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      const auto outputs =
+          controlledPhase ? builder.cp(.37, q0, q1) : builder.rzz(.37, q0, q1);
+      builder.sink(outputs.first);
+      builder.sink(outputs.second);
+      return llvm::SmallVector<Value>{};
+    });
+    auto function = mainFunction(*original);
+    ASSERT_TRUE(mlir::succeeded(function.insertArgument(
+        0, mlir::Float64Type::get(context.get()), {}, function.getLoc())));
+    auto gate = *function.getOps<mlir::qco::UnitaryOpInterface>().begin();
+    auto sequence = mlir::qco::decomposition::getPauliRotations(gate);
+    ASSERT_TRUE(sequence);
+    sequence->angle.replaceAllUsesWith(function.getArgument(0));
+    for (const int branching : {0, 1, 2}) {
+      SCOPED_TRACE(testing::Message() << controlledPhase << " " << branching);
+      std::vector<Capability> capabilities;
+      if (branching != 0) {
+        capabilities.push_back({.id = Capability::FORWARD_BRANCHING.str()});
+        if (branching == 1) {
+          capabilities.back().constraints.push_back({
+              .id = mlir::ProgramConstraint::MAX_NESTING_DEPTH.str(),
+              .value = 16,
+          });
+        }
+      }
+      const auto target = makeUCxTarget();
+      auto synthesized = OwningOpRef<ModuleOp>(original->clone());
+      mlir::attachTargetEnvironment(
+          *synthesized,
+          mlir::TargetEnvironment(
+              target,
+              valid(mlir::PayloadSpecification::create(
+                  {.id = "qir", .version = "2.1.0", .profile = "adaptive"},
+                  capabilities))));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*synthesized, mlir::qco::createTargetNativeSynthesis())));
+      const auto branches = countOps<mlir::qco::IfOp>(*synthesized);
+      if (branching == 2) {
+        EXPECT_GT(branches, 0U);
+        EXPECT_LE(branches, 3U);
+      } else {
+        EXPECT_EQ(branches, 0U);
+      }
+      EXPECT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+      EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
+      if (branching != 2) {
+        continue;
+      }
+      for (double angle : {
+               0.,
+               1e-6,
+               -1e-6,
+               3e-6,
+               -3e-6,
+               3.5e-6,
+               -3.5e-6,
+               6e-6,
+               -.37,
+               std::numeric_limits<double>::infinity(),
+               -std::numeric_limits<double>::infinity(),
+               std::numeric_limits<double>::quiet_NaN(),
+           }) {
+        SCOPED_TRACE(angle);
+        auto actual = OwningOpRef<ModuleOp>(synthesized->clone());
+        auto entry = mainFunction(*actual);
+        mlir::OpBuilder builder(context.get());
+        builder.setInsertionPointToStart(&entry.getBody().front());
+        auto constant = mlir::arith::ConstantOp::create(
+            builder, entry.getLoc(), builder.getF64FloatAttr(angle));
+        entry.getArgument(0).replaceAllUsesWith(constant);
+        if (!std::isfinite(angle)) {
+          actual->walk([&](mlir::qco::IfOp branch) {
+            auto condition = mlir::dyn_cast_if_present<mlir::IntegerAttr>(
+                mlir::mqt::valueToConstantAttr(branch.getCondition()));
+            ASSERT_TRUE(condition);
+            EXPECT_FALSE(condition.getValue().getBoolValue());
+          });
+          continue;
+        }
+        const double pauliAngle = controlledPhase ? -angle / 2. : angle;
+        const double floor = mlir::qco::decomposition::WEYL_DEFAULT_FIDELITY;
+        const auto fidelity = [](double trace) {
+          return mlir::qco::decomposition::traceToFidelity(trace);
+        };
+        const bool approximate =
+            fidelity(4. * std::cos(pauliAngle / 2.)) >= floor;
+        const unsigned locals =
+            !controlledPhase                                    ? 0
+            : .7 + .3 * std::cos(angle) >= floor                ? 0
+            : fidelity(2. + 2. * std::cos(angle / 2.)) >= floor ? 1
+                                                                : 2;
+        ASSERT_TRUE(
+            mlir::succeeded(runPass(*actual, mlir::createCanonicalizerPass())));
+        auto expected = build([&](QCOProgramBuilder& reference) {
+          auto q0 = reference.staticQubit(0);
+          auto q1 = reference.staticQubit(1);
+          if (approximate && controlledPhase) {
+            if (locals >= 1) {
+              q0 = reference.rz(angle / 2., q0);
+            }
+            if (locals == 2) {
+              q1 = reference.rz(angle / 2., q1);
+            }
+            reference.gphase(angle / 4.);
+          } else if (!approximate) {
+            const auto outputs = controlledPhase ? reference.cp(angle, q0, q1)
+                                                 : reference.rzz(angle, q0, q1);
+            q0 = outputs.first;
+            q1 = outputs.second;
+          }
+          reference.sink(q0);
+          reference.sink(q1);
+          return llvm::SmallVector<Value>{};
+        });
+        ::mqt::test::expectFullUnitaryEqual(
+            *expected, *actual, 2, mlir::qco::decomposition::WEYL_TOLERANCE);
+        if (approximate) {
+          const double actualFidelity =
+              !controlledPhase || locals == 2
+                  ? fidelity(4. * std::cos(pauliAngle / 2.))
+              : locals == 1 ? fidelity(2. + 2. * std::cos(angle / 2.))
+                            : .7 + .3 * std::cos(angle);
+          EXPECT_GE(actualFidelity, floor);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest,
+       PhaseFanoutLoopsShareLocalRotationsAndPreservePhase) {
+  const auto target = valid(
+      Target::create(5, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  for (bool fixedControl : {false, true}) {
+    for (bool nonDiagonal : {false, true}) {
+      auto original = mlir::parseSourceString<ModuleOp>(R"mlir(module {
+        func.func @main(%angle: f64, %count: index) {
+          %c0 = arith.constant 0 : index
+          %c1 = arith.constant 1 : index
+          %c4 = arith.constant 4 : index
+          %half = arith.constant 0.5 : f64
+          %q0 = qco.static 0 : !qco.qubit
+          %q1 = qco.static 1 : !qco.qubit
+          %q2 = qco.static 2 : !qco.qubit
+          %q3 = qco.static 3 : !qco.qubit
+          %q4 = qco.static 4 : !qco.qubit
+          %reg = qtensor.from_elements %q0, %q1, %q2, %q3, %q4 : tensor<5x!qco.qubit>
+          %rest, %fixed = qtensor.extract %reg[%c4] : tensor<5x!qco.qubit>
+          %h = qco.h %fixed : !qco.qubit
+          %ready = qtensor.insert %h into %rest[%c4] : tensor<5x!qco.qubit>
+          %out:2 = scf.for %i = %c0 to %count step %c1
+              iter_args(%a = %angle, %r = %ready) -> (f64, tensor<5x!qco.qubit>) {
+            %r1, %varying = qtensor.extract %r[%i] : tensor<5x!qco.qubit>
+            %r2, %target = qtensor.extract %r1[%c4] : tensor<5x!qco.qubit>
+            %c, %t = qco.ctrl(%varying) targets(%q = %target) {
+              %p = qco.p(%a) %q : !qco.qubit
+              qco.yield %p : !qco.qubit
+            } : ({!qco.qubit}, {!qco.qubit})
+            %r3 = qtensor.insert %t into %r2[%c4] : tensor<5x!qco.qubit>
+            %r4 = qtensor.insert %c into %r3[%i] : tensor<5x!qco.qubit>
+            %next = arith.mulf %a, %half : f64
+            scf.yield %next, %r4 : f64, tensor<5x!qco.qubit>
+          }
+          qtensor.dealloc %out#1 : tensor<5x!qco.qubit>
+          return
+        }
+      })mlir",
+                                                        context.get());
+      ASSERT_TRUE(original);
+      auto loop = *mainFunction(*original).getOps<mlir::scf::ForOp>().begin();
+      auto phase = *loop.getBody()->getOps<CtrlOp>().begin();
+      auto inserts =
+          llvm::to_vector(loop.getBody()->getOps<mlir::qtensor::InsertOp>());
+      if (fixedControl) {
+        auto inputs = llvm::to_vector(phase.getInputQubits());
+        phase->setOperand(0, inputs[1]);
+        phase->setOperand(1, inputs[0]);
+        inserts[0].getScalarMutable().assign(phase.getOutputQubit(0));
+        inserts[1].getScalarMutable().assign(phase.getOutputQubit(1));
+      }
+      if (nonDiagonal) {
+        mlir::OpBuilder builder(inserts[0]);
+        auto h =
+            HOp::create(builder, inserts[0].getLoc(), inserts[0].getScalar());
+        inserts[0].getScalarMutable().assign(h);
+      }
+      auto synthesized = OwningOpRef<ModuleOp>(original->clone());
+      mlir::attachTargetEnvironment(
+          *synthesized,
+          mlir::TargetEnvironment(
+              target,
+              valid(mlir::PayloadSpecification::create(
+                  {.id = "qir", .version = "2.1.0", .profile = "adaptive"},
+                  {
+                      {
+                          .id =
+                              mlir::ProgramCapability::FORWARD_BRANCHING.str(),
+                      },
+                  }))));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*synthesized, mlir::qco::createTargetNativeSynthesis())));
+      EXPECT_EQ(countOps<mlir::scf::ForOp>(*synthesized), 1U);
+      EXPECT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+      EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
+      for (unsigned iterations : {0U, 4U}) {
+        for (double start : {
+                 0.,
+                 .37,
+                 -9.2,
+                 2. * std::numbers::pi,
+                 1e20,
+                 1e308,
+                 7e-6,
+                 6e-6,
+             }) {
+          SCOPED_TRACE(testing::Message() << fixedControl << ' ' << nonDiagonal
+                                          << ' ' << iterations << ' ' << start);
+          auto actual = OwningOpRef<ModuleOp>(synthesized->clone());
+          auto function = mainFunction(*actual);
+          mlir::OpBuilder builder(&function.getBody().front(),
+                                  function.getBody().front().begin());
+          auto angle = mlir::arith::ConstantOp::create(
+              builder, function.getLoc(), builder.getF64FloatAttr(start));
+          auto count = mlir::arith::ConstantIndexOp::create(
+              builder, function.getLoc(), iterations);
+          function.getArgument(0).replaceAllUsesWith(angle);
+          function.getArgument(1).replaceAllUsesWith(count);
+          auto expected = build([&](QCOProgramBuilder& reference) {
+            llvm::SmallVector<Value> wires;
+            for (unsigned i = 0; i < 5; ++i) {
+              wires.push_back(reference.staticQubit(i));
+            }
+            wires[4] = reference.h(wires[4]);
+            double value = start;
+            for (unsigned i = 0; i < iterations; ++i, value *= .5) {
+              auto& control = wires[fixedControl ? 4 : i];
+              auto& targetQubit = wires[fixedControl ? i : 4];
+              const double floor =
+                  mlir::qco::decomposition::WEYL_DEFAULT_FIDELITY;
+              const auto fidelity = [](double trace) {
+                return mlir::qco::decomposition::traceToFidelity(trace);
+              };
+              if (fidelity(4. * std::cos(value / 4.)) < floor) {
+                std::tie(control, targetQubit) =
+                    reference.cp(value, control, targetQubit);
+              } else {
+                if (.7 + .3 * std::cos(value) < floor) {
+                  control = reference.rz(value / 2., control);
+                }
+                if (fidelity(2. + 2. * std::cos(value / 2.)) < floor) {
+                  targetQubit = reference.rz(value / 2., targetQubit);
+                }
+                reference.gphase(value / 4.);
+              }
+              if (nonDiagonal) {
+                wires[4] = reference.h(wires[4]);
+              }
+            }
+            for (auto wire : wires) {
+              reference.sink(wire);
+            }
+            return llvm::SmallVector<Value>{};
+          });
+          ::mqt::test::expectFullUnitaryEqual(
+              *expected, *actual, 5, mlir::qco::decomposition::WEYL_TOLERANCE);
+          if (!nonDiagonal && start == .37 && iterations != 0) {
+            auto boundLoop =
+                *mainFunction(*actual).getOps<mlir::scf::ForOp>().begin();
+            ASSERT_TRUE(mlir::succeeded(mlir::loopUnrollFull(boundLoop)));
+            ASSERT_TRUE(mlir::succeeded(
+                runPass(*actual, mlir::createCanonicalizerPass())));
+            EXPECT_LE(countOps<UOp>(*actual), 2 * iterations + 1);
+          }
+        }
+      }
     }
   }
 }

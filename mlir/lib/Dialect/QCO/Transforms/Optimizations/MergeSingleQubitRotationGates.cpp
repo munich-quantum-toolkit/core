@@ -33,6 +33,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -369,6 +370,54 @@ static Val sumAngles(Val lhs, Val rhs) {
     return lhs;
   }
   return lhs + rhs;
+}
+
+// Forward a phase into U without adding angles or losing large-angle offsets.
+static LogicalResult mergeNativePhaseFactor(UOp op, PatternRewriter& rewriter) {
+  auto next = dyn_cast<UOp>(*op.getQubitOut().user_begin());
+  if (!next || next->getBlock() != op->getBlock() ||
+      op->getParentOfType<CtrlOp>()) {
+    return failure();
+  }
+  const auto constant = [](Value value) {
+    return mqt::valueToConstantDouble(value).has_value();
+  };
+  if (llvm::all_of(op.getParameters(), constant) &&
+      llvm::all_of(next.getParameters(), constant)) {
+    return failure();
+  }
+  const auto phase = [](ArrayRef<Value> angles) {
+    Value result;
+    for (auto angle : angles) {
+      if (mqt::valueToConstantDouble(angle) == 0.) {
+        continue;
+      }
+      if (result) {
+        return Value{};
+      }
+      result = angle;
+    }
+    return result ? result : angles.front();
+  };
+  Value theta = next.getTheta();
+  Value phi = next.getPhi();
+  Value lambda = next.getLambda();
+  if (mqt::valueToConstantDouble(op.getTheta()) == 0.) {
+    lambda = phase({op.getPhi(), op.getLambda(), next.getLambda()});
+  } else if (mqt::valueToConstantDouble(next.getTheta()) == 0.) {
+    theta = op.getTheta();
+    phi = phase({next.getPhi(), next.getLambda(), op.getPhi()});
+    lambda = op.getLambda();
+  } else {
+    return failure();
+  }
+  if (!phi || !lambda) {
+    return failure();
+  }
+  rewriter.setInsertionPoint(next);
+  rewriter.replaceOpWithNewOp<UOp>(next, op.getQubitIn(), theta, phi, lambda);
+  rewriter.eraseOp(op);
+  return success();
 }
 
 /// Compose a maximal run without introducing quaternion expressions.
@@ -912,6 +961,9 @@ void populateRotationCompositionPatterns(RewritePatternSet& patterns,
                                               ArrayRef(&site, 1));
            });
   };
+  if (target != nullptr && unrestricted("u", 3)) {
+    patterns.add(mergeNativePhaseFactor);
+  }
   if (unrestricted("rx", 1)) {
     patterns.add(mergeParameterizedRotations<RXOp>);
   }
