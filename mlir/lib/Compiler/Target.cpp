@@ -624,7 +624,8 @@ struct CompilerTarget::Storage {
       std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
       AngleSupport angles = AngleSupport::Fixed,
       function_ref<bool(const OperationCapability&)> filter = nullptr) const;
-  [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis();
+  [[nodiscard]] std::optional<SynthesisBasis>
+  resolveSynthesisBasis(bool unknownSites = false);
 
   std::optional<std::string> name;
   std::optional<DurationUnit> durationUnit;
@@ -647,6 +648,7 @@ struct CompilerTarget::Storage {
   SmallVector<GateKind> supportedGates;
   SmallVector<Entangler> entanglers;
   std::optional<SynthesisBasis> basis;
+  bool indexedSynthesis = false;
 };
 
 CompilerTarget::Storage::Storage(
@@ -787,6 +789,21 @@ llvm::Error CompilerTarget::Storage::initialize() {
     }
   }
   basis = resolveSynthesisBasis();
+  indexedSynthesis = basis && (sites.size() == 1 || basis->entangler) &&
+                     (llvm::all_of(operations,
+                                   [](const auto& operation) {
+                                     return operation.siteTuples().empty();
+                                   }) ||
+                      basis == resolveSynthesisBasis(true));
+  for (StringRef name : {StringRef{"measure"}, StringRef{"reset"}}) {
+    if (capabilities.contains(name) &&
+        !supportsOperation(name, 1, 0, std::nullopt, false, nullptr,
+                           [](const auto& operation) {
+                             return operation.siteTuples().empty();
+                           })) {
+      indexedSynthesis = false;
+    }
+  }
   return llvm::Error::success();
 }
 
@@ -888,13 +905,39 @@ bool CompilerTarget::Storage::supportsGate(
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
-CompilerTarget::Storage::resolveSynthesisBasis() {
+CompilerTarget::Storage::resolveSynthesisBasis(bool unknownSites) {
+  const auto sitesToCheck =
+      unknownSites ? ArrayRef(siteIds).take_front(1) : ArrayRef(siteIds);
+  const auto supportsOnSites =
+      [&](StringRef name, size_t arity, size_t parameters,
+          std::optional<ArrayRef<SiteId>> sites, bool variadicOnly,
+          function_ref<std::optional<double>(size_t)> parameterAt = nullptr,
+          function_ref<bool(const OperationCapability&)> filter = nullptr) {
+        return supportsOperation(
+            name, arity, parameters, unknownSites ? std::nullopt : sites,
+            variadicOnly, nullptr, [&](const auto& operation) {
+              return (!unknownSites || operation.siteTuples().empty()) &&
+                     (filter ? filter(operation)
+                             : matchesParameters(operation, parameterAt));
+            });
+      };
+  const auto supportsGateOnSites = [&](GateKind gate, ArrayRef<SiteId> sites,
+                                       AngleSupport angles =
+                                           AngleSupport::Fixed) {
+    return supportsGate(
+        gate,
+        unknownSites ? std::nullopt : std::optional<ArrayRef<SiteId>>(sites),
+        angles, [&](const auto& operation) {
+          return !unknownSites || operation.siteTuples().empty();
+        });
+  };
+  SmallVector<Entangler> candidates;
   const auto supportsEveryPlacement =
       [&](StringRef operationName, size_t arity, size_t numParameters,
           bool variadicOnly = false,
           std::optional<GateKind> gate = std::nullopt,
           AngleSupport angles = AngleSupport::Fixed) {
-        return supportsOperation(
+        return supportsOnSites(
             operationName, arity, numParameters, std::nullopt, variadicOnly,
             nullptr, [&](const auto& operation) {
               return operation.siteTuples().empty() &&
@@ -904,8 +947,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
             });
       };
   const auto supportsOnEverySite = [&](GateKind gate) {
-    return llvm::all_of(siteIds, [&](SiteId site) {
-      return supportsGate(gate, ArrayRef<SiteId>(&site, 1));
+    return llvm::all_of(sitesToCheck, [&](SiteId site) {
+      return supportsGateOnSites(gate, ArrayRef<SiteId>(&site, 1));
     });
   };
   std::optional<SingleQubitBasis> singleQubit;
@@ -934,8 +977,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
       const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
                                                    &GateSpecification::kind);
       const auto supportsRotation = [&](double angle) {
-        return llvm::all_of(siteIds, [&](SiteId site) {
-          return supportsOperation(
+        return llvm::all_of(sitesToCheck, [&](SiteId site) {
+          return supportsOnSites(
               specification->name, 1, specification->numParameters,
               ArrayRef<SiteId>(&site, 1), false, [angle](size_t parameter) {
                 return std::optional{parameter == 0 ? angle : 0.};
@@ -970,11 +1013,11 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
     }
   }
 
-  if (!singleQubit && llvm::all_of(siteIds, [&](SiteId site) {
+  if (!singleQubit && llvm::all_of(sitesToCheck, [&](SiteId site) {
         return llvm::all_of(
             std::array{std::numbers::pi, std::numbers::pi / 2.},
             [&](double angle) {
-              return supportsOperation(
+              return supportsOnSites(
                   "r", 1, 2, ArrayRef<SiteId>(&site, 1), false,
                   [angle](size_t parameter) -> std::optional<double> {
                     return parameter == 0 ? std::optional{angle} : std::nullopt;
@@ -1008,11 +1051,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
                                    angles)) {
           return true;
         }
+        if (unknownSites) {
+          return false;
+        }
         const auto supportsPair = [&](SiteId source, SiteId target) {
           const std::array forward{source, target};
           const std::array reverse{target, source};
-          return supportsGate(gate, forward, angles) ||
-                 supportsGate(gate, reverse, angles);
+          return supportsGateOnSites(gate, forward, angles) ||
+                 supportsGateOnSites(gate, reverse, angles);
         };
         if (connectivityKind == Connectivity::Kind::Explicit) {
           return llvm::all_of(couplings, [&](const auto& coupling) {
@@ -1035,10 +1081,10 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
       GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
   const auto addEntangler = [&](GateKind gate, AngleSupport angles) {
-    if (!llvm::any_of(entanglers,
+    if (!llvm::any_of(candidates,
                       [gate](const auto& item) { return item.gate == gate; }) &&
         supportsOnEveryCoupling(gate, angles)) {
-      entanglers.push_back({.gate = gate, .angles = angles});
+      candidates.push_back({.gate = gate, .angles = angles});
     }
   };
   // An arbitrary-angle Pauli entangler realizes each Cartan rotation directly.
@@ -1053,10 +1099,13 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   for (const auto gate : entanglerPreference) {
     addEntangler(gate, AngleSupport::Fixed);
   }
+  if (!unknownSites) {
+    entanglers = candidates;
+  }
   return SynthesisBasis{
       .singleQubit = *singleQubit,
       .entangler =
-          entanglers.empty() ? std::nullopt : std::optional{entanglers.front()},
+          candidates.empty() ? std::nullopt : std::optional{candidates.front()},
       .quarterTurnGates = quarterTurnGates,
       .hasHalfTurn = hasHalfTurn,
   };
@@ -1575,6 +1624,10 @@ ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
 const std::optional<CompilerTarget::SynthesisBasis>&
 CompilerTarget::synthesisBasis() const noexcept {
   return storage_->basis;
+}
+
+bool CompilerTarget::supportsIndexedSynthesis() const noexcept {
+  return storage_->indexedSynthesis;
 }
 
 ArrayRef<CompilerTarget::Entangler>

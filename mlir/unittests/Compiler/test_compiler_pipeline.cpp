@@ -4401,6 +4401,67 @@ TEST_F(CompilerPipelineTest, RestrictedNativeExtraDoesNotBlockDecomposition) {
   }
 }
 
+TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create(
+              "rccx", 3, 0,
+              {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 2, 3}))})),
+      })));
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::QIRAdaptive)));
+  ASSERT_TRUE(environment.supportsIndexedQubits());
+  auto placed = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %a = qco.static 0 : !qco.qubit
+      %b = qco.static 2 : !qco.qubit
+      %c = qco.static 3 : !qco.qubit
+      %x, %y, %z = qco.rccx %a, %b, %c : !qco.qubit, !qco.qubit, !qco.qubit
+      qco.sink %x : !qco.qubit
+      qco.sink %y : !qco.qubit
+      qco.sink %z : !qco.qubit
+      return
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(placed);
+  ASSERT_TRUE(succeeded(placed->compileForTarget(environment)));
+  EXPECT_TRUE(StringRef(placed->str()).contains("qco.rccx"));
+  auto placedQC = std::move(*placed).intoQC();
+  MQT_ASSERT_SUCCESS(placedQC);
+  auto placedQIR = std::move(*placedQC).intoQIR(QIRProfile::Adaptive);
+  MQT_ASSERT_SUCCESS(placedQIR);
+  EXPECT_TRUE(succeeded(verify(placedQIR->module())));
+  auto input = QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; qubit[4] q; bit[4] c; "
+      "h q[0]; for int repeat in [0:100000] { "
+      "for int i in [0:1] { rccx q[i], q[2], q[3]; } } c = measure q;");
+  MQT_ASSERT_SUCCESS(input);
+  auto program = std::move(*input).intoQCO();
+  MQT_ASSERT_SUCCESS(program);
+  ASSERT_TRUE(succeeded(program->compileForTarget(environment)));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  size_t loops = 0;
+  size_t nativeExtras = 0;
+  program->module().walk([&](scf::ForOp) { ++loops; });
+  program->module().walk([&](qco::RCCXOp) { ++nativeExtras; });
+  EXPECT_EQ(loops, 2U);
+  EXPECT_EQ(nativeExtras, 0U);
+  auto qc = std::move(*program).intoQC();
+  MQT_ASSERT_SUCCESS(qc);
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
+  MQT_ASSERT_SUCCESS(qir);
+  auto llvmIR = std::move(*qir).intoLLVMIR();
+  MQT_ASSERT_SUCCESS(llvmIR);
+  EXPECT_TRUE(StringRef(*llvmIR).contains("!\"backwards_branching\", i2 1"));
+}
+
 TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() -> i1 attributes {mqt.entry_point} {

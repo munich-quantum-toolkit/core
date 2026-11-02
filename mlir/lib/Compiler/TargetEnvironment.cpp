@@ -408,9 +408,10 @@ bool TargetEnvironment::supportsIndexedQubits() const noexcept {
   return format.id == "qir" && format.profile == "adaptive" &&
          target_.connectivityKind() ==
              CompilerTarget::Connectivity::Kind::AllToAll &&
-         llvm::all_of(target_.operations(), [](const auto& operation) {
-           return operation.siteTuples().empty();
-         });
+         (target_.supportsIndexedSynthesis() ||
+          llvm::all_of(target_.operations(), [](const auto& operation) {
+            return operation.siteTuples().empty();
+          }));
 }
 
 mqt::TargetEnvAttr TargetEnvironment::materialize(MLIRContext& context) const {

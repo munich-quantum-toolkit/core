@@ -516,24 +516,32 @@ reorder the before-region results. Untouched slots remain outside the control
 flow. Runtime indices and incomplete or nested tensor updates do not match this
 scalarization.
 
-For Adaptive QIR on an all-to-all target whose operations have empty
-`site_tuples`, placement assigns physical sites to the allocation's slots and
-retains indexed registers. Loop bodies do not grow with their iteration counts.
-The site list requires space proportional to the register width. Capacity,
-physical site IDs, qubit origins, native operations, and payload limits are
-still checked. This path uses target metadata and does not depend on a device
-name.
+Adaptive QIR placement can retain indexed registers on all-to-all hardware. This
+requires empty `site_tuples` for every operation, or a selected synthesis basis
+that supports unknown sites with the same parameter domains. In the latter case,
+multi-qubit targets need a native entangler in that basis. Advertised
+measurement and reset operations must also support unknown sites. A
+site-restricted gate can remain native at proven sites; operations at unknown
+sites require unrestricted support or decomposition into the selected basis.
 
-Other payloads, explicit topology, and site-specific operations require exact
-quantum addresses. Bounded specialization exposes those addresses before
-placement or routing. Residual unsupported tensor control flow produces a
-diagnostic before allocation changes. Mapped OpenQASM uses static physical
-qubits; indexed tensor loops must fit the default one-billion-operation
-unrolling budget. Runtime-dependent indices that cannot be specialized are
-unsupported. Logical qubit indices can remain dynamic in targetless OpenQASM
-export. Constant rank-one `f64` table reads use switches that group equal
-entries and require unrestricted multiway branching from the selected payload.
-Their size grows with the table data and number of reads.
+Placement assigns physical sites to the allocation's slots. Loop bodies do not
+grow with their iteration counts. The site list requires space proportional to
+the register width. Capacity, physical site IDs, qubit origins, native
+operations, and payload limits are checked from target metadata.
+
+Runtime angles can prevent constant-angle simplification, so compact IR can
+execute more native gates than a specialized program.
+
+Other payloads, explicit topology, and targets that require known sites for
+synthesis or measurement/reset need exact quantum addresses. Bounded
+specialization exposes those addresses before placement or routing. Residual
+unsupported tensor control flow produces a diagnostic before allocation changes.
+Mapped OpenQASM uses static physical qubits; indexed tensor loops must fit the
+default one-billion-operation unrolling budget. Runtime-dependent indices that
+cannot be specialized are unsupported. Logical qubit indices can remain dynamic
+in targetless OpenQASM export. Constant rank-one `f64` table reads use switches
+that group equal entries and require unrestricted multiway branching from the
+selected payload. Their size grows with the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

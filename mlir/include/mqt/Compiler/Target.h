@@ -542,6 +542,12 @@ public:
   [[nodiscard]] const std::optional<SynthesisBasis>&
   synthesisBasis() const noexcept;
 
+  /// Whether the selected basis and advertised measurement/reset operations
+  /// support unknown sites without changing their synthesis domains.
+  ///
+  /// Multi-site targets require an entangler in that basis.
+  [[nodiscard]] bool supportsIndexedSynthesis() const noexcept;
+
   /// Return globally usable entanglers in deterministic preference order.
   ///
   /// Each gate appears once, with its widest supported synthesis domain.
