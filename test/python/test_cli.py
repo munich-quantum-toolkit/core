@@ -55,8 +55,8 @@ def test_cli_include_dir(script_runner: ScriptRunner) -> None:
 @pytest.mark.parametrize(("option", "kind"), [("include_dir", "include"), ("cmake_dir", "CMake")])
 def test_cli_path_not_installed(script_runner: ScriptRunner, option: str, kind: str) -> None:
     """Report the missing distribution when querying installation paths."""
-    with patch("importlib.metadata.Distribution.from_name") as mock:
-        mock.side_effect = PackageNotFoundError()
+    with patch("mqt.core._commands.distribution") as mock:
+        mock.side_effect = PackageNotFoundError("mqt-core")
         ret = script_runner.run(["mqt-core-cli", f"--{option}"])
         assert not ret.success
         assert f"mqt-core not installed, installation required to access the {kind} files." in ret.stderr
@@ -65,7 +65,7 @@ def test_cli_path_not_installed(script_runner: ScriptRunner, option: str, kind: 
 @pytest.mark.parametrize(("option", "kind"), [("include_dir", "include"), ("cmake_dir", "CMake")])
 def test_cli_path_not_found(script_runner: ScriptRunner, option: str, kind: str) -> None:
     """Report a missing directory in an installed distribution."""
-    with patch("importlib.metadata.Distribution.from_name") as mock:
+    with patch("mqt.core._commands.distribution") as mock:
         mock.return_value.locate_file.return_value = "dir-not-found"
         ret = script_runner.run(["mqt-core-cli", f"--{option}"])
         assert not ret.success
