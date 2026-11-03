@@ -1,7 +1,7 @@
 # Documentation builds and artifact publication
 
-Status: implementation and local validation complete; hosted measurements and
-RtD activation remain.
+Status: implementation, local checks, and the first hosted build passed. Final
+measurements and activation status are tracked in PR #2922.
 
 ## Goal and scope
 
@@ -32,7 +32,7 @@ link and asset checks in the existing `nox -s docs` entry point.
 
 - [x] Implement and test the builder and trusted artifact publisher.
 - [ ] Measure cold and cached builds and verify generated output.
-- [ ] Review the final change and submit a signed PR.
+- [x] Review the final change and submit a signed PR.
 - [ ] Verify hosted publication after RtD activation and token provisioning.
 
 ## Measurement baseline
@@ -51,3 +51,16 @@ The six focused tests and repository lint passed. Four targeted mutations
 confirmed commit, stale-PR, deleted-fork, and symlink regression coverage.
 Chrome inspection confirmed rendered notebook output and loaded styles/scripts;
 its only failed request was the browser's implicit favicon request.
+
+The first hosted build (run 41695361664) passed all 18 notebooks with no
+compiler cache hits: 418.25 seconds for docs (312.13 package, 103.86
+rendering/checks), 597 seconds for the job. Checkout alone took 112 seconds. A
+blob-filtered clone preserves the release tag and commit distance while omitting
+historical file contents; the local clone used 15.18 MiB of Git packs. The next
+hosted run will measure this checkout and the restored compiler cache.
+
+External linkcheck reported two missing anchors on existing QIR 2.1 URLs amid
+GitHub rate limits. Both exact headings exist in the upstream source. Local HTML
+links and assets passed. The pinned RtD client produced a valid 17.58 MiB upload
+archive containing the site and offline ZIP. Live publication still requires RtD
+support enablement, the token, and the documented activation steps.

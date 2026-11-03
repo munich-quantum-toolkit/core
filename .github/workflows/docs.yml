@@ -33,6 +33,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          filter: blob:none
           persist-credentials: false
       # GitHub scopes PR caches to their merge ref; main cannot restore them.
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # zizmor: ignore[cache-poisoning]
