@@ -35,7 +35,6 @@
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
@@ -132,14 +131,6 @@ static LogicalResult unrollStaticLoop(scf::ForOp loop,
 using mqt::getExactConstantTripCount;
 using mqt::PayloadControlFeature;
 using mqt::PayloadControlSupport;
-
-[[nodiscard]] static bool hasLinearQubitCapture(Operation* operation) {
-  bool hasCapture = false;
-  visitUsedValuesDefinedAbove(operation->getRegions(), [&](OpOperand* operand) {
-    hasCapture |= isLinearQubitType(operand->get().getType());
-  });
-  return hasCapture;
-}
 
 [[nodiscard]] static bool hasLinearBranchState(Operation* operation) {
   return llvm::any_of(operation->getResultTypes(), isLinearQubitType) ||

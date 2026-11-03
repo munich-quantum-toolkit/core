@@ -1548,14 +1548,116 @@ TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
           context.get(), [&](Diagnostic& diagnostic) {
             sawExpectedDiagnostic |=
                 StringRef(diagnostic.str())
-                    .contains("body must not capture qubits from above; use "
-                              "only its aliased block arguments");
+                    .contains("regions must not capture QCO linear values "
+                              "from above; pass them as region arguments");
             return success();
           });
       EXPECT_TRUE(failed(verify(modifierOp)));
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
   }
+}
+
+TEST_F(QCOTest, BranchScopesRejectDirectAndNestedQuantumCaptures) {
+  constexpr StringLiteral branch = R"mlir(
+    qco.if %condition args() -> () {
+      qco.yield
+    } else args() {
+      qco.yield
+    }
+  )mlir";
+  constexpr StringLiteral indexSwitch = R"mlir(
+    qco.index_switch %selector -> ()
+    case 0 args() {
+      qco.yield
+    }
+    default args() {
+      qco.yield
+    }
+  )mlir";
+  for (StringRef type :
+       {"!qco.qubit", "tensor<1x!qco.qubit>", "vector<1x!qco.qubit>"}) {
+    for (StringRef body : {branch, indexSwitch}) {
+      for (bool nested : {false, true}) {
+        SCOPED_TRACE(type.str());
+        SCOPED_TRACE(body.str());
+        SCOPED_TRACE(nested);
+        const auto source = "func.func private @consume(" + type.str() +
+                            ")\nfunc.func @test(%captured: " + type.str() +
+                            ", %condition: i1, %selector: index) {\n" +
+                            body.str() + "\nreturn\n}";
+        auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+        ASSERT_TRUE(moduleOp);
+        auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+        auto* scope = &function.front().front();
+        OpBuilder builder(context.get());
+        builder.setInsertionPointToStart(&scope->getRegion(0).front());
+        if (nested) {
+          auto region = scf::ExecuteRegionOp::create(builder, scope->getLoc(),
+                                                     TypeRange{});
+          builder.setInsertionPointToStart(&region.getRegion().emplaceBlock());
+          scf::YieldOp::create(builder, scope->getLoc());
+          builder.setInsertionPointToStart(&region.getRegion().front());
+        }
+        func::CallOp::create(builder, scope->getLoc(), "consume", TypeRange{},
+                             ValueRange{function.getArgument(0)});
+        EXPECT_TRUE(function.getArgument(0).hasOneUse());
+        std::string diagnostic;
+        ScopedDiagnosticHandler handler(context.get(),
+                                        [&](Diagnostic& message) {
+                                          diagnostic = message.str();
+                                          return success();
+                                        });
+        EXPECT_TRUE(failed(verify(*moduleOp)));
+        EXPECT_TRUE(
+            StringRef(diagnostic)
+                .contains(
+                    "regions must not capture QCO linear values from above"));
+      }
+    }
+  }
+}
+
+TEST_F(QCOTest, QubitScopesAllowClassicalCapturesAndLocalQuantumValues) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%condition: i1, %theta: f64) {
+      qco.if %condition args() -> () {
+        qco.if %condition args() -> () {
+          %local = qco.alloc : !qco.qubit
+          %angle = arith.addf %theta, %theta : f64
+          %next = qco.rz(%angle) %local : !qco.qubit
+          qco.sink %next : !qco.qubit
+          %size = arith.constant 1 : index
+          %tensor = qtensor.alloc(%size) : tensor<1x!qco.qubit>
+          qtensor.dealloc %tensor : tensor<1x!qco.qubit>
+          qco.yield
+        } else args() {
+          qco.yield
+        }
+        qco.yield
+      } else args() {
+        qco.yield
+      }
+      return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  auto outer = cast<IfOp>(function.front().front());
+  auto inner = cast<IfOp>(outer.getThenRegion().front().front());
+  EXPECT_FALSE(hasLinearQubitCapture(outer));
+  EXPECT_FALSE(hasLinearQubitCapture(inner));
+
+  auto allocation = *inner.getThenRegion().getOps<AllocOp>().begin();
+  allocation->moveBefore(inner);
+  EXPECT_FALSE(hasLinearQubitCapture(outer));
+  EXPECT_TRUE(hasLinearQubitCapture(inner));
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(verify(*moduleOp)));
 }
 
 TEST_F(QCOTest, RegionOperationEffectTraitsMatchTheirSemantics) {
