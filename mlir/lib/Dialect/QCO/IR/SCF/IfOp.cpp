@@ -342,9 +342,9 @@ Value IfOp::getInputForOutput(Value output) {
 }
 
 Value IfOp::getOutputForInput(Value input) {
-  for (auto [index, qubit] : llvm::enumerate(getQubits())) {
-    if (input == qubit) {
-      return getLinearResults()[index];
+  for (auto& use : input.getUses()) {
+    if (auto result = getTiedResult(&use)) {
+      return result;
     }
   }
   return {};

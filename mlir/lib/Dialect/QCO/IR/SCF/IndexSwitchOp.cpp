@@ -266,9 +266,9 @@ Value IndexSwitchOp::getInputForOutput(Value output) {
 }
 
 Value IndexSwitchOp::getOutputForInput(Value input) {
-  for (auto [index, target] : llvm::enumerate(getTargets())) {
-    if (input == target) {
-      return getLinearResults()[index];
+  for (auto& use : input.getUses()) {
+    if (auto result = getTiedResult(&use)) {
+      return result;
     }
   }
   return {};
