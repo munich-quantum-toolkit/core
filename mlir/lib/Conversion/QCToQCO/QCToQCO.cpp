@@ -466,7 +466,6 @@ static void commitQubits(LoweringState& state, Operation* anchor,
     }
     if (auto returnOp = dyn_cast<func::ReturnOp>(operation)) {
       auto function = returnOp->getParentOfType<func::FuncOp>();
-      llvm::SmallDenseSet<Value, 4> returnedQubits;
       for (Value value : returnOp.getOperands()) {
         if (!isa<qc::QubitType>(value.getType())) {
           continue;
@@ -478,10 +477,10 @@ static void commitQubits(LoweringState& state, Operation* anchor,
               "returns borrowed qubits implicitly");
           return WalkResult::interrupt();
         }
-        if (!returnedQubits.insert(value).second) {
-          returnOp.emitOpError("cannot return the same qubit more than once");
-          return WalkResult::interrupt();
-        }
+      }
+      if (failed(qc::verifyDistinctQubitOperands(returnOp,
+                                                 returnOp.getOperands()))) {
+        return WalkResult::interrupt();
       }
     }
 
@@ -728,17 +727,14 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       return WalkResult::advance();
     }
 
-    llvm::SmallDenseSet<Value, 4> qubits;
+    if (failed(qc::verifyDistinctQubitOperands(operation, operands))) {
+      return WalkResult::interrupt();
+    }
     DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
     for (auto qubit : operands) {
       if (!isa<qc::QubitType>(qubit.getType())) {
         continue;
       }
-      if (!qubits.insert(qubit).second) {
-        operation->emitOpError("requires distinct qubit operands");
-        return WalkResult::interrupt();
-      }
-
       const auto access = state.registerAccesses.find(qubit);
       if (access == state.registerAccesses.end()) {
         continue;

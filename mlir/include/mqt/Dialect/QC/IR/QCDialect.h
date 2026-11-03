@@ -11,6 +11,9 @@
 #pragma once
 
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+
+#include "llvm/ADT/StringRef.h"
 
 #define DIALECT_NAME_QC "qc"
 
@@ -32,6 +35,13 @@
 //===----------------------------------------------------------------------===//
 
 namespace mlir::qc {
+
+/// Quantum state accessed by QC reference operations.
+///
+/// Effects conservatively overlap SideEffects::DefaultResource effects.
+struct QubitResource final : SideEffects::Resource::Base<QubitResource> {
+  StringRef getName() const override { return "QCQubit"; }
+};
 
 /// Trait for operations with a fixed number of target qubits and
 /// parameters

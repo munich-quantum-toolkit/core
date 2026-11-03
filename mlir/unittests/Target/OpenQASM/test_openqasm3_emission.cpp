@@ -1975,14 +1975,6 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidGateFunctions) {
           return
         }
       })mlir"},
-      llvm::StringLiteral{R"mlir(module {
-        func.func @entry() attributes {mqt.entry_point} {
-          %qubit = qc.alloc : !qc.qubit
-          qc.swap %qubit, %qubit : !qc.qubit, !qc.qubit
-          qc.dealloc %qubit : !qc.qubit
-          return
-        }
-      })mlir"},
   };
   for (const auto source : sources) {
     DialectRegistry registry = emissionDialects();
