@@ -83,7 +83,7 @@ designations when every eligible value is an output. See {doc}`OpenQASM` and
 Use {py:func}`~mqt.core.mlir.serialize_program` for an already-native Qiskit
 circuit or `QCProgram`. It serializes without synthesis, routing, or quantum
 optimization. The caller is responsible for native gate and placement validity;
-the Qiskit backend checks these before its built-in serializers run.
+the Qiskit backend checks these before any serializer runs.
 
 Some receivers return measurements in physical-site order. For those receivers,
 `terminal_readout=TerminalReadout.MEASURED` emits one measurement for each

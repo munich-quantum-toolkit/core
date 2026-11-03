@@ -1451,14 +1451,16 @@ TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
     EXPECT_EQ(compiled->programFormat(), format);
     EXPECT_FALSE(compiled->payload().empty());
   }
-  const auto iqm =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.sc.iqm.garnet"));
   const mlir::TargetEnvironment iqmEnvironment(
-      llvm::cantFail(mlir::compilerTargetFromDevice(iqm)),
+      llvm::cantFail(CompilerTarget::create(
+          "IQM", {llvm::cantFail(CompilerTarget::Site::create(0, "QB1"))},
+          CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::unrestricted())),
       llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
           QDMI_PROGRAM_FORMAT_IQMJSON)));
   auto nativeIqm = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
-      "OPENQASM 3; bit[2] c; c[1] = measure $0; c[0] = measure $0;"));
+      "OPENQASM 3; bit[2] c; gphase(0.7); c[1] = measure $0; c[0] = measure "
+      "$0;"));
   auto iqmPayload =
       mlir::CompiledProgram::serialize(std::move(nativeIqm), iqmEnvironment);
   MQT_ASSERT_SUCCESS(iqmPayload);

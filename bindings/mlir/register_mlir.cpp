@@ -842,10 +842,10 @@ payloadForOutput(OutputFormat output) {
 }
 
 [[nodiscard]] static mlir::CompiledProgram
-serializePythonProgram(const nb::handle program, const nb::handle target,
-                       std::optional<QDMI_Program_Format> programFormat,
-                       std::optional<mlir::TerminalReadout> terminalReadout,
-                       bool physicalQubits) {
+serializeProgram(const nb::handle program, const nb::handle target,
+                 std::optional<QDMI_Program_Format> programFormat,
+                 std::optional<mlir::TerminalReadout> terminalReadout,
+                 bool physicalQubits) {
   if (nb::isinstance<mlir::TargetEnvironment>(target) && programFormat) {
     throw nb::value_error("TargetEnvironment already selects a payload format");
   }
@@ -2830,7 +2830,7 @@ need not be a device's execution format. Jeff output does not retain hardware
 placement.)pb");
 
   m.def(
-      "serialize_program", &serializePythonProgram, "program"_a, nb::kw_only(),
+      "serialize_program", &serializeProgram, "program"_a, nb::kw_only(),
       "target"_a, "program_format"_a = nb::none(),
       "terminal_readout"_a = nb::none(), "physical_qubits"_a = true,
       nb::sig("def serialize_program(program: QCProgram | "

@@ -497,6 +497,9 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
                                                     : ProgramFormat::QIRBase));
             populateQIRPreparationPipeline(
                 pm, payload.materialize(*qc.module().getContext()));
+            if (output == ProgramFormat::IQMJSON) {
+              pm.addPass(mqt::createDropGlobalPhases());
+            }
           },
           "failed to prepare compiled QC for QIR", options))) {
     return failure();
