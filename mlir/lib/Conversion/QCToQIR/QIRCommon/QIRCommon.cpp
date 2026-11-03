@@ -171,7 +171,8 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
   }
   if (profile == "adaptive" &&
       llvm::any_of(payload.capabilities(), [](const auto& capability) {
-        return capability.id == ProgramCapability::COUNTED_ITERATION &&
+        return (capability.id == ProgramCapability::COUNTED_ITERATION ||
+                capability.id == ProgramCapability::MULTIWAY_BRANCHING) &&
                !capability.constraints.empty();
       })) {
     if (failed(prepareQIRClassicalMemory(moduleOp))) {

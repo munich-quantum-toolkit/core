@@ -552,9 +552,11 @@ unusable. A capability absent from the selected specification is unsupported.
 QIR profile conversion attaches metadata and validates the emitted capabilities
 and receiver version against a matching target payload. Adaptive conversion
 checks counted-loop bounds before lowering, including loops introduced by
-classical copies. Residual `scf.while` operations require unconstrained emitted
-loop capabilities because QIR classifies loops by data dependence. See
-{doc}`Conversions` for profile requirements.
+classical copies. It checks switch limits and lowers oversized switches to
+conditional branches when the target permits that expansion. Residual
+`scf.while` operations require unconstrained emitted loop capabilities because
+QIR classifies loops by data dependence. See {doc}`Conversions` for profile
+requirements.
 
 An explicit output combines the output format's capabilities with the target's
 contract. Matching language versions and profiles retain only capabilities
