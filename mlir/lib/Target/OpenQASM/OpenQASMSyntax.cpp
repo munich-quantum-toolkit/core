@@ -110,12 +110,14 @@ SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
   return success();
 }
 
-LogicalResult SyntaxBuilder::assignment(SMLoc location,
-                                        const BitReference& target,
-                                        SyntaxExpressionId value) {
+LogicalResult
+SyntaxBuilder::assignment(SMLoc location, const BitReference& target,
+                          SyntaxExpressionId value,
+                          std::optional<SyntaxExpressionId> compoundLhs) {
   std::ignore = addStatement(location, SyntaxAssignment{
                                            .target = target,
                                            .value = value,
+                                           .compoundLhs = compoundLhs,
                                        });
   return success();
 }
@@ -179,6 +181,31 @@ LogicalResult SyntaxBuilder::barrier(SMLoc location,
 
 LogicalResult SyntaxBuilder::gateCall(const GateCall& call) {
   std::ignore = addStatement(call.loc, copyGateCall(call));
+  return success();
+}
+
+LogicalResult SyntaxBuilder::subroutineCall(SMLoc location,
+                                            SyntaxExpressionId call) {
+  std::ignore = addStatement(location, SyntaxSubroutineCallStatement{call});
+  return success();
+}
+
+LogicalResult
+SyntaxBuilder::returnStmt(SMLoc location,
+                          std::optional<SyntaxExpressionId> value) {
+  std::ignore = addStatement(location, SyntaxReturn{value});
+  return success();
+}
+
+LogicalResult SyntaxBuilder::subroutineDefinition(
+    SMLoc location, SyntaxSubroutineDefinition definition,
+    function_ref<LogicalResult()> continuation) {
+  auto body = parseNestedBody(continuation);
+  if (failed(body)) {
+    return failure();
+  }
+  definition.body = std::move(*body);
+  std::ignore = addStatement(location, std::move(definition));
   return success();
 }
 

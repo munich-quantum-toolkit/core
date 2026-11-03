@@ -28,12 +28,14 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/DynamicAPInt.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
 
 #include <algorithm>
@@ -45,6 +47,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
@@ -495,6 +498,8 @@ private:
   };
   SmallVector<Scope> scopes;
   llvm::StringMap<GateSignature> customGates;
+  llvm::StringMap<uint32_t> subroutines_;
+  StringRef activeSubroutine_;
   std::vector<std::shared_ptr<BitInitialization>> initializedBits;
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
@@ -517,6 +522,7 @@ private:
   mutable std::vector<std::optional<ScalarType>> constantTypes;
   // Reuse the nodes created while deciding whether sizeof is constant.
   llvm::DenseMap<SyntaxExpressionId, ExpressionId> sizeOfExpressions_;
+  std::optional<std::pair<SyntaxExpressionId, ExpressionId>> assignmentLhs_;
   StringRef activeGate_;
   std::set<uint64_t> hardwareQubits;
   uint64_t totalArrayElements = 0;
@@ -537,6 +543,8 @@ private:
       const auto& symbol = entry.getValue();
       if (symbol.kind == SymbolKind::Register) {
         registerStateSlots_[symbol.id] = std::numeric_limits<size_t>::max();
+      } else if (symbol.kind == SymbolKind::Array) {
+        arrayStateSlots_[symbol.id] = std::numeric_limits<size_t>::max();
       } else if (symbol.kind == SymbolKind::Scalar ||
                  symbol.kind == SymbolKind::GateLocalScalar) {
         scalarStateSlots_[symbol.id] = std::numeric_limits<size_t>::max();
@@ -952,6 +960,9 @@ private:
       for (const auto index : expression.additionalIndices) {
         depth = std::max(depth, depths[index] + 1);
       }
+      for (const auto argument : expression.arguments) {
+        depth = std::max(depth, depths[argument] + 1);
+      }
       if (depth > EXPRESSION_DEPTH_LIMIT) {
         return fail(expression.location,
                     Twine("expression depth exceeds the limit of ") +
@@ -1013,6 +1024,10 @@ private:
     for (const auto& scope : llvm::reverse(scopes)) {
       if (const auto found = scope.symbols.find(name);
           found != scope.symbols.end()) {
+        if (!activeSubroutine_.empty() && &scope == &scopes.front() &&
+            found->second.kind != SymbolKind::Constant) {
+          return nullptr;
+        }
         return &found->second;
       }
     }
@@ -1033,7 +1048,8 @@ private:
         catalog != nullptr && isGateDeclared(*catalog);
     if (builtinConstant(name) ||
         (scopes.size() == 1 &&
-         (customGates.contains(name) || catalogNameReserved))) {
+         (customGates.contains(name) || subroutines_.contains(name) ||
+          catalogNameReserved))) {
       return fail(location, "identifier '" + name + "' is already declared");
     }
     if (!scopes.back().symbols.insert({name, symbol}).second) {
@@ -1401,7 +1417,9 @@ private:
     MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(syntaxId));
     const auto type = program.expressions[value].type;
     auto zeroValue = Constant{.type = ScalarType::Int, .value = int64_t{0}};
-    if (type == ScalarType::Float) {
+    if (type == ScalarType::Bool) {
+      zeroValue = Constant{.type = type, .value = false};
+    } else if (type == ScalarType::Float) {
       zeroValue = Constant{.type = type, .value = 0.0};
     } else if (type == ScalarType::Angle) {
       zeroValue = Constant{.type = type, .value = FixedAngle{}};
@@ -1804,6 +1822,7 @@ private:
       case Expr::Kind::ShiftRight:
         return evaluateConstantBitwise(expression);
       case Expr::Kind::Index:
+      case Expr::Kind::Call:
       case Expr::Kind::Slice:
       case Expr::Kind::Range:
       case Expr::Kind::Concat:
@@ -2025,6 +2044,7 @@ private:
       case Expr::Kind::Slice:
       case Expr::Kind::Range:
       case Expr::Kind::Concat:
+      case Expr::Kind::Call:
         return fail(expression.location,
                     "expression is not a compile-time constant");
       case Expr::Kind::PopCount:
@@ -2373,6 +2393,7 @@ private:
         MQT_OQ3_TRY_ASSIGN(size, analyzeSizeOf(id));
         return program.expressions[size].kind == ExpressionKind::Constant;
       }
+      case Expr::Kind::Call:
       case Expr::Kind::Index:
       case Expr::Kind::Slice:
       case Expr::Kind::Range:
@@ -2404,6 +2425,10 @@ private:
   [[nodiscard]] LogicalResult
   validateGateExpression(const SyntaxExpressionId id) const {
     const auto& expression = syntax.expressions[id];
+    if (expression.kind == Expr::Kind::Call) {
+      return fail(expression.location,
+                  "subroutine calls are not supported in gate definitions");
+    }
     if (expression.kind == Expr::Kind::Identifier &&
         !builtinConstant(expression.identifier)) {
       const auto* symbol = lookup(expression.identifier);
@@ -2421,6 +2446,13 @@ private:
   [[nodiscard]] bool
   isBitVectorExpression(const SyntaxExpressionId syntaxId) const {
     const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::Call) {
+      const auto function = subroutines_.find(expression.identifier);
+      return function != subroutines_.end() &&
+             program.subroutines[function->second].result &&
+             program.subroutines[function->second].result->bitVector &&
+             !program.subroutines[function->second].result->scalarBit;
+    }
     if (expression.kind == Expr::Kind::Identifier) {
       const auto* symbol = lookup(expression.identifier);
       return symbol != nullptr && symbol->kind == SymbolKind::Register &&
@@ -2452,6 +2484,21 @@ private:
       const SyntaxExpressionId syntaxId,
       const std::optional<uint64_t> expectedWidth = std::nullopt) {
     const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::Call) {
+      MQT_OQ3_TRY_ASSIGN(call, analyzeSubroutineCall(expression));
+      const auto& result =
+          program.subroutines[program.calls[call].callee].result;
+      if (!result || !result->bitVector || result->scalarBit ||
+          (expectedWidth && *expectedWidth != result->width)) {
+        return fail(expression.location,
+                    "subroutine result must be a matching-width bit value");
+      }
+      return addBitVectorExpression({
+          .kind = BitVectorExpressionKind::Call,
+          .width = result->width,
+          .call = call,
+      });
+    }
     if (expression.kind == Expr::Kind::BitString) {
       llvm::SmallString<64> digits;
       for (char digit : expression.identifier) {
@@ -2719,6 +2766,9 @@ private:
   [[nodiscard]] FailureOr<ExpressionId>
   analyzeExpression(const SyntaxExpressionId syntaxId,
                     const bool allowWideBitVectorCast = false) {
+    if (assignmentLhs_ && assignmentLhs_->first == syntaxId) {
+      return assignmentLhs_->second;
+    }
     const auto& expression = syntax.expressions[syntaxId];
     if (expression.kind == Expr::Kind::Range) {
       return fail(expression.location,
@@ -2726,6 +2776,22 @@ private:
     }
     if (!activeGate_.empty() && failed(validateGateExpression(syntaxId))) {
       return failure();
+    }
+    if (expression.kind == Expr::Kind::Call) {
+      MQT_OQ3_TRY_ASSIGN(call, analyzeSubroutineCall(expression));
+      const auto& result =
+          program.subroutines[program.calls[call].callee].result;
+      if (!result || (result->bitVector && result->width != 1)) {
+        return fail(expression.location,
+                    "subroutine call does not return a scalar value");
+      }
+      const auto type = result->bitVector ? ScalarType::Bool : result->scalar;
+      return addExpression({
+          .kind = ExpressionKind::Call,
+          .type = type,
+          .integerWidth = isInteger(type) ? result->width : 0,
+          .call = call,
+      });
     }
     MQT_OQ3_TRY_ASSIGN(isConstant, isConstantExpression(syntaxId));
     if (isConstant) {
@@ -3496,6 +3562,26 @@ private:
                           "gate definitions are only allowed at global scope");
             }
             return analyzeGateDefinition(statement.location, data);
+          } else if constexpr (std::is_same_v<T, SyntaxSubroutineDefinition>) {
+            if (!global) {
+              return fail(
+                  statement.location,
+                  "subroutine definitions are only allowed at global scope");
+            }
+            return analyzeSubroutineDefinition(statement.location, data);
+          } else if constexpr (std::is_same_v<T,
+                                              SyntaxSubroutineCallStatement>) {
+            MQT_OQ3_TRY_ASSIGN(
+                call, analyzeSubroutineCall(syntax.expressions[data.call]));
+            MQT_OQ3_TRY_ASSIGN(typed,
+                               addStatement(statement.location,
+                                            SubroutineCallStatement{call}));
+            destination.push_back(typed);
+            return success();
+          } else if constexpr (std::is_same_v<T, SyntaxReturn>) {
+            return fail(
+                statement.location,
+                "only a final top-level subroutine return is supported");
           } else if constexpr (std::is_same_v<T, SyntaxIf>) {
             MQT_OQ3_TRY_ASSIGN(analyzed, analyzeIf(statement.location, data));
             destination.push_back(analyzed);
@@ -3563,7 +3649,8 @@ private:
       if (!belongsToLibrary) {
         continue;
       }
-      if (customGates.contains(gate.name) || lookup(gate.name) != nullptr) {
+      if (customGates.contains(gate.name) || subroutines_.contains(gate.name) ||
+          lookup(gate.name) != nullptr) {
         return fail(location, "standard-library gate '" + gate.name +
                                   "' is already declared");
       }
@@ -3811,13 +3898,20 @@ private:
     std::vector<ArraySelection> selection;
     for (const auto [dimension, extent] : llvm::enumerate(shape)) {
       if (dimension >= count) {
-        selection.push_back({
+        ArraySelection whole{
             .offset = addConstant({
                 .type = ScalarType::Int,
                 .value = int64_t{0},
             }),
             .size = extent,
-        });
+        };
+        if (extent < 0) {
+          whole.runtime = ArrayRange{
+              .step =
+                  addConstant({.type = ScalarType::Int, .value = int64_t{1}}),
+          };
+        }
+        selection.push_back(whole);
         continue;
       }
       const auto id = dimension == 0 ? *index : additional[dimension - 1];
@@ -3839,7 +3933,7 @@ private:
         }
         return *asSigned(value);
       };
-      bool runtime = false;
+      bool runtime = extent < 0;
       for (const auto bound :
            {expression.lhs, expression.rhs, expression.step}) {
         if (bound) {
@@ -3988,6 +4082,8 @@ private:
       program.arraySizeQueries.push_back({
           .range = *index.runtime,
           .extent = program.arrays[source.array].shape[sourceDimension],
+          .array = source.array,
+          .dimension = static_cast<uint32_t>(sourceDimension),
       });
       size = addExpression({
           .kind = ExpressionKind::ArraySize,
@@ -4228,11 +4324,19 @@ private:
   }
 
   [[nodiscard]] FailureOr<ExpressionId>
-  analyzeArrayIndex(SyntaxExpressionId source, uint64_t length,
-                    SMLoc location) {
-    MQT_OQ3_TRY_ASSIGN(constant, constantIndex(source, length, location));
+  analyzeArrayIndex(SyntaxExpressionId source, int64_t length, SMLoc location) {
+    if (length < 0) {
+      MQT_OQ3_TRY_ASSIGN(dynamic, analyzeExpression(source));
+      if (!isInteger(program.expressions[dynamic].type)) {
+        return fail(location, "array index must be an integer expression");
+      }
+      return dynamic;
+    }
+    MQT_OQ3_TRY_ASSIGN(
+        constant,
+        constantIndex(source, static_cast<uint64_t>(length), location));
     if (constant) {
-      if (*constant >= length) {
+      if (std::cmp_greater_equal(*constant, length)) {
         return fail(location, "array index is out of bounds");
       }
       return addConstant(
@@ -4260,7 +4364,7 @@ private:
     std::vector<ExpressionId> indices;
     for (size_t dimension = 0; dimension < count; ++dimension) {
       const auto source = dimension == 0 ? *index : additional[dimension - 1];
-      const auto length = static_cast<uint64_t>(shape[dimension]);
+      const auto length = shape[dimension];
       MQT_OQ3_TRY_ASSIGN(value, analyzeArrayIndex(source, length, location));
       indices.push_back(value);
     }
@@ -4269,6 +4373,9 @@ private:
 
   [[nodiscard]] std::optional<size_t>
   constantArrayOffset(ArrayId array, ArrayRef<ExpressionId> indices) const {
+    if (program.arrays[array].borrowed) {
+      return std::nullopt;
+    }
     size_t offset = 0;
     for (const auto [dimension, index] : llvm::enumerate(indices)) {
       const auto& expression = program.expressions[index];
@@ -4324,18 +4431,31 @@ private:
     const auto* symbol = lookup(assignment.target.identifier);
     if (symbol != nullptr && symbol->kind == SymbolKind::Array) {
       const auto array = symbol->id;
-      MQT_OQ3_TRY_ASSIGN(
-          selection,
-          analyzeArraySelection(array, assignment.target.index,
-                                assignment.target.additionalIndices, location));
-      if (llvm::any_of(selection,
-                       [](const auto& index) { return !index.isScalar(); })) {
-        return analyzeArrayCopy(array, std::move(selection), assignment.value,
-                                location, destination);
+      if (program.arrays[array].readonly) {
+        return fail(location,
+                    "cannot write through a readonly array reference");
       }
       std::vector<ExpressionId> indices;
-      for (const auto& index : selection) {
-        indices.push_back(index.offset);
+      std::optional<ExpressionId> compoundLhs;
+      llvm::SaveAndRestore lhsScope(assignmentLhs_);
+      if (assignment.compoundLhs && assignment.target.index) {
+        MQT_OQ3_TRY_ASSIGN(lhs, analyzeExpression(*assignment.compoundLhs));
+        compoundLhs = lhs;
+        indices = program.expressions[lhs].indices;
+        assignmentLhs_ = std::pair(*assignment.compoundLhs, lhs);
+      } else {
+        MQT_OQ3_TRY_ASSIGN(selection,
+                           analyzeArraySelection(
+                               array, assignment.target.index,
+                               assignment.target.additionalIndices, location));
+        if (llvm::any_of(selection,
+                         [](const auto& index) { return !index.isScalar(); })) {
+          return analyzeArrayCopy(array, std::move(selection), assignment.value,
+                                  location, destination);
+        }
+        for (const auto& index : selection) {
+          indices.push_back(index.offset);
+        }
       }
       MQT_OQ3_TRY_ASSIGN(value, analyzeArrayValue(array, assignment.value));
       if (const auto offset = constantArrayOffset(array, indices)) {
@@ -4346,6 +4466,7 @@ private:
                                                 .array = array,
                                                 .indices = std::move(indices),
                                                 .value = value,
+                                                .compoundLhs = compoundLhs,
                                             }));
       destination.push_back(statement);
       return success();
@@ -4530,12 +4651,398 @@ private:
   }
 
   [[nodiscard]] LogicalResult
+  analyzeSubroutineDefinition(SMLoc location,
+                              const SyntaxSubroutineDefinition& declaration) {
+    if (program.openQASM2) {
+      return fail(location, "OpenQASM 2 does not support subroutines");
+    }
+    if (lookup(declaration.identifier) != nullptr ||
+        customGates.contains(declaration.identifier) ||
+        subroutines_.contains(declaration.identifier) ||
+        builtinConstant(declaration.identifier) ||
+        getMathFunctionKind(declaration.identifier) ||
+        lookupGate(declaration.identifier) != nullptr) {
+      return fail(location, "subroutine name '" + declaration.identifier +
+                                "' is already declared or reserved");
+    }
+    SubroutineDefinition definition{
+        .name = declaration.identifier.str(),
+        .location = getSourceLocation(location),
+    };
+    if (declaration.result) {
+      MQT_OQ3_TRY_ASSIGN(type,
+                         analyzeSubroutineType(*declaration.result, location));
+      definition.result = type;
+    }
+    const SyntaxReturn* finalReturn = nullptr;
+    if (!declaration.body.empty()) {
+      finalReturn = std::get_if<SyntaxReturn>(
+          &syntax.statements[declaration.body.back()].data);
+    }
+    if (definition.result && (finalReturn == nullptr || !finalReturn->value)) {
+      return fail(location,
+                  "value-returning subroutine requires a final return value");
+    }
+    if (!definition.result && finalReturn != nullptr && finalReturn->value) {
+      return fail(location, "void subroutine cannot return a value");
+    }
+    auto body = ArrayRef(declaration.body);
+    if (finalReturn != nullptr) {
+      body = body.drop_back();
+    }
+    SmallVector<SyntaxStatementId> pending(body);
+    while (!pending.empty()) {
+      const auto& statement = syntax.statements[pending.pop_back_val()];
+      const auto supported = std::visit(
+          [&](const auto& data) -> LogicalResult {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (std::is_same_v<T, SyntaxReturn>) {
+              return fail(
+                  statement.location,
+                  "only a final top-level subroutine return is supported");
+            } else if constexpr (std::is_same_v<T, SyntaxGateCall> ||
+                                 std::is_same_v<T, SyntaxMeasurement> ||
+                                 std::is_same_v<T, SyntaxReset> ||
+                                 std::is_same_v<T, SyntaxBarrier> ||
+                                 std::is_same_v<T, SyntaxQubitDeclaration>) {
+              return fail(
+                  statement.location,
+                  "quantum statements are not supported in scalar subroutines");
+            } else if constexpr (std::is_same_v<T, SyntaxArrayDeclaration>) {
+              return fail(
+                  statement.location,
+                  "local arrays are not supported in scalar subroutines");
+            } else if constexpr (std::is_same_v<T,
+                                                SyntaxSubroutineDefinition> ||
+                                 std::is_same_v<T, SyntaxGateDefinition>) {
+              return fail(
+                  statement.location,
+                  "function definitions are only allowed at global scope");
+            } else if constexpr (std::is_same_v<T, SyntaxIf>) {
+              llvm::append_range(pending, data.thenStatements);
+              llvm::append_range(pending, data.elseStatements);
+            } else if constexpr (std::is_same_v<T, SyntaxFor> ||
+                                 std::is_same_v<T, SyntaxWhile>) {
+              llvm::append_range(pending, data.body);
+            } else if constexpr (std::is_same_v<T, SyntaxSwitch>) {
+              llvm::append_range(pending, data.defaultStatements);
+              for (const auto& branch : data.cases) {
+                llvm::append_range(pending, branch.body);
+              }
+            }
+            return success();
+          },
+          statement.data);
+      if (failed(supported)) {
+        return failure();
+      }
+    }
+    const bool entryReachable = reachable;
+    const bool entryActive = activePath;
+    enterScope();
+    activeSubroutine_ = declaration.identifier;
+    auto scopeGuard = llvm::scope_exit([&] {
+      activeSubroutine_ = {};
+      reachable = entryReachable;
+      activePath = entryActive;
+      leaveScope();
+    });
+    for (const auto& parameter : declaration.parameters) {
+      MQT_OQ3_TRY_ASSIGN(type, analyzeSubroutineType(parameter.type, location));
+      std::vector<StatementId> ignored;
+      uint32_t symbol = 0;
+      if (type.array) {
+        symbol = static_cast<ArrayId>(program.arrays.size());
+        program.arrays.push_back({
+            .type = type.scalar,
+            .elementWidth = type.width,
+            .shape = type.array->shape,
+            .name = parameter.identifier.str(),
+            .location = getSourceLocation(location),
+            .borrowed = true,
+            .readonly = type.array->readonly,
+        });
+        arrayStateSlots_.push_back(initializedBits.size());
+        arraysWithInitializers_.push_back(true);
+        // Callers establish complete initialization for each borrowed view.
+        initializedBits.push_back(std::make_shared<BitInitialization>(1, true));
+        if (failed(declare(location, parameter.identifier,
+                           {
+                               .kind = SymbolKind::Array,
+                               .type = type.scalar,
+                               .id = symbol,
+                           }))) {
+          return failure();
+        }
+      } else if (type.bitVector) {
+        symbol = static_cast<RegisterId>(program.registers.size());
+        if (failed(analyzeRegisterDeclaration(
+                location, parameter.identifier, parameter.type.width,
+                std::nullopt, false, false, ignored, false))) {
+          return failure();
+        }
+        mutableBitInitialization(registerStateSlots_[symbol]).set();
+      } else {
+        symbol = static_cast<ScalarId>(program.scalars.size());
+        if (failed(
+                analyzeScalarDeclaration(location,
+                                         {
+                                             .kind = parameter.type.scalar,
+                                             .identifier = parameter.identifier,
+                                             .size = parameter.type.width,
+                                         },
+                                         ignored, false))) {
+          return failure();
+        }
+        initializedScalars[scalarStateSlots_[symbol]] = true;
+      }
+      definition.parameters.push_back(
+          {.type = std::move(type), .symbol = symbol});
+    }
+    if (failed(analyzeBody(body, definition.body, false))) {
+      return failure();
+    }
+    if (finalReturn != nullptr) {
+      ReturnStatement result;
+      if (finalReturn->value) {
+        MQT_OQ3_TRY_ASSIGN(value, analyzeSubroutineValue(*finalReturn->value,
+                                                         *definition.result));
+        result.value = value;
+      }
+      MQT_OQ3_TRY_ASSIGN(
+          typed,
+          addStatement(syntax.statements[declaration.body.back()].location,
+                       result));
+      definition.body.push_back(typed);
+    }
+    subroutines_.try_emplace(declaration.identifier,
+                             static_cast<uint32_t>(program.subroutines.size()));
+    program.subroutines.push_back(std::move(definition));
+    return success();
+  }
+
+  [[nodiscard]] FailureOr<SubroutineType>
+  analyzeSubroutineType(const SyntaxSubroutineType& syntaxType,
+                        SMLoc location) {
+    SubroutineType type{
+        .bitVector = syntaxType.bitVector,
+        .scalarBit = syntaxType.bitVector && !syntaxType.width,
+        .scalar = scalarType(syntaxType.scalar),
+    };
+    if (syntaxType.readonly) {
+      type.array = SubroutineArrayType{.readonly = *syntaxType.readonly};
+      if (syntaxType.rank) {
+        MQT_OQ3_TRY_ASSIGN(rank,
+                           constantWidth(syntaxType.rank, location,
+                                         "array reference rank", false, 7));
+        type.array->shape.assign(rank, -1);
+      } else {
+        for (const auto dimension : syntaxType.dimensions) {
+          MQT_OQ3_TRY_ASSIGN(extent, constantWidth(dimension, location,
+                                                   "array dimension", true,
+                                                   ARRAY_ELEMENT_LIMIT));
+          type.array->shape.push_back(static_cast<int64_t>(extent));
+        }
+      }
+    }
+    if (type.bitVector) {
+      MQT_OQ3_TRY_ASSIGN(width, constantWidth(syntaxType.width, location,
+                                              "bit parameter width", false,
+                                              IntegerType::kMaxWidth));
+      type.width = static_cast<unsigned>(width);
+    } else if (type.scalar == ScalarType::Bool) {
+      if (syntaxType.width) {
+        return fail(location, "bool subroutine types do not have a width");
+      }
+      type.width = 1;
+    } else if (isInteger(type.scalar)) {
+      MQT_OQ3_TRY_ASSIGN(width, bitVectorCastWidth(syntaxType.width, location));
+      type.width = static_cast<unsigned>(width);
+    } else if (type.scalar == ScalarType::Float) {
+      type.width = 64;
+      if (syntaxType.width) {
+        MQT_OQ3_TRY_ASSIGN(width, constantWidth(syntaxType.width, location));
+        if (width != 64) {
+          return fail(location, "float subroutine types require width 64");
+        }
+      }
+    } else if (type.array && type.scalar == ScalarType::Angle) {
+      MQT_OQ3_TRY_ASSIGN(width, angleWidth(syntaxType.width, location));
+      type.width = width;
+    } else {
+      return fail(location, "runtime angle subroutine types are not supported");
+    }
+    return type;
+  }
+
+  [[nodiscard]] FailureOr<SubroutineArgument>
+  analyzeSubroutineValue(SyntaxExpressionId expression,
+                         const SubroutineType& type) {
+    if (type.array) {
+      const auto location = syntax.expressions[expression].location;
+      MQT_OQ3_TRY_ASSIGN(
+          source, analyzeArraySource(
+                      syntax.expressions[expression], location,
+                      "array reference argument requires an array or slice"));
+      const auto& declaration = program.arrays[source.array];
+      const auto shape = selectedShape(source.indices);
+      if (declaration.type != type.scalar ||
+          (type.scalar != ScalarType::Bool &&
+           (declaration.elementWidth == 0 ? 64 : declaration.elementWidth) !=
+               type.width) ||
+          shape.size() != type.array->shape.size()) {
+        return fail(
+            location,
+            "array argument must match the parameter element type and rank");
+      }
+      for (const auto [actual, expected] :
+           llvm::zip_equal(shape, type.array->shape)) {
+        if (expected >= 0 && actual != expected) {
+          return fail(location,
+                      "array argument must match the parameter shape");
+        }
+      }
+      if (!type.array->readonly && declaration.readonly) {
+        return fail(location,
+                    "readonly array cannot bind to a mutable parameter");
+      }
+      const auto& initialized =
+          *initializedBits[arrayStateSlots_[source.array]];
+      if (!initialized.all() &&
+          !visitArraySelectionRuns(
+              source.array, source.indices, [&](unsigned first, unsigned last) {
+                return initialized.find_first_unset_in(first, last) == -1;
+              })) {
+        return fail(location, "array argument has uninitialized elements");
+      }
+      return SubroutineArgument{.array = std::move(source)};
+    }
+    if (type.bitVector) {
+      if (type.scalarBit) {
+        MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(expression));
+        const auto scalar = addExpression({
+            .kind = ExpressionKind::Condition,
+            .type = ScalarType::Bool,
+            .condition = condition,
+        });
+        return SubroutineArgument{
+            .bitVector = true,
+            .value = addBitVectorExpression({
+                .kind = BitVectorExpressionKind::ScalarCast,
+                .width = 1,
+                .scalar = scalar,
+            }),
+        };
+      }
+      MQT_OQ3_TRY_ASSIGN(value,
+                         analyzeBitVectorExpression(expression, type.width));
+      return SubroutineArgument{.bitVector = true, .value = value};
+    }
+    MQT_OQ3_TRY_ASSIGN(
+        value, analyzeElementValue(type.scalar,
+                                   isInteger(type.scalar) ? type.width : 0,
+                                   expression));
+    return SubroutineArgument{.bitVector = false, .value = value};
+  }
+
+  [[nodiscard]] bool arrayArgumentsDisjoint(const ArrayCopySource& lhs,
+                                            const ArrayCopySource& rhs) const {
+    if (lhs.array != rhs.array) {
+      return true;
+    }
+    for (const auto& [left, right] :
+         llvm::zip_equal(lhs.indices, rhs.indices)) {
+      if (left.size == 0 || right.size == 0) {
+        return true;
+      }
+      if (left.runtime || right.runtime) {
+        continue;
+      }
+      const auto& leftOffset = program.expressions[left.offset];
+      const auto& rightOffset = program.expressions[right.offset];
+      if (leftOffset.kind != ExpressionKind::Constant ||
+          rightOffset.kind != ExpressionKind::Constant) {
+        continue;
+      }
+      const auto* leftConstant = std::get_if<int64_t>(&leftOffset.constant);
+      const auto* rightConstant = std::get_if<int64_t>(&rightOffset.constant);
+      if (leftConstant == nullptr || rightConstant == nullptr) {
+        continue;
+      }
+      const auto leftFirst = *leftConstant;
+      const auto rightFirst = *rightConstant;
+      if (leftFirst < 0 || rightFirst < 0) {
+        continue;
+      }
+      const auto leftLast =
+          leftFirst + (left.isScalar() ? 0 : left.size - 1) * left.stride;
+      const auto rightLast =
+          rightFirst + (right.isScalar() ? 0 : right.size - 1) * right.stride;
+      if (std::max(leftFirst, leftLast) < std::min(rightFirst, rightLast) ||
+          std::max(rightFirst, rightLast) < std::min(leftFirst, leftLast) ||
+          (leftFirst - rightFirst) % std::gcd(left.stride, right.stride) != 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] FailureOr<SubroutineCallId>
+  analyzeSubroutineCall(const SyntaxExpression& expression) {
+    if (lookup(expression.identifier) != nullptr) {
+      return fail(expression.location, "identifier '" + expression.identifier +
+                                           "' is not a subroutine");
+    }
+    if (expression.identifier == activeSubroutine_) {
+      return fail(expression.location,
+                  "recursive subroutine calls are not supported");
+    }
+    const auto found = subroutines_.find(expression.identifier);
+    if (found == subroutines_.end()) {
+      return fail(expression.location, "unknown subroutine '" +
+                                           expression.identifier +
+                                           "'; definitions must precede calls");
+    }
+    const auto& definition = program.subroutines[found->second];
+    if (expression.arguments.size() != definition.parameters.size()) {
+      return fail(expression.location,
+                  "subroutine argument count does not match its definition");
+    }
+    SubroutineCall call{
+        .callee = found->second,
+        .location = getSourceLocation(expression.location),
+    };
+    for (const auto [argument, parameter] :
+         llvm::zip_equal(expression.arguments, definition.parameters)) {
+      MQT_OQ3_TRY_ASSIGN(value,
+                         analyzeSubroutineValue(argument, parameter.type));
+      if (value.array) {
+        for (const auto [index, previous] : llvm::enumerate(call.arguments)) {
+          if (previous.array &&
+              (!parameter.type.array->readonly ||
+               !definition.parameters[index].type.array->readonly) &&
+              !arrayArgumentsDisjoint(*value.array, *previous.array)) {
+            return fail(expression.location,
+                        "mutable array arguments must be provably disjoint "
+                        "from other array arguments");
+          }
+        }
+      }
+      call.arguments.push_back(std::move(value));
+    }
+    const auto id = static_cast<SubroutineCallId>(program.calls.size());
+    program.calls.push_back(std::move(call));
+    return id;
+  }
+
+  [[nodiscard]] LogicalResult
   analyzeGateDefinition(SMLoc location,
                         const SyntaxGateDefinition& declaration) {
     if (declaration.opaque && !program.openQASM2) {
       return fail(location, "opaque declarations require OpenQASM 2");
     }
     if (customGates.contains(declaration.identifier) ||
+        subroutines_.contains(declaration.identifier) ||
         lookup(declaration.identifier) != nullptr) {
       return fail(location,
                   "gate '" + declaration.identifier + "' is already declared");
@@ -5351,6 +5858,18 @@ private:
       return addCondition(std::move(typed));
     }
     switch (condition.kind) {
+    case Expr::Kind::Call: {
+      MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(syntaxId));
+      if (program.expressions[value].type != ScalarType::Bool) {
+        return fail(condition.location, "condition must have bool type");
+      }
+      typed.kind = ConditionKind::Comparison;
+      typed.comparisonLhs = value;
+      typed.comparisonRhs =
+          addConstant({.type = ScalarType::Bool, .value = false});
+      typed.comparison = ComparisonKind::NotEqual;
+      break;
+    }
     case Expr::Kind::BoolCast:
       if (condition.lhs) {
         return fail(condition.location, "bool casts do not have a width");

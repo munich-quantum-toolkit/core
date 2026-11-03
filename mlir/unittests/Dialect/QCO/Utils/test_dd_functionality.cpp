@@ -3221,6 +3221,15 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedTensorConstants) {
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
   for (const StringRef source : {
            R"mlir(module {
+             func.func @main() {
+               %reg = memref.alloca() : memref<1xi1>
+               %view = memref.reinterpret_cast %reg to
+                 offset: [0], sizes: [1], strides: [1]
+                 : memref<1xi1> to memref<1xi1>
+               return
+             }
+           })mlir",
+           R"mlir(module {
              func.func @main(%reg: memref<i1>) {
                %value = memref.load %reg[] : memref<i1>
                return
@@ -3253,6 +3262,21 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
                %value = arith.constant true
                %i2 = arith.constant 2 : index
                memref.store %value, %reg[%i2] : memref<1xi1>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main() {
+               %size = arith.constant 2 : index
+               %reg = memref.alloc(%size) : memref<?xi1>
+               %cast = memref.cast %reg : memref<?xi1> to memref<3xi1>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main() {
+               %reg = memref.alloc() : memref<1xi1>
+               %cast = memref.cast %reg : memref<1xi1> to memref<*xi1>
                return
              }
            })mlir",

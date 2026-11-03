@@ -126,7 +126,8 @@ public:
         qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
         scalarValues(program.scalars.size()),
-        arrayValues_(program.arrays.size()) {
+        arrayValues_(program.arrays.size()),
+        subroutineFunctions_(program.subroutines.size()) {
     context
         .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
@@ -139,8 +140,11 @@ public:
       structuredGateCapabilities.try_emplace(
           &gate, statementsRequireStructuredControlFlow(gate.body));
     }
-    if (customGateIndex.contains("main")) {
-      // A dot cannot occur in a source gate identifier.
+    if (customGateIndex.contains("main") ||
+        llvm::any_of(program.subroutines, [](const auto& function) {
+          return function.name == "main";
+        })) {
+      // A dot cannot occur in a source identifier.
       cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
           .setName("mqt.entry");
     }
@@ -172,6 +176,13 @@ public:
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);
       scalarUpdates_.clear();
+      if (emissionFailed || emissionBudget.isExhausted()) {
+        return nullptr;
+      }
+    }
+    for (const auto [index, subroutine] :
+         llvm::enumerate(program.subroutines)) {
+      emitSubroutineDefinition(index, subroutine);
       if (emissionFailed || emissionBudget.isExhausted()) {
         return nullptr;
       }
@@ -227,6 +238,7 @@ private:
   std::vector<Value> classicalRegisters;
   std::vector<Value> scalarValues;
   std::vector<Value> arrayValues_;
+  std::optional<std::pair<frontend::ExpressionId, Value>> assignmentLhs_;
   llvm::DenseMap<frontend::ArrayId, Value> arraySnapshots_;
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
   DenseMap<const openqasm::frontend::GateDefinition*, bool>
@@ -234,6 +246,7 @@ private:
   llvm::StringMap<const openqasm::frontend::GateDefinition*> customGateIndex;
   DenseMap<const openqasm::frontend::GateDefinition*, func::FuncOp>
       customGateFunctions_;
+  SmallVector<func::FuncOp> subroutineFunctions_;
   bool emissionFailed = false;
   QCProgramBuilder::LoopBuilder* activeLoop = nullptr;
   SmallVector<frontend::ScalarId> breakSlots;
@@ -472,6 +485,10 @@ private:
     const auto type =
         opBuilder.getIntegerType(static_cast<unsigned>(expression.width));
     switch (expression.kind) {
+    case frontend::BitVectorExpressionKind::Call: {
+      auto call = emitSubroutineCall(opBuilder, expression.call);
+      return call ? call.getResult(0) : Value{};
+    }
     case frontend::BitVectorExpressionKind::ScalarCast:
       return emitExpression(opBuilder, expression.scalar, {});
     case frontend::BitVectorExpressionKind::Constant:
@@ -646,9 +663,9 @@ private:
           if constexpr (std::is_same_v<T, double>) {
             return FloatAttr::get(type, value);
           } else {
-            return IntegerAttr::get(type,
-                                    APInt(cast<IntegerType>(type).getWidth(),
-                                          static_cast<uint64_t>(value)));
+            return IntegerAttr::get(
+                type, APInt(cast<IntegerType>(type).getWidth(),
+                            static_cast<uint64_t>(value), std::is_signed_v<T>));
           }
         },
         expression.constant);
@@ -659,11 +676,18 @@ private:
     if (emissionBudget.isExhausted()) {
       return {};
     }
+    if (assignmentLhs_ && assignmentLhs_->first == id) {
+      return assignmentLhs_->second;
+    }
     const auto& expression = program.expressions.at(id);
     auto loc = opBuilder.getInsertionPoint() == opBuilder.getBlock()->end()
                    ? opBuilder.getUnknownLoc()
                    : opBuilder.getInsertionPoint()->getLoc();
     switch (expression.kind) {
+    case frontend::ExpressionKind::Call: {
+      auto call = emitSubroutineCall(opBuilder, expression.call);
+      return call ? call.getResult(0) : Value{};
+    }
     case frontend::ExpressionKind::Constant:
       return arith::ConstantOp::create(opBuilder, loc, constantAttribute(id));
     case frontend::ExpressionKind::GateParameter:
@@ -682,8 +706,12 @@ private:
     case frontend::ExpressionKind::ArraySize: {
       const auto& query =
           program.arraySizeQueries.at(expression.arraySizeQuery);
+      Value extent =
+          query.extent < 0
+              ? arrayExtent(opBuilder, query.array, query.dimension)
+              : arith::ConstantIntOp::create(opBuilder, loc, query.extent, 64);
       auto range =
-          emitArrayRange(opBuilder, query.range, query.extent, gateParameters);
+          emitArrayRange(opBuilder, query.range, extent, gateParameters);
       if (!range[1] || emissionBudget.isExhausted()) {
         return {};
       }
@@ -882,8 +910,8 @@ private:
 
   [[nodiscard]] Value
   emitClassicalIndex(OpBuilder& opBuilder,
-                     const frontend::ExpressionId expression,
-                     const int64_t width, ValueRange gateParameters) {
+                     const frontend::ExpressionId expression, Value width,
+                     ValueRange gateParameters) {
     auto index = emitExpression(opBuilder, expression, gateParameters);
     if (!index) {
       return {};
@@ -893,22 +921,41 @@ private:
     index = emitScalarCast(opBuilder, loc, index, type, type);
     if (type == frontend::ScalarType::Int) {
       auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
-      auto upper = arith::ConstantIntOp::create(opBuilder, loc, width, 64);
       auto negative = arith::CmpIOp::create(
           opBuilder, loc, arith::CmpIPredicate::slt, index, zero);
-      auto wrapped = arith::AddIOp::create(opBuilder, loc, index, upper);
+      auto wrapped = arith::AddIOp::create(opBuilder, loc, index, width);
       index = arith::SelectOp::create(opBuilder, loc, negative, wrapped, index);
     }
     return index;
   }
 
+  [[nodiscard]] Value emitClassicalIndex(OpBuilder& opBuilder,
+                                         frontend::ExpressionId expression,
+                                         int64_t width,
+                                         ValueRange gateParameters) {
+    return emitClassicalIndex(
+        opBuilder, expression,
+        arith::ConstantIntOp::create(opBuilder, builder.getLoc(), width, 64),
+        gateParameters);
+  }
+
+  [[nodiscard]] Value arrayExtent(OpBuilder& opBuilder, frontend::ArrayId array,
+                                  size_t dimension) {
+    auto size = opBuilder.createOrFold<memref::DimOp>(
+        builder.getLoc(), arrayValues_.at(array), dimension);
+    return opBuilder.createOrFold<arith::IndexCastOp>(
+        builder.getLoc(), opBuilder.getI64Type(), size);
+  }
+
   [[nodiscard]] Value emitArrayIndex(OpBuilder& opBuilder,
                                      frontend::ExpressionId expression,
-                                     int64_t extent) {
+                                     Value extent) {
     const auto& index = program.expressions.at(expression);
-    if (index.kind == frontend::ExpressionKind::Constant) {
+    if (const auto* constant = std::get_if<int64_t>(&index.constant);
+        index.kind == frontend::ExpressionKind::Constant &&
+        constant != nullptr && *constant >= 0) {
       return arith::ConstantIndexOp::create(opBuilder, builder.getLoc(),
-                                            std::get<int64_t>(index.constant));
+                                            *constant);
     }
     auto indexValue = emitClassicalIndex(opBuilder, expression, extent, {});
     if (!indexValue) {
@@ -924,7 +971,7 @@ private:
     SmallVector<Value> indices;
     for (const auto [dimension, expression] : llvm::enumerate(expressions)) {
       auto index = emitArrayIndex(opBuilder, expression,
-                                  program.arrays.at(array).shape[dimension]);
+                                  arrayExtent(opBuilder, array, dimension));
       if (!index) {
         return failure();
       }
@@ -1029,6 +1076,117 @@ private:
     auto negativeHalf = arith::ConstantFloatOp::create(
         opBuilder, loc, opBuilder.getF64Type(), APFloat(-0.5));
     return opBuilder.createOrFold<arith::MulFOp>(loc, sum, negativeHalf);
+  }
+
+  [[nodiscard]] Value
+  emitSubroutineArgument(OpBuilder& opBuilder,
+                         const frontend::SubroutineArgument& argument) {
+    if (argument.array) {
+      return emitArrayView(argument.array->array, argument.array->indices);
+    }
+    return argument.bitVector
+               ? emitBitVectorExpression(opBuilder, argument.value)
+               : emitExpression(opBuilder, argument.value, {});
+  }
+
+  [[nodiscard]] func::CallOp emitSubroutineCall(OpBuilder& opBuilder,
+                                                frontend::SubroutineCallId id) {
+    const auto& call = program.calls.at(id);
+    auto function = subroutineFunctions_[call.callee];
+    SmallVector<Value> operands;
+    for (const auto [index, argument] : llvm::enumerate(call.arguments)) {
+      auto value = emitSubroutineArgument(opBuilder, argument);
+      if (!value) {
+        emissionFailed = true;
+        return {};
+      }
+      if (argument.array &&
+          value.getType() != function.getArgumentTypes()[index]) {
+        value =
+            memref::CastOp::create(opBuilder, getLocation(call.location),
+                                   function.getArgumentTypes()[index], value);
+      }
+      operands.push_back(value);
+    }
+    if (!function ||
+        function.getArgumentTypes() != ValueRange(operands).getTypes()) {
+      emitError(getLocation(call.location))
+          << "OpenQASM QC emission error: subroutine call does not match its "
+             "verified declaration";
+      emissionFailed = true;
+      return {};
+    }
+    return func::CallOp::create(opBuilder, getLocation(call.location), function,
+                                operands);
+  }
+
+  void
+  emitSubroutineDefinition(size_t index,
+                           const frontend::SubroutineDefinition& subroutine) {
+    SmallVector<Type> argumentTypes;
+    for (const auto& parameter : subroutine.parameters) {
+      if (parameter.type.array) {
+        auto shape = llvm::to_vector(parameter.type.array->shape);
+        for (auto& extent : shape) {
+          if (extent < 0) {
+            extent = ShapedType::kDynamic;
+          }
+        }
+        argumentTypes.push_back(MemRefType::get(
+            shape, scalarType(parameter.type.scalar, parameter.type.width),
+            StridedLayoutAttr::get(
+                &context, ShapedType::kDynamic,
+                SmallVector<int64_t>(shape.size(), ShapedType::kDynamic))));
+        continue;
+      }
+      argumentTypes.push_back(
+          parameter.type.bitVector
+              ? builder.getIntegerType(parameter.type.width)
+              : scalarType(parameter.type.scalar, parameter.type.width));
+    }
+    const auto checkpoint = scalarUpdates_.size();
+    builder.setLoc(getLocation(subroutine.location));
+    subroutineFunctions_[index] = builder.createFunction(
+        subroutine.name, argumentTypes, [&](ValueRange arguments) {
+          for (auto [parameter, value] :
+               llvm::zip_equal(subroutine.parameters, arguments)) {
+            if (parameter.type.array) {
+              arrayValues_.at(parameter.symbol) = value;
+            } else if (parameter.type.bitVector) {
+              emitDeclaration({.reg = parameter.symbol});
+              if (emissionBudget.isExhausted()) {
+                return SmallVector<Value>{};
+              }
+              cbit::WriteOp::create(builder, value,
+                                    classicalRegisters.at(parameter.symbol));
+            } else {
+              setScalarValue(parameter.symbol, value);
+            }
+          }
+          for (const auto statement : subroutine.body) {
+            const auto& typed = program.statements.at(statement);
+            if (const auto* result =
+                    std::get_if<frontend::ReturnStatement>(&typed.data)) {
+              if (!result->value) {
+                return SmallVector<Value>{};
+              }
+              builder.setLoc(getLocation(typed.location));
+              emissionBudget.setLocation(builder.getLoc());
+              auto value = emitSubroutineArgument(builder, *result->value);
+              if (!value) {
+                emissionFailed = true;
+                return SmallVector<Value>{};
+              }
+              return SmallVector<Value>{value};
+            }
+            emitStatement(statement, {}, {});
+            if (emissionFailed || emissionBudget.isExhausted()) {
+              return SmallVector<Value>{};
+            }
+          }
+          return SmallVector<Value>{};
+        });
+    restoreScalars(checkpoint);
   }
 
   void emitGateDefinition(const frontend::GateDefinition& gate) {
@@ -1752,6 +1910,9 @@ private:
             flowReachable = false;
           } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
             emitSwitch(data, gateParameters, gateQubits);
+          } else if constexpr (std::is_same_v<
+                                   T, frontend::SubroutineCallStatement>) {
+            std::ignore = emitSubroutineCall(builder, data.call);
           }
         },
         statement.data);
@@ -1843,7 +2004,7 @@ private:
   /// Return offset, size, and stride under the runtime range preconditions.
   [[nodiscard]] std::array<Value, 3>
   emitArrayRange(OpBuilder& opBuilder, const frontend::ArrayRange& range,
-                 int64_t extent, ValueRange gateParameters) {
+                 Value extent, ValueRange gateParameters) {
     auto step = emitExpression(opBuilder, range.step, gateParameters);
     if (!step) {
       return {};
@@ -1853,11 +2014,15 @@ private:
     step = emitScalarCast(opBuilder, loc, step, type, type);
     auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
     auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 64);
-    auto last = arith::ConstantIntOp::create(opBuilder, loc, extent - 1, 64);
-    if (extent == 0 && !range.start && !range.stop) {
-      auto empty = arith::ConstantIndexOp::create(opBuilder, loc, 0);
-      return {empty, empty, arith::ConstantIndexOp::create(opBuilder, loc, 1)};
+    if (!range.start && !range.stop && getConstantIntValue(step) == 1) {
+      return {
+          arith::ConstantIndexOp::create(opBuilder, loc, 0),
+          opBuilder.createOrFold<arith::IndexCastOp>(
+              loc, opBuilder.getIndexType(), extent),
+          arith::ConstantIndexOp::create(opBuilder, loc, 1),
+      };
     }
+    auto last = arith::SubIOp::create(opBuilder, loc, extent, one);
     auto positive = arith::CmpIOp::create(
         opBuilder, loc, arith::CmpIPredicate::sgt, step, zero);
     const auto bound = [&](std::optional<frontend::ExpressionId> expression,
@@ -1878,7 +2043,13 @@ private:
     // In-bounds endpoints bound the difference, even for an INT64_MIN step.
     auto distance = arith::SubIOp::create(opBuilder, loc, stop, start);
     auto quotient = arith::DivSIOp::create(opBuilder, loc, distance, step);
-    auto size = arith::AddIOp::create(opBuilder, loc, quotient, one);
+    Value size = arith::AddIOp::create(opBuilder, loc, quotient, one);
+    if (!range.start && !range.stop) {
+      auto empty = arith::CmpIOp::create(
+          opBuilder, loc, arith::CmpIPredicate::eq, extent, zero);
+      size = arith::SelectOp::create(opBuilder, loc, empty, zero, size);
+      start = arith::SelectOp::create(opBuilder, loc, empty, zero, start);
+    }
     auto single = arith::CmpIOp::create(opBuilder, loc,
                                         arith::CmpIPredicate::eq, size, one);
     step = arith::SelectOp::create(opBuilder, loc, single, one, step);
@@ -1897,9 +2068,17 @@ private:
                 ArrayRef<frontend::ArraySelection> selection) {
     auto storage = arrayValues_.at(array);
     const auto& shape = program.arrays.at(array).shape;
-    if (llvm::all_of(llvm::zip(selection, shape), [](const auto& pair) {
-          return std::get<0>(pair).size == std::get<1>(pair) &&
-                 std::get<0>(pair).stride == 1;
+    if (llvm::all_of(llvm::zip(selection, shape), [&](const auto& pair) {
+          const auto& index = std::get<0>(pair);
+          if (index.runtime) {
+            const auto& range = *index.runtime;
+            const auto& step = program.expressions.at(range.step);
+            const auto* value = std::get_if<int64_t>(&step.constant);
+            return !range.start && !range.stop &&
+                   step.kind == frontend::ExpressionKind::Constant && value &&
+                   *value == 1;
+          }
+          return index.size == std::get<1>(pair) && index.stride == 1;
         })) {
       return storage;
     }
@@ -1909,8 +2088,8 @@ private:
     SmallVector<int64_t> resultShape;
     for (const auto [dimension, index] : llvm::enumerate(selection)) {
       if (index.runtime) {
-        auto range =
-            emitArrayRange(builder, *index.runtime, shape[dimension], {});
+        auto range = emitArrayRange(builder, *index.runtime,
+                                    arrayExtent(builder, array, dimension), {});
         if (!range[0]) {
           return {};
         }
@@ -1920,7 +2099,8 @@ private:
         resultShape.push_back(ShapedType::kDynamic);
         continue;
       }
-      auto offset = emitArrayIndex(builder, index.offset, shape[dimension]);
+      auto offset = emitArrayIndex(builder, index.offset,
+                                   arrayExtent(builder, array, dimension));
       if (!offset || emissionBudget.isExhausted()) {
         return {};
       }
@@ -1931,6 +2111,22 @@ private:
       if (!index.isScalar()) {
         resultShape.push_back(index.size);
       }
+    }
+    if (llvm::is_contained(resultShape, int64_t{0})) {
+      if (llvm::is_contained(resultShape, ShapedType::kDynamic)) {
+        emitError(builder.getLoc())
+            << "empty array views require statically known extents";
+        emissionFailed = true;
+        return {};
+      }
+      // Empty views have no addressable elements. Use a shape-only cast until
+      // subviews accept zero extents.
+      auto type = MemRefType::get(
+          resultShape, cast<MemRefType>(storage.getType()).getElementType());
+      auto [emptyStrides, emptyOffset] = type.getStridesAndOffset();
+      return memref::ReinterpretCastOp::create(
+                 builder, type, storage, emptyOffset, resultShape, emptyStrides)
+          .getResult();
     }
     auto type = memref::SubViewOp::inferRankReducedResultType(
         resultShape, cast<MemRefType>(storage.getType()), offsets, sizes,
@@ -1946,9 +2142,22 @@ private:
     if (!scratch) {
       OpBuilder::InsertionGuard guard(builder);
       auto storage = arrayValues_.at(array);
-      builder.setInsertionPointAfter(storage.getDefiningOp());
-      scratch = memref::AllocaOp::create(builder,
-                                         cast<MemRefType>(storage.getType()));
+      if (auto argument = dyn_cast<BlockArgument>(storage)) {
+        builder.setInsertionPointToStart(argument.getOwner());
+      } else {
+        builder.setInsertionPointAfter(storage.getDefiningOp());
+      }
+      auto sourceType = cast<MemRefType>(storage.getType());
+      auto type =
+          MemRefType::get(sourceType.getShape(), sourceType.getElementType());
+      SmallVector<Value> dimensions;
+      for (auto dimension : llvm::seq<int64_t>(0, type.getRank())) {
+        if (type.isDynamicDim(dimension)) {
+          dimensions.push_back(
+              memref::DimOp::create(builder, storage, dimension));
+        }
+      }
+      scratch = memref::AllocaOp::create(builder, type, dimensions);
     }
     if (auto subview = view.getDefiningOp<memref::SubViewOp>()) {
       // Scratch needs the selection's shape, not its physical layout.
@@ -2050,7 +2259,7 @@ private:
              llvm::zip(selection, program.arrays.at(array).shape)) {
           if (!index.isScalar()) {
             retained = true;
-            if (index.size != extent || index.stride != 1) {
+            if (index.runtime || index.size != extent || index.stride != 1) {
               return false;
             }
           } else if (retained) {
@@ -2079,8 +2288,17 @@ private:
   emitArrayAssignment(const frontend::ArrayAssignmentStatement& statement) {
     auto indices =
         emitArrayIndices(builder, statement.array, statement.indices);
+    if (failed(indices) || emissionBudget.isExhausted()) {
+      return;
+    }
+    llvm::SaveAndRestore lhsScope(assignmentLhs_);
+    if (statement.compoundLhs) {
+      auto previous = memref::LoadOp::create(
+          builder, arrayValues_.at(statement.array), *indices);
+      assignmentLhs_ = std::pair(*statement.compoundLhs, previous.getResult());
+    }
     auto value = emitExpression(builder, statement.value, {});
-    if (failed(indices) || !value || emissionBudget.isExhausted()) {
+    if (!value || emissionBudget.isExhausted()) {
       return;
     }
     memref::StoreOp::create(builder, value, arrayValues_.at(statement.array),

@@ -32,6 +32,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -49,6 +50,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Region.h"
@@ -2176,6 +2178,11 @@ namespace {
 struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
   using QCOToJeffBase::QCOToJeffBase;
 
+  void getDependentDialects(DialectRegistry& registry) const override {
+    QCOToJeffBase::getDependentDialects(registry);
+    func::registerInlinerExtension(registry);
+  }
+
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
@@ -2203,6 +2210,33 @@ protected:
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
+    }
+
+    const auto borrowsArray = [](func::FuncOp function) {
+      return llvm::any_of(function.getArgumentTypes(),
+                          llvm::IsaPred<MemRefType>);
+    };
+    if (llvm::any_of(moduleOp.getOps<func::FuncOp>(), borrowsArray)) {
+      SmallVector<StringAttr> preserved;
+      for (auto function : moduleOp.getOps<func::FuncOp>()) {
+        if (!borrowsArray(function) && !function.getNoInline()) {
+          function.setNoInline(true);
+          preserved.push_back(function.getSymNameAttr());
+        }
+      }
+      OpPassManager inlining(ModuleOp::getOperationName());
+      // jeff arrays have value semantics; inline borrows to retain aliasing.
+      inlining.addPass(createInlinerPass({}, [](OpPassManager&) {}));
+      const auto result = runPipeline(inlining, moduleOp);
+      for (auto name : preserved) {
+        if (auto function = moduleOp.lookupSymbol<func::FuncOp>(name)) {
+          function.setNoInline(false);
+        }
+      }
+      if (failed(result)) {
+        signalPassFailure();
+        return;
+      }
     }
 
     if (moduleOp
@@ -2341,8 +2375,14 @@ protected:
       if (mqt::isEntryPoint(function)) {
         state.entryPointName = function.getSymName();
         mqt::removeEntryPoint(function);
+      } else if (borrowsArray(function)) {
+        function.emitError("jeff cannot preserve borrowed array helper "
+                           "signatures; use private, nonrecursive definitions "
+                           "without no_inline");
+        signalPassFailure();
+        return;
       } else if (llvm::any_of(function.getArgumentTypes(),
-                              llvm::IsaPred<cbit::RegisterType, MemRefType>)) {
+                              llvm::IsaPred<cbit::RegisterType>)) {
         function.emitError("classical register arguments in helper functions "
                            "are not supported");
         signalPassFailure();
