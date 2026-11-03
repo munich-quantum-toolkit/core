@@ -43,8 +43,8 @@ summary's end time differs from command records, so do not combine them into a
 precise total. Separate queue time, active build time, and publication time.
 Comparisons across RtD and GitHub runners include the hardware change.
 
-Local Spark validation (AArch64, four compilation jobs): the first build with
-an empty compiler cache took 271.36 seconds, including 183.31 seconds for the
+Local Spark validation (AArch64, four compilation jobs): the first build with an
+empty compiler cache took 271.36 seconds, including 183.31 seconds for the
 package and 87.30 seconds for rendering and checks. All 18 notebooks executed.
 Python downloads were already cached; this is not a cold network measurement.
 The six focused tests and repository lint passed. Four targeted mutations
