@@ -450,6 +450,71 @@ LogicalResult QIRProgram::writeBitcode(const std::filesystem::path& path) && {
 // Pipeline
 //===----------------------------------------------------------------------===//
 
+FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
+                                           const TargetEnvironment* environment,
+                                           const CompilationOptions& options,
+                                           bool physicalQubits) {
+  if (output == ProgramFormat::OpenQASM3 ||
+      output == ProgramFormat::OpenQASM2) {
+    if (failed(runWithPassManager(qc.module(), populateQCExportPipeline,
+                                  "failed to clean up compiled QC"))) {
+      return failure();
+    }
+    if (output == ProgramFormat::OpenQASM2 &&
+        failed(runWithPassManager(
+            qc.module(),
+            [&](OpPassManager& pm) {
+              const auto payload =
+                  llvm::cantFail(PayloadSpecification::forProgramFormat(
+                      ProgramFormat::OpenQASM2));
+              populateOpenQASM2PreparationPipeline(
+                  pm, payload.materialize(*qc.module().getContext()));
+            },
+            "failed to lower compiled QC for OpenQASM 2", options))) {
+      return failure();
+    }
+    auto source = output == ProgramFormat::OpenQASM2
+                      ? std::move(qc).intoOpenQASM2()
+                      : std::move(qc).intoOpenQASM3(physicalQubits);
+    if (failed(source)) {
+      return failure();
+    }
+    return CompilerProgram(std::move(*source));
+  }
+  if (failed(qc.cleanup())) {
+    return failure();
+  }
+
+  const auto profile = output == ProgramFormat::QIRAdaptive
+                           ? QIRProfile::Adaptive
+                           : QIRProfile::Base;
+  if (failed(runWithPassManager(
+          qc.module(),
+          [&](OpPassManager& pm) {
+            const auto payload =
+                llvm::cantFail(PayloadSpecification::forProgramFormat(
+                    profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
+                                                    : ProgramFormat::QIRBase));
+            populateQIRPreparationPipeline(
+                pm, payload.materialize(*qc.module().getContext()));
+          },
+          "failed to prepare compiled QC for QIR", options))) {
+    return failure();
+  }
+  auto qir = std::move(qc).intoQIR(profile);
+  if (failed(qir) || failed(qir->cleanup())) {
+    return failure();
+  }
+  if (output == ProgramFormat::IQMJSON) {
+    auto source = exportIQMJSON(*qir, environment->target());
+    if (failed(source)) {
+      return failure();
+    }
+    return CompilerProgram(std::move(*source));
+  }
+  return CompilerProgram(std::move(*qir));
+}
+
 [[nodiscard]] static FailureOr<CompilerProgram>
 runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
                        const TargetEnvironment* environment,
@@ -554,65 +619,7 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
     // Export cleanup can change resources and invalidate routing metadata.
     return CompilerProgram(std::move(*qc));
   }
-  if (output == ProgramFormat::OpenQASM3 ||
-      output == ProgramFormat::OpenQASM2) {
-    if (failed(runWithPassManager(qc->module(), populateQCExportPipeline,
-                                  "failed to clean up compiled QC"))) {
-      return failure();
-    }
-    if (output == ProgramFormat::OpenQASM2 &&
-        failed(runWithPassManager(
-            qc->module(),
-            [&](OpPassManager& pm) {
-              const auto payload =
-                  llvm::cantFail(PayloadSpecification::forProgramFormat(
-                      ProgramFormat::OpenQASM2));
-              populateOpenQASM2PreparationPipeline(
-                  pm, payload.materialize(*qc->module().getContext()));
-            },
-            "failed to lower compiled QC for OpenQASM 2", options))) {
-      return failure();
-    }
-    auto source = output == ProgramFormat::OpenQASM2
-                      ? std::move(*qc).intoOpenQASM2()
-                      : std::move(*qc).intoOpenQASM3();
-    if (failed(source)) {
-      return failure();
-    }
-    return CompilerProgram(std::move(*source));
-  }
-  if (failed(qc->cleanup())) {
-    return failure();
-  }
-
-  const auto profile = output == ProgramFormat::QIRAdaptive
-                           ? QIRProfile::Adaptive
-                           : QIRProfile::Base;
-  if (failed(runWithPassManager(
-          qc->module(),
-          [&](OpPassManager& pm) {
-            const auto payload =
-                llvm::cantFail(PayloadSpecification::forProgramFormat(
-                    profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
-                                                    : ProgramFormat::QIRBase));
-            populateQIRPreparationPipeline(
-                pm, payload.materialize(*qc->module().getContext()));
-          },
-          "failed to prepare compiled QC for QIR", options))) {
-    return failure();
-  }
-  auto qir = std::move(*qc).intoQIR(profile);
-  if (failed(qir) || failed(qir->cleanup())) {
-    return failure();
-  }
-  if (output == ProgramFormat::IQMJSON) {
-    auto source = exportIQMJSON(*qir, environment->target());
-    if (failed(source)) {
-      return failure();
-    }
-    return CompilerProgram(std::move(*source));
-  }
-  return CompilerProgram(std::move(*qir));
+  return exportQCProgram(std::move(*qc), output, environment, options);
 }
 
 static Expected<CompilerProgram>

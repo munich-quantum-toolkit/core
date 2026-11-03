@@ -70,6 +70,11 @@ class MockQDMIDevice:
     providing configurable device properties and mock job execution.
     """
 
+    @staticmethod
+    def query_custom_property(*_args: object) -> None:
+        """No optional device metadata is advertised."""
+        return
+
     class MockSite:
         """Mock device site."""
 
@@ -665,18 +670,22 @@ def replaced_qasm3_serializer() -> Iterator[str]:
 
 
 def test_backend_uses_replaced_qasm3_serializer(replaced_qasm3_serializer: str) -> None:
-    """A custom serializer retains control over compilation to native width."""
+    """Custom serializers receive validated native circuits."""
     device = MockQDMIDevice(num_qubits=1, operations=["h", "measure"])
     submissions = _record_submissions(device)
 
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
-    qc = QuantumCircuit(2)
+    qc = QuantumCircuit(1)
     qc.h(0)
     qc.measure_all()
 
     backend.run(qc, shots=100)
 
     assert submissions == [(replaced_qasm3_serializer, ProgramFormat.QASM3)]
+
+    with pytest.raises(CircuitValidationError, match="addressable positions"):
+        backend.run(QuantumCircuit(2))
+    assert len(submissions) == 1
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.QPY])
@@ -741,6 +750,13 @@ def test_native_parameter_alternatives(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.validate_circuit(native, native=True)
     with pytest.raises(UnsupportedOperationError, match="parameters"):
         backend.validate_circuit(source, native=True)
+
+    def unexpected_serializer(*_args: object) -> None:
+        pytest.fail("invalid native parameters reached the serializer")
+
+    monkeypatch.setattr(backend, "_serialize_circuit", unexpected_serializer)
+    with pytest.raises(UnsupportedOperationError, match="parameters"):
+        backend.run(source)
     assert all(
         instruction.operation.name == "rz" or instruction.operation.params[0] in angles for instruction in native.data
     )

@@ -168,6 +168,8 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
                bool physicalQubits = true);
 
 /// Validate the destination contract before creating and submitting a QDMI job.
+/// Raw job results require decoding with the compiled result layout, if
+/// present.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
     const qdmi::Device& device, const CompiledProgram& program,
     int64_t numShots = 1024,

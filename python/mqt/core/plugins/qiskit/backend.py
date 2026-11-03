@@ -859,7 +859,7 @@ class QDMIBackend(BackendV2):
                 msg = "Classical registers must partition circuit.clbits in register order."
                 raise CircuitValidationError(msg)
 
-            self.validate_circuit(bound_circuit)
+            self.validate_circuit(bound_circuit, native=True)
 
             prepared_circuits.append(bound_circuit)
 

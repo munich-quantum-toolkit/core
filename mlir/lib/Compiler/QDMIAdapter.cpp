@@ -808,6 +808,30 @@ snapshotTargetEnvironment(const qdmi::Device& device,
   if (!target) {
     return target.takeError();
   }
+  auto readout = device.queryCustomProperty<std::vector<std::byte>>(
+      qdmi::CustomProperty::Custom3);
+  if (!readout) {
+    return readout.takeError();
+  }
+  std::vector<ProgramCapability> capabilities(payload->capabilities().begin(),
+                                              payload->capabilities().end());
+  if (matchesMetadata(*readout, "mqt.readout.v1:measured:physical")) {
+    capabilities.push_back({.id = "mqt.readout.v1", .value = 1});
+  } else if (matchesMetadata(*readout, "mqt.readout.v1:all:virtual")) {
+    capabilities.push_back({.id = "mqt.readout.v1", .value = 2});
+  } else if (*readout) {
+    const auto bytes = StringRef(
+        reinterpret_cast<const char*>((*readout)->data()), (*readout)->size());
+    if (bytes.starts_with("mqt.readout.v1:")) {
+      return createStringError("Invalid mqt.readout.v1 metadata");
+    }
+  }
+  payload =
+      PayloadSpecification::create(payload->format(), std::move(capabilities),
+                                   payload->optionalCapabilitiesKnown());
+  if (!payload) {
+    return payload.takeError();
+  }
   return TargetEnvironment(*target, std::move(*payload));
 }
 
@@ -848,6 +872,18 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
   }
   const auto& a = compiled.payloadSpecification();
   const auto& b = destination.payloadSpecification();
+  const auto readout =
+      [](const PayloadSpecification& payload) -> std::optional<uint64_t> {
+    for (const auto& capability : payload.capabilities()) {
+      if (capability.id == "mqt.readout.v1") {
+        return capability.value;
+      }
+    }
+    return std::nullopt;
+  };
+  if (readout(a) != readout(b)) {
+    return incompatible("receiver readout contract differs");
+  }
   const bool versionsCompatible =
       a.versionRange() && b.versionRange()
           ? a.versionRange()->isSubsetOf(*b.versionRange())
@@ -918,10 +954,28 @@ Error validateSerializationOptions(
   return Error::success();
 }
 
+static void selectReadout(const TargetEnvironment& environment,
+                          std::optional<TerminalReadout>& terminalReadout,
+                          bool& physicalQubits) {
+  for (const auto& capability :
+       environment.payloadSpecification().capabilities()) {
+    if (capability.id == "mqt.readout.v1") {
+      terminalReadout = capability.value == 2 ? TerminalReadout::All
+                                              : TerminalReadout::Measured;
+      physicalQubits = capability.value != 2;
+    }
+  }
+  if (!terminalReadout &&
+      environment.payloadSpecification().format().id == "iqm-json") {
+    terminalReadout = TerminalReadout::Measured;
+  }
+}
+
 Expected<CompiledProgram> CompiledProgram::compile(
     CompilerInput program, const TargetEnvironment& environment,
     const CompilationOptions& options,
     std::optional<TerminalReadout> terminalReadout, bool physicalQubits) {
+  selectReadout(environment, terminalReadout, physicalQubits);
   if (auto error = validateSerializationOptions(environment, terminalReadout,
                                                 physicalQubits)) {
     return std::move(error);
@@ -960,6 +1014,7 @@ Expected<CompiledProgram> CompiledProgram::compile(
 Expected<CompiledProgram> CompiledProgram::serialize(
     QCProgram program, const TargetEnvironment& environment,
     std::optional<TerminalReadout> terminalReadout, bool physicalQubits) {
+  selectReadout(environment, terminalReadout, physicalQubits);
   if (auto error = validateSerializationOptions(environment, terminalReadout,
                                                 physicalQubits)) {
     return std::move(error);
@@ -968,7 +1023,6 @@ Expected<CompiledProgram> CompiledProgram::serialize(
   if (!format) {
     return format.takeError();
   }
-  const bool qasm = *format == QDMI_PROGRAM_FORMAT_QASM3;
   const auto context = program.context();
   CompilerDiagnostics diagnostics(context.get());
   if (failed(program.cleanup())) {
@@ -992,34 +1046,30 @@ Expected<CompiledProgram> CompiledProgram::serialize(
     }
   }
   attachTargetEnvironment(program.module(), environment);
-  if (qasm || *format == QDMI_PROGRAM_FORMAT_QASM2) {
-    auto source = qasm ? std::move(program).intoOpenQASM3(physicalQubits)
-                       : std::move(program).intoOpenQASM2();
-    if (succeeded(source)) {
-      return CompiledProgram(environment, std::move(*source).intoSource(),
-                             *format, std::move(layout));
-    }
-  } else if (*format == QDMI_PROGRAM_FORMAT_IQMJSON) {
-    auto source = std::move(program).intoIQMJSON(environment.target());
-    if (succeeded(source)) {
-      return CompiledProgram(environment, std::move(*source).intoSource(),
-                             *format, std::move(layout));
-    }
-  } else {
-    const auto qirProfile = (*format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
-                             *format == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
-                                ? QIRProfile::Adaptive
-                                : QIRProfile::Base;
-    auto qir = std::move(program).intoQIR(qirProfile);
-    if (succeeded(qir)) {
-      auto payload = serializeQIR(std::move(*qir), *format);
-      if (!payload) {
-        return payload.takeError();
-      }
-      return CompiledProgram(environment, std::move(*payload), *format,
-                             std::move(layout));
-    }
+  auto output = environment.payloadSpecification().compilerOutput();
+  if (!output) {
+    return output.takeError();
   }
+  auto exported = exportQCProgram(std::move(program), *output, &environment, {},
+                                  physicalQubits);
+  if (succeeded(exported)) {
+    if (auto* qasm = std::get_if<OpenQASMProgram>(&*exported)) {
+      return CompiledProgram(environment, std::move(*qasm).intoSource(),
+                             *format, std::move(layout));
+    }
+    if (auto* json = std::get_if<IQMJSONProgram>(&*exported)) {
+      return CompiledProgram(environment, std::move(*json).intoSource(),
+                             *format, std::move(layout));
+    }
+    auto payload =
+        serializeQIR(std::move(std::get<QIRProgram>(*exported)), *format);
+    if (!payload) {
+      return payload.takeError();
+    }
+    return CompiledProgram(environment, std::move(*payload), *format,
+                           std::move(layout));
+  }
+
   return diagnostics.takeError(
       std::make_error_code(std::errc::invalid_argument));
 }
@@ -1112,11 +1162,6 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
   auto compiled = compileProgram(std::move(program), device, format, options);
   if (!compiled) {
     return compiled.takeError();
-  }
-  if (compiled->resultLayout()) {
-    return createStringError(std::errc::invalid_argument,
-                             "compile the program explicitly and retain its "
-                             "result layout before submission");
   }
   return submitPayload(device, *compiled, numShots, custom1, custom2, custom3,
                        custom4, custom5);

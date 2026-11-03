@@ -612,6 +612,13 @@ using CompilerProgram =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,
                  QIRProgram, IQMJSONProgram>;
 
+/// Prepare and export native QC using the selected output format.
+[[nodiscard]] FailureOr<CompilerProgram>
+exportQCProgram(QCProgram program, ProgramFormat output,
+                const TargetEnvironment* environment,
+                const CompilationOptions& options = {},
+                bool physicalQubits = true);
+
 /// Run the coordinated default compiler pipeline.
 ///
 /// The supplied program is consumed. Call `copy()` before this function

@@ -2820,7 +2820,7 @@ Args:
     qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
         Custom pipelines require no target.
     options: Shared compilation controls.
-    terminal_readout: Canonical terminal measurements, or None to preserve outputs.
+    terminal_readout: Canonical terminal measurements, or None for receiver defaults.
     physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 
 Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
@@ -2851,7 +2851,7 @@ Args:
     program: A native Qiskit circuit or QC program with static target sites.
     target: The destination device, registered device ID, CompilerTarget, or TargetEnvironment.
     program_format: Exact payload format; required for CompilerTarget.
-    terminal_readout: Measure only selected sites or all addressed sites.
+    terminal_readout: Readout for offline targets; device requirements take precedence.
     physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 )pb");
 
@@ -2867,7 +2867,8 @@ Args:
 ``target`` accepts a registered device ID or an open device. For source input,
 ``program_format`` selects the exact QDMI execution format, including text or
 binary QIR; omitting it selects a supported native format. A compiled program
-retains its payload and must match the destination contract.)pb");
+retains its payload and must match the destination contract. Job results are raw;
+apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb");
 }
 
 } // namespace mqt

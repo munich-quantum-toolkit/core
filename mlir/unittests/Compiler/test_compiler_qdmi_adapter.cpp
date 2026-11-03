@@ -1370,6 +1370,63 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, SnapshotsReceiverReadoutRequirements) {
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      query;
+  static thread_local std::string metadata;
+  query = api->device_session_query_device_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_device_property = query; });
+  api->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) -> int {
+    if (property != QDMI_DEVICE_PROPERTY_CUSTOM3) {
+      return query(session, property, size, value, sizeRet);
+    }
+    if (sizeRet != nullptr) {
+      *sizeRet = metadata.size() + 1;
+    }
+    if (value != nullptr) {
+      if (size <= metadata.size()) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, metadata.c_str(), metadata.size() + 1);
+    }
+    return QDMI_SUCCESS;
+  };
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; bit[2] c; c[1] = measure $0; c[0] = measure $1;"));
+  metadata = "unrelated vendor property";
+  auto plain = llvm::cantFail(
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3));
+  metadata = "mqt.readout.v1:all:virtual";
+  auto environment = llvm::cantFail(
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3));
+  auto compiled = mlir::CompiledProgram::serialize(program.copy(), environment);
+  MQT_ASSERT_SUCCESS(compiled);
+  ASSERT_TRUE(compiled->resultLayout());
+  EXPECT_EQ(llvm::cantFail(compiled->resultLayout()->decodeBits("10")), "01");
+  EXPECT_EQ(compiled->payload().find('$'), std::string::npos);
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::validateTargetCompatibility(environment, plain)));
+  metadata = "mqt.readout.v1:measured:physical";
+  auto physical = llvm::cantFail(
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3));
+  compiled = mlir::CompiledProgram::serialize(program.copy(), physical);
+  MQT_ASSERT_SUCCESS(compiled);
+  EXPECT_NE(compiled->payload().find('$'), std::string::npos);
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(environment, physical)));
+  metadata = "mqt.readout.v1:invalid";
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3)
+          .takeError()));
+}
+
 TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
   const auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
@@ -1379,6 +1436,7 @@ TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
       "c[0] = measure $0;"));
   for (const auto format : {
            QDMI_PROGRAM_FORMAT_QASM3,
+           QDMI_PROGRAM_FORMAT_QASM2,
            QDMI_PROGRAM_FORMAT_QIRBASESTRING,
            QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
@@ -1400,10 +1458,12 @@ TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
       llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
           QDMI_PROGRAM_FORMAT_IQMJSON)));
   auto nativeIqm = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
-      "OPENQASM 3; bit[1] c; c[0] = measure $0;"));
+      "OPENQASM 3; bit[2] c; c[1] = measure $0; c[0] = measure $0;"));
   auto iqmPayload =
       mlir::CompiledProgram::serialize(std::move(nativeIqm), iqmEnvironment);
   MQT_ASSERT_SUCCESS(iqmPayload);
+  ASSERT_TRUE(iqmPayload->resultLayout());
+  EXPECT_EQ(llvm::cantFail(iqmPayload->resultLayout()->decodeBits("1")), "11");
   const auto json = llvm::cantFail(llvm::json::parse(iqmPayload->payload()));
   EXPECT_EQ(json.getAsObject()->getArray("instructions")->size(), 1);
   const mlir::TargetEnvironment qasm(

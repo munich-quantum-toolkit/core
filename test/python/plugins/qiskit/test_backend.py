@@ -25,7 +25,7 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core.mlir import sample, serialize_program
+from mqt.core.mlir import CompiledProgram, sample, serialize_program
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -623,8 +623,8 @@ def test_iqm_serializer_uses_device_site_names() -> None:
     serializer = program_serializer(ProgramFormat.IQM_JSON)
     assert serializer is not None
     payload = serializer(circuit, backend)
-    assert isinstance(payload, str)
-    instructions = json.loads(payload)["instructions"]
+    assert isinstance(payload, CompiledProgram)
+    instructions = json.loads(payload.payload)["instructions"]
     site = backend.device.sites()[0].name()
     assert instructions == [
         {"name": "prx", "locus": [site], "args": {"angle": 0.731, "phase": -0.419}},
