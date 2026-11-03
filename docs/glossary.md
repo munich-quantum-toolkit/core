@@ -347,10 +347,9 @@ value semantics
 
 wire correspondence
   The relation between an operation's input and output quantum values that
-  continue the same qubit identities. QCO's `WireOpInterface` exposes positional
-  quantum ranges for unitary operations, measurement, reset, and branches.
-  Classical operands and results are excluded. SWAP exchanges quantum states
-  while preserving wire correspondence.
+  continue the same qubit identities. QCO exposes this positional relation
+  through `WireOpInterface`. SWAP exchanges quantum states while preserving wire
+  correspondence.
 
 linear semantics
 linear ownership

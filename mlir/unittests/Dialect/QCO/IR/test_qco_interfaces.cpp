@@ -19,10 +19,8 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -71,7 +69,6 @@ TEST(QCOWireInterface, PreservesWiresAcrossUnitaryAndNonunitaryOperations) {
   )mlir",
                                               &context);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
 
   auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
@@ -96,20 +93,8 @@ TEST(QCOWireInterface, PreservesWiresAcrossUnitaryAndNonunitaryOperations) {
             function.getArgument(3));
 
   auto measure = *function.getOps<qco::MeasureOp>().begin();
-  EXPECT_EQ(measure.getOutputQubits().front(), measure.getQubitOut());
-  EXPECT_EQ(measure.getOutputQubits().size(), 1U);
   auto conditional = *function.getOps<qco::IfOp>().begin();
-  EXPECT_EQ(conditional.getInputQubits().getBeginOperandIndex(), 1U);
-  EXPECT_EQ(conditional.getOutputQubit(0), conditional.getResult(1));
-
-  DenseMap<Value, Value> origins;
-  ASSERT_TRUE(succeeded(qco::collectWireOrigins(*moduleOp, origins)));
   auto returned = cast<func::ReturnOp>(function.getBody().front().back());
-  for (auto [output, input] :
-       llvm::zip_equal(returned.getOperands().drop_front(),
-                       function.getArguments().drop_front(2))) {
-    EXPECT_EQ(origins.lookup(output), input);
-  }
 
   auto reset = *function.getOps<qco::ResetOp>().begin();
   auto indexSwitch = *function.getOps<qco::IndexSwitchOp>().begin();

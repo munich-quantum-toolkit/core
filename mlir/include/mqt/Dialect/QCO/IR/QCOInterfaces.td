@@ -55,14 +55,8 @@ def WireOpInterface : OpInterface<"WireOpInterface"> {
 
 def UnitaryOpInterface : OpInterface<"UnitaryOpInterface", [WireOpInterface]> {
   let description = [{
-        This interface provides a unified API for all operations that apply or
-        produce a unitary transformation in the QCO dialect. This includes base
-        gates, user-defined gates, modifier operations (control, inverse, power),
-        and sequences.
-
-        The interface enables uniform introspection and composition capabilities
-        across all unitary operations with value semantics.
-
+        Describes unitary transformations in QCO, including base gates,
+        user-defined gates, and modifiers (control, inverse, power).
         Wire access and correspondence are inherited from `WireOpInterface`.
 
         Gate parameters must be finite, including values produced at runtime.
