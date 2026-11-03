@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -214,6 +215,8 @@ def test_retry_shot_copies_preserves_order_and_tracking(
 @pytest.mark.parametrize("compiled", [False, True])
 def test_openqasm2_execution(*, compiled: bool) -> None:
     """The shared compiler supports OpenQASM 2 in both PennyLane paths."""
+    if compiled and find_spec("catalyst") is None:
+        pytest.skip("Install Catalyst to run compiled device tests.")
     device = QDMIDevice("mqt.ddsim.default", wires=2, program_format=ProgramFormat.QASM2)
 
     @qp.qnode(device, shots=16)
