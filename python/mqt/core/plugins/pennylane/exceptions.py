@@ -19,8 +19,6 @@ __all__ = [
     "PennyLaneConfigurationError",
     "PennyLaneExecutionError",
     "PennyLaneTranslationError",
-    "PennyLaneUnsupportedFormatError",
-    "PennyLaneUnsupportedOperationError",
     "PennyLaneValidationError",
     "QDMIPluginError",
 ]
@@ -44,14 +42,6 @@ class PennyLaneValidationError(QDMIPluginError):
 
 class PennyLaneTranslationError(QDMIPluginError):
     """Raised when a PennyLane program cannot be translated."""
-
-
-class PennyLaneUnsupportedFormatError(PennyLaneTranslationError):
-    """Raised when a device advertises no supported exchange format."""
-
-
-class PennyLaneUnsupportedOperationError(PennyLaneTranslationError):
-    """Raised when an operation cannot be represented for the selected device."""
 
 
 class PennyLaneExecutionError(QDMIPluginError):

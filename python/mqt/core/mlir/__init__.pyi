@@ -10,10 +10,11 @@
 
 import enum
 import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from typing import Annotated, Any, Literal, Self, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
 
 import numpy as np
+import pennylane.tape
 import qiskit.circuit
 import qiskit.providers
 import qiskit.transpiler
@@ -22,6 +23,7 @@ from numpy.typing import NDArray
 import mqt.core.dd
 import mqt.core.plugins.qiskit.backend
 import mqt.core.qdmi
+from mqt.core.mlir import _pennylane as _pennylane
 from mqt.core.qdmi import Device
 
 _CompilerInput: TypeAlias = (
@@ -869,6 +871,20 @@ class QCProgram(Program):
             native: Whether the circuit is already compiled for a device. Fixes circuit
                 indices to device qubits and preserves gate names and operands without
                 importing definitions. The caller validates device support and placements.
+        """
+
+    @staticmethod
+    def from_pennylane(tape: pennylane.tape.QuantumScript, *, wires: Sequence[Hashable] | None = None) -> QCProgram:
+        """Translate a preprocessed PennyLane {py:class}`~pennylane.tape.QuantumScript` to QC MLIR.
+
+        The tape must contain supported native gates after decomposition, measurement
+        basis rotations, and mid-circuit measurement deferral. All wires are measured
+        and returned in the supplied order (the tape's wire order by default).
+        PennyLane's terminal measurements are evaluated from these samples by the device.
+
+        Args:
+            tape: Preprocessed tape to import.
+            wires: Wire order for the measured results. Defaults to the tape's wire order.
         """
 
     def copy(self) -> QCProgram:
@@ -1870,6 +1886,24 @@ def serialize_program(
     Args:
         program: A native Qiskit circuit or QC program with static target sites.
         target: The destination device, registered device ID, or TargetEnvironment.
+    """
+
+def try_submit_programs(
+    programs: Sequence[CompiledProgram],
+    *,
+    target: object,
+    num_shots: int = 1024,
+    custom1: str | bool | float | bytes | None = None,
+    custom2: str | bool | float | bytes | None = None,
+    custom3: str | bool | float | bytes | None = None,
+    custom4: str | bool | float | bytes | None = None,
+    custom5: str | bool | float | bytes | None = None,
+) -> mqt.core.qdmi.Job | None:
+    """Submit compatible compiled programs together when supported.
+
+    Returns ``None`` if the provider declines a multi-program job before submission.
+    Programs must share a payload format. ``target`` accepts a device ID or an open
+    device. Other validation or submission failures raise an exception.
     """
 
 def submit_program(

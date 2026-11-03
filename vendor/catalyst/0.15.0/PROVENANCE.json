@@ -1,0 +1,18 @@
+{
+  "component": "Catalyst runtime device ABI headers",
+  "embedded_version": "0.15.0",
+  "license": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/PennyLaneAI/catalyst",
+    "commit": "3126674625638fee8413d5828b24d2b074a0aeb4",
+    "tag": "v0.15.0",
+    "directory": "runtime/include"
+  },
+  "files": {
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "include/DataView.hpp": "7c1989c9897edb4924505aa871ccba3232e052f3bacded40e04397dc0894219b",
+    "include/Exception.hpp": "cfb8a97b5b43fd485e3015bb5ce62bbc2ccf87744cd5c016c6f0215539eed53f",
+    "include/QuantumDevice.hpp": "571c7e5635889ba5d173ff3d6bd928f326b1fdf4f099bb19939e2c7ee6ddcfca",
+    "include/Types.h": "1095985e3ddaaa74992965336591d673ab1737998f235514ae94815b293ad991"
+  }
+}

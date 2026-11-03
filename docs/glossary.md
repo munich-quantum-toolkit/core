@@ -168,7 +168,8 @@ Quantum Intermediate Representation
   **Preferred term:** Quantum Intermediate Representation. **Accepted
   abbreviation:** QIR. An
   [LLVM-based representation and runtime interface](https://www.qir-alliance.org/)
-  for exchanging and executing quantum programs.
+  for exchanging and executing quantum programs. Refer to its Base Profile and
+  Adaptive Profile as Base Profile QIR and Adaptive Profile QIR.
 
 TUM
 Technical University of Munich
