@@ -3107,37 +3107,62 @@ TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
 }
 
 TEST_F(TargetSynthesisTest, MergesDiagonalPairsWithoutCrossingBarriers) {
-  for (bool barrier : {false, true}) {
-    SCOPED_TRACE(barrier);
-    const std::string source = std::string(R"mlir(
+  for (const auto& [gate, wire, expectedRotations] : {
+           std::tuple{"rz", 0U, 1U},
+           std::tuple{"h", 3U, 1U},
+           std::tuple{"h", 0U, 3U},
+           std::tuple{"h", 1U, 3U},
+           std::tuple{"barrier", 0U, 3U},
+           std::tuple{"barrier", 3U, 3U},
+       }) {
+    SCOPED_TRACE(gate);
+    SCOPED_TRACE(wire);
+    auto original = mlir::parseSourceString<ModuleOp>(R"mlir(
       module {
-        func.func @main(%a: f64, %b: f64) -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        func.func @main(%a: f64, %b: f64)
+            -> (!qco.qubit, !qco.qubit, !qco.qubit, !qco.qubit) {
           %q0 = qco.static 0 : !qco.qubit
           %q1 = qco.static 1 : !qco.qubit
           %q2 = qco.static 2 : !qco.qubit
+          %q3 = qco.static 3 : !qco.qubit
           %negative = arith.negf %a : f64
           %u0, %u1 = qco.rzz(%a) %q0, %q1 : !qco.qubit, !qco.qubit
           %v1, %v2 = qco.rzz(%b) %u1, %q2 : !qco.qubit, !qco.qubit
-    )mlir") +
-                               (barrier ? R"mlir(
-          %v0 = qco.barrier %u0 : !qco.qubit
-    )mlir"
-                                        : R"mlir(
-          %v0 = qco.rz(%b) %u0 : !qco.qubit
-    )mlir") + R"mlir(
-          %out0, %out1 = qco.rzz(%negative) %v0, %v1 : !qco.qubit, !qco.qubit
-          return %out0, %out1, %v2 : !qco.qubit, !qco.qubit, !qco.qubit
+          %out0, %out1 = qco.rzz(%negative) %u0, %v1 : !qco.qubit, !qco.qubit
+          return %out0, %out1, %v2, %q3
+              : !qco.qubit, !qco.qubit, !qco.qubit, !qco.qubit
         }
       }
-    )mlir";
-    auto original = mlir::parseSourceString<ModuleOp>(source, context.get());
+    )mlir",
+                                                      context.get());
     ASSERT_TRUE(original);
+    auto function = mainFunction(*original);
+    auto first = *function.getOps<mlir::qco::RZZOp>().begin();
+    Value input = wire == 3 ? function.front().getTerminator()->getOperand(3)
+                            : first->getResult(wire);
+    mlir::OpBuilder builder(first);
+    builder.setInsertionPointAfter(first);
+    Value output;
+    if (llvm::StringRef(gate) == "rz") {
+      output =
+          RZOp::create(builder, first.getLoc(), input, function.getArgument(1));
+    } else if (llvm::StringRef(gate) == "h") {
+      output = HOp::create(builder, first.getLoc(), input);
+    } else {
+      output = mlir::qco::BarrierOp::create(builder, first.getLoc(),
+                                            ValueRange{input})
+                   ->getResult(0);
+    }
+    input.replaceAllUsesExcept(output, output.getDefiningOp());
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*original)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*original)));
     auto fused = OwningOpRef<ModuleOp>(original->clone());
     mlir::PassManager manager(context.get());
     manager.addPass(mlir::qco::createFuseTwoQubitGates());
     ASSERT_TRUE(mlir::succeeded(manager.run(*fused)));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*fused)));
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*fused)));
-    EXPECT_EQ(countOps<mlir::qco::RZZOp>(*fused), barrier ? 3U : 1U);
+    EXPECT_EQ(countOps<mlir::qco::RZZOp>(*fused), expectedRotations);
     for (const auto& angles : {std::array{.31, -.43}, std::array{-7.1, 2.4}}) {
       auto expected = OwningOpRef<ModuleOp>(original->clone());
       auto actual = OwningOpRef<ModuleOp>(fused->clone());

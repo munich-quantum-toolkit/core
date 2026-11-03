@@ -713,7 +713,16 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
           }
           if (!body || !isa<IdOp, ZOp, SOp, SdgOp, TOp, TdgOp, RZOp, POp, RZZOp,
                             GPhaseOp>(body.getOperation())) {
-            flush();
+            if (!isMemoryEffectFree(&operation) ||
+                operation.getNumRegions() != 0 || isa<BarrierOp>(operation)) {
+              flush();
+            } else {
+              // End only the touched wire segments; later outputs get fresh
+              // IDs.
+              for (Value input : gate.getInputQubits()) {
+                wires.erase(input);
+              }
+            }
             continue;
           }
           SmallVector<size_t, 2> operands;
