@@ -40,7 +40,10 @@ namespace mlir::qco::decomposition {
 
 using mqt::PauliAxis;
 
-/// Merge equal diagonal rotations across diagonal gates on other pairs.
+/// Merge equal diagonal rotations across diagonal gates and disjoint pure leaf
+/// gates.
+///
+/// Barriers, side effects, and unsupported region operations stop merging.
 void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp);
 
 /// A quarter-turn Clifford C that maps from to the requested Pauli axis.
