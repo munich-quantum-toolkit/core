@@ -301,8 +301,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     a greedy layout when available, then identity if a slot remains, and random
     layouts for the remaining slots. Every trial uses `niterations` refinement
     rounds before scoring; zero scores the initial layouts directly.
-    It defaults to the number of available logical CPUs reported by LLVM, taking
-    CPU affinity into account, with a minimum of one. Disabling multithreading
+    The defaults are at least eight trials and two refinement rounds. The trial
+    count uses the number of available logical CPUs reported by LLVM, taking CPU
+    affinity into account, with a minimum of eight. Disabling multithreading
     runs the same trials sequentially; it does not reduce the trial count.
     If compiled with multi-threading on, these trials will be executed in parallel.
     Set both `ntrials` and `seed` explicitly for reproducible results across
@@ -347,26 +348,29 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     target compilation diagnoses unsupported native operations. Scoring and final
     routing use the same traversal hooks and first-SWAP cost guidance.
   }];
-  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "20",
-                        "The number of lookahead steps.">,
-                 Option<"alpha", "alpha", "float", "1.0F",
-                        "The alpha cost factor. Must be finite and > 0.">,
-                 Option<"lambda", "lambda", "float", "0.5F",
-                        "The lambda factor in the cost function.">,
-                 Option<"niterations", "niterations", "std::size_t", "1",
-                        "The number of forwards and backwards traversal to "
-                        "improve the initial layout. Must be >= 0.">,
-                 Option<"ntrials", "ntrials", "std::size_t",
-                        "llvm::hardware_concurrency().compute_thread_count()",
-                        "The total number of greedy/identity/random trials of "
-                        "the forwards and backwards mechanism. Defaults to "
-                        "the available logical CPU count. Must be > 0.">,
-                 Option<"seed", "seed", "std::size_t", "42",
-                        "A seed used for randomization.">,
-                 Option<"searchMemoryLimit", "search-memory-limit", "size_t",
-                        "256UL * 1024 * 1024",
-                        "Estimated node and layout bytes per search. "
-                        "Zero disables node expansion.">];
+  let options =
+      [Option<"nlookahead", "nlookahead", "std::size_t", "20",
+              "The number of lookahead steps.">,
+       Option<"alpha", "alpha", "float", "1.0F",
+              "The alpha cost factor. Must be finite and > 0.">,
+       Option<"lambda", "lambda", "float", "0.5F",
+              "The lambda factor in the cost function.">,
+       Option<"niterations", "niterations", "std::size_t", "2",
+              "The number of forwards and backwards traversal to "
+              "improve the initial layout. Must be >= 0.">,
+       Option<
+           "ntrials", "ntrials", "std::size_t",
+           "std::max(8U, llvm::hardware_concurrency().compute_thread_count())",
+           "The total number of greedy/identity/random trials of "
+           "the forwards and backwards mechanism. Defaults to "
+           "the available logical CPU count, with a minimum of 8. "
+           "Must be > 0.">,
+       Option<"seed", "seed", "std::size_t", "42",
+              "A seed used for randomization.">,
+       Option<"searchMemoryLimit", "search-memory-limit", "size_t",
+              "256UL * 1024 * 1024",
+              "Estimated node and layout bytes per search. "
+              "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }

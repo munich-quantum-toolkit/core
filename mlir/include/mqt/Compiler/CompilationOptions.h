@@ -18,10 +18,11 @@ namespace mlir {
 
 /// Controls for native placement and routing.
 struct MappingOptions {
-  /// Positive trial count; omission uses the available logical CPU count.
+  /// Positive trial count; omission uses the available logical CPU count, with
+  /// a minimum of 8.
   std::optional<size_t> trials;
   /// Forward/backward refinement rounds; zero scores each start directly.
-  size_t iterations = 1;
+  size_t iterations = 2;
   /// Additional two-qubit gates considered during routing; zero disables
   /// lookahead.
   size_t lookahead = 20;
