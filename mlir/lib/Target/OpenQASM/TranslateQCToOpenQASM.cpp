@@ -2453,7 +2453,7 @@ private:
     auto first = cast<qc::MeasureOp>(operations.front());
     auto reg = measurementStores.at(first).getReg();
     const auto& destination = resources.at(reg);
-    if (operations.size() != destination.width) {
+    if (std::cmp_not_equal(operations.size(), destination.width)) {
       return false;
     }
     auto load = first.getQubit().getDefiningOp<memref::LoadOp>();
@@ -3049,9 +3049,6 @@ private:
       }
       targets.push_back(std::move(*qubit));
     }
-    if (body.getNumArguments() != targets.size()) {
-      return fail(modifier, "modifier target and body argument counts differ");
-    }
     for (const auto [argument, target] :
          llvm::zip_equal(body.getArguments(), targets)) {
       valueNames[argument] = target;
@@ -3135,15 +3132,6 @@ private:
     DenseSet<Value> captured;
     SmallVector<std::pair<Value, Attribute>> exponents;
     const auto walk = modifier.getRegion().walk([&](Operation* operation) {
-      for (auto operand : operation->getOperands()) {
-        if (isa<QubitType>(operand.getType()) &&
-            !modifier.getRegion().isAncestor(operand.getParentRegion())) {
-          std::ignore = fail(
-              modifier,
-              "multi-operation modifier bodies cannot capture extra qubits");
-          return WalkResult::interrupt();
-        }
-      }
       if (auto power = dyn_cast<PowOp>(operation)) {
         auto exponent = mqt::valueToConstantAttr(power.getExponent());
         if (!exponent) {
