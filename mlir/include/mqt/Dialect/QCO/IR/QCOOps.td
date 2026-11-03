@@ -100,8 +100,9 @@ def StaticOp : QCOOp<"static", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def MeasureOp
-    : QCOOp<"measure", [Pure, DeclareOpInterfaceMethods<
-                                  OpAsmOpInterface, ["getAsmResultNames"]>]> {
+    : QCOOp<"measure", [Pure, WireOpInterface,
+                        DeclareOpInterfaceMethods<
+                            OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Measure a qubit in the computational basis";
   let description = [{
         Measures a qubit in the computational (Z) basis, collapsing the state
@@ -118,9 +119,22 @@ def MeasureOp
   let assemblyFormat = [{
         $qubit_in `:` type($qubit_in) attr-dict
     }];
+  let extraClassDeclaration = [{
+    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
+    OperandRange getInputQubits() { return getOperation()->getOperands(); }
+    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+    ResultRange getOutputQubits() { return getResults().take_front(1); }
+    Value getInputForOutput(Value output) {
+      return output == getQubitOut() ? getQubitIn() : Value{};
+    }
+    Value getOutputForInput(Value input) {
+      return input == getQubitIn() ? getQubitOut() : Value{};
+    }
+  }];
 }
 
-def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
+def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure,
+                              WireOpInterface]> {
   let summary = "Reset a qubit to |0⟩ state";
   let description = [{
         Resets a qubit to the |0⟩ state, regardless of its current state,
@@ -136,6 +150,18 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
   let hasFolder = 1;
+  let extraClassDeclaration = [{
+    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
+    OperandRange getInputQubits() { return getOperation()->getOperands(); }
+    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+    ResultRange getOutputQubits() { return getOperation()->getResults(); }
+    Value getInputForOutput(Value output) {
+      return output == getQubitOut() ? getQubitIn() : Value{};
+    }
+    Value getOutputForInput(Value input) {
+      return input == getQubitIn() ? getQubitOut() : Value{};
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1563,7 +1589,7 @@ def IfOp
                     DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
                     SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
-                    AttrSizedResultSegments]> {
+                    AttrSizedResultSegments, WireOpInterface]> {
 
   let summary = "If-then-else operation with classical and linear results";
   let description = [{
@@ -1626,6 +1652,13 @@ def IfOp
            CArg<"function_ref<Value(Value)>", "nullptr">:$elseBuilder)>];
 
   let extraClassDeclaration = [{
+        Value getInputQubit(size_t i) { return getQubits()[i]; }
+        OperandRange getInputQubits() { return getQubits(); }
+        Value getOutputQubit(size_t i) { return getLinearResults()[i]; }
+        ResultRange getOutputQubits() { return getLinearResults(); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+
         /// Return the then-block.
         Block *thenBlock() {
           return &getThenRegion().back();
@@ -1705,7 +1738,7 @@ def IndexSwitchOp
                     DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
                     SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
-                    AttrSizedResultSegments]> {
+                    AttrSizedResultSegments, WireOpInterface]> {
 
   let summary =
       "Index-based switch operation with classical and linear results";
@@ -1783,6 +1816,13 @@ def IndexSwitchOp
            "function_ref<Value(Value)>":$defaultBuilder)>];
 
   let extraClassDeclaration = [{
+        Value getInputQubit(size_t i) { return getTargets()[i]; }
+        OperandRange getInputQubits() { return getTargets(); }
+        Value getOutputQubit(size_t i) { return getLinearResults()[i]; }
+        ResultRange getOutputQubits() { return getLinearResults(); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+
         /// Return the number of case regions
         size_t getNumCases();
 
