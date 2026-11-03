@@ -487,6 +487,9 @@ Other build dependencies must also be available offline. For manual SDK
 installation or a custom LLVM/MLIR build, follow the [`setup-mlir`] or
 [`portable-mlir-toolchain`] instructions.
 
+A custom LLVM/MLIR SDK must be built with position-independent code
+(`-DLLVM_ENABLE_PIC=ON`) for the shared native compiler library.
+
 ### Making MLIR Available to the Build
 
 To select an installed SDK, point the build system to it by setting the CMake

@@ -43,49 +43,63 @@
 using llvm::createStringError;
 using llvm::Expected;
 
-static llvm::cl::OptionCategory benchmarkOptions("Benchmark options");
-static llvm::cl::SubCommand listCommand("list",
-                                        "List the available benchmarks");
-static llvm::cl::SubCommand
-    describeCommand("describe",
-                    "Describe one benchmark instance specification schema");
-static llvm::cl::SubCommand
-    generateCommand("generate", "Generate one configured benchmark");
-static llvm::cl::SubCommand
-    evaluateCommand("evaluate", "Evaluate counts against a manifest");
+namespace {
+struct BenchmarkOptions {
+  llvm::cl::OptionCategory benchmarkOptions{"Benchmark options"};
+  llvm::cl::SubCommand listCommand{"list", "List the available benchmarks"};
+  llvm::cl::SubCommand describeCommand{
+      "describe", "Describe one benchmark instance specification schema"};
+  llvm::cl::SubCommand generateCommand{"generate",
+                                       "Generate one configured benchmark"};
+  llvm::cl::SubCommand evaluateCommand{"evaluate",
+                                       "Evaluate counts against a manifest"};
 
-static llvm::cl::opt<std::string> benchmarkId(llvm::cl::Positional,
-                                              llvm::cl::desc("<id>"),
-                                              llvm::cl::Required,
-                                              llvm::cl::cat(benchmarkOptions),
-                                              llvm::cl::sub(describeCommand));
+  llvm::cl::opt<std::string> benchmarkId{
+      llvm::cl::Positional, llvm::cl::desc("<id>"), llvm::cl::Required,
+      llvm::cl::cat(benchmarkOptions), llvm::cl::sub(describeCommand)};
 
-static llvm::cl::opt<std::string> instanceSpecificationPath(
-    "instance-specification",
-    llvm::cl::desc(
-        "Instance specification JSON file, or '-' for standard input"),
-    llvm::cl::value_desc("file|-"), llvm::cl::Required,
-    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+  llvm::cl::opt<std::string> instanceSpecificationPath{
+      "instance-specification",
+      llvm::cl::desc(
+          "Instance specification JSON file, or '-' for standard input"),
+      llvm::cl::value_desc("file|-"),
+      llvm::cl::Required,
+      llvm::cl::cat(benchmarkOptions),
+      llvm::cl::sub(generateCommand)};
 
-static llvm::cl::opt<std::string> outputFormat(
-    "format", llvm::cl::desc("Generated program format: qc or jeff"),
-    llvm::cl::value_desc("qc|jeff"), llvm::cl::Required,
-    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+  llvm::cl::opt<std::string> outputFormat{
+      "format",
+      llvm::cl::desc("Generated program format: qc or jeff"),
+      llvm::cl::value_desc("qc|jeff"),
+      llvm::cl::Required,
+      llvm::cl::cat(benchmarkOptions),
+      llvm::cl::sub(generateCommand)};
 
-static llvm::cl::opt<std::string> outputDirectory(
-    "output", llvm::cl::desc("Directory for the program and manifest"),
-    llvm::cl::value_desc("directory"), llvm::cl::Required,
-    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+  llvm::cl::opt<std::string> outputDirectory{
+      "output",
+      llvm::cl::desc("Directory for the program and manifest"),
+      llvm::cl::value_desc("directory"),
+      llvm::cl::Required,
+      llvm::cl::cat(benchmarkOptions),
+      llvm::cl::sub(generateCommand)};
 
-static llvm::cl::opt<std::string> manifestInputPath(
-    "manifest", llvm::cl::desc("Benchmark manifest JSON file"),
-    llvm::cl::value_desc("file"), llvm::cl::Required,
-    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
+  llvm::cl::opt<std::string> manifestInputPath{
+      "manifest",
+      llvm::cl::desc("Benchmark manifest JSON file"),
+      llvm::cl::value_desc("file"),
+      llvm::cl::Required,
+      llvm::cl::cat(benchmarkOptions),
+      llvm::cl::sub(evaluateCommand)};
 
-static llvm::cl::opt<std::string> countsInputPath(
-    "counts", llvm::cl::desc("Counts JSON file, or '-' for standard input"),
-    llvm::cl::value_desc("file|-"), llvm::cl::Required,
-    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
+  llvm::cl::opt<std::string> countsInputPath{
+      "counts",
+      llvm::cl::desc("Counts JSON file, or '-' for standard input"),
+      llvm::cl::value_desc("file|-"),
+      llvm::cl::Required,
+      llvm::cl::cat(benchmarkOptions),
+      llvm::cl::sub(evaluateCommand)};
+};
+} // namespace
 
 [[nodiscard]] static Expected<std::string> readText(const std::string& path) {
   auto buffer = path == "-" ? llvm::MemoryBuffer::getSTDIN()
@@ -317,56 +331,50 @@ publish(mqt::bench::GeneratedBenchmark generated, const std::string_view format,
   return 0;
 }
 
-[[nodiscard]] static Expected<int>
-generateFromInstanceSpecification(const std::string& instanceSpecification,
-                                  const std::string& source) {
-  auto generated = mqt::bench::generate(instanceSpecification, source);
-  if (mlir::failed(generated)) {
-    return 1;
-  }
-  return publish(std::move(*generated), outputFormat,
-                 std::filesystem::path(outputDirectory.getValue()));
-}
-
-static Expected<int> run() {
-  if (listCommand) {
+static Expected<int> run(const BenchmarkOptions& cli) {
+  if (cli.listCommand) {
     llvm::outs() << mqt::bench::listBenchmarksJSON() << '\n';
     return 0;
   }
-  if (describeCommand) {
-    auto result = mqt::bench::describeBenchmarkJSON(benchmarkId);
+  if (cli.describeCommand) {
+    auto result = mqt::bench::describeBenchmarkJSON(cli.benchmarkId);
     if (!result) {
       return result.takeError();
     }
     llvm::outs() << *result << '\n';
     return 0;
   }
-  if (generateCommand) {
-    auto instanceSpecification = readText(instanceSpecificationPath);
+  if (cli.generateCommand) {
+    auto instanceSpecification = readText(cli.instanceSpecificationPath);
     if (!instanceSpecification) {
       return instanceSpecification.takeError();
     }
-    const auto source = instanceSpecificationPath == "-"
+    const auto source = cli.instanceSpecificationPath == "-"
                             ? "<stdin>"
-                            : instanceSpecificationPath.getValue();
-    return generateFromInstanceSpecification(*instanceSpecification, source);
+                            : cli.instanceSpecificationPath.getValue();
+    auto generated = mqt::bench::generate(*instanceSpecification, source);
+    if (mlir::failed(generated)) {
+      return 1;
+    }
+    return publish(std::move(*generated), cli.outputFormat,
+                   std::filesystem::path(cli.outputDirectory.getValue()));
   }
-  if (evaluateCommand) {
-    if (manifestInputPath == "-") {
+  if (cli.evaluateCommand) {
+    if (cli.manifestInputPath == "-") {
       return createStringError("--manifest requires a file path");
     }
-    auto manifest = readText(manifestInputPath);
+    auto manifest = readText(cli.manifestInputPath);
     if (!manifest) {
       return manifest.takeError();
     }
-    auto counts = readText(countsInputPath);
+    auto counts = readText(cli.countsInputPath);
     if (!counts) {
       return counts.takeError();
     }
     const auto countsSource =
-        countsInputPath == "-" ? "<stdin>" : countsInputPath.getValue();
+        cli.countsInputPath == "-" ? "<stdin>" : cli.countsInputPath.getValue();
     auto result = mqt::bench::evaluateJSON(*manifest, *counts,
-                                           manifestInputPath, countsSource);
+                                           cli.manifestInputPath, countsSource);
     if (!result) {
       return result.takeError();
     }
@@ -383,11 +391,12 @@ extern "C" MQT_CORE_NATIVE_COMPILER_EXPORT int mqtCoreRunBench(int argc,
 #else
 int main(int argc, char** argv) {
 #endif
-  llvm::cl::HideUnrelatedOptions(benchmarkOptions);
+  BenchmarkOptions cli;
+  llvm::cl::HideUnrelatedOptions(cli.benchmarkOptions);
   llvm::cl::ParseCommandLineOptions(
       argc, argv, "Generate and evaluate structured quantum benchmarks\n");
 
-  auto result = run();
+  auto result = run(cli);
   if (!result) {
     llvm::errs() << llvm::toString(result.takeError()) << '\n';
     return 1;

@@ -16,7 +16,7 @@ mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)
 
 # The executable that generates and evaluates configured benchmarks.
 set(native_compiler ${MQT_CORE_TARGET_NAME}-native-compiler)
-if(SKBUILD AND TARGET ${native_compiler})
+if(TARGET ${native_compiler})
   target_sources(${native_compiler} PRIVATE MQTCoreBench.cpp)
   target_compile_definitions(${native_compiler} PRIVATE MQT_CORE_SHARED_BENCHMARK)
   target_link_libraries(${native_compiler} PRIVATE MQT::CoreBenchGenerate MLIRSupport)
