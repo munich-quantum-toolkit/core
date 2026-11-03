@@ -65,17 +65,15 @@ ResultLayout::decodeBits(llvm::StringRef raw) const {
   return result;
 }
 
-FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
-                                                 TerminalReadout readout) {
+FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
   auto function = mqt::getEntryPoint(moduleOp);
   if (!function || !llvm::hasSingleElement(function.getBody())) {
-    return moduleOp.emitError(
-        "terminal readout requires a straight-line entry function");
+    return failure();
   }
   auto& block = function.getBody().front();
   auto returnOp = dyn_cast<func::ReturnOp>(block.getTerminator());
   if (!returnOp || returnOp.getNumOperands() == 0) {
-    return function.emitError("terminal readout requires bit-register outputs");
+    return failure();
   }
 
   struct Register {
@@ -85,25 +83,20 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
   DenseMap<Value, Register> registers;
   std::map<size_t, Value> measuredSites;
   SmallVector<Operation*> oldReadout;
-  size_t addressWidth = 0;
   for (auto& operation : block.without_terminator()) {
-    if (auto qubit = dyn_cast<qc::StaticOp>(operation)) {
-      if (!qubit.getQubit().use_empty()) {
-        addressWidth =
-            std::max(addressWidth, static_cast<size_t>(qubit.getIndex()) + 1);
-      }
-    } else if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
+    if (isa<qc::StaticOp>(operation)) {
+      continue;
+    }
+    if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
       auto qubit = measurement.getQubit().getDefiningOp<qc::StaticOp>();
       if (!qubit) {
-        return measurement.emitError("terminal readout requires static qubits");
+        return failure();
       }
       if (!llvm::all_of(
               measurement.getResult().getUsers(), [&](Operation* user) {
                 return isa<cbit::StoreOp>(user) && user->getBlock() == &block;
               })) {
-        return measurement.emitError(
-            "terminal readout requires measurement results stored directly "
-            "in top-level bit registers");
+        return failure();
       }
       const auto site = static_cast<size_t>(qubit.getIndex());
       measuredSites.try_emplace(site, qubit.getQubit());
@@ -124,61 +117,53 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
       if (!index || *index < 0 || reg == registers.end() ||
           static_cast<size_t>(*index) >= reg->second.sites.size() ||
           !measurement) {
-        return store.emitError("terminal readout requires direct measurements "
-                               "at static bit destinations");
+        return failure();
       }
       reg->second.sites[static_cast<size_t>(*index)] = static_cast<size_t>(
           measurement.getQubit().getDefiningOp<qc::StaticOp>().getIndex());
       oldReadout.push_back(&operation);
-    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
-      if (!measuredSites.empty() || call.getNumResults() != 0 ||
-          !llvm::all_of(call.getOperandTypes(), [](Type type) {
-            return type.isF64() || isa<qc::QubitType>(type);
-          })) {
-        return call.emitError(
-            "terminal readout only supports gate calls before measurements");
-      }
     } else if (isa<arith::ConstantOp, qc::BarrierOp>(operation)) {
       continue;
-    } else if (isa<qc::UnitaryOpInterface, qc::ResetOp>(operation)) {
+    } else if (isa<qc::UnitaryOpInterface, qc::ResetOp, func::CallOp>(
+                   operation)) {
+      if (auto call = dyn_cast<func::CallOp>(operation);
+          call &&
+          (call.getNumResults() != 0 ||
+           !llvm::any_of(call.getOperandTypes(),
+                         [](Type type) { return isa<qc::QubitType>(type); }) ||
+           !llvm::all_of(call.getOperandTypes(), [](Type type) {
+             return type.isF64() || isa<qc::QubitType>(type);
+           }))) {
+        return failure();
+      }
       for (auto operand : operation.getOperands()) {
         if (!isa<qc::QubitType>(operand.getType())) {
           continue;
         }
         auto qubit = operand.getDefiningOp<qc::StaticOp>();
         if (!qubit || measuredSites.contains(qubit.getIndex())) {
-          return operation.emitError(
-              "terminal readout requires gates on unmeasured static qubits");
+          return failure();
         }
       }
     } else {
-      return operation.emitError(
-          "terminal readout requires gates and direct bit stores");
+      return failure();
     }
   }
   ResultLayout layout;
   for (auto output : returnOp.getOperands()) {
     auto reg = registers.find(output);
     if (reg == registers.end()) {
-      return returnOp.emitError(
-          "terminal readout requires bit-register outputs");
+      return failure();
     }
     for (auto site : reg->second.sites) {
       if (!site && !reg->second.zeroInitialized) {
-        return returnOp.emitError(
-            "terminal readout has an undefined output bit");
+        return failure();
       }
       layout.bits.push_back(site);
     }
   }
-  if (readout == TerminalReadout::All) {
-    for (size_t site = 0; site < addressWidth; ++site) {
-      measuredSites.try_emplace(site, Value{});
-    }
-  }
   if (measuredSites.empty()) {
-    return returnOp.emitError(
-        "terminal readout requires at least one measured qubit");
+    return failure();
   }
 
   OpBuilder builder(returnOp);
@@ -193,9 +178,6 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp,
   for (auto [site, qubit] : measuredSites) {
     const auto index = slots.size();
     slots.try_emplace(site, index);
-    if (!qubit) {
-      qubit = qc::StaticOp::create(builder, returnOp.getLoc(), site);
-    }
     auto offset = arith::ConstantIndexOp::create(builder, returnOp.getLoc(),
                                                  static_cast<int64_t>(index));
     auto bit = qc::MeasureOp::create(builder, returnOp.getLoc(), qubit);

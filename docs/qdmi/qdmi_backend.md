@@ -195,7 +195,7 @@ receiver must support it. QDMI does not negotiate QPY versions.
 A serializer takes `(circuit, backend)` and returns `str` for text formats,
 `bytes` for binary formats, or a {py:class}`~mqt.core.mlir.CompiledProgram` when
 result mapping is needed. {py:func}`~mqt.core.mlir.serialize_program` builds the
-latter without compiling and selects readout from device metadata. Provider
+latter without compiling and normalizes static terminal measurements. Provider
 packages own service-specific syntax. `run()` validates native operations,
 parameters, and placements before calling any serializer.
 

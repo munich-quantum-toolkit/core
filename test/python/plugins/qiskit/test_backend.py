@@ -25,7 +25,7 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core.mlir import CompiledProgram, sample, serialize_program
+from mqt.core.mlir import CompiledProgram, TargetEnvironment, sample, serialize_program
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -395,13 +395,10 @@ def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBacken
     assert serializer is not None
     program = serializer(qc, ddsim_backend)
 
-    assert isinstance(program, str)
-    assert "output " not in program
-    outputs = re.findall(r"bit\[(\d+)] (\w+);", program)
-    assert [int(width) for width, _ in outputs] == [1, 1, 3]
-    for width, name in outputs:
-        assert program.index(f'{name} = "{int(width) * "0"}";') < program.index("x $0;")
-    assert sample(program, shots=8) == {"01000": 8}
+    assert isinstance(program, CompiledProgram)
+    assert program.result_layout is not None
+    assert sample(program.payload, shots=8) == {"1": 8}
+    assert program.result_layout.decode_bits("1") == "01000"
     assert qc == original
 
 
@@ -638,7 +635,9 @@ def test_serializer_rejects_compiled_program_in_wrong_format(
     """Reject a serializer that labels a compiled QASM payload as QIR."""
     circuit = QuantumCircuit(1, 1)
     circuit.measure(0, 0)
-    compiled = serialize_program(circuit, target=ddsim_backend.device, program_format=ProgramFormat.QASM3)
+    compiled = serialize_program(
+        circuit, target=TargetEnvironment.from_device(ddsim_backend.device, program_format=ProgramFormat.QASM3)
+    )
     monkeypatch.setattr(
         "mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (ProgramFormat.QIR_BASE_STRING,)
     )
@@ -658,11 +657,12 @@ def test_native_submission_preserves_folded_unitary_sequence(
     assert serializer is not None
     payloads: list[str] = []
 
-    def capture(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
-        payload = serializer(circuit, backend)
-        assert isinstance(payload, str)
-        payloads.append(payload)
-        return payload
+    def capture(circuit: QuantumCircuit, backend: QDMIBackend) -> CompiledProgram:
+        program = serializer(circuit, backend)
+        assert isinstance(program, CompiledProgram)
+        assert isinstance(program.payload, str)
+        payloads.append(program.payload)
+        return program
 
     monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
     monkeypatch.setattr("mqt.core.plugins.qiskit.backend.program_serializer", lambda _: capture)

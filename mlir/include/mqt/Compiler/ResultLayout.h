@@ -23,9 +23,6 @@ template <typename T> class Expected;
 
 namespace mlir {
 
-/// Canonical terminal readout over measured sites or all addressed qubits.
-enum class TerminalReadout : uint8_t { Measured, All };
-
 /// Reconstruct logical output bits from a compiled program's binary samples.
 ///
 /// Both indices and entries use least-significant-bit-first order. An index

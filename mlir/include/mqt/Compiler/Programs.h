@@ -309,8 +309,7 @@ public:
   /// Legalize classical memory and control flow for the source format without
   /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
-  [[nodiscard]] FailureOr<OpenQASMProgram>
-  intoOpenQASM3(bool physicalQubits = true) &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
 
   /// Consume this program and emit OpenQASM 2.
   ///
@@ -611,13 +610,6 @@ using CompilerInput =
 using CompilerProgram =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,
                  QIRProgram, IQMJSONProgram>;
-
-/// Prepare and export native QC using the selected output format.
-[[nodiscard]] FailureOr<CompilerProgram>
-exportQCProgram(QCProgram program, ProgramFormat output,
-                const TargetEnvironment* environment,
-                const CompilationOptions& options = {},
-                bool physicalQubits = true);
 
 /// Run the coordinated default compiler pipeline.
 ///

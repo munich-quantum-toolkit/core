@@ -28,16 +28,14 @@ namespace qc {
 ///
 /// Non-gate helpers are inlined and array views normalized in the supplied
 /// module. Gate definitions and supported structured control flow are
-/// preserved. Static sites use physical references unless physicalQubits is
-/// false. The module is consumed even on failure. Translation is buffered: the
+/// preserved. Static sites use physical references. The module is consumed
+/// even on failure. Translation is buffered: the
 /// output stream is unchanged if the module cannot be translated.
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output,
-                                     bool physicalQubits = true);
+                                     llvm::raw_ostream& output);
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                              bool physicalQubits = true);
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
 
 /// Consume a QC module and emit OpenQASM 2 with bound parameters.
 ///

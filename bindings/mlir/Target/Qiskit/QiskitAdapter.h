@@ -1069,6 +1069,12 @@ public:
     }
     if (opaque && kind == OperationKind::Unknown) {
       const auto operation = pythonOperation(index);
+      if (nb::isinstance(
+              operation,
+              nb::module_::import_("qiskit.circuit").attr("ControlledGate")) &&
+          canUnwrapControl(operation)) {
+        return instruction(index, false);
+      }
       if (nb::isinstance(operation,
                          nb::module_::import_("qiskit.circuit").attr("Gate"))) {
         if (nb::cast<size_t>(operation.attr("num_qubits")) == 0U) {
@@ -2297,20 +2303,19 @@ public:
   NativeCircuitWriter(uint32_t looseQubits, uint32_t looseClbits,
                       std::shared_ptr<OutputParameters> parameters,
                       std::shared_ptr<NativeGateRegistry> gates,
-                      const mlir::CompilerTarget* target, bool preserveSiteIds)
+                      const mlir::CompilerTarget* target)
       : NativeCircuitWriter(qk_circuit_new(looseQubits, looseClbits),
-                            std::move(parameters), std::move(gates), {}, target,
-                            preserveSiteIds) {}
+                            std::move(parameters), std::move(gates), {},
+                            target) {}
 
   NativeCircuitWriter(QkCircuit* circuit,
                       std::shared_ptr<OutputParameters> parameters,
                       std::shared_ptr<NativeGateRegistry> gates,
                       PythonVariables variables,
-                      const mlir::CompilerTarget* target, bool preserveSiteIds)
+                      const mlir::CompilerTarget* target)
       : data_(nb::steal<nb::object>(qk_circuit_to_python(circuit))),
         variables_(std::move(variables)), parameters_(std::move(parameters)),
-        gates_(std::move(gates)), target_(target),
-        preserveSiteIds_(preserveSiteIds) {
+        gates_(std::move(gates)), target_(target) {
     if (!data_.is_valid()) {
       throwPythonError("Qiskit failed to construct output CircuitData");
     }
@@ -2328,7 +2333,7 @@ public:
     return std::make_unique<NativeCircuitWriter>(
         qk_circuit_copy_empty_like(circuit_, QkVarsMode_Drop,
                                    QkBlocksMode_Drop),
-        parameters_, gates_, variables_, target_, preserveSiteIds_);
+        parameters_, gates_, variables_, target_);
   }
 
   void addQuantumRegister(std::string_view name, uint32_t size) override {
@@ -2418,10 +2423,7 @@ public:
             std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
               return std::ranges::equal(
                   tuple.sites(), qubits, {}, {}, [&](uint32_t qubit) {
-                    return preserveSiteIds_
-                               ? static_cast<mlir::CompilerTarget::SiteId>(
-                                     qubit)
-                               : target_->siteForVertex(qubit);
+                    return static_cast<mlir::CompilerTarget::SiteId>(qubit);
                   });
             })) {
           gate = candidate;
@@ -3011,7 +3013,6 @@ private:
   std::shared_ptr<OutputParameters> parameters_;
   std::shared_ptr<NativeGateRegistry> gates_;
   const mlir::CompilerTarget* target_;
-  bool preserveSiteIds_;
 };
 
 class NativeTranslation final : public VersionedTranslation {
@@ -3332,16 +3333,15 @@ public:
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
-                const mlir::CompilerTarget* target,
-                bool preserveSiteIds) const override {
+                const mlir::CompilerTarget* target) const override {
     if (target != nullptr &&
         std::ranges::none_of(target->operations(), [](const auto& operation) {
           return operation.name() != operation.canonicalName();
         })) {
       target = nullptr;
     }
-    return std::make_unique<NativeCircuitWriter>(
-        looseQubits, looseClbits, parameters_, gates_, target, preserveSiteIds);
+    return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
+                                                 parameters_, gates_, target);
   }
 
   void registerCustomGate(std::string_view symbol, std::string_view name,

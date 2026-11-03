@@ -55,8 +55,8 @@ from importlib.metadata import entry_points
 from io import BytesIO
 from typing import TYPE_CHECKING, Protocol
 
-from mqt.core.mlir import CompiledProgram, CompilerTarget, QCProgram, QIRProfile, serialize_program
-from mqt.core.qdmi import CustomProperty, ProgramFormat
+from mqt.core.mlir import CompiledProgram, serialize_program
+from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -156,29 +156,15 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
 )
 
 
-def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str | CompiledProgram:
-    """Export validated native operations and device sites through MQT Core.
+def _serialize_native(
+    circuit: QuantumCircuit, backend: QDMIBackend, *, program_format: ProgramFormat
+) -> CompiledProgram:
+    """Serialize native operations using the backend's cached format snapshot.
 
     Returns:
-        OpenQASM 3 preserving the circuit's classical outputs.
+        The payload and its logical readout layout.
     """
-    readout = backend.device.query_custom_property(CustomProperty.CUSTOM3, bytes)
-    if readout is not None and readout.startswith(b"mqt.readout.v1:"):
-        return serialize_program(circuit, target=backend.device, program_format=ProgramFormat.QASM3)
-    return QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
-
-
-def _serialize_to_qasm2(circuit: QuantumCircuit, _backend: QDMIBackend) -> str:
-    """Serialize a circuit into an OpenQASM 2 program.
-
-    Args:
-        circuit: The circuit to serialize.
-        _backend: The backend whose native placements constrain the circuit.
-
-    Returns:
-        The OpenQASM 2 program.
-    """
-    return QCProgram.from_qiskit(circuit, native=True).to_openqasm2().source
+    return serialize_program(circuit, target=backend.serialization_environment(program_format))
 
 
 def _serialize_to_qpy(circuit: QuantumCircuit, _backend: QDMIBackend) -> bytes:
@@ -195,41 +181,19 @@ def _serialize_to_qpy(circuit: QuantumCircuit, _backend: QDMIBackend) -> bytes:
         return buffer.getvalue()
 
 
-def _serialize_to_qir(
-    circuit: QuantumCircuit, _backend: QDMIBackend, *, adaptive: bool = False, binary: bool = False
-) -> str | bytes:
-    """Export device gate calls as QIR text or bitcode.
-
-    Returns:
-        The selected QIR encoding, with circuit indices as device qubits.
-    """
-    program = QCProgram.from_qiskit(circuit, native=True).to_qir(QIRProfile.ADAPTIVE if adaptive else QIRProfile.BASE)
-    return program.to_bitcode() if binary else program.to_llvm_ir()
-
-
-def _serialize_to_iqm_json(circuit: QuantumCircuit, backend: QDMIBackend) -> CompiledProgram:
-    """Export PRX/CZ gates and terminal measurements using device site names.
-
-    Returns:
-        An IQM circuit object in JSON.
-    """
-    return serialize_program(
-        circuit,
-        target=CompilerTarget.from_device(backend.device),
-        program_format=ProgramFormat.IQM_JSON,
-    )
-
-
 _FALLBACKS: dict[ProgramFormat, ProgramSerializer] = {
-    ProgramFormat.QASM2: _serialize_to_qasm2,
-    ProgramFormat.QASM3: _serialize_to_qasm3,
-    ProgramFormat.QPY: _serialize_to_qpy,
-    ProgramFormat.IQM_JSON: _serialize_to_iqm_json,
-    ProgramFormat.QIR_BASE_STRING: _serialize_to_qir,
-    ProgramFormat.QIR_BASE_MODULE: partial(_serialize_to_qir, binary=True),
-    ProgramFormat.QIR_ADAPTIVE_STRING: partial(_serialize_to_qir, adaptive=True),
-    ProgramFormat.QIR_ADAPTIVE_MODULE: partial(_serialize_to_qir, adaptive=True, binary=True),
+    fmt: partial(_serialize_native, program_format=fmt)
+    for fmt in (
+        ProgramFormat.QASM2,
+        ProgramFormat.QASM3,
+        ProgramFormat.IQM_JSON,
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    )
 }
+_FALLBACKS[ProgramFormat.QPY] = _serialize_to_qpy
 
 
 class _ProgramSerializerRegistry:

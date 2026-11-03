@@ -853,17 +853,6 @@ def test_compile_and_serialize_with_device_environment() -> None:
     assert job.wait()
     assert sum(job.get_counts().values()) == 8
 
-    with pytest.raises(ValueError, match="already selects"):
-        serialize_program(native, target=environment, program_format=ProgramFormat.QASM3)
-
-    qir_environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
-    unconsumed = compile_program(QASM_STRING, output=OutputFormat.QC_IMPORT)
-    with pytest.raises(ValueError, match="virtual qubit addressing"):
-        compile_program(unconsumed, target=qir_environment, physical_qubits=False)
-    assert unconsumed.is_valid
-    with pytest.raises(ValueError, match="virtual qubit addressing"):
-        compile_program([], target=qir_environment, physical_qubits=False)
-
 
 def test_explicit_output_preserves_environment_payload_version() -> None:
     """The receiver's version constraint applies to explicit and implicit output."""
@@ -2510,3 +2499,15 @@ def test_sample_imported_native_cu3() -> None:
     source = 'OPENQASM 3; include "stdgates.inc"; const uint[8] zero=0; x $1; cu3(pi,0,zero) $1,$0; bit[2] c;'
     source += " c[0]=measure $0; c[1]=measure $1;"
     assert sample(source, shots=16, seed=71) == {"11": 16}
+
+
+def test_source_submission_requires_explicit_result_layout() -> None:
+    """Source-only submission cannot discard nonidentity classical destinations."""
+    source = "OPENQASM 3; qubit[2] q; bit[2] c; x q[0]; c[1] = measure q[0]; c[0] = measure q[1];"
+    with pytest.raises(ValueError, match="Compile explicitly and retain the result layout"):
+        submit_program(source, target="mqt.ddsim.default", num_shots=4)
+    compiled = compile_program(source, target="mqt.ddsim.default")
+    assert compiled.result_layout is not None
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
+    assert job.wait()
+    assert {compiled.result_layout.decode_bits(bits): count for bits, count in job.get_counts().items()} == {"10": 4}

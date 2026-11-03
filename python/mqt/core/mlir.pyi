@@ -54,8 +54,6 @@ class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
     options: CompilationOptions
-    terminal_readout: TerminalReadout | None
-    physical_qubits: bool
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -185,6 +183,10 @@ class PayloadSpecification:
         capabilities: Sequence[ProgramCapability] = [],
         optional_capabilities_known: bool = False,
     ) -> None: ...
+    @staticmethod
+    def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification:
+        """The standard contract for a QDMI program format."""
+
     @property
     def format(self) -> PayloadFormat:
         """The selected payload format and receiver-version constraint."""
@@ -893,7 +895,7 @@ class QCProgram(Program):
             copy: Export a copy of the program.
         """
 
-    def to_openqasm3(self, *, physical_qubits: bool = True, copy: bool = False) -> OpenQASMProgram:
+    def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
         """Emit this QC program as OpenQASM 3.
 
         Classical memory and control flow are legalized for the source format. Use
@@ -902,7 +904,6 @@ class QCProgram(Program):
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
         Args:
-            physical_qubits: Emit static sites as physical references rather than a virtual register.
             copy: Preserve the source program by exporting a copy.
         """
 
@@ -1499,11 +1500,6 @@ def _operation_parameter_constraints(
 ) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
     """Parse the temporary QDMI operation parameter constraints."""
 
-class TerminalReadout(enum.Enum):
-    MEASURED = 0
-
-    ALL = 1
-
 class ResultLayout:
     """Reconstruct logical bits from receiver samples."""
 
@@ -1795,8 +1791,6 @@ def compile_program(
         qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
             Custom pipelines require no target.
         options: Shared compilation controls.
-        terminal_readout: Canonical terminal measurements, or None for receiver defaults.
-        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 
     Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
     (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
@@ -1806,26 +1800,17 @@ def compile_program(
     """
 
 def serialize_program(
-    program: QCProgram | qiskit.circuit.QuantumCircuit,
-    *,
-    target: CompilerTarget | TargetEnvironment | mqt.core.qdmi.Device | str,
-    program_format: mqt.core.qdmi.ProgramFormat | None = None,
-    terminal_readout: TerminalReadout | None = None,
-    physical_qubits: bool = True,
+    program: QCProgram | qiskit.circuit.QuantumCircuit, *, target: TargetEnvironment | mqt.core.qdmi.Device | str
 ) -> CompiledProgram:
     """Serialize an already native circuit without compiling or routing it.
 
-    The caller supplies validated native operations and placements. Optional
-    terminal readout retains a logical result layout and rejects feedback or gates
-    after measurement. Without it, the format retains its supported classical and
-    control-flow behavior. Inputs remain reusable.
+    The caller supplies validated native operations and placements. Static programs
+    use canonical terminal readout and retain their logical result layout. Dynamic
+    programs retain their classical outputs. Inputs remain reusable.
 
     Args:
         program: A native Qiskit circuit or QC program with static target sites.
-        target: The destination device, registered device ID, CompilerTarget, or TargetEnvironment.
-        program_format: Exact payload format; required for CompilerTarget.
-        terminal_readout: Readout for offline targets; device requirements take precedence.
-        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
+        target: The destination device, registered device ID, or TargetEnvironment.
     """
 
 def submit_program(

@@ -18,6 +18,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
@@ -274,12 +275,26 @@ private:
                               [&] { stream.value(siteNames_.at(*qubit)); });
         stream.attributeObject("args", [&] {
           stream.attributeBegin("angle");
-          stream.rawValue(
-              [&](llvm::raw_ostream& out) { out << llvm::APFloat(*angle); });
+          stream.rawValue([&](llvm::raw_ostream& out) {
+            llvm::SmallString<32> number;
+            llvm::APFloat(*angle).toString(number);
+            out << number;
+            if (!number.contains('.') && !number.contains('E') &&
+                !number.contains('e')) {
+              out << ".0";
+            }
+          });
           stream.attributeEnd();
           stream.attributeBegin("phase");
-          stream.rawValue(
-              [&](llvm::raw_ostream& out) { out << llvm::APFloat(*phase); });
+          stream.rawValue([&](llvm::raw_ostream& out) {
+            llvm::SmallString<32> number;
+            llvm::APFloat(*phase).toString(number);
+            out << number;
+            if (!number.contains('.') && !number.contains('E') &&
+                !number.contains('e')) {
+              out << ".0";
+            }
+          });
           stream.attributeEnd();
         });
       });

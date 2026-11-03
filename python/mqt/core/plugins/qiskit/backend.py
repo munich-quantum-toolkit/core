@@ -38,6 +38,7 @@ from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit.circuit import (
+    Barrier,
     BreakLoopOp,
     ContinueLoopOp,
     ControlFlowOp,
@@ -59,7 +60,13 @@ from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
-from mqt.core.mlir import CompiledProgram, _operation_parameter_constraints
+from mqt.core.mlir import (
+    CompiledProgram,
+    CompilerTarget,
+    PayloadSpecification,
+    TargetEnvironment,
+    _operation_parameter_constraints,
+)
 from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -268,6 +275,7 @@ class QDMIBackend(BackendV2):
         self.last_job: QDMIJob | None = None
 
         self._target = self._build_target()
+        self._serialization_environments: dict[ProgramFormat, TargetEnvironment] = {}
 
     @classmethod
     def from_device_id(
@@ -385,6 +393,14 @@ class QDMIBackend(BackendV2):
         """
         return self._native_width
 
+    def serialization_environment(self, program_format: ProgramFormat) -> TargetEnvironment:
+        """Return the cached native serialization contract for a format."""
+        if program_format not in self._serialization_environments:
+            self._serialization_environments[program_format] = TargetEnvironment(
+                CompilerTarget.from_device(self.device), PayloadSpecification.from_program_format(program_format)
+            )
+        return self._serialization_environments[program_format]
+
     def _build_target(self) -> Target:
         """Construct a Qiskit Target from device capabilities.
 
@@ -438,6 +454,8 @@ class QDMIBackend(BackendV2):
                 stacklevel=2,
             )
 
+        if "barrier" not in target.operation_names:
+            target.add_instruction(Barrier, name="barrier")
         return target
 
     def _add_operation_to_target(
@@ -455,6 +473,9 @@ class QDMIBackend(BackendV2):
             op: The device operation to add.
             seen_gate_names: Names represented by earlier operations (mutated in place).
             native: Also represent opaque gates with a fixed advertised arity.
+
+        Raises:
+            UnsupportedOperationError: If parameter bounds are invalid.
         """
         op_name = op.name().lower()
 
@@ -505,6 +526,15 @@ class QDMIBackend(BackendV2):
             target.add_instruction(gate, properties)
             return
         for index, (fixed, bounds) in enumerate(alternatives):
+            for parameter, bound in enumerate(bounds):
+                fixed_value = fixed[parameter] if fixed else None
+                if bound is not None and (
+                    not all(isfinite(value) for value in bound)
+                    or bound[0] > bound[1]
+                    or (fixed_value is not None and not bound[0] <= fixed_value <= bound[1])
+                ):
+                    msg = f"Invalid parameter bounds for operation {op.name()!r}"
+                    raise UnsupportedOperationError(msg)
             variant = gate.copy()
             if fixed:
                 variant.params = [

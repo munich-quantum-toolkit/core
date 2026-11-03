@@ -25,9 +25,11 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.mlir import TerminalReadout, serialize_program
+from mqt.core.mlir import TargetEnvironment, serialize_program
 from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend, QDMIJob
 from mqt.core.qdmi import Job, ProgramFormat, open_device
+
+pytestmark = pytest.mark.usefixtures("mock_device_snapshot")
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -169,10 +171,7 @@ def test_native_result_layouts(
     prepared = [
         serialize_program(
             native,
-            target=device,
-            program_format=ProgramFormat.QASM3,
-            terminal_readout=TerminalReadout.ALL,
-            physical_qubits=False,
+            target=TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3),
         )
         for native in (circuit, subset)
     ]
@@ -180,9 +179,9 @@ def test_native_result_layouts(
     monkeypatch.setattr(backend, "_serialize_circuit", serializer)
     job = backend.run([circuit, subset], shots=4, memory=memory)
     raw = ["00", "01", "10", "11"]
-    for handle in jobs:
-        handle.get_shots.side_effect = lambda _program_index=0: raw
-        handle.get_counts.side_effect = lambda _program_index=0: dict(Counter(raw))
+    for handle, samples in zip(jobs, (raw, ["0", "0", "1", "1"]), strict=True):
+        handle.get_shots.side_effect = lambda _program_index=0, samples=samples: samples
+        handle.get_counts.side_effect = lambda _program_index=0, samples=samples: dict(Counter(samples))
     result = job.result()
     assert result.get_counts("permuted") == {"00 00": 1, "10 00": 1, "00 01": 1, "10 01": 1}
     assert result.get_counts("subset") == {"00": 2, "01": 2}
@@ -201,10 +200,7 @@ def test_result_layout_rejects_mismatched_circuit_width(
     native.measure(1, 0)
     program = serialize_program(
         native,
-        target=open_device("mqt.ddsim.default"),
-        program_format=ProgramFormat.QASM3,
-        terminal_readout=TerminalReadout.ALL,
-        physical_qubits=False,
+        target=TargetEnvironment.from_device(open_device("mqt.ddsim.default"), program_format=ProgramFormat.QASM3),
     )
     assert program.result_layout is not None
     monkeypatch.setattr(backend, "_serialize_circuit", lambda *_: (program, ProgramFormat.QASM3))
@@ -224,14 +220,11 @@ def test_result_layout_rejects_malformed_raw_samples(
     circuit.measure(1, 0)
     program = serialize_program(
         circuit,
-        target=open_device("mqt.ddsim.default"),
-        program_format=ProgramFormat.QASM3,
-        terminal_readout=TerminalReadout.ALL,
-        physical_qubits=False,
+        target=TargetEnvironment.from_device(open_device("mqt.ddsim.default"), program_format=ProgramFormat.QASM3),
     )
     monkeypatch.setattr(backend, "_serialize_circuit", lambda *_args: (program, program.program_format))
     job = backend.run(circuit, shots=1, memory=True)
-    jobs[0].get_shots.side_effect = lambda _program_index=0: ["0"]
+    jobs[0].get_shots.side_effect = lambda _program_index=0: ["00"]
     with pytest.raises(JobExecutionError, match=r"(?i)(width|binary|bitstring)"):
         job.result()
 

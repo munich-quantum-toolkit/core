@@ -85,33 +85,20 @@ circuit or `QCProgram`. It serializes without synthesis, routing, or quantum
 optimization. The caller is responsible for native gate and placement validity;
 the Qiskit backend checks these before any serializer runs.
 
-Some receivers return measurements in physical-site order. For those receivers,
-`terminal_readout=TerminalReadout.MEASURED` emits one measurement for each
-selected site, in ascending site order. `TerminalReadout.ALL` measures every
-addressed site, including gaps. `physical_qubits=False` emits virtual OpenQASM
-indices instead of physical `$N` references. Device metadata selects these
-controls automatically; explicit options are useful for targets defined offline.
-
-Terminal normalization accepts flat circuits with direct measurement stores and
-untouched zero-filled slots. It supports measured subsets and destination
-permutations, coalesces repeated terminal measurements, and retains the final
-write to each classical slot. Feedback, gates on already measured qubits, and
-classical computation are rejected. General function calls must precede
-measurements. With `terminal_readout=None` (the default), device requirements
-select the readout policy. IQM JSON defaults to measured-site readout. Other
-formats retain their ordinary classical and control-flow semantics when no
-policy is advertised.
-
-Devices can advertise the temporary `QDMI_DEVICE_PROPERTY_CUSTOM3` contract as a
-NUL-terminated string: `mqt.readout.v1:measured:physical` or
-`mqt.readout.v1:all:virtual`. The snapshot retains this requirement in its
-payload capabilities and checks it when submitting to another device. An absent
-or unrelated custom property leaves the defaults intact; malformed values in
-this namespace are rejected.
+Static programs use canonical terminal readout: one register with measurements
+in ascending physical-site order. This supports measured subsets, destination
+permutations, repeated terminal measurements, and zero-filled output slots.
+Gates may follow measurements of other qubits. Dynamic programs retain their
+classical outputs; the selected exporter checks whether the receiver supports
+them. Provider transports handle service-specific requirements such as simulator
+qubit declarations and all-qubit measurement.
 
 The compiled program retains a {py:class}`~mqt.core.mlir.ResultLayout` when raw
 measurement order differs from logical output order. QDMI jobs expose raw
-results; direct callers apply this mapping:
+results; direct callers apply this mapping. Source-only `submit_program` rejects
+programs requiring a layout: compile explicitly and retain the artifact instead.
+
+Direct decoding:
 
 ```python
 from collections import Counter

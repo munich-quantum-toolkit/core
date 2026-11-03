@@ -38,7 +38,7 @@ from qiskit.circuit.library import CU3Gate, CUGate
 from qiskit.quantum_info import SparsePauliOp, Statevector
 from qiskit.transpiler import Target
 
-from mqt.core.mlir import QCProgram, compile_program
+from mqt.core.mlir import CompiledProgram, compile_program
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -52,6 +52,8 @@ from mqt.core.plugins.qiskit import (
 )
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
+
+pytestmark = pytest.mark.usefixtures("mock_device_snapshot")
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, MutableSet, Sequence
@@ -128,6 +130,9 @@ class MockQDMIDevice:
             elif name in {"rxx", "ryy", "rzz", "rzx"}:
                 self._qubits = 2
                 self._params = 1
+            elif name in {"r", "prx"}:
+                self._qubits = 1
+                self._params = 2
             elif name in {"cu", "cu3"}:
                 self._qubits = 2
                 self._params = 4 if name == "cu" else 3
@@ -277,7 +282,7 @@ class MockQDMIDevice:
         self._sites = [self.MockSite(i) for i in range(num_qubits)]
 
         if operations is None:
-            operations = ["h", "cz", "ry", "rz", "measure"]
+            operations = ["h", *(["cz"] if num_qubits >= 2 else []), "ry", "rz", "measure"]
         self._operations = [self.MockOperation(op) for op in operations]
 
         if coupling_map is not None:
@@ -388,7 +393,7 @@ def test_backend_warns_on_incomplete_operation_mapping(
     _patch_client_devices(monkeypatch, [device])
     with pytest.warns(UserWarning, match=message):
         backend = QDMIProvider().get_backend("Test Device")
-    assert set(backend.target.operation_names) == set(operations) & {"cz", "measure"}
+    assert set(backend.target.operation_names) == (set(operations) & {"cz", "measure"}) | {"barrier"}
 
 
 @pytest.mark.parametrize("alias", ["absent", "filtered", "incompatible"])
@@ -509,8 +514,9 @@ def test_qasm_preserves_float_parameters(angle: float, program_format: ProgramFo
     serializer = program_serializer(program_format)
     assert serializer is not None
     program = serializer(circuit, backend)
-    assert isinstance(program, str)
-    match = re.search(r"rx\(([^)]+)\)", program)
+    assert isinstance(program, CompiledProgram)
+    assert isinstance(program.payload, str)
+    match = re.search(r"rx\(([^)]+)\)", program.payload)
     assert match is not None
     assert float(match[1]).hex() == float(angle).hex()
 
@@ -880,7 +886,7 @@ def test_backend_qasm_serialization_failure(
         msg = f"Simulated {qasm_module_name.upper()} conversion failure"
         raise ValueError(msg)
 
-    monkeypatch.setattr(QCProgram, "from_qiskit", failing_dumps)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.serialize_program", failing_dumps)
 
     qc = QuantumCircuit(2)
     qc.cz(0, 1)

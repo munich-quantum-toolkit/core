@@ -752,7 +752,9 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
 }
 
 /// Give opaque quantum functions QIS symbols without expanding their bodies.
-static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
+static LogicalResult
+nameOpaqueQIRGates(ModuleOp moduleOp,
+                   const std::optional<CompilerTarget>& target) {
   DenseSet<Operation*> named;
   for (auto function :
        llvm::make_early_inc_range(moduleOp.getOps<func::FuncOp>())) {
@@ -792,6 +794,41 @@ static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
       return function.emitError("unsupported opaque QIR gate signature: ")
              << name;
     }
+    if (target) {
+      const auto result = moduleOp.walk([&](func::CallOp call) {
+        if (call.getCallee() != function.getSymName()) {
+          return WalkResult::advance();
+        }
+        SmallVector<CompilerTarget::SiteId> sites;
+        SmallVector<std::optional<double>> values;
+        for (auto operand : call.getOperands()) {
+          if (operand.getType().isF64()) {
+            values.push_back(mqt::valueToDouble(operand));
+          } else if (auto site = operand.getDefiningOp<qc::StaticOp>()) {
+            sites.push_back(
+                static_cast<CompilerTarget::SiteId>(site.getIndex()));
+          } else {
+            call.emitError("native QIR gates require static target sites");
+            return WalkResult::interrupt();
+          }
+        }
+        const auto* capability =
+            target->findOperation(name, sites.size(), values, sites).capability;
+        if (!capability) {
+          call.emitError("external gate is not native for the target");
+          return WalkResult::interrupt();
+        }
+        call->setAttr(qir::QIR_NATIVE_NAME_ATTR,
+                      StringAttr::get(moduleOp.getContext(),
+                                      (Twine("__quantum__qis__") +
+                                       capability->name() + "__body")
+                                          .str()));
+        return WalkResult::advance();
+      });
+      if (result.wasInterrupted()) {
+        return failure();
+      }
+    }
     auto* existing = moduleOp.lookupSymbol(symbol);
     if (existing != nullptr && existing != function) {
       auto declaration = dyn_cast<func::FuncOp>(existing);
@@ -824,9 +861,6 @@ static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                       bool allowComputedOutputs,
                                       bool deferMeasurementStores) {
-  if (failed(nameOpaqueQIRGates(cast<ModuleOp>(moduleOp)))) {
-    return failure();
-  }
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
   const TargetEnvironmentAnalysis environment(moduleOp);
   if (environment &&
@@ -868,6 +902,10 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
   });
   if (hasInvalidMemory) {
+    return failure();
+  }
+  if (failed(
+          nameOpaqueQIRGates(cast<ModuleOp>(moduleOp), state.nativeTarget))) {
     return failure();
   }
   SmallVector<func::ReturnOp> returns;

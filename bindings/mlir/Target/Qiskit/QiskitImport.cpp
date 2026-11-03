@@ -1996,9 +1996,14 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     if (!variables.reachable) {
       break;
     }
-    const auto instruction = circuit.instruction(index, gateState.native);
+    auto instruction = circuit.instruction(index, gateState.native);
     if (gateState.native && instruction.kind == OperationKind::Gate &&
         !instruction.qubits.empty()) {
+      if (instruction.standardGate && !instruction.modifiers.empty()) {
+        emitGate(builder, instruction, allQubits, qubitMap, localParameters,
+                 globalParameters);
+        continue;
+      }
       llvm::SmallVector<mlir::Value> operands;
       for (const auto& parameter : instruction.parameters) {
         operands.push_back(mlir::mqt::variantToValue(
@@ -2735,8 +2740,14 @@ void validateCircuit(const CircuitReader& circuit,
           "operations");
     }
 
-    if (native && (!instruction.modifiers.empty() ||
-                   instruction.kind == OperationKind::Unknown)) {
+    if (native && (instruction.kind == OperationKind::Unknown ||
+                   (!instruction.modifiers.empty() &&
+                    (!instruction.standardGate ||
+                     !llvm::all_of(instruction.modifiers,
+                                   [](const GateModifier& modifier) {
+                                     return modifier.kind ==
+                                            GateModifierKind::Control;
+                                   }))))) {
       throw std::runtime_error("Native import requires concrete gates; lower "
                                "annotated operations and instructions first");
     }

@@ -4751,11 +4751,6 @@ TEST_F(CompilerPipelineTest, RuntimePauliApproximationExportsOpenQASM3) {
     auto qc = std::move(*program).intoQC();
     MQT_ASSERT_SUCCESS(qc);
     auto output = std::move(*qc).intoOpenQASM3();
-    if (!branching) {
-      // Hiding implicit classical outputs requires an OpenQASM scope branch.
-      EXPECT_TRUE(failed(output));
-      continue;
-    }
     MQT_ASSERT_SUCCESS(output);
     EXPECT_TRUE(StringRef(output->source()).contains("theta"));
     EXPECT_EQ(StringRef(output->source()).contains("theta >="), branching);
@@ -7465,8 +7460,8 @@ TEST_F(CompilerPipelineTest, OpenQASMReceiverVersionFloorAndFutureMinorInput) {
     auto input = QCProgram::fromOpenQASMString(
         "OPENQASM 3.99; include \"stdgates.inc\"; qubit q; h q;");
     MQT_ASSERT_SUCCESS(input);
-    const auto payload = llvm::cantFail(PayloadSpecification::create(
-        {.id = "openqasm", .version = version}, {{.id = "forward-branching"}}));
+    const auto payload = llvm::cantFail(
+        PayloadSpecification::create({.id = "openqasm", .version = version}));
     attachTargetEnvironment(
         input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
     auto output = std::move(*input).intoOpenQASM3();

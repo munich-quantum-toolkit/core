@@ -59,7 +59,6 @@ from mqt.core.mlir import (
     ProgramCapability,
     QCProgram,
     TargetEnvironment,
-    TerminalReadout,
     compile_program,
     sample,
     serialize_program,
@@ -4298,8 +4297,8 @@ def test_named_non_f64_runtime_input_is_rejected_on_export() -> None:
     assert runtime.ir == source_ir
 
 
-def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
-    """Map large sparse target site IDs to dense physical-qubit indices."""
+def test_target_aware_qiskit_export_rejects_unrepresentable_site_ids() -> None:
+    """Reject physical site IDs outside Qiskit's supported address width."""
     target = CompilerTarget(
         "sparse target",
         [CompilerTarget.Site(10), CompilerTarget.Site(4294967296)],
@@ -4317,13 +4316,8 @@ def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
 """
     )
 
-    restored = program.to_qiskit(target=target)
-
-    assert restored.num_qubits == 2
-    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
-    assert restored.layout is None
-    assert restored.data[0].operation.name == "x"
-    assert restored.find_bit(restored.data[0].qubits[0]).index == 1
+    with pytest.raises(RuntimeError, match="target address width index cannot be represented"):
+        program.to_qiskit(target=target)
 
 
 def test_target_aware_qiskit_export_rejects_unknown_site() -> None:
@@ -4688,9 +4682,9 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     )
     target = CompilerTarget(
         "sparse line",
-        [CompilerTarget.Site(site) for site in [10, 30, 20, 40]],
+        [CompilerTarget.Site(site) for site in [0, 2, 1, 4]],
         connectivity=(
-            CompilerTarget.Connectivity([(10, 30), (30, 20), (20, 40)])
+            CompilerTarget.Connectivity([(0, 2), (2, 1), (1, 4)])
             if routed
             else CompilerTarget.Connectivity.all_to_all()
         ),
@@ -4713,10 +4707,10 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
         assert all(gate.operation.params == [np.pi / 2] for gate in exported.data if gate.operation.name == "rx")
     layout = exported.layout
     assert layout is not None
-    assert sorted(layout.initial_index_layout()) == list(range(4))
-    assert len(layout.routing_permutation()) == 4
-    assert sorted(layout.final_index_layout(filter_ancillas=False)) == list(range(4))
-    expected = QuantumCircuit(4)
+    assert sorted(layout.initial_index_layout()) == list(range(5))
+    assert len(layout.routing_permutation()) == 5
+    assert sorted(layout.final_index_layout(filter_ancillas=False)) == list(range(5))
+    expected = QuantumCircuit(5)
     expected.compose(circuit, [0, 1, 2], inplace=True)
     np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
     qc = program.to_qc()
@@ -4744,14 +4738,14 @@ def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
     restored = QCProgram.from_mlir_str(program.to_qc().ir)
     exported = restored.to_qiskit(target=target, copy=True)
     assert exported.layout is not None
-    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(circuit).data, atol=1e-12)
+    expected = QuantumCircuit(max(sites) + 1)
+    expected.compose(circuit, range(2), inplace=True)
+    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
 
     without_target = restored.to_qiskit(copy=True)
     assert without_target.layout is None
     assert without_target.num_qubits == max(sites) + 1
-    expected = QuantumCircuit(max(sites) + 1)
-    expected.compose(exported, qubits=sites, inplace=True)
-    np.testing.assert_allclose(Operator(without_target).data, Operator(expected).data, atol=1e-12)
+    np.testing.assert_allclose(Operator(without_target).data, Operator(exported).data, atol=1e-12)
 
     reversed_target = CompilerTarget(
         "reversed site order",
@@ -4761,9 +4755,7 @@ def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
     )
     reordered = restored.to_qiskit(target=reversed_target)
     assert reordered.layout is None
-    expected = QuantumCircuit(2)
-    expected.compose(exported, qubits=[1, 0], inplace=True)
-    np.testing.assert_allclose(Operator(reordered).data, Operator(expected).data, atol=1e-12)
+    np.testing.assert_allclose(Operator(reordered).data, Operator(exported).data, atol=1e-12)
 
 
 def test_native_compilation_rejects_imported_qiskit_layout() -> None:
@@ -4920,17 +4912,16 @@ def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool)
     assert sample(source, shots=8) == {"0111": 8}
 
 
-@pytest.mark.parametrize("physical", [False, True])
-def test_qiskit_native_export_preserves_sites_gate_names_and_phase(*, physical: bool) -> None:
+def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
     """Native export preserves idle-site holes and exact gate/global phases."""
     circuit = QuantumCircuit(4, global_phase=0.37)
     circuit.h(0)
     circuit.u(0.2, 0.3, 0.4, 2)
     circuit.cx(2, 0)
     circuit.sxdg(3)
-    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3(physical_qubits=physical).source
-    assert ("cx $2, $0;" if physical else "cx q[2], q[0];") in source
-    assert ("sxdg $3;" if physical else "sxdg q[3];") in source
+    source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
+    assert "cx $2, $0;" in source
+    assert "sxdg $3;" in source
     np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
 
 
@@ -5045,14 +5036,13 @@ def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
     assert circuit.metadata == {"nested": [1]}
     artifact = serialize_program(
         compiled,
-        target=compiler_target,
-        program_format=ProgramFormat.QASM3,
+        target=TargetEnvironment(compiler_target, PayloadSpecification.from_program_format(ProgramFormat.QASM3)),
     )
     payload = artifact.payload
     assert isinstance(payload, str)
     raw_counts = sample(payload, shots=8)
-    assert artifact.result_layout is None
-    assert raw_counts == {"1001": 8}
+    assert artifact.result_layout is not None
+    assert {artifact.result_layout.decode_bits(bits): count for bits, count in raw_counts.items()} == {"1001": 8}
 
 
 @pytest.mark.parametrize("rotation", ["rx", "prx"])
@@ -5079,7 +5069,7 @@ def test_compiler_target_qiskit_output_preserves_physical_sites(rotation: str) -
     assert native.num_qubits == 6
     assert native.layout is not None
     artifact = serialize_program(
-        native, target=target, program_format=ProgramFormat.QASM3, terminal_readout=TerminalReadout.MEASURED
+        native, target=TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
     )
     assert isinstance(artifact.payload, str)
     parameters = "1.0" if rotation == "rx" else "1.0, 0.0"

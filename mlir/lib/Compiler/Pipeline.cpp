@@ -28,6 +28,7 @@
 #include "mqt/Target/QIR/Export.h"
 
 #include "Diagnostics.h"
+#include "Export.h"
 
 #include "capnp/common.h"
 #include "jeff/Translation/Deserialize.hpp"
@@ -93,7 +94,7 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
-FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3(bool physicalQubits) && {
+FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
   auto storage = std::move(*this).releaseStorage();
   if (failed(runWithPassManager(
           *storage.mod,
@@ -104,8 +105,7 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3(bool physicalQubits) && {
           "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
-  auto source =
-      qc::translateQCToOpenQASM3(std::move(storage.mod), physicalQubits);
+  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
   if (failed(source)) {
     return failure();
   }
@@ -129,19 +129,15 @@ static FailureOr<IQMJSONProgram> exportIQMJSON(QIRProgram& qir,
 
 FailureOr<IQMJSONProgram>
 QCProgram::intoIQMJSON(const CompilerTarget& target) && {
-  auto source = std::move(*this);
-  if (failed(source.normalizeGlobalPhases()) ||
-      failed(runWithPassManager(
-          source.module(),
-          [](OpPassManager& pm) { pm.addPass(mqt::createDropGlobalPhases()); },
-          "failed to drop global phases for IQM JSON"))) {
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::IQMJSON)));
+  auto exported =
+      exportQCProgram(std::move(*this), ProgramFormat::IQMJSON, &environment);
+  if (failed(exported)) {
     return failure();
   }
-  auto qir = std::move(source).intoQIR(QIRProfile::Base);
-  if (failed(qir)) {
-    return failure();
-  }
-  return exportIQMJSON(*qir, target);
+  return std::move(std::get<IQMJSONProgram>(*exported));
 }
 
 FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
@@ -452,12 +448,11 @@ LogicalResult QIRProgram::writeBitcode(const std::filesystem::path& path) && {
 
 FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
                                            const TargetEnvironment* environment,
-                                           const CompilationOptions& options,
-                                           bool physicalQubits) {
+                                           const CompilationOptions& options) {
   if (output == ProgramFormat::OpenQASM3 ||
       output == ProgramFormat::OpenQASM2) {
     if (failed(runWithPassManager(qc.module(), populateQCExportPipeline,
-                                  "failed to clean up compiled QC"))) {
+                                  "failed to clean up compiled QC", options))) {
       return failure();
     }
     if (output == ProgramFormat::OpenQASM2 &&
@@ -475,7 +470,7 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
     }
     auto source = output == ProgramFormat::OpenQASM2
                       ? std::move(qc).intoOpenQASM2()
-                      : std::move(qc).intoOpenQASM3(physicalQubits);
+                      : std::move(qc).intoOpenQASM3();
     if (failed(source)) {
       return failure();
     }

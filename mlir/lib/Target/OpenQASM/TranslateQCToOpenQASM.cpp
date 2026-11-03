@@ -157,10 +157,8 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false,
-                           bool physicalQubits = true)
-      : version2_(version2), physicalQubits_(physicalQubits),
-        moduleOp(moduleOp) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
+      : version2_(version2), moduleOp(moduleOp) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -237,9 +235,6 @@ public:
     if (version2_ && failed(prepareVersion2())) {
       return failure();
     }
-    if (virtualQubits() && failed(prepareVirtualQubits())) {
-      return failure();
-    }
     for (auto gate : gateFunctions_) {
       if (failed(emitGateDefinition(gate))) {
         return failure();
@@ -255,12 +250,14 @@ public:
         failed(emitBlock(function.getBody().front()))) {
       return failure();
     }
-    if (outputs.empty() && !version2_) {
-      bodyOutput.unindent();
-      bodyOutput << "}\n";
-      --controlDepth_;
-    }
     bodyOutput.flush();
+    if (outputs.empty() && !version2_ && needsClassicalScope_) {
+      if (failed(checkBranch(function))) {
+        return failure();
+      }
+      body.insert(classicalScopeStart_, "if (true) {\n");
+      body += "}\n";
+    }
 
     if (acceptedVersions_) {
       const auto selected = acceptedVersions_->select(
@@ -327,11 +324,10 @@ private:
   std::optional<mqt::PayloadControlSupport> controlSupport_;
   uint64_t controlDepth_ = 0;
   bool version2_ = false;
-  bool physicalQubits_;
   bool implicitOutputs_ = false;
 
-  [[nodiscard]] bool virtualQubits() const { return !physicalQubits_; }
-
+  bool needsClassicalScope_ = false;
+  uint64_t classicalScopeStart_ = 0;
   std::string deviceRegister_;
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
@@ -1275,9 +1271,6 @@ private:
       }
       *output << result.kind << ' ' << result.name << ";\n";
     }
-    if (virtualQubits() && deviceWidth_ != 0) {
-      *output << "qubit[" << deviceWidth_ << "] " << deviceRegister_ << ";\n";
-    }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
       if (resource.kind == ResourceKind::Array) {
@@ -1306,21 +1299,15 @@ private:
       }
       *output << ' ' << resource.name << ";\n";
     }
-    if (outputs.empty() && !version2_) {
-      // Global classical declarations become implicit outputs on import.
-      if (failed(checkBranch(function))) {
-        return failure();
-      }
-      ++controlDepth_;
-      *output << "if (true) {\n";
-      output->indent();
-    }
+    // Only declarations introduce implicit classical outputs on re-import.
+    classicalScopeStart_ = output->tell();
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
       if (resource.kind != ResourceKind::Bit) {
         continue;
       }
       if (!resource.output) {
+        needsClassicalScope_ = true;
         *output << "bit[" << resource.width << "] " << resource.name << ";\n";
       }
       if (resource.initialization == cbit::Initialization::Zero) {
@@ -1698,11 +1685,10 @@ private:
       return found->second;
     }
     if (auto staticOp = value.getDefiningOp<qc::StaticOp>()) {
-      return (version2_ || virtualQubits())
-                 ? (Twine(deviceRegister_) + "[" + Twine(staticOp.getIndex()) +
-                    "]")
-                       .str()
-                 : (Twine('$') + Twine(staticOp.getIndex())).str();
+      return version2_ ? (Twine(deviceRegister_) + "[" +
+                          Twine(staticOp.getIndex()) + "]")
+                             .str()
+                       : (Twine('$') + Twine(staticOp.getIndex())).str();
     }
     auto load = value.getDefiningOp<memref::LoadOp>();
     if (!load || load.getIndices().size() != 1) {
@@ -2426,6 +2412,7 @@ private:
     if (!valueNames.contains(measurement.getResult())) {
       const auto name = uniqueName("b", nextBit);
       valueNames.try_emplace(measurement.getResult(), name);
+      needsClassicalScope_ |= controlDepth_ == 0;
       *output << "bit " << name << ";\n";
     }
     *output << valueNames.at(measurement.getResult()) << " = measure " << *qubit
@@ -2465,6 +2452,7 @@ private:
       }
       auto name = uniqueName("v", nextScalar);
       valueNames[value] = name;
+      needsClassicalScope_ |= controlDepth_ == 0;
       *output << *type << ' ' << name << ";\n";
     }
     return success();
@@ -2511,6 +2499,7 @@ private:
       *expression = *type + "(" + *expression + ")";
     }
     auto name = uniqueName("v", nextScalar);
+    needsClassicalScope_ |= controlDepth_ == 0;
     *output << *type << ' ' << name << " = " << *expression << ";\n";
     valueNames[value] = std::move(name);
     return success();
@@ -2528,6 +2517,7 @@ private:
         return failure();
       }
       auto name = uniqueName("tmp", nextScalar);
+      needsClassicalScope_ |= controlDepth_ == 0;
       *output << *type << ' ' << name << " = " << *expression << ";\n";
       temporaries.push_back(std::move(name));
     }
@@ -2784,6 +2774,7 @@ private:
       first = uniqueName("lower", nextScalar);
       const auto end = uniqueName("upper", nextScalar);
       // Snapshot bounds before the body can change their source storage.
+      needsClassicalScope_ |= controlDepth_ == 0;
       *output << "int[64] " << first << " = " << boundType << '('
               << *lowerExpression << ");\n";
       *output << "int[64] " << end << " = " << boundType << '('
@@ -2885,6 +2876,7 @@ private:
       return failure();
     }
     const auto conditionName = uniqueName("cond", nextScalar);
+    needsClassicalScope_ |= controlDepth_ == 0;
     *output << "bool " << conditionName << " = " << *condition << ";\n";
     if (failed(assignEdge(whileOp.getResults(), conditionOp.getArgs(),
                           conditionOp))) {
@@ -3633,20 +3625,17 @@ private:
 } // namespace
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output,
-                                     bool physicalQubits) {
+                                     llvm::raw_ostream& output) {
   if (failed(verify(*moduleOp))) {
     return failure();
   }
-  return OpenQASMEmitter(*moduleOp, false, physicalQubits).emit(output);
+  return OpenQASMEmitter(*moduleOp, false).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                              bool physicalQubits) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream,
-                                    physicalQubits))) {
+  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
     return failure();
   }
   return source;

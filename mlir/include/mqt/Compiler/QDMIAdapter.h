@@ -98,41 +98,29 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 validateTargetCompatibility(const TargetEnvironment& compiled,
                             const TargetEnvironment& destination);
 
-/// Validate preparation choices against the selected payload and target.
-[[nodiscard]] llvm::Error
-validateSerializationOptions(const TargetEnvironment& environment,
-                             std::optional<TerminalReadout> terminalReadout,
-                             bool physicalQubits);
-
 /// Compiled payload and the target used to check submission compatibility.
 class CompiledProgram {
 public:
   /// Compile and serialize for one selected hardware/payload contract.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   compile(CompilerInput program, const TargetEnvironment& environment,
-          const CompilationOptions& options = {},
-          std::optional<TerminalReadout> terminalReadout = std::nullopt,
-          bool physicalQubits = true);
+          const CompilationOptions& options = {});
 
   /// Serialize an already native program without routing or gate synthesis.
   ///
   /// The caller supplies valid native operations and placements.
-  /// Optional terminal readout retains the logical output map. Without it,
-  /// the selected format retains its supported classical and control-flow
-  /// behavior.
+  /// Static programs use canonical terminal readout and retain the logical
+  /// output map. Dynamic programs retain their classical outputs.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   serialize(QCProgram program, const TargetEnvironment& environment,
-            std::optional<TerminalReadout> terminalReadout = std::nullopt,
-            bool physicalQubits = true);
+            const CompilationOptions& options = {});
 
   /// Snapshot exact operation placements and serialize for a QDMI device.
   ///
   /// Input wires already denote target site IDs.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   serialize(QCProgram program, const qdmi::Device& device,
-            std::optional<QDMI_Program_Format> format = std::nullopt,
-            std::optional<TerminalReadout> terminalReadout = std::nullopt,
-            bool physicalQubits = true);
+            std::optional<QDMI_Program_Format> format = std::nullopt);
 
   /// Logical binary output reconstruction; absent for an identity layout.
   [[nodiscard]] const std::optional<ResultLayout>&
@@ -163,9 +151,7 @@ private:
 [[nodiscard]] llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
-               const CompilationOptions& options = {},
-               std::optional<TerminalReadout> terminalReadout = std::nullopt,
-               bool physicalQubits = true);
+               const CompilationOptions& options = {});
 
 /// Validate the destination contract before creating and submitting a QDMI job.
 /// Raw job results require decoding with the compiled result layout, if
