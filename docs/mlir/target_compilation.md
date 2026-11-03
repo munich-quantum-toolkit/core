@@ -749,15 +749,15 @@ marked as unknown. The compiler selects the emitted version from the features
 used by the program. Use `TargetEnvironment` and `PayloadSpecification` for
 staged compilation with explicit restrictions.
 
-QIR submission requires a parameterless entry point. QC-to-QIR conversion
-records direct measurements and CBit-register results, then emits runtime status
-0 for successful execution. Adaptive Profile also records computed Boolean
-(`i1`) results. All explicit QC and QCO returns are program data; other scalar
-entry results, including a constant-zero `i64`, are unsupported with or without
-a target. Keep other classical temporaries local, or select OpenQASM 3 for wider
-scalar outputs. In OpenQASM 3, declare `output bit` registers explicitly when
-global scalar variables are only temporaries. See the
-{doc}`QIR execution contracts <../qir/index>`.
+QC-to-QIR conversion requires a parameterless entry point. Bind any program
+parameters first. The converter records direct measurements and CBit-register
+results, then emits runtime status 0 for successful execution. Adaptive Profile
+also records computed Boolean (`i1`) results. All explicit QC and QCO returns
+are program data; other scalar entry results, including a constant-zero `i64`,
+are unsupported with or without a target. Keep other classical temporaries
+local, or select OpenQASM 3 for wider scalar outputs. In OpenQASM 3, declare
+`output bit` registers explicitly when global scalar variables are only
+temporaries. See the {doc}`QIR execution contracts <../qir/index>`.
 
 The adapter accepts circuit-model devices whose two-qubit operations cover every
 topology edge in at least one operand orientation and preserves the exact

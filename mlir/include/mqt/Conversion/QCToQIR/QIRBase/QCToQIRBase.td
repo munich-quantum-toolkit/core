@@ -26,7 +26,8 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
       limited to quantum resources or stores to distinct constant indices of the
       same register.
     - Input is a valid module in the QC dialect.
-    - The entry function must be marked with `mqt.entry_point`.
+    - The entry function must be marked with `mqt.entry_point` and have no arguments.
+      Bind program parameters before conversion.
     - Measurements and CBit allocations must be in the entry function.
       Returns may contain only direct measurements and direct CBit allocations.
       Other scalar program outputs are not supported.

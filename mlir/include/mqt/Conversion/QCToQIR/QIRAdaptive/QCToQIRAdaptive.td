@@ -20,7 +20,8 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     Requirements:
 
     - Input is a valid module in the QC dialect.
-    - The entry function must be marked with `mqt.entry_point` and have a single return.
+    - The entry function must be marked with `mqt.entry_point`, have no arguments,
+      and have a single return. Bind program parameters before conversion.
     - Measurements and CBit allocations must be in the entry function.
       Returns may contain direct measurements, direct CBit allocations, and
       Boolean scalar values. Other scalar program outputs are not supported.
@@ -56,8 +57,6 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
       Classical heap allocation is rejected. These operations require the
       Adaptive array capability and the stored element types.
     - Classical array indices must be in bounds. No runtime checks are inserted.
-      The metadata pass conservatively requires loop support for residual
-      dynamic array indices.
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect",
