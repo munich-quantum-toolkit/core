@@ -97,6 +97,8 @@ email = "marcel@mq.sc"
 [project.optional-dependencies]
 catalyst = [
   # Catalyst and its pinned JAX wheels support these platforms on CPython 3.11-3.14.
+  # The alpha boundary admits 0.16 development wheels as an early ABI check
+  # against the vendored 0.15 headers, while excluding 0.16 alpha releases.
   """\
   pennylane-catalyst>=0.15,<0.16.0a0; python_version<'3.15' and ((sys_platform=='linux' and \
   (platform_machine=='x86_64' or platform_machine=='aarch64')) or (sys_platform=='darwin' and \
@@ -139,7 +141,6 @@ test = [
   "qirrunner~=0.9.6",
 ]
 docs = [
-  { include-group = "catalyst" },
   "furo>=2025.12.19",
   "mlir-pygments>=1",
   "myst-nb>=1.4",
@@ -168,7 +169,6 @@ cpp-lint = [
   "nanobind~=3.1.0",
 ]
 test-base = [
-  { include-group = "catalyst" },
   "numpy>=2.1; python_version>='3.13'",
   "numpy>=2.3.2; python_version>='3.14'",
   "numpy>=2.5.2; python_version>='3.15'",

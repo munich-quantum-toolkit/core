@@ -38,7 +38,7 @@ from pennylane.transforms import defer_measurements
 from pennylane.transforms.core import CompilePipeline
 
 from mqt.core import mlir
-from mqt.core.mlir import QCProgram, TargetEnvironment, TerminalReadout, compile_program
+from mqt.core.mlir import QCProgram, compile_program
 from mqt.core.mlir._pennylane import Context
 from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneTranslationError as TranslationError
@@ -144,8 +144,6 @@ class QDMIDevice(Device):
         job_parameters: QDMI custom job keyword arguments.
         max_retries: Maximum automatic replacements per failed entry; disabled by default.
         program_format: Explicit QDMI execution format, or the device default.
-        terminal_readout: Optional canonical terminal measurements.
-        physical_qubits: Use physical OpenQASM site references.
     """
 
     config_filepath = str(Path(__file__).with_name("capabilities.toml"))
@@ -174,8 +172,6 @@ class QDMIDevice(Device):
         job_parameters: QDMIJobParameters | None = None,
         max_retries: int = 0,
         program_format: ProgramFormat | None = None,
-        terminal_readout: TerminalReadout | None = None,
-        physical_qubits: bool = True,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
@@ -186,9 +182,6 @@ class QDMIDevice(Device):
             msg = f"max_retries must be a nonnegative integer, got {max_retries!r}."
             raise ConfigurationError(msg)
         self._max_retries = int(max_retries)
-        self._program_format = program_format
-        self._terminal_readout = terminal_readout
-        self._physical_qubits = physical_qubits
         self.last_job: PennyLaneJob | None = None
         session_parameters = session_parameters.copy() if session_parameters else {}
         job_parameters = job_parameters.copy() if job_parameters else {}
@@ -230,8 +223,6 @@ class QDMIDevice(Device):
             self._context = Context(
                 self._qdmi_device,
                 program_format=program_format,
-                terminal_readout=terminal_readout,
-                physical_qubits=physical_qubits,
                 **job_parameters,
             )
         except (RuntimeError, ValueError) as exc:
@@ -269,6 +260,14 @@ class QDMIDevice(Device):
         pipeline += super().preprocess_transforms(execution_config)
         return pipeline
 
+    def _tape_wires(self, tape: QuantumScript) -> Wires:
+        """Select the logical wires needed by this tape.
+
+        Returns:
+            All device wires for an unqualified measurement, otherwise tape wires.
+        """
+        return self.wires if any(not measurement.wires for measurement in tape.measurements) else tape.wires
+
     def _prepare(self, tapes: Sequence[QuantumScript]) -> list[CompiledProgram]:
         """Compile preprocessed tapes using one snapshot of the QDMI target.
 
@@ -279,12 +278,9 @@ class QDMIDevice(Device):
             PennyLaneTranslationError: If an operation or target cannot be compiled.
         """
         try:
-            environment = TargetEnvironment.from_device(self._qdmi_device, program_format=self._program_format)
             return compile_program(
-                [QCProgram.from_pennylane(tape, wires=self.wires) for tape in tapes],
-                target=environment,
-                terminal_readout=self._terminal_readout,
-                physical_qubits=self._physical_qubits,
+                [QCProgram.from_pennylane(tape, wires=self._tape_wires(tape)) for tape in tapes],
+                target=self._context.environment,
             )
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             raise TranslationError(str(exc)) from exc

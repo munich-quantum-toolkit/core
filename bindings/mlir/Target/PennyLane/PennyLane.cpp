@@ -22,6 +22,7 @@
 #include "nanobind/stl/shared_ptr.h"
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/variant.h"
+#include "nanobind/stl/vector.h"
 
 #include <complex>
 #include <cstddef>
@@ -166,9 +167,7 @@ void registerBindings(nb::module_& m) {
                        const std::optional<PythonJobParameter>& custom3,
                        const std::optional<PythonJobParameter>& custom4,
                        const std::optional<PythonJobParameter>& custom5,
-                       std::optional<QDMI_Program_Format> programFormat,
-                       std::optional<mlir::TerminalReadout> terminalReadout,
-                       bool physicalQubits) {
+                       std::optional<QDMI_Program_Format> programFormat) {
              catalyst::JobParameters parameters{
                  ownJobParameter(custom1), ownJobParameter(custom2),
                  ownJobParameter(custom3), ownJobParameter(custom4),
@@ -176,15 +175,25 @@ void registerBindings(nb::module_& m) {
              };
              const nb::gil_scoped_release release;
              return catalyst::Context::create(
-                 std::move(device), std::move(parameters), programFormat,
-                 terminalReadout, physicalQubits);
+                 std::move(device), std::move(parameters), programFormat);
            }),
            "device"_a, nb::kw_only(), "custom1"_a = nb::none(),
            "custom2"_a = nb::none(), "custom3"_a = nb::none(),
            "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-           "program_format"_a = nb::none(), "terminal_readout"_a = nb::none(),
-           "physical_qubits"_a = true)
-      .def_prop_ro("id", &catalyst::Context::id);
+           "program_format"_a = nb::none())
+      .def_prop_ro("id", &catalyst::Context::id)
+      .def_prop_ro("environment", &catalyst::Context::environment)
+      .def("submit", &catalyst::Context::submit, "program"_a, "num_shots"_a,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "try_submit",
+          [](const catalyst::Context& context,
+             const std::vector<const mlir::CompiledProgram*>& programs,
+             int64_t shots) {
+            const nb::gil_scoped_release release;
+            return context.trySubmit(programs, shots);
+          },
+          "programs"_a, "num_shots"_a);
 
   pennylane.def(
       "samples",

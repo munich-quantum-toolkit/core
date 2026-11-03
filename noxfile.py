@@ -136,6 +136,7 @@ def _run_tests(
     session: nox.Session,
     *,
     install_args: Sequence[str] = (),
+    groups: Sequence[str] = (),
     uv_run_args: Sequence[str] = (),
     pytest_run_args: Sequence[str] = (),
 ) -> None:
@@ -164,6 +165,7 @@ def _run_tests(
         "--no-dev",  # do not auto-install dev dependencies
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
+        *(arg for group in groups for arg in ("--group", group)),
         *install_args,
         env=env,
     )
@@ -184,6 +186,12 @@ def _run_tests(
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session, pytest_run_args=["-m", "not slurm"])
+
+
+@nox.session(name="catalyst", python="3.14", reuse_venv=True)
+def catalyst(session: nox.Session) -> None:
+    """Run the optional Catalyst integration suite."""
+    _run_tests(session, groups=["catalyst"], pytest_run_args=["test/python/plugins/qdmi_pennylane"])
 
 
 @nox.session(name="catalyst-dev", python="3.14", reuse_venv=True)

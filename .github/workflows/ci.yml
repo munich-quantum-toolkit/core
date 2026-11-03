@@ -158,7 +158,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@a4b4977405c7685f95e127cdb6db396bbadce787 # v2.5.5
     with:
       runs-on: ${{ matrix.runs-on }}
-      sessions: ${{ matrix.runs-on == 'ubuntu-26.04' && '["minimums", "tests", "qiskit-compat"]' || '["minimums", "tests"]' }}
+      sessions: ${{ matrix.runs-on == 'ubuntu-26.04' && '["minimums", "tests", "qiskit-compat", "catalyst"]' || '["minimums", "tests"]' }}
       setup-mlir: true
       llvm-version: 23.1.4
     permissions:

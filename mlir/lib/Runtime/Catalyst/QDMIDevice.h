@@ -45,25 +45,27 @@ class Context {
 public:
   static std::shared_ptr<Context>
   create(qdmi::Device device, JobParameters parameters = {},
-         std::optional<QDMI_Program_Format> programFormat = std::nullopt,
-         std::optional<mlir::TerminalReadout> terminalReadout = std::nullopt,
-         bool physicalQubits = true);
+         std::optional<QDMI_Program_Format> programFormat = std::nullopt);
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;
   ~Context();
   [[nodiscard]] uint64_t id() const noexcept;
   [[nodiscard]] size_t qubits() const noexcept;
+  [[nodiscard]] std::optional<qdmi::Job>
+  trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
+            int64_t shots) const;
+  [[nodiscard]] qdmi::Job submit(const mlir::CompiledProgram& program,
+                                 int64_t shots) const;
+  [[nodiscard]] const mlir::TargetEnvironment& environment() const noexcept {
+    return environment_;
+  }
 
 private:
   explicit Context(qdmi::Device device, JobParameters parameters,
-                   std::optional<QDMI_Program_Format> programFormat,
-                   std::optional<mlir::TerminalReadout> terminalReadout,
-                   bool physicalQubits);
+                   std::optional<QDMI_Program_Format> programFormat);
   qdmi::Device device_;
   JobParameters parameters_;
   mlir::TargetEnvironment environment_;
-  std::optional<mlir::TerminalReadout> terminalReadout_;
-  bool physicalQubits_;
   size_t qubits_;
   uint64_t id_ = 0;
   friend class QDMIDevice;

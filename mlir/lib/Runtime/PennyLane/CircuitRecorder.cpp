@@ -115,11 +115,14 @@ std::vector<intptr_t> CircuitRecorder::allocate(size_t count) {
   require(count > 0 && count <= static_cast<size_t>(INTPTR_MAX) -
                                     static_cast<size_t>(nextQubit_),
           "Qubit allocation exceeds the supported range.");
-  compiler_ = mlir::createCompilerContext();
+  if (!compiler_) {
+    compiler_ = mlir::createCompilerContext();
+  }
   builder_ = std::make_unique<mlir::qc::QCProgramBuilder>(compiler_.get());
   builder_->initialize();
   auto reg = builder_->allocQubitRegister(static_cast<int64_t>(count));
   qubits_ = std::move(reg.qubits);
+  touched_.assign(count, false);
   ids_.resize(count);
   std::iota(ids_.begin(), ids_.end(), nextQubit_);
   nextQubit_ += static_cast<intptr_t>(count);
@@ -134,7 +137,6 @@ void CircuitRecorder::release(llvm::ArrayRef<intptr_t> wires) {
   builder_.reset();
   qubits_.clear();
   ids_.clear();
-  compiler_.reset();
 }
 
 void CircuitRecorder::namedOperation(const std::string& name,
@@ -164,6 +166,9 @@ void CircuitRecorder::namedOperation(const std::string& name,
   auto operands = controls;
   operands.insert(operands.end(), wires.begin(), wires.end());
   const auto indices = wireIndices(operands);
+  for (const auto index : indices) {
+    touched_[index] = true;
+  }
   if (gate->gate == Gate::Id) {
     initialState_ = false;
     return;
@@ -259,6 +264,9 @@ void CircuitRecorder::matrixOperation(
   const auto valid = mlir::succeeded(mlir::mqt::verifyDenseUnitaryMatrix(
       builder_->getInsertionBlock()->getParentOp(), values, targets));
   require(valid, "Invalid unitary matrix: " + diagnostics);
+  for (const auto index : indices) {
+    touched_[index] = true;
+  }
   emitOperation(
       indices, controls.size(), controlValues, inverse,
       [&](mlir::ValueRange qubits) { builder_->unitary(qubits, values); });
@@ -276,10 +284,15 @@ void CircuitRecorder::setBasisState(std::span<const int8_t> state,
   }
   for (size_t i = 0; i < indices.size(); ++i) {
     if (state[i] == 1) {
+      touched_[indices[i]] = true;
       builder_->x(qubits_[indices[i]]);
     }
   }
   initialState_ = false;
+}
+
+bool CircuitRecorder::hasTouchedWires() const {
+  return llvm::is_contained(touched_, true);
 }
 
 mlir::QCProgram CircuitRecorder::takeProgram() {
@@ -296,7 +309,9 @@ mlir::QCProgram CircuitRecorder::takeProgram() {
   auto bits = builder.allocClassicalBitRegister(
       static_cast<int64_t>(qubits_.size()), "c");
   for (size_t i = 0; i < qubits_.size(); ++i) {
-    builder.measure(qubits_[i], bits, static_cast<int64_t>(i));
+    if (touched_[i]) {
+      builder.measure(qubits_[i], bits, static_cast<int64_t>(i));
+    }
   }
   auto moduleOp = builder.finalize({bits});
   builder_.reset();

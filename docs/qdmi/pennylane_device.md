@@ -64,7 +64,7 @@ to finite-shot fluctuations in their relative frequencies.
 
 Add `qp.qjit` to compile a QNode with Catalyst:
 
-```{code-cell} ipython3
+```python
 compiled_device = qp.device("mqt.ddsim.default", wires=2)
 
 
@@ -93,22 +93,22 @@ expanding parameter broadcasts. MQT Core then synthesizes gates and routes the
 circuits for the selected QDMI target. Programs need not use the provider's
 native gate names or physical qubit placement. Invalid target metadata and
 unsupported target configurations fail before submission; all programs in an
-ordinary QNode batch use one snapshot of the target and are prepared before any
-jobs are submitted.
+ordinary QNode batch are prepared before any jobs are submitted. The device
+retains one target snapshot for its lifetime.
 
 The compiler selects an advertised format in this order: Adaptive Profile QIR
 binary/text, OpenQASM 3, IQM JSON, then Base Profile QIR binary/text, and
 OpenQASM 2. IQM targets must provide physical site names and supported gate
-metadata; the compiler emits terminal readout keys in logical output order.
-Results follow PennyLane's wire order regardless of physical placement. If the
-provider returns only counts, samples are reconstructed without temporal shot
-order. Terminal measurements of a compiled circuit share one provider readout.
+metadata. Terminal readout follows ascending physical site IDs; the compiled
+result layout restores logical output order. Results follow PennyLane's wire
+order regardless of physical placement. If the provider returns only counts,
+samples are reconstructed without temporal shot order. Terminal measurements of
+a compiled circuit share one provider readout.
 
-Provider helpers select `program_format`, optional `terminal_readout`, and
-OpenQASM `physical_qubits` addressing. Both ordinary QNodes and Catalyst retain
-the compiler's result layout before selecting PennyLane wires. Terminal
-normalization supports measured subsets, permutations, and zero-filled holes;
-the default preserves the selected format's broader readout semantics. See
+Ordinary QNodes compile only the tape's wires, unless a measurement requests all
+device wires. Catalyst omits readout of untouched wires and supplies their known
+zero values locally. Both paths retain the compiler's result layout before
+selecting PennyLane wires. See
 [terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 Hardware parameter constraints come from the provider's QDMI operation metadata.
@@ -134,11 +134,11 @@ print(program.to_openqasm3())
 ```
 
 The importer expects supported gates and terminal measurements. It appends
-computational-basis readout in the supplied wire order. Use PennyLane's device
-preprocessing for decomposition, basis changes, and deferred measurements. The
-resulting {py:class}`~mqt.core.mlir.QCProgram` supports compiler transformations
-and export; {py:func}`~mqt.core.mlir.compile_program` prepares it for a QDMI
-target.
+computational-basis outputs in the supplied wire order, filling untouched wires
+with zeros. Use PennyLane's device preprocessing for decomposition, basis
+changes, and deferred measurements. The resulting
+{py:class}`~mqt.core.mlir.QCProgram` supports compiler transformations and
+export; {py:func}`~mqt.core.mlir.compile_program` prepares it for a QDMI target.
 
 ## Direct generic construction
 

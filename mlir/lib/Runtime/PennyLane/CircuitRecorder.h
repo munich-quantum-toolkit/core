@@ -58,6 +58,7 @@ public:
                        const std::vector<bool>& controlValues = {});
   void setBasisState(std::span<const int8_t> state,
                      const std::vector<intptr_t>& wires);
+  [[nodiscard]] bool hasTouchedWires() const;
   [[nodiscard]] mlir::QCProgram takeProgram();
 
 private:
@@ -68,6 +69,7 @@ private:
   std::unique_ptr<mlir::qc::QCProgramBuilder> builder_;
   llvm::SmallVector<mlir::Value> qubits_;
   std::vector<intptr_t> ids_;
+  std::vector<bool> touched_;
   intptr_t nextQubit_ = 0;
   bool initialState_ = true;
 };

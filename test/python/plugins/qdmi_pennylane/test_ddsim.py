@@ -18,7 +18,7 @@ import numpy as np
 import pennylane as qp
 import pytest
 
-from mqt.core.mlir import QCProgram, TerminalReadout, submit_program
+from mqt.core.mlir import QCProgram, compile_program, submit_program
 from mqt.core.plugins.pennylane import (
     DDSIMDevice,
     PennyLaneJob,
@@ -42,10 +42,13 @@ def test_public_tape_import_returns_all_declared_wires(wires: list[str] | None, 
     tape = qp.tape.QuantumScript(
         [qp.BasisState([1], "active"), qp.QubitUnitary(np.eye(2), "idle")], [qp.sample(wires=["active"])]
     )
-    program = QCProgram.from_pennylane(tape, wires=wires)
+    program = compile_program(QCProgram.from_pennylane(tape, wires=wires), target="mqt.ddsim.default")
     job = submit_program(program, target="mqt.ddsim.default", num_shots=3)
     assert job.wait()
-    assert job.get_shots() == [expected] * 3
+    shots = job.get_shots()
+    if program.result_layout is not None:
+        shots = [program.result_layout.decode_bits(bits) for bits in shots]
+    assert shots == [expected] * 3
 
 
 def test_plugin_registration_and_wire_order() -> None:
@@ -69,8 +72,6 @@ def test_terminal_readout_preserves_named_wire_order() -> None:
         "mqt.ddsim.default",
         wires=wires,
         program_format=ProgramFormat.QASM3,
-        terminal_readout=TerminalReadout.ALL,
-        physical_qubits=False,
     )
 
     @qp.qnode(device, shots=4)

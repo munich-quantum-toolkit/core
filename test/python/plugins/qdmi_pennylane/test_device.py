@@ -18,7 +18,7 @@ import pennylane as qp
 import pytest
 from qiskit import QuantumCircuit
 
-from mqt.core.mlir import TerminalReadout, serialize_program
+from mqt.core.mlir import TargetEnvironment, serialize_program
 from mqt.core.plugins.pennylane import (
     PennyLaneConfigurationError,
     PennyLaneExecutionError,
@@ -63,6 +63,20 @@ def test_invalid_retry_configuration(value: object) -> None:
     """Retry limits are nonnegative integers."""
     with pytest.raises(PennyLaneConfigurationError, match="max_retries"):
         QDMIDevice("mqt.ddsim.default", max_retries=cast("int", value))
+
+
+@pytest.mark.parametrize("all_wires", [False, True])
+def test_compiles_only_requested_wires(*, all_wires: bool) -> None:
+    """A small tape does not turn idle device wires into readout obligations."""
+    device = QDMIDevice("mqt.ddsim.default", wires=8)
+    tape = qp.tape.QuantumScript([qp.X(7)], [qp.sample() if all_wires else qp.sample(wires=[7])], shots=2)
+    result = device.execute(tape)
+    expected = [0] * 7 + [1] if all_wires else [1]
+    np.testing.assert_array_equal(result, np.tile(expected, (2, 1)))
+    assert device.last_job is not None
+    entry = device.last_job.entries[0]
+    assert entry.result is not None
+    assert entry.result.shape == (2, 8 if all_wires else 1)
 
 
 def test_forwards_job_parameters() -> None:
@@ -170,18 +184,13 @@ def test_retry_shot_copies_preserves_order_and_tracking(
         wires=wires,
         max_retries=max_retries,
         program_format=ProgramFormat.QASM3,
-        terminal_readout=TerminalReadout.ALL,
-        physical_qubits=False,
     )
     native = QuantumCircuit(3, 3)
-    native.x(0)
+    native.x(2)
     native.measure([2, 0], [0, 2])
     program = serialize_program(
         native,
-        target=device.qdmi_device,
-        program_format=ProgramFormat.QASM3,
-        terminal_readout=TerminalReadout.ALL,
-        physical_qubits=False,
+        target=TargetEnvironment.from_device(device.qdmi_device, program_format=ProgramFormat.QASM3),
     )
     assert program.result_layout is not None
     # Inject an equivalent prepared program with permuted readout and a zero slot.

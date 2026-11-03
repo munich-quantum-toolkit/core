@@ -180,23 +180,17 @@ static uint64_t parseContext(const char* kwargs) {
 }
 
 Context::Context(qdmi::Device device, JobParameters parameters,
-                 std::optional<QDMI_Program_Format> programFormat,
-                 std::optional<mlir::TerminalReadout> terminalReadout,
-                 bool physicalQubits)
+                 std::optional<QDMI_Program_Format> programFormat)
     : device_(std::move(device)), parameters_(std::move(parameters)),
       environment_(
           unwrap(mlir::targetEnvironmentFromDevice(device_, programFormat))),
-      terminalReadout_(terminalReadout), physicalQubits_(physicalQubits),
       qubits_(unwrap(device_.getQubitsNum())) {}
 
 std::shared_ptr<Context>
 Context::create(qdmi::Device device, JobParameters parameters,
-                std::optional<QDMI_Program_Format> programFormat,
-                std::optional<mlir::TerminalReadout> terminalReadout,
-                bool physicalQubits) {
+                std::optional<QDMI_Program_Format> programFormat) {
   auto context = std::shared_ptr<Context>(
-      new Context(std::move(device), std::move(parameters), programFormat,
-                  terminalReadout, physicalQubits));
+      new Context(std::move(device), std::move(parameters), programFormat));
   auto& entries = registry();
   const std::scoped_lock lock(entries.mutex);
   require(entries.next < UINT64_MAX - 1, "QDMI context ID space exhausted.");
@@ -213,6 +207,23 @@ Context::~Context() {
 
 uint64_t Context::id() const noexcept { return id_; }
 size_t Context::qubits() const noexcept { return qubits_; }
+
+std::optional<qdmi::Job>
+Context::trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
+                   int64_t shots) const {
+  const auto parameters = borrowParameters(parameters_);
+  return unwrap(mlir::trySubmitPrograms(
+      device_, programs, shots, parameters[0], parameters[1], parameters[2],
+      parameters[3], parameters[4], &environment_));
+}
+
+qdmi::Job Context::submit(const mlir::CompiledProgram& program,
+                          int64_t shots) const {
+  auto job = trySubmit({&program}, shots);
+  require(job.has_value(),
+          "Device declined the compiled program before submission.");
+  return std::move(*job);
+}
 
 std::vector<int8_t>
 decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
@@ -254,17 +265,15 @@ ObsIdType QDMIDevice::addObservable(ObservableWires value) {
 const QDMIDevice::Readout& QDMIDevice::read() {
   validateShots(shots_);
   require(context_ != nullptr, "No QDMI execution context is configured.");
+  if (!result_ && !recorder_.hasTouchedWires()) {
+    result_ = Readout{{std::string(recorder_.wires().size(), '0'), shots_}};
+  }
   if (!result_) {
     if (!compiled_) {
       compiled_ = unwrap(mlir::CompiledProgram::compile(
-          recorder_.takeProgram(), context_->environment_, {},
-          context_->terminalReadout_, context_->physicalQubits_));
+          recorder_.takeProgram(), context_->environment_));
     }
-    const auto parameters = borrowParameters(context_->parameters_);
-    auto job = unwrap(mlir::submitProgram(
-        context_->device_, *compiled_, static_cast<int64_t>(shots_),
-        parameters[0], parameters[1], parameters[2], parameters[3],
-        parameters[4]));
+    auto job = context_->submit(*compiled_, static_cast<int64_t>(shots_));
     require(unwrap(job.wait()) && unwrap(job.check()) == QDMI_JOB_STATUS_DONE,
             "QDMI job did not complete successfully.");
     result_ = readout(job, recorder_.wires().size(), shots_, 0,
@@ -315,6 +324,7 @@ void QDMIDevice::NamedOperation(
     const std::vector<std::string>& optionalParameters) {
   require(optionalParameters.empty(),
           "Optional Catalyst gate parameters are unsupported.");
+  require(!result_, "Operations after terminal readout are unsupported.");
   recorder_.namedOperation(name, parameters, wires, inverse, controls,
                            controlValues);
 }
@@ -324,11 +334,13 @@ void QDMIDevice::MatrixOperation(
     const std::vector<QubitIdType>& wires, bool inverse,
     const std::vector<QubitIdType>& controls,
     const std::vector<bool>& controlValues) {
+  require(!result_, "Operations after terminal readout are unsupported.");
   recorder_.matrixOperation(matrix, wires, inverse, controls, controlValues);
 }
 
 void QDMIDevice::SetBasisState(DataView<int8_t, 1>& state,
                                std::vector<QubitIdType>& wires) {
+  require(!result_, "Operations after terminal readout are unsupported.");
   require(recorder_.canPrepareBasisState(),
           "Basis state preparation must precede all other operations.");
   require(state.size() == wires.size() && !wires.empty(),

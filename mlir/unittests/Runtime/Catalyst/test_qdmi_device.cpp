@@ -132,7 +132,8 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
       llvm::cantFail(mlir::compileProgram(importer.takeProgram(), device));
   auto job = llvm::cantFail(mlir::submitProgram(device, program, 2));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
-  EXPECT_EQ(decodeSamples(job, 3, 2), (std::vector<int8_t>{1, 0, 0, 1, 0, 0}));
+  EXPECT_EQ(decodeSamples(job, 3, 2, 0, program.resultLayout()),
+            (std::vector<int8_t>{1, 0, 0, 1, 0, 0}));
   api.device_job_get_results = getResults;
   returnedKeys.clear();
   returnedShots = "10 0,001";
@@ -221,10 +222,9 @@ TEST(CatalystQDMI, MatrixGatesShareCorrelatedTerminalReadouts) {
 TEST(CatalystQDMI, TerminalReadoutPreservesWireOrder) {
   const auto device =
       llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
-  for (const auto physicalQubits : {false, true}) {
-    QDMIDevice runtime(Context::create(device, {}, QDMI_PROGRAM_FORMAT_QASM3,
-                                       mlir::TerminalReadout::All,
-                                       physicalQubits));
+  for (const auto format :
+       {QDMI_PROGRAM_FORMAT_QASM3, QDMI_PROGRAM_FORMAT_QIRBASESTRING}) {
+    QDMIDevice runtime(Context::create(device, {}, format));
     const auto wires = runtime.AllocateQubits(3);
     runtime.NamedOperation("PauliX", {}, {wires[1]});
     runtime.SetDeviceShots(2);
@@ -235,6 +235,29 @@ TEST(CatalystQDMI, TerminalReadoutPreservesWireOrder) {
     runtime.PartialSample(view, {wires[2], wires[0], wires[1]});
     EXPECT_EQ(samples, (std::vector<double>{0, 0, 1, 0, 0, 1}));
   }
+}
+
+TEST(CatalystQDMI, UntouchedWiresNeedNoSubmission) {
+  const auto device =
+      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  auto& api =
+      const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  const auto originalSubmit = api.device_job_submit;
+  const auto restore =
+      llvm::make_scope_exit([&] { api.device_job_submit = originalSubmit; });
+  api.device_job_submit = [](QDMI_Device_Job) -> int {
+    ADD_FAILURE() << "Untouched wires must not submit a provider job";
+    return QDMI_ERROR_NOTSUPPORTED;
+  };
+  QDMIDevice runtime(Context::create(device));
+  const auto wires = runtime.AllocateQubits(3);
+  runtime.SetDeviceShots(2);
+  std::vector<double> probabilities(8);
+  DataView<double, 1> view(probabilities);
+  runtime.Probs(view);
+  EXPECT_EQ(probabilities, (std::vector<double>{1, 0, 0, 0, 0, 0, 0, 0}));
+  EXPECT_THROW(runtime.NamedOperation("PauliX", {}, {wires[0]}),
+               std::runtime_error);
 }
 
 TEST(CatalystQDMI, InvalidBasisStateLeavesRecordingUsable) {

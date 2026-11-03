@@ -8,6 +8,7 @@
 
 """Runtime support for the PennyLane QDMI device."""
 
+from collections.abc import Sequence
 from typing import Annotated
 
 import numpy as np
@@ -27,11 +28,15 @@ class Context:
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
         program_format: mqt.core.qdmi.ProgramFormat | None = None,
-        terminal_readout: mqt.core.mlir.TerminalReadout | None = None,
-        physical_qubits: bool = True,
     ) -> None: ...
     @property
     def id(self) -> int: ...
+    @property
+    def environment(self) -> mqt.core.mlir.TargetEnvironment: ...
+    def submit(self, program: mqt.core.mlir.CompiledProgram, num_shots: int) -> mqt.core.qdmi.Job: ...
+    def try_submit(
+        self, programs: Sequence[mqt.core.mlir.CompiledProgram], num_shots: int
+    ) -> mqt.core.qdmi.Job | None: ...
 
 def samples(
     job: mqt.core.qdmi.Job,
