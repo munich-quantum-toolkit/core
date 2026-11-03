@@ -85,6 +85,13 @@ if(MQT_CORE_INSTALL)
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
+  if(SKBUILD AND UNIX)
+    # Wheels store the linker alias as another full library.
+    set(mqt_core_namelink NAMELINK_SKIP)
+  else()
+    set(mqt_core_namelink NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  endif()
+
   # FILE_SET should be aligned with LIBRARY and ARCHIVE, so we turn cmake-format off
   # cmake-format: off
   install(
@@ -93,7 +100,7 @@ if(MQT_CORE_INSTALL)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-            NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development
+            ${mqt_core_namelink}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT ${MQT_CORE_TARGET_NAME}_Development
     FILE_SET HEADERS
