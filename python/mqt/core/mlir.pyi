@@ -811,6 +811,13 @@ class QuantumProgramInfo:
         See :meth:`Program.operation_counts`.
         """
 
+    @property
+    def depth(self) -> int | None:
+        """Depth of the program, or ``None`` if unsupported.
+
+        See :meth:`QCProgram.depth`.
+        """
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
@@ -978,6 +985,19 @@ class QCProgram(Program):
         Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
         visited once, without expanding calls. Region terminators
         such as ``scf.yield`` are excluded.
+        """
+
+    def depth(self) -> int | None:
+        """Compute depth of the entry-point IR.
+
+        Gates, measurements, and resets add one layer. Measurements include the bit
+        they are stored to. Barriers align their qubits without adding a layer. A gate
+        modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+        regardless of the depth of its body.
+
+        Returns ``None`` for loops, calls, other control flow, qubits without a known
+        wire, and an ``if`` nested in a modifier or ``if`` body. The same applies to
+        qubit stores in an ``if`` body, as the branch may not run.
         """
 
     @property
@@ -1154,6 +1174,19 @@ class QCOProgram(Program):
         Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
         visited once, without expanding calls. Region terminators
         such as ``scf.yield`` are excluded.
+        """
+
+    def depth(self) -> int | None:
+        """Compute depth of the entry-point IR.
+
+        Gates, measurements, and resets add one layer. Measurements include the bit
+        they are stored to. Barriers align their qubits without adding a layer. A gate
+        modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+        regardless of the depth of its body.
+
+        Returns ``None`` for loops, calls, other control flow, qubits without a known
+        wire, and an ``if`` nested in a modifier or ``if`` body. The same applies to
+        qubit stores in an ``if`` body, as the branch may not run.
         """
 
     @property

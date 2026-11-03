@@ -367,7 +367,23 @@ Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
 
 Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
 visited once, without expanding calls. Region terminators
-such as ``scf.yield`` are excluded.)pb");
+such as ``scf.yield`` are excluded.)pb")
+      .def(
+          "depth",
+          [](const T& program) {
+            requireValid(program);
+            return program.depth();
+          },
+          R"pb(Compute depth of the entry-point IR.
+
+Gates, measurements, and resets add one layer. Measurements include the bit
+they are stored to. Barriers align their qubits without adding a layer. A gate
+modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+regardless of the depth of its body.
+
+Returns ``None`` for loops, calls, other control flow, qubits without a known
+wire, and an ``if`` nested in a modifier or ``if`` body. The same applies to
+qubit stores in an ``if`` body, as the branch may not run.)pb");
 }
 
 template <class ProgramType>
@@ -1903,7 +1919,10 @@ excludes nested modules.)pb")
               "See :meth:`QCProgram.control_flow_counts`.")
       .def_ro("operation_counts", &mlir::QuantumProgramInfo::operationCounts,
               "Full module operation histogram.\n\n"
-              "See :meth:`Program.operation_counts`.");
+              "See :meth:`Program.operation_counts`.")
+      .def_ro("depth", &mlir::QuantumProgramInfo::depth,
+              "Depth of the program, or ``None`` if unsupported.\n\n"
+              "See :meth:`QCProgram.depth`.");
 
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", nb::pooled(), R"pb(A compiler program in the QC dialect.
