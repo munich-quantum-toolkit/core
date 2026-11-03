@@ -1138,7 +1138,8 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     std::optional<CompilerTarget::SynthesisBasis> basis,
-    std::optional<ArrayRef<SiteId>> sites, NativeCostAnalysis& analysis) {
+    std::optional<ArrayRef<SiteId>> sites, NativeCostAnalysis& analysis,
+    bool canEmitRuntimeBranches) {
   Operation* const operation = op.getOperation();
   if (const auto reverse = analysis.nativeOrientation(op, target, sites)) {
     if (*reverse) {
@@ -1198,9 +1199,10 @@ static LogicalResult synthesizeTargetOperation(
     if (const auto choice =
             counts ? analysis.select(*counts, target, sites) : std::nullopt) {
       basis->entangler = choice->entangler;
-      rewriter.replaceOp(operation, decomposition::emitPauliRotations(
-                                        rewriter, operation, *sequence, *basis,
-                                        choice->reverse));
+      rewriter.replaceOp(operation,
+                         decomposition::emitPauliRotations(
+                             rewriter, operation, *sequence, *basis,
+                             choice->reverse, canEmitRuntimeBranches));
       return success();
     }
   }
@@ -1528,6 +1530,18 @@ protected:
       return;
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
+    const auto& payload = environment.environment().payloadSpecification();
+    const bool supportsFloatBranches =
+        (payload.format().id == "qir" &&
+         payload.format().profile == "adaptive") ||
+        (payload.format().id == "openqasm" && payload.versionRange() &&
+         payload.versionRange()->withinMajor(3));
+    const bool canEmitRuntimeBranches =
+        supportsFloatBranches &&
+        llvm::any_of(payload.capabilities(), [](const auto& capability) {
+          return capability.id == ProgramCapability::FORWARD_BRANCHING &&
+                 capability.value == 0 && capability.constraints.empty();
+        });
     auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
       signalPassFailure();
@@ -1585,7 +1599,7 @@ protected:
           auto operationSites = getOperationSites(operation, *sites);
           const auto synthesized = synthesizeTargetOperation(
               rewriter, unitary, target, emissionBasis,
-              knownSites(operationSites), analysis);
+              knownSites(operationSites), analysis, canEmitRuntimeBranches);
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });

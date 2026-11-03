@@ -120,7 +120,8 @@ pauliRotationEntanglerCount(PauliRotationCounts rotations,
 [[nodiscard]] SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
-                   const CompilerTarget::SynthesisBasis& basis, bool reverse);
+                   const CompilerTarget::SynthesisBasis& basis, bool reverse,
+                   bool allowRuntimeApproximation = false);
 
 /// Compose adjacent commuting Pauli operations with runtime parameters when
 /// their native two-qubit count decreases.

@@ -297,10 +297,15 @@ Bind parameters before compilation to use fractional entanglers directly. Qiskit
 import conservatively recognizes this interval through its public bound
 predicates.
 
-Resynthesis of constant two-qubit gates uses an average gate fidelity floor of
-`1 - 1e-12` per decomposition, including direct Pauli lowering. It may remove
-small entangling angles or shorten near-Clifford rotations. This is a local
-bound, not a whole-circuit error budget; unbound angles are not approximated.
+Two-qubit synthesis uses a `1 - 1e-12` average gate fidelity floor per
+decomposition. It can omit small entangling angles or shorten near-Clifford
+rotations. Adaptive QIR and OpenQASM 3 with unrestricted forward branching can
+also omit the sole entangling term for a small runtime angle, preserving local
+rotations and global phase. This is not a whole-circuit error bound; repeated
+approximations can accumulate.
+
+Synthesis forwards phase-only U factors into neighboring U gates without runtime
+arithmetic.
 
 Synthesis merges Z rotations through diagonal entanglers on native RZ targets.
 Equatorial R targets use at most two R gates per single-qubit unitary and absorb

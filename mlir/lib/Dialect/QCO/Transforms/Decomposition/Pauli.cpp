@@ -20,14 +20,17 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -766,15 +769,69 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
   });
 }
 
+// Omit the sole entangling Pauli only when it meets the Weyl fidelity floor.
+static SmallVector<Value, 2> emitRuntimePauliSequence(
+    RewriterBase& rewriter, Location loc, ValueRange inputs,
+    const PauliRotationSequence& sequence,
+    const CompilerTarget::SynthesisBasis& basis, bool reverse) {
+  auto reduced = sequence;
+  auto* term = llvm::find_if(reduced.rotations, [](const auto& rotation) {
+    return rotation.axes[0] != PauliAxis::I && rotation.axes[1] != PauliAxis::I;
+  });
+  if (term == reduced.rotations.end() ||
+      llvm::count_if(reduced.rotations,
+                     [](const auto& rotation) {
+                       return rotation.axes[0] != PauliAxis::I &&
+                              rotation.axes[1] != PauliAxis::I;
+                     }) != 1 ||
+      !std::isnormal(term->angleScale)) {
+    return emitPauliSequence(rewriter, loc, inputs, sequence, basis, reverse);
+  }
+  // One omitted Pauli rotation has 1 - F <= (scale * angle)^2 / 5.
+  const double bound = std::nextafter(
+      std::sqrt(5. * (1. - WEYL_DEFAULT_FIDELITY)) / std::abs(term->angleScale),
+      0.);
+  if (!std::isfinite(bound) || bound <= 0.) {
+    return emitPauliSequence(rewriter, loc, inputs, sequence, basis, reverse);
+  }
+  reduced.rotations.erase(term);
+  auto lower = mqt::constantFromScalar(rewriter, loc, -bound);
+  auto upper = mqt::constantFromScalar(rewriter, loc, bound);
+  auto above = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
+                                     sequence.angle, lower);
+  auto below = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OLE,
+                                     sequence.angle, upper);
+  auto small = arith::AndIOp::create(rewriter, loc, above, below);
+  auto branch = IfOp::create(rewriter, loc, TypeRange{}, inputs.getTypes(),
+                             small, inputs);
+  const OpBuilder::InsertionGuard guard(rewriter);
+  for (auto [index, region] : llvm::enumerate(branch->getRegions())) {
+    auto* block =
+        rewriter.createBlock(&region, {}, inputs.getTypes(),
+                             SmallVector<Location>(inputs.size(), loc));
+    auto values =
+        emitPauliSequence(rewriter, loc, block->getArguments(),
+                          index == 0 ? reduced : sequence, basis, reverse);
+    YieldOp::create(rewriter, loc, values);
+  }
+  return {branch.result_begin(), branch.result_end()};
+}
+
 SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
-                   const CompilerTarget::SynthesisBasis& basis, bool reverse) {
+                   const CompilerTarget::SynthesisBasis& basis, bool reverse,
+                   bool allowRuntimeApproximation) {
   hoistPauliAngle(rewriter, operation);
   rewriter.setInsertionPoint(operation);
-  return emitPauliSequence(rewriter, operation->getLoc(),
-                           cast<UnitaryOpInterface>(operation).getInputQubits(),
-                           sequence, basis, reverse);
+  auto inputs = cast<UnitaryOpInterface>(operation).getInputQubits();
+  if (allowRuntimeApproximation &&
+      !mqt::valueToConstantDouble(sequence.angle)) {
+    return emitRuntimePauliSequence(rewriter, operation->getLoc(), inputs,
+                                    sequence, basis, reverse);
+  }
+  return emitPauliSequence(rewriter, operation->getLoc(), inputs, sequence,
+                           basis, reverse);
 }
 
 std::optional<PauliRotationCounts>
