@@ -509,7 +509,7 @@ public:
                 llvm::function_ref<bool(const OperationCapability&)> filter =
                     nullptr) const;
 
-  /// Return whether a QCO operation is supported.
+  /// Return whether a QCO operation is supported without knowing its sites.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
 
   /// Return whether a QCO operation is supported on ordered target sites.
@@ -526,6 +526,9 @@ public:
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> sites) const;
 
+  /// Check the entangler's synthesis domain without knowing its sites.
+  [[nodiscard]] bool supports(Entangler entangler) const;
+
   /// Check the entangler's synthesis domain on ordered sites.
   [[nodiscard]] bool supports(Entangler entangler,
                               llvm::ArrayRef<SiteId> sites) const;
@@ -538,6 +541,9 @@ public:
   /// The cached basis remains valid while this target or a copy exists.
   [[nodiscard]] const std::optional<SynthesisBasis>&
   synthesisBasis() const noexcept;
+
+  /// Return whether native operations or a synthesis basis cover unknown sites.
+  [[nodiscard]] bool supportsIndexedSynthesis() const noexcept;
 
   /// Return globally usable entanglers in deterministic preference order.
   ///

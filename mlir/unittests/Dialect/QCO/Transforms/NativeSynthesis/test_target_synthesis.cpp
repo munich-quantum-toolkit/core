@@ -916,6 +916,7 @@ TEST_F(TargetSynthesisTest, NativeCostSelectsCheapestAvailableEntangler) {
         EXPECT_FALSE(
             analysis.decompose(matrix, target, sites,
                                [count](size_t cost) { return cost < count; }));
+        EXPECT_FALSE(analysis.select(matrix, target, std::nullopt));
         const auto selected = analysis.select(matrix, target, sites);
         ASSERT_TRUE(selected);
         EXPECT_EQ(selected->entangler.gate, entangler);
@@ -1329,6 +1330,56 @@ module {
                     .find("not available at compile time"),
                 std::string::npos);
     }
+  }
+}
+
+TEST_F(TargetSynthesisTest, IndexedSynthesisKeepsKnownNativeSitesAndCosts) {
+  for (bool exchange : {false, true}) {
+    const std::string name = exchange ? "xx_plus_yy" : "rxx";
+    SCOPED_TRACE(name);
+    std::string source;
+    llvm::raw_string_ostream(source) << R"mlir(module {
+      func.func @main(%theta: f64, %beta: f64) {
+        %a = qco.static 0 : !qco.qubit
+        %b = qco.static 1 : !qco.qubit
+        %c, %d = qco.)mlir" << name << "(%theta"
+                                     << (exchange ? ", %beta" : "") <<
+        R"mlir() %a, %b : !qco.qubit, !qco.qubit
+        %e, %f = qco.)mlir" << name << "(%beta"
+                                     << (exchange ? ", %theta" : "") <<
+        R"mlir() %c, %d : !qco.qubit, !qco.qubit
+        qco.sink %e : !qco.qubit
+        qco.sink %f : !qco.qubit
+        return
+      }
+    })mlir";
+    auto program = mlir::parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(program);
+    const auto target = valid(Target::create(
+        3, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(OperationCapability::create("u", 1, 3)),
+            valid(OperationCapability::create("cz", 2, 0)),
+            valid(OperationCapability::create("gphase", 0, 1)),
+            valid(OperationCapability::create(
+                name, 2, exchange ? 2 : 1, {valid(SiteTuple::create({0, 1}))})),
+        })));
+    const mlir::TargetEnvironment environment(
+        target, valid(mlir::PayloadSpecification::create(
+                    {.id = "qir", .version = "2.1.0", .profile = "adaptive"})));
+    ASSERT_TRUE(environment.supportsIndexedQubits());
+    mlir::attachTargetEnvironment(*program, environment);
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*program, mlir::qco::createTargetNativeSynthesis())));
+    EXPECT_EQ(exchange ? countOps<mlir::qco::XXPlusYYOp>(*program)
+                       : countOps<RXXOp>(*program),
+              2U);
+    EXPECT_EQ(countOps<UOp>(*program), 0U);
+    EXPECT_EQ(countOps<CtrlOp>(*program), 0U);
+    EXPECT_TRUE(mlir::succeeded(mlir::verify(*program)));
+    EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*program)));
+    EXPECT_TRUE(mlir::succeeded(
+        runPass(*program, mlir::qco::createVerifyTargetConformance())));
   }
 }
 
