@@ -733,17 +733,14 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       return WalkResult::advance();
     }
 
-    llvm::SmallDenseSet<Value, 4> qubits;
+    if (failed(qc::verifyDistinctQubitOperands(operation, operands))) {
+      return WalkResult::interrupt();
+    }
     DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
     for (auto qubit : operands) {
       if (!isa<qc::QubitType>(qubit.getType())) {
         continue;
       }
-      if (!qubits.insert(qubit).second) {
-        operation->emitOpError("requires distinct qubit operands");
-        return WalkResult::interrupt();
-      }
-
       const auto access = state.registerAccesses.find(qubit);
       if (access == state.registerAccesses.end()) {
         continue;

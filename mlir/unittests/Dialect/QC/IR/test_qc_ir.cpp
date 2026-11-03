@@ -27,6 +27,7 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -39,6 +40,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
@@ -87,6 +89,174 @@ QCTest::QCTest() {
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
+}
+
+TEST_F(QCTest, QuantumEffectsUseAConservativeNamedResource) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+        qc.x %q : !qc.qubit
+        return
+      }
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %control = qc.alloc : !qc.qubit
+        %theta = arith.constant 0.3 : f64
+        qc.h %q : !qc.qubit
+        %bit = qc.measure %q : !qc.qubit -> i1
+        qc.reset %q : !qc.qubit
+        qc.gphase(%theta)
+        qc.barrier %q, %control : !qc.qubit, !qc.qubit
+        qc.ctrl(%control) targets(%target = %q) {
+          qc.x %target : !qc.qubit
+          qc.yield
+        } : {!qc.qubit}, {!qc.qubit}
+        qc.call @flip(%q) : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        qc.dealloc %control : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto* resource = QubitResource::get();
+  auto* defaultResource = SideEffects::DefaultResource::get();
+  EXPECT_EQ(resource->getParent(), defaultResource);
+  EXPECT_TRUE(resource->isAddressable());
+  EXPECT_FALSE(resource->isDisjointFrom(defaultResource));
+  EXPECT_FALSE(defaultResource->isDisjointFrom(resource));
+  moduleOp->walk([&](Operation* operation) {
+    if (operation->getName().getDialectNamespace() != "qc") {
+      return;
+    }
+    auto memory = dyn_cast<MemoryEffectOpInterface>(operation);
+    ASSERT_TRUE(memory);
+    SmallVector<MemoryEffects::EffectInstance> effects;
+    memory.getEffects(effects);
+    for (const auto& effect : effects) {
+      EXPECT_EQ(effect.getResource(), resource);
+    }
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+        unitary && !isa<GPhaseOp, CallOp>(operation)) {
+      for (Value qubit : unitary.getQubits()) {
+        EXPECT_TRUE(llvm::any_of(effects, [&](const auto& effect) {
+          return isa<MemoryEffects::Read>(effect.getEffect()) &&
+                 effect.getValue() == qubit;
+        }));
+        EXPECT_TRUE(llvm::any_of(effects, [&](const auto& effect) {
+          return isa<MemoryEffects::Write>(effect.getEffect()) &&
+                 effect.getValue() == qubit;
+        }));
+      }
+    }
+    if (isa<AllocOp>(operation)) {
+      EXPECT_TRUE(memory.hasEffect<MemoryEffects::Allocate>());
+    } else if (isa<DeallocOp>(operation)) {
+      EXPECT_TRUE(memory.hasEffect<MemoryEffects::Free>());
+    } else if (isa<GPhaseOp, CallOp, MeasureOp, ResetOp>(operation)) {
+      EXPECT_TRUE(memory.hasEffect<MemoryEffects::Write>());
+    }
+  });
+}
+
+TEST_F(QCTest, UnitariesRejectObviousSimultaneousQubitAliases) {
+  for (const char* gate : {
+           "qc.swap %q0, {0} : !qc.qubit, !qc.qubit",
+           "qc.ctrl(%q0) targets(%target = {0}) {{\n"
+           "  qc.x %target : !qc.qubit\n"
+           "  qc.yield\n"
+           "} : {{!qc.qubit}, {{!qc.qubit}",
+           "qc.inv (%first = %q0, %second = {0}) {{\n"
+           "  qc.x %first : !qc.qubit\n"
+           "  qc.h %second : !qc.qubit\n"
+           "  qc.yield\n"
+           "} : !qc.qubit, !qc.qubit",
+           "qc.call @pair(%q0, {0}) : !qc.qubit, !qc.qubit",
+       }) {
+    for (bool sameSSA : {false, true}) {
+      const auto source = std::string(R"mlir(
+        module {
+          func.func private @pair(%a: !qc.qubit, %b: !qc.qubit)
+              attributes {mqt.unitary} {
+            qc.x %a : !qc.qubit
+            qc.h %b : !qc.qubit
+            return
+          }
+          func.func @main() {
+            %q0 = qc.static 0 : !qc.qubit
+            %alias = qc.static 0 : !qc.qubit
+      )mlir") + llvm::formatv(gate, sameSSA ? "%q0" : "%alias").str() +
+                          "\nreturn\n}\n}";
+      SCOPED_TRACE(source);
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("requires distinct qubit operands");
+            return success();
+          });
+      EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
+  }
+}
+
+TEST_F(QCTest, DiagnosesMalformedStaticReferencesAfterTheirConsumers) {
+  context->loadDialect<cf::ControlFlowDialect>();
+  for (const char* properties : {
+           "",
+           "<{index = 18446744073709551616 : i128}>",
+           "<{index = 0 : index}>",
+           "<{index = -1 : i64}>",
+       }) {
+    const auto source = std::string(R"mlir(
+      func.func @main() {
+        cf.br ^producer
+      ^consumer:
+        qc.swap %q, %other : !qc.qubit, !qc.qubit
+        return
+      ^producer:
+        %q = "qc.static"() )mlir") +
+                        properties + R"mlir( : () -> !qc.qubit
+        %other = qc.static 1 : !qc.qubit
+        cf.br ^consumer
+      }
+    )mlir";
+    SCOPED_TRACE(source);
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      const auto message = diagnostic.str();
+      sawExpectedDiagnostic |= StringRef(message).contains("'qc.static' op") &&
+                               StringRef(message).contains("'index'");
+      return success();
+    });
+    auto moduleOp =
+        parseSourceString<ModuleOp>(source, ParserConfig(context.get(), false));
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCTest, PermitsSequentialAliasesBarriersAndUnprovenDynamicReferences) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main(%reg: memref<2x!qc.qubit>, %i: index, %j: index) {
+      %q = qc.static 0 : !qc.qubit
+      %alias = qc.static 0 : !qc.qubit
+      qc.x %q : !qc.qubit
+      qc.h %alias : !qc.qubit
+      qc.barrier %q, %q, %alias : !qc.qubit, !qc.qubit, !qc.qubit
+      %first = memref.load %reg[%i] : memref<2x!qc.qubit>
+      %second = memref.load %reg[%j] : memref<2x!qc.qubit>
+      qc.swap %first, %second : !qc.qubit, !qc.qubit
+      return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 static Value measureRegister(QCProgramBuilder& b, ValueRange qubits) {
