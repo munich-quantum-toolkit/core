@@ -46,6 +46,7 @@ target_link_libraries(
     MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
+    LLVMIRReader
     MLIRAnalysis
     MLIRMQTDialect
     MLIRMQTUtils

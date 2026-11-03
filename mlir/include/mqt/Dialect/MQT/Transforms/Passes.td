@@ -43,6 +43,28 @@ def SimplifyQuantum : Pass<"simplify-quantum"> {
   }];
 }
 
+def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::mqt::MQTDialect",
+                           "mlir::scf::SCFDialect"];
+  let summary = "Legalize SCF control flow for the selected payload";
+  let description = [{
+    Uses an explicit `payload-spec` attribute when set, otherwise reads
+    `mqt.target_env`. Retains covered SCF branches and loops, lowers unsupported
+    index switches to nested forward branches when possible, and rejects
+    unsupported residual control flow. Loop bounds and steps must be literal
+    constants when the payload requires a trip-count proof. Switch expansion
+    respects the forward-branching depth limit and a maximum generated nesting
+    depth of 256.
+
+    Run after constant propagation and cleanup. For QCO programs, use
+    `legalize-qco-control-flow`, which also checks quantum state and handles
+    QCO branches.
+  }];
+  let options = [Option<
+      "payloadSpec", "payload-spec", "std::string", "\"\"",
+      "Explicit #mqt.payload_spec; defaults to mqt.target_env.">];
+}
+
 def PromoteClassicalMemory
     : Pass<"promote-classical-memory", "mlir::ModuleOp"> {
   let summary = "Promote local classical memory to SSA values";

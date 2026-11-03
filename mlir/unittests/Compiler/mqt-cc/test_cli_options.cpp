@@ -208,6 +208,23 @@ TEST(CompilerCLI, CompilesForExplicitTarget) {
   ASSERT_TRUE(output);
   EXPECT_TRUE((*output)->getBuffer().contains("mqt.target_env"));
   EXPECT_TRUE((*output)->getBuffer().contains("mqt.layout"));
+
+  args = {
+      MQT_CORE_MQT_CC,
+      MQT_CORE_MQT_CC_INPUT,
+      target,
+      "--payload-spec=#mqt.payload_spec<format = <id = \"qir\", "
+      "version = \"2.1\", profile = \"adaptive\", encoding = text>, "
+      "capabilities = [], optional_capabilities_known = false>",
+  };
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(
+                MQT_CORE_MQT_CC, args, std::nullopt,
+                {std::nullopt, std::nullopt, outputPath.str()}, 10),
+            1);
+  auto diagnostics = llvm::MemoryBuffer::getFile(outputPath);
+  ASSERT_TRUE(diagnostics);
+  EXPECT_TRUE((*diagnostics)->getBuffer().contains("requires capability"))
+      << (*diagnostics)->getBuffer().str();
 }
 
 TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {

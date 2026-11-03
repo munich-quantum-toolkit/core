@@ -20,13 +20,11 @@
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
-#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
-#include "mqt/Target/QIR/Capabilities.h"
 #include "mqt/Target/QIR/Export.h"
 
 #include "Diagnostics.h"
@@ -159,7 +157,7 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   auto moduleOp = *storage.mod;
   if (failed(runWithPassManager(
           moduleOp,
-          [&](OpPassManager& pm) {
+          [profile](OpPassManager& pm) {
             pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
@@ -167,27 +165,9 @@ FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
             } else {
               pm.addPass(createQCToQIRBase());
             }
-            pm.addPass(qir::createQIRSetAttributesAndMetadata(
-                {profile == QIRProfile::Adaptive}));
           },
           "failed to convert QC to QIR"))) {
     return failure();
-  }
-  if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
-    const TargetEnvironmentAnalysis environment(moduleOp);
-    if (!environment) {
-      moduleOp.emitError(environment.error());
-      return failure();
-    }
-    const auto& targetPayload =
-        environment.environment().payloadSpecification();
-    const auto& format = targetPayload.format();
-    if (format.id == "qir" &&
-        format.profile ==
-            (profile == QIRProfile::Adaptive ? "adaptive" : "base") &&
-        failed(qir::validateCapabilities(moduleOp, targetPayload))) {
-      return failure();
-    }
   }
   return QIRProgram(std::move(storage), profile);
 }

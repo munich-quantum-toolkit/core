@@ -37,7 +37,7 @@ constexpr uint32_t VERSION = 4;
 constexpr uint8_t SLOTS = 2;
 using Header = SPSArgList<uint32_t, uint32_t, uint64_t>;
 using Request = SPSArgList<int32_t, SPSString, uint64_t, SPSOptional<uint64_t>,
-                           uint8_t, uint64_t, uint8_t>;
+                           uint8_t, uint64_t, uint8_t, uint16_t>;
 using Response = SPSArgList<uint8_t, SPSOptional<SPSString>, uint32_t,
                             SPSOptional<SPSString>>;
 
@@ -147,16 +147,16 @@ bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes) {
 
 std::string encode(const WorkerRequest& request) {
   std::string bytes(
-      Request::size(request.format, request.program, request.shots,
-                    request.seed, static_cast<uint8_t>(request.captureOutput),
-                    request.maxWorkers,
-                    static_cast<uint8_t>(request.automaticWorkers)),
+      Request::size(
+          request.format, request.program, request.shots, request.seed,
+          static_cast<uint8_t>(request.captureOutput), request.maxWorkers,
+          static_cast<uint8_t>(request.automaticWorkers), request.maxQubits),
       '\0');
   SPSOutputBuffer buffer(bytes.data(), bytes.size());
-  Request::serialize(buffer, request.format, request.program, request.shots,
-                     request.seed, static_cast<uint8_t>(request.captureOutput),
-                     request.maxWorkers,
-                     static_cast<uint8_t>(request.automaticWorkers));
+  Request::serialize(
+      buffer, request.format, request.program, request.shots, request.seed,
+      static_cast<uint8_t>(request.captureOutput), request.maxWorkers,
+      static_cast<uint8_t>(request.automaticWorkers), request.maxQubits);
   return bytes;
 }
 
@@ -167,8 +167,8 @@ bool decode(llvm::StringRef bytes, WorkerRequest& request) {
   if (!SPSArgList<int32_t, SPSString, uint64_t>::deserialize(
           buffer, request.format, request.program, request.shots) ||
       !readOptional<uint64_t>(buffer, request.seed) ||
-      !SPSArgList<uint8_t, uint64_t, uint8_t>::deserialize(
-          buffer, capture, request.maxWorkers, automatic) ||
+      !SPSArgList<uint8_t, uint64_t, uint8_t, uint16_t>::deserialize(
+          buffer, capture, request.maxWorkers, automatic, request.maxQubits) ||
       capture > 1 || automatic > 1 || request.maxWorkers == 0 ||
       buffer.data() != bytes.end()) {
     return false;

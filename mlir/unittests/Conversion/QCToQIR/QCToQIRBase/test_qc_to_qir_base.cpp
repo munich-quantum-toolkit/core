@@ -48,6 +48,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
 
@@ -627,6 +628,13 @@ TEST_F(QCToQIRBaseNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
       module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
   auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
   ASSERT_TRUE(main);
+  for (const StringRef key : {"required_num_qubits", "required_num_results"}) {
+    EXPECT_TRUE(llvm::is_contained(main.getPassthroughAttr(),
+                                   builder.getStrArrayAttr({key, "4"})));
+  }
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"qir_profiles", "base_profile"})));
   EXPECT_TRUE(main.getFunctionType().getReturnType().isInteger(64));
   main.walk([&](LLVM::ReturnOp op) {
     ASSERT_EQ(op.getNumOperands(), 1U);
@@ -829,7 +837,7 @@ INSTANTIATE_TEST_SUITE_P(
                             MQT_NAMED_BUILDER(qir::multipleControlledH<true>)},
         QCToQIRBaseTestCase{"HWithoutRegister",
                             MQT_NAMED_BUILDER(qc::hWithoutRegister),
-                            MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
+                            MQT_NAMED_BUILDER(qir::hWithoutRegisterBase)}));
 /// @}
 
 /// \name QCToQIRBase/Operations/StandardGates/IdOp.cpp
@@ -1254,7 +1262,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegistersBase)}));
 /// @}
 
 /// \name QCToQIRBase/QubitManagement/QubitManagement.cpp

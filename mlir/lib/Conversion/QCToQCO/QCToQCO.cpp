@@ -119,6 +119,15 @@ struct LoweringState {
   /// Transient provenance for register-backed QC qubit references.
   DenseMap<Value, RegisterAccess> registerAccesses;
 
+  struct RegisterQubit {
+    Value index;
+    Value qubit;
+  };
+  /// Constant slots kept in SSA form until their local register is deallocated.
+  /// First-use order makes reinsertion deterministic.
+  DenseMap<RegisterId, llvm::MapVector<int64_t, RegisterQubit>>
+      scalarRegisterQubits;
+
   /// Immutable physical reference buffers, in slot order.
   DenseMap<Value, SmallVector<std::pair<Value, uint64_t>>> referenceBuffers;
   /// Local physical tensors released at function return, in allocation order.
@@ -325,10 +334,25 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
     }
 
     const auto access = accessIt->second;
+    Value* cachedQubit = nullptr;
+    if (auto reg = state.scalarRegisterQubits.find(access.reg);
+        reg != state.scalarRegisterQubits.end()) {
+      auto& slot = reg->second[*getConstantIntValue(access.index)];
+      if (slot.qubit) {
+        materialized.values.push_back(slot.qubit);
+        materialized.accesses.emplace_back(access);
+        continue;
+      }
+      slot.index = access.index;
+      cachedQubit = &slot.qubit;
+    }
     auto tensor = lookupMappedTensor(state, anchor, access.reg);
     auto extract = qtensor::ExtractOp::create(rewriter, anchor->getLoc(),
                                               tensor, access.index);
     assignMappedTensor(state, anchor, access.reg, extract.getOutTensor());
+    if (cachedQubit != nullptr) {
+      *cachedQubit = extract.getResult();
+    }
     materialized.values.push_back(extract.getResult());
     materialized.accesses.emplace_back(access);
   }
@@ -352,6 +376,12 @@ static void commitQubits(LoweringState& state, Operation* anchor,
       continue;
     }
 
+    if (auto reg = state.scalarRegisterQubits.find(access->reg);
+        reg != state.scalarRegisterQubits.end()) {
+      reg->second[*getConstantIntValue(access->index)].qubit =
+          qcoQubits[position];
+      continue;
+    }
     auto tensor = lookupMappedTensor(state, anchor, access->reg);
     auto insert = qtensor::InsertOp::create(
         rewriter, anchor->getLoc(), qcoQubits[position], tensor, access->index);
@@ -767,6 +797,54 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     return WalkResult::advance();
   });
   return success(!stores.wasInterrupted());
+}
+
+/// Selects local registers whose constant slots stay in one block until free.
+static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
+  moduleOp.walk([&](memref::AllocOp allocation) {
+    auto type = allocation.getType();
+    if (!isa<qc::QubitType>(type.getElementType()) || !type.hasStaticShape() ||
+        type.getDimSize(0) <= 0 || !type.getLayout().isIdentity() ||
+        type.getMemorySpace()) {
+      return;
+    }
+    auto* block = allocation->getBlock();
+    memref::DeallocOp deallocation;
+    for (auto* user : allocation->getUsers()) {
+      if (auto dealloc = dyn_cast<memref::DeallocOp>(user)) {
+        if (deallocation || user->getBlock() != block) {
+          return;
+        }
+        deallocation = dealloc;
+      } else if (!isa<memref::LoadOp>(user)) {
+        return;
+      }
+    }
+    if (!deallocation) {
+      return;
+    }
+    for (auto* user : allocation->getUsers()) {
+      auto load = dyn_cast<memref::LoadOp>(user);
+      if (!load) {
+        continue;
+      }
+      auto index = getConstantIntValue(load.getIndices().front());
+      if (!index || *index < 0 || *index >= type.getDimSize(0) ||
+          load->getBlock() != block || !load->isBeforeInBlock(deallocation)) {
+        return;
+      }
+      for (auto* consumer : load->getUsers()) {
+        if (consumer->getBlock() != block ||
+            !consumer->isBeforeInBlock(deallocation) ||
+            !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp>(
+                consumer)) {
+          return;
+        }
+      }
+    }
+    state.scalarRegisterQubits.try_emplace(
+        lookupRegisterId(state, allocation.getResult()));
+  });
 }
 
 /// Collects values captured by supported structured control flow.
@@ -1192,6 +1270,15 @@ struct ConvertMemRefDeallocOp final : LoweringPattern<memref::DeallocOp> {
     auto& tensorMap = state.tensorMap[op->getParentRegion()];
     const auto reg = lookupRegisterId(state, memref);
     auto qtensor = lookupMappedTensor(state, op.getOperation(), reg);
+    if (auto cached = state.scalarRegisterQubits.find(reg);
+        cached != state.scalarRegisterQubits.end()) {
+      for (auto& slot : llvm::make_second_range(cached->second)) {
+        qtensor = qtensor::InsertOp::create(rewriter, op.getLoc(), slot.qubit,
+                                            qtensor, slot.index)
+                      .getResult();
+      }
+      state.scalarRegisterQubits.erase(cached);
+    }
     tensorMap.erase(reg);
 
     rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
@@ -1946,6 +2033,7 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
       }
     }
   }
+  collectScalarRegisters(moduleOp, state);
   collectStructuredCaptures(moduleOp, state);
   auto* ctx = moduleOp.getContext();
   auto* qcDialect = ctx->getLoadedDialect<qc::QCDialect>();

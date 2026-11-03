@@ -11,17 +11,17 @@
 import enum
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Any, Literal, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
+from typing import Annotated, Any, Literal, Self, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
 import qiskit.providers
 import qiskit.transpiler
+from numpy.typing import NDArray
 
 import mqt.core.dd
 import mqt.core.qdmi
 from mqt.core.qdmi import Device
-from mqt.core.typing import QDMISessionParameters
 
 _CompilerInput: TypeAlias = (
     str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
@@ -557,8 +557,23 @@ class CompilerTarget:
         """
 
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
-        """Open a client-visible device and snapshot its compiler target."""
+    def from_device_id(
+        device_id: str,
+        *,
+        driver_path: str | os.PathLike[str] | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike[str] | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> CompilerTarget:
+        """Open a device through :func:`mqt.core.qdmi.open_device` and snapshot its compiler target."""
 
     @property
     def name(self) -> str | None:
@@ -977,8 +992,12 @@ class QCProgram(Program):
             | Sequence[SupportsFloat]
             | np.ndarray[tuple[int], np.dtype[np.floating[Any] | np.integer[Any]]],
         ],
-    ) -> None:
-        """Bind named scalar and array parameters in place.
+        *,
+        copy: bool = False,
+    ) -> Self:
+        """Bind named scalar and array parameters and return the bound program.
+
+        Binding modifies this program unless ``copy=True`` requests an independent copy.
 
         Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
         Supply arrays as sequences or NumPy arrays with the expected length.
@@ -988,7 +1007,7 @@ class QCProgram(Program):
         without changing the program.
 
         Binding folds expressions using the bound values. Folding failures may
-        leave the program modified. Call ``copy()`` first to preserve the input.
+        leave the program modified. Use ``copy=True`` to preserve the input.
         """
 
 class QCOProgram(Program):
@@ -1149,8 +1168,12 @@ class QCOProgram(Program):
             | Sequence[SupportsFloat]
             | np.ndarray[tuple[int], np.dtype[np.floating[Any] | np.integer[Any]]],
         ],
-    ) -> None:
-        """Bind named scalar and array parameters in place.
+        *,
+        copy: bool = False,
+    ) -> Self:
+        """Bind named scalar and array parameters and return the bound program.
+
+        Binding modifies this program unless ``copy=True`` requests an independent copy.
 
         Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
         Supply arrays as sequences or NumPy arrays with the expected length.
@@ -1160,7 +1183,7 @@ class QCOProgram(Program):
         without changing the program.
 
         Binding folds expressions using the bound values. Folding failures may
-        leave the program modified. Call ``copy()`` first to preserve the input.
+        leave the program modified. Use ``copy=True`` to preserve the input.
         """
 
     def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
@@ -1316,6 +1339,12 @@ class QIRProgram(Program):
     LLVM bitcode.
     """
 
+    def simulate(self) -> Annotated[NDArray[np.complex128], {"shape": (None,), "order": "C", "device": "cpu"}]:
+        """Return the uncollapsed statevector in QIR runtime qubit order; reset and measurement-dependent feedback are unsupported."""
+
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+        """Sample recorded outputs. Zero selects random seeding; fixed seeds must fit a positive signed 32-bit integer."""
+
     def copy(self) -> QIRProgram:
         """Return an independent copy of this program."""
 
@@ -1383,7 +1412,9 @@ def simulate(
     | QCProgram
     | QCOProgram
     | JeffProgram
-    | OpenQASMProgram,
+    | OpenQASMProgram
+    | QIRProgram
+    | bytes,
 ) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None,)}]:
     """Simulate a closed compiler input from the all-zero state.
 
@@ -1394,15 +1425,19 @@ def simulate(
     or for a custom initial state.
 
     Args:
-        program: Compiler input to lower directly to QCO.
+        program: Compiler input, compiled QIR, or QIR text/bitcode.
+            QIR profile and version are read from module metadata. Other inputs
+            lower to QCO.
 
     Returns:
-        Full statevector, materialized directly into the returned NumPy array.
+        Full statevector in runtime qubit order, materialized into a NumPy array.
+        Compiled QIR may remove or reorder source qubits.
 
     Raises:
         MemoryError: When the dense statevector does not fit in memory.
         ValueError: When the program is not closed, is unsupported for statevector
             simulation, or the statevector dimensions exceed addressable memory.
+        RuntimeError: When QIR execution fails.
     """
 
 def sample(
@@ -1412,15 +1447,20 @@ def sample(
     | QCProgram
     | QCOProgram
     | JeffProgram
-    | OpenQASMProgram,
+    | OpenQASMProgram
+    | QIRProgram
+    | bytes,
     shots: int = 1024,
     seed: int = 0,
 ) -> dict[str, int]:
-    """Sample a supported input after translating or converting it to QCO.
+    """Sample a supported compiler input or QIR program.
 
     An existing QCO program is used without copying. See
     {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
-    contracts.
+    contracts. QIR text and bitcode run through the bundled DDSIM worker using
+    the profile and version declared in the module metadata.
+    QIR seeds use 0 for randomness or a positive signed 32-bit integer. Profile
+    declarations do not validate arbitrary LLVM; executable QIR must be trusted.
     """
 
 def expectation_values(

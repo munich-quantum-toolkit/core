@@ -16,6 +16,7 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -38,6 +39,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cmath>
 #include <cstddef>
@@ -829,6 +831,53 @@ TEST_F(ElidePermutationsTest, PreservesOpaqueRegionCapturesAndTensorOwnership) {
     EXPECT_EQ(
         llvm::range_size(mlir::mqt::getEntryPoint(*fixed).getOps<SWAPOp>()),
         2U);
+  }
+}
+
+TEST_F(ElidePermutationsTest, PreservesCapturedQuantumLoopState) {
+  for (bool tensor : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "tensor=" << tensor);
+    std::string source;
+    llvm::raw_string_ostream(source) << R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %a = qco.static 0 : !qco.qubit
+        %b = qco.static 1 : !qco.qubit
+    )mlir"
+                                     << (tensor ? R"mlir(
+        %packed = qtensor.from_elements %a, %b : tensor<2x!qco.qubit>
+    )mlir"
+                                                : "")
+                                     << R"mlir(
+        scf.for %i = %zero to %one step %one {
+    )mlir"
+                                     << (tensor ? R"mlir(
+          %t0, %x = qtensor.extract %packed[%zero] : tensor<2x!qco.qubit>
+          %t1, %y = qtensor.extract %t0[%one] : tensor<2x!qco.qubit>
+          %u, %v = qco.swap %x, %y : !qco.qubit, !qco.qubit
+          %t2 = qtensor.insert %u into %t1[%zero] : tensor<2x!qco.qubit>
+          %t3 = qtensor.insert %v into %t2[%one] : tensor<2x!qco.qubit>
+          qtensor.dealloc %t3 : tensor<2x!qco.qubit>
+    )mlir"
+                                                : R"mlir(
+          %u, %v = qco.swap %a, %b : !qco.qubit, !qco.qubit
+          qco.sink %u : !qco.qubit
+          qco.sink %v : !qco.qubit
+    )mlir") << R"mlir(
+          scf.yield
+        }
+        return
+      }
+    })mlir";
+    auto program = parseSourceString<ModuleOp>(source, &context_);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(verify(*program)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*program)));
+    ASSERT_NO_FATAL_FAILURE(rewrite(*program));
+    size_t swaps = 0;
+    program->walk([&](SWAPOp) { ++swaps; });
+    EXPECT_EQ(swaps, 1U);
   }
 }
 

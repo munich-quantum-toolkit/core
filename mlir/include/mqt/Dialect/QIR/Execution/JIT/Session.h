@@ -76,12 +76,15 @@ public:
   /// @param randomSeed Optional deterministic runtime seed.
   /// @param output Borrowed stream for constructor, entry-point, and destructor
   /// records. It must outlive the session; null disables output.
-  /// Returns an owned error if parsing, validation, or initialization fails.
+  /// @param maxQubits Optional runtime qubit capacity, also enforced for
+  /// dynamic allocation. Returns an owned error if parsing, validation, or
+  /// initialization fails.
   [[nodiscard]] static llvm::Expected<std::unique_ptr<JitSession>>
   create(llvm::StringRef irBytes, llvm::StringRef bufferName,
          Execution execution = Execution::Sampling,
          std::optional<uint64_t> randomSeed = std::nullopt,
-         llvm::raw_ostream* output = &llvm::outs());
+         llvm::raw_ostream* output = &llvm::outs(),
+         std::optional<size_t> maxQubits = std::nullopt);
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();

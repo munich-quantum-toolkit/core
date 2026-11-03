@@ -2,7 +2,7 @@ mqt\.core\.mlir\._generate_benchmark$:
 
 mqt\.core\.mlir\.(?:QC|QCO)Program\.bind_parameters$:
     \from collections.abc import Mapping, Sequence
-    \from typing import Any, SupportsFloat
+    \from typing import Any, Self, SupportsFloat
     \import numpy
     def bind_parameters(
         self,
@@ -12,7 +12,9 @@ mqt\.core\.mlir\.(?:QC|QCO)Program\.bind_parameters$:
             | Sequence[SupportsFloat]
             | numpy.ndarray[tuple[int], numpy.dtype[numpy.floating[Any] | numpy.integer[Any]]],
         ],
-    ) -> None:
+        *,
+        copy: bool = False,
+    ) -> Self:
         \doc
 
 mqt\.core\.mlir\.JeffProgram\.from_segments$:
@@ -181,10 +183,8 @@ mqt\.core\.mlir\.CompilerTarget\.from_device$:
         \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
-    \from typing import Unpack
-    \from mqt.core.typing import QDMISessionParameters
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
+    def from_device_id(device_id: str, *, driver_path: str | os.PathLike[str] | None = None, token: str | None = None, auth_file: str | os.PathLike[str] | None = None, auth_url: str | None = None, username: str | None = None, password: str | None = None, project_id: str | None = None, custom1: str | None = None, custom2: str | None = None, custom3: str | None = None, custom4: str | None = None, custom5: str | None = None) -> CompilerTarget:
         \doc
 
 mqt\.core\.mlir\.__prefix__$:

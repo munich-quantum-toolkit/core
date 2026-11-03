@@ -12,8 +12,9 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
   let summary = "Convert QC dialect to QCO dialect.";
 
   let description = [{
-    This pass converts all operations from the QC dialect to their equivalent operations in the QCO dialect.
-    It handles the transformation of qubit references in QC to qubit values in QCO, ensuring that the semantics of quantum operations are preserved during the conversion process.
+    This pass converts QC qubit references to QCO qubit values and threads
+    their state through quantum operations, functions and structured control
+    flow.
     Control flow must use structured SCF operations. Operations with block
     successors, including `cf.br`, `cf.cond_br`, and `cf.switch`, are diagnosed
     before conversion.
@@ -25,9 +26,13 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     order. Duplicate register operands, register/element aliases, and consumption
     or explicit returns of borrowed registers are diagnosed before conversion.
     Register slots retain their qubit identities. Loads refer to stable slots;
-    identity stores are erased. Entry-block physical reference buffers may be
-    initialized once with distinct static qubits and become tensors of those
-    qubits. Other reference stores are unsupported. Loaded references remain
+    identity stores are erased. Local fixed-size registers with constant-index
+    accesses confined to one block can keep accessed slots in scalar SSA form
+    until deallocation. Registers that escape or have other accesses use
+    per-operation extraction and reinsertion.
+    Entry-block physical reference buffers may be initialized once with
+    distinct static qubits and become tensors of those qubits. Other reference
+    stores are unsupported. Loaded references remain
     valid across helper calls. Bounds, disjoint runtime operands, and matching
     dynamic store indices are program preconditions; this pass diagnoses known
     violations without inserting runtime checks. See the shared

@@ -152,7 +152,9 @@ TEST_F(ErrorHandling, CustomEnums) {
        }) {
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_session_set_parameter(session, param, 0, nullptr),
-        QDMI_ERROR_NOTSUPPORTED)
+        param == QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1
+            ? QDMI_SUCCESS
+            : QDMI_ERROR_NOTSUPPORTED)
         << param;
   }
   MQT_DDSIM_QDMI_device_session_free(session);

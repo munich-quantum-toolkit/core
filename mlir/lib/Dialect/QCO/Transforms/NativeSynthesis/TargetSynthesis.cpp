@@ -1424,14 +1424,19 @@ public:
         }
       }
       if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
-        pending_.push_back(constant);
+        if (pendingPositions_.try_emplace(constant, pending_.size()).second) {
+          pending_.push_back(constant);
+        }
       }
     }
   }
 
   void foldPending() {
+    pendingPositions_.clear();
     for (auto constant : pending_) {
-      folder_.insertKnownConstant(constant, constant.getValue());
+      if (constant) {
+        folder_.insertKnownConstant(constant, constant.getValue());
+      }
     }
     pending_.clear();
   }
@@ -1439,7 +1444,12 @@ public:
   void notifyOperationErased(Operation* operation) override {
     if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
       folder_.notifyRemoval(constant);
-      llvm::erase(pending_, constant);
+      if (auto found = pendingPositions_.find(constant);
+          found != pendingPositions_.end()) {
+        // Preserve folding order without rescanning the queue for each erase.
+        pending_[found->second] = {};
+        pendingPositions_.erase(found);
+      }
     }
   }
 
@@ -1447,6 +1457,7 @@ private:
   OperationFolder folder_;
   SiteMap& sites_;
   SmallVector<arith::ConstantOp> pending_;
+  DenseMap<arith::ConstantOp, size_t> pendingPositions_;
 };
 
 struct ComposePauliRotations final
@@ -1579,10 +1590,11 @@ protected:
               indexed ? std::nullopt
                       : std::optional<ArrayRef<SiteId>>(operationSites),
               analysis);
-          listener.foldPending();
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });
+    // Fold after traversal so constant hoisting cannot skip unvisited gates.
+    listener.foldPending();
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;

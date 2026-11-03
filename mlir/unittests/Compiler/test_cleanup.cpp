@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "gtest/gtest.h"

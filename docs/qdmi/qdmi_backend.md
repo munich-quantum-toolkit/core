@@ -368,10 +368,10 @@ an already-running backend call.
 ### Exact local expectations
 
 {py:class}`~mqt.core.plugins.qiskit.estimator.DDEstimator` evaluates real sparse
-Pauli sums with Core's local DD engine. It prepares each bound circuit once for
-all its broadcast observables without materializing a dense state or observable
-matrix. This entry point does not use a QDMI device; `backend.estimator()`
-remains the sampled estimator above.
+Pauli sums with Core's local DD engine. It imports each PUB once, then prepares
+one state per parameter binding for all its broadcast observables without
+materializing a dense state or observable matrix. This entry point does not use
+a QDMI device; `backend.estimator()` remains the sampled estimator above.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import DDEstimator

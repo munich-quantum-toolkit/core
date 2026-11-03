@@ -828,6 +828,14 @@ protected:
                                                             : 0;
         auto inputs = quantumValues(op->getOperands());
         auto outputs = quantumValues(op->getResults());
+        // Captures have no corresponding region argument to track.
+        for (auto input : inputs) {
+          auto* scope = input.getParentRegion()->getParentOp();
+          for (auto* parent = op->getParentOp(); parent != scope;
+               parent = parent->getParentOp()) {
+            effects[parent] |= NONPOSITIONAL;
+          }
+        }
         bool positional = isa<UnitaryOpInterface, MeasureOp, ResetOp>(op);
         if (auto call = dyn_cast<func::CallOp>(op)) {
           positional = hasPositionalResults(call, inputs, outputs);

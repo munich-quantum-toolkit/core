@@ -203,13 +203,10 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
     reg.results.reserve(static_cast<size_t>(*size));
-    const auto base = static_cast<int64_t>(state.scalarResults.size());
     for (int64_t i = 0; i < *size; ++i) {
-      const auto index = base + i;
+      const auto index = static_cast<int64_t>(state.numScalarResults++);
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
       reg.results.push_back(result);
-      // The results are recorded as part of the register
-      state.scalarResults.push_back(result);
     }
 
     rewriter.eraseOp(op);
@@ -414,7 +411,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     }
     auto result = *registerResult;
     if (!result) {
-      result = getResultPtr(state, op.getOperation(), rewriter, false);
+      result = getResultPtr(state, op.getOperation(), rewriter);
     }
 
     if (auto it = state.measuredResults.find(op);
@@ -456,7 +453,7 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
 namespace {
 /// Lower supported QC operations to QIR Base runtime calls and LLVM IR.
 ///
-/// QIR attributes and module flags are attached by the separate metadata pass.
+/// Matching target payloads are checked before and after lowering.
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
 
@@ -545,6 +542,14 @@ protected:
       signalPassFailure();
       return;
     }
+    const auto run = [&](OpPassManager& pm) {
+      return runPipeline(pm, moduleOp);
+    };
+    auto payload = prepareQIRTarget(moduleOp, "base", run);
+    if (failed(payload)) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
 
@@ -626,7 +631,8 @@ protected:
     // Discard folded descriptor operations before enforcing Base's subset.
     PassManager cleanup(ctx);
     cleanup.addPass(createCanonicalizerPass());
-    if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main))) {
+    if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main)) ||
+        failed(finalizeQIRMetadata(moduleOp, "base", *payload, run))) {
       signalPassFailure();
     }
   }

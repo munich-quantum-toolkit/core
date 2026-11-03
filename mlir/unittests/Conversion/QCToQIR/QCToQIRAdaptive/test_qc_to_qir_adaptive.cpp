@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -53,7 +55,10 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include <array>
@@ -61,7 +66,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 using namespace mlir;
 
@@ -129,6 +136,53 @@ static void expectConversionFailure(
       });
   EXPECT_TRUE(failed(convert(moduleOp)));
   EXPECT_TRUE(diagnosed) << expected.str();
+}
+
+TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedTargetRequirements) {
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  for (const auto& [maximum, integers, diagnostic] : {
+           std::tuple{2U, true, "scf.for"},
+           std::tuple{3U, true, ""},
+           std::tuple{3U, false, "qir.int-computations"},
+       }) {
+    SCOPED_TRACE(diagnostic);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %three = arith.constant 3 : index
+        %q = qc.static 0 : !qc.qubit
+        scf.for %i = %zero to %three step %one {
+          qc.h %q : !qc.qubit
+        }
+        return
+      }
+    })mlir",
+                                                &context);
+    ASSERT_TRUE(moduleOp);
+    std::vector<ProgramCapability> capabilities{
+        {
+            .id = ProgramCapability::COUNTED_ITERATION.str(),
+            .constraints = {{.id = "max-iteration-count", .value = maximum}},
+        },
+    };
+    if (integers) {
+      capabilities.push_back({.id = "qir.int-computations"});
+    }
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "qir", .version = "2.1", .profile = "adaptive"},
+        std::move(capabilities)));
+    attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
+    if (!StringRef(diagnostic).empty()) {
+      expectConversionFailure(*moduleOp, diagnostic);
+    } else {
+      ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+      EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    }
+  }
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {
@@ -455,12 +509,12 @@ TEST_F(QCToQIRAdaptiveNativeTest,
   }
 }
 
-TEST_F(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
+TEST_F(QCToQIRAdaptiveNativeTest, AssignsStaticResultIdsToArrays) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   SmallVector<Value> registers;
-  for (size_t i = 0; i < 12; ++i) {
-    registers.push_back(builder.allocClassicalBitRegister(1));
+  for (int64_t width : {1, 2}) {
+    registers.push_back(builder.allocClassicalBitRegister(width));
   }
 
   auto moduleOp = builder.finalize(registers);
@@ -468,17 +522,27 @@ TEST_F(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  SmallVector<Value> allocated;
-  SmallVector<Value> released;
-  moduleOp->walk([&](LLVM::CallOp call) {
-    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
-      allocated.push_back(call.getOperand(1));
-    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
-      released.push_back(call.getOperand(1));
+  DenseSet<int64_t> results;
+  moduleOp->walk([&](LLVM::StoreOp store) {
+    if (store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
+      auto pointer = store.getValue().getDefiningOp<LLVM::IntToPtrOp>();
+      ASSERT_TRUE(pointer);
+      const auto index = getConstantIntValue(pointer.getArg());
+      ASSERT_TRUE(index);
+      EXPECT_TRUE(results.insert(*index).second);
     }
   });
-  ASSERT_EQ(allocated.size(), 12);
-  EXPECT_EQ(released, allocated);
+  EXPECT_EQ(results, (DenseSet<int64_t>{0, 1, 2}));
+  moduleOp->walk([&](LLVM::CallOp call) {
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_ALLOC);
+    EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_RELEASE);
+  });
+
+  ASSERT_TRUE(succeeded(runQIRCleanupPipeline(moduleOp.get(), true)));
+  auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_results", "3"})));
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
@@ -923,25 +987,6 @@ TEST_F(QCToQIRAdaptiveNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
     ASSERT_TRUE(code);
     EXPECT_EQ(cast<IntegerAttr>(code.getValue()).getInt(), 0);
   });
-  SmallVector<Value> allocatedScalars;
-  SmallVector<Value> releasedScalars;
-  SmallVector<Value> allocatedArrays;
-  SmallVector<Value> releasedArrays;
-  module->walk([&](LLVM::CallOp call) {
-    if (call.getCallee() == qir::QIR_RESULT_ALLOC) {
-      allocatedScalars.push_back(call.getResult());
-    } else if (call.getCallee() == qir::QIR_RESULT_RELEASE) {
-      releasedScalars.push_back(call.getOperand(0));
-    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
-      allocatedArrays.push_back(call.getOperand(1));
-    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
-      releasedArrays.push_back(call.getOperand(1));
-    }
-  });
-  EXPECT_EQ(allocatedScalars.size(), 1U);
-  EXPECT_EQ(allocatedArrays.size(), 3U);
-  EXPECT_EQ(releasedScalars, allocatedScalars);
-  EXPECT_EQ(releasedArrays, allocatedArrays);
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, MaterializesBooleanOutputsBeforeRecording) {
@@ -1114,7 +1159,7 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
   });
   ASSERT_EQ(measurements.size(), 3U);
   ASSERT_EQ(reads.size(), 2U);
-  EXPECT_EQ(allocated.size(), 2U);
+  EXPECT_TRUE(allocated.empty());
   EXPECT_EQ(released, allocated);
   EXPECT_EQ(measurements[0].getOperand(1), measurements[1].getOperand(1));
   EXPECT_NE(measurements[0].getOperand(1), measurements[2].getOperand(1));
@@ -1131,6 +1176,24 @@ TEST_F(QCToQIRAdaptiveNativeTest, RecordsComputedStoreAfterMeasurement) {
     EXPECT_TRUE(measurements.back()->isBeforeInBlock(op));
   });
   EXPECT_EQ(combinations, 1U);
+
+  bool staticResults = false;
+  module->walk([&](LLVM::ModuleFlagsOp flags) {
+    for (const auto flag :
+         flags.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
+      if (flag.getKey().getValue() == "dynamic_result_management") {
+        staticResults = cast<IntegerAttr>(flag.getValue()).getInt() == 0;
+      }
+    }
+  });
+  EXPECT_TRUE(staticResults);
+  auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"qir_profiles", "adaptive_profile"})));
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_results", "2"})));
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, RejectsClassicalMemrefOutput) {
@@ -1177,10 +1240,37 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
-                                    qir::QIRProgramBuilder::Profile::Adaptive);
+  auto reference = ::mqt::test::buildMLIRProgram(
+      context.get(), referenceBuilder,
+      qir::QIRProgramBuilder::Profile::Adaptive, true);
   ASSERT_TRUE(reference);
+  // The converter reserves IDs for returned arrays before scalar results.
+  llvm::SmallSetVector<Value, 4> resultPointers;
+  reference->walk([&](LLVM::StoreOp store) {
+    if (store->hasAttr(qir::QIR_RESULT_STORE_ATTR)) {
+      resultPointers.insert(store.getValue());
+    }
+  });
+  reference->walk([&](LLVM::IntToPtrOp pointer) {
+    if (llvm::any_of(pointer->getUsers(), [&](Operation* user) {
+          auto call = dyn_cast<LLVM::CallOp>(user);
+          return call && ((call.getCallee() == qir::QIR_MEASURE &&
+                           call.getOperand(1) == pointer) ||
+                          ((call.getCallee() == qir::QIR_RECORD_OUTPUT ||
+                            call.getCallee() == qir::QIR_READ_RESULT) &&
+                           call.getOperand(0) == pointer));
+        })) {
+      resultPointers.insert(pointer);
+    }
+  });
+  for (auto [index, result] : llvm::enumerate(resultPointers)) {
+    auto pointer = result.getDefiningOp<LLVM::IntToPtrOp>();
+    ASSERT_TRUE(pointer);
+    auto constant = pointer.getArg().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(constant);
+    constant.setValueAttr(
+        IntegerAttr::get(constant.getType(), static_cast<int64_t>(index)));
+  }
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 

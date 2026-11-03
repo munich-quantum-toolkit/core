@@ -153,7 +153,7 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
     preserving enclosing loops. This analysis stays within nested loop chains.
     The `max-operations` option limits cloned body operations to one billion by default.
     Run constant propagation and QCO cleanup again after this pass, then
-    `legalize-control-flow` to check the remaining branches and loops.
+    `legalize-qco-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
@@ -163,12 +163,12 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
                              "Maximum number of cloned loop-body operations.">];
 }
 
-def LegalizeControlFlow : PayloadControlFlowPass<"legalize-control-flow"> {
+def LegalizeControlFlow : PayloadControlFlowPass<"legalize-qco-control-flow"> {
   let options = payloadOptions;
   let dependentDialects = ["mlir::mqt::MQTDialect", "mlir::qco::QCODialect",
                            "mlir::scf::SCFDialect",
                            "mlir::arith::ArithDialect"];
-  let summary = "Legalize control flow for the selected payload";
+  let summary = "Legalize QCO and SCF control flow for the selected payload";
   let description = [{
     Uses an explicit `payload-spec` attribute when set, otherwise reads
     `mqt.target_env`. Explicit payloads do not require hardware metadata. The pass
@@ -200,9 +200,9 @@ def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
     permutations where resource identity or region interfaces require them.
     The default mode preserves physical output order and reconciles
     permutations before measurements. Fixed physical qubits, regions with
-    nonpositional quantum yields, and unstructured function bodies retain their
-    wiring. Dynamic tensor accesses reconcile pending permutations on that
-    tensor.
+    captured linear values or nonpositional quantum yields, and unstructured
+    function bodies retain their wiring. Dynamic tensor accesses reconcile
+    pending permutations on that tensor.
 
     With `track-output-permutation` and source labels from target preparation,
     terminal output permutations may remain virtual through final observations
@@ -242,9 +242,13 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The entry function and supported structured-control-flow regions must each
     contain one block. Calls that carry qubits must be inlined before mapping.
-    Classical side effects must use CBit operations; opaque calls and other
-    memory effects must be lowered before mapping. Tensor allocations must
-    follow a flat extract/insert/deallocate chain without tensor control flow.
+    Classical side effects must use CBit operations, MemRef operations, or
+    `bufferization.materialize_in_destination` with
+    value-associated memory effects. The pass preserves their source order
+    across potentially aliased handles and includes their measurement feedback
+    in routing dependencies. Opaque calls and other memory effects must be
+    lowered before mapping. Tensor allocations must follow a flat
+    extract/insert/deallocate chain without tensor control flow.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the

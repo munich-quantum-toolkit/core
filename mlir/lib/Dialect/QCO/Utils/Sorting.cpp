@@ -12,7 +12,9 @@
 
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -32,8 +34,10 @@ bool hasPotentialClassicalAliases(Block& block) {
     const auto effects = getEffectsRecursively(&op);
     if (effects && any_of(*effects, [](const auto& effect) {
           auto value = effect.getValue();
-          return value && isa<cbit::RegisterType>(value.getType()) &&
-                 !value.template getDefiningOp<cbit::AllocOp>();
+          return value &&
+                 isa<cbit::RegisterType, BaseMemRefType>(value.getType()) &&
+                 !isa_and_nonnull<cbit::AllocOp, memref::AllocOp,
+                                  memref::AllocaOp>(value.getDefiningOp());
         })) {
       return true;
     }
@@ -75,8 +79,9 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
         if (!value) {
           continue;
         }
-        if (mayAlias && isa<cbit::RegisterType>(value.getType())) {
-          // Aliased register handles share one effect chain.
+        if (mayAlias &&
+            isa<cbit::RegisterType, BaseMemRefType>(value.getType())) {
+          // Potentially aliased storage shares one effect chain.
           value = {};
         }
         auto [it, inserted] = lastEffect.try_emplace(value, &op);

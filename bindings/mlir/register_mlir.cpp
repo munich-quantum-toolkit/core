@@ -37,9 +37,12 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/bench/Generate.h"
+#include "qdmi/Parameters.hpp"
 #include "qdmi/QDMI.hpp"
 
+#include "Array.hpp"
 #include "Result.hpp"
 #include "Target/Qiskit/Qiskit.h"
 
@@ -64,9 +67,15 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -98,6 +107,8 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 using bindings::bindResult;
+using bindings::PythonCustomJobParameter;
+using bindings::toCustomJobParameter;
 using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
@@ -106,26 +117,6 @@ using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
                                 nb::c_contig, nb::device::cpu>;
 using JeffSegment = nb::ndarray<nb::memview, const uint8_t, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
-
-using PythonCustomJobParameter =
-    std::variant<std::string, bool, int, double, nb::bytes>;
-
-[[nodiscard]] static std::optional<qdmi::CustomJobParameter>
-toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
-  if (!parameter) {
-    return std::nullopt;
-  }
-  return std::visit(
-      [](const auto& value) -> qdmi::CustomJobParameter {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     nb::bytes>) {
-          return std::as_bytes(std::span(value.c_str(), value.size()));
-        } else {
-          return value;
-        }
-      },
-      *parameter);
-}
 
 template <class T>
 static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
@@ -255,8 +246,10 @@ static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
           "order.")
       .def(
           "bind_parameters",
-          [](T& program, const nb::typed<nb::mapping, nb::str,
-                                         mlir::ParameterValue>& values) {
+          [](T& program,
+             const nb::typed<nb::mapping, nb::str, mlir::ParameterValue>&
+                 values,
+             bool copy) -> nb::typed<nb::object, T> {
             requireValid(program);
             nb::dict snapshot;
             try {
@@ -284,12 +277,18 @@ static void registerParameterBinding(nb::class_<T, mlir::Program>& binding) {
               }
               bindings.emplace(std::move(name), std::move(parameter));
             }
-            withDiagnostics(program.module().getContext(),
+            auto result = copy ? nb::cast(program.copy())
+                               : nb::cast(program, nb::rv_policy::reference);
+            auto& bound = nb::cast<T&>(result);
+            withDiagnostics(bound.module().getContext(),
                             "cannot bind parameters",
-                            [&] { return program.bindParameters(bindings); });
+                            [&] { return bound.bindParameters(bindings); });
+            return result;
           },
-          "values"_a,
-          R"pb(Bind named scalar and array parameters in place.
+          "values"_a, nb::kw_only(), "copy"_a = false,
+          R"pb(Bind named scalar and array parameters and return the bound program.
+
+Binding modifies this program unless ``copy=True`` requests an independent copy.
 
 Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
 Supply arrays as sequences or NumPy arrays with the expected length.
@@ -299,7 +298,7 @@ non-finite values, and references to the entry point raise ValueError
 without changing the program.
 
 Binding folds expressions using the bound values. Folding failures may
-leave the program modified. Call ``copy()`` first to preserve the input.)pb");
+leave the program modified. Use ``copy=True`` to preserve the input.)pb");
 }
 
 template <class T>
@@ -369,33 +368,6 @@ Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
 Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
 visited once, without expanding calls. Region terminators
 such as ``scf.yield`` are excluded.)pb");
-}
-
-[[nodiscard]] static qdmi::Device openQDMIDevice(
-    const std::string& deviceId,
-    std::optional<std::filesystem::path> driverPath,
-    std::optional<std::string> token,
-    std::optional<std::filesystem::path> authFile,
-    std::optional<std::string> authUrl, std::optional<std::string> username,
-    std::optional<std::string> password, std::optional<std::string> projectId,
-    std::optional<std::string> custom1, std::optional<std::string> custom2,
-    std::optional<std::string> custom3, std::optional<std::string> custom4,
-    std::optional<std::string> custom5) {
-  return unwrap(qdmi::Session::openDevice(
-      deviceId, {
-                    .driverPath = std::move(driverPath),
-                    .token = std::move(token),
-                    .authFile = std::move(authFile),
-                    .authUrl = std::move(authUrl),
-                    .username = std::move(username),
-                    .password = std::move(password),
-                    .projectId = std::move(projectId),
-                    .custom1 = std::move(custom1),
-                    .custom2 = std::move(custom2),
-                    .custom3 = std::move(custom3),
-                    .custom4 = std::move(custom4),
-                    .custom5 = std::move(custom5),
-                }));
 }
 
 template <class ProgramType>
@@ -950,14 +922,7 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
           "dense statevector dimensions exceed addressable memory");
     }
   }
-  auto dataPtr = std::make_unique<dd::CVec>(unwrap(dd::getVector(state)));
-  auto* const data = dataPtr->data();
-  const auto size = dataPtr->size();
-  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
-    delete static_cast<dd::CVec*>(ptr);
-  });
-  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
-  return DenseVector(data, {size}, owner);
+  return bindings::ownedArray(unwrap(dd::getVector(state)));
 }
 
 [[nodiscard]] static DenseMatrix toDenseMatrix(const dd::MatrixDD& matrix,
@@ -995,8 +960,126 @@ buildDenseFunctionality(PythonInputTypes& types, const nb::handle program) {
   });
 }
 
+template <class Payload>
+[[nodiscard]] static qdmi::Job executeQIR(const Payload& payload,
+                                          QDMI_Program_Format format,
+                                          size_t shots, uint64_t seed) {
+  if (seed > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+    throw nb::value_error(
+        "QIR seed must fit a nonnegative signed 32-bit integer");
+  }
+  const nb::gil_scoped_release release;
+  auto device = unwrap(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  std::optional<qdmi::CustomJobParameter> randomSeed;
+  if (seed != 0) {
+    randomSeed = static_cast<int>(seed);
+  }
+  auto job = unwrap(device.submitJob(payload, format, shots, randomSeed));
+  unwrap(job.wait());
+  if (unwrap(job.check()) != QDMI_JOB_STATUS_DONE) {
+    throw std::runtime_error(
+        "QIR execution failed; check the profile and supported operations");
+  }
+  return job;
+}
+
+/// Read routing metadata without JIT compilation or bitcode body
+/// materialization.
+[[nodiscard]] static std::optional<QDMI_Program_Format>
+qirFormat(llvm::StringRef payload, bool binary) {
+  const nb::gil_scoped_release release;
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic diagnostic;
+  auto module = llvm::getLazyIRModule(
+      llvm::MemoryBuffer::getMemBuffer(payload, "<qir>", false), diagnostic,
+      context);
+  if (!module) {
+    if (!binary) {
+      return std::nullopt;
+    }
+    throw nb::value_error("Invalid QIR bitcode");
+  }
+  std::optional<QDMI_Program_Format> format;
+  for (const auto& function : *module) {
+    if (!function.hasFnAttribute(qir::ENTRY_POINT_ATTR)) {
+      continue;
+    }
+    if (format) {
+      throw nb::value_error("QIR requires exactly one entry point");
+    }
+    const auto attribute = function.getFnAttribute(qir::QIR_PROFILES_ATTR);
+    const auto profile = attribute.isStringAttribute()
+                             ? attribute.getValueAsString()
+                             : llvm::StringRef{};
+    if (profile.compare(qir::BASE_PROFILE) == 0) {
+      format = binary ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                      : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+    } else if (profile.compare(qir::ADAPTIVE_PROFILE) == 0) {
+      format = binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                      : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+    } else {
+      throw nb::value_error(
+          "QIR entry point requires a Base or Adaptive profile");
+    }
+  }
+  if (!format) {
+    throw nb::value_error("QIR requires exactly one entry point");
+  }
+  return format;
+}
+
+[[nodiscard]] static qdmi::Job
+executeQIRProgram(const mlir::QIRProgram& program, size_t shots,
+                  uint64_t seed) {
+  requireValid(program);
+  auto copy = program.copy();
+  const auto payload =
+      withDiagnostics(program.context().get(), "cannot export QIR",
+                      [&] { return std::move(copy).intoLLVMIR(); });
+  const auto format = program.profile() == mlir::QIRProfile::Base
+                          ? QDMI_PROGRAM_FORMAT_QIRBASESTRING
+                          : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  return executeQIR(payload, format, shots, seed);
+}
+
+[[nodiscard]] static std::optional<qdmi::Job>
+executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
+  if (nb::isinstance<mlir::QIRProgram>(program)) {
+    return executeQIRProgram(nb::cast<const mlir::QIRProgram&>(program), shots,
+                             seed);
+  }
+  if (nb::isinstance<nb::bytes>(program)) {
+    const auto bytes = nb::borrow<nb::bytes>(program);
+    const llvm::StringRef payload(static_cast<const char*>(bytes.data()),
+                                  bytes.size());
+    return executeQIR(std::as_bytes(std::span(payload.data(), payload.size())),
+                      *qirFormat(payload, true), shots, seed);
+  }
+  if (nb::isinstance<nb::str>(program)) {
+    const auto payload = nb::cast<std::string_view>(program);
+    if (auto format = qirFormat(payload, false)) {
+      // Python's UTF-8 storage includes the QDMI text terminator.
+      return executeQIR(
+          std::as_bytes(std::span(payload.data(), payload.size() + 1)), *format,
+          shots, seed);
+    }
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] static DenseVector qirState(const qdmi::Job& job) {
+  auto values = [&] {
+    const nb::gil_scoped_release release;
+    return unwrap(job.getDenseStateVector());
+  }();
+  return bindings::ownedArray(std::move(values));
+}
+
 [[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,
                                                const nb::handle program) {
+  if (auto job = executeQIRInput(program, 0, 0)) {
+    return qirState(*job);
+  }
   return withQCOProgram(types, program, [](const mlir::QCOProgram& qco) {
     auto ddPackage = unwrap(dd::Package::create(0));
     auto func = entryFunc(qco);
@@ -1010,6 +1093,10 @@ buildDenseFunctionality(PythonInputTypes& types, const nb::handle program) {
 [[nodiscard]] static std::map<std::string, size_t>
 sample(PythonInputTypes& types, const nb::handle program, size_t shots,
        uint64_t seed) {
+  if (auto job = executeQIRInput(program, shots, seed)) {
+    const nb::gil_scoped_release release;
+    return unwrap(job->getCounts());
+  }
   return withQCOProgram(types, program, [&](const mlir::QCOProgram& qco) {
     return sampleQCO(qco, shots, seed);
   });
@@ -1614,39 +1701,19 @@ Raises:
     ValueError: If the selected operations or connectivity cannot be represented.)pb")
       .def_static(
           "from_device_id",
-          [](const std::string& deviceId,
-             std::optional<std::filesystem::path> driverPath,
-             std::optional<std::string> token,
-             std::optional<std::filesystem::path> authFile,
-             std::optional<std::string> authUrl,
-             std::optional<std::string> username,
-             std::optional<std::string> password,
-             std::optional<std::string> projectId,
-             std::optional<std::string> custom1,
-             std::optional<std::string> custom2,
-             std::optional<std::string> custom3,
-             std::optional<std::string> custom4,
-             std::optional<std::string> custom5) {
-            auto target = [&] {
+          [](const std::string& deviceId, const nb::kwargs& sessionParameters) {
+            const auto device = nb::cast<qdmi::Device>(
+                nb::module_::import_("mqt.core.qdmi")
+                    .attr("open_device")(deviceId, **sessionParameters));
+            auto target = [&device] {
               const nb::gil_scoped_release release;
-              auto device = openQDMIDevice(
-                  deviceId, std::move(driverPath), std::move(token),
-                  std::move(authFile), std::move(authUrl), std::move(username),
-                  std::move(password), std::move(projectId), std::move(custom1),
-                  std::move(custom2), std::move(custom3), std::move(custom4),
-                  std::move(custom5));
               return mlir::compilerTargetFromDevice(device);
             }();
             return unwrap(std::move(target));
           },
-          "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
-          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
-          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-          "password"_a = std::nullopt, "project_id"_a = std::nullopt,
-          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-          "custom5"_a = std::nullopt,
-          "Open a client-visible device and snapshot its compiler target.")
+          "device_id"_a, "session_parameters"_a,
+          "Open a device through :func:`mqt.core.qdmi.open_device` and "
+          "snapshot its compiler target.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {
@@ -2323,6 +2390,24 @@ The source is consumed even on failure. Set ``copy=True`` to preserve it.)pb");
 QIR programs retain their target profile and can be emitted as LLVM IR or
 LLVM bitcode.)pb");
   qirProgram
+      .def(
+          "simulate",
+          [](const mlir::QIRProgram& self) {
+            return qirState(executeQIRProgram(self, 0, 0));
+          },
+          "Return the uncollapsed statevector in QIR runtime qubit order; "
+          "reset and measurement-dependent "
+          "feedback are unsupported.")
+      .def(
+          "sample",
+          [](const mlir::QIRProgram& self, size_t shots, uint64_t seed) {
+            auto job = executeQIRProgram(self, shots, seed);
+            const nb::gil_scoped_release release;
+            return unwrap(job.getCounts());
+          },
+          "shots"_a = 1024U, "seed"_a = 0U,
+          "Sample recorded outputs. Zero selects random seeding; fixed seeds "
+          "must fit a positive signed 32-bit integer.")
       .def("copy", &copyProgram<mlir::QIRProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &FallibleMemberAdapter<&mlir::QIRProgram::cleanup>::call,
@@ -2481,7 +2566,7 @@ Raises:
   m.def("simulate", PythonInputAdapter<&simulateDense>{inputTypes}, "program"_a,
         nb::sig("def simulate(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-                "JeffProgram | OpenQASMProgram) -> "
+                "JeffProgram | OpenQASMProgram | QIRProgram | bytes) -> "
                 "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
                 "{'shape': (None,)}]"),
         R"pb(Simulate a closed compiler input from the all-zero state.
@@ -2493,27 +2578,35 @@ Mid-circuit measurement feedback and resets are unsupported; use
 or for a custom initial state.
 
 Args:
-    program: Compiler input to lower directly to QCO.
+    program: Compiler input, compiled QIR, or QIR text/bitcode.
+        QIR profile and version are read from module metadata. Other inputs
+        lower to QCO.
 
 Returns:
-    Full statevector, materialized directly into the returned NumPy array.
+    Full statevector in runtime qubit order, materialized into a NumPy array.
+    Compiled QIR may remove or reorder source qubits.
 
 Raises:
     MemoryError: When the dense statevector does not fit in memory.
     ValueError: When the program is not closed, is unsupported for statevector
-        simulation, or the statevector dimensions exceed addressable memory.)pb");
+        simulation, or the statevector dimensions exceed addressable memory.
+    RuntimeError: When QIR execution fails.)pb");
 
   m.def("sample", PythonInputAdapter<&sample>{inputTypes}, "program"_a,
         "shots"_a = 1024U, "seed"_a = 0U,
         nb::sig("def sample(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-                "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
+                "JeffProgram | OpenQASMProgram | QIRProgram | bytes, shots: "
+                "int = 1024, seed: int = "
                 "0) -> dict[str, int]"),
-        R"pb(Sample a supported input after translating or converting it to QCO.
+        R"pb(Sample a supported compiler input or QIR program.
 
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
-contracts.)pb");
+contracts. QIR text and bitcode run through the bundled DDSIM worker using
+the profile and version declared in the module metadata.
+QIR seeds use 0 for randomness or a positive signed 32-bit integer. Profile
+declarations do not validate arbitrary LLVM; executable QIR must be trusted.)pb");
 
   m.def(
       "expectation_values", PythonInputAdapter<&expectationValues>{inputTypes},
@@ -2601,10 +2694,11 @@ placement.)pb");
 
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
         "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
-        "program_format"_a = nb::none(), "custom1"_a = nb::none(),
-        "custom2"_a = nb::none(), "custom3"_a = nb::none(),
-        "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-        "options"_a = nb::none(),
+        "program_format"_a = nb::none(), "custom1"_a.noconvert() = nb::none(),
+        "custom2"_a.noconvert() = nb::none(),
+        "custom3"_a.noconvert() = nb::none(),
+        "custom4"_a.noconvert() = nb::none(),
+        "custom5"_a.noconvert() = nb::none(), "options"_a = nb::none(),
         R"pb(Compile source or submit a compiled program to a device.
 
 ``target`` accepts a registered device ID or an open device. For source input,

@@ -81,6 +81,7 @@ struct Execution {
   bool captureQIROutput_;
   size_t maxWorkers_;
   bool automaticWorkers_;
+  uint16_t maxQubits_;
   std::optional<std::string> qirOutput_;
   std::optional<qdmi::dd::OutputTemplate> outputTemplate_;
   std::string shots_;
@@ -120,7 +121,8 @@ struct Execution {
               : maxWorkers_;
       auto counts = mlir::qco::sample(
           entryPoint, numShots_, seed_.value_or(0),
-          mlir::qco::DDArgumentBindings{}, nullptr, &retainedState, {}, workers,
+          mlir::qco::DDArgumentBindings{}, nullptr, &retainedState,
+          {.maxQubits = maxQubits_}, workers,
           [&](size_t desired) { return requestWorkers(desired); });
       if (llvm::failed(counts)) {
         return false;
@@ -130,8 +132,10 @@ struct Execution {
       stateVecDD_ = retainedState.state;
       return true;
     }
-    dd_ = llvm::cantFail(dd::Package::create());
-    auto state = mlir::qco::simulateStatevector(entryPoint, *dd_);
+    dd_ = llvm::cantFail(dd::Package::create(0));
+    auto state = mlir::qco::simulateStatevector(entryPoint, *dd_,
+                                                mlir::qco::DDArgumentBindings{},
+                                                {.maxQubits = maxQubits_});
     if (llvm::failed(state)) {
       return false;
     }
@@ -147,7 +151,7 @@ struct Execution {
         irBytes, "QDMI job",
         sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
         sampling ? seed_ : std::nullopt,
-        capture ? &output.emplace(qirOutput_.emplace()) : nullptr);
+        capture ? &output.emplace(qirOutput_.emplace()) : nullptr, maxQubits_);
     if (!created) {
       llvm::errs() << llvm::toString(created.takeError()) << "\n";
       return false;
@@ -240,7 +244,7 @@ struct Execution {
         } else if (i != 0) {
           auto createdPeer = qir::JitSession::create(
               irBytes, "QDMI job", qir::Execution::Sampling, workerSeeds[i],
-              capture ? &localOutput : nullptr);
+              capture ? &localOutput : nullptr, maxQubits_);
           if (!createdPeer) {
             qdmi::diagnostics::error("DDSIM program failed: {0}",
                                      llvm::toString(createdPeer.takeError()));
@@ -344,6 +348,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
       .captureQIROutput_ = request.captureOutput,
       .maxWorkers_ = static_cast<size_t>(request.maxWorkers),
       .automaticWorkers_ = request.automaticWorkers,
+      .maxQubits_ = request.maxQubits,
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;

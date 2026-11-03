@@ -208,6 +208,9 @@ public:
 
   /// Allocate a classical bit register
   ///
+  /// Adaptive registers contain dynamic result pointers unless `build` enables
+  /// static results. Base registers always use static result IDs.
+  ///
   /// @param size Number of bits (must be positive)
   /// @param record Whether the register should be recorded in the output
   /// @return A `ClassicalRegister` structure
@@ -245,8 +248,9 @@ public:
   /// Base uses static result IDs and inserts the call in the measurements
   /// block. Adaptive allocates result slots once in the entry block and
   /// measures at the current insertion point. Finalization records selected
-  /// results and releases dynamic slots. Adaptive measurements cannot be mixed
-  /// with explicit `staticResult()` calls.
+  /// results and releases dynamic slots. With `build`'s `staticResults` option,
+  /// Adaptive uses static IDs and permits explicit `staticResult()` calls.
+  /// Mixing static and dynamic result allocation is a usage error.
   ///
   /// @param qubit The qubit to measure
   /// @param index Non-negative result slot index
@@ -1074,11 +1078,12 @@ public:
   /// properly initialized before calling this function, and the resulting
   /// module will be finalized and returned after this function completes.
   /// @param profile The profile to use for the program. Defaults to Adaptive.
+  /// @param staticResults Use statically assigned result IDs in Adaptive QIR.
   /// @return The module containing the quantum program built by buildFunc.
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<Value(QIRProgramBuilder&)>& buildFunc,
-        Profile profile = Profile::Adaptive);
+        Profile profile = Profile::Adaptive, bool staticResults = false);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
@@ -1155,6 +1160,7 @@ private:
 
   /// Track whether Base or Adaptive Profile is used.
   Profile profile = Profile::Adaptive;
+  bool staticResults = false;
 
   /// Reject use after finalization or moving the program to another builder.
   void checkFinalized() const;

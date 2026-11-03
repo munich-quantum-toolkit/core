@@ -66,7 +66,8 @@ child IDs.
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through
-`custom5`.
+`custom5`. Custom session parameters are strings; the device interprets their
+contents.
 
 `device-config` selects exactly one device configuration source:
 

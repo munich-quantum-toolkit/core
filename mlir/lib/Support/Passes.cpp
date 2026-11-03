@@ -90,6 +90,7 @@ void registerMQTCompilerPasses() {
     mqt::registerLowerQuantumModifiers();
     mqt::registerDropGlobalPhases();
     mqt::registerNormalizeGlobalPhases();
+    mqt::registerLegalizeControlFlow();
     mqt::registerPromoteClassicalMemory();
     mqt::registerSimplifyClassicalControl();
     mqt::registerUnrollModifiers();
