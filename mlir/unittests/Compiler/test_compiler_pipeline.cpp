@@ -4474,6 +4474,108 @@ TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
   EXPECT_TRUE(StringRef(*llvmIR).contains("!\"backwards_branching\", i2 1"));
 }
 
+TEST_F(CompilerPipelineTest,
+       PlacedRuntimePauliApproximationExportsAdaptiveQIR) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cx", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %limit = arith.constant 10 : index
+      %factor = arith.constant 1.e-6 : f64
+      %q0 = qco.static 0 : !qco.qubit
+      %q1 = qco.static 1 : !qco.qubit
+      %r:2 = scf.for %i = %c0 to %limit step %c1
+          iter_args(%a = %q0, %b = %q1) -> (!qco.qubit, !qco.qubit) {
+        %n = arith.index_cast %i : index to i64
+        %f = arith.sitofp %n : i64 to f64
+        %angle = arith.mulf %f, %factor : f64
+        %x, %y = qco.rzz(%angle) %a, %b : !qco.qubit, !qco.qubit
+        scf.yield %x, %y : !qco.qubit, !qco.qubit
+      }
+      qco.sink %r#0 : !qco.qubit
+      qco.sink %r#1 : !qco.qubit
+      return
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(program);
+  const auto payload = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
+  const TargetEnvironment environment(target, payload);
+  EXPECT_FALSE(environment.supportsIndexedQubits());
+  ASSERT_TRUE(succeeded(program->compileForTarget(environment)));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  size_t branches = 0;
+  program->module().walk([&](qco::IfOp) { ++branches; });
+  EXPECT_EQ(branches, 1U);
+  auto qc = std::move(*program).intoQC();
+  MQT_ASSERT_SUCCESS(qc);
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
+  MQT_ASSERT_SUCCESS(qir);
+  auto llvmIR = std::move(*qir).intoLLVMIR();
+  MQT_ASSERT_SUCCESS(llvmIR);
+  EXPECT_TRUE(StringRef(*llvmIR).contains("fcmp"));
+}
+
+TEST_F(CompilerPipelineTest, RuntimePauliApproximationExportsOpenQASM3) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::fromOperations({
+                                 llvm::cantFail(Capability::create("u", 1, 3)),
+                                 llvm::cantFail(Capability::create("cz", 2, 0)),
+                             })));
+  constexpr auto source = R"mlir(module {
+    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+      %q0 = qco.static 0 : !qco.qubit
+      %q1 = qco.static 1 : !qco.qubit
+      %r0, %r1 = qco.rzz(%theta) %q0, %q1 : !qco.qubit, !qco.qubit
+      qco.sink %r0 : !qco.qubit
+      qco.sink %r1 : !qco.qubit
+      return
+    }
+  })mlir";
+  for (const bool branching : {false, true}) {
+    std::vector<ProgramCapability> capabilities;
+    if (branching) {
+      capabilities.push_back(
+          {.id = ProgramCapability::FORWARD_BRANCHING.str()});
+    }
+    auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "openqasm", .version = "3.0"}, capabilities));
+    auto program = QCOProgram::fromMLIRString(source);
+    MQT_ASSERT_SUCCESS(program);
+    ASSERT_TRUE(succeeded(
+        program->compileForTarget(TargetEnvironment(target, payload))));
+    EXPECT_TRUE(succeeded(verify(program->module())));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+    size_t branches = 0;
+    program->module().walk([&](qco::IfOp) { ++branches; });
+    EXPECT_EQ(branches, branching ? 1U : 0U);
+    auto qc = std::move(*program).intoQC();
+    MQT_ASSERT_SUCCESS(qc);
+    auto output = std::move(*qc).intoOpenQASM3();
+    MQT_ASSERT_SUCCESS(output);
+    EXPECT_TRUE(StringRef(output->source()).contains("theta"));
+    EXPECT_EQ(StringRef(output->source()).contains("theta >="), branching);
+    EXPECT_TRUE(StringRef(output->source()).contains("cz "));
+    if (branching) {
+      EXPECT_TRUE(StringRef(output->source()).contains("if ("));
+    }
+    auto reparsed = QCProgram::fromOpenQASMString(output->source());
+    MQT_ASSERT_SUCCESS(reparsed);
+    EXPECT_TRUE(succeeded(verify(reparsed->module())));
+  }
+}
+
 TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() -> i1 attributes {mqt.entry_point} {

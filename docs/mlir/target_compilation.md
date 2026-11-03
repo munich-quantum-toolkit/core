@@ -296,26 +296,18 @@ Bind parameters before compilation to use fractional entanglers directly. Qiskit
 import conservatively recognizes this interval through its public bound
 predicates.
 
-Resynthesis of constant two-qubit gates uses an average gate fidelity floor of
-`1 - 1e-12` per decomposition, including direct Pauli lowering. It may remove
-small entangling angles or shorten near-Clifford rotations. Indexed Adaptive QIR
-with unrestricted forward branching also applies this floor to runtime Pauli
-sequences with one entangling rotation. Angle guards can omit that rotation and
-its commuting local rotations within one cumulative bound, while retaining the
-explicit global phase. Other runtime angles use the full sequence. The fidelity
-floor applies to each decomposition; it is not a whole-circuit error budget.
+Two-qubit synthesis uses a `1 - 1e-12` average gate fidelity floor per
+decomposition. It can omit small entangling angles or shorten near-Clifford
+rotations. Adaptive QIR and OpenQASM 3 with unrestricted forward branching can
+also omit the sole entangling term for a small runtime angle, preserving local
+rotations and global phase. This is not a whole-circuit error bound; repeated
+approximations can accumulate.
 
-On U targets, synthesis can fold a phase-only U into a neighboring U by
-forwarding one unchanged phase. This exact rewrite removes a native call and
-needs no runtime arithmetic.
-
-On indexed U/CZ targets, a loop that extracts and reinserts two qubits and
-applies one controlled phase can share a basis change on its invariant tensor
-slot. The slot must already receive H before the loop. Synthesis carries
-retained local Z rotations in a classical angle, normalized modulo 4π, and
-applies them at loop exit. Tensors remain complete at region boundaries. Other
-quantum operations in the body keep per-operation synthesis. Bounded angles use
-arithmetic and comparisons; large angles use trigonometric normalization.
+Synthesis forwards phase-only U factors into neighboring U gates without runtime
+arithmetic. On indexed Adaptive QIR targets with unrestricted forward branching,
+a controlled-phase loop can share a basis change on an invariant tensor slot
+with a pre-loop insertion. Synthesis accumulates local rotations modulo 4π and
+applies them at loop exit, preserving complete tensors at region boundaries.
 
 Synthesis merges Z rotations through diagonal entanglers on native RZ targets.
 Equatorial R targets use at most two R gates per single-qubit unitary and absorb

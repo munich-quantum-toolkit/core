@@ -1139,7 +1139,7 @@ static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     std::optional<CompilerTarget::SynthesisBasis> basis,
     std::optional<ArrayRef<SiteId>> sites, NativeCostAnalysis& analysis,
-    bool allowRuntimeApproximation) {
+    bool canEmitRuntimeBranches) {
   Operation* const operation = op.getOperation();
   if (const auto reverse = analysis.nativeOrientation(op, target, sites)) {
     if (*reverse) {
@@ -1202,7 +1202,7 @@ static LogicalResult synthesizeTargetOperation(
       rewriter.replaceOp(operation,
                          decomposition::emitPauliRotations(
                              rewriter, operation, *sequence, *basis,
-                             choice->reverse, allowRuntimeApproximation));
+                             choice->reverse, canEmitRuntimeBranches));
       return success();
     }
   }
@@ -1530,15 +1530,19 @@ protected:
       return;
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
-    const bool allowRuntimeApproximation =
-        indexed &&
-        llvm::any_of(
-            environment.environment().payloadSpecification().capabilities(),
-            [](const auto& capability) {
-              return capability.id == ProgramCapability::FORWARD_BRANCHING &&
-                     capability.value == 0 && capability.constraints.empty();
-            });
-    if (allowRuntimeApproximation) {
+    const auto& payload = environment.environment().payloadSpecification();
+    const bool supportsFloatBranches =
+        (payload.format().id == "qir" &&
+         payload.format().profile == "adaptive") ||
+        (payload.format().id == "openqasm" && payload.versionRange() &&
+         payload.versionRange()->withinMajor(3));
+    const bool canEmitRuntimeBranches =
+        supportsFloatBranches &&
+        llvm::any_of(payload.capabilities(), [](const auto& capability) {
+          return capability.id == ProgramCapability::FORWARD_BRANCHING &&
+                 capability.value == 0 && capability.constraints.empty();
+        });
+    if (indexed && canEmitRuntimeBranches) {
       IRRewriter loopRewriter(&getContext());
       decomposition::synthesizePhaseFanoutLoops(loopRewriter, moduleOp, target);
     }
@@ -1599,7 +1603,7 @@ protected:
           auto operationSites = getOperationSites(operation, *sites);
           const auto synthesized = synthesizeTargetOperation(
               rewriter, unitary, target, emissionBasis,
-              knownSites(operationSites), analysis, allowRuntimeApproximation);
+              knownSites(operationSites), analysis, canEmitRuntimeBranches);
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });
