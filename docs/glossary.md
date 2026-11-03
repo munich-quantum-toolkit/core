@@ -345,6 +345,13 @@ value semantics
   A model in which an operation consumes input values and produces new output
   values. QCO uses this model to make quantum data flow explicit in SSA form.
 
+wire correspondence
+  The relation between an operation's input and output quantum values that
+  continue the same qubit identities. QCO's `WireOpInterface` exposes positional
+  quantum ranges for unitary operations, measurement, reset, and branches.
+  Classical operands and results are excluded. SWAP exchanges quantum states
+  while preserving wire correspondence.
+
 linear semantics
 linear ownership
   **Preferred term:** linear semantics. **Accepted alias:** linear ownership

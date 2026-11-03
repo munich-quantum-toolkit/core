@@ -335,6 +335,21 @@ OpResult IfOp::getTiedResult(OpOperand* qubit) {
   return getLinearResults()[qubit->getOperandNumber() - 1];
 }
 
+Value IfOp::getInputForOutput(Value output) {
+  auto result = dyn_cast<OpResult>(output);
+  auto* input = result ? getTiedQubit(result) : nullptr;
+  return input != nullptr ? input->get() : Value{};
+}
+
+Value IfOp::getOutputForInput(Value input) {
+  for (auto [index, qubit] : llvm::enumerate(getQubits())) {
+    if (input == qubit) {
+      return getLinearResults()[index];
+    }
+  }
+  return {};
+}
+
 OpOperand* IfOp::getTiedQubit(OpResult result) {
   if (result.getDefiningOp() != getOperation()) {
     return nullptr;

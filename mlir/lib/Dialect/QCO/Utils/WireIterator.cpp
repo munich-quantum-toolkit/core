@@ -79,20 +79,16 @@ void WireIterator::forward() {
   pos_ = Position::Between;
 
   TypeSwitch<Operation*>(op_)
-      .Case([&](UnitaryOpInterface op) {
+      .Case([&](WireOpInterface op) {
         const auto index =
             use.getOperandNumber() - op.getInputQubits().getBeginOperandIndex();
         qubit_ = op.getOutputQubit(index);
       })
-      .Case([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
-      .Case([&](ResetOp op) { qubit_ = op.getQubitOut(); })
       .Case([&](scf::ForOp op) { qubit_ = op.getTiedLoopResult(&use); })
       .Case([&](scf::WhileOp op) {
         qubit_ = getCorrespondingQuantumValue(op.getInits(), op.getResults(),
                                               use.getOperandNumber());
       })
-      .Case([&](IfOp op) { qubit_ = op.getTiedResult(&use); })
-      .Case([&](IndexSwitchOp op) { qubit_ = op.getTiedResult(&use); })
       .Default([&](Operation*) { pos_ = Position::Tail; });
 }
 
@@ -124,11 +120,8 @@ void WireIterator::backward() {
     bool unknown = false;
     // Find the input from the output qubit SSA value.
     TypeSwitch<Operation*>(op_)
-        .Case([&](UnitaryOpInterface op) {
-          qubit_ = op.getInputForOutput(qubit_);
-        })
-        .Case([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
-        .Case([&](ResetOp op) { qubit_ = op.getQubitIn(); })
+        .Case(
+            [&](WireOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
         .Case([&](scf::ForOp op) {
           if (auto result = dyn_cast<OpResult>(qubit_)) {
             qubit_ = op.getTiedLoopInit(result)->get();
@@ -140,20 +133,6 @@ void WireIterator::backward() {
           qubit_ = getCorrespondingQuantumValue(
               op.getResults(), op.getInits(),
               cast<OpResult>(qubit_).getResultNumber());
-        })
-        .Case([&](IfOp op) {
-          if (auto result = dyn_cast<OpResult>(qubit_)) {
-            qubit_ = op.getTiedQubit(result)->get();
-            return;
-          }
-          llvm::reportFatalInternalError("expected result lookup");
-        })
-        .Case([&](IndexSwitchOp op) {
-          if (auto result = dyn_cast<OpResult>(qubit_)) {
-            qubit_ = op.getTiedTarget(result)->get();
-            return;
-          }
-          llvm::reportFatalInternalError("expected result lookup");
         })
         .Default([&](Operation*) { unknown = true; });
 

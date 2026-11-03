@@ -11,6 +11,7 @@ add_executable(
   ${qco_ir_target}
   test_qco_simplification.cpp
   test_qco_control_flow_canonicalization.cpp
+  test_qco_interfaces.cpp
   test_qco_ir.cpp
   test_qco_ir_matrix.cpp
   test_qco_modifier_simplification.cpp

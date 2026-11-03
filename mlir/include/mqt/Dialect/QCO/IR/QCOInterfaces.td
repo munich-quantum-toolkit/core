@@ -12,10 +12,48 @@
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
+// WireOpInterface
+//===----------------------------------------------------------------------===//
+
+def WireOpInterface : OpInterface<"WireOpInterface"> {
+  let description = [{
+    Describes the quantum wires continued by an operation, independently of
+    whether the operation is unitary. The input and output ranges have matching
+    types and correspond positionally. A value may be a scalar qubit or a
+    one-dimensional qubit tensor or vector. Classical operands and results are
+    excluded from these ranges, which need not start at position zero.
+
+    Wire identity is preserved even when quantum states are exchanged by SWAP.
+    Region operations must also verify the correspondence through their bodies;
+    this interface describes their external input/output relationship only.
+
+    Indexed access and correspondence queries require a value or index from the
+    declared quantum ranges. Allocation and lifetime-ending operations do not
+    implement this interface because they do not continue existing wires.
+  }];
+  let cppNamespace = "::mlir::qco";
+  let methods =
+      [InterfaceMethod<"Returns the i-th input quantum value.", "Value",
+                       "getInputQubit", (ins "size_t":$i)>,
+       InterfaceMethod<"Returns the input quantum values in wire order.",
+                       "OperandRange", "getInputQubits", (ins)>,
+       InterfaceMethod<"Returns the i-th output quantum value.", "Value",
+                       "getOutputQubit", (ins "size_t":$i)>,
+       InterfaceMethod<"Returns the output quantum values in wire order.",
+                       "ResultRange", "getOutputQubits", (ins)>,
+       InterfaceMethod<
+           "Returns the input quantum value corresponding to an output.",
+           "Value", "getInputForOutput", (ins "Value":$output)>,
+       InterfaceMethod<
+           "Returns the output quantum value corresponding to an input.",
+           "Value", "getOutputForInput", (ins "Value":$input)>];
+}
+
+//===----------------------------------------------------------------------===//
 // UnitaryOpInterface
 //===----------------------------------------------------------------------===//
 
-def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
+def UnitaryOpInterface : OpInterface<"UnitaryOpInterface", [WireOpInterface]> {
   let description = [{
         This interface provides a unified API for all operations that apply or
         produce a unitary transformation in the QCO dialect. This includes base
@@ -25,8 +63,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         The interface enables uniform introspection and composition capabilities
         across all unitary operations with value semantics.
 
-        Input and output qubit ranges correspond positionally: the i-th output
-        continues the i-th input wire, including for SWAP operations.
+        Wire access and correspondence are inherited from `WireOpInterface`.
 
         Gate parameters must be finite, including values produced at runtime.
         Operation verification only checks direct constants as a sanity check.
@@ -73,18 +110,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
       InterfaceMethod<
           "Returns the number of control qubits (both positive and negative).",
           "size_t", "getNumControls", (ins)>,
-      InterfaceMethod<
-          "Returns the i-th input qubit (targets + controls combined).",
-          "Value", "getInputQubit", (ins "size_t":$i)>,
-      InterfaceMethod<
-          "Returns a range of all input qubits (targets + controls combined).",
-          "OperandRange", "getInputQubits", (ins)>,
-      InterfaceMethod<
-          "Returns the i-th output qubit (targets + controls combined).",
-          "Value", "getOutputQubit", (ins "size_t":$i)>,
-      InterfaceMethod<
-          "Returns a range of all output qubits (targets + controls combined).",
-          "ResultRange", "getOutputQubits", (ins)>,
       InterfaceMethod<"Returns the i-th target input qubit.", "Value",
                       "getInputTarget", (ins "size_t":$i)>,
       InterfaceMethod<"Returns a range of all target input qubits.",
@@ -101,13 +126,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       "getOutputControl", (ins "size_t":$i)>,
       InterfaceMethod<"Returns a range of all control output qubits.",
                       "ResultRange", "getOutputControls", (ins)>,
-      InterfaceMethod<
-          "Returns the input qubit corresponding to the given output qubit.",
-          "Value", "getInputForOutput", (ins "Value":$output)>,
-      InterfaceMethod<
-          "Returns the output qubit corresponding to the given input qubit.",
-          "Value", "getOutputForInput", (ins "Value":$input)>,
-
       // Parameter handling
       InterfaceMethod<"Returns the number of parameters.", "size_t",
                       "getNumParams", (ins)>,
