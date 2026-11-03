@@ -48,10 +48,12 @@ from mqt.core.mlir import (
     build_functionality,
     compile_program,
     sample,
+    serialize_program,
     simulate,
     submit_program,
 )
 from mqt.core.qdmi import Device, ProgramFormat, open_device
+from mqt.core.qdmi.builtin_driver import open_device as open_builtin_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not supports_qiskit_translation(),
@@ -441,7 +443,8 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     optimized = compile_program(direct)
     assert_type(optimized, OpenQASMProgram)
     assert isinstance(optimized, OpenQASMProgram)
-    assert "output bit[2] c;" in optimized.source
+    assert "bit[2] c;" in optimized.source
+    assert "output " not in optimized.source
     assert set(sample(optimized, shots=32, seed=1)) == {"00", "11"}
 
     imported = compile_program(direct, output=OutputFormat.QC_IMPORT)
@@ -828,6 +831,56 @@ def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
     assert mapped.ir.count("qco.measure") == 2
     assert "qco.rx" not in mapped.ir
     assert "qco.ry" not in mapped.ir
+
+
+def test_compile_and_serialize_with_device_environment() -> None:
+    """Reuse one selected payload for compilation, serialization, and execution."""
+    device = open_builtin_device("mqt.ddsim.default", custom1="2")
+    environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
+    compiled = compile_program(QASM_STRING, target=environment)
+    assert compiled.program_format == ProgramFormat.QASM3
+    native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
+    serialized = serialize_program(native, target=environment)
+    assert serialized.program_format == ProgramFormat.QASM3
+    for program in (compiled, serialized):
+        job = submit_program(program, target=device, num_shots=8)
+        assert job.wait()
+        assert sum(job.get_counts().values()) == 8
+
+    restricted = TargetEnvironment(environment.target, PayloadSpecification(environment.payload_specification.format))
+    restricted_program = compile_program(QASM_STRING, target=restricted)
+    job = submit_program(restricted_program, target=device, num_shots=8)
+    assert job.wait()
+    assert sum(job.get_counts().values()) == 8
+
+    with pytest.raises(ValueError, match="already selects"):
+        serialize_program(native, target=environment, program_format=ProgramFormat.QASM3)
+
+    qir_environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
+    unconsumed = compile_program(QASM_STRING, output=OutputFormat.QC_IMPORT)
+    with pytest.raises(ValueError, match="virtual qubit addressing"):
+        compile_program(unconsumed, target=qir_environment, physical_qubits=False)
+    assert unconsumed.is_valid
+    with pytest.raises(ValueError, match="virtual qubit addressing"):
+        compile_program([], target=qir_environment, physical_qubits=False)
+
+
+def test_explicit_output_preserves_environment_payload_version() -> None:
+    """The receiver's version constraint applies to explicit and implicit output."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    payload = PayloadSpecification(PayloadFormat("openqasm", ">=3.1,<4"))
+    environment = TargetEnvironment(target, payload)
+    compiled = compile_program(QASM_STRING, target=environment)
+    explicit = compile_program(QASM_STRING, target=environment, output=OutputFormat.OPENQASM3)
+    assert isinstance(compiled.payload, str)
+    assert compiled.payload.startswith("OPENQASM 3.1;")
+    assert explicit.source.startswith("OPENQASM 3.1;")
+    qc = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
+    assert qc.to_openqasm3().source.startswith("OPENQASM 3.1;")
 
 
 @pytest.mark.parametrize("output", [OutputFormat.QC_IMPORT, OutputFormat.QCO])

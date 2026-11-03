@@ -107,15 +107,26 @@ PayloadControlSupport::get(PayloadControlFeature feature) const {
 
 bool PayloadControlSupport::coversDepth(PayloadControlFeature feature,
                                         Operation* operation) const {
+  return coversDepth(feature, controlDepth(operation));
+}
+
+bool PayloadControlSupport::coversDepth(PayloadControlFeature feature,
+                                        uint64_t depth) const {
   const CapabilityGroup& group = get(feature);
-  return group.usable && (!group.maxNestingDepth ||
-                          controlDepth(operation) <= *group.maxNestingDepth);
+  return group.usable &&
+         (!group.maxNestingDepth || depth <= *group.maxNestingDepth);
 }
 
 bool PayloadControlSupport::coversIteration(
     PayloadControlFeature feature, Operation* operation,
     const std::optional<llvm::APInt>& tripCount) const {
-  if (!coversDepth(feature, operation)) {
+  return coversIteration(feature, controlDepth(operation), tripCount);
+}
+
+bool PayloadControlSupport::coversIteration(
+    PayloadControlFeature feature, uint64_t depth,
+    const std::optional<llvm::APInt>& tripCount) const {
+  if (!coversDepth(feature, depth)) {
     return false;
   }
   const CapabilityGroup& group = get(feature);
@@ -127,7 +138,12 @@ bool PayloadControlSupport::coversIteration(
 
 bool PayloadControlSupport::coversMultiwayBranching(Operation* operation,
                                                     uint64_t caseCount) const {
-  if (!coversDepth(PayloadControlFeature::MultiwayBranching, operation)) {
+  return coversMultiwayBranching(controlDepth(operation), caseCount);
+}
+
+bool PayloadControlSupport::coversMultiwayBranching(uint64_t depth,
+                                                    uint64_t caseCount) const {
+  if (!coversDepth(PayloadControlFeature::MultiwayBranching, depth)) {
     return false;
   }
   const CapabilityGroup& group = get(PayloadControlFeature::MultiwayBranching);

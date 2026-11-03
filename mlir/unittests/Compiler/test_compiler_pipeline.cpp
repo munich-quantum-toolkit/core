@@ -2530,7 +2530,7 @@ bit[2] c = measure q;
   EXPECT_FALSE(directQC->isValid());
   EXPECT_TRUE(direct->source().starts_with("OPENQASM 3;\n"));
   EXPECT_EQ(direct->str(), direct->source());
-  EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
+  EXPECT_NE(direct->source().find("bit[2] c;"), std::string::npos);
   EXPECT_TRUE(llvm::errorToBool(
       direct->write(std::filesystem::path(testing::TempDir()) / "missing" /
                     "typed_program_output.qasm")));
@@ -4751,6 +4751,11 @@ TEST_F(CompilerPipelineTest, RuntimePauliApproximationExportsOpenQASM3) {
     auto qc = std::move(*program).intoQC();
     MQT_ASSERT_SUCCESS(qc);
     auto output = std::move(*qc).intoOpenQASM3();
+    if (!branching) {
+      // Hiding implicit classical outputs requires an OpenQASM scope branch.
+      EXPECT_TRUE(failed(output));
+      continue;
+    }
     MQT_ASSERT_SUCCESS(output);
     EXPECT_TRUE(StringRef(output->source()).contains("theta"));
     EXPECT_EQ(StringRef(output->source()).contains("theta >="), branching);
@@ -5343,7 +5348,8 @@ c = measure q;
                                         return success();
                                       });
       EXPECT_TRUE(failed(std::move(direct).intoOpenQASM3()));
-      EXPECT_TRUE(StringRef(diagnostics).contains("no known OpenQASM version"))
+      EXPECT_TRUE(
+          StringRef(diagnostics).contains("control flow is not supported"))
           << diagnostics;
     }
     auto output = runDefaultPipeline(
@@ -6093,7 +6099,8 @@ TEST_F(CompilerPipelineTest, TargetOpenQASMRetainsExportableControlledAngles) {
                              })));
   const TargetEnvironment environment(
       target, llvm::cantFail(PayloadSpecification::create(
-                  {.id = "openqasm", .version = "3.1.0", .profile = ""})));
+                  {.id = "openqasm", .version = "3.1.0", .profile = ""},
+                  {{.id = "forward-branching"}})));
   auto qc = QCProgram::fromOpenQASMString(R"(OPENQASM 3.1;
 include "stdgates.inc";
 input float[64] theta;
@@ -7458,8 +7465,8 @@ TEST_F(CompilerPipelineTest, OpenQASMReceiverVersionFloorAndFutureMinorInput) {
     auto input = QCProgram::fromOpenQASMString(
         "OPENQASM 3.99; include \"stdgates.inc\"; qubit q; h q;");
     MQT_ASSERT_SUCCESS(input);
-    const auto payload = llvm::cantFail(
-        PayloadSpecification::create({.id = "openqasm", .version = version}));
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "openqasm", .version = version}, {{.id = "forward-branching"}}));
     attachTargetEnvironment(
         input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
     auto output = std::move(*input).intoOpenQASM3();

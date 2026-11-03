@@ -849,7 +849,8 @@ collectUnitaryInstruction(mlir::Operation& operation,
 }
 
 static void collectResources(mlir::func::FuncOp function, ExportState& state,
-                             const mlir::CompilerTarget* const target) {
+                             const mlir::CompilerTarget* const target,
+                             bool preserveSiteIds) {
   llvm::StringSet<> usedNames;
   for (const auto& parameter : state.parameterNames) {
     usedNames.insert(parameter.getKey());
@@ -873,7 +874,9 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           throw std::runtime_error(
               "QC static qubit is not a site of the supplied compiler target");
         }
-        index = checkedIndex(static_cast<uint64_t>(*vertex), "qubit");
+        index = preserveSiteIds
+                    ? checkedIndex(staticQubit.getIndex(), "qubit")
+                    : checkedIndex(static_cast<uint64_t>(*vertex), "qubit");
       } else {
         index = checkedIndex(staticQubit.getIndex(), "qubit");
       }
@@ -2863,7 +2866,8 @@ collectGateDefinition(mlir::func::FuncOp function) {
 [[nodiscard]] static nb::object
 exportCircuitImpl(mlir::QCProgram program,
                   const mlir::CompilerTarget* const target,
-                  const mlir::PayloadSpecification* const payload) {
+                  const mlir::PayloadSpecification* const payload,
+                  bool preserveSiteIds = false) {
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {
@@ -2905,10 +2909,15 @@ exportCircuitImpl(mlir::QCProgram program,
   if (target != nullptr) {
     state.numQubits = checkedIndex(static_cast<uint64_t>(target->numSites()),
                                    "target qubit count");
+    if (preserveSiteIds) {
+      state.numQubits = checkedIndex(
+          static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
+          "target address width");
+    }
   }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);
-  collectResources(function, state, target);
+  collectResources(function, state, target, preserveSiteIds);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
@@ -2937,7 +2946,8 @@ exportCircuitImpl(mlir::QCProgram program,
                                     definition.formalParameters,
                                     std::move(definitionWriter));
   }
-  auto writer = translation->createCircuit(looseQubits, looseClbits, target);
+  auto writer = translation->createCircuit(looseQubits, looseClbits, target,
+                                           preserveSiteIds);
   for (const auto& reg : state.quantumRegisters) {
     writer->addQuantumRegister(reg.name,
                                static_cast<uint32_t>(reg.bits.size()));
@@ -2947,11 +2957,33 @@ exportCircuitImpl(mlir::QCProgram program,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
   emitCircuit(circuit, *writer);
-  // Compiler layouts use target positions; imported layouts use circuit wires.
-  if (layout && layout->initial.size() == state.numQubits &&
-      (layout->sites
-           ? target != nullptr && llvm::equal(*layout->sites, target->siteIds())
-           : target == nullptr)) {
+  if (preserveSiteIds && layout && layout->sites && target != nullptr &&
+      layout->initial.size() == target->numSites() &&
+      llvm::equal(*layout->sites, target->siteIds())) {
+    const auto& sites = *layout->sites;
+    for (auto& site : layout->initial) {
+      site = sites[static_cast<size_t>(site)];
+    }
+    for (uint32_t site = 0; site < state.numQubits; ++site) {
+      if (!target->vertexForSite(site)) {
+        layout->initial.push_back(site);
+      }
+    }
+    if (layout->routing) {
+      auto positions = std::move(*layout->routing);
+      layout->routing->resize(state.numQubits);
+      std::iota(layout->routing->begin(), layout->routing->end(), int64_t{0});
+      for (auto [index, site] : llvm::enumerate(sites)) {
+        (*layout->routing)[static_cast<size_t>(site)] =
+            sites[static_cast<size_t>(positions[index])];
+      }
+    }
+    layout->sites.reset();
+    writer->setLayout(*layout);
+  } else if (layout && layout->initial.size() == state.numQubits &&
+             (layout->sites ? target != nullptr &&
+                                  llvm::equal(*layout->sites, target->siteIds())
+                            : target == nullptr)) {
     writer->setLayout(*layout);
   }
   return writer->finish();
@@ -2965,7 +2997,7 @@ nb::object exportCircuit(mlir::QCProgram program,
 nb::object exportCircuit(mlir::QCProgram program,
                          const mlir::TargetEnvironment& environment) {
   return exportCircuitImpl(std::move(program), &environment.target(),
-                           &environment.payloadSpecification());
+                           &environment.payloadSpecification(), true);
 }
 
 } // namespace mqt::bindings::qiskit

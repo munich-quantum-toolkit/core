@@ -1,0 +1,22 @@
+{
+  "schema-version": 1,
+  "name": "Site-restricted Additional Operations",
+  "numQubits": 3,
+  "durationUnit": { "unit": "ns", "scaleFactor": 1.0 },
+  "qubitProperties": { "defaults": {}, "overrides": [] },
+  "couplings": [
+    [0, 1],
+    [1, 2]
+  ],
+  "operations": [
+    { "name": "prx", "numQubits": 1, "numParameters": 2 },
+    { "name": "cz", "numQubits": 2, "numParameters": 0 },
+    { "name": "measure", "numQubits": 1, "numParameters": 0 },
+    {
+      "name": "measure_012",
+      "numQubits": 1,
+      "numParameters": 0,
+      "sites": [[0]]
+    }
+  ]
+}

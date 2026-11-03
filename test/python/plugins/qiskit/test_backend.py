@@ -25,7 +25,7 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core.mlir import sample
+from mqt.core.mlir import sample, serialize_program
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
@@ -396,7 +396,8 @@ def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBacken
     program = serializer(qc, ddsim_backend)
 
     assert isinstance(program, str)
-    outputs = re.findall(r"output bit\[(\d+)] (\w+);", program)
+    assert "output " not in program
+    outputs = re.findall(r"bit\[(\d+)] (\w+);", program)
     assert [int(width) for width, _ in outputs] == [1, 1, 3]
     for width, name in outputs:
         assert program.index(f'{name} = "{int(width) * "0"}";') < program.index("x $0;")
@@ -629,6 +630,23 @@ def test_iqm_serializer_uses_device_site_names() -> None:
         {"name": "prx", "locus": [site], "args": {"angle": 0.731, "phase": -0.419}},
         {"name": "measure", "locus": [site], "args": {"key": "c_1_0_0"}},
     ]
+
+
+def test_serializer_rejects_compiled_program_in_wrong_format(
+    ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject a serializer that labels a compiled QASM payload as QIR."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    compiled = serialize_program(circuit, target=ddsim_backend.device, program_format=ProgramFormat.QASM3)
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (ProgramFormat.QIR_BASE_STRING,)
+    )
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.program_serializer", lambda _: lambda *_: compiled)
+    with pytest.raises(TranslationError, match="returned a QASM3 program"):
+        ddsim_backend.run(circuit, shots=1)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (ProgramFormat.QASM3,))
+    assert ddsim_backend.run(circuit, shots=1).result().get_counts() == {"0": 1}
 
 
 @pytest.mark.parametrize("fmt", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_STRING, ProgramFormat.QIR_ADAPTIVE_STRING])

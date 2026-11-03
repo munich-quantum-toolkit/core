@@ -1036,10 +1036,11 @@ public:
       throw std::runtime_error("Qiskit initial layout must cover every qubit");
     }
     const auto count = metadata.attr("_input_qubit_count");
-    if (count.is_none()) {
-      throw std::runtime_error("Qiskit layout requires an input qubit count");
-    }
-    result.inputCount = nb::cast<int64_t>(count);
+    // Physical OpenQASM imports leave the count unset: every mapped qubit is
+    // an input, with no separately identified transpiler workspace.
+    result.inputCount = count.is_none()
+                            ? static_cast<int64_t>(result.initial.size())
+                            : nb::cast<int64_t>(count);
     if (const auto final = metadata.attr("final_layout"); !final.is_none()) {
       if (metadata.attr("_output_qubit_list").is_none()) {
         throw std::runtime_error(
@@ -2296,19 +2297,20 @@ public:
   NativeCircuitWriter(uint32_t looseQubits, uint32_t looseClbits,
                       std::shared_ptr<OutputParameters> parameters,
                       std::shared_ptr<NativeGateRegistry> gates,
-                      const mlir::CompilerTarget* target)
+                      const mlir::CompilerTarget* target, bool preserveSiteIds)
       : NativeCircuitWriter(qk_circuit_new(looseQubits, looseClbits),
-                            std::move(parameters), std::move(gates), {},
-                            target) {}
+                            std::move(parameters), std::move(gates), {}, target,
+                            preserveSiteIds) {}
 
   NativeCircuitWriter(QkCircuit* circuit,
                       std::shared_ptr<OutputParameters> parameters,
                       std::shared_ptr<NativeGateRegistry> gates,
                       PythonVariables variables,
-                      const mlir::CompilerTarget* target)
+                      const mlir::CompilerTarget* target, bool preserveSiteIds)
       : data_(nb::steal<nb::object>(qk_circuit_to_python(circuit))),
         variables_(std::move(variables)), parameters_(std::move(parameters)),
-        gates_(std::move(gates)), target_(target) {
+        gates_(std::move(gates)), target_(target),
+        preserveSiteIds_(preserveSiteIds) {
     if (!data_.is_valid()) {
       throwPythonError("Qiskit failed to construct output CircuitData");
     }
@@ -2326,7 +2328,7 @@ public:
     return std::make_unique<NativeCircuitWriter>(
         qk_circuit_copy_empty_like(circuit_, QkVarsMode_Drop,
                                    QkBlocksMode_Drop),
-        parameters_, gates_, variables_, target_);
+        parameters_, gates_, variables_, target_, preserveSiteIds_);
   }
 
   void addQuantumRegister(std::string_view name, uint32_t size) override {
@@ -2370,14 +2372,14 @@ public:
     nb::dict indices;
     for (auto [index, site] : llvm::enumerate(layout.initial)) {
       const auto bit = input[nb::int_(index)];
-      initial[bit] = nb::int_(site);
+      initial[nb::int_(site)] = bit;
       indices[bit] = nb::int_(index);
     }
     nb::object final = nb::none();
     if (layout.routing) {
       nb::dict positions;
       for (auto [site, output] : llvm::enumerate(*layout.routing)) {
-        positions[physical[site]] = nb::int_(output);
+        positions[nb::int_(output)] = physical[site];
       }
       final = transpiler.attr("Layout")(positions);
     }
@@ -2414,10 +2416,13 @@ public:
         }
         if (operation.siteTuples().empty() ||
             std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
-              return std::ranges::equal(tuple.sites(), qubits, {}, {},
-                                        [&](uint32_t qubit) {
-                                          return target_->siteForVertex(qubit);
-                                        });
+              return std::ranges::equal(
+                  tuple.sites(), qubits, {}, {}, [&](uint32_t qubit) {
+                    return preserveSiteIds_
+                               ? static_cast<mlir::CompilerTarget::SiteId>(
+                                     qubit)
+                               : target_->siteForVertex(qubit);
+                  });
             })) {
           gate = candidate;
           nativeName = operation.name().str();
@@ -3006,6 +3011,7 @@ private:
   std::shared_ptr<OutputParameters> parameters_;
   std::shared_ptr<NativeGateRegistry> gates_;
   const mlir::CompilerTarget* target_;
+  bool preserveSiteIds_;
 };
 
 class NativeTranslation final : public VersionedTranslation {
@@ -3034,9 +3040,9 @@ public:
     return target;
   }
 
-  static mlir::CompilerTarget::NativeOperations
-  readOperations(nb::handle source, nb::handle operationNames,
-                 bool placements) {
+  static mlir::CompilerTarget::NativeOperations readOperations(
+      nb::handle source, nb::handle operationNames, bool placements,
+      std::set<mlir::CompilerTarget::SiteId>* activeSites = nullptr) {
     using Target = mlir::CompilerTarget;
     auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
@@ -3051,6 +3057,13 @@ public:
                                                   ? nb::handle(available)
                                                   : operationNames)) {
       names.insert(nb::cast<std::string>(item));
+    }
+
+    const auto selectedNames = names;
+    if (activeSites != nullptr) {
+      for (auto item : nb::borrow<nb::iterable>(available)) {
+        names.insert(nb::cast<std::string>(item));
+      }
     }
 
     std::vector<Target::OperationCapability> operations;
@@ -3077,11 +3090,37 @@ public:
       if ((!qargs.is_none() && nb::len(qargs) == 0) ||
           nb::issubclass(instructionType, ignoredTypes) ||
           nativeName == "gphase") {
-        if (!operationNames.is_none()) {
+        if (!operationNames.is_none() &&
+            selectedNames.contains(operationName)) {
           throw nb::value_error(("Qiskit target operation " + quotedName +
                                  " has no native gate applicability")
                                     .c_str());
         }
+        continue;
+      }
+
+      // Unsupported gates still identify physical sites, but cannot supply
+      // routing edges. Directives were excluded above.
+      if (activeSites != nullptr &&
+          (instruction.is_type() ||
+           nb::cast<size_t>(instruction.attr("num_qubits")) > 0)) {
+        if (qargs.is_none()) {
+          const auto width = nb::cast<size_t>(target.attr("num_qubits"));
+          if (activeSites->size() != width) {
+            for (size_t site = 0; site < width; ++site) {
+              activeSites->insert(static_cast<Target::SiteId>(site));
+            }
+          }
+        } else {
+          for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
+            for (auto site : nb::borrow<nb::iterable>(tuple)) {
+              activeSites->insert(nb::cast<Target::SiteId>(site));
+            }
+          }
+        }
+      }
+
+      if (!selectedNames.contains(operationName)) {
         continue;
       }
 
@@ -3245,7 +3284,22 @@ public:
       throw nb::value_error(
           "Qiskit target must have a known positive qubit count");
     }
-    const auto nativeOperations = readOperations(target, operationNames, true);
+    std::set<Target::SiteId> activeSites;
+    const auto nativeOperations =
+        readOperations(target, operationNames, true, &activeSites);
+    std::vector<Target::Site> sites;
+    sites.reserve(activeSites.size());
+    for (const auto site : activeSites) {
+      if (site < 0 || std::cmp_greater_equal(site, numQubits)) {
+        throw nb::value_error(
+            "Qiskit target placement exceeds its address width");
+      }
+      sites.push_back(unwrap(Target::Site::create(site)));
+    }
+    numQubits = sites.size();
+    if (numQubits == 0) {
+      throw nb::value_error("Qiskit target has no addressable quantum sites");
+    }
     std::set<Target::Coupling> couplings;
     bool allToAll = numQubits == 1;
     for (const auto& capability : nativeOperations.operations()) {
@@ -3271,22 +3325,23 @@ public:
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
     return unwrap(
-        targetName ? Target::create(*targetName, numQubits, connectivity,
-                                    nativeOperations)
-                   : Target::create(numQubits, connectivity, nativeOperations));
+        targetName
+            ? Target::create(*targetName, sites, connectivity, nativeOperations)
+            : Target::create(sites, connectivity, nativeOperations));
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
-                const mlir::CompilerTarget* target) const override {
+                const mlir::CompilerTarget* target,
+                bool preserveSiteIds) const override {
     if (target != nullptr &&
         std::ranges::none_of(target->operations(), [](const auto& operation) {
           return operation.name() != operation.canonicalName();
         })) {
       target = nullptr;
     }
-    return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
-                                                 parameters_, gates_, target);
+    return std::make_unique<NativeCircuitWriter>(
+        looseQubits, looseClbits, parameters_, gates_, target, preserveSiteIds);
   }
 
   void registerCustomGate(std::string_view symbol, std::string_view name,

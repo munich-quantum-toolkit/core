@@ -105,7 +105,8 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
         f"--target={target}",
         (
             '--payload-spec=#mqt.payload_spec<format = <id = "openqasm", version = "3.1.0", '
-            'profile = "", encoding = text>, capabilities = [], optional_capabilities_known = false>'
+            'profile = "", encoding = text>, capabilities = [<id = "forward-branching", '
+            "value = 0, constraints = []>], optional_capabilities_known = false>"
         ),
     ])
     assert ret.success

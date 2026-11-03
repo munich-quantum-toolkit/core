@@ -27,7 +27,12 @@ _CompilerInput: TypeAlias = (
     str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
 )
 _CompilerTarget: TypeAlias = (
-    CompilerTarget | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
+    CompilerTarget
+    | TargetEnvironment
+    | qiskit.providers.BackendV2
+    | qiskit.transpiler.Target
+    | mqt.core.qdmi.Device
+    | str
 )
 _CompilerOutput: TypeAlias = (
     qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
@@ -49,6 +54,8 @@ class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
     options: CompilationOptions
+    terminal_readout: TerminalReadout | None
+    physical_qubits: bool
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -639,6 +646,12 @@ class TargetEnvironment:
     """A compiler target and its selected payload specification."""
 
     def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification) -> None: ...
+    @staticmethod
+    def from_device(
+        device: mqt.core.qdmi.Device | str, *, program_format: mqt.core.qdmi.ProgramFormat | None = None
+    ) -> TargetEnvironment:
+        """Snapshot a QDMI device and select its executable payload."""
+
     @property
     def target(self) -> CompilerTarget:
         """The compiler target."""
@@ -880,7 +893,7 @@ class QCProgram(Program):
             copy: Export a copy of the program.
         """
 
-    def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
+    def to_openqasm3(self, *, physical_qubits: bool = True, copy: bool = False) -> OpenQASMProgram:
         """Emit this QC program as OpenQASM 3.
 
         Classical memory and control flow are legalized for the source format. Use
@@ -889,6 +902,7 @@ class QCProgram(Program):
         The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 
         Args:
+            physical_qubits: Emit static sites as physical references rather than a virtual register.
             copy: Preserve the source program by exporting a copy.
         """
 
@@ -1480,8 +1494,36 @@ def expectation_values(
     and error contracts.
     """
 
+def _operation_parameter_constraints(
+    metadata: bytes | None, num_parameters: int
+) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
+    """Parse the temporary QDMI operation parameter constraints."""
+
+class TerminalReadout(enum.Enum):
+    MEASURED = 0
+
+    ALL = 1
+
+class ResultLayout:
+    """Reconstruct logical bits from receiver samples."""
+
+    @property
+    def raw_width(self) -> int:
+        """The number of bits in each raw receiver sample."""
+
+    @property
+    def bits(self) -> list[int | None]:
+        """Raw indices or None for zero in LSB-first order."""
+
+    def decode_bits(self, raw: str) -> str:
+        """Decode one MSB-first binary sample to logical output order."""
+
 class CompiledProgram:
     """A compiled program ready for QDMI submission."""
+
+    @property
+    def result_layout(self) -> ResultLayout | None:
+        """Logical output reconstruction, or None for an identity layout."""
 
     @property
     def program_format(self) -> mqt.core.qdmi.ProgramFormat:
@@ -1583,7 +1625,7 @@ def compile_program(
 def compile_program(
     program: _CompilerInput,
     *,
-    target: mqt.core.qdmi.Device | str,
+    target: mqt.core.qdmi.Device | str | TargetEnvironment,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> CompiledProgram: ...
@@ -1695,7 +1737,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_CompilerInputT],
     *,
-    target: mqt.core.qdmi.Device | str,
+    target: mqt.core.qdmi.Device | str | TargetEnvironment,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[CompiledProgram]: ...
@@ -1730,7 +1772,7 @@ def compile_program(
     Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
     An explicit ``output`` selects each result's representation. Without it, a
-    Qiskit target selects QuantumCircuit and a QDMI device selects
+    Qiskit target selects QuantumCircuit and a QDMI device or target environment selects
     :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
     retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
@@ -1745,19 +1787,45 @@ def compile_program(
     Args:
         program: Source text, a file path, a Qiskit circuit, a typed compiler program,
             or a homogeneous sequence of these inputs.
-        target: A CompilerTarget, Qiskit BackendV2 or Target, QDMI Device, or device ID.
+        target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
+            QDMI Device, or device ID.
         output: The returned representation. QC_IMPORT and raw QCO are checkpoints
             before target compilation and cannot be combined with a target.
         copy: Preserve typed inputs by compiling copies. Defaults to False.
         qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
             Custom pipelines require no target.
         options: Shared compilation controls.
+        terminal_readout: Canonical terminal measurements, or None to preserve outputs.
+        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
 
     Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
-    (binary, text). Select an exact execution format with
-    :func:`submit_program` and its ``program_format`` argument. An explicit output
+    (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
+    An explicit output
     need not be a device's execution format. Jeff output does not retain hardware
     placement.
+    """
+
+def serialize_program(
+    program: QCProgram | qiskit.circuit.QuantumCircuit,
+    *,
+    target: CompilerTarget | TargetEnvironment | mqt.core.qdmi.Device | str,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    terminal_readout: TerminalReadout | None = None,
+    physical_qubits: bool = True,
+) -> CompiledProgram:
+    """Serialize an already native circuit without compiling or routing it.
+
+    The caller supplies validated native operations and placements. Optional
+    terminal readout retains a logical result layout and rejects feedback or gates
+    after measurement. Without it, the format retains its supported classical and
+    control-flow behavior. Inputs remain reusable.
+
+    Args:
+        program: A native Qiskit circuit or QC program with static target sites.
+        target: The destination device, registered device ID, CompilerTarget, or TargetEnvironment.
+        program_format: Exact payload format; required for CompilerTarget.
+        terminal_readout: Measure only selected sites or all addressed sites.
+        physical_qubits: Emit physical OpenQASM references rather than a virtual register.
     """
 
 def submit_program(

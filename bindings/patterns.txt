@@ -190,7 +190,7 @@ mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
 mqt\.core\.mlir\.__prefix__$:
     \from typing import TypeAlias, TypeVar, TypedDict, Unpack
     _CompilerInput: TypeAlias = str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
-    _CompilerTarget: TypeAlias = CompilerTarget | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
+    _CompilerTarget: TypeAlias = CompilerTarget | TargetEnvironment | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
     _CompilerOutput: TypeAlias = qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
     _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _CompilerInputT = TypeVar("_CompilerInputT", str, os.PathLike[str], qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
@@ -200,6 +200,8 @@ mqt\.core\.mlir\.__prefix__$:
         copy: bool
         qco_pipeline: str
         options: CompilationOptions
+        terminal_readout: TerminalReadout | None
+        physical_qubits: bool
 
 mqt\.core\.mlir\.compile_program$:
     \from typing import overload, Literal
@@ -288,7 +290,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: _CompilerInput,
         *,
-        target: mqt.core.qdmi.Device | str,
+        target: mqt.core.qdmi.Device | str | TargetEnvironment,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> CompiledProgram: ...
@@ -401,7 +403,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: mqt.core.qdmi.Device | str,
+        target: mqt.core.qdmi.Device | str | TargetEnvironment,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[CompiledProgram]: ...

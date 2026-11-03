@@ -11,6 +11,8 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
 #include "qdmi/QDMI.hpp"
 
 #include "Driver.hpp"
@@ -247,6 +249,94 @@ TEST(CompilerQDMIAdapterTest, DoesNotTreatMissingEdgesAsHomogeneous) {
   EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 
+TEST(CompilerQDMIAdapterTest, PreservesNonhomogeneousOperationSupport) {
+  const auto device = openScDevice("heterogeneous-sc.json");
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  EXPECT_TRUE(target.supportsOperation("cz", 2, 0, {0, 1}));
+  EXPECT_FALSE(target.supportsOperation("cz", 2, 0, {1, 2}));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_FALSE(target.synthesisBasis()->entangler);
+
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
+  auto compiled = mlir::CompiledProgram::compile(
+      mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
+                            "qubit[3] q; cx q[0], q[2]; "
+                            "bit[3] c = measure q;"),
+      environment);
+  ASSERT_FALSE(compiled);
+  const auto message = llvm::toString(compiled.takeError());
+  EXPECT_NE(message.find("entangler"), std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, CompilesWithSiteRestrictedAdditionalOperations) {
+  const auto device = openScDevice("site-restricted-additional-sc.json");
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  ASSERT_EQ(target.operations().size(), 3U);
+  EXPECT_FALSE(target.supportsOperation("measure_012", 1, 0, {0}));
+  EXPECT_FALSE(target.supportsOperation("measure_012", 1, 0, {1}));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_TRUE(target.synthesisBasis()->entangler);
+
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
+  auto compiled = mlir::CompiledProgram::compile(
+      mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
+                            "qubit[2] q; h q[0]; cx q[0], q[1]; "
+                            "bit[2] c = measure q;"),
+      environment);
+  MQT_ASSERT_SUCCESS(compiled);
+}
+
+TEST(CompilerQDMIAdapterTest, SerializesExactHeterogeneousPlacements) {
+  const auto device = openScDevice("heterogeneous-sc.json");
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      queryDevice;
+  queryDevice = api->device_session_query_device_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_device_property = queryDevice; });
+  api->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) -> int {
+    if (property != QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
+      return queryDevice(session, property, size, value, sizeRet);
+    }
+    constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
+    if (sizeRet) {
+      *sizeRet = sizeof(format);
+    }
+    if (value) {
+      if (size < sizeof(format)) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, &format, sizeof(format));
+    }
+    return QDMI_SUCCESS;
+  };
+  for (const auto& [first, last] : {std::pair{0, 1}, std::pair{1, 2}}) {
+    auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+        llvm::formatv(
+            "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; cz ${0}, "
+            "${1}; c[0] = measure ${0};",
+            first, last)
+            .str()));
+    auto compiled = mlir::CompiledProgram::serialize(
+        std::move(program), device, QDMI_PROGRAM_FORMAT_QASM3,
+        mlir::TerminalReadout::Measured);
+    if (last == 1) {
+      MQT_ASSERT_SUCCESS(compiled);
+      EXPECT_NE(compiled->payload().find("cz $0, $1;"), std::string::npos);
+    } else {
+      EXPECT_FALSE(static_cast<bool>(compiled));
+      llvm::consumeError(compiled.takeError());
+    }
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
   const auto device = openScDevice("higher-arity-sc.json");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
@@ -479,6 +569,51 @@ TEST(CompilerQDMIAdapterTest,
       }));
   EXPECT_TRUE(llvm::errorToBool(mlir::validateTargetCompatibility(
       original, mlir::TargetEnvironment(original.target(), constrained))));
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      mlir::TargetEnvironment(original.target(), constrained), original)));
+  const auto bounded = [&](uint64_t depth) {
+    return mlir::TargetEnvironment(
+        original.target(),
+        llvm::cantFail(mlir::PayloadSpecification::create(
+            payload.format(),
+            {
+                {
+                    .id = "forward-branching",
+                    .constraints =
+                        {
+                            {
+                                .id = "max-control-flow-nesting-depth",
+                                .value = depth,
+                            },
+                        },
+                },
+            })));
+  };
+  EXPECT_FALSE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(bounded(1), bounded(2))));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(bounded(2), bounded(1))));
+  const auto custom = [&](uint64_t value) {
+    return mlir::TargetEnvironment(
+        original.target(),
+        llvm::cantFail(mlir::PayloadSpecification::create(
+            payload.format(), {
+                                  {
+                                      .id = "forward-branching",
+                                      .constraints =
+                                          {
+                                              {
+                                                  .id = "vendor-limit",
+                                                  .value = value,
+                                              },
+                                          },
+                                  },
+                              })));
+  };
+  EXPECT_FALSE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(custom(1), custom(1))));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(custom(2), custom(1))));
 }
 
 TEST(CompilerQDMIAdapterTest, CompatibilityRequiresVersionRangeInclusion) {
@@ -921,6 +1056,76 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   EXPECT_EQ(llvm::cantFail(sourceJob.getCounts()).at("0"), 4);
 }
 
+TEST(CompilerQDMIAdapterTest, NativeOpenQASMDeclaresStandardGates) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("rx", 1, 1)),
+      })));
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; rx(0.3) $0;"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(program),
+      mlir::TargetEnvironment(
+          target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                      QDMI_PROGRAM_FORMAT_QASM3))));
+  MQT_ASSERT_SUCCESS(compiled);
+  EXPECT_TRUE(mlir::openqasm::frontend::analyzeOpenQASM(
+      compiled->payload(), mlir::openqasm::frontend::GatePolicy::Strict));
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsNativeOpenQASMStandardGateConflicts) {
+  struct Case {
+    const char* canonical;
+    size_t arity;
+    const char* declaration;
+    const char* call;
+  };
+  for (const auto& test : {
+           Case{
+               .canonical = "y",
+               .arity = 1,
+               .declaration = "",
+               .call = "qc.y %q0 : !qc.qubit",
+           },
+           Case{
+               .canonical = "y",
+               .arity = 1,
+               .declaration = "func.func private @y(!qc.qubit)",
+               .call = "func.call @y(%q0) : (!qc.qubit) -> ()",
+           },
+           Case{
+               .canonical = "x",
+               .arity = 2,
+               .declaration = "func.func private @X(!qc.qubit, !qc.qubit)",
+               .call = "func.call @X(%q0, %q1) : (!qc.qubit, !qc.qubit) -> ()",
+           },
+       }) {
+    SCOPED_TRACE(test.call);
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        2, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(CompilerTarget::OperationCapability::create(
+                "x", test.arity, 0, {}, std::nullopt, std::nullopt, {},
+                test.canonical)),
+        })));
+    auto program = llvm::cantFail(mlir::QCProgram::fromMLIRString(
+        llvm::formatv("module {{ {0} func.func @main() attributes "
+                      "{{mqt.entry_point} {{ %q0 = qc.static 0 : !qc.qubit "
+                      "%q1 = qc.static 1 : !qc.qubit {1} return } }",
+                      test.declaration, test.call)
+            .str()));
+    auto compiled = mlir::CompiledProgram::serialize(
+        std::move(program),
+        mlir::TargetEnvironment(
+            target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                        QDMI_PROGRAM_FORMAT_QASM3))));
+    EXPECT_FALSE(static_cast<bool>(compiled));
+    llvm::consumeError(compiled.takeError());
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
   for (const auto& [single, entangler] : {
            std::pair{"u", "cnot"},
@@ -965,7 +1170,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
         EXPECT_NE(payload.find(std::string(entangler) + " $"),
                   std::string::npos);
         EXPECT_EQ(payload.find("gate "), std::string::npos);
-        EXPECT_EQ(payload.find("include "), std::string::npos);
+        EXPECT_NE(payload.find("include \"stdgates.inc\";"), std::string::npos);
         EXPECT_EQ(payload.find("gphase"), std::string::npos);
       } else {
         EXPECT_NE(
@@ -1163,4 +1368,478 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
               std::string::npos);
     EXPECT_NE(text->find("\"required_num_qubits\"=\"3\""), std::string::npos);
   }
+}
+
+TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; x $0; "
+      "c[0] = measure $0;"));
+  for (const auto format : {
+           QDMI_PROGRAM_FORMAT_QASM3,
+           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+       }) {
+    const mlir::TargetEnvironment environment(
+        target,
+        llvm::cantFail(mlir::payloadSpecificationForProgramFormat(format)));
+    auto compiled =
+        mlir::CompiledProgram::serialize(program.copy(), environment);
+    MQT_ASSERT_SUCCESS(compiled);
+    EXPECT_EQ(compiled->programFormat(), format);
+    EXPECT_FALSE(compiled->payload().empty());
+  }
+  const auto iqm =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.sc.iqm.garnet"));
+  const mlir::TargetEnvironment iqmEnvironment(
+      llvm::cantFail(mlir::compilerTargetFromDevice(iqm)),
+      llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+          QDMI_PROGRAM_FORMAT_IQMJSON)));
+  auto nativeIqm = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; bit[1] c; c[0] = measure $0;"));
+  auto iqmPayload =
+      mlir::CompiledProgram::serialize(std::move(nativeIqm), iqmEnvironment);
+  MQT_ASSERT_SUCCESS(iqmPayload);
+  const auto json = llvm::cantFail(llvm::json::parse(iqmPayload->payload()));
+  EXPECT_EQ(json.getAsObject()->getArray("instructions")->size(), 1);
+  const mlir::TargetEnvironment qasm(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QASM3)));
+  auto normalized = mlir::CompiledProgram::compile(
+      program.copy(), qasm, {}, mlir::TerminalReadout::Measured, false);
+  MQT_ASSERT_SUCCESS(normalized);
+  EXPECT_NE(normalized->payload().find("q[0]"), std::string::npos);
+  const mlir::TargetEnvironment qir(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateSerializationOptions(qir, std::nullopt, false)));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::CompiledProgram::serialize(program.copy(), qir, std::nullopt, false)
+          .takeError()));
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::CompiledProgram::compile(program.copy(), qir, {},
+                                                       std::nullopt, false)
+                            .takeError()));
+  const mlir::TargetEnvironment unknown(
+      target, llvm::cantFail(mlir::PayloadSpecification::create(
+                  mlir::PayloadFormat{.id = "vendor-format"})));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::validateSerializationOptions(unknown, std::nullopt, true)));
+  const auto sparse = llvm::cantFail(CompilerTarget::create(
+      "sparse", {llvm::cantFail(CompilerTarget::Site::create(2, "Q2"))},
+      CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::unrestricted()));
+  EXPECT_TRUE(llvm::errorToBool(mlir::validateSerializationOptions(
+      mlir::TargetEnvironment(sparse, qasm.payloadSpecification()),
+      mlir::TerminalReadout::All, true)));
+}
+
+TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("x", 1, 0)),
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("measure", 1, 0)),
+      })));
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QASM3)));
+  const auto context = mlir::createCompilerContext();
+  mlir::qc::QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0 = builder.staticQubit(0);
+  auto q1 = builder.staticQubit(1);
+  auto q2 = builder.staticQubit(2);
+  auto zebra = builder.allocClassicalBitRegister(4, "zebra");
+  auto a = builder.allocClassicalBitRegister(1, "a");
+  builder.x(q0).x(q2);
+  builder.measure(q2, zebra, 2);
+  builder.measure(q2, zebra, 0);
+  builder.measure(q2, zebra, 3);
+  builder.measure(q1, zebra, 3);
+  builder.measure(q2, a, 0);
+  auto program =
+      mlir::QCProgram::fromModule(context, builder.finalize({zebra, a}));
+  ASSERT_TRUE(mlir::succeeded(program));
+  for (const auto readout :
+       {mlir::TerminalReadout::Measured, mlir::TerminalReadout::All}) {
+    for (const auto physical : {false, true}) {
+      auto compiled = mlir::CompiledProgram::serialize(
+          program->copy(), environment, readout, physical);
+      MQT_ASSERT_SUCCESS(compiled);
+      ASSERT_TRUE(compiled->resultLayout());
+      const auto& layout = *compiled->resultLayout();
+      EXPECT_EQ(layout.rawWidth, readout == mlir::TerminalReadout::All ? 3 : 2);
+      EXPECT_EQ(layout.bits.size(), 5);
+      EXPECT_EQ(llvm::cantFail(layout.decodeBits(
+                    readout == mlir::TerminalReadout::All ? "101" : "10")),
+                "10101");
+      EXPECT_EQ(compiled->payload().find("output "), std::string::npos);
+      EXPECT_EQ(compiled->payload().find("= \""), std::string::npos);
+      EXPECT_NE(compiled->payload().find(physical ? "x $2;" : "x q[2];"),
+                std::string::npos);
+      const auto device =
+          llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+      auto job = llvm::cantFail(
+          device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+      ASSERT_TRUE(llvm::cantFail(job.wait()));
+      for (const auto& shot : llvm::cantFail(job.getShots())) {
+        EXPECT_EQ(llvm::cantFail(layout.decodeBits(shot)), "10101");
+      }
+    }
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, DefaultSerializationPreservesDynamicReadout) {
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; x $0; "
+      "c[0] = measure $0; if (c[0]) { x $1; } "
+      "reset $0; c[0] = measure $0; c[0] = measure $1;"));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
+                                                   QDMI_PROGRAM_FORMAT_QASM3);
+  MQT_ASSERT_SUCCESS(compiled);
+  EXPECT_FALSE(compiled->resultLayout());
+  auto job = llvm::cantFail(
+      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+  ASSERT_TRUE(llvm::cantFail(job.wait()));
+  EXPECT_EQ(llvm::cantFail(job.getShots()), std::vector<std::string>(8, "1"));
+}
+
+TEST(CompilerQDMIAdapterTest, SerializationHonorsPayloadControlFlow) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const auto full = llvm::cantFail(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
+  const auto restricted =
+      llvm::cantFail(mlir::PayloadSpecification::create(full.format()));
+  auto input = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[2] c; h $0; "
+      "c[0] = measure $0; if (c[0]) { x $1; } c[1] = measure $1;"));
+  auto rejected = mlir::CompiledProgram::serialize(
+      input.copy(), mlir::TargetEnvironment(target, restricted));
+  EXPECT_FALSE(static_cast<bool>(rejected));
+  llvm::consumeError(rejected.takeError());
+  auto accepted = mlir::CompiledProgram::serialize(
+      std::move(input), mlir::TargetEnvironment(target, full));
+  MQT_ASSERT_SUCCESS(accepted);
+
+  auto noOutput = llvm::cantFail(
+      mlir::QCProgram::fromOpenQASMString("OPENQASM 3; qubit q; x q;"));
+  auto rejectedScope = mlir::CompiledProgram::serialize(
+      std::move(noOutput), mlir::TargetEnvironment(target, restricted));
+  EXPECT_FALSE(static_cast<bool>(rejectedScope));
+  llvm::consumeError(rejectedScope.takeError());
+
+  auto nested = llvm::cantFail(mlir::QCProgram::fromMLIRString(R"mlir(
+module {
+  func.func private @helper(%c: i1, %q: !qc.qubit) {
+    scf.if %c { qc.x %q : !qc.qubit }
+    return
+  }
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %c = qc.measure %q : !qc.qubit -> i1
+    %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+    cbit.store %c, %r[%zero] : !cbit.reg<1>
+    scf.if %c { func.call @helper(%c, %q) : (i1, !qc.qubit) -> () }
+    qc.dealloc %q : !qc.qubit
+    return %r : !cbit.reg<1>
+  }
+})mlir"));
+  const auto bounded = llvm::cantFail(mlir::PayloadSpecification::create(
+      full.format(), {
+                         {
+                             .id = "forward-branching",
+                             .constraints =
+                                 {
+                                     {
+                                         .id = "max-control-flow-nesting-depth",
+                                         .value = 1,
+                                     },
+                                 },
+                         },
+                     }));
+  auto rejectedNested = mlir::CompiledProgram::serialize(
+      std::move(nested), mlir::TargetEnvironment(target, bounded));
+  EXPECT_FALSE(static_cast<bool>(rejectedNested));
+  llvm::consumeError(rejectedNested.takeError());
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsNonNativeOrNonterminalSerialization) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("x", 1, 0)),
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("measure", 1, 0)),
+      })));
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QASM3)));
+  for (const auto* source : {
+           "bit[1] c; c[0] = measure $0; x $0; c[0] = measure $0;",
+           "bit[1] c; h $0; c[0] = measure $0;",
+           "bit[1] c; x $2; c[0] = measure $2;",
+       }) {
+    auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+        std::string("OPENQASM 3; include \"stdgates.inc\"; ") + source));
+    auto compiled = mlir::CompiledProgram::serialize(
+        std::move(program), environment, mlir::TerminalReadout::Measured);
+    EXPECT_FALSE(static_cast<bool>(compiled));
+    llvm::consumeError(compiled.takeError());
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
+  const mlir::TargetEnvironment environment(
+      llvm::cantFail(CompilerTarget::create(
+          2, CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::unrestricted())),
+      llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+          QDMI_PROGRAM_FORMAT_QASM3)));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  for (const auto* operation : {"x", "reset", "flip"}) {
+    for (const auto site : {0, 1}) {
+      SCOPED_TRACE(llvm::formatv("{0} on site {1}", operation, site).str());
+      auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+          llvm::formatv("OPENQASM 3; include \"stdgates.inc\"; "
+                        "gate flip q {{ x q; } bit[2] c; x $0; x $1; "
+                        "c[0] = measure $0; {0} ${1}; c[1] = measure $1;",
+                        operation, site)
+              .str()));
+      auto compiled = mlir::CompiledProgram::serialize(
+          std::move(program), environment, mlir::TerminalReadout::Measured);
+      if (site == 0) {
+        ASSERT_FALSE(static_cast<bool>(compiled));
+        EXPECT_NE(llvm::toString(compiled.takeError()).find("unmeasured"),
+                  std::string::npos);
+        continue;
+      }
+      MQT_ASSERT_SUCCESS(compiled);
+      auto job = llvm::cantFail(
+          device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+      ASSERT_TRUE(llvm::cantFail(job.wait()));
+      EXPECT_EQ(llvm::cantFail(job.getShots()),
+                std::vector<std::string>(8, "01"));
+    }
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
+  const auto context = mlir::createCompilerContext();
+  auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
+    func.func private @write(%c: !cbit.reg<2>) {
+      %true = arith.constant true
+      %zero = arith.constant 0 : index
+      cbit.store %true, %c[%zero] : !cbit.reg<2>
+      return
+    }
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %one = arith.constant 1 : index
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      func.call @write(%c) : (!cbit.reg<2>) -> ()
+      %q = qc.static 0 : !qc.qubit
+      %bit = qc.measure %q : !qc.qubit -> i1
+      cbit.store %bit, %c[%one] : !cbit.reg<2>
+      return %c : !cbit.reg<2>
+    }
+  })mlir",
+                                                          context.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(mlir::succeeded(program));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(*program), device, QDMI_PROGRAM_FORMAT_QASM3,
+      mlir::TerminalReadout::Measured);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(
+      llvm::toString(compiled.takeError()).find("only supports gate calls"),
+      std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsGeneralCallsAfterMeasurement) {
+  const auto context = mlir::createCompilerContext();
+  auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
+    func.func private @flip() {
+      %q = qc.static 0 : !qc.qubit
+      qc.x %q : !qc.qubit
+      return
+    }
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %q = qc.static 0 : !qc.qubit
+      %bit = qc.measure %q : !qc.qubit -> i1
+      cbit.store %bit, %c[%zero] : !cbit.reg<1>
+      func.call @flip() : () -> ()
+      return %c : !cbit.reg<1>
+    }
+  })mlir",
+                                                          context.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(mlir::succeeded(program));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(*program), device, QDMI_PROGRAM_FORMAT_QASM3,
+      mlir::TerminalReadout::Measured);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(llvm::toString(compiled.takeError())
+                .find("gate calls before measurements"),
+            std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsCapturedMeasurementFeedback) {
+  const auto context = mlir::createCompilerContext();
+  auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %angle0 = arith.constant 0.0 : f64
+      %angle1 = arith.constant 3.141592653589793 : f64
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      %q0 = qc.static 0 : !qc.qubit
+      %q1 = qc.static 1 : !qc.qubit
+      %m = qc.measure %q0 : !qc.qubit -> i1
+      cbit.store %m, %c[%zero] : !cbit.reg<2>
+      qc.inv(%a = %q1) {
+        %theta = arith.select %m, %angle1, %angle0 : f64
+        qc.rz(%theta) %a : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+      %n = qc.measure %q1 : !qc.qubit -> i1
+      cbit.store %n, %c[%one] : !cbit.reg<2>
+      return %c : !cbit.reg<2>
+    }
+  })mlir",
+                                                          context.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(mlir::succeeded(program));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(
+      std::move(*program), device, QDMI_PROGRAM_FORMAT_QASM3,
+      mlir::TerminalReadout::Measured);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(llvm::toString(compiled.takeError()).find("measurement results"),
+            std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, ValidatesResultLayoutSamples) {
+  const mlir::ResultLayout identity{2, {size_t{0}, size_t{1}}};
+  EXPECT_TRUE(identity.isIdentity());
+  EXPECT_EQ(llvm::cantFail(identity.decodeBits("10")), "10");
+  const mlir::ResultLayout layout{2, {size_t{1}, std::nullopt, size_t{1}}};
+  EXPECT_FALSE(layout.isIdentity());
+  EXPECT_EQ(llvm::cantFail(layout.decodeBits("10")), "101");
+  for (const auto* raw : {"", "1", "111", "0x"}) {
+    EXPECT_TRUE(llvm::errorToBool(layout.decodeBits(raw).takeError()));
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, SnapshotsVersionedParameterConstraints) {
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.sc.default"));
+  const auto operations = llvm::cantFail(device.getOperations());
+  const auto operation = *llvm::find_if(operations, [](const auto& candidate) {
+    return llvm::cantFail(candidate.getName()) == "r";
+  });
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_operation_property)*
+      query;
+  static thread_local QDMI_Operation constrained;
+  static thread_local std::string metadata;
+  constrained = operation;
+  query = api->device_session_query_operation_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_operation_property = query; });
+  api->device_session_query_operation_property =
+      [](QDMI_Device_Session session, QDMI_Operation handle, size_t numSites,
+         const QDMI_Site* sites, size_t numParams, const double* params,
+         QDMI_Operation_Property property, size_t size, void* value,
+         size_t* sizeRet) -> int {
+    if (handle != constrained || property != QDMI_OPERATION_PROPERTY_CUSTOM2) {
+      return query(session, handle, numSites, sites, numParams, params,
+                   property, size, value, sizeRet);
+    }
+    if (metadata == "query-error") {
+      return QDMI_ERROR_FATAL;
+    }
+    if (sizeRet) {
+      *sizeRet = metadata.size() + 1;
+    }
+    if (value) {
+      if (size < metadata.size() + 1) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, metadata.c_str(), metadata.size() + 1);
+    }
+    return QDMI_SUCCESS;
+  };
+  metadata =
+      R"({"schema":"mqt.operation-parameters.v1","alternatives":[{"fixed":[1,null],"bounds":[null,[-3,3]]},{"fixed":[-1,null]}]})";
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  EXPECT_EQ(target.operations().size(), 4);
+  EXPECT_TRUE(target.supportsOperation("r", 1, 2, std::nullopt, {1., 0.}));
+  EXPECT_TRUE(target.supportsOperation("r", 1, 2, std::nullopt, {-1., 0.}));
+  EXPECT_FALSE(target.supportsOperation("r", 1, 2, std::nullopt, {1., 4.}));
+  EXPECT_FALSE(target.supportsOperation("r", 1, 2, std::nullopt, {0.5, 0.}));
+  for (
+      const auto* invalid : {
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[]})",
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[{"fixed":[1]}]})",
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[null]})",
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[{"fixed":["invalid",null]}]})",
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[{"bounds":[[0],null]}]})",
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[{"bounds":[[1,0],null]}]})",
+          R"({"schema":"mqt.operation-parameters.v1","alternatives":[{"fixed":[2,null],"bounds":[[0,1],null]}]})",
+      }) {
+    metadata = invalid;
+    EXPECT_TRUE(llvm::errorToBool(
+        mlir::parseOperationParameterConstraints(
+            llvm::StringRef(metadata.c_str(), metadata.size() + 1), 2)
+            .takeError()));
+  }
+  metadata = R"({"schema":"unrelated","alternatives":[]})";
+  EXPECT_TRUE(
+      llvm::cantFail(
+          mlir::parseOperationParameterConstraints(
+              llvm::StringRef(metadata.c_str(), metadata.size() + 1), 2))
+          .empty());
+  metadata = R"({"schema":"other","note":"mqt.operation-parameters.v1"})";
+  EXPECT_TRUE(
+      llvm::cantFail(
+          mlir::parseOperationParameterConstraints(
+              llvm::StringRef(metadata.c_str(), metadata.size() + 1), 2))
+          .empty());
+  metadata = R"({"schema":"mqt.operation-parameters.v1")";
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::parseOperationParameterConstraints(metadata, 2).takeError()));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::parseOperationParameterConstraints(
+          llvm::StringRef(metadata.c_str(), metadata.size() + 1), 2)
+          .takeError()));
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::compilerTargetFromDevice(device).takeError()));
+  metadata = "query-error";
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::compilerTargetFromDevice(device).takeError()));
 }
