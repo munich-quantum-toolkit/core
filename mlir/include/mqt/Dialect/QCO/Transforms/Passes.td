@@ -142,7 +142,12 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
     Uses an explicit `payload-spec` attribute when set, otherwise reads
     `mqt.target_env`. Explicit payloads do not require hardware metadata. Fully unrolls
     static `scf.for` operations that its counted-iteration capability does not
-    cover. Local classical memory is promoted and static branches fold between
+    cover. When the payload does not support a `scf.while`, recovers `scf.for`
+    from loops with a signed strict upper bound, constant bounds, and a positive
+    constant step whose counter cannot overflow. The condition region must only
+    compare the counter and forward iteration arguments in order. Other while
+    loops remain unchanged.
+    Local classical memory is promoted and static branches fold between
     expansion rounds, exposing constant accesses and nested loop bounds.
     In target-environment mode, tensor-carrying loops remain indexed for Adaptive
     QIR on all-to-all targets whose native operations have no site tuples. Other

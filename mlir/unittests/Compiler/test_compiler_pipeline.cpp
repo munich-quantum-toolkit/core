@@ -3858,6 +3858,181 @@ c = measure q;
   }
 }
 
+TEST_F(CompilerPipelineTest, PayloadControlFromOpenQASMRecoversCountedWhile) {
+  auto qc = QCProgram::fromOpenQASMString(R"qasm(
+    OPENQASM 3.1;
+    include "stdgates.inc";
+    qubit q;
+    int i = 2;
+    while (i < 10) { x q; i += 3; }
+  )qasm");
+  MQT_ASSERT_SUCCESS(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(program));
+  ASSERT_TRUE(StringRef(program->str()).contains("scf.while"));
+  ASSERT_TRUE(succeeded(program->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(), makeControlPayloadSpecification({})))));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.while"));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+  auto result = cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+  ASSERT_EQ(result.getNumOperands(), 1U);
+  IntegerAttr value;
+  ASSERT_TRUE(matchPattern(result.getOperand(0), m_Constant(&value)));
+  EXPECT_EQ(value.getInt(), 11);
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlRecoversStaticWhileState) {
+  struct LoopCase {
+    StringRef type;
+    int64_t lower;
+    int64_t upper;
+    int64_t step;
+    int64_t exit;
+    int64_t sum;
+    size_t iterations;
+  };
+  for (const auto& test : {
+           LoopCase{"index", 0, 3, 1, 3, 3, 3},
+           LoopCase{"i64", 2, 10, 3, 11, 15, 3},
+           LoopCase{"i64", 8, 2, 3, 8, 0, 0},
+           LoopCase{"i64", -4, 4, 3, 5, -3, 3},
+           LoopCase{"i8", -128, -2, 63, -2, 63, 2},
+       }) {
+    for (StringRef capability : {"", "counted-iteration", "conditional-loop"}) {
+      SCOPED_TRACE(llvm::formatv("{0}: {1}:{2}:{3}, capability={4}", test.type,
+                                 test.lower, test.upper, test.step, capability)
+                       .str());
+      auto program = QCOProgram::fromMLIRString(
+          llvm::formatv(R"mlir(module {{
+            func.func @main(%q: !qco.qubit) -> ({0}, {0}, !qco.qubit) {{
+              %lb = arith.constant {1} : {0}
+              %ub = arith.constant {2} : {0}
+              %step = arith.constant {3} : {0}
+              %zero = arith.constant 0 : {0}
+              %out:3 = scf.while (%sum = %zero, %i = %lb, %wire = %q)
+                  : ({0}, {0}, !qco.qubit) -> ({0}, {0}, !qco.qubit) {{
+                %condition = arith.cmpi {4} : {0}
+                scf.condition(%condition) %sum, %i, %wire
+                    : {0}, {0}, !qco.qubit
+              } do {{
+              ^bb0(%sum: {0}, %i: {0}, %wire: !qco.qubit):
+                %next = arith.addi %i, %step : {0}
+                %total = arith.addi %sum, %i : {0}
+                %updated = qco.x %wire : !qco.qubit
+                scf.yield %total, %next, %updated : {0}, {0}, !qco.qubit
+              }
+              return %out#1, %out#0, %out#2 : {0}, {0}, !qco.qubit
+            }
+          })mlir",
+                        test.type, test.lower, test.upper, test.step,
+                        test.lower < 0 ? "sgt, %ub, %i" : "slt, %i, %ub")
+              .str());
+      MQT_ASSERT_SUCCESS(program);
+      ASSERT_TRUE(succeeded(verify(program->module())));
+      ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification(
+                                capability.empty()
+                                    ? std::vector<ProgramCapability>{}
+                                    : std::vector<ProgramCapability>{
+                                          {.id = capability.str()},
+                                      })));
+      if (capability == "conditional-loop") {
+        ASSERT_TRUE(succeeded(program->runPassPipeline(
+            "unroll-loops-for-payload{max-operations=0},"
+            "legalize-qco-control-flow")));
+        EXPECT_TRUE(succeeded(verify(program->module())));
+        EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+        EXPECT_TRUE(StringRef(program->str()).contains("scf.while"));
+        EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+        continue;
+      }
+      ASSERT_TRUE(succeeded(program->runPassPipeline(
+          "unroll-loops-for-payload,legalize-qco-control-flow")));
+      EXPECT_TRUE(succeeded(verify(program->module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      EXPECT_FALSE(StringRef(program->str()).contains("scf.while"));
+      auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+      auto result =
+          cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+      IntegerAttr exit;
+      ASSERT_TRUE(matchPattern(result.getOperand(0), m_Constant(&exit)));
+      EXPECT_EQ(exit.getInt(), test.exit);
+      if (capability.empty()) {
+        EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+        IntegerAttr sum;
+        ASSERT_TRUE(matchPattern(result.getOperand(1), m_Constant(&sum)));
+        EXPECT_EQ(sum.getInt(), test.sum);
+        size_t gates = 0;
+        program->module().walk([&](qco::XOp) { ++gates; });
+        EXPECT_EQ(gates, test.iterations);
+      } else {
+        size_t loops = 0;
+        program->module().walk([&](scf::ForOp loop) {
+          ++loops;
+          ASSERT_TRUE(loop.getStaticTripCount());
+          EXPECT_EQ(loop.getStaticTripCount()->getZExtValue(), test.iterations);
+        });
+        if (test.iterations > 0) {
+          EXPECT_EQ(loops, 1U);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlLeavesUnprovenWhileLoops) {
+  for (const auto& [predicate, lower, upper, step] : {
+           std::tuple{"slt", 0, 3, 0},
+           std::tuple{"slt", 0, 3, -1},
+           std::tuple{"slt", 125, 127, 3},
+           std::tuple{"sle", 125, 127, 1},
+           std::tuple{"ult", 0, 3, 1},
+       }) {
+    auto source = llvm::formatv(R"mlir(module {{
+      func.func @main(%q: !qco.qubit) -> (i8, !qco.qubit) {{
+        %lb = arith.constant {1} : i8
+        %ub = arith.constant {2} : i8
+        %step = arith.constant {3} : i8
+        %out:2 = scf.while (%i = %lb, %wire = %q)
+            : (i8, !qco.qubit) -> (i8, !qco.qubit) {{
+          %condition = arith.cmpi {0}, %i, %ub : i8
+          scf.condition(%condition) %i, %wire : i8, !qco.qubit
+        } do {{
+        ^bb0(%i: i8, %wire: !qco.qubit):
+          %next = arith.addi %i, %step : i8
+          %updated = qco.x %wire : !qco.qubit
+          scf.yield %next, %updated : i8, !qco.qubit
+        }
+        return %out#0, %out#1 : i8, !qco.qubit
+      }
+    })mlir",
+                                predicate, lower, upper, step)
+                      .str();
+    SCOPED_TRACE(source);
+    auto program = QCOProgram::fromMLIRString(source);
+    MQT_ASSERT_SUCCESS(program);
+    attachTargetEnvironment(
+        program->module(),
+        TargetEnvironment(makeUnrestrictedTarget(),
+                          makeControlPayloadSpecification({})));
+    ASSERT_TRUE(
+        succeeded(program->runPassPipeline("unroll-loops-for-payload")));
+    EXPECT_TRUE(succeeded(verify(program->module())));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+    EXPECT_TRUE(StringRef(program->str()).contains("scf.while"));
+    EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+    ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                    [](Diagnostic&) { return success(); });
+    EXPECT_TRUE(failed(program->runPassPipeline("legalize-qco-control-flow")));
+  }
+}
+
 TEST_F(CompilerPipelineTest,
        PayloadControlUnrollsTerminatorOnlyInductionValue) {
   constexpr llvm::StringLiteral source = R"mlir(
