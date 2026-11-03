@@ -156,6 +156,8 @@ TEST_F(QCTest, UnitariesRejectObviousSimultaneousQubitAliases) {
   for (const char* gate : {
            "qc.swap %q0, %q0 : !qc.qubit, !qc.qubit",
            "qc.swap %q0, %alias : !qc.qubit, !qc.qubit",
+           "qc.barrier %q0, %q0 : !qc.qubit, !qc.qubit",
+           "qc.barrier %q0, %alias : !qc.qubit, !qc.qubit",
            R"mlir(qc.ctrl(%q0) targets(%target = %q0) {
              qc.x %target : !qc.qubit
              qc.yield
@@ -233,14 +235,13 @@ TEST_F(QCTest, DiagnosesMalformedStaticReferencesAfterTheirConsumers) {
   }
 }
 
-TEST_F(QCTest, PermitsSequentialAliasesBarriersAndUnprovenDynamicReferences) {
+TEST_F(QCTest, PermitsSequentialAliasesAndUnprovenDynamicReferences) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     func.func @main(%reg: memref<2x!qc.qubit>, %i: index, %j: index) {
       %q = qc.static 0 : !qc.qubit
       %alias = qc.static 0 : !qc.qubit
       qc.x %q : !qc.qubit
       qc.h %alias : !qc.qubit
-      qc.barrier %q, %q, %alias : !qc.qubit, !qc.qubit, !qc.qubit
       %first = memref.load %reg[%i] : memref<2x!qc.qubit>
       %second = memref.load %reg[%j] : memref<2x!qc.qubit>
       qc.swap %first, %second : !qc.qubit, !qc.qubit

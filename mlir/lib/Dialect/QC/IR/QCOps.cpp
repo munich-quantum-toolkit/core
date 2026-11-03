@@ -157,8 +157,7 @@ LogicalResult mlir::qc::verifyDistinctQubitOperands(Operation* op,
 
 LogicalResult mlir::qc::verifyUnitaryOpInterface(Operation* op) {
   auto unitary = cast<UnitaryOpInterface>(op);
-  if (!isa<BarrierOp>(op) &&
-      failed(verifyDistinctQubitOperands(op, unitary.getQubits()))) {
+  if (failed(verifyDistinctQubitOperands(op, unitary.getQubits()))) {
     return failure();
   }
   return mqt::verifyFiniteConstantParameters(op, unitary.getParameters());

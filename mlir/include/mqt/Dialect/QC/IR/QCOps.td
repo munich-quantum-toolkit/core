@@ -889,8 +889,7 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
   let summary = "Apply a barrier operation to a set of qubits";
   let description = [{
         Marks a barrier on the given qubit references without changing their quantum state.
-        QC verification permits repeated references. QC-to-QCO conversion
-        requires distinct operands.
+        Each operand must refer to a distinct qubit.
 
         Example:
         ```mlir

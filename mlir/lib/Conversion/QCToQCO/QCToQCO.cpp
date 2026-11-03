@@ -471,7 +471,6 @@ static void commitQubits(LoweringState& state, Operation* anchor,
     }
     if (auto returnOp = dyn_cast<func::ReturnOp>(operation)) {
       auto function = returnOp->getParentOfType<func::FuncOp>();
-      llvm::SmallDenseSet<Value, 4> returnedQubits;
       for (Value value : returnOp.getOperands()) {
         if (!isa<qc::QubitType>(value.getType())) {
           continue;
@@ -483,10 +482,10 @@ static void commitQubits(LoweringState& state, Operation* anchor,
               "returns borrowed qubits implicitly");
           return WalkResult::interrupt();
         }
-        if (!returnedQubits.insert(value).second) {
-          returnOp.emitOpError("cannot return the same qubit more than once");
-          return WalkResult::interrupt();
-        }
+      }
+      if (failed(qc::verifyDistinctQubitOperands(returnOp,
+                                                 returnOp.getOperands()))) {
+        return WalkResult::interrupt();
       }
     }
 

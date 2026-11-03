@@ -1353,10 +1353,23 @@ module {
   }
 }
 )mlir",
+      R"mlir(
+module {
+  func.func private @aliases() -> (!qc.qubit, !qc.qubit) {
+    %q = qc.static 0 : !qc.qubit
+    %alias = qc.static 0 : !qc.qubit
+    return %q, %alias : !qc.qubit, !qc.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
   });
-  constexpr std::array<StringLiteral, 2> diagnostics{
+  constexpr std::array<StringLiteral, 3> diagnostics{
       "cannot return a borrowed qubit argument explicitly",
-      "cannot return the same qubit more than once",
+      "requires distinct qubit operands",
+      "requires distinct qubit operands",
   };
 
   for (auto [source, expected] : llvm::zip_equal(sources, diagnostics)) {
