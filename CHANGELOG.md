@@ -23,6 +23,8 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Ship one copy of each shared library in Linux and macOS wheels while
+  retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during
   global-phase or permutation updates ([#2826]) ([**@denialhaag**])
 - 🐛 Reject DD extraction widths, dimensions, and output vectors that cannot
@@ -931,6 +933,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2923]: https://github.com/munich-quantum-toolkit/core/pull/2923
 [#2831]: https://github.com/munich-quantum-toolkit/core/pull/2831
 [#2826]: https://github.com/munich-quantum-toolkit/core/pull/2826
 [#2814]: https://github.com/munich-quantum-toolkit/core/pull/2814

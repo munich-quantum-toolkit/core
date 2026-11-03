@@ -54,12 +54,17 @@ function(add_mqt_core_library name)
   # Always compile with position-independent code to enable usage in shared libraries
   set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  # Set versioning information
   set_target_properties(
-    ${name}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME Core${ARG_ALIAS_NAME})
+    ${name} PROPERTIES SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+                       EXPORT_NAME Core${ARG_ALIAS_NAME})
+  # Give Unix wheels one file at the ABI name used by existing consumers.
+  if(SKBUILD AND UNIX)
+    if(APPLE)
+      set_target_properties(${name} PROPERTIES MACHO_CURRENT_VERSION ${PROJECT_VERSION})
+    endif()
+  else()
+    set_target_properties(${name} PROPERTIES VERSION ${PROJECT_VERSION})
+  endif()
 
   # Make version available
   target_compile_definitions(${name} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
