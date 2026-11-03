@@ -535,6 +535,7 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   EXPECT_FALSE(target.areAdjacent(1, 1));
   EXPECT_EQ(target.distanceBetween(0, 2), 1);
   EXPECT_EQ(target.distanceBetween(2, 2), 0);
+  EXPECT_TRUE(target.distanceMatrix().empty());
   EXPECT_EQ(target.shortestPathBetween(0, 2),
             (llvm::SmallVector<size_t>{0, 2}));
   EXPECT_EQ(target.shortestPathBetween(2, 2), (llvm::SmallVector<size_t>{2}));
@@ -613,6 +614,12 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   EXPECT_FALSE(target.areAdjacent(0, 2));
   EXPECT_EQ(target.distanceBetween(0, 2), 2);
   EXPECT_EQ(target.distanceBetween(2, 0), 2);
+  EXPECT_EQ(target.distanceMatrix(),
+            (llvm::ArrayRef<size_t>{0, 1, 2, 1, 0, 1, 2, 1, 0}));
+  // Exercise shared ownership through the copy constructor.
+  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+  const auto copy = target;
+  EXPECT_EQ(copy.distanceMatrix().data(), target.distanceMatrix().data());
   EXPECT_EQ(target.shortestPathBetween(0, 2),
             (llvm::SmallVector<size_t>{0, 1, 2}));
   EXPECT_EQ(target.shortestPathBetween(2, 0),

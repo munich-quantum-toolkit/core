@@ -1343,6 +1343,13 @@ size_t CompilerTarget::distanceBetween(size_t source, size_t target) const {
   if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return source == target ? 0 : 1;
   }
+  return distanceMatrix()[(source * numSites()) + target];
+}
+
+ArrayRef<size_t> CompilerTarget::distanceMatrix() const {
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
+    return {};
+  }
   std::call_once(storage_->distancesOnce, [&] {
     storage_->distances.assign(numSites() * numSites(),
                                std::numeric_limits<size_t>::max());
@@ -1352,7 +1359,7 @@ size_t CompilerTarget::distanceBetween(size_t source, size_t target) const {
                                      .slice(vertex * numSites(), numSites()));
     }
   });
-  return storage_->distances[(source * numSites()) + target];
+  return storage_->distances;
 }
 
 SmallVector<size_t> CompilerTarget::shortestPathBetween(size_t source,

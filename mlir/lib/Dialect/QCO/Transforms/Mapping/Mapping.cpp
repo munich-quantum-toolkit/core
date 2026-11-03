@@ -623,6 +623,22 @@ private:
     void merge(const Statistics& other) { nswaps += other.nswaps; }
   };
 
+  /// Borrow the target's cached distances without repeating cache
+  /// initialization.
+  class DistanceMatrix {
+  public:
+    explicit DistanceMatrix(const CompilerTarget& target)
+        : distances_(target.distanceMatrix()), size_(target.numSites()) {}
+
+    [[nodiscard]] size_t operator()(size_t source, size_t target) const {
+      return distances_[source * size_ + target];
+    }
+
+  private:
+    ArrayRef<size_t> distances_;
+    size_t size_;
+  };
+
   /// Parameters influencing the behavior of the A* search algorithm.
   struct Parameters {
     /// The path weight.
@@ -689,7 +705,7 @@ private:
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate,
                          ArrayRef<QubitIndexPair> window,
-                         const CompilerTarget& target,
+                         const DistanceMatrix& distances,
                          const Parameters& params) {
       layout = nextParent->layout;
       layout.swap(candidate.indices.first, candidate.indices.second);
@@ -698,7 +714,8 @@ private:
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) * h(window, target, params);
+          static_cast<float>(candidate.standalone) *
+              h(window, distances, params);
 
       swap = candidate.indices;
       parent = nextParent;
@@ -735,7 +752,7 @@ private:
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
     [[nodiscard]] float h(ArrayRef<QubitIndexPair> window,
-                          const CompilerTarget& target,
+                          const DistanceMatrix& distances,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
@@ -743,7 +760,7 @@ private:
       for (const auto& progs : window) {
         const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
+        const size_t nswaps = distances(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
@@ -1297,6 +1314,7 @@ private:
   /// identity and random starts.
   [[nodiscard]] std::optional<std::pair<Layout<QubitIndex>, bool>>
   generateGreedyLayout(const Wires& wires, const Environment& env) const {
+    const DistanceMatrix distances(env.target);
     DenseMap<QubitIndexPair, size_t> weights;
     // Bound both sums over neighbors and their distance-weighted costs.
     const size_t maximumWeight = std::numeric_limits<size_t>::max() /
@@ -1395,7 +1413,7 @@ private:
     SmallVector<size_t> hardwareDegree(nhardware, 0);
     for (size_t hw = 0; hw < nhardware; ++hw) {
       for (size_t other = 0; other < nhardware; ++other) {
-        centrality[hw] += env.target.distanceBetween(hw, other);
+        centrality[hw] += distances(hw, other);
       }
       env.target.forEachNeighbour(hw, [&](size_t) { ++hardwareDegree[hw]; });
     }
@@ -1424,7 +1442,7 @@ private:
         size_t cost = 0;
         for (const auto& [partner, weight] : neighbours[prog]) {
           if (mapping[partner] != nhardware) {
-            cost += weight * env.target.distanceBetween(hw, mapping[partner]);
+            cost += weight * distances(hw, mapping[partner]);
           }
         }
         if (best == nhardware ||
@@ -1497,11 +1515,25 @@ private:
     Block& block = func.getFunctionBody().front();
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(env.target.numSites(), searchMemoryLimit);
+      std::optional<Trial> best;
+      const auto retain = [&](const Layout<QubitIndex>& layout,
+                              RoutingState& state, const Statistics& stats) {
+        const auto score =
+            (state.costs ? state.costs->score() : std::nullopt)
+                .value_or(
+                    Score{std::numeric_limits<size_t>::max(), stats.nswaps});
+        if (!best || score <= best->score) {
+          best = Trial{layout, score};
+        }
+      };
 
       {
         auto state = RoutingState::fromLayout(wires, t.layout, env);
         for (size_t i = 0; i < niterations; ++i) {
-          route<WireDirection::Forward>(block, state, arena, env);
+          const auto start = state.layout;
+          const auto stats =
+              route<WireDirection::Forward>(block, state, arena, env);
+          retain(start, state, stats);
           route<WireDirection::Backward>(block, state, arena, env);
         }
         t.layout = std::move(state.layout);
@@ -1513,9 +1545,8 @@ private:
 
       const auto score =
           route<WireDirection::Forward>(block, state, arena, env);
-      const auto quality = state.costs ? state.costs->score() : std::nullopt;
-      t.score = quality.value_or(
-          std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
+      retain(t.layout, state, score);
+      t = std::move(*best);
     });
 
     Trial* const best = min_element(trials, [](const Trial& a, const Trial& b) {
@@ -1532,6 +1563,7 @@ private:
   search(ArrayRef<QubitIndexPair> window, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
+    const DistanceMatrix distances(env.target);
 
     arena.reset();
     Node* root = arena.allocate();
@@ -1581,7 +1613,7 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, window, env.target, params);
+            child->initializeChild(curr, candidate, window, distances, params);
             seen.insert(indices);
             frontier.push(child);
           }

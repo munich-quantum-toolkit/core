@@ -327,6 +327,9 @@ using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 multithreading runs the same trials sequentially. The trial budget includes a
 greedy layout when available, followed by identity if a slot remains and random
 layouts for the remaining slots. Every trial uses the same refinement count.
+Each trial retains the start layout with the lowest native two-qubit gate count
+across its forward refinement routes and final scoring route, using depth to
+break ties. Retention does not add routing passes.
 
 Each routing search limits its estimated node and layout storage to 256 MiB by
 default. When the budget is exhausted, it checks queued states before falling
