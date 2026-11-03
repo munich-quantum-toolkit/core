@@ -42,13 +42,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${WORKER_TARGET}
     PRIVATE
-      MQT::CoreDD
-      MQT::CoreQDMICommon
-      MLIRQCODDFunctionality
-      MQTCompilerPrograms
-      MQT::CoreQIRJIT
-      MQT::CoreQIRRuntime
-      MQT::ProjectWarnings
+      MQT::CoreDD MQT::CoreQDMICommon MQT::CoreQIRJIT MQT::CoreQIRRuntime MQT::ProjectWarnings
       MQT::ProjectOptions)
   llvm_update_compile_flags(${WORKER_TARGET})
   if(WIN32)
@@ -60,6 +54,50 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(
     ${WORKER_TARGET}
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${WORKER_DIRECTORY}")
+
+  set(native_compiler ${MQT_CORE_TARGET_NAME}-native-compiler)
+  if(SKBUILD)
+    # Keep MLIR and the OpenQASM execution state inside one image.
+    add_library(${native_compiler} SHARED WorkerQasm.cpp)
+    set_target_properties(
+      ${native_compiler}
+      PROPERTIES
+        CXX_VISIBILITY_PRESET
+        hidden
+        VISIBILITY_INLINES_HIDDEN
+        ON
+        LIBRARY_OUTPUT_DIRECTORY
+        "${CMAKE_BINARY_DIR}/${WORKER_DIRECTORY}"
+        RUNTIME_OUTPUT_DIRECTORY
+        "${CMAKE_BINARY_DIR}/${WORKER_DIRECTORY}")
+    if(APPLE)
+      target_link_options(
+        ${native_compiler}
+        PRIVATE "LINKER:-exported_symbol,_mqtCoreRunWorkerQasm")
+    elseif(UNIX)
+      target_link_options(${native_compiler} PRIVATE "LINKER:--exclude-libs,ALL")
+    endif()
+    if(MQT_CORE_INSTALL)
+      install(
+        TARGETS ${native_compiler}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
+    endif()
+  else()
+    add_library(${native_compiler} STATIC WorkerQasm.cpp)
+  endif()
+  include(GenerateExportHeader)
+  generate_export_header(${native_compiler} BASE_NAME mqt_core_native_compiler)
+  target_include_directories(${native_compiler} PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
+  target_compile_features(${native_compiler} PRIVATE cxx_std_20)
+  target_link_libraries(
+    ${native_compiler}
+    PRIVATE
+      MQT::CoreDD MQT::CoreQDMICommon MLIRQCODDFunctionality MQTCompilerPrograms
+      MQT::ProjectWarnings MQT::ProjectOptions)
+  llvm_update_compile_flags(${native_compiler})
+  target_link_libraries(${WORKER_TARGET} PRIVATE ${native_compiler})
+
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE MQT_DDSIM_WORKER_NAME="${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
@@ -74,6 +112,14 @@ if(NOT TARGET ${TARGET_NAME})
     TARGET ${TARGET_NAME}
     APPEND
     PROPERTY QDMI_RUNTIME_FILES "${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
+  if(SKBUILD)
+    set_property(
+      TARGET ${TARGET_NAME}
+      APPEND
+      PROPERTY
+        QDMI_RUNTIME_FILES
+        "${CMAKE_SHARED_LIBRARY_PREFIX}${native_compiler}${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  endif()
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

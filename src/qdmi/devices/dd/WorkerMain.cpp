@@ -11,22 +11,18 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Export.hpp"
 #include "dd/Package.hpp"
-#include "mqt/Compiler/Programs.h"
-#include "mqt/Dialect/MQT/IR/MQTDialect.h"
-#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
-#include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "qdmi/common/Diagnostics.hpp"
 
 #include "WorkerProtocol.hpp"
+#include "WorkerQasm.hpp"
 
 #include "qdmi/constants.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/raw_socket_stream.h"
@@ -58,19 +54,17 @@ void appendShot(std::string& packed, std::string_view shot) {
   packed.push_back(',');
 }
 
-[[nodiscard]] auto parseQASMToQCO(const std::string_view source)
-    -> llvm::FailureOr<mlir::QCOProgram> {
-  auto context = mlir::createCompilerContext();
-  auto moduleOp = mlir::qc::translateOpenQASMToQC(source, context.get());
-  if (!moduleOp) {
-    return llvm::failure();
+[[nodiscard]] size_t requestWorkers(raw_socket_stream& stream, size_t desired) {
+  std::string bytes;
+  qdmi::dd::WorkerSlots slots;
+  if (!qdmi::dd::writeFrame(stream,
+                            qdmi::dd::encode(qdmi::dd::WorkerSlots{desired})) ||
+      !qdmi::dd::readFrame(stream, bytes) || !qdmi::dd::decode(bytes, slots) ||
+      slots.count > desired) {
+    qdmi::diagnostics::error("DDSIM worker slot exchange failed");
+    return 0;
   }
-  auto qcProgram =
-      mlir::QCProgram::fromModule(std::move(context), std::move(moduleOp));
-  if (llvm::failed(qcProgram)) {
-    return llvm::failure();
-  }
-  return std::move(*qcProgram).intoQCO();
+  return slots.count;
 }
 
 struct Execution {
@@ -89,59 +83,6 @@ struct Execution {
   std::map<std::string, size_t> counts_;
   std::unique_ptr<dd::Package> dd_;
   dd::VectorDD stateVecDD_{};
-  [[nodiscard]] size_t requestWorkers(size_t desired) const {
-    std::string bytes;
-    qdmi::dd::WorkerSlots slots;
-    if (!qdmi::dd::writeFrame(
-            *stream_, qdmi::dd::encode(qdmi::dd::WorkerSlots{desired})) ||
-        !qdmi::dd::readFrame(*stream_, bytes) ||
-        !qdmi::dd::decode(bytes, slots) || slots.count > desired) {
-      qdmi::diagnostics::error("DDSIM worker slot exchange failed");
-      return 0;
-    }
-    return slots.count;
-  }
-  bool qasmProgram() {
-    auto qcoProgram = parseQASMToQCO(program_);
-    if (llvm::failed(qcoProgram)) {
-      return false;
-    }
-    // NOLINTNEXTLINE(misc-const-correctness): MLIR handles remain mutable.
-    auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
-    if (entryPoint == nullptr) {
-      qdmi::diagnostics::error("QCO program has no entry point");
-      return false;
-    }
-    if (numShots_ != 0) {
-      mlir::qco::DDSamplingState retainedState;
-      const size_t workers =
-          automaticWorkers_
-              ? std::min(maxWorkers_,
-                         std::clamp(numShots_ / 256, size_t{1}, size_t{8}))
-              : maxWorkers_;
-      auto counts = mlir::qco::sample(
-          entryPoint, numShots_, seed_.value_or(0),
-          mlir::qco::DDArgumentBindings{}, nullptr, &retainedState,
-          {.maxQubits = maxQubits_}, workers,
-          [&](size_t desired) { return requestWorkers(desired); });
-      if (llvm::failed(counts)) {
-        return false;
-      }
-      counts_ = std::move(*counts);
-      dd_ = std::move(retainedState.dd);
-      stateVecDD_ = retainedState.state;
-      return true;
-    }
-    dd_ = llvm::cantFail(dd::Package::create(0));
-    auto state = mlir::qco::simulateStatevector(entryPoint, *dd_,
-                                                mlir::qco::DDArgumentBindings{},
-                                                {.maxQubits = maxQubits_});
-    if (llvm::failed(state)) {
-      return false;
-    }
-    stateVecDD_ = *state;
-    return true;
-  }
   bool qirProgram() {
     const llvm::StringRef irBytes(program_.data(), program_.size());
     const bool sampling = numShots_ != 0;
@@ -176,7 +117,7 @@ struct Execution {
       workers =
           automaticWorkers_ ? std::min(maxWorkers_, automatic) : maxWorkers_;
       if (workers > 1) {
-        workers = requestWorkers(workers);
+        workers = requestWorkers(*stream_, workers);
         if (workers == 0) {
           return false;
         }
@@ -340,6 +281,13 @@ struct Execution {
 qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
                                  raw_socket_stream& stream) {
   qdmi::dd::WorkerResponse response;
+  if (request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
+      request.format == QDMI_PROGRAM_FORMAT_QASM3) {
+    qdmi::dd::mqtCoreRunWorkerQasm(request, response, [&](size_t desired) {
+      return requestWorkers(stream, desired);
+    });
+    return response;
+  }
   Execution execution{
       .stream_ = &stream,
       .program_ = request.program,
@@ -350,9 +298,7 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
       .automaticWorkers_ = request.automaticWorkers,
       .maxQubits_ = request.maxQubits,
   };
-  const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
-                    request.format == QDMI_PROGRAM_FORMAT_QASM3;
-  response.succeeded = qasm ? execution.qasmProgram() : execution.qirProgram();
+  response.succeeded = execution.qirProgram();
   if (response.succeeded) {
     response.shotCount = execution.shotCount_;
     response.shots = std::move(execution.shots_);

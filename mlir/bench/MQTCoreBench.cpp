@@ -10,6 +10,10 @@
 
 // Generates configured benchmarks and evaluates their results.
 
+#ifdef MQT_CORE_SHARED_BENCHMARK
+#include "mqt_core_native_compiler_export.h"
+#endif
+
 #include "bench/JSON.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/bench/Generate.h"
@@ -373,7 +377,12 @@ static Expected<int> run() {
   return 1;
 }
 
+#ifdef MQT_CORE_SHARED_BENCHMARK
+extern "C" MQT_CORE_NATIVE_COMPILER_EXPORT int mqtCoreRunBench(int argc,
+                                                               char** argv) {
+#else
 int main(int argc, char** argv) {
+#endif
   llvm::cl::HideUnrelatedOptions(benchmarkOptions);
   llvm::cl::ParseCommandLineOptions(
       argc, argv, "Generate and evaluate structured quantum benchmarks\n");
