@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -3721,6 +3722,105 @@ TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
       }
     }
   }
+}
+
+TEST_F(MappingPassFixture, RetainBestRefinementPlacement) {
+  context->disableMultithreading();
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      7,
+      Connectivity::fromCouplings(
+          {{0, 1}, {1, 2}, {1, 3}, {2, 4}, {3, 4}, {3, 5}, {4, 6}, {5, 6}}),
+      NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("r", 1, 2)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  // Reduced DNN circuit: the middle refinement placement has fewer native
+  // gates than both the initial and final placements, despite greater depth.
+  auto input =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+        auto unused = builder.allocClassicalBitRegister(7);
+        auto bits = builder.allocClassicalBitRegister(7);
+        SmallVector<Value> q;
+        for (size_t i = 0; i < 7; ++i) {
+          q.push_back(builder.allocQubit());
+        }
+        q[0] = builder.h(q[0]);
+        const std::array angles{
+            std::pair{5.2906137, 2.3094216},
+            std::pair{2.370297, 1.9983717},
+            std::pair{4.8278313, 3.9494396},
+        };
+        for (size_t i = 0; i < angles.size(); ++i) {
+          q[i + 1] = builder.ry(angles[i].first, q[i + 1]);
+          q[i + 1] = builder.rz(angles[i].second, q[i + 1]);
+        }
+        std::tie(q[1], q[2]) = builder.ryy(5.0565645, q[1], q[2]);
+        std::tie(q[1], q[2]) = builder.rzz(1.1204827, q[1], q[2]);
+        constexpr double halfPi = 1.5707963267948966;
+        q[2] = builder.rx(halfPi, q[2]);
+        q[3] = builder.rx(halfPi, q[3]);
+        std::tie(q[2], q[3]) = builder.cx(q[2], q[3]);
+        q[3] = builder.rz(5.7808481, q[3]);
+        std::tie(q[2], q[3]) = builder.cx(q[2], q[3]);
+        q[2] = builder.rx(-halfPi, q[2]);
+        q[3] = builder.rx(-halfPi, q[3]);
+        std::tie(q[2], q[3]) = builder.rzz(0.3152806, q[2], q[3]);
+        std::tie(q[1], q[2]) = builder.cry(1.7470274, q[1], q[2]);
+        std::tie(q[1], q[2]) = builder.crz(4.0018927, q[1], q[2]);
+        std::tie(q[2], q[3]) = builder.cry(5.0273213, q[2], q[3]);
+        std::tie(q[2], q[3]) = builder.crz(1.2747353, q[2], q[3]);
+        const std::array tail{
+            std::pair{0.60604959, 0.35387948},
+            std::pair{-1.8210064, -0.94711221},
+            std::pair{2.6244992, 1.2244612},
+        };
+        for (size_t i = 0; i < tail.size(); ++i) {
+          q[i + 4] = builder.ry(tail[i].first, q[i + 4]);
+          q[i + 4] = builder.rz(tail[i].second, q[i + 4]);
+        }
+        for (size_t i = 1; i <= 3; ++i) {
+          const auto [control, targets] = builder.cswap(q[0], q[i], q[i + 3]);
+          q[0] = control;
+          std::tie(q[i], q[i + 3]) = targets;
+        }
+        q[0] = builder.h(q[0]);
+        const auto afterBarrier = builder.barrier(q);
+        q.assign(afterBarrier.begin(), afterBarrier.end());
+        for (size_t i = 0; i < q.size(); ++i) {
+          std::tie(q[i], std::ignore) =
+              builder.measure(q[i], bits, static_cast<int64_t>(i));
+          builder.sink(q[i]);
+        }
+        return SmallVector<Value>{unused, bits};
+      });
+  ASSERT_TRUE(succeeded(verify(*input)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+  PayloadFormat format;
+  format.id = "openqasm";
+  format.version = "3.1.0";
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::create(std::move(format))));
+  std::array<size_t, 3> counts{};
+  for (size_t rounds = 0; rounds < counts.size(); ++rounds) {
+    SCOPED_TRACE(rounds);
+    OwningOpRef<ModuleOp> module = input->clone();
+    (*module)->setAttr(
+        COMPILATION_SEED_ATTR,
+        IntegerAttr::get(IntegerType::get(context.get(), 64), 42));
+    PassManager pm(context.get());
+    populateTargetCompilationPipeline(
+        pm, environment, MappingOptions{.trials = 1, .iterations = rounds});
+    ASSERT_TRUE(succeeded(pm.run(*module)));
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+    module->walk(
+        [&](UnitaryOpInterface gate) { counts[rounds] += gate.isTwoQubit(); });
+  }
+  EXPECT_LT(counts[1], counts[0]);
+  EXPECT_EQ(counts[2], counts[1]);
 }
 
 TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
