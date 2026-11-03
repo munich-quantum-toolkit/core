@@ -20,7 +20,7 @@ namespace mlir::qc {
 
 /// Reject identical qubit references or static indices within one operation.
 ///
-/// Other alias relationships remain runtime preconditions.
+/// Distinctness of other references is a runtime precondition.
 LogicalResult verifyDistinctQubitOperands(Operation* op, ValueRange operands);
 
 LogicalResult verifyUnitaryOpInterface(Operation* op);

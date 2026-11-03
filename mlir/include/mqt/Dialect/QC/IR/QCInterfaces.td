@@ -28,9 +28,9 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         Operation verification only checks direct constants as a sanity check.
 
         Qubit operands must denote distinct resources, except for barriers.
-        Verification rejects repeated SSA values and equal static indices;
-        other aliases remain a runtime precondition. References may be reused
-        by separate operations.
+        Verification rejects repeated SSA values and equal static indices.
+        Distinctness of other references is a runtime precondition. References
+        may be reused by separate operations.
     }];
 
   let cppNamespace = "::mlir::qc";

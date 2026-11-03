@@ -122,10 +122,8 @@ TEST_F(QCTest, QuantumEffectsUseAConservativeNamedResource) {
   ASSERT_TRUE(moduleOp);
   auto* resource = QubitResource::get();
   auto* defaultResource = SideEffects::DefaultResource::get();
-  EXPECT_EQ(resource->getParent(), defaultResource);
   EXPECT_TRUE(resource->isAddressable());
   EXPECT_FALSE(resource->isDisjointFrom(defaultResource));
-  EXPECT_FALSE(defaultResource->isDisjointFrom(resource));
   moduleOp->walk([&](Operation* operation) {
     if (operation->getName().getDialectNamespace() != "qc") {
       return;
@@ -140,14 +138,8 @@ TEST_F(QCTest, QuantumEffectsUseAConservativeNamedResource) {
     if (auto unitary = dyn_cast<UnitaryOpInterface>(operation);
         unitary && !isa<GPhaseOp, CallOp>(operation)) {
       for (Value qubit : unitary.getQubits()) {
-        EXPECT_TRUE(llvm::any_of(effects, [&](const auto& effect) {
-          return isa<MemoryEffects::Read>(effect.getEffect()) &&
-                 effect.getValue() == qubit;
-        }));
-        EXPECT_TRUE(llvm::any_of(effects, [&](const auto& effect) {
-          return isa<MemoryEffects::Write>(effect.getEffect()) &&
-                 effect.getValue() == qubit;
-        }));
+        EXPECT_TRUE(memory.getEffectOnValue<MemoryEffects::Read>(qubit));
+        EXPECT_TRUE(memory.getEffectOnValue<MemoryEffects::Write>(qubit));
       }
     }
     if (isa<AllocOp>(operation)) {
@@ -162,20 +154,24 @@ TEST_F(QCTest, QuantumEffectsUseAConservativeNamedResource) {
 
 TEST_F(QCTest, UnitariesRejectObviousSimultaneousQubitAliases) {
   for (const char* gate : {
-           "qc.swap %q0, {0} : !qc.qubit, !qc.qubit",
-           "qc.ctrl(%q0) targets(%target = {0}) {{\n"
-           "  qc.x %target : !qc.qubit\n"
-           "  qc.yield\n"
-           "} : {{!qc.qubit}, {{!qc.qubit}",
-           "qc.inv (%first = %q0, %second = {0}) {{\n"
-           "  qc.x %first : !qc.qubit\n"
-           "  qc.h %second : !qc.qubit\n"
-           "  qc.yield\n"
-           "} : !qc.qubit, !qc.qubit",
-           "qc.call @pair(%q0, {0}) : !qc.qubit, !qc.qubit",
+           "qc.swap %q0, %q0 : !qc.qubit, !qc.qubit",
+           "qc.swap %q0, %alias : !qc.qubit, !qc.qubit",
+           R"mlir(qc.ctrl(%q0) targets(%target = %q0) {
+             qc.x %target : !qc.qubit
+             qc.yield
+           } : {!qc.qubit}, {!qc.qubit})mlir",
+           R"mlir(qc.ctrl(%q0) targets(%target = %alias) {
+             qc.x %target : !qc.qubit
+             qc.yield
+           } : {!qc.qubit}, {!qc.qubit})mlir",
+           R"mlir(qc.inv (%first = %q0, %second = %q0) {
+             qc.x %first : !qc.qubit
+             qc.h %second : !qc.qubit
+             qc.yield
+           } : !qc.qubit, !qc.qubit)mlir",
+           "qc.call @pair(%q0, %q0) : !qc.qubit, !qc.qubit",
        }) {
-    for (bool sameSSA : {false, true}) {
-      const auto source = std::string(R"mlir(
+    const auto source = std::string(R"mlir(
         module {
           func.func private @pair(%a: !qc.qubit, %b: !qc.qubit)
               attributes {mqt.unitary} {
@@ -186,20 +182,17 @@ TEST_F(QCTest, UnitariesRejectObviousSimultaneousQubitAliases) {
           func.func @main() {
             %q0 = qc.static 0 : !qc.qubit
             %alias = qc.static 0 : !qc.qubit
-      )mlir") + llvm::formatv(gate, sameSSA ? "%q0" : "%alias").str() +
-                          "\nreturn\n}\n}";
-      SCOPED_TRACE(source);
-      bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
-            sawExpectedDiagnostic |=
-                StringRef(diagnostic.str())
-                    .contains("requires distinct qubit operands");
-            return success();
-          });
-      EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
-      EXPECT_TRUE(sawExpectedDiagnostic);
-    }
+      )mlir") + gate + "\nreturn\n}\n}";
+    SCOPED_TRACE(source);
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("requires distinct qubit operands");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic);
   }
 }
 

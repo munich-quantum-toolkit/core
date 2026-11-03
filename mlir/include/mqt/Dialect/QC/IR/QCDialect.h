@@ -38,7 +38,7 @@ namespace mlir::qc {
 
 /// Quantum state accessed by QC reference operations.
 ///
-/// The default resource remains its conservative parent.
+/// Effects conservatively overlap SideEffects::DefaultResource effects.
 struct QubitResource final : SideEffects::Resource::Base<QubitResource> {
   StringRef getName() const override { return "QCQubit"; }
 };
