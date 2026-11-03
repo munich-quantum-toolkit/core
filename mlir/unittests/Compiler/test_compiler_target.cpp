@@ -388,13 +388,6 @@ TEST(TargetEnvironmentTest, IndexedSynthesisRequiresTheSelectedUniformBasis) {
   const auto measure = valid(OperationCapability::create("measure", 1, 0));
   const auto localMeasure = valid(OperationCapability::create(
       "measure", 1, 0, {valid(SiteTuple::create({0}))}));
-  const auto localU =
-      valid(OperationCapability::create("u", 1, 3,
-                                        {
-                                            valid(SiteTuple::create({0})),
-                                            valid(SiteTuple::create({1})),
-                                            valid(SiteTuple::create({2})),
-                                        }));
   const auto localCZ =
       valid(OperationCapability::create("cz", 2, 0,
                                         {
@@ -412,7 +405,6 @@ TEST(TargetEnvironmentTest, IndexedSynthesisRequiresTheSelectedUniformBasis) {
             valid(mlir::PayloadSpecification::forProgramFormat(
                 mlir::ProgramFormat::QIRAdaptive)));
       };
-  EXPECT_FALSE(environmentWith({localU, cz, measure}).supportsIndexedQubits());
   EXPECT_FALSE(environmentWith({u, localCZ, measure}).supportsIndexedQubits());
   EXPECT_FALSE(environmentWith({u, cz, localMeasure}).supportsIndexedQubits());
   const auto localReset = valid(OperationCapability::create(
@@ -423,11 +415,31 @@ TEST(TargetEnvironmentTest, IndexedSynthesisRequiresTheSelectedUniformBasis) {
   EXPECT_FALSE(environmentWith({u}).supportsIndexedQubits());
 
   const auto rz = valid(OperationCapability::create("rz", 1, 1));
-  const auto rx = valid(OperationCapability::create("rx", 1, 1));
-  EXPECT_FALSE(environmentWith({localU, rx, rz, cz}).supportsIndexedQubits());
   const auto quarter = valid(OperationCapability::create(
       "rx", 1, 1, {}, std::nullopt, std::nullopt, {std::numbers::pi / 2.}));
   EXPECT_TRUE(environmentWith({rz, quarter, cz}).supportsIndexedQubits());
+}
+
+TEST(TargetEnvironmentTest, IndexedNativeOnlyOperationsCoverAllSites) {
+  const auto first = valid(
+      OperationCapability::create("x", 1, 0, {valid(SiteTuple::create({0}))}));
+  const auto second = valid(
+      OperationCapability::create("x", 1, 0, {valid(SiteTuple::create({1}))}));
+  const auto payload = valid(mlir::PayloadSpecification::forProgramFormat(
+      mlir::ProgramFormat::QIRAdaptive));
+  const auto targetWith =
+      [&](const std::vector<OperationCapability>& operations) {
+        return valid(
+            Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations(operations)));
+      };
+  const auto complete = targetWith({first, second});
+  ASSERT_FALSE(complete.synthesisBasis());
+  EXPECT_TRUE(
+      mlir::TargetEnvironment(complete, payload).supportsIndexedQubits());
+  const auto partial = targetWith({first});
+  EXPECT_FALSE(
+      mlir::TargetEnvironment(partial, payload).supportsIndexedQubits());
 }
 
 TEST(TargetEnvironmentTest, ReusesPreparedTargetStorage) {
@@ -1227,6 +1239,26 @@ TEST(CompilerTargetTest, ResolvesFixedRXGateBasisOnlyOnEverySite) {
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             Target::SingleQubitBasis::ZSXX);
   EXPECT_FALSE(target.synthesisBasis()->entangler);
+}
+
+TEST(CompilerTargetTest, SiteCoverageDoesNotCombineDifferentNativeGates) {
+  const auto rz = valid(OperationCapability::create("rz", 1, 1));
+  const auto first = valid(OperationCapability::create(
+      "rx", 1, 1, {valid(SiteTuple::create({0}))}, std::nullopt, std::nullopt,
+      {std::numbers::pi / 2.}));
+  for (const auto& second : {
+           valid(OperationCapability::create(
+               "rx", 1, 1, {valid(SiteTuple::create({1}))}, std::nullopt,
+               std::nullopt, {-std::numbers::pi / 2.})),
+           valid(OperationCapability::create(
+               "rx90", 1, 1, {valid(SiteTuple::create({1}))}, std::nullopt,
+               std::nullopt, {std::numbers::pi / 2.}, "rx")),
+       }) {
+    const auto target = valid(
+        Target::create(2, Connectivity::allToAll(),
+                       NativeOperations::fromOperations({rz, first, second})));
+    EXPECT_FALSE(target.synthesisBasis());
+  }
 }
 
 TEST(CompilerTargetTest, KeepsUnsupportedRXAnglesNativeWithoutSynthesis) {

@@ -235,7 +235,9 @@ compiler-target operations.
 nonempty list has one entry per parameter; `None` leaves a parameter
 unrestricted. An omitted or empty list leaves every parameter unrestricted.
 Multiple capabilities for the same operation form a union of supported values
-and placements. For example, these capabilities accept four RX angles:
+and placements. A homogeneous synthesis basis can combine site coverage from
+records with the same native name and parameter constraints. For example, these
+capabilities accept four RX angles:
 
 ```python
 from math import pi
@@ -312,13 +314,12 @@ Use plain tuples for placements without calibration. Use
 calibration to a placement; both forms can appear in the same list.
 
 Routing uses undirected adjacency; native synthesis repairs unsupported operand
-directions. Target compilation requires a known static physical site for each
-qubit. Structured branch exits must agree on sites, and loop backedges must
-preserve the entry sites. Unsupported or inconsistent site transfers are
-diagnosed, including after all-to-all placement. A synthesis basis must provide
-the same one-qubit gate family on every site. Its entangler is optional:
-one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
-on every routing edge in at least one direction.
+directions. For statically addressed qubits, structured branch exits must agree
+on sites and loop backedges must preserve their entry sites. Unsupported or
+inconsistent site transfers are diagnosed. A synthesis basis must provide the
+same one-qubit gate family on every site. Its entangler is optional: one-qubit
+synthesis does not need one. Two-qubit synthesis requires an entangler on every
+routing edge in at least one direction.
 
 Mapping explores one initial-layout trial per available logical CPU by default,
 using LLVM's affinity-aware CPU count with a minimum of one. An explicit
@@ -516,21 +517,13 @@ reorder the before-region results. Untouched slots remain outside the control
 flow. Runtime indices and incomplete or nested tensor updates do not match this
 scalarization.
 
-Adaptive QIR placement can retain indexed registers on all-to-all hardware. This
-requires empty `site_tuples` for every operation, or a selected synthesis basis
-that supports unknown sites with the same parameter domains. In the latter case,
-multi-qubit targets need a native entangler in that basis. Advertised
-measurement and reset operations must also support unknown sites. A
-site-restricted gate can remain native at proven sites; operations at unknown
-sites require unrestricted support or decomposition into the selected basis.
-
-Placement assigns physical sites to the allocation's slots. Loop bodies do not
-grow with their iteration counts. The site list requires space proportional to
-the register width. Capacity, physical site IDs, qubit origins, native
-operations, and payload limits are checked from target metadata.
-
-Runtime angles can prevent constant-angle simplification, so compact IR can
-execute more native gates than a specialized program.
+Adaptive QIR retains indexed registers on all-to-all targets when the synthesis
+basis and any advertised measurement or reset cover their possible sites, or
+when all operations have unrestricted sites. Coverage may be explicit. Placement
+assigns physical sites to register slots and checks capacity and native
+operations; loop bodies do not grow with iteration counts. Site-restricted gates
+remain native only at proven sites. Runtime angles can prevent constant-angle
+simplification and increase the executed gate count.
 
 Other payloads, explicit topology, and targets that require known sites for
 synthesis or measurement/reset need exact quantum addresses. Bounded
@@ -767,11 +760,11 @@ scalar outputs. In OpenQASM 3, declare `output bit` registers explicitly when
 global scalar variables are only temporaries. See the
 {doc}`QIR execution contracts <../qir/index>`.
 
-The adapter accepts circuit-model devices whose two-qubit operations cover every
-topology edge in at least one operand orientation and preserves the exact
-ordered tuples reported by the device. Operations with arity above two must
-report every ordered tuple of distinct sites. Neutral-atom zone models require a
-different compilation model and are rejected with a diagnostic.
+The adapter preserves ordered placements for recognized circuit operations.
+Compilation requires a single-qubit basis on every site and, for two-qubit
+synthesis, an entangler on every edge. Unknown operations are ignored, as are
+operations with unreported sites unless homogeneous support is declared.
+Neutral-atom zone models require a different compilation model and are rejected.
 
 QDMI 1.3 cannot report an operation-arity range. The bundled DDSIM device uses
 an exact, versioned custom-operation marker to state that each canonical

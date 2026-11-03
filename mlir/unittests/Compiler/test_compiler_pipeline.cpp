@@ -4403,12 +4403,24 @@ TEST_F(CompilerPipelineTest, RestrictedNativeExtraDoesNotBlockDecomposition) {
 
 TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
   using Capability = CompilerTarget::OperationCapability;
+  std::vector<CompilerTarget::SiteTuple> allSites;
+  std::vector<CompilerTarget::SiteTuple> allPairs;
+  for (CompilerTarget::SiteId first = 0; first < 4; ++first) {
+    allSites.push_back(
+        llvm::cantFail(CompilerTarget::SiteTuple::create({first})));
+    for (CompilerTarget::SiteId second = 0; second < 4; ++second) {
+      if (first != second) {
+        allPairs.push_back(
+            llvm::cantFail(CompilerTarget::SiteTuple::create({first, second})));
+      }
+    }
+  }
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
-          llvm::cantFail(Capability::create("u", 1, 3)),
-          llvm::cantFail(Capability::create("cz", 2, 0)),
-          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create("u", 1, 3, allSites)),
+          llvm::cantFail(Capability::create("cz", 2, 0, allPairs)),
+          llvm::cantFail(Capability::create("measure", 1, 0, allSites)),
           llvm::cantFail(Capability::create(
               "rccx", 3, 0,
               {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 2, 3}))})),
