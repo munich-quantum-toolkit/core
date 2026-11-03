@@ -205,8 +205,8 @@ records the result array, and `dynamic_qubit_management` and
 `dynamic_result_management` describe resource allocation. LLVM prints the
 conditional-loop bit pattern as `i2 -2` (binary `10`). Other programs can also
 carry `int_computations`, `float_computations`, `ir_functions`,
-`multiple_target_branching`, and `multiple_return_points` flags when their
-lowered instructions require those capabilities.
+`multiple_target_branching`, `multiple_return_points`, and `writable_results`
+flags when their lowered instructions require those capabilities.
 
 A profile name alone does not describe every device's capabilities. When
 compiling for a device, use the

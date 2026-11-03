@@ -53,6 +53,11 @@ enum class AllocationMode : std::uint8_t {
 struct LoweringState {
   std::optional<CompilerTarget> nativeTarget;
 
+  /// Whether the target confirms support for classical result writes.
+  ///
+  /// Selects register storage before calls and metadata exist.
+  bool useWritableResults = false;
+
   /// Select the advertised name using converted physical qubits and parameters.
   [[nodiscard]] CompilerTarget::OperationMatch
   nativeOperation(StringRef name, ValueRange qubits, ValueRange parameters,
@@ -65,8 +70,8 @@ struct LoweringState {
   /// Returned result-register arrays that reject non-measurement stores.
   llvm::SmallSetVector<Value, 4> resultArrays;
 
-  /// CBit read operations whose register is backed by a result array.
-  DenseSet<Operation*> returnedCBitReads;
+  /// CBit accesses whose register is backed by a result array.
+  DenseSet<Operation*> returnedCBitAccesses;
 
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
@@ -215,6 +220,8 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// With \p allowComputedOutputs, returned registers use Boolean storage when
 /// they contain computed bits or fusion cannot preserve their stores and
 /// returned measurement snapshots. Otherwise these cases fail.
+/// With writable results enabled in \p state, these stores retain Result
+/// arrays and write Boolean values into their slots instead.
 /// Boolean scalar outputs remain function results until output recording.
 /// Local CBit stores retain ordinary semantics.
 ///

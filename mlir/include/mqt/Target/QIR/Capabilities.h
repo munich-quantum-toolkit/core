@@ -25,6 +25,7 @@ namespace qir {
 inline constexpr std::array OPTIONAL_CAPABILITIES{
     std::pair{"dynamic_qubit_management", "qir.dynamic-qubit-management"},
     std::pair{"dynamic_result_management", "qir.dynamic-result-management"},
+    std::pair{"writable_results", "qir.writable-results"},
     std::pair{"arrays", "qir.arrays"},
     std::pair{"ir_functions", "qir.ir-functions"},
     std::pair{"multiple_return_points", "qir.multiple-return-points"},
