@@ -14,6 +14,7 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -36,10 +37,4 @@ namespace mlir::qco {
 
 /// Return the quantum block argument continued by @p value.
 [[nodiscard]] FailureOr<unsigned> traceQubitArgument(Block& block, Value value);
-
-/// Check that extracted tensor slots are restored at calls and region exits.
-///
-/// Slot identity and disjoint extractions are program preconditions; known
-/// violations and positional region correspondence are checked separately.
-[[nodiscard]] bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0);
 } // namespace mlir::qco

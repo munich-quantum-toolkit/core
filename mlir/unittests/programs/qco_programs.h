@@ -17,7 +17,7 @@ namespace mlir::qco {
 class QCOProgramBuilder;
 
 /// Creates an empty QCO program.
-Value emptyQCO(QCOProgramBuilder& builder);
+SmallVector<Value> emptyQCO(QCOProgramBuilder& builder);
 
 /// Calls a reusable unitary rotation.
 Value reusableUnitaryFunction(QCOProgramBuilder& b);
@@ -34,7 +34,7 @@ Value allocQubit(QCOProgramBuilder& b);
 Value alloc2Qubits(QCOProgramBuilder& b);
 
 /// Allocates a single qubit that is not measured.
-Value allocQubitNoMeasure(QCOProgramBuilder& b);
+SmallVector<Value> allocQubitNoMeasure(QCOProgramBuilder& b);
 
 /// Allocates a qubit register of size `1`.
 Value alloc1QubitRegister(QCOProgramBuilder& b);
@@ -55,7 +55,7 @@ Value allocLargeRegister(QCOProgramBuilder& b);
 Value staticQubits(QCOProgramBuilder& b);
 
 /// Allocates two inline qubits without measuring them.
-Value staticQubitsNoMeasure(QCOProgramBuilder& b);
+SmallVector<Value> staticQubitsNoMeasure(QCOProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
 Value staticQubitsWithOps(QCOProgramBuilder& b);
@@ -73,7 +73,7 @@ Value staticQubitsWithCtrl(QCOProgramBuilder& b);
 Value staticQubitsWithInv(QCOProgramBuilder& b);
 
 /// Allocates and explicitly sinks a single qubit.
-Value allocSinkPair(QCOProgramBuilder& b);
+SmallVector<Value> allocSinkPair(QCOProgramBuilder& b);
 
 /// Allocates two qubits and performs a set of dead gates on them.
 SmallVector<Value> deadGatesProgram(QCOProgramBuilder& b);
@@ -150,7 +150,7 @@ SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b);
 // --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
-Value globalPhase(QCOProgramBuilder& b);
+SmallVector<Value> globalPhase(QCOProgramBuilder& b);
 
 /// Creates a controlled global phase gate with a single control qubit.
 Value singleControlledGlobalPhase(QCOProgramBuilder& b);
@@ -159,23 +159,23 @@ Value singleControlledGlobalPhase(QCOProgramBuilder& b);
 Value multipleControlledGlobalPhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase gate.
-Value inverseGlobalPhase(QCOProgramBuilder& b);
+SmallVector<Value> inverseGlobalPhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled global
 /// phase gate.
 Value inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(3.0) wrapping a global-phase gate (scales θ).
-Value powGphaseScaled(QCOProgramBuilder& b);
+SmallVector<Value> powGphaseScaled(QCOProgramBuilder& b);
 
 /// Creates the reference for powGphaseScaled: gphase(3*0.123).
-Value powGphaseScaledRef(QCOProgramBuilder& b);
+SmallVector<Value> powGphaseScaledRef(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(-3.0) wrapping gphase (negative exponent).
-Value negPowGphase(QCOProgramBuilder& b);
+SmallVector<Value> negPowGphase(QCOProgramBuilder& b);
 
 /// Reference for negPowGphase: gphase(-3.0 * 0.123).
-Value negPowGphaseRef(QCOProgramBuilder& b);
+SmallVector<Value> negPowGphaseRef(QCOProgramBuilder& b);
 
 // --- IdOp ----------------------------------------------------------------- //
 
@@ -1530,42 +1530,34 @@ Value nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b);
 // --- QTensor Operations -------------------------------------------------- //
 
 /// Allocates a tensor of size `3`.
-Value qtensorAlloc(QCOProgramBuilder& b);
+SmallVector<Value> qtensorAlloc(QCOProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a tensor.
-Value qtensorDealloc(QCOProgramBuilder& b);
+SmallVector<Value> qtensorDealloc(QCOProgramBuilder& b);
 
 /// Constructs a tensor with from_elements.
-Value qtensorFromElements(QCOProgramBuilder& b);
+SmallVector<Value> qtensorFromElements(QCOProgramBuilder& b);
 
 /// Extracts a qubit from a tensor.
 Value qtensorExtract(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor.
-Value qtensorInsert(QCOProgramBuilder& b);
-
-/// Extracts a qubit from a tensor and inserts it immediately at a different
-/// index.
-Value qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b);
+SmallVector<Value> qtensorInsert(QCOProgramBuilder& b);
 
 /// Extracts a qubit from a tensor and inserts it immediately at the same index.
-Value qtensorExtractInsertSameIndex(QCOProgramBuilder& b);
-
-/// Inserts a qubit into a tensor and extracts it immediately at a different
-/// index.
-Value qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
+SmallVector<Value> qtensorExtractInsertSameIndex(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
-Value qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+SmallVector<Value> qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
 
 /// Extracts three qubits with ascending index (0, 1, 2), performs a
 /// computation, and finally inserts the qubits in ascending order (0, 1, 2).
-Value qtensorChain(QCOProgramBuilder& b);
+SmallVector<Value> qtensorChain(QCOProgramBuilder& b);
 
 /// Performs the same computation as the `qtensorChain` function, but uses
 /// qubits immediately after the extract and inserts the qubits in descending
 /// order (2, 1, 0).
-Value qtensorAlternativeChain(QCOProgramBuilder& b);
+SmallVector<Value> qtensorAlternativeChain(QCOProgramBuilder& b);
 
 Value controlledXH(QCOProgramBuilder& b);
 

@@ -189,7 +189,7 @@ standardQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
     scf::YieldOp::create(builder, ValueRange{next});
   }
 
-  detail::inverseQFT(builder, query, precision);
+  detail::qft(builder, query, precision, true);
   builder.measureQubitRegister(query, result, precision);
   return {result};
 }

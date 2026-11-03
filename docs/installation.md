@@ -76,13 +76,13 @@ This prints the installed package version.
 
 ## Build performance
 
-Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.2
+Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.4
 SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
 macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
 exports. Wheels include the QDMI driver and device bundles, `mqt-cc`, and
 `mqt-core-bench`. Their CMake package exposes the QDMI C interfaces and tool
-targets without requiring LLVM/MLIR. See {doc}`cpp_api` for native consumers.
+targets. Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`.
 C++ development libraries and headers are available from source installations;
 the DD library is static.
 
@@ -115,7 +115,9 @@ pip install mqt.core --no-binary mqt.core
 
 This requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
-and [CMake](https://cmake.org/) 3.28 or newer.
+and [CMake](https://cmake.org/) 3.28 or newer. CMake downloads a compatible
+LLVM/MLIR SDK when none is available; see {ref}`setting-up-mlir` for supported
+platforms and offline builds.
 
 Local Release source builds default to `DEPLOY=OFF`, which enables native CPU
 tuning and LTO when the compiler supports them. On Linux, Clang with its
@@ -223,7 +225,7 @@ flexibility in how the library is integrated into the project.
 include(FetchContent)
 set(FETCH_PACKAGES "")
 
-# cmake-format: off
+# cmakefmt: off
 set(MQT_CORE_MINIMUM_VERSION "<minimum_version>"
     CACHE STRING "MQT Core minimum version")
 set(MQT_CORE_VERSION "<version>"
@@ -232,7 +234,7 @@ set(MQT_CORE_REV "<revision>"
     CACHE STRING "MQT Core identifier (tag, branch or commit hash)")
 set(MQT_CORE_REPO_OWNER "munich-quantum-toolkit"
     CACHE STRING "MQT Core repository owner (change when using a fork)")
-# cmake-format: on
+# cmakefmt: on
 FetchContent_Declare(
   mqt-core
   GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
@@ -297,7 +299,7 @@ Set up a reproducible development environment for MQT Core. This is the
 recommended starting point for both bug fixes and new features. For detailed
 guidelines and workflows, see {doc}`contributing`.
 
-1. Get the code: <!-- rumdl-disable-line MD013 -->
+1. Get the code:
 
    ::::{tab-set}
 
@@ -343,17 +345,13 @@ guidelines and workflows, see {doc}`contributing`.
 
    Now you can make your changes locally.
 
-Before building the package, install LLVM/MLIR as described in
-{ref}`setting-up-mlir`. It must be available to CMake before the next step.
-
-4. Install the project and its development dependencies: <!-- rumdl-disable-line MD013 -->
+4. Install the project and its development dependencies:
 
    We highly recommend using modern, fast tooling for the development workflow.
-   We recommend using [{code}`uv`][uv].
-   If you don't have {code}`uv`,
-   follow the installation instructions in the recommendation above
-   (see {ref}`tip above <uv-recommendation>`).
-   See the [uv documentation][uv] for more information.
+   We recommend using [{code}`uv`][uv]. If you don't have {code}`uv`, follow the
+   installation instructions in the recommendation above (see
+   {ref}`tip above <uv-recommendation>`). See the [uv documentation][uv] for
+   more information.
 
    ::::{tab-set}
    :sync-group: installer
@@ -361,7 +359,8 @@ Before building the package, install LLVM/MLIR as described in
    :::{tab-item} {code}`uv` _(recommended)_
    :sync: uv
 
-   Install the project (including development dependencies) with [{code}`uv`][uv]:
+   Install the project (including development dependencies) with
+   [{code}`uv`][uv]:
 
    ```console
    uv sync
@@ -387,17 +386,18 @@ Before building the package, install LLVM/MLIR as described in
 
    ::::
 
-5. Install pre-commit hooks to ensure code quality: <!-- rumdl-disable-line MD013 -->
+5. Install pre-commit hooks to ensure code quality:
 
-   The project uses pre-commit hooks for running linters and formatting tools on each commit.
-   These checks can be run manually via [{code}`nox`][nox], by running:
+   The project uses pre-commit hooks for running linters and formatting tools on
+   each commit. These checks can be run manually via [{code}`nox`][nox], by
+   running:
 
    ```console
    nox -s lint
    ```
 
-   They can also be run automatically on every commit via [{code}`prek`][prek] (recommended). To set
-   this up, install {code}`prek`, e.g., via:
+   They can also be run automatically on every commit via [{code}`prek`][prek]
+   (recommended). To set this up, install {code}`prek`, e.g., via:
 
    ::::{tab-set}
 
@@ -438,78 +438,58 @@ Before building the package, install LLVM/MLIR as described in
 ## Setting Up MLIR
 
 All MQT Core source builds require
-[LLVM](https://llvm.org/)/[MLIR](https://mlir.llvm.org/) 23.1 or newer,
-including embedded builds using `FetchContent` or `add_subdirectory`. Make the
-SDK available to CMake as described below. The wheel's
+[LLVM](https://llvm.org/)/[MLIR](https://mlir.llvm.org/) 23.1.x, including
+embedded builds using `FetchContent` or `add_subdirectory`. CMake first searches
+for a compatible installed SDK. If none is available, it downloads a prebuilt
+SDK from [`portable-mlir-toolchain`] using a pinned [`setup-mlir`] installer and
+version manifest. The wheel's
 [Runtime component](cpp_api.md#use-the-wheels-native-runtime) needs no SDK.
 
-We highly recommend using the prebuilt MLIR distribution provided by the
-[`portable-mlir-toolchain`] project. These can be conveniently installed with
-the [`setup-mlir`] scripts as described below.
+### Automatic installation
 
-### Downloading the MLIR Distribution
+The first configure downloads the SDK into `_deps/llvm-<version>-<assertions>`
+inside the build directory. Subsequent configures reuse that installation. These
+CMake settings control the fallback:
 
-The [`setup-mlir`] repository provides installation scripts for all supported
-operating systems. You must pass the LLVM version (e.g., `23.1.0`) and the
-installation prefix (directory) where MLIR should be extracted. The scripts
-download a platform-specific archive. The only requirement is that the `tar`
-command is available on the system.
+| Setting                      | Default         | Effect                                               |
+| ---------------------------- | --------------- | ---------------------------------------------------- |
+| `MQT_CORE_AUTO_INSTALL_MLIR` | `ON`            | Download an SDK when none is available.              |
+| `MQT_CORE_MLIR_VERSION`      | `23.1.4`        | Select a version from the pinned installer manifest. |
+| `MQT_CORE_MLIR_ASSERTIONS`   | Build-dependent | Select an SDK with LLVM assertions enabled.          |
 
-::::{note}
-:name: tar-requirement
+All automatic downloads use Release SDKs. Assertions default to `ON` for
+single-config `Debug` and `RelWithDebInfo` builds, and `OFF` otherwise,
+including multi-config generators. Explicit settings take precedence. CMake
+caches this choice; after changing the build type in an existing build
+directory, use `-UMQT_CORE_MLIR_ASSERTIONS` to recompute the default or set it
+explicitly.
 
-`tar` is included by default on Windows 10 and Windows 11. On older Windows
-versions, you can install it, for example, via
-[Chocolatey](https://chocolatey.org/): `choco install tar`.
-::::
+Version overrides must use `X.Y.Z` syntax, belong to the LLVM 23.1 series, and
+exist in the pinned manifest; commit hashes are not accepted. These options do
+not replace or alter a compatible installed SDK. For example,
+`-DMQT_CORE_MLIR_ASSERTIONS=OFF` selects the assertion-free download; it does
+not change assertions in an SDK selected through `MLIR_DIR`. For Python builds,
+pass CMake settings as `-Ccmake.define.<setting>=<value>` to `uv pip install` or
+`pip install`.
 
-::::{tab-set}
+Automatic installation supports native Linux x86_64 and AArch64 with glibc,
+macOS AArch64, and Windows x86_64 and ARM64. Linux and macOS require Bash,
+`curl`, and `tar`; Windows requires PowerShell 7.4 or newer (`pwsh`) and `tar`.
+The installer selects the host architecture. Cross-compilation (including
+same-OS architecture changes), Intel macOS, universal2, and musl builds require
+a compatible SDK supplied by the user with automatic installation disabled. A
+compiler compatible with the SDK is still required.
 
-:::{tab-item} Linux and macOS
-
-Run the Bash script with the desired LLVM version and installation path:
-
-```console
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 23.1.0 -p /path/to/installation
-```
-
-Replace `/path/to/installation` with the directory where the LLVM distribution
-should be installed (e.g., `/opt/llvm-23.1.0`).
-
-:::
-
-:::{tab-item} Windows (PowerShell)
-
-Run the PowerShell script with the desired LLVM version and installation path:
-
-```console
-powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.ps1))) -llvm_version 23.1.0 -install_prefix \path\to\installation"
-```
-
-Replace `\path\to\installation` with the directory where the LLVM distribution
-should be installed (e.g., `C:\llvm-23.1.0`). For debug builds on Windows, add
-the `-use_debug` flag to the script invocation.
-
-:::
-
-::::
-
-For supported LLVM versions, commit hashes, and other options, see the
-[`setup-mlir`] repository and its
-[`version-manifest.json`](https://github.com/munich-quantum-software/setup-mlir/blob/main/version-manifest.json).
-
-::::{note}
-:name: mlir-build-note
-
-If you want to build MLIR from source, you can follow the instructions in the
-[`portable-mlir-toolchain`] repository. This is not recommended unless you need
-a specific configuration that is not available in the prebuilt distributions, as
-building MLIR from source can be complex and time-consuming.
-::::
+To disable LLVM/MLIR downloads, including for offline builds, set
+`-DMQT_CORE_AUTO_INSTALL_MLIR=OFF`. A completed SDK installation in the build
+directory can still be reused; otherwise, make an SDK available as shown below.
+Other build dependencies must also be available offline. For manual SDK
+installation or a custom LLVM/MLIR build, follow the [`setup-mlir`] or
+[`portable-mlir-toolchain`] instructions.
 
 ### Making MLIR Available to the Build
 
-After installing MLIR, point the build system to it by setting the CMake
+To select an installed SDK, point the build system to it by setting the CMake
 variable {code}`MLIR_DIR` to the **CMake configuration directory** of the
 installation:
 
@@ -517,8 +497,7 @@ installation:
 cmake -S . -B build -DMLIR_DIR=/path/to/installation/lib/cmake/mlir
 ```
 
-Replace `/path/to/installation` with the actual path to the MLIR installation
-from the previous step.
+Replace `/path/to/installation` with the actual path to the MLIR installation.
 
 Alternatively, you can set the {code}`MLIR_DIR` environment variable to the same
 path before running CMake:

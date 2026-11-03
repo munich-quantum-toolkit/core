@@ -55,6 +55,9 @@ void setUnitaryFunction(Operation* operation);
   return nullptr;
 }
 
+/// Check that the entry function returns no quantum values.
+[[nodiscard]] LogicalResult verifyEntryPointResults(func::FuncOp function);
+
 /// Check that dynamic quantum allocations belong to the program entry block.
 ///
 /// Modules without an entry point must not contain dynamic quantum allocations.

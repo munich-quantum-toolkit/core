@@ -17,8 +17,9 @@ if(TARGET MQT::CoreQDMIDriver)
   if(WIN32)
     unset(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE)
   endif()
-  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver
-                                                    ${PROJECT_SOURCE_DIR}/test)
+  target_include_directories(
+    ${TARGET_NAME}
+    PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver ${PROJECT_SOURCE_DIR}/test)
   if(TARGET MQT::CoreQDMI_DDSIM_Device)
     target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_HAS_DDSIM_DEVICE)
   endif()

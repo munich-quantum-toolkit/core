@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "llvm/Support/Error.h"
+
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -41,11 +43,10 @@ namespace qir {
 ///
 /// @param entryPoint QIR entry point to rewrite in place.
 /// @return Whether an irreversible boundary was found and truncated.
-/// @throws std::invalid_argument for an unsupported profile, signature or
-/// effects. Base Profile extraction additionally rejects non-terminal
-/// irreversible regions and defined helpers; neither profile supports indirect
-/// calls.
-bool prepareForStateExtraction(llvm::Function& entryPoint);
+/// Returns an owned error for an unsupported profile, signature or effects.
+/// Base Profile extraction additionally rejects non-terminal irreversible
+/// regions and defined helpers; neither profile supports indirect calls.
+llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint);
 
 /// Return logical qubit IDs in output order for deferred sampling.
 ///
@@ -55,5 +56,20 @@ bool prepareForStateExtraction(llvm::Function& entryPoint);
 /// std::nullopt, leaving ordinary per-shot execution available.
 std::optional<std::vector<uintptr_t>>
 getStaticSamplingOutputs(const llvm::Function& entryPoint);
+
+/// Whether repeated executions depend only on quantum measurement outcomes.
+///
+/// Inspect the optimized entry point. Branch sampling supports classical loops,
+/// stack-local memory, constant globals, and QIR qubit/result resources. Native
+/// heap objects, remaining helper calls, pointer-address observations, external
+/// effects, and module constructors/destructors require ordinary execution.
+/// Runtime declarations must already have passed the JIT's ABI validation.
+bool canSampleBranches(const llvm::Function& entryPoint);
+
+/// Whether a replayable entry point has no feedback or explicit reset.
+///
+/// Requires @ref canSampleBranches. Runtime tracking must still check gates on
+/// measured wires and qubit reuse before accepting a deferred sampling trial.
+bool canDeferMeasurements(const llvm::Function& entryPoint);
 
 } // namespace qir

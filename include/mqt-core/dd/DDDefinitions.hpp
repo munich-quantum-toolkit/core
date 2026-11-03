@@ -13,8 +13,9 @@
 
 #pragma once
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <array>
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +23,6 @@
 #include <map>
 #include <numbers>
 #include <set>
-#include <sstream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -61,10 +61,11 @@ struct Control {
   // NOLINTEND(misc-explicit-constructor)
 
   [[nodiscard]] std::string toString() const {
-    std::ostringstream oss{};
-    oss << "Control(qubit=" << qubit << ", type_=\""
+    std::string result;
+    llvm::raw_string_ostream(result)
+        << "Control(qubit=" << qubit << ", type_=\""
         << (type == Type::Pos ? "Pos" : "Neg") << "\")";
-    return oss.str();
+    return result;
   }
 };
 
@@ -176,24 +177,6 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
     }
   }
   return binary;
-}
-
-// calculates the Units in Last Place (ULP) distance of two floating point
-// numbers
-[[nodiscard, maybe_unused]] static std::size_t ulpDistance(fp a, fp b) {
-  // NOLINTNEXTLINE(clang-diagnostic-float-equal)
-  if (a == b) {
-    return 0;
-  }
-
-  std::size_t ulps = 1;
-  fp nextFP = std::nextafter(a, b);
-  // NOLINTNEXTLINE(clang-diagnostic-float-equal)
-  while (nextFP != b) {
-    ulps++;
-    nextFP = std::nextafter(nextFP, b);
-  }
-  return ulps;
 }
 
 /// 64bit mixing hash (from MurmurHash3)

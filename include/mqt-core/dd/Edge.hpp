@@ -17,6 +17,8 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <array>
 #include <complex>
 #include <cstddef>
@@ -108,10 +110,10 @@ template <class Node> struct Edge {
   /// @param decisions string {0, 1, 2, 3}^n describing which outgoing edge
   /// should be followed (for vectors entries are limited to 0 and 1) If string
   /// is longer than required, the additional characters are ignored.
-  /// @throws std::out_of_range if the path is too short
-  /// @throws std::invalid_argument if a used path digit is outside the radix
+  /// Returns an error if the path or requested width is too short
+  /// Returns an error if a used path digit is outside the radix
   /// @return the complex amplitude of the specified element
-  [[nodiscard]] std::complex<fp>
+  [[nodiscard]] llvm::Expected<std::complex<fp>>
   getValueByPath(std::size_t numQubits, const std::string& decisions) const;
 
   /// Get the size of the DD
@@ -144,53 +146,62 @@ private:
 /// @param cn a reference to the complex number manager (for adding new
 /// complex numbers)
 /// @return the normalized vector DD
-auto normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<vNode>;
+Edge<vNode> normalize(vNode* p, const std::array<Edge<vNode>, RADIX>& e,
+                      MemoryManager& mm, ComplexNumbers& cn);
 
 /// Get a single element of the vector represented by the DD
 ///
 /// @param edge the vector DD
 /// @param i index of the element
-/// @throws std::out_of_range if the index is outside the vector
+/// Returns an error if the index is outside the vector
 /// @return the complex value of the amplitude
-[[nodiscard]] std::complex<fp> getValueByIndex(const Edge<vNode>& edge,
-                                               size_t i);
+[[nodiscard]] llvm::Expected<std::complex<fp>>
+getValueByIndex(const Edge<vNode>& edge, size_t i);
 
 /// Get the vector represented by the DD
 ///
 /// @param edge the vector DD
 /// @param threshold amplitudes with a magnitude below this threshold will be
 /// ignored
+/// Returns an error if the vector dimension does not fit in size_t.
 /// @return the vector
-[[nodiscard]] CVec getVector(const Edge<vNode>& edge, fp threshold = 0.);
+[[nodiscard]] llvm::Expected<CVec> getVector(const Edge<vNode>& edge,
+                                             fp threshold = 0.);
 
 /// Get the sparse vector represented by the DD
 ///
 /// @param edge the vector DD
 /// @param threshold amplitudes with a magnitude below this threshold will be
 /// ignored
+/// Returns an error if basis indices do not fit in size_t.
 /// @return the sparse vector
-[[nodiscard]] SparseCVec getSparseVector(const Edge<vNode>& edge,
-                                         fp threshold = 0.);
+[[nodiscard]] llvm::Expected<SparseCVec>
+getSparseVector(const Edge<vNode>& edge, fp threshold = 0.);
 
 /// Visit vector amplitudes in ascending basis-index order without storing them.
 ///
 /// Zero-weight child edges and paths below @p threshold are skipped. The
-/// callback is borrowed for this call. Basis indices must fit in size_t.
-/// @throws std::out_of_range if the DD has more qubits than size_t has bits.
-void traverseVector(const Edge<vNode>& edge, const AmplitudeFunc& f,
-                    fp threshold = 0.);
+/// callback is borrowed for this call and must be nonempty and nonthrowing.
+/// Basis indices must fit in size_t.
+/// Fails before invoking the callback if a basis index cannot fit in size_t.
+[[nodiscard]] llvm::Error traverseVector(const Edge<vNode>& edge,
+                                         const AmplitudeFunc& f,
+                                         fp threshold = 0.);
 
 /// Print the vector represented by the DD
 ///
 /// @note This function scales exponentially with the number of qubits.
-void printVector(const Edge<vNode>& edge);
+/// Returns an error if the vector dimension does not fit in size_t.
+[[nodiscard]] llvm::Error printVector(const Edge<vNode>& edge);
 
 /// Add the amplitudes of a vector DD to a vector
 ///
 /// @param edge the vector DD
-/// @param amplitudes the vector to add to
-void addToVector(const Edge<vNode>& edge, CVec& amplitudes);
+/// @param amplitudes the destination vector, sized for the full DD dimension
+/// Returns an error if the DD dimension does not fit in size_t or the
+/// destination vector is too small.
+[[nodiscard]] llvm::Error addToVector(const Edge<vNode>& edge,
+                                      CVec& amplitudes);
 
 /// Get a normalized matrix DD from a fresh node and a list of edges
 ///
@@ -200,8 +211,8 @@ void addToVector(const Edge<vNode>& edge, CVec& amplitudes);
 /// @param cn a reference to the complex number manager (for adding new
 /// complex numbers)
 /// @return the normalized matrix DD
-auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
-               MemoryManager& mm, ComplexNumbers& cn) -> Edge<mNode>;
+Edge<mNode> normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
+                      MemoryManager& mm, ComplexNumbers& cn);
 
 /// Check whether the matrix represented by the DD is the identity
 ///
@@ -223,9 +234,10 @@ auto normalize(mNode* p, const std::array<Edge<mNode>, NEDGE>& e,
 /// @param numQubits number of qubits in the considered DD
 /// @param i row index of the element
 /// @param j column index of the element
-/// @throws std::out_of_range if either index is outside the matrix
+/// Returns an error if either index is outside the matrix or the
+/// requested width does not cover the DD.
 /// @return the complex value of the entry
-[[nodiscard]] std::complex<fp>
+[[nodiscard]] llvm::Expected<std::complex<fp>>
 getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
 
 /// Get the matrix represented by the DD
@@ -234,9 +246,11 @@ getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
 /// @param numQubits number of qubits in the considered DD
 /// @param threshold entries with a magnitude below this threshold will be
 /// ignored
+/// Returns an error if the width does not cover the DD or the matrix
+/// dimension does not fit in size_t.
 /// @return the matrix
-[[nodiscard]] CMat getMatrix(const Edge<mNode>& edge, size_t numQubits,
-                             fp threshold = 0.);
+[[nodiscard]] llvm::Expected<CMat>
+getMatrix(const Edge<mNode>& edge, size_t numQubits, fp threshold = 0.);
 
 /// Get the sparse matrix represented by the DD
 ///
@@ -244,21 +258,27 @@ getValueByIndex(const Edge<mNode>& edge, size_t numQubits, size_t i, size_t j);
 /// @param numQubits number of qubits in the considered DD
 /// @param threshold entries with a magnitude below this threshold will be
 /// ignored
+/// Returns an error if the width does not cover the DD or basis
+/// indices do not fit in size_t.
 /// @return the sparse matrix
-[[nodiscard]] SparseCMat getSparseMatrix(const Edge<mNode>& edge,
-                                         size_t numQubits, fp threshold = 0.);
+[[nodiscard]] llvm::Expected<SparseCMat>
+getSparseMatrix(const Edge<mNode>& edge, size_t numQubits, fp threshold = 0.);
 
 /// Print the matrix represented by the DD
 ///
 /// @param edge the matrix DD
 /// @param numQubits number of qubits in the considered DD
 /// @note This function scales exponentially with the number of qubits.
-void printMatrix(const Edge<mNode>& edge, size_t numQubits);
+/// Returns an error if the width does not cover the DD or the matrix
+/// dimension does not fit in size_t.
+[[nodiscard]] llvm::Error printMatrix(const Edge<mNode>& edge,
+                                      size_t numQubits);
 
 /// Recursively traverse the DD and call a function for each non-zero
 /// matrix entry.
 ///
-/// One callback instance is used for the entire traversal.
+/// One nonempty, nonthrowing callback instance is used for the entire
+/// traversal.
 /// @param edge the matrix DD
 /// @param amp the accumulated amplitude from previous traversals
 /// @param i the current row index in the matrix
@@ -269,9 +289,12 @@ void printMatrix(const Edge<mNode>& edge, size_t numQubits);
 /// nodes and is 0 for the terminal node)
 /// @param threshold entries with a magnitude below this threshold will be
 /// ignored
-void traverseMatrix(const Edge<mNode>& edge, const std::complex<fp>& amp,
-                    size_t i, size_t j, MatrixEntryFunc f, size_t level,
-                    fp threshold = 0.);
+/// Returns an error if the level does not cover the DD or basis
+/// indices do not fit in size_t.
+[[nodiscard]] llvm::Error traverseMatrix(const Edge<mNode>& edge,
+                                         const std::complex<fp>& amp, size_t i,
+                                         size_t j, MatrixEntryFunc f,
+                                         size_t level, fp threshold = 0.);
 } // namespace dd
 
 template <class Node> struct std::hash<dd::Edge<Node>> {

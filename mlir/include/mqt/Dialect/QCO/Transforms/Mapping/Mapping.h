@@ -18,12 +18,10 @@
 
 namespace mlir {
 
-class CompilerTarget;
-
 namespace qco {
 
 /// Create a deterministic placement pass for a compiler target.
-std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target);
+std::unique_ptr<Pass> createPlacementPass();
 
 /// Elide terminal SWAPs in prepared straight-line programs before placement.
 ///

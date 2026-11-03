@@ -11,6 +11,7 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
@@ -64,8 +65,8 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
         %one = arith.constant 1 : i32
         %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
         %other = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
-        %count, %second, %result = scf.while (%t = %tensor, %i = %zero, %s = %other)
-            : (tensor<2x!qco.qubit>, i32, tensor<1x!qco.qubit>) -> (i32, tensor<1x!qco.qubit>, tensor<2x!qco.qubit>) {
+        %count, %result, %second = scf.while (%t = %tensor, %i = %zero, %s = %other)
+            : (tensor<2x!qco.qubit>, i32, tensor<1x!qco.qubit>) -> (i32, tensor<2x!qco.qubit>, tensor<1x!qco.qubit>) {
           %rest, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
           %h = qco.h %q : !qco.qubit
           %out, %condition = qco.measure %h : !qco.qubit
@@ -73,9 +74,9 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
           %srest, %sq = qtensor.extract %s[%c0] : tensor<1x!qco.qubit>
           %sx = qco.x %sq : !qco.qubit
           %supdated = qtensor.insert %sx into %srest[%c0] : tensor<1x!qco.qubit>
-          scf.condition(%condition) %i, %supdated, %updated : i32, tensor<1x!qco.qubit>, tensor<2x!qco.qubit>
+          scf.condition(%condition) %i, %updated, %supdated : i32, tensor<2x!qco.qubit>, tensor<1x!qco.qubit>
         } do {
-        ^bb0(%i: i32, %s: tensor<1x!qco.qubit>, %t: tensor<2x!qco.qubit>):
+        ^bb0(%i: i32, %t: tensor<2x!qco.qubit>, %s: tensor<1x!qco.qubit>):
           %rest, %q = qtensor.extract %t[%c1] : tensor<2x!qco.qubit>
           %out = qco.x %q : !qco.qubit
           %updated = qtensor.insert %out into %rest[%c1] : tensor<2x!qco.qubit>

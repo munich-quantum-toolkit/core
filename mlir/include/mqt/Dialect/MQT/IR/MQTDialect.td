@@ -49,23 +49,35 @@ def MQTDialect : Dialect {
     `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
     Removed slots remain in the attached layout.
 
-    `mqt.input_name` records the source-level name of a function input.
+    `mqt.input_name` records the source-level name of a function input,
+    including the name used by parameter binding.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a
     named function input. It is an `i128` attribute, unique within the function;
     every bit pattern is valid. Transformations carry it with the input and
     remove it when removing the input. It does not identify an SSA value or
     change execution semantics.
     `mqt.source_name` records a source-level function name when the IR symbol
-    must be uniquified.
+    must be uniquified, preserving the original gate name on Qiskit export.
     `mqt.parameter_group` optionally preserves the source-level vector
     identity, name, element index, and size of a function input or a lexically
     bound `scf.for` parameter.
     `mqt.register_name` records the source-level name of a quantum or classical
     register declaration, including local reference buffers created during
-    conversion. Input and register names share one function-wide
-    namespace.
+    conversion. Exporters use it for register names and QIR result labels.
+    Input and register names share one function-wide namespace.
+
+    Cosmetic names for scalar qubits and scoped classical storage use MLIR
+    `NameLoc` locations. Exporters may reuse these hints when they do not
+    conflict with declared names; otherwise they generate names. Locations
+    may be discarded, including by plain IR printing, without changing
+    execution, parameter binding, or result labels. Keep names and identities
+    required by those contracts in the explicit attributes above.
+
     `mqt.entry_point` marks the single public, defined `func.func` program entry
-    in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
+    in a module. QC/QCO entries cannot return quantum values. Their classical
+    results are program data; an entry with no outputs returns no values. QIR conversion records supported bit outputs and generates
+    an `i64` zero execution status. It rejects other scalar program outputs.
+    Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
     qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
     entry block. Other functions receive quantum resources as arguments;
     they cannot allocate them. Classical allocations and static qubit references
@@ -280,11 +292,15 @@ def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",
 }
 
 def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
-  let summary = "Exact payload identity";
+  let summary = "Selected payload format and accepted versions";
   let description = [{
-    Identifies a payload by format ID, exact version, optional profile ID, and
+    Identifies a payload by format ID, receiver-version constraint, optional profile ID, and
     encoding. Every field takes part in identity. An empty profile denotes a
     payload without a named profile.
+    An empty version identifies an unversioned format. Nonempty versions use
+    `major[.minor[.patch]]` for a same-major ceiling, or comma-conjoined
+    `>=`, `<`, and `<=` bounds. For example, `2.1` accepts versions from 2.0
+    through 2.1, while `>=2.1,<3` requires at least 2.1.
 
     The following identity selects binary QIR 2.1 with the base profile:
 

@@ -10,11 +10,13 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"argparse", "mqt.core._commands", "mqt.core._version"}
+
 import argparse
 import sys
 
-from ._commands import cmake_dir, include_dir
-from ._version import version as __version__
+from mqt.core._commands import cmake_dir, include_dir
+from mqt.core._version import version as __version__
 
 
 def main() -> None:

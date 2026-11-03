@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -20,14 +22,22 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <utility>
+#include <variant>
 
 namespace mlir {
+
+class OpPassManager;
 
 /// Register dialects and bufferization interfaces for constant tensor reads.
 void registerQIRClassicalTensorDialects(DialectRegistry& registry);
@@ -41,7 +51,18 @@ enum class AllocationMode : std::uint8_t {
 
 /// State object for tracking lowering information during QIR conversion
 struct LoweringState {
-  /// Result-array pointers to be deallocated at the end of the program
+  std::optional<CompilerTarget> nativeTarget;
+
+  /// Select the advertised name using converted physical qubits and parameters.
+  [[nodiscard]] CompilerTarget::OperationMatch
+  nativeOperation(StringRef name, ValueRange qubits, ValueRange parameters,
+                  size_t numControls = 0) const;
+
+  /// Retain a native QIS name until profile cleanup has finished.
+  [[nodiscard]] LogicalResult nameNativeCall(LLVM::CallOp call, StringRef name,
+                                             ValueRange qubits) const;
+
+  /// Returned result-register arrays that reject non-measurement stores.
   llvm::SmallSetVector<Value, 4> resultArrays;
 
   /// CBit read operations whose register is backed by a result array.
@@ -62,8 +83,11 @@ struct LoweringState {
   /// Map from `cbit::AllocOp` to its index in `cregs`.
   DenseMap<Operation*, size_t> cregIndices;
 
-  /// Returned classical-register indices in function-result order.
-  SmallVector<size_t> returnedCregs;
+  /// Resource definitions or scalar return indices in output order.
+  SmallVector<std::variant<Operation*, int64_t>> returnedOutputs;
+
+  /// Result pointers for returned measurements, resolved during conversion.
+  DenseMap<Operation*, qir::OutputRecord> measuredResults;
 
   /// Destination register index and bit index of each stored measurement.
   DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
@@ -71,14 +95,14 @@ struct LoweringState {
   /// Measurement stores kept as SSA users across structural conversion.
   DenseMap<Operation*, Operation*> deferredMeasurementStores;
 
-  /// Indexed scalar results, dynamically allocated in Adaptive and static in
-  /// Base.
-  DenseMap<int64_t, qir::StaticResult> scalarResults;
+  /// Number of static results assigned after the reserved register IDs.
+  size_t numScalarResults = 0;
 
-  /// Metadata for returned scalar measurement results.
-  ///
-  /// Each entry is a defining `qc::MeasureOp`
-  DenseSet<Operation*> returnedScalarResults;
+  /// Number of static IDs reserved for returned result registers.
+  int64_t staticRegisterResults = 0;
+
+  /// Reusable Adaptive measurement result.
+  Value scratchResult;
 
   /// Converted controls associated with their specific body unitary.
   DenseMap<Operation*, SmallVector<Value>> controlledGates;
@@ -95,6 +119,27 @@ struct LoweringState {
   [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
+
+/// Check a target payload matching the requested QIR profile before lowering.
+///
+/// The profile is the payload identifier, "base" or "adaptive".
+/// Return no payload when the module has no matching QIR target. Otherwise,
+/// return a copy with proved counted-loop constraints discharged. Run child
+/// passes through the caller to preserve instrumentation and reproducers.
+[[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
+                 function_ref<LogicalResult(OpPassManager&)> runPipeline);
+
+/// Attach QIR metadata and validate emitted requirements for a matching target.
+///
+/// The profile is the payload identifier, "base" or "adaptive".
+[[nodiscard]] LogicalResult
+finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
+                    const std::optional<PayloadSpecification>& payload,
+                    function_ref<LogicalResult(OpPassManager&)> runPipeline);
+
+/// Bufferize classical tensors and expose strided-copy loops before lowering.
+[[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);
 
 /// Lower remaining classical dialects and reconcile casts for either profile.
 [[nodiscard]] LogicalResult
@@ -147,22 +192,11 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state);
 
-/// Adds output recording calls to the output block
+/// Record entry-function outputs in return order, independently of ownership.
 ///
-/// Generates output recording calls in the output block based on the
-/// measurements tracked during conversion. Follows the QIR specification for
-/// labeled output schema.
-///
-/// Measurement registers use `__quantum__rt__result_array_record_output`.
-/// Computed registers use an array record followed by boolean records.
-///
-/// Results that are not part of registers (i.e., measurements without register
-/// info) are grouped under a default `__unnamed__` label recorded via
-/// `__quantum__rt__result_record_output`.
-///
-/// @param main The main LLVM function
-/// @param ctx The MLIR context
-/// @param state The lowering state whose returned register records are consumed
+/// Measurement registers use result-array recording; computed registers use
+/// an array record followed by Boolean records. Scalar results and repeated
+/// references retain their positions in the output stream.
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
@@ -178,8 +212,10 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 /// quantum resources, or store to a provably distinct constant index of the
 /// same register.
 ///
-/// With \p allowComputedOutputs, returned registers that contain computed bits
-/// use boolean storage and keep ordinary stores. Otherwise these stores fail.
+/// With \p allowComputedOutputs, returned registers use Boolean storage when
+/// they contain computed bits or fusion cannot preserve their stores and
+/// returned measurement snapshots. Otherwise these cases fail.
+/// Boolean scalar outputs remain function results until output recording.
 /// Local CBit stores retain ordinary semantics.
 ///
 /// Call while `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` remain in
@@ -196,6 +232,6 @@ void finalizeClassicalResults(LoweringState& state);
 /// Returns a result pointer for a measurement that does not write into a
 /// returned classical bit register
 Value getResultPtr(LoweringState& state, Operation* op,
-                   ConversionPatternRewriter& rewriter, bool dynamic);
+                   ConversionPatternRewriter& rewriter);
 
 } // namespace mlir

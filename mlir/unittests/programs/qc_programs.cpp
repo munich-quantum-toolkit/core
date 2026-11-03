@@ -37,13 +37,10 @@ static Value measureToRegister(QCProgramBuilder& b, Value qubit) {
 }
 
 static Value measureAndReturn(QCProgramBuilder& b, ValueRange qubits) {
-  if (qubits.empty()) {
-    return b.intConstant(0);
-  }
   return measureToRegister(b, qubits);
 }
 
-Value emptyQC(QCProgramBuilder& b) { return b.intConstant(0); }
+SmallVector<Value> emptyQC(QCProgramBuilder&) { return {}; }
 
 Value reusableUnitaryFunction(QCProgramBuilder& b) {
   auto qubit = b.allocQubit();
@@ -70,9 +67,9 @@ Value allocQubit(QCProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-Value allocQubitNoMeasure(QCProgramBuilder& b) {
+SmallVector<Value> allocQubitNoMeasure(QCProgramBuilder& b) {
   b.allocQubit();
-  return b.intConstant(0);
+  return {};
 }
 
 Value allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
@@ -118,10 +115,10 @@ Value staticQubits(QCProgramBuilder& b) {
   return measureAndReturn(b, {q0, q1});
 }
 
-Value staticQubitsNoMeasure(QCProgramBuilder& b) {
+SmallVector<Value> staticQubitsNoMeasure(QCProgramBuilder& b) {
   b.staticQubit(0);
   b.staticQubit(1);
-  return b.intConstant(0);
+  return {};
 }
 
 Value staticQubitsWithOps(QCProgramBuilder& b) {
@@ -186,10 +183,10 @@ Value staticQubitsCanonical(QCProgramBuilder& b) {
   return measureAndReturn(b, {q0, q1});
 }
 
-Value allocDeallocPair(QCProgramBuilder& b) {
+SmallVector<Value> allocDeallocPair(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.dealloc(q);
-  return b.intConstant(0);
+  return {};
 }
 
 Value mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
@@ -320,9 +317,9 @@ SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b) {
   return {c};
 }
 
-Value globalPhase(QCProgramBuilder& b) {
+SmallVector<Value> globalPhase(QCProgramBuilder& b) {
   b.gphase(0.123);
-  return b.intConstant(0);
+  return {};
 }
 
 Value globalPhaseAndMeasure(QCProgramBuilder& b) {
@@ -355,9 +352,9 @@ Value trivialControlledGlobalPhase(QCProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-Value inverseGlobalPhase(QCProgramBuilder& b) {
+SmallVector<Value> inverseGlobalPhase(QCProgramBuilder& b) {
   b.inv(ValueRange{}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
-  return b.intConstant(0);
+  return {};
 }
 
 Value inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {
@@ -367,24 +364,24 @@ Value inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-Value powGphaseScaled(QCProgramBuilder& b) {
+SmallVector<Value> powGphaseScaled(QCProgramBuilder& b) {
   b.pow(3.0, ValueRange{}, [&](ValueRange) { b.gphase(0.123); });
-  return b.intConstant(0);
+  return {};
 }
 
-Value powGphaseScaledRef(QCProgramBuilder& b) {
+SmallVector<Value> powGphaseScaledRef(QCProgramBuilder& b) {
   b.gphase(3.0 * 0.123);
-  return b.intConstant(0);
+  return {};
 }
 
-Value negPowGphase(QCProgramBuilder& b) {
+SmallVector<Value> negPowGphase(QCProgramBuilder& b) {
   b.pow(-3.0, ValueRange{}, [&](ValueRange) { b.gphase(0.123); });
-  return b.intConstant(0);
+  return {};
 }
 
-Value negPowGphaseRef(QCProgramBuilder& b) {
+SmallVector<Value> negPowGphaseRef(QCProgramBuilder& b) {
   b.gphase(-3.0 * 0.123);
-  return b.intConstant(0);
+  return {};
 }
 
 Value identity(QCProgramBuilder& b) {

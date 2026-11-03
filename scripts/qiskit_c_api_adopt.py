@@ -47,9 +47,9 @@ from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR_ROOT = ROOT / "vendor" / "qiskit-c-api"
-REGISTRY = ROOT / "bindings" / "mlir" / "qiskit" / "SupportedVersions.inc"
-TRANSLATION_TEMPLATE = ROOT / "bindings" / "mlir" / "qiskit" / "QiskitMinor.cpp.in"
-TRANSLATION_IMPLEMENTATION = ROOT / "bindings" / "mlir" / "qiskit" / "Qiskit2_5.cpp"
+REGISTRY = ROOT / "bindings" / "mlir" / "Target" / "Qiskit" / "SupportedVersions.inc"
+TRANSLATION_TEMPLATE = ROOT / "bindings" / "mlir" / "Target" / "Qiskit" / "QiskitMinor.cpp.in"
+TRANSLATION_IMPLEMENTATION = ROOT / "bindings" / "mlir" / "Target" / "Qiskit" / "QiskitAdapter.h"
 LOGGER = logging.getLogger(__name__)
 BUILD_TIMEOUT = 3600
 GIT_TIMEOUT = 30
@@ -263,38 +263,6 @@ def api_surface(include: Path) -> dict[str, Any]:
     return {"functions": functions, "types": {name: types[name] for name in sorted(used_type_names)}}
 
 
-def surface_diff(previous: dict[str, Any], current: dict[str, Any]) -> str:
-    """Render symbol-level additions, removals, and changes for review.
-
-    Returns:
-        A Markdown review report for the two API surfaces.
-    """
-    lines = ["# Qiskit C API surface comparison", ""]
-    changed = False
-    for section in ("functions", "types"):
-        before = previous.get(section, {})
-        after = current.get(section, {})
-        added = sorted(after.keys() - before.keys())
-        removed = sorted(before.keys() - after.keys())
-        modified = sorted(name for name in before.keys() & after.keys() if before[name] != after[name])
-        lines.extend([f"## {section.replace('_', ' ').title()}", ""])
-        if not (added or removed or modified):
-            lines.extend(["No changes.", ""])
-            continue
-        changed = True
-        for label, names in (("Added", added), ("Removed", removed), ("Changed", modified)):
-            if names:
-                lines.extend([f"- {label}: " + ", ".join(f"`{name}`" for name in names)])
-        lines.append("")
-    if changed:
-        lines.extend([
-            "Any changed or removed surface used by the translation requires human review,",
-            "even when the compilation and focused tests below succeed.",
-            "",
-        ])
-    return "\n".join(lines)
-
-
 def directory_contents(root: Path) -> dict[Path, bytes]:
     """Read a directory as relative paths and exact file contents.
 
@@ -346,12 +314,12 @@ def populate_vendor_tree(target: Path, version: str, wheel: Path, artifact: Json
         RuntimeError: If the wheel does not contain the required exact release files.
     """
     target.mkdir(parents=True)
-    prefix = "qiskit/include/"
     hashes: dict[str, str] = {}
     with zipfile.ZipFile(wheel) as archive:
+        prefix = "qiskit/capi/include/" if "qiskit/capi/include/qiskit.h" in archive.namelist() else "qiskit/include/"
         header_names = sorted(name for name in archive.namelist() if name.startswith(prefix) and name.endswith(".h"))
-        if "qiskit/include/qiskit.h" not in header_names:
-            msg = "wheel does not contain qiskit/include/qiskit.h"
+        if f"{prefix}qiskit.h" not in header_names:
+            msg = "wheel does not contain Qiskit C API headers"
             raise RuntimeError(msg)
         for archive_name in header_names:
             data = archive.read(archive_name)
@@ -381,20 +349,6 @@ def populate_vendor_tree(target: Path, version: str, wheel: Path, artifact: Json
 
     surface = api_surface(target / "include")
     atomic_write_text(target / "API_SURFACE.json", json.dumps(surface, indent=2, sort_keys=True) + "\n")
-    previous_dirs: list[Path] = []
-    for path in VENDOR_ROOT.iterdir():
-        if not path.is_dir() or path.name == version:
-            continue
-        try:
-            Version(path.name)
-        except ValueError:
-            continue
-        previous_dirs.append(path)
-    previous_dirs.sort(key=lambda path: Version(path.name))
-    if previous_dirs:
-        previous = api_surface(previous_dirs[-1] / "include")
-        atomic_write_text(target / "API_DIFF.md", surface_diff(previous, surface))
-
     provenance = {
         "component": "Qiskit C API headers",
         "embedded_version": embedded_version,
@@ -434,29 +388,10 @@ def write_vendor_tree(version: str, wheel: Path, artifact: JsonObject) -> Path:
         return target
 
 
-def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: bool) -> None:
+def build_and_test(build_dir: Path) -> None:
     """Build a clean binding and run the focused translation tests."""
     env = os.environ.copy()
     env["SKBUILD_BUILD_DIR"] = str(build_dir)
-    cmake_args = [
-        argument
-        for argument in env.get("SKBUILD_CMAKE_ARGS", "").split(";")
-        if argument
-        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
-        and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
-    ]
-    if candidate:
-        cmake_args.extend([
-            f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include}",
-            f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
-        ])
-        env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
-    else:
-        env.pop("MQT_QISKIT_TEST_CANDIDATE_VERSION", None)
-    if cmake_args:
-        env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
-    else:
-        env.pop("SKBUILD_CMAKE_ARGS", None)
     run(
         "uv",
         "pip",
@@ -484,20 +419,11 @@ def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: b
 
 def translation_artifacts(version: Version) -> tuple[Path, str, str]:
     """Return the generated translation path, contents, and registration."""
-    major, minor, patch = version.release
-    suffix = f"{major}_{minor}"
-    next_minor = minor + 1
-    supported_range = f">={version},<{major}.{next_minor}.0"
-    registration = f'MQT_QISKIT_VERSION({major}, {minor}, {suffix}, {patch}, {version}, "{supported_range}")'
-    source = (
-        TRANSLATION_TEMPLATE
-        .read_text(encoding="utf-8")
-        .replace("@QISKIT_FACTORY@", f"createQiskit{suffix}")
-        .replace("@QISKIT_MAJOR@", str(major))
-        .replace("@QISKIT_MINOR@", str(minor))
-        .replace("@QISKIT_EXACT_API@", "0")
-        .replace("@QISKIT_LABEL@", f"{major}.{minor}")
-    )
+    _, minor, patch = version.release
+    suffix = f"2_{minor}"
+    supported_range = f">={version},<3.0.0"
+    registration = f'MQT_QISKIT_VERSION({minor}, {patch}, {version}, "{supported_range}")'
+    source = TRANSLATION_TEMPLATE.read_text(encoding="utf-8").replace("@QISKIT_FACTORY@", f"createQiskit{suffix}")
     return TRANSLATION_TEMPLATE.with_name(f"Qiskit{suffix}.cpp"), source, registration
 
 
@@ -507,12 +433,12 @@ def register_translation(version: Version) -> None:
     Raises:
         RuntimeError: If existing generated state is inconsistent.
     """
-    major, minor, _ = version.release
+    minor = version.minor
     destination, source, registration = translation_artifacts(version)
     current = REGISTRY.read_text(encoding="utf-8")
-    existing = re.search(rf"^MQT_QISKIT_VERSION\({major}, *{minor},.*$", current, re.MULTILINE)
+    existing = re.search(rf"^MQT_QISKIT_VERSION\({minor},.*$", current, re.MULTILINE)
     if existing is not None and existing.group(0) != registration:
-        msg = f"Qiskit {major}.{minor} has a conflicting translation registration"
+        msg = f"Qiskit 2.{minor} has a conflicting translation registration"
         raise RuntimeError(msg)
     if destination.exists():
         if destination.read_text(encoding="utf-8") != source:
@@ -523,7 +449,7 @@ def register_translation(version: Version) -> None:
     if existing is None:
         atomic_write_text(REGISTRY, current.rstrip() + "\n" + registration + "\n")
     else:
-        LOGGER.info("Reusing exact Qiskit %s.%s translation registration", major, minor)
+        LOGGER.info("Reusing exact Qiskit 2.%s translation registration", minor)
 
 
 def require_restartable_worktree(git: str, version: Version) -> None:
@@ -577,23 +503,24 @@ def require_restartable_worktree(git: str, version: Version) -> None:
 
 
 def exact_release(text: str) -> Version:
-    """Parse an exact public Qiskit release with three numeric components.
+    """Parse an exact public Qiskit 2 release with three numeric components.
 
     Returns:
         The exact release version.
 
     Raises:
-        argparse.ArgumentTypeError: If the text is not an exact public release.
+        argparse.ArgumentTypeError: If the text is not an exact public Qiskit 2 release.
     """
     parsed = Version(text)
     if (
-        str(parsed) != text
+        parsed.major != 2
+        or str(parsed) != text
         or len(parsed.release) != 3
         or parsed.is_prerelease
         or parsed.is_devrelease
         or parsed.local is not None
     ):
-        msg = "expected an exact Qiskit release such as 2.6.0"
+        msg = "expected an exact Qiskit 2 release such as 2.6.0"
         raise argparse.ArgumentTypeError(msg)
     return parsed
 
@@ -651,11 +578,10 @@ def main() -> None:
         temporary_path = Path(temporary)
         wheel = temporary_path / artifact["filename"]
         download_wheel(artifact, wheel)
-        vendor = write_vendor_tree(str(parsed), wheel, artifact)
+        write_vendor_tree(str(parsed), wheel, artifact)
         run("uv", "pip", "install", "--python", sys.executable, "--reinstall", str(wheel))
-        build_and_test(str(parsed), vendor / "include", temporary_path / "candidate", candidate=True)
         register_translation(parsed)
-        build_and_test(str(parsed), vendor / "include", temporary_path / "shipping", candidate=False)
+        build_and_test(temporary_path / "shipping")
 
 
 if __name__ == "__main__":

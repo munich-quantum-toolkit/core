@@ -94,6 +94,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("OPENQASM", TokenKind::OpenQASM)
       .Case("include", TokenKind::Include)
       .Case("const", TokenKind::Const)
+      .Case("array", TokenKind::Array)
       .Case("qubit", TokenKind::Qubit)
       .Case("qreg", TokenKind::Qreg)
       .Case("bit", TokenKind::Bit)
@@ -118,6 +119,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("gphase", TokenKind::Gphase)
       .Case("inv", TokenKind::Inv)
       .Case("pow", TokenKind::Pow)
+      .Case("sizeof", TokenKind::SizeOf)
       .Case("ctrl", TokenKind::Ctrl)
       .Case("negctrl", TokenKind::NegCtrl)
       .Case("int", TokenKind::Int)
@@ -133,10 +135,8 @@ decodeCodePoint(const char* position, const char* end) {
       .Cases({"extern", "box", "let"}, TokenKind::UnsupportedKeyword)
       .Cases({"end", "return"}, TokenKind::UnsupportedKeyword)
       .Cases({"pragma", "readonly", "mutable"}, TokenKind::UnsupportedKeyword)
-      .Cases({"complex", "array", "void", "stretch"},
-             TokenKind::UnsupportedKeyword)
-      .Cases({"durationof", "delay", "im", "sizeof"},
-             TokenKind::UnsupportedKeyword)
+      .Cases({"complex", "void", "stretch"}, TokenKind::UnsupportedKeyword)
+      .Cases({"durationof", "delay", "im"}, TokenKind::UnsupportedKeyword)
       .Default(TokenKind::Identifier);
 }
 
@@ -252,83 +252,59 @@ Token Lexer::lexIdentifierOrKeyword(const char* start) {
 
 Token Lexer::lexNumber(const char* start) {
   const auto isSeparator = [](const char value) { return value == '_'; };
+  unsigned radix = 10;
+  bool isFloat = false;
+  const char* digits = start;
   if (*start == '0' && (peek() == 'b' || peek() == 'B' || peek() == 'o' ||
                         peek() == 'O' || peek() == 'x' || peek() == 'X')) {
     const char prefix = peek();
+    radix = prefix == 'b' || prefix == 'B'   ? 2
+            : prefix == 'o' || prefix == 'O' ? 8
+                                             : 16;
     cur += 2;
-    unsigned radix = 16;
-    if (prefix == 'b' || prefix == 'B') {
-      radix = 2;
-    } else if (prefix == 'o' || prefix == 'O') {
-      radix = 8;
-    }
-    const char* digits = cur;
+    digits = cur;
     while (!atEnd() && ((std::isalnum(static_cast<unsigned char>(*cur)) != 0) ||
                         isSeparator(*cur))) {
       ++cur;
     }
-    const StringRef text(start, static_cast<size_t>(cur - start));
-    const StringRef digitText(digits, static_cast<size_t>(cur - digits));
-    Token token{
-        .kind = TokenKind::IntegerLiteral,
-        .loc = SMLoc::getFromPointer(start),
-        .identifier = {},
-        .stringValue = {},
-        .spelling = text,
-        .intValue = 0,
-        .floatValue = 0.0,
-        .wideInteger = false,
-    };
-    llvm::SmallString<32> normalized;
-    for (const char value : digitText) {
-      if (!isSeparator(value)) {
-        normalized.push_back(value);
+  } else {
+    while (!atEnd() && (isDigit(*cur) || isSeparator(*cur))) {
+      ++cur;
+    }
+    if (!atEnd() && *cur == '.') {
+      isFloat = true;
+      ++cur;
+      while (!atEnd() && (isDigit(*cur) || isSeparator(*cur))) {
+        ++cur;
       }
     }
-    if (digitText.empty() ||
-        !hasValidSeparators(digitText,
-                            [radix](const char value) {
-                              return isDigitForRadix(value, radix);
-                            }) ||
-        StringRef(normalized).getAsInteger(radix, token.intValue)) {
-      token.kind = TokenKind::Error;
-    }
-    return token;
-  }
-
-  bool isFloat = false;
-  while (!atEnd() && (isDigit(*cur) || isSeparator(*cur))) {
-    ++cur;
-  }
-  if (!atEnd() && *cur == '.') {
-    isFloat = true;
-    ++cur;
-    while (!atEnd() && (isDigit(*cur) || isSeparator(*cur))) {
+    if (!atEnd() && (*cur == 'e' || *cur == 'E')) {
+      isFloat = true;
       ++cur;
+      if (!atEnd() && (*cur == '+' || *cur == '-')) {
+        ++cur;
+      }
+      while (!atEnd() && (isDigit(*cur) || isSeparator(*cur))) {
+        ++cur;
+      }
     }
   }
-  if (!atEnd() && (*cur == 'e' || *cur == 'E')) {
-    isFloat = true;
-    ++cur;
-    if (!atEnd() && (*cur == '+' || *cur == '-')) {
-      ++cur;
-    }
-    while (!atEnd() && (isDigit(*cur) || isSeparator(*cur))) {
-      ++cur;
-    }
-  }
-  const StringRef text(start, static_cast<size_t>(cur - start));
   Token token;
   token.loc = SMLoc::getFromPointer(start);
-  token.spelling = text;
+  token.spelling = StringRef(start, static_cast<size_t>(cur - start));
+  const StringRef digitText(digits, static_cast<size_t>(cur - digits));
   llvm::SmallString<32> normalized;
-  for (const char value : text) {
+  bool invalidDigits = digitText.empty();
+  for (const char value : digitText) {
     if (!isSeparator(value)) {
       normalized.push_back(value);
+      invalidDigits |= !isFloat && !isDigitForRadix(value, radix);
     }
   }
-  const bool invalidSeparators = !hasValidSeparators(
-      text, [](const char value) { return isDigit(value); });
+  const bool invalidSeparators =
+      !hasValidSeparators(digitText, [radix](const char value) {
+        return isDigitForRadix(value, radix);
+      });
   if (isFloat) {
     token.kind = TokenKind::FloatLiteral;
     if (invalidSeparators ||
@@ -338,11 +314,11 @@ Token Lexer::lexNumber(const char* start) {
     }
   } else {
     token.kind = TokenKind::IntegerLiteral;
-    if (invalidSeparators) {
+    if (invalidDigits || invalidSeparators) {
       token.kind = TokenKind::Error;
-    } else if (StringRef(normalized).getAsInteger(10, token.intValue)) {
+    } else if (StringRef(normalized).getAsInteger(radix, token.intValue)) {
       token.wideInteger = true;
-      token.stringValue = text;
+      token.stringValue = token.spelling;
       token.intValue = 0;
     }
   }
@@ -524,6 +500,9 @@ Token Lexer::next() {
     return peek() == '=' ? twoChar(TokenKind::GreaterEquals)
                          : single(TokenKind::Greater);
   case '+':
+    if (peek() == '+') {
+      return twoChar(TokenKind::DoublePlus);
+    }
     return peek() == '=' ? twoChar(TokenKind::CompoundAssign)
                          : single(TokenKind::Plus);
   case '-':

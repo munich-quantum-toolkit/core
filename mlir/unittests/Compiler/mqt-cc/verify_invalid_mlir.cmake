@@ -7,10 +7,7 @@
 # Licensed under the MIT License
 
 function(require_failure description expected)
-  execute_process(
-    COMMAND ${ARGN}
-    RESULT_VARIABLE result
-    ERROR_VARIABLE error)
+  execute_process(COMMAND ${ARGN} RESULT_VARIABLE result ERROR_VARIABLE error)
   if(NOT result EQUAL 1 OR NOT error MATCHES "${expected}")
     message(FATAL_ERROR "${description} did not fail as expected:\n${error}")
   endif()

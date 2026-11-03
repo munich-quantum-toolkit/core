@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from qiskit.providers import JobError
 
 if TYPE_CHECKING:
-    from .job import QDMIJob
+    from mqt.core.plugins.qiskit.job import QDMIJob
 
 __all__ = [
     "CircuitValidationError",

@@ -16,6 +16,9 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/IR/BuiltinTypes.h"
+
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -35,6 +38,38 @@ using namespace mlir;
 using namespace mlir::openqasm::test;
 
 namespace {
+
+TEST(OpenQASMFrontendTest, OpaqueGateDeclarations) {
+  auto result = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.0; opaque hop(theta) a,b; qreg q[2]; hop(0.125) q[1],q[0];");
+  ASSERT_TRUE(result);
+  ASSERT_EQ(result.program->gates.size(), 1);
+  const auto& gate = result.program->gates.front();
+  EXPECT_TRUE(gate.opaque);
+  EXPECT_TRUE(gate.body.empty());
+  EXPECT_EQ(gate.parameterCount, 1);
+  EXPECT_EQ(gate.qubitCount, 2);
+  for (const auto* name : {"sx", "cx"}) {
+    auto custom = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 2.0; opaque ") + name + "(theta) q; qreg q[1]; " +
+        name + "(0.125) q[0];");
+    ASSERT_TRUE(custom);
+    ASSERT_EQ(custom.program->gates.size(), 1);
+    EXPECT_TRUE(custom.program->gates.front().opaque);
+    EXPECT_EQ(custom.program->gates.front().parameterCount, 1);
+  }
+  for (const auto* source : {
+           "OPENQASM 3.1; opaque hop a;",
+           "OPENQASM 2.0; include \"qelib1.inc\"; opaque cx a,b;",
+           "OPENQASM 2.0; opaque hop(a,a) q;",
+           "OPENQASM 2.0; opaque hop(a) a;",
+           "OPENQASM 2.0; opaque hop(a) q; qreg q[1]; hop q[0];",
+           "OPENQASM 2.0; opaque hop a,b; qreg q[1]; hop q[0];",
+       }) {
+    SCOPED_TRACE(source);
+    EXPECT_FALSE(openqasm::frontend::analyzeOpenQASM(source));
+  }
+}
 
 TEST(OpenQASMFrontendTest, ResolvesRegisterSlicesInSelectionOrder) {
   using namespace openqasm::frontend;
@@ -113,6 +148,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidRegisterSlices) {
       {"for int i in [0:1] { cx q[i:i+1], q[i:i+1]; }", "distinct qubits"},
       {"c[2:-1:0] ^= \"001\";", "indexed compound assignments"},
       {"int step = 0; x q[0:step:2];", "step must not be zero"},
+      {"c[:] = c[:, 0];", "only arrays support multiple indices"},
       {"int first = 2; x q[first:0];", "must not be empty"},
       {"int last = 2; bit[2] out = measure q[0:last];", "same width"},
       {"int last = 1; c[0:last] = \"111\";", "width must match"},
@@ -141,7 +177,402 @@ TEST(OpenQASMFrontendTest, KnownMeasurementSlicesInitializeSelectedBits) {
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 
-TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
+TEST(OpenQASMFrontendTest, ClassicalArrays) {
+  for (const auto* source : {
+           "array[int, 1] a; a[0] = 1; array[int[64], 1] b = a; b = b;",
+           "array[angle, 1] a = {pi}; array[angle[52], 1] b = a;",
+           "array[int, 2, 1] a; a[1, 0] = 2; array[int, 1] row = a[-1]; "
+           "array[int, 2, 1] b; bool c = true; "
+           "if (c) { b[1] = row; } else { b[1] = a[1]; } int x = b[1, 0];",
+           "array[int, 1] a = {1}; array[int, 1] b; "
+           "for int i in [0:1] { b = a; } int x = b[0];",
+           "array[int, 2, 3] a; a[1, 2] = 4; int result = a[-1, -1];",
+           "input float selector; int i = int(selector); "
+           "array[int, 2] a = {1, 2}; "
+           "if (selector > 0) { a[0] = 3; } else { a[1] = 4; } "
+           "int result = a[i];",
+           "input float selector; int i = int(selector); "
+           "array[int, 2] a; a[0] = 1; "
+           "if (selector > 0) { a[0] = 2; a[1] = 3; } "
+           "else { a[1] = 4; } int result = a[i];",
+           "array[int, 1] a; for int i in [0:1] { a[0] = 1; } "
+           "int result = a[0];",
+           "array[int, 400, 400, 0] a;",
+           "array[int, 2] a = {1, 2}; array[int, 2] b = a[::]; "
+           "b[::1] = a[0::1];",
+           "array[int, 2, 3] a; a[0, 1] = 1; a[1, 1] = 2; "
+           "array[int, 2] b = a[:-1:, 1]; a[0, 2:-2:0] = b; int x = a[0, 0];",
+           "array[int, 2] a = {1, 2}; "
+           "array[int, 1] b = a[0:9223372036854775807:1]; "
+           "b = a[1:-9223372036854775807-1:0];",
+           "array[int, 2, 3] a; a[1, 2] = 7; int result; "
+           "for int x in a[1, 2:2] { result = x; } int copy = result;",
+           "array[int, 1, 1, 1, 1, 1, 1, 1,] a = {{{{{{{7,},},},},},},}; "
+           "int result = a[0, 0, 0, 0, 0, 0, -1,];",
+       }) {
+    SCOPED_TRACE(source);
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        std::string("OPENQASM 3.0; ") + source);
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  }
+  const auto sizes = std::to_array<std::pair<llvm::StringLiteral, int64_t>>({
+      {"sizeof(a, sizeof(a) - 1)", 3},
+      {"sizeof(a[i])", 3},
+      {"sizeof(a[:i], 1)", 3},
+      {"sizeof(a[:, i])", 2},
+      {"sizeof(a[:, 0:2:2], 1)", 2},
+  });
+  for (const auto& [query, expected] : sizes) {
+    SCOPED_TRACE(query.str());
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(
+        "OPENQASM 3.0; array[int, 2, 3] a; int i = 0; const uint n = " +
+        query.str() + "; array[bool, n] result;");
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+    ASSERT_EQ(analyzed.program->arrays.size(), 2);
+    EXPECT_EQ(analyzed.program->arrays.back().shape,
+              (std::vector<int64_t>{expected}));
+  }
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
+  const auto cases =
+      std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"array[int, -1] a;", "non-negative"},
+          {"array[int, 1, 1] a = {{1}}; for int x in a {}", "one-dimensional"},
+          {"array[int, 1] a = {1}; for int x in a[0] {}", "one-dimensional"},
+          {"int a = 1; for int x in a {}", "one-dimensional"},
+          {"array[int, 1] a; for int x in a {}", "uninitialized"},
+          {
+              "array[int, 2] a; a[0] = 1; int i = 0; for int x in a[:i] {}",
+              "uninitialized",
+          },
+          {
+              "array[int, 0] a; int result; "
+              "for int x in a { result = 1; } int y = result;",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a = {1}; int result; "
+              "for int x in a { break; result = 1; } int y = result;",
+              "uninitialized",
+          },
+          {"array[int, 1] a = {1}; for int x in a {} int y = x;", "unknown"},
+          {"array[int, 1] a = {1}; for bool x in a {}", "cannot be converted"},
+          {"array[int, 1] a = {1}; for float[32] x in a {}", "float[64]"},
+          {"array[int, 1] a = {1}; for int[0] x in a {}", "width"},
+          {
+              "array[angle[8], 1] a = {pi}; for angle[4] x in a {}",
+              "cannot be converted",
+          },
+          {
+              "array[float, 1] a = {1.0}; for angle x in a {}",
+              "cannot be converted",
+          },
+          {
+              "array[angle[8], 1] a = {pi}; for angle[8] x in a { x += pi; }",
+              "compile-time",
+          },
+          {
+              "array[int, 1] a = {1}; gate g q { for int x in a {} }",
+              "cannot capture",
+          },
+          {
+              "uint n = sizeof(missing) + sizeof(missing);",
+              "array or subarray",
+          },
+          {"uint n = sizeof(1);", "array or subarray"},
+          {
+              "array[int, 2, 3] a; uint n = sizeof(a[0, 0]);",
+              "array or subarray",
+          },
+          {
+              "array[int, 2, 3] a; uint n = sizeof(a, -1);",
+              "dimension is out of bounds",
+          },
+          {
+              "array[int, 2, 3] a; uint n = sizeof(a[0], 1);",
+              "dimension is out of bounds",
+          },
+          {
+              "array[int, 2] a; uint n = sizeof(a, 18446744073709551615);",
+              "integer that fits in i64",
+          },
+          {"array[int, 2] a; uint n = sizeof(a, true);", "must be an integer"},
+          {
+              "array[int, 2] a; int i = 0; uint n = sizeof(a, i);",
+              "compile-time integer",
+          },
+          {
+              "array[int, 2] a; int i = 0; "
+              "uint n = sizeof(a[:i], sizeof(a[:i]));",
+              "compile-time integer",
+          },
+          {
+              "array[int, 2] a; int i; uint n = sizeof(a[:i]);",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a; int i = 1; const uint n = sizeof(a[:i]) + 1;",
+              "constant",
+          },
+          {
+              "array[int, 2] a; int i = 1; array[int, sizeof(a[:i])] b;",
+              "constant",
+          },
+          {
+              "array[int, 2] a; int i = 1; int[sizeof(a[:i])] n;",
+              "constant",
+          },
+          {
+              "array[int, 2] a; uint n = sizeof(a); int x = a[0];",
+              "uninitialized",
+          },
+          {"array[int, 2] a = {1, 2}; a = a ++ a;", "matching shapes"},
+          {
+              "array[int, 1] a = {1}; array[uint, 2] b = a ++ a;",
+              "element types",
+          },
+          {
+              "array[int[8], 1] a = {1}; array[int[16], 2] b = a ++ a;",
+              "element types",
+          },
+          {
+              "array[int, 1, 2] a = {{1, 2}}; array[int, 2, 1] b = a ++ a;",
+              "matching shapes",
+          },
+          {
+              "array[int, 1] a = {1}; array[int, 2] b = a ++ 2;",
+              "array or subarray",
+          },
+          {
+              "array[int, 1] a = {1}; array[int, 2] b = a[0] ++ a;",
+              "matching shapes",
+          },
+          {"array[int, 2] a; a[0] = 1; a = a[0:0] ++ a[1:1];", "uninitialized"},
+          {"int a = 1 ++ 2;", "scalar arithmetic expression"},
+          {"array[int, 2] a = {1, 2}; a = a[1:0];", "must not be empty"},
+          {"array[int, 2] a = {1, 2}; a = a[0:-1:1];", "must not be empty"},
+          {"array[int, 2] a = {1, 2}; a = a[0:0:1];", "must not be zero"},
+          {"array[int, 2] a = {1, 2}; a = a[0:2];", "out of bounds"},
+          {"array[int, 2] a = {1, 2}; a = a[-3:1];", "out of bounds"},
+          {"array[int, 2] a = {1, 2}; a = a[0.0:1];", "requires integers"},
+          {
+              "array[int, 2] a = {1, 2}; float n = 1.0; a = a[0:n:1];",
+              "step must be an integer",
+          },
+          {
+              "array[int, 2] a = {1, 2}; int n = 1; a = a[0:0:n];",
+              "step must not be zero",
+          },
+          {
+              "array[int, 2] a; a[0] = 1; int n = 0; "
+              "array[int, 1] b = a[:n];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a; array[int, 2] b = {1, 2}; int n = 1; "
+              "a[:n] = b; int x = a[0];",
+              "uninitialized",
+          },
+          {"array[int, 2] a = {1, 2}; int n = a[0:0];", "not a scalar"},
+          {
+              "array[int, 2] a = {1, 2}; a[:] += a;",
+              "indexed compound assignments",
+          },
+          {
+              "array[int, 3] a; a[0] = 1; a[2] = 2; a[0:1] = a[1:2];",
+              "uninitialized",
+          },
+          {
+              "array[int, 3] a; a[0] = 1; a[2] = 2; a[0:2:2] = a[0:2:2]; "
+              "int x = a[1];",
+              "uninitialized",
+          },
+          {"array[int, 0] a; a[0] = 1;", "out of bounds"},
+          {"array[int, 100001] a;", "exceeds the limit"},
+          {"array[int, 60000] a; array[int, 60000] b;", "exceed the limit"},
+          {"int n = 2; array[int, n] a;", "constant integer"},
+          {"array[int, 2] a = {1};", "initializer length"},
+          {"array[bool[2], 1] a;", "do not have a width"},
+          {"array[float[32], 1] a;", "only width 64"},
+          {"array[angle, 1] a = {0.0}; a[0] = a[0];", "compile-time values"},
+          {"array[angle, 1] a = {1};", "float or angle"},
+          {
+              "array[angle, 1] a = {pi}; qubit q; U(-a[0], 0, 0) q;",
+              "runtime fixed-width angle arithmetic",
+          },
+          {
+              "array[angle, 1] a = {pi}; qubit q; U(a[0] + a[0], 0, 0) q;",
+              "runtime fixed-width angle arithmetic",
+          },
+          {"array[angle, 1] a = {pi}; int b = int(a[0]);", "to float"},
+          {"array[angle, 1] a = {pi}; bool b = a[0] == pi;", "to float"},
+          {"int i = 0; array[int, 1] a = {a[i]};", "uninitialized"},
+          {"array[int, 1] a; int b = a[0];", "uninitialized"},
+          {
+              "array[int, 2] a; a[0] = 1; int i = 0; int b = a[i];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; int i = 0; a[i] = 1; int b = a[0];",
+              "uninitialized",
+          },
+          {
+              "input float selector; int i = int(selector); "
+              "array[int, 2] a; a[0] = 1; "
+              "if (selector > 0) { a[1] = 2; int value = a[i]; } "
+              "int result = a[i];",
+              "uninitialized",
+          },
+          {
+              "input float selector; int i = int(selector); "
+              "array[int, 2] a; array[int, 1] b = {1}; "
+              "if (selector > 0) { a[0:0] = b; } else { a[1:1] = b; } "
+              "int result = a[i];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; while (false) { a[0] = 1; } int b = a[0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a; for int i in [0:1] { continue; a[0] = 1; } "
+              "int b = a[0];",
+              "uninitialized",
+          },
+          {"array[int, 1] a = {0}; int b = a[1];", "out of bounds"},
+          {"array[int, 1] a = {0}; a[-2] = 1;", "out of bounds"},
+          {
+              "array[int, 1] a = {0}; float i = 0; int b = a[i];",
+              "integer expression",
+          },
+          {"array[int, 1] a = {0}; if (a[0]) {}", "bool type"},
+          {"array[int, 1] a = {0}; a = 1;", "array or subarray source"},
+          {
+              "int value = 1; array[int, 1] a = value;",
+              "array or subarray source",
+          },
+          {"array[int, 1] a = missing;", "array or subarray source"},
+          {"array[int, 1] a = a;", "uninitialized"},
+          {"array[int, 1] a = {1}; array[int, 1] b = a[0];", "matching shapes"},
+          {"array[int, 2] a; a[0] = 1; array[int, 2] b = a;", "uninitialized"},
+          {
+              "array[int, 1, 2] a = {{1, 2}}; array[int, 2, 1] b = a;",
+              "matching shapes",
+          },
+          {
+              "array[int[8], 1] a = {1}; array[int[16], 1] b = a;",
+              "element types",
+          },
+          {
+              "array[int, 1, 1] a = {{1}}; array[uint, 1] b = a[0];",
+              "element types",
+          },
+          {"array[float, 1] a = {1}; array[angle, 1] b = a;", "element types"},
+          {
+              "array[int, 1] a = {1}; array[int, 1] b; b += a;",
+              "array or subarray source",
+          },
+          {
+              "array[int, 1] a = {1}; array[int, 1] b; bool c = true; "
+              "if (c) { b = a; } int x = b[0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1] a = {1}; array[int, 1] b; "
+              "while (false) { b = a; } int x = b[0];",
+              "uninitialized",
+          },
+          {"array[int, 1] a = {0}; int b = a;", "not a scalar"},
+          {"if (true) { array[int, 1] a; }", "global scope"},
+          {
+              "array[float, 1] a = {0}; gate g q { U(a[0], 0, 0) q; }",
+              "cannot capture",
+          },
+          {"array[int, 0, -1] a;", "non-negative"},
+          {"array[int, 100000, 100000] a;", "element count exceeds"},
+          {"array[int, 1, 1, 1, 1, 1, 1, 1, 1] a;", "at most 7"},
+          {"array[int, 2, 2] a = {{1, 2}, {3}};", "initializer length"},
+          {"array[int, 2, 2] a = {1, 2};", "initializer length"},
+          {"array[int, 2] a = {{1}, {2}};", "scalar element"},
+          {"array[int, 1] a = {{{{{{{{1}}}}}}}};", "nesting exceeds"},
+          {"array[int, 2, 2] a; a[0] = 1;", "array or subarray source"},
+          {
+              "array[int, 2, 2] a; a[1, 0] = 1; array[int, 2] b = a[1];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a = {1, 2}; array[int, 2, 2] b; "
+              "b[1] = a; int x = b[0, 0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a = {1, 2}; array[int, 2, 2] b; int i = 1; "
+              "b[i] = a; int x = b[1, 0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2] a = {1, 2}; array[int, 2, 2] b; b[1] = a; "
+              "int i = 1; a = b[i];",
+              "uninitialized",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[int, 3] b = a[0];",
+              "matching shapes",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[int, 2] b = a[2];",
+              "out of bounds",
+          },
+          {
+              "array[int, 2, 0] a; array[int, 0] b = a[2, :];",
+              "out of bounds",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; "
+              "array[int, 2] b; b = a[-3];",
+              "out of bounds",
+          },
+          {
+              "array[int, 2, 2] a = {{1, 2}, {3, 4}}; array[int, 2] b; "
+              "float i = 0; b = a[i];",
+              "integer expression",
+          },
+          {"array[int, 2] a; a[0, 0] = 1;", "one index per dimension"},
+          {"array[int, 2, 2] a; a[0, 2] = 1;", "out of bounds"},
+          {"array[int, 2, 2] a; a[-3, 0] = 1;", "out of bounds"},
+          {"array[int, 2, 2] a; a[0, 0.5] = 1;", "integer expression"},
+          {
+              "array[int, 2, 2] a; a[0, 1] = 1; int b = a[1, 0];",
+              "uninitialized",
+          },
+          {
+              "array[int, 1, 2] a; a[0, 0] = 1; int i = 0; int b = a[0, i];",
+              "uninitialized",
+          },
+          {"array[int, 2, 2] a; a[0, 0, 0, 0, 0, 0, 0, 0] = 1;", "at most 7"},
+          {"bit[2] c = 0; c[0, 1] = true;", "only arrays"},
+          {"bit[2] c = 0; bool b = c[0, 1];", "only arrays"},
+          {"bit[2] c = 0; if (c[0, 1]) {}", "only arrays"},
+          {"array[bit, 1] a;", "unsupported array element type"},
+      });
+  for (const auto& [source, diagnostic] : cases) {
+    SCOPED_TRACE(source.str());
+    auto analyzed =
+        openqasm::frontend::analyzeOpenQASM("OPENQASM 3.0; " + source.str());
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(diagnostic),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
+  EXPECT_FALSE(
+      openqasm::frontend::analyzeOpenQASM("OPENQASM 2.0; array[int, 1] a;"));
+  EXPECT_FALSE(openqasm::frontend::parseOpenQASM(
+      "OPENQASM 3.0; output array[int, 1] a;"));
+}
+
+TEST(OpenQASMFrontendTest, LoopExitsPreserveDefiniteInitialization) {
   for (const auto* source : {
            "OPENQASM 3.0; continue;",
            "OPENQASM 3.0; int x; for int i in [0:1] { "
@@ -152,10 +583,16 @@ TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
     auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
     EXPECT_FALSE(analyzed);
   }
-  auto analyzed = openqasm::frontend::analyzeOpenQASM(
-      "OPENQASM 3.0; int x; for int i in [0:1] "
-      "{ x = 1; continue; } int y = x;");
-  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  for (const auto* source : {
+           "OPENQASM 3.0; int x; for int i in [0:1] "
+           "{ x = 1; continue; } int y = x;",
+           "OPENQASM 3.1; output bit c; output int x; for int i in [0:0] { "
+           "switch (i) { case 0 { c = true; x = 1; break; } "
+           "default { c = false; x = 2; break; } } }",
+       }) {
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  }
 }
 
 TEST(OpenQASMFrontendTest, SemanticAnalysisIsIndependentOfMLIR) {
@@ -244,6 +681,7 @@ for int i in [0:3] {
 }
 int stride = 2;
 for int i in [0:stride:6] { x q[i]; }
+for int i in [1:0] { x q[i - i + 8]; }
 )qasm";
 
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
@@ -330,6 +768,18 @@ TEST(OpenQASMFrontendTest, DoesNotInheritFactsFromExpiredLocalDeclarations) {
 TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
   constexpr auto rejections =
       std::to_array<std::pair<llvm::StringRef, llvm::StringRef>>({
+          {
+              "OPENQASM 3.1; qubit[2] q; int n = 0; int a = 0; "
+              "for int outer in [0:0] { for int inner in [0:n] { a = 1; } } "
+              "x q[a];",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[2] q; int n = 0; int a = 0; "
+              "while (true) { for int inner in [0:n] { a = 1; } break; } "
+              "x q[a];",
+              "cannot prove that qubit index is in bounds",
+          },
           {
               "OPENQASM 3.1; qubit[4] q; for int i in [0:3] { for int j in "
               "[0:3] { cx q[i], q[j]; } }",
@@ -613,6 +1063,10 @@ TEST(OpenQASMFrontendTest, AcceptsLogAndRejectsLnBuiltInSpelling) {
   auto log = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; const float value = log(2.0);");
   ASSERT_TRUE(log) << log.diagnostics.front().message;
+
+  auto qasm2Ln = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 2.0; qreg q[1]; U(ln(2.0),0,0) q[0];");
+  ASSERT_TRUE(qasm2Ln) << qasm2Ln.diagnostics.front().message;
 
   auto nonstandardLn = openqasm::frontend::parseOpenQASM(
       "OPENQASM 3.1; const float value = ln(2.0);");
@@ -978,23 +1432,70 @@ for int i in [0:0:3] {}
             std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, BoundsRegisterStorageBeforeAllocation) {
-  EXPECT_TRUE(
-      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.1; qubit[100000] q;"));
-
-  for (const auto* const source : {
-           "OPENQASM 3.1; qubit[100001] q;",
-           "OPENQASM 3.1; qubit[18446744073709551615] q;",
-           "OPENQASM 3.1; qubit[60000] q; bit[40001] c;",
+TEST(OpenQASMFrontendTest, LargeRegistersDoNotConsumeArrayStorageBudget) {
+  for (const auto* source : {
+           "OPENQASM 2.0; qreg q[80001]; creg c[80000];",
+           "OPENQASM 3.1; qubit[2000001] q; bit[2000000] c = 0; "
+           "array[int, 100000] a;",
        }) {
+    SCOPED_TRACE(source);
     auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
-    ASSERT_FALSE(analyzed) << source;
-    ASSERT_FALSE(analyzed.diagnostics.empty());
-    EXPECT_NE(analyzed.diagnostics.front().message.find("limit"),
-              std::string::npos);
-    EXPECT_EQ(analyzed.diagnostics.front().location.filename, "<input>");
-    EXPECT_EQ(analyzed.diagnostics.front().location.line, 1);
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   }
+}
+
+TEST(OpenQASMFrontendTest, BoundsRegisterWidthsByTheirRepresentation) {
+  const auto largestBits = "OPENQASM 3.1; bit[" +
+                           std::to_string(IntegerType::kMaxWidth) + "] c = 0;";
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(largestBits));
+  const auto oversizedBits = "OPENQASM 3.1; bit[" +
+                             std::to_string(IntegerType::kMaxWidth + 1) +
+                             "] c = 0;";
+  auto analyzedBits = openqasm::frontend::analyzeOpenQASM(oversizedBits);
+  ASSERT_FALSE(analyzedBits);
+  ASSERT_FALSE(analyzedBits.diagnostics.empty());
+  EXPECT_NE(analyzedBits.diagnostics.front().message.find(
+                "bit register width exceeds the limit"),
+            std::string::npos);
+
+  auto analyzedQubits = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; qubit[9223372036854775808] q;");
+  ASSERT_FALSE(analyzedQubits);
+  ASSERT_FALSE(analyzedQubits.diagnostics.empty());
+  EXPECT_NE(analyzedQubits.diagnostics.front().message.find("limit"),
+            std::string::npos);
+  EXPECT_EQ(analyzedQubits.diagnostics.front().location.filename, "<input>");
+  EXPECT_EQ(analyzedQubits.diagnostics.front().location.line, 1);
+}
+
+TEST(OpenQASMFrontendTest, PreservesWideBitStringValues) {
+  std::string digits(100'001, '0');
+  digits.front() = digits.back() = digits[digits.size() - 65] = '1';
+  digits.insert(1, "_");
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; bit[100001] c = \"" + digits + "\";");
+  ASSERT_TRUE(analyzed);
+  ASSERT_EQ(analyzed.program->bitVectorExpressions.size(), 1);
+  EXPECT_EQ(analyzed.program->bitVectorExpressions.front().constant,
+            (llvm::APInt(100'001, 1) << 100'000) +
+                (llvm::APInt(100'001, 1) << 64) + 1);
+}
+
+TEST(OpenQASMFrontendTest, BoundsLargeRegisterExpansionBeforeAllocation) {
+  for (const auto* operation : {"reset q;", "reset q[:];", "barrier;"}) {
+    SCOPED_TRACE(operation);
+    const auto source = std::string("OPENQASM 3.1; "
+                                    "qubit[9223372036854775807] q; ") +
+                        operation;
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(
+                  "register operand expansion exceeds"),
+              std::string::npos);
+  }
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; qubit[9223372036854775807] q; reset q[-2:-1];"));
 }
 
 TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
@@ -1337,46 +1838,21 @@ TEST(OpenQASMFrontendTest, AppliesC99SignedUnsignedConstantPromotion) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 const uint maximum = 18446744073709551615;
-const uint wrapped_add = maximum + 1;
 const uint one = 1;
-const uint wrapped_negation = -one;
-const bool mixed_order = -1 < maximum;
-qubit q;
-rx(wrapped_add) q;
-if (mixed_order) { x q; }
+output bool result;
+result = maximum + 1 == 0 && -one == maximum &&
+         !(-1 < maximum) && -uint[8](1) < 0 &&
+         float(-uint[8](1)) == -1.0;
 )qasm";
-
   auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-
-  bool sawWrappedParameter = false;
-  bool sawFalseCondition = false;
-  for (const auto statement : analyzed.program->body) {
-    const auto& data = analyzed.program->statements[statement].data;
-    if (const auto* application =
-            std::get_if<openqasm::frontend::GateApplication>(&data);
-        application != nullptr && application->callee == "rx") {
-      ASSERT_EQ(application->parameters.size(), 1);
-      const auto& parameter =
-          analyzed.program->expressions[application->parameters.front()];
-      ASSERT_EQ(parameter.kind, openqasm::frontend::ExpressionKind::Cast);
-      ASSERT_EQ(parameter.type, openqasm::frontend::ScalarType::Angle);
-      const auto& operand = analyzed.program->expressions[parameter.lhs];
-      sawWrappedParameter =
-          operand.type == openqasm::frontend::ScalarType::Uint &&
-          std::get<uint64_t>(operand.constant) == 0;
-    }
-    if (const auto* conditional =
-            std::get_if<openqasm::frontend::IfStatement>(&data)) {
-      const auto& condition =
-          analyzed.program->conditions[conditional->condition];
-      sawFalseCondition =
-          condition.kind == openqasm::frontend::ConditionKind::Literal &&
-          !condition.literal;
-    }
-  }
-  EXPECT_TRUE(sawWrappedParameter);
-  EXPECT_TRUE(sawFalseCondition);
+  const auto& assignment =
+      std::get<openqasm::frontend::ScalarAssignmentStatement>(
+          analyzed.program->statements[analyzed.program->body.back()].data);
+  ASSERT_TRUE(assignment.condition);
+  const auto& result = analyzed.program->conditions[*assignment.condition];
+  ASSERT_EQ(result.kind, openqasm::frontend::ConditionKind::Literal);
+  EXPECT_TRUE(result.literal);
 }
 
 TEST(OpenQASMFrontendTest, FoldsUnsignedAndMixedNumericConstantOperators) {
@@ -2028,24 +2504,35 @@ if(c==1) x q[1];
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 
-TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralInOpenQASM2If) {
-  // 2^70 + 9 fits in an 80-bit register but exceeds uint64_t.
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 2.0;
-include "qelib1.inc";
-qreg q[1];
-creg c[80];
-measure q[0] -> c[0];
-if(c==1180591620717411303433) x q[0];
-)qasm";
-  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
-  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(
-      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
-        return c.kind ==
-                   openqasm::frontend::BitVectorExpressionKind::Constant &&
-               c.width == 80 && c.constant[70];
-      }));
+TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiterals) {
+  constexpr const char* binary = "0b1000000_00000000_00000000_00000000_"
+                                 "00000000_00000000_00000000_00000000_00001001";
+  for (const auto* literal : {
+           "1180591620717411303433",
+           "1_180_591_620_717_411_303_433",
+           "01180591620717411303433",
+           "0X40_0000000000000009",
+           "0x40_0000000000000009",
+           "0o200000000000000000000011",
+           binary,
+       }) {
+    for (const auto& source : {
+             std::string("OPENQASM 2.0; qreg q[1]; creg c[80]; if(c == ") +
+                 literal + ") U(0,0,0) q[0];",
+             std::string("OPENQASM 3.1; bit[80] c = ") + literal + ";",
+         }) {
+      SCOPED_TRACE(source);
+      auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
+      ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+      EXPECT_TRUE(llvm::any_of(
+          analyzed.program->bitVectorExpressions, [](const auto& value) {
+            return value.kind ==
+                       openqasm::frontend::BitVectorExpressionKind::Constant &&
+                   value.width == 80 &&
+                   value.constant == ((llvm::APInt(80, 1) << 70) + 9);
+          }));
+    }
+  }
 }
 
 TEST(OpenQASMFrontendTest, PromotesNarrowUnsignedBitRegisterCastToInt) {
@@ -2121,6 +2608,21 @@ TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
           .diagnostic = "supports widths from 1 through 64",
       },
       {
+          .source = "OPENQASM 3.1; qubit[65] q; bit[65] value = measure q; "
+                    "uint result = uint[64](uint[66](value));",
+          .diagnostic = "must match the bit-register width",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[65] value; "
+                    "uint result = uint[64](uint[65](value));",
+          .diagnostic = "has not been initialized",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[65] value; "
+                    "uint result = uint[64](uint[65](value) + 1);",
+          .diagnostic = "supports widths from 1 through 64",
+      },
+      {
           .source = "OPENQASM 3.1; bit[2] value; "
                     "uint result = uint[2](value);",
           .diagnostic = "has not been initialized",
@@ -2151,27 +2653,6 @@ TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
               std::string::npos)
         << analyzed.diagnostics.front().message;
   }
-}
-
-TEST(OpenQASMFrontendTest,
-     AcceptsWideIntegerLiteralWithDigitSeparatorsInOpenQASM2If) {
-  // Same value as above, spelled with grammar-legal digit separators.
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 2.0;
-include "qelib1.inc";
-qreg q[1];
-creg c[80];
-measure q[0] -> c[0];
-if(c==1_180_591_620_717_411_303_433) x q[0];
-)qasm";
-  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
-  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(
-      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
-        return c.kind ==
-                   openqasm::frontend::BitVectorExpressionKind::Constant &&
-               c.width == 80 && c.constant[70];
-      }));
 }
 
 TEST(OpenQASMFrontendTest,

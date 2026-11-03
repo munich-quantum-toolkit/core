@@ -365,6 +365,10 @@ struct ReplaceBasisStateControlsWithIfPattern final
     auto ifOp = IfOp::create(
         rewriter, ctrlOp.getLoc(), condition, ifOperands,
         [&](ValueRange qubits) -> SmallVector<Value> {
+          if (numRemaining == 0) {
+            return mqt::inlineBodyReturningYields(*ctrlOp.getBody(), qubits,
+                                                  rewriter);
+          }
           auto newCtrl = CtrlOp::create(rewriter, ctrlOp.getLoc(),
                                         qubits.take_front(numRemaining),
                                         qubits.drop_front(numRemaining));

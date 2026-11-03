@@ -217,16 +217,22 @@ The output format changes the file name, but not the semantic case ID.
 
 A source installation provides the `MQT::CoreBench` target with typed
 parameters, references, evaluation, instances, instance specifications, and
-manifests.
+manifests. Use `create` to construct validated instances. Fallible operations
+return `llvm::Expected<T>`. Native `probability` and `cutSize` queries require
+binary outcomes of `output().width` bits. Python queries and count evaluation
+validate their inputs. Evaluation results include the total `shots` used.
 
 ```cpp
 #include "bench/Grover.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <cassert>
 
 int main() {
-  const mqt::bench::Grover benchmark{{.markedBitstring = "101"}};
-  const auto evaluation = benchmark.evaluate({{"101", 1000}});
+  const auto benchmark =
+      llvm::cantFail(mqt::bench::Grover::create({.markedBitstring = "101"}));
+  const auto evaluation = llvm::cantFail(benchmark.evaluate({{"101", 1000}}));
   assert(evaluation.successProbability == 1.0);
 }
 ```
@@ -253,13 +259,14 @@ Adding a family requires five extension points:
    evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
    family-specific parameter JSON, reference JSON, parser, and schema body to
    `src/bench/JSON.cpp`.
-3. Declare and implement the structured emitter under `mlir/bench/`, add its
-   source to the program library, and declare the typed `generate(...)`
-   overload. The catalog supplies the generation wrapper and JSON dispatch row.
+3. Implement the structured emitter under `mlir/bench/` and add its source to
+   the program library. The catalog supplies the emitter declaration, typed
+   `generate(...)` overload, generation wrapper, and JSON dispatch row.
 4. Add the explicit Python types in a family registration source under
-   `bindings/bench/`, register its direct submodule in `register_bench.cpp`, and
-   add the source to `bindings/bench/CMakeLists.txt`.
-5. Test the reference, strict instance specification JSON, emitter structure,
+   `bindings/bench/`, use `registerBenchmarkIO` for generation and JSON methods,
+   register its direct submodule in `register_bench.cpp`, and add the source to
+   `bindings/bench/CMakeLists.txt`.
+5. Test the reference, instance specification validation, emitter structure,
    `jeff` conversion, and Python generation.
 
 `BenchmarkFamilies.inc` is the sole family catalog. Do not add a private family
@@ -270,10 +277,48 @@ list, a generic option map, or a public base class.
 Instance specifications reject unknown fields and invalid values. The case ID
 does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
-Before evaluation, normalize backend results to the manifest's big-endian
-`result` order.
+JSON APIs use the C numeric locale (`LC_NUMERIC=C`). Normalize backend results
+to the manifest's big-endian `result` order before evaluation.
 
 ## Benchmark families
+
+### Fan-out
+
+The `fan-out` family implements the Hamming-weight rotation in Figure 5 of
+[Høyer and Špalek](https://arxiv.org/html/quant-ph/0208043), with a fixed phase
+of $\pi/2$. It prepares uniform control qubits and a target in $|+\rangle$.
+{term}`Quantum fan-out <quantum fan-out>` distributes the controlled phase gates
+over the target and clean ancillas. Uncomputing the fan-out restores all
+ancillas to zero. A final Hadamard on the target makes the phase observable.
+
+Set `controls` to $n\in[1, 1073]$. The circuit uses $2n$ qubits and returns the
+control string $x$ followed by the target bit. For Hamming weight $w=|x|$,
+
+```{math}
+P(x,0)=2^{-n}\cos^2(\pi w/4),\qquad
+P(x,1)=2^{-n}\sin^2(\pi w/4).
+```
+
+The width limit keeps every nonzero reference probability representable as a
+double. The circuit uses linear space and gate count; its structured loops do
+not enumerate input bitstrings. Fan-out is decomposed into CNOT gates, so the
+paper's constant-depth bound for an unbounded fan-out primitive does not apply
+to the generated circuit.
+
+With $S$ shots, empirical TVD is at least $\max(0,1-S/2^n)$, even for ideal
+execution. Large widths are useful for generation and compilation workloads;
+keep $n$ small for sampled-distribution comparisons. For example, 30 controls
+and 16,384 shots give TVD of at least 0.9999847.
+
+```{code-cell} ipython3
+from mqt.core.bench import fan_out
+
+benchmark = fan_out.FanOut(fan_out.Options(controls=3))
+assert benchmark.output.width == 4
+assert benchmark.probability("0000") == 0.125
+assert benchmark.probability("0011") == 0.0625
+assert benchmark.generate().is_valid
+```
 
 ### Grover search with weak measurement
 
@@ -399,6 +444,54 @@ Computational-basis measurements cannot detect arbitrary relative-phase errors.
 Native tests therefore also compare complete coherent states and require clean
 work-qubit recovery. A single correct basis result does not certify a unitary on
 every input.
+
+### QAOA
+
+The `qaoa` family implements the
+{term}`quantum approximate optimization algorithm <QAOA>` for MaxCut on an
+unweighted cycle, as in
+[Farhi, Goldstone, and Gutmann, Section IV](https://arxiv.org/html/1411.4028#S4).
+Starting from $|+\rangle^{\otimes n}$, each layer applies the cost unitary
+$e^{-i\gamma_\ell C}$ then the mixer $e^{-i\beta_\ell B}$, with
+
+```{math}
+C=\sum_{j=0}^{n-1}\frac{1-Z_jZ_{(j+1)\bmod n}}{2},\qquad B=\sum_{j=0}^{n-1} X_j.
+```
+
+Set `qubits` to at least three and `depth` to the number of layers, which
+defaults to one. For depth $d$, the generated program takes two arrays of $d$
+angles in radians: `gammas` and `betas`. The manifest and case ID identify this
+circuit template. Record the bound angles separately to reproduce a run. The
+benchmark does not run an optimizer. Store reusable named templates as QC. Bind
+angles before binary `jeff` serialization, which does not preserve input names.
+For Qiskit export, first call
+{py:meth}`~mqt.core.mlir.QCOProgram.unroll_quantum_loops` to resolve
+loop-indexed qubits.
+
+The verification reference reports the shot-weighted mean cut and its ratio to
+the cycle's maximum cut, $n-(n\bmod 2)$. These scores measure solution quality,
+not agreement with an ideal distribution. Qubit counts and depths must fit
+signed 64-bit circuit dimensions; practical limits depend on compilation and
+execution resources.
+
+Generate a reusable four-vertex template, bind angles to a copy, and score its
+sampled cuts:
+
+```{code-cell} ipython3
+import numpy as np
+
+from mqt.core.bench import qaoa
+from mqt.core.mlir import sample
+
+benchmark = qaoa.QAOA(qaoa.Options(qubits=4))
+template = benchmark.generate()
+program = template.copy()
+program.bind_parameters({"gammas": [np.pi / 4], "betas": [np.pi / 8]})
+counts = sample(program, shots=1024, seed=17)
+evaluation = benchmark.evaluate(counts)
+print(f"Mean cut: {evaluation.mean_cut:.3f} of 4 edges")
+print(f"Approximation ratio: {evaluation.approximation_ratio:.3f}")
+```
 
 ### QFT addition
 
@@ -541,10 +634,10 @@ number of retry attempts.
 
 ```{code-cell} ipython3
 evaluation = rus.evaluate(counts)
-assert sum(counts.values()) == 4096
+assert evaluation.shots == 4096
 assert evaluation.total_variation_distance < 0.02
 for bit in ("0", "1"):
-    observed = counts.get(bit, 0) / sum(counts.values())
+    observed = counts.get(bit, 0) / evaluation.shots
     print(f"P({bit}): observed {observed:.3f}, ideal {rus.probability(bit):.3f}")
 print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
 ```

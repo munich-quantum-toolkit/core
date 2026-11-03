@@ -61,7 +61,7 @@ shots = 4096
 seed = 17
 
 logical = QCProgram.from_openqasm_str(source)
-logical.to_qiskit().draw("mpl")
+logical.to_qiskit(copy=True).draw("mpl")
 ```
 
 Check the expected logical output before introducing a target:

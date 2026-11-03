@@ -103,6 +103,7 @@ pre.fragment {
 }
 
 #titlearea {
+  box-sizing: border-box;
   box-shadow: none;
   padding: 0.5rem 1rem;
 }

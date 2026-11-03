@@ -14,18 +14,25 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "mqt.core.plugins.qiskit.backend",
+    "mqt.core.plugins.qiskit.exceptions",
+    "mqt.core.qdmi.builtin_driver",
+    "warnings",
+}
+
 import warnings
 from typing import TYPE_CHECKING
 
-from ...qdmi.builtin_driver import registered_device_ids
-from .backend import QDMIBackend
-from .exceptions import UnsupportedDeviceError
+from mqt.core.plugins.qiskit.backend import QDMIBackend
+from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
+from mqt.core.qdmi.builtin_driver import registered_device_ids
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from typing import Unpack
 
-    from ...typing import QDMISessionParameters
+    from mqt.core.typing import QDMISessionParameters
 
 __all__ = ["QDMIProvider"]
 

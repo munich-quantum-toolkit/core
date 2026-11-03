@@ -156,11 +156,39 @@ def test_module_functions_share_one_registry(monkeypatch: pytest.MonkeyPatch) ->
     assert serializers.program_serializer(ProgramFormat.CUSTOM1) is None
 
 
-def test_serializer_is_discovered_from_entry_point() -> None:
+@pytest.mark.parametrize("fmt", [ProgramFormat.CUSTOM2, ProgramFormat.QPY])
+def test_serializer_is_discovered_from_entry_point(fmt: ProgramFormat) -> None:
     """The registry loads a serializer advertised through the entry point group."""
-    registry = _registry([_entry_point("CUSTOM2", "pkg.mod:serializer", _serializer)])
+    registry = _registry([_entry_point(fmt.name, "pkg.mod:serializer", _serializer)])
 
-    assert registry.get(ProgramFormat.CUSTOM2) is _serializer
+    assert registry.get(fmt) is _serializer
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        ProgramFormat.QASM2,
+        ProgramFormat.QASM3,
+        ProgramFormat.QPY,
+        ProgramFormat.IQM_JSON,
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+def test_provider_overrides_and_removal_of_builtin_fallbacks(fmt: ProgramFormat) -> None:
+    """Provider serializers win; explicit removal cannot resurrect a fallback."""
+    registry = _registry()
+    assert registry.get(fmt) is not None
+    registry.register(fmt, _serializer)
+    assert registry.get(fmt) is _serializer
+    registry.unregister(fmt)
+    assert registry.get(fmt) is None
+    registry.register(fmt, _serializer)
+    assert registry.get(fmt) is _serializer
+    discovered = _registry([_entry_point(fmt.name, "pkg.mod:serializer", _serializer)])
+    assert discovered.get(fmt) is _serializer
 
 
 def test_entry_points_are_read_once() -> None:

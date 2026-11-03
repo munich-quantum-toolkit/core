@@ -8,7 +8,7 @@ three extracted changes now merged into main.
 ## Matrix and U-power regressions
 
 The
-[QCO numeric suite](../../mlir/unittests/Dialect/QCO/IR/test_qco_numeric_canonicalization.cpp)
+[QCO numeric suite](../../mlir/unittests/Dialect/QCO/IR/test_qco_numeric_simplification.cpp)
 retains five tests:
 
 - `RMatrixPreservesLargeAxisAngles` checks an independent axis matrix and
@@ -23,9 +23,9 @@ retains five tests:
 - `UToU2PreservesLargeEulerAngles` tests a consumer of the shared U/U2 matrix.
 
 The
-[QC](../../mlir/unittests/Dialect/QC/IR/test_qc_modifier_canonicalization.cpp)
+[QC](../../mlir/unittests/Dialect/QC/IR/test_qc_modifier_simplification.cpp)
 and
-[QCO](../../mlir/unittests/Dialect/QCO/IR/test_qco_modifier_canonicalization.cpp)
+[QCO](../../mlir/unittests/Dialect/QCO/IR/test_qco_modifier_simplification.cpp)
 modifier suites retain `InverseU2PreservesLargeAngles`,
 `InverseU2PreservesDynamicAngles`, `InverseU2PreservesFullUnitary`, and
 `InverseControlledU2PreservesFullUnitary`. They cover sign-only U parameters,
@@ -76,7 +76,7 @@ oracles.
 
 ## Identity and local-analysis regressions
 
-[QCO gate tests](../../mlir/unittests/Dialect/QCO/IR/test_qco_canonicalization.cpp)
+[QCO gate tests](../../mlir/unittests/Dialect/QCO/IR/test_qco_simplification.cpp)
 check H/X/Y/Z pair cancellation through `PatternApplicator`, then immediately
 verify IR and QCO linearity. This catches the rejected `Involution` migration: a
 folder can forward through a producer but cannot erase that producer, leaving an

@@ -14,11 +14,14 @@ include "mlir/Pass/PassBase.td"
 def ShrinkQTensorToFitPass : Pass<"qtensor-shrink-to-fit", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qtensor::QTensorDialect",
                            "mlir::arith::ArithDialect"];
-  let summary = "Shrink static qtensors to their actually accessed indices.";
+  let summary = "Compact static quantum tensors";
   let description = [{
-    Shrinks one-dimensional static qtensors by tracing linear tensor chains from
-    `qtensor.dealloc` to `qtensor.alloc` and rebuilding the chain on a compact
-    allocation that only keeps accessed indices.
+    Compacts static quantum tensors whose linear allocation-to-deallocation
+    chain consists of constant-index extracts and inserts. Retained indices
+    preserve their relative order and source-qubit mapping.
+
+    Run canonicalization first to fold size and index expressions. Tensors with
+    nonconstant indices or unsupported uses are left unchanged.
   }];
 }
 

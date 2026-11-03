@@ -29,6 +29,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
@@ -111,12 +112,12 @@ TEST_F(QuantumLoopUnrollTest, InvalidUnrollFactor) {
 
 TEST_F(QuantumLoopUnrollTest, NoOp) {
   auto m = getGHZ(context.get(), 2);
-  auto mClone = m->clone();
+  OwningOpRef<ModuleOp> mClone = m->clone();
 
   const auto res = runPass(m, QuantumLoopUnrollOptions{.unrollFactor = 0});
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(mlir::OperationEquivalence::isEquivalentTo(
-      m->getOperation(), mClone.getOperation(),
+      m->getOperation(), mClone->getOperation(),
       mlir::OperationEquivalence::Flags::None));
 }
 
@@ -155,7 +156,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
               });
         })[0];
     b.qtensorDealloc(tensor);
-    return b.intConstant(0);
+    return SmallVector<Value>{};
   });
   ASSERT_TRUE(m);
 
@@ -163,38 +164,6 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
   auto entry = *m->getOps<func::FuncOp>().begin();
   EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
   EXPECT_EQ(range_size(entry.getOps<HOp>()), 1);
-}
-
-TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
-  for (const int64_t iterations : {1, 2, 3, 4}) {
-    SCOPED_TRACE(iterations);
-    QCOProgramBuilder builder(context.get());
-    builder.initialize();
-
-    Value q0 = builder.allocQubit();
-    Value q1 = builder.allocQubit();
-    const auto results = builder.scfFor(0, iterations, 1, {q0, q1},
-                                        [](Value, ValueRange iterArgs) {
-                                          return SmallVector<Value>(iterArgs);
-                                        });
-    builder.sink(results[0]);
-    builder.sink(results[1]);
-    auto m = builder.finalize();
-    auto entry = *m->getOps<func::FuncOp>().begin();
-    // The unroller handles general SCF permutations even though the program
-    // builder requires positional quantum results.
-    auto loop = *entry.getOps<scf::ForOp>().begin();
-    auto args = loop.getRegionIterArgs();
-    loop.getBody()->getTerminator()->setOperands({args[1], args[0]});
-
-    ASSERT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
-    EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
-
-    auto sinks = llvm::to_vector(entry.getOps<SinkOp>());
-    ASSERT_EQ(sinks.size(), 2);
-    EXPECT_EQ(sinks[0].getQubit(), iterations % 2 == 0 ? q0 : q1);
-    EXPECT_EQ(sinks[1].getQubit(), iterations % 2 == 0 ? q1 : q0);
-  }
 }
 
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {

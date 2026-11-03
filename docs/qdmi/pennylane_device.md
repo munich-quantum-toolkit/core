@@ -337,14 +337,14 @@ reused; errors that do not confirm job failure require
 
 An integration can return an already-open device. Pass that handle directly to
 the generic class. Do not repeat session parameters because the session already
-exists. For example, a Slurm job can reuse the device selected by its license:
+exists:
 
 ```python
 from mqt.core.plugins.pennylane import QDMIDevice
-from mqt.core.qdmi import slurm
+from mqt.core.qdmi import builtin_driver
 
 device = QDMIDevice(
-    device=slurm.open_device_from_license(),
+    device=builtin_driver.open_device("mqt.ddsim.default"),
 )
 ```
 

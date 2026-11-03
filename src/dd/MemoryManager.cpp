@@ -12,23 +12,35 @@
 
 #include "dd/LinkedListBase.hpp"
 
+#include "llvm/Support/ErrorHandling.h"
+
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <memory>
-#include <stdexcept>
+#include <utility>
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#ifdef _M_X64
+#include <xmmintrin.h>
+#elif defined(_M_ARM64)
+#include <intrin.h>
+#endif
+#endif
 
 namespace dd {
 
 MemoryManager::MemoryManager(size_t entrySize,
                              const std::size_t initialAllocationSize)
     : entrySize_(entrySize), chunks(1), stats(entrySize) {
-  if (initialAllocationSize == 0) {
-    throw std::invalid_argument("Initial DD allocation size must be positive.");
+  assert(initialAllocationSize > 0 &&
+         "Initial DD allocation size must be positive");
+  if (initialAllocationSize > std::numeric_limits<size_t>::max() / entrySize) {
+    llvm::report_bad_alloc_error("DD allocation size overflow");
   }
-  chunks[0] = {std::make_unique_for_overwrite<Storage>(initialAllocationSize *
-                                                       entrySize),
-               initialAllocationSize * entrySize};
+  const auto bytes = initialAllocationSize * entrySize;
+  chunks[0] = {std::make_unique_for_overwrite<Storage>(bytes), bytes};
   // The first slab must exist before its bounds can be initialized.
   // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
   chunkIt = chunks[0].first.get();
@@ -56,18 +68,11 @@ void MemoryManager::returnEntry(LLBase& entry) noexcept {
   stats.trackReturnedEntry();
 }
 
-void MemoryManager::reset(const bool resizeToTotal) noexcept {
-  available = nullptr;
-
-  auto numAllocations = stats.numAllocations;
+void MemoryManager::reset() {
+  const auto numAllocations = stats.numAllocations;
   chunks.resize(1U);
-  if (resizeToTotal && chunks[0].second != stats.numAllocated * entrySize_) {
-    chunks[0] = {std::make_unique_for_overwrite<Storage>(stats.numAllocated *
-                                                         entrySize_),
-                 stats.numAllocated * entrySize_};
-    ++numAllocations;
-  }
 
+  available = nullptr;
   chunkIt = chunks[0].first.get();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   chunkEndIt = chunks[0].first.get() + chunks[0].second;
@@ -86,6 +91,15 @@ LLBase* MemoryManager::getEntryFromAvailableList() noexcept {
 
   auto* entry = available;
   available = available->next();
+  if (available != nullptr) {
+#if defined(__clang__) || defined(__GNUC__)
+    __builtin_prefetch(available, 0, 3);
+#elif defined(_M_ARM64)
+    __prefetch(available);
+#elif defined(_M_X64)
+    _mm_prefetch(reinterpret_cast<char*>(available), _MM_HINT_T0);
+#endif
+  }
   stats.trackReusedEntries();
   return entry;
 }
@@ -93,12 +107,14 @@ LLBase* MemoryManager::getEntryFromAvailableList() noexcept {
 void MemoryManager::allocateNewChunk() {
   assert(!entryAvailableInChunk());
 
-  const auto numPrevEntries = chunks.back().second / entrySize_;
-  const auto numNewEntries = numPrevEntries * GROWTH_FACTOR;
+  const auto previousBytes = chunks.back().second;
+  if (previousBytes > std::numeric_limits<size_t>::max() / GROWTH_FACTOR) {
+    llvm::report_bad_alloc_error("DD allocation size overflow");
+  }
+  const auto bytes = previousBytes * GROWTH_FACTOR;
+  const auto numNewEntries = bytes / entrySize_;
 
-  chunks.emplace_back(
-      std::make_unique_for_overwrite<Storage>(numNewEntries * entrySize_),
-      numNewEntries * entrySize_);
+  chunks.emplace_back(std::make_unique_for_overwrite<Storage>(bytes), bytes);
   chunkIt = chunks.back().first.get();
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   chunkEndIt = chunks.back().first.get() + chunks.back().second;

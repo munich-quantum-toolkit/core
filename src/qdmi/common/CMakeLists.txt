@@ -11,29 +11,25 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-common)
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon FORCE_STATIC HIDDEN_VISIBILITY)
 
+  llvm_update_compile_flags(${TARGET_NAME})
+
   target_sources(${TARGET_NAME} PRIVATE Common.cpp DeviceConfiguration.cpp)
 
   target_sources(
     ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Common.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/DeviceConfiguration.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Diagnostics.hpp)
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Common.hpp
+            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/DeviceConfiguration.hpp
+            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Diagnostics.hpp)
 
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi LLVMSupport
     PRIVATE $<BUILD_LOCAL_INTERFACE:qdmi::qdmi_project_warnings> ${CMAKE_DL_LIBS})
 
-  target_include_directories(${TARGET_NAME} SYSTEM PUBLIC "$<BUILD_INTERFACE:${LLVM_INCLUDE_DIRS}>")
-
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

@@ -15,11 +15,10 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/LinkedListBase.hpp"
-#include "dd/mqt_core_dd_export.h"
 
-#include <istream>
+#include "llvm/Support/raw_ostream.h"
+
 #include <limits>
-#include <ostream>
 
 namespace dd {
 /// A struct for representing real numbers as part of the DD package.
@@ -109,19 +108,13 @@ struct RealNumber final : LLBase {
   ///
   /// @param e The number to write.
   /// @param os The stream to write to.
-  static void writeBinary(const RealNumber* e, std::ostream& os);
+  static void writeBinary(const RealNumber* e, llvm::raw_ostream& os);
 
   /// Write a binary representation of a floating point number to a
   ///
   /// @param num The number to write.
   /// @param os The stream to write to.
-  static void writeBinary(fp num, std::ostream& os);
-
-  /// Read a binary representation of a number from a stream.
-  ///
-  /// @param num The number to read into.
-  /// @param is The stream to read from.
-  static void readBinary(fp& num, std::istream& is);
+  static void writeBinary(fp num, llvm::raw_ostream& os);
 
   /// Get an aligned pointer to the number.
   ///
@@ -211,11 +204,11 @@ static_assert(alignof(RealNumber) == 8);
 namespace constants {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 /// The constant zero.
-MQT_CORE_DD_EXPORT extern RealNumber zero;
+extern RealNumber zero;
 /// The constant one.
-MQT_CORE_DD_EXPORT extern RealNumber one;
+extern RealNumber one;
 /// The constant sqrt(2)/2 = 1/sqrt(2).
-MQT_CORE_DD_EXPORT extern RealNumber sqrt2over2;
+extern RealNumber sqrt2over2;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 /// Check whether a number is one of the static numbers.

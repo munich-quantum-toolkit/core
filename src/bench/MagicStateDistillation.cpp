@@ -14,23 +14,31 @@
 
 #include "EvaluationUtils.hpp"
 
+#include "llvm/Support/Error.h"
+
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <stdexcept>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bench {
 
 MagicStateDistillation::MagicStateDistillation(
     MagicStateDistillationOptions options)
-    : options_(options), output_{.name = "result", .width = 2} {
-  if (options_.levels == 0 ||
-      options_.levels >
+    : options_(options), output_{.name = "result", .width = 2} {}
+
+llvm::Expected<MagicStateDistillation>
+MagicStateDistillation::create(MagicStateDistillationOptions options) {
+  if (options.levels == 0 ||
+      options.levels >
           static_cast<size_t>(std::numeric_limits<int64_t>::max()) / 5) {
-    throw std::invalid_argument("magic-state-distillation levels must be "
-                                "positive and fit circuit dimensions");
+    return llvm::createStringError(std::errc::invalid_argument,
+                                   "magic-state-distillation levels must be "
+                                   "positive and fit circuit dimensions");
   }
+  return MagicStateDistillation(options);
 }
 
 const MagicStateDistillationOptions&
@@ -44,11 +52,13 @@ const Output& MagicStateDistillation::output() const noexcept {
 
 double
 MagicStateDistillation::probability(const std::string_view outcome) const {
-  detail::validateOutcome(outcome, output_.width);
+  assert(outcome.size() == output_.width &&
+         outcome.find_first_not_of("01") == std::string_view::npos);
   return outcome == "00" ? 1. : 0.;
 }
 
-Evaluation MagicStateDistillation::evaluate(const Counts& counts) const {
+llvm::Expected<Evaluation>
+MagicStateDistillation::evaluate(const Counts& counts) const {
   return detail::evaluate(*this, counts, "00");
 }
 

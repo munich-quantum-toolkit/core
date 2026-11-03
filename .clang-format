@@ -6,10 +6,7 @@ IncludeCategories:
     Priority: 1
   - Regex: '^"qdmi/.*\.hpp"'
     Priority: 1
-  # This is MQT's private binding header, not an upstream Qiskit header.
-  - Regex: '^"qiskit/Qiskit\.h"'
-    Priority: 2
-  - Regex: '^"((capnp|gmock|gtest|kj|nanobind|nlohmann|qdmi|qiskit)/|jeff[./])'
+  - Regex: '^"((capnp|gmock|gtest|kj|nanobind|qdmi|qiskit)/|jeff[./])'
     Priority: 3
   - Regex: '^"mlir/'
     Priority: 4

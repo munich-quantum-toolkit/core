@@ -10,25 +10,26 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"mqt.core.plugins.pennylane.exceptions", "mqt.core.plugins.qdmi_batch", "numpy"}
+
 from contextlib import contextmanager
 from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from ..qdmi_batch import Batch, BatchEntry
-from .exceptions import PennyLaneExecutionError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
     from pennylane.typing import Result, ResultBatch
 
+    from mqt.core.plugins.pennylane.converter import _ConvertedProgram
+    from mqt.core.plugins.pennylane.device import QDMIDevice
     from mqt.core.qdmi import Job
     from mqt.core.typing import QDMIJobParameters
-
-    from .converter import _ConvertedProgram
-    from .device import QDMIDevice
 
 __all__ = ["PennyLaneJob"]
 
@@ -93,7 +94,7 @@ class PennyLaneJob:
 
     @staticmethod
     def _shots_or_counts(job: Job, program_index: int = 0) -> tuple[list[str], list[int] | None]:
-        """Read ordered shots or distinct outcomes with their multiplicities.
+        """Read individual shots or distinct outcomes with their multiplicities.
 
         Returns:
             Bit strings and optional repetition counts for histogram results.

@@ -10,17 +10,18 @@ set(mqt_ir_target mqt-core-mlir-unittest-mqt-ir)
 add_executable(${mqt_ir_target} test_mqt_ir.cpp)
 target_link_libraries(
   ${mqt_ir_target}
-  PRIVATE GTest::gtest_main
-          MLIRArithDialect
-          MLIRCBitDialect
-          MLIRFuncDialect
-          MLIRMemRefDialect
-          MLIRMQTDialect
-          MLIRParser
-          MLIRQCDialect
-          MLIRQCODialect
-          MLIRQTensorDialect
-          MLIRSCFDialect)
+  PRIVATE
+    GTest::gtest_main
+    MLIRArithDialect
+    MLIRCBitDialect
+    MLIRFuncDialect
+    MLIRMemRefDialect
+    MLIRMQTDialect
+    MLIRParser
+    MLIRQCDialect
+    MLIRQCODialect
+    MLIRQTensorDialect
+    MLIRSCFDialect)
 mqt_mlir_configure_unittest_target(${mqt_ir_target})
 
 gtest_discover_tests(${mqt_ir_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

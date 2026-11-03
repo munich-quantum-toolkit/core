@@ -12,6 +12,8 @@
 
 #include "qdmi/device.h"
 
+#include "llvm/Support/Error.h"
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -19,8 +21,10 @@
 
 namespace qdmi::detail {
 
-/// Returns the directory of the loaded module containing the caller's anchor.
-[[nodiscard]] std::filesystem::path moduleDirectory(const void* anchor);
+/// Return the directory of the loaded module containing the caller's anchor.
+/// Return failure if the anchor does not identify a loaded module.
+[[nodiscard]] llvm::Expected<std::filesystem::path>
+moduleDirectory(const void* anchor);
 
 /// JSON text selected for a provider session together with a safe source label.
 struct LoadedDeviceConfiguration {
@@ -43,10 +47,11 @@ int setDeviceConfigurationParameter(QDMI_Device_Session_Parameter parameter,
 /// an explicit source, exactly one technology-specific environment variable may
 /// select inline JSON or a file. The final fallback is a file beside the shared
 /// module containing @p anchor.
-std::optional<LoadedDeviceConfiguration> loadDeviceConfiguration(
-    const std::optional<std::string>& inlineJson,
-    const std::optional<std::filesystem::path>& file,
-    std::string_view inlineEnvironment, std::string_view fileEnvironment,
-    std::string_view bundledFilename, const void* anchor, int& status);
+llvm::Expected<LoadedDeviceConfiguration>
+loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
+                        const std::optional<std::filesystem::path>& file,
+                        std::string_view inlineEnvironment,
+                        std::string_view fileEnvironment,
+                        std::string_view bundledFilename, const void* anchor);
 
 } // namespace qdmi::detail

@@ -29,7 +29,7 @@ def CBitDialect : Dialect {
 
   let summary = "Classical-bit register storage shared by quantum dialects";
   let description = [{
-    The CBit dialect represents non-aliasing classical-bit registers whose
+    The CBit dialect represents mutable classical-bit registers whose
     width, initialization, and public identity remain explicit across quantum
     IR conversions. It separates source-level classical storage from generic
     memory lowering.

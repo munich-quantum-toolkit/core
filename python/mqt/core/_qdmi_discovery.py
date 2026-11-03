@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"importlib.metadata", "pathlib", "warnings"}
+
 import warnings
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path, PurePosixPath

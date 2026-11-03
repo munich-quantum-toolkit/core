@@ -78,12 +78,3 @@ DynamicMatrix UnitaryOp::getUnitaryMatrix() {
   }
   return result;
 }
-
-LogicalResult UnitaryOp::fold(FoldAdaptor /*adaptor*/,
-                              SmallVectorImpl<OpFoldResult>& results) {
-  if (!mqt::isExactIdentityMatrix(getMatrix())) {
-    return failure();
-  }
-  llvm::append_range(results, getQubitsIn());
-  return success();
-}

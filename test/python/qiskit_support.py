@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -21,14 +20,7 @@ from packaging.version import Version
 
 def supports_qiskit_translation(version: str = qiskit.__version__) -> bool:
     """Return whether the installed release has a registered test adapter."""
-    if version == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION"):
-        return True
     installed = Version(version)
-    registry = Path(__file__).resolve().parents[2] / "bindings/mlir/qiskit/SupportedVersions.inc"
+    registry = Path(__file__).resolve().parents[2] / "bindings/mlir/Target/Qiskit/SupportedVersions.inc"
     ranges = re.findall(r'^MQT_QISKIT_VERSION\([^\n]+"([^"\n]+)"\)', registry.read_text(), re.MULTILINE)
-    return (
-        not installed.is_prerelease
-        and not installed.is_devrelease
-        and installed.local is None
-        and any(installed in SpecifierSet(supported) for supported in ranges)
-    )
+    return any(SpecifierSet(supported).contains(installed, prereleases=True) for supported in ranges)

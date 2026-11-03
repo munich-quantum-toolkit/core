@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -26,7 +27,6 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
-#include <cstddef>
 #include <iterator>
 
 namespace mlir::qtensor {
@@ -39,51 +39,6 @@ TypedValue<RankedTensorType> TensorIterator::tensor() const {
   }
 
   return tensor_;
-}
-
-[[nodiscard]] static TypedValue<RankedTensorType>
-whileResultForInit(scf::WhileOp op, OpOperand& init) {
-  auto current = cast<TypedValue<RankedTensorType>>(
-      op.getBeforeBody()->getArgument(init.getOperandNumber()));
-  TensorIterator iterator(current);
-  while (true) {
-    assert(current.hasOneUse() && "expected linear semantics");
-    auto* user = *current.user_begin();
-    if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
-      const auto result = llvm::find(condition.getArgs(), current);
-      if (result == condition.getArgs().end()) {
-        llvm::reportFatalInternalError(
-            "expected scf.while tensor in condition arguments");
-      }
-      const auto resultNumber = static_cast<std::size_t>(
-          std::distance(condition.getArgs().begin(), result));
-      return cast<TypedValue<RankedTensorType>>(op.getResult(resultNumber));
-    }
-    ++iterator;
-    if (iterator == std::default_sentinel) {
-      llvm::reportFatalInternalError(
-          "expected scf.while tensor to reach its condition");
-    }
-    current = iterator.tensor();
-  }
-}
-
-[[nodiscard]] static TypedValue<RankedTensorType>
-whileInitForResult(scf::WhileOp op, OpResult result) {
-  auto condition = cast<scf::ConditionOp>(op.getBeforeBody()->getTerminator());
-  auto current = cast<TypedValue<RankedTensorType>>(
-      condition.getArgs()[result.getResultNumber()]);
-  TensorIterator iterator(current);
-  while (iterator.operation() != nullptr) {
-    --iterator;
-  }
-  auto argument = dyn_cast<BlockArgument>(iterator.tensor());
-  if (!argument || argument.getOwner() != op.getBeforeBody()) {
-    llvm::reportFatalInternalError(
-        "expected scf.while tensor to originate from a before-region argument");
-  }
-  return cast<TypedValue<RankedTensorType>>(
-      op.getInits()[argument.getArgNumber()]);
 }
 
 void TensorIterator::forward() {
@@ -121,7 +76,10 @@ void TensorIterator::forward() {
               op.getTiedLoopResult(&*tensor_.use_begin()));
         })
         .Case([&](scf::WhileOp op) {
-          tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              qco::getCorrespondingQuantumValue(
+                  op.getInits(), op.getResults(),
+                  tensor_.use_begin()->getOperandNumber()));
         })
         .Case([&](qco::IfOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
@@ -188,13 +146,10 @@ void TensorIterator::backward() {
             "expected scf.for result for tied init lookup");
       })
       .Case([&](scf::WhileOp op) {
-        if (auto result = dyn_cast<OpResult>(tensor_)) {
-          tensor_ = whileInitForResult(op, result);
-          return;
-        }
-
-        llvm::reportFatalInternalError(
-            "expected scf.while result for tied init lookup");
+        tensor_ = cast<TypedValue<RankedTensorType>>(
+            qco::getCorrespondingQuantumValue(
+                op.getResults(), op.getInits(),
+                cast<OpResult>(tensor_).getResultNumber()));
       })
       .Case([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {

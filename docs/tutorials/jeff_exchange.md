@@ -183,7 +183,7 @@ while (result) {
 """
 feedback_exchange = compile_program(feedback_source, output=OutputFormat.JEFF)
 feedback_received = JeffProgram.from_bytes(feedback_exchange.to_bytes())
-restored_qco = compile_program(feedback_received, output=OutputFormat.QCO)
+restored_qco = compile_program(feedback_received, output=OutputFormat.QCO, copy=True)
 assert sample(restored_qco, shots=64, seed=17) == {"0": 64}
 ```
 

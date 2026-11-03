@@ -62,6 +62,9 @@ struct Expr {
     AngleCast,
     Index,
     Slice,
+    Range,
+    SizeOf,
+    Concat,
     Neg,
     Not,
     BitNot,
@@ -160,6 +163,7 @@ struct BitReference {
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
   std::optional<Slice> slice;
+  std::vector<SyntaxExpressionId> additionalIndices{};
 };
 
 /// @ingroup ParseVocabulary
@@ -175,7 +179,7 @@ struct GateCall {
 };
 
 using SyntaxStatementId = uint32_t;
-using SyntaxIncludeContextId = size_t;
+using SyntaxIncludeContextId = uint32_t;
 
 struct SyntaxExpression {
   Expr::Kind kind = Expr::Kind::Int;
@@ -189,6 +193,8 @@ struct SyntaxExpression {
   std::optional<SyntaxExpressionId> lhs;
   std::optional<SyntaxExpressionId> rhs;
   std::optional<Slice> slice;
+  std::optional<SyntaxExpressionId> step;
+  std::vector<SyntaxExpressionId> additionalIndices{};
 };
 
 struct SyntaxGateCall {
@@ -213,6 +219,19 @@ struct SyntaxScalarDeclaration {
 struct SyntaxAssignment {
   BitReference target;
   SyntaxExpressionId value = 0;
+};
+
+struct SyntaxArrayInitializer {
+  SMLoc location;
+  std::variant<SyntaxExpressionId, std::vector<SyntaxArrayInitializer>> value;
+};
+
+struct SyntaxArrayDeclaration {
+  ScalarKind kind = ScalarKind::Int;
+  StringRef identifier;
+  std::optional<SyntaxExpressionId> elementWidth;
+  std::vector<SyntaxExpressionId> dimensions;
+  std::optional<SyntaxArrayInitializer> initializer;
 };
 
 struct SyntaxQubitDeclaration {
@@ -241,6 +260,7 @@ struct SyntaxBarrier {
 };
 
 struct SyntaxGateDefinition {
+  bool opaque = false;
   StringRef identifier;
   std::vector<StringRef> parameters;
   std::vector<StringRef> qubits;
@@ -255,7 +275,9 @@ struct SyntaxIf {
 
 struct SyntaxFor {
   StringRef inductionVariable;
-  bool isUnsigned = false;
+  ScalarKind type = ScalarKind::Int;
+  std::optional<SyntaxExpressionId> width;
+  std::optional<SyntaxExpressionId> iterable;
   SyntaxExpressionId start = 0;
   SyntaxExpressionId step = 0;
   SyntaxExpressionId stop = 0;
@@ -292,7 +314,8 @@ struct SyntaxStandardLibraryInclude {
 
 using SyntaxStatementData =
     std::variant<SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
-                 SyntaxAssignment, SyntaxQubitDeclaration, SyntaxBitDeclaration,
+                 SyntaxArrayDeclaration, SyntaxAssignment,
+                 SyntaxQubitDeclaration, SyntaxBitDeclaration,
                  SyntaxMeasurement, SyntaxReset, SyntaxBarrier, SyntaxGateCall,
                  SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
                  SyntaxSwitch, SyntaxBreak, SyntaxContinue>;
@@ -321,7 +344,8 @@ struct SyntaxProgram {
   std::vector<SyntaxExpression> expressions;
   std::vector<SyntaxStatement> statements;
   std::vector<SyntaxStatementId> body;
-  /// Expansion-site include context for each statement in `body`.
+  /// Expansion-site include context for each statement in `body`, or empty
+  /// when the program has no custom includes.
   std::vector<std::optional<SyntaxIncludeContextId>> bodyIncludeContexts;
 };
 
@@ -347,6 +371,8 @@ public:
   [[nodiscard]] LogicalResult assignment(SMLoc location,
                                          const BitReference& target,
                                          SyntaxExpressionId value);
+  [[nodiscard]] LogicalResult arrayDecl(SMLoc location,
+                                        SyntaxArrayDeclaration declaration);
   [[nodiscard]] LogicalResult
   qubitRegister(SMLoc location, StringRef identifier,
                 std::optional<SyntaxExpressionId> size);
@@ -363,15 +389,15 @@ public:
   [[nodiscard]] LogicalResult
   gateDefinition(SMLoc location, StringRef identifier,
                  ArrayRef<StringRef> parameters, ArrayRef<StringRef> qubits,
-                 function_ref<LogicalResult()> continuation);
+                 function_ref<LogicalResult()> continuation,
+                 bool opaque = false);
   [[nodiscard]] LogicalResult
   ifStmt(SMLoc location, SyntaxExpressionId condition,
          function_ref<LogicalResult()> thenContinuation,
          function_ref<LogicalResult()> elseContinuation);
   [[nodiscard]] LogicalResult
-  forStmt(SMLoc location, StringRef inductionVariable, bool isUnsigned,
-          SyntaxExpressionId start, SyntaxExpressionId step,
-          SyntaxExpressionId stop, function_ref<LogicalResult()> continuation);
+  forStmt(SMLoc location, SyntaxFor loop,
+          function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult breakStmt(SMLoc location);
   [[nodiscard]] LogicalResult continueStmt(SMLoc location);
   [[nodiscard]] LogicalResult
@@ -385,6 +411,10 @@ public:
              function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
   switchDefault(SMLoc location, function_ref<LogicalResult()> continuation);
+
+  [[nodiscard]] bool isOpenQASM2() const {
+    return program.version && program.version->major == 2;
+  }
 
   [[nodiscard]] SyntaxProgram takeProgram() { return std::move(program); }
   [[nodiscard]] const std::vector<SyntaxDiagnostic>& getDiagnostics() const {

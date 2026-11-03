@@ -13,7 +13,19 @@ Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 
 from __future__ import annotations
 
-import datetime
+__lazy_modules__ = {
+    "collections",
+    "copy",
+    "datetime",
+    "mqt.core.plugins.qdmi_batch",
+    "mqt.core.plugins.qiskit.exceptions",
+    "mqt.core.qdmi",
+    "numbers",
+    "qiskit.result",
+    "qiskit.result.models",
+}
+
+import datetime as dt
 from collections import Counter
 from copy import deepcopy
 from numbers import Integral
@@ -23,20 +35,18 @@ from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
+from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
-
-from ..qdmi_batch import Batch, BatchEntry
-from .exceptions import JobExecutionError, JobSubmissionError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from qiskit.circuit import QuantumCircuit
 
+    from mqt.core.plugins.qiskit.backend import QDMIBackend
     from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters
-
-    from .backend import QDMIBackend
 
 __all__ = ["QDMIJob"]
 
@@ -71,7 +81,7 @@ class QDMIJob(JobV1):
         backend: The backend this job runs on.
         circuits: The executed circuits, used to snapshot result headers.
         shots: Requested shots per circuit.
-        memory: Whether to collect genuine ordered shots.
+        memory: Whether to collect individual shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
             disabled by default. Cancelled or uncertain jobs are never retried.
         job_parameters: Custom submission parameters retained for replacements.
@@ -108,7 +118,7 @@ class QDMIJob(JobV1):
         ]
         self._shots = shots
         self._memory = memory
-        self._job_parameters = job_parameters or {}
+        self._job_parameters = job_parameters.copy() if job_parameters is not None else {}
         self._result: Result | None = None
         formats = backend.device.supported_program_formats()
         self._programs: tuple[tuple[str | bytes, ProgramFormat], ...] = tuple(
@@ -213,7 +223,7 @@ class QDMIJob(JobV1):
                 backend_version=self._backend.backend_version,
                 job_id=self.job_id(),
                 success=True,
-                date=datetime.datetime.now(datetime.UTC).isoformat(),
+                date=dt.datetime.now(dt.UTC).isoformat(),
                 results=[entry.result for entry in self.entries],
             )
         except BaseException as exc:
@@ -228,7 +238,7 @@ class QDMIJob(JobV1):
         """Collect and validate one circuit's result.
 
         Returns:
-            A Qiskit experiment with counts and, if requested, ordered memory.
+            A Qiskit experiment with counts and, if requested, per-shot memory.
 
         Raises:
             JobError: If execution failed or the result violates the circuit's output contract.

@@ -11,6 +11,8 @@
 #include "bench/JSON.hpp"
 #include "bench/WState.hpp"
 
+#include "register_benchmark.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/map.h"         // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
@@ -32,49 +34,19 @@ void registerWState(const nb::module_& m) {
 
   auto wState = nb::class_<bench::WState>(
       m, "WState", "A validated W-state preparation benchmark.");
-  wState.def(nb::init<bench::WStateOptions>(), "options"_a)
+  wState.def("__init__", benchmarkInit(&bench::WState::create), "options"_a)
       .def_prop_ro("options", &bench::WState::options,
                    nb::rv_policy::reference_internal,
                    "The resolved benchmark parameters.")
       .def_prop_ro("output", &bench::WState::output,
                    nb::rv_policy::reference_internal,
                    "The logical output register.")
-      .def("probability", &bench::WState::probability, "outcome"_a,
-           "Return the ideal probability of an outcome.")
-      .def("evaluate", &bench::WState::evaluate, "counts"_a,
-           "Compare sampled counts with the ideal distribution.")
-      .def(
-          "generate",
-          [](const bench::WState& value) {
-            return nb::module_::import_("mqt.core.mlir")
-                .attr("_generate_benchmark")(
-                    bench::toInstanceSpecificationJSON(value));
-          },
-          nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
-          "Generate the benchmark as a QC program.")
-      .def_prop_ro(
-          "instance_specification_json",
-          [](const bench::WState& value) {
-            return bench::toInstanceSpecificationJSON(value);
-          },
-          "The canonical instance specification JSON.")
-      .def_prop_ro(
-          "manifest_json",
-          [](const bench::WState& value) {
-            return bench::toManifestJSON(value);
-          },
-          "The canonical manifest JSON.")
-      .def_prop_ro(
-          "case_id",
-          [](const bench::WState& value) { return bench::caseId(value); },
-          "The stable semantic case ID.")
-      .def_static("from_instance_specification_json",
-                  &bench::wStateFromInstanceSpecificationJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<instance-specification>",
-                  "Parse a strict benchmark instance specification.")
-      .def_static("from_manifest_json", &bench::wStateFromManifestJSON,
-                  "json"_a, nb::kw_only(), "source"_a = "<manifest>",
-                  "Parse a strict benchmark manifest.");
+      .def("probability", benchmarkOutcome(&bench::WState::probability),
+           "outcome"_a, "Return the ideal probability of an outcome.")
+      .def("evaluate", benchmarkMethod(&bench::WState::evaluate), "counts"_a,
+           "Compare sampled counts with the ideal distribution.");
+  registerBenchmarkIO(wState, &bench::wStateFromInstanceSpecificationJSON,
+                      &bench::wStateFromManifestJSON);
 }
 
 } // namespace mqt

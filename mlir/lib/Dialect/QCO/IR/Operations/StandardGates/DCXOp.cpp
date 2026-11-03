@@ -20,8 +20,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void DCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* /*context*/) {
+void DCXOp::getOptimizationPatterns(RewritePatternSet& results,
+                                    MLIRContext* /*context*/) {
   results.add(+[](DCXOp op, PatternRewriter& rewriter) {
     return removeInversePairTwoTargetZeroParameter<DCXOp>(op, rewriter, false,
                                                           true);

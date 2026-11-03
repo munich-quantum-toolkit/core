@@ -37,21 +37,21 @@ current behavior.
   session.
 
 - A TableGen pass declaration necessarily generates a targetless factory and
-  command-line registration, but placement cannot run without a
-  `CompilerTarget`. Evidence: the generated default constructor left the target
-  empty and could only terminate through `reportFatalUsageError`.
+  command-line registration. Placement still needs a compiler target, which it
+  reads from the canonical `mqt.target_env` module attribute through
+  `TargetEnvironmentAnalysis`.
 
 ## Decisions
 
-- Add a dedicated target-bound placement pass and keep `place-and-route` as the
-  routing pass. Rationale: Placement and routing are established compiler stages
-  with different information requirements. A separate pass removes the
+- Add a dedicated environment-backed placement pass and keep `place-and-route`
+  as the routing pass. Rationale: Placement and routing are established compiler
+  stages with different information requirements. A separate pass removes the
   topology-dependent router from all-to-all compilation.
 
-- Implement placement directly as a `PassWrapper` and expose only
-  `createPlacementPass(const CompilerTarget&)`. Rationale: placement has no
-  valid targetless form, so TableGen would create an unusable public API and
-  command-line registration.
+- Implement placement directly as a `PassWrapper` and expose
+  `createPlacementPass()`. Rationale: the typed target environment is the single
+  source of truth for target passes, so the pass factory must not capture a
+  second, potentially inconsistent target.
 
 - Share internal allocation discovery and rewriting rather than invoking one
   pass from another. Rationale: The router must retain the wire and layout state
@@ -70,16 +70,16 @@ current behavior.
 Target compilation now runs compact deterministic placement for the current main
 branch's all-to-all target representation and retains topology-aware mapping
 only for explicit coupling graphs. Both passes use the same allocation
-discovery, capacity validation, and rewrite. The public surface grows by one
-target-aware pass factory; no new dependency, option, or target-model concept
-was introduced.
+discovery, capacity validation, and rewrite. The placement factory reads the
+typed target environment attached to the module; no new dependency, option, or
+target-model concept was introduced.
 
-The direct mapping binary passed all 86 tests, including scalar placement,
-tensor placement with classical outputs, compact noncontiguous site selection,
-and both placement and direct-mapping failure atomicity. The compiler binary
-passed all 139 tests, including compact all-to-all target compilation and the
-existing explicit-topology pipeline. Generated MLIR documentation, repository
-format/lint, focused direct `clang-tidy`, and `git diff --check` all pass.
+The original validation covered scalar placement, tensor placement with
+classical outputs, compact noncontiguous site selection, both placement and
+direct-mapping failure atomicity, compact all-to-all target compilation, and the
+existing explicit-topology pipeline. It also covered generated MLIR
+documentation, repository format/lint, focused direct `clang-tidy`, and
+`git diff --check`.
 
 The intermediate unknown-connectivity proposal was superseded by
 [the complete-target contract](generalize-compiler-target.md), which rejects
@@ -103,10 +103,10 @@ but not routing. An explicit topology is a listed set of connected site pairs
 and requires the router.
 
 `mlir/include/mlir/Dialect/QCO/Transforms/Passes.td` declares the generated
-mapping pass and its documentation. The target-bound placement pass is private
-to `Mapping.cpp`. `mlir/include/mlir/Dialect/QCO/Transforms/Mapping/Mapping.h`
-declares the target-aware pass factories.
-`mlir/lib/Compiler/TargetCompilation.cpp` builds the target compilation
+mapping pass and its documentation. The environment-backed placement pass is
+private to `Mapping.cpp`.
+`mlir/include/mlir/Dialect/QCO/Transforms/Mapping/Mapping.h` declares its pass
+factory. `mlir/lib/Compiler/TargetCompilation.cpp` builds the target compilation
 pipeline. Direct mapping tests live in
 `mlir/unittests/Dialect/QCO/Transforms/Mapping/test_mapping.cpp`, and end-to-end
 target pipeline tests live in
@@ -136,11 +136,11 @@ accepts the complete target contract described in
 
 The final public C++ factory is:
 
-    std::unique_ptr<Pass>
-    createPlacementPass(const CompilerTarget& target);
+    std::unique_ptr<Pass> createPlacementPass();
 
-The placement implementation is an internal `PassWrapper` with no targetless
-factory or command-line registration. `MappingPass` keeps its existing factory
-and options. Both implementations use the existing `CompilerTarget`, `Layout`,
+The placement implementation is an internal `PassWrapper` with no command-line
+registration. It obtains the target and selected payload from
+`TargetEnvironmentAnalysis`. `MappingPass` keeps its existing factory and
+options. Both implementations use the existing `CompilerTarget`, `Layout`,
 `WireIterator`, `TensorIterator`, QCO, QTensor, and MLIR rewrite APIs. No new
 dependency is added.

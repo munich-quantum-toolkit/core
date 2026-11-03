@@ -15,9 +15,7 @@ function(kebab_to_camel output input)
     string(TOUPPER ${first} first)
     string(APPEND result "${first}${rest}")
   endforeach()
-  set(${output}
-      "${result}"
-      PARENT_SCOPE)
+  set(${output} "${result}" PARENT_SCOPE)
 endfunction()
 
 function(add_mqt_core_library name)
@@ -50,16 +48,22 @@ function(add_mqt_core_library name)
 
   target_compile_features(${name} PUBLIC cxx_std_20)
 
-  target_link_libraries(${name}
-                        PRIVATE "$<BUILD_LOCAL_INTERFACE:MQT::ProjectWarnings;MQT::ProjectOptions>")
+  target_link_libraries(
+    ${name}
+    PRIVATE "$<BUILD_LOCAL_INTERFACE:MQT::ProjectWarnings;MQT::ProjectOptions>")
 
   if(ARG_HIDDEN_VISIBILITY)
     set_target_properties(
       ${name}
-      PROPERTIES C_VISIBILITY_PRESET hidden
-                 CXX_VISIBILITY_PRESET hidden
-                 VISIBILITY_INLINES_HIDDEN 1
-                 WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+      PROPERTIES
+        C_VISIBILITY_PRESET
+        hidden
+        CXX_VISIBILITY_PRESET
+        hidden
+        VISIBILITY_INLINES_HIDDEN
+        1
+        WINDOWS_EXPORT_ALL_SYMBOLS
+        OFF)
   elseif(WIN32)
     if(target_type STREQUAL "SHARED_LIBRARY")
       set_target_properties(${name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
@@ -77,8 +81,9 @@ function(add_mqt_core_library name)
   # Wheels materialize version symlinks as duplicate libraries.
   if(NOT SKBUILD)
     set_target_properties(
-      ${name} PROPERTIES VERSION ${PROJECT_VERSION}
-                         SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+      ${name}
+      PROPERTIES
+        VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
   endif()
 
   # Make version available

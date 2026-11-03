@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
@@ -58,15 +59,14 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <iosfwd>
 #include <memory>
-#include <ostream>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -81,17 +81,7 @@ struct QCOTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
-
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
-  return os << "QCO{" << info.name << ", original="
-            << ::mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
 
 class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
@@ -121,6 +111,11 @@ static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
 }
 
 TEST_P(QCOTest, ProgramEquivalence) {
+  SCOPED_TRACE(
+      llvm::formatv("QCO: {0}, original={1}, reference={2}", GetParam().name,
+                    ::mqt::test::displayName(GetParam().programBuilder.name),
+                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
+          .str());
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
@@ -130,6 +125,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -140,6 +136,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  ASSERT_TRUE(succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -268,6 +265,11 @@ TEST_F(QCOTest, PrintsReadableQubitAndClassicalNames) {
   std::ignore = bit;
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
+  auto mainFunc = mlir::mqt::getEntryPoint(*moduleOp);
+  EXPECT_EQ(mainFunc.getNumResults(), 0U);
+  EXPECT_EQ(
+      cast<func::ReturnOp>(mainFunc.getBody().front().back()).getNumOperands(),
+      0U);
 
   std::string text;
   llvm::raw_string_ostream stream(text);
@@ -333,6 +335,124 @@ TEST_F(QCOTest, BuilderDisposesScalarsInDefinitionOrder) {
   moduleOp->walk([&](SinkOp sink) { sunk.push_back(sink.getQubit()); });
   // Emission order is part of the reproducible builder output contract.
   EXPECT_EQ(sunk, qubits);
+}
+
+TEST_F(QCOTest, ChecksOutstandingConstantRegisterSlots) {
+  for (const int64_t secondIndex : {0, 1}) {
+    SCOPED_TRACE(secondIndex);
+    const auto source = llvm::formatv(R"mlir(
+      module {{
+        func.func @main() attributes {{mqt.entry_point} {{
+          %c0 = arith.constant 0 : index
+          %other = arith.constant {0} : index
+          %c2 = arith.constant 2 : index
+          %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          %t1, %left = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %t2, %right = qtensor.extract %t1[%other] : tensor<2x!qco.qubit>
+          %changed = qco.h %left : !qco.qubit
+          %restored = arith.addi %c0, %c0 : index
+          %t3 = qtensor.insert %changed into %t2[%restored] : tensor<2x!qco.qubit>
+          %t4 = qtensor.insert %right into %t3[%other] : tensor<2x!qco.qubit>
+          %t5, %again = qtensor.extract %t4[%c0] : tensor<2x!qco.qubit>
+          %t6 = qtensor.insert %again into %t5[%c0] : tensor<2x!qco.qubit>
+          qtensor.dealloc %t6 : tensor<2x!qco.qubit>
+          return
+        }
+      }
+    )mlir",
+                                      secondIndex)
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_EQ(succeeded(qco::verifyLinearity(*moduleOp)), secondIndex != 0);
+    if (secondIndex == 0) {
+      EXPECT_NE(diagnostics.find("register slot that is already extracted"),
+                std::string::npos);
+    }
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
+TEST_F(QCOTest, KeepsRegisterSlotsDistinctAcrossRegistersAndBranches) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c2 = arith.constant 2 : index
+        %left = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %right = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %l1, %lq = qtensor.extract %left[%c0] : tensor<2x!qco.qubit>
+        %r1, %rq = qtensor.extract %right[%c0] : tensor<2x!qco.qubit>
+        %l2 = qtensor.insert %lq into %l1[%c0] : tensor<2x!qco.qubit>
+        %r2 = qtensor.insert %rq into %r1[%c0] : tensor<2x!qco.qubit>
+        qtensor.dealloc %r2 : tensor<2x!qco.qubit>
+        %result = qco.if %condition args(%tensor = %l2)
+            -> tensor<2x!qco.qubit> {
+          %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %updated = qco.h %q : !qco.qubit
+          %full = qtensor.insert %updated into %rest[%c0] : tensor<2x!qco.qubit>
+          qco.yield %full : tensor<2x!qco.qubit>
+        } else args(%tensor = %l2) {
+          %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %updated = qco.x %q : !qco.qubit
+          %full = qtensor.insert %updated into %rest[%c0] : tensor<2x!qco.qubit>
+          qco.yield %full : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %result : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QCOTest, KeepsSlotsOutstandingAfterMismatchedInsertion) {
+  for (const bool anotherRegister : {false, true}) {
+    SCOPED_TRACE(anotherRegister);
+    const auto source = llvm::formatv(R"mlir(
+      module {{
+        func.func @main() attributes {{mqt.entry_point} {{
+          %c0 = arith.constant 0 : index
+          %c1 = arith.constant 1 : index
+          %c2 = arith.constant 2 : index
+          %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          %other = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+          %wrong = qtensor.insert %q into {0}[{1}] : tensor<2x!qco.qubit>
+          %remaining, %again = qtensor.extract {2}[%c0] : tensor<2x!qco.qubit>
+          qco.sink %again : !qco.qubit
+          qtensor.dealloc %remaining : tensor<2x!qco.qubit>
+          qtensor.dealloc {3} : tensor<2x!qco.qubit>
+          return
+        }
+      }
+    )mlir",
+                                      anotherRegister ? "%other" : "%rest",
+                                      anotherRegister ? "%c0" : "%c1",
+                                      anotherRegister ? "%rest" : "%wrong",
+                                      anotherRegister ? "%wrong" : "%other")
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(qco::verifyLinearity(*moduleOp)));
+    EXPECT_NE(diagnostics.find("register slot that is already extracted"),
+              std::string::npos);
+  }
 }
 
 TEST_F(QCOTest, BuilderReinsertsAndDisposesTensorsInStableOrder) {
@@ -451,7 +571,7 @@ buildTensorControlFlow(QCOProgramBuilder& builder, ValueRange args,
 
 TEST_F(QCOTest, BuilderIfReturnsClassicalValues) {
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type(), builder.getI64Type()});
+  builder.initialize();
   auto tensor = builder.qtensorAlloc(1);
   auto [remainder, qubit] = builder.qtensorExtract(builder.qtensorAlloc(1), 0);
   const auto branch = [&](ValueRange args) {
@@ -693,6 +813,62 @@ TEST_F(QCOTest, BuilderRejectsIncompleteRegisterBoundaries) {
   }
 }
 
+TEST_F(QCOTest, BuilderRejectsQuantumCapturesAndEscapes) {
+  for (unsigned scenario = 0; scenario < 4; ++scenario) {
+    SCOPED_TRACE(scenario);
+    EXPECT_DEATH(
+        ([&] {
+          QCOProgramBuilder builder(context.get());
+          builder.initialize();
+          auto qubit = builder.allocQubit();
+          auto tensor = builder.qtensorAlloc(1);
+          if (scenario < 2) {
+            builder.qcoIf(true, ValueRange{}, [&](ValueRange) {
+              if (scenario == 0) {
+                builder.h(qubit);
+              } else {
+                builder.qtensorExtract(tensor, 0);
+              }
+              return SmallVector<Value>{};
+            });
+          } else if (scenario == 2) {
+            builder.qcoIf(true, tensor, [&](Value argument) {
+              return builder.qtensorExtract(argument, 0).first;
+            });
+            builder.finalize();
+          } else {
+            builder.inv(qubit, [&](Value argument) {
+              builder.qtensorExtract(tensor, 0);
+              return argument;
+            });
+          }
+        }()),
+        "Quantum values must be passed explicitly through region arguments");
+  }
+}
+
+TEST_F(QCOTest, BuilderRejectsChangedTensorSlots) {
+  for (unsigned scenario = 0; scenario < 3; ++scenario) {
+    SCOPED_TRACE(scenario);
+    EXPECT_DEATH(
+        ([&] {
+          QCOProgramBuilder builder(context.get());
+          builder.initialize();
+          auto [tensor, qubit] =
+              builder.qtensorExtract(builder.qtensorAlloc(2), 0);
+          if (scenario == 1) {
+            tensor = builder.qtensorAlloc(2);
+          } else if (scenario == 2) {
+            qubit = builder.allocQubit();
+          }
+          builder.qtensorInsert(qubit, tensor, scenario == 0 ? 1 : 0);
+        }()),
+        scenario == 0
+            ? "Inserted qubit must return to its original slot"
+            : "Inserted qubit must belong to the destination register");
+  }
+}
+
 TEST_F(QCOTest, BuilderRejectsChangedTensorRegisterAssociations) {
   EXPECT_DEATH(([&] {
                  QCOProgramBuilder builder(context.get());
@@ -707,46 +883,40 @@ TEST_F(QCOTest, BuilderRejectsChangedTensorRegisterAssociations) {
                "must preserve quantum inputs positionally");
 }
 
-TEST_F(QCOTest, CleanupPreservesReturnedStaticQubit) {
-  auto moduleOp = QCOProgramBuilder::build(
-      context.get(), [&](auto& builder) { return builder.staticQubit(0); });
-  ASSERT_TRUE(moduleOp);
-
-  auto mainFunc = *moduleOp->getOps<func::FuncOp>().begin();
-  auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
-  ASSERT_EQ(returnOp.getNumOperands(), 1U);
-  auto returnedQubit = returnOp.getOperand(0);
-  EXPECT_TRUE(returnedQubit.getDefiningOp<StaticOp>());
-  EXPECT_TRUE(returnedQubit.hasOneUse());
-  EXPECT_EQ(*returnedQubit.user_begin(), returnOp.getOperation());
-  EXPECT_TRUE(mainFunc.getBody().getOps<SinkOp>().empty());
-
-  ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
-  EXPECT_TRUE(verify(*moduleOp).succeeded());
-
-  returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
-  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<StaticOp>());
+TEST_F(QCOTest, BuilderRejectsQuantumEntryResults) {
+  for (bool tensor : {false, true}) {
+    SCOPED_TRACE(tensor);
+    EXPECT_DEATH(
+        {
+          QCOProgramBuilder builder(context.get());
+          builder.initialize();
+          Value result;
+          if (tensor) {
+            result = builder.qtensorAlloc(2);
+          } else {
+            result = builder.staticQubit(0);
+          }
+          auto moduleOp = builder.finalize(result);
+        },
+        "cannot return quantum values");
+  }
 }
 
-TEST_F(QCOTest, CleanupPreservesReturnedQubitTensor) {
-  auto moduleOp = QCOProgramBuilder::build(
-      context.get(), [&](auto& builder) { return builder.qtensorAlloc(2); });
-  ASSERT_TRUE(moduleOp);
-
-  auto mainFunc = *moduleOp->getOps<func::FuncOp>().begin();
-  auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
-  ASSERT_EQ(returnOp.getNumOperands(), 1U);
-  auto returnedTensor = returnOp.getOperand(0);
-  EXPECT_TRUE(returnedTensor.getDefiningOp<qtensor::AllocOp>());
-  EXPECT_TRUE(returnedTensor.hasOneUse());
-  EXPECT_EQ(*returnedTensor.user_begin(), returnOp.getOperation());
-  EXPECT_TRUE(mainFunc.getBody().getOps<qtensor::DeallocOp>().empty());
-
-  ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
-  EXPECT_TRUE(verify(*moduleOp).succeeded());
-
-  returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
-  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<qtensor::AllocOp>());
+TEST_F(QCOTest, CleanupPreservesQuantumHelperResults) {
+  for (const auto* type : {"!qco.qubit", "tensor<2x!qco.qubit>"}) {
+    SCOPED_TRACE(type);
+    const auto source =
+        "module { func.func @helper(%value: " + std::string(type) + ") -> " +
+        type + " { return %value : " + type + " } }";
+    auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+    auto returned = cast<func::ReturnOp>(helper.getBody().front().back());
+    ASSERT_EQ(returned.getNumOperands(), 1U);
+    EXPECT_EQ(returned.getOperand(0), helper.getArgument(0));
+  }
 }
 
 TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
@@ -810,7 +980,7 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   auto zero = builder.allocClassicalBitRegister(3);
   auto undefined = builder.allocClassicalBitRegister(
       2, "undefined", cbit::Initialization::Undefined);
-  builder.retype({zero.getType(), undefined.getType()});
+
   auto moduleOp = builder.finalize({zero, undefined});
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -963,10 +1133,11 @@ TEST_F(QCOTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
         func.func private @plain(%q: !qco.qubit) -> !qco.qubit {
           return %q : !qco.qubit
         }
-        func.func @main(%q: !qco.qubit) -> !qco.qubit
+        func.func @main(%q: !qco.qubit)
             attributes {mqt.entry_point} {
           %out = qco.call @plain(%q) : (!qco.qubit) -> !qco.qubit
-          return %out : !qco.qubit
+          qco.sink %out : !qco.qubit
+          return
         }
       })mlir",
       R"mlir(module {
@@ -976,10 +1147,12 @@ TEST_F(QCOTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
           return %out : !qco.qubit
         }
         func.func @main(%left: !qco.qubit, %right: !qco.qubit)
-            -> (!qco.qubit, !qco.qubit) attributes {mqt.entry_point} {
+            attributes {mqt.entry_point} {
           %a, %b = qco.call @flip(%left, %right)
               : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit)
-          return %a, %b : !qco.qubit, !qco.qubit
+          qco.sink %a : !qco.qubit
+          qco.sink %b : !qco.qubit
+          return
         }
       })mlir",
   };
@@ -994,10 +1167,11 @@ TEST_F(QCOTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
   auto resultModule = parseSourceString<ModuleOp>(R"mlir(module {
     func.func private @bad(%q: !qco.qubit)
         -> (!qco.qubit, !qco.qubit) attributes {mqt.unitary}
-    func.func @main(%q: !qco.qubit) -> !qco.qubit
+    func.func @main(%q: !qco.qubit)
         attributes {mqt.entry_point} {
       %out = qco.call @bad(%q) : (!qco.qubit) -> !qco.qubit
-      return %out : !qco.qubit
+      qco.sink %out : !qco.qubit
+      return
     }
   })mlir",
                                                   config);
@@ -1560,8 +1734,7 @@ TEST_F(QCOTest, UnitaryCallEffectsConservativelyHandleInvalidCallees) {
 
 TEST_F(QCOTest, DirectIfBuilder) {
   QCOProgramBuilder builder(context.get());
-  auto cbitType = cbit::RegisterType::get(context.get(), 1);
-  builder.initialize({cbitType, cbitType});
+  builder.initialize();
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   auto one = arith::ConstantIndexOp::create(builder, 1);
   auto r0 = qtensor::AllocOp::create(builder, one);
@@ -2689,6 +2862,7 @@ TEST_F(QCOTest, NestedPowerOfSquaredPauliIsIdentity) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2704,6 +2878,7 @@ TEST_F(QCOTest, PowRxxFold) {
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powRxx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2753,6 +2928,7 @@ TEST_F(QCOTest, PowGateFoldPreservesReorderedBodyResults) {
   ASSERT_TRUE(succeeded(verify(*program)));
 
   PassManager pm(context.get());
+  pm.addPass(mlir::mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(pm.run(*program)));
   ASSERT_TRUE(succeeded(verify(*program)));
@@ -2774,6 +2950,7 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   ASSERT_TRUE(succeeded(verify(*program)));
 
   PassManager pm(context.get());
+  pm.addPass(mlir::mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(pm.run(*program)));
   ASSERT_TRUE(succeeded(verify(*program)));
@@ -2800,6 +2977,7 @@ TEST_F(QCOTest, NegPowHExpands) {
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2816,6 +2994,7 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
                                                MQT_NAMED_BUILDER(ctrlPowSx));
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(runPassPipeline(program.get(), "simplify-quantum")));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -2837,18 +3016,24 @@ TEST_F(QCOTest, CtrlPowSxExpands) {
 }
 
 TEST_F(QCOTest, CtrlGPhasePassesTargetsThrough) {
-  auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
-    auto controlIn = builder.staticQubit(0);
-    auto targetIn = builder.staticQubit(1);
-    auto [control, target] =
-        builder.ctrl(controlIn, targetIn, [&](Value targetArg) {
-          builder.gphase(0.123);
-          return targetArg;
-        });
-    return SmallVector<Value>{control, target};
-  });
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @test() -> (!qco.qubit, !qco.qubit) {
+        %angle = arith.constant 0.123 : f64
+        %control = qco.static 0 : !qco.qubit
+        %target = qco.static 1 : !qco.qubit
+        %out_control, %out_target = qco.ctrl(%control) targets(%arg = %target) {
+          qco.gphase(%angle)
+          qco.yield %arg : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+        return %out_control, %out_target : !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                             context.get());
   ASSERT_TRUE(program);
 
+  ASSERT_TRUE(succeeded(runPassPipeline(*program, "simplify-quantum")));
   ASSERT_TRUE(runQCOCleanupPipeline(*program).succeeded());
   ASSERT_TRUE(verify(*program).succeeded());
 
@@ -4115,4 +4300,108 @@ TEST_F(QCOTest, BuilderRejectsMissingBorrowedRegisterSlots) {
             });
       },
       "must restore all extracted slots");
+}
+
+TEST(QCOVerificationTest, RejectsNonPositionalControlFlowResults) {
+  DialectRegistry registry;
+  registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  const std::array bodies = {
+      R"mlir(
+      %r:2 = qco.if %flag args(%u = %a, %v = %b)
+          -> (!qco.qubit, !qco.qubit) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } else args(%u = %a, %v = %b) {
+        qco.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %r:2 = scf.for %i = %c0 to %index step %c1
+          iter_args(%u = %a, %v = %b) -> (!qco.qubit, !qco.qubit) {
+        scf.yield %v, %u : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %r:3 = scf.while (%u = %a, %v = %b)
+          : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %extra = qco.alloc : !qco.qubit
+        scf.condition(%flag) %u, %v, %extra
+            : !qco.qubit, !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit, %extra: !qco.qubit):
+        qco.sink %extra : !qco.qubit
+        scf.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+      qco.sink %r#2 : !qco.qubit
+    )mlir",
+      R"mlir(
+      %r:2 = qco.index_switch %index -> (!qco.qubit, !qco.qubit)
+      case 0 args(%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      }
+      default args(%u = %a, %v = %b) {
+        qco.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %r:2 = scf.while (%u = %a, %v = %b)
+          : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+        scf.condition(%flag) %v, %u : !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit):
+        scf.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %r:2 = scf.while (%u = %a, %v = %b)
+          : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+        scf.condition(%flag) %u, %v : !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit):
+        scf.yield %v, %u : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+  };
+  for (const auto* body : bodies) {
+    SCOPED_TRACE(body);
+    for (const bool tensor : {false, true}) {
+      SCOPED_TRACE(tensor);
+      if (tensor && StringRef(body).contains("qco.alloc")) {
+        continue;
+      }
+      std::string source = std::string(R"mlir(
+      func.func @test(%flag: i1, %index: index,
+                      %a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+    )mlir") + body + R"mlir(
+        return %r#0, %r#1 : !qco.qubit, !qco.qubit
+      }
+    )mlir";
+      if (tensor) {
+        constexpr StringRef qubitType = "!qco.qubit";
+        constexpr StringRef tensorType = "tensor<1x!qco.qubit>";
+        size_t position = 0;
+        while ((position = source.find(qubitType, position)) !=
+               std::string::npos) {
+          source.replace(position, qubitType.size(), tensorType);
+          position += tensorType.size();
+        }
+      }
+      auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+      ASSERT_TRUE(moduleOp);
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+        diagnostics += diagnostic.str();
+        return success();
+      });
+      EXPECT_TRUE(failed(qco::verifyLinearity(*moduleOp)));
+      EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+                std::string::npos);
+      EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    }
+  }
 }

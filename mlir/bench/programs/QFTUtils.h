@@ -44,19 +44,16 @@ void phaseAdditionLoop(
     const mlir::function_ref<void(mlir::Value angle, mlir::Value target)>& body,
     bool inverse = false);
 
-/// Advance a semiclassical QFT correction: correction/2 + firstAngle*bit.
-/// half = 0.5 and firstAngle = +/-pi/2 keep it bounded by pi.
+/// Advance a phase for Fourier addition or semiclassical feedback.
+///
+/// With half = 0.5 and an initial correction of zero, firstAngle = ±π/2 bounds
+/// feedback corrections by π; firstAngle = ±π bounds addition phases by 2π.
 mlir::Value advancePhaseCorrection(mlir::qc::QCProgramBuilder& builder,
-                                   mlir::Value correction,
-                                   mlir::Value measuredBit, mlir::Value half,
-                                   mlir::Value firstAngle);
+                                   mlir::Value correction, mlir::Value inputBit,
+                                   mlir::Value half, mlir::Value firstAngle);
 
-/// Apply the exact no-swap QFT.
-void forwardQFT(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,
-                int64_t qubits);
-
-/// Apply the exact inverse of `forwardQFT`.
-void inverseQFT(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,
-                int64_t qubits);
+/// Apply the exact no-swap QFT or its inverse.
+void qft(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,
+         int64_t qubits, bool inverse = false);
 
 } // namespace mqt::bench::detail

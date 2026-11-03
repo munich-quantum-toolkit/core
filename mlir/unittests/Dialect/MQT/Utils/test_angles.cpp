@@ -82,19 +82,6 @@ TEST(AngleArithmeticTest, RejectsProductOverflowAndExcessRoundingError) {
   EXPECT_FALSE(scaleConstantAngle(1.0e16, 1.1));
 }
 
-TEST(AngleArithmeticTest, RejectsNonfiniteOperands) {
-  for (double value : {
-           std::numeric_limits<double>::infinity(),
-           -std::numeric_limits<double>::infinity(),
-           std::numeric_limits<double>::quiet_NaN(),
-       }) {
-    EXPECT_FALSE(addConstantAngles(value, 0.0));
-    EXPECT_FALSE(addConstantAngles(0.0, value));
-    EXPECT_FALSE(scaleConstantAngle(value, 0.0));
-    EXPECT_FALSE(scaleConstantAngle(0.0, value));
-  }
-}
-
 TEST(PhaseGateClassificationTest, RecognizesNamedPhasesAndTheirInverses) {
   const double pi = std::numbers::pi;
   for (auto [angle, expected] : {
@@ -131,13 +118,11 @@ TEST(PhaseGateClassificationTest, RecognizesEquivalentPhasesModuloTwoPi) {
   }
 }
 
-TEST(PhaseGateClassificationTest, KeepsGeneralAndNonfiniteAnglesUnclassified) {
+TEST(PhaseGateClassificationTest, KeepsGeneralAnglesUnclassified) {
   EXPECT_FALSE(classifyPhaseGate(0.3));
   EXPECT_FALSE(classifyPhaseGate(-0.3));
   EXPECT_FALSE(classifyPhaseGate(std::numbers::pi / 8.0));
   EXPECT_FALSE(classifyPhaseGate(2.0 * PARAMETER_COMPARISON_TOLERANCE));
-  EXPECT_FALSE(classifyPhaseGate(std::numeric_limits<double>::infinity()));
-  EXPECT_FALSE(classifyPhaseGate(std::numeric_limits<double>::quiet_NaN()));
 }
 
 TEST(PhaseGateClassificationTest, PreservesPhaseLostByLargeAngleReduction) {

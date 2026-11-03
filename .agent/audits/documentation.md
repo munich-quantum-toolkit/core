@@ -1,9 +1,9 @@
 # Documentation audit
 
-Status: findings implemented and locally validated. Date: 2026-09-08. The audit
-examined `33dbc843e589d9e9166308084e825c9f8b2ff89d`; the fixes include the
-subsequent main-branch changes. Reassessed against upstream main `0c3fac2cb`
-after seventeen additional PRs merged.
+The original audit on 2026-09-08 examined
+`33dbc843e589d9e9166308084e825c9f8b2ff89d`. Its findings were implemented and
+locally validated, then reassessed against upstream main `0c3fac2cb` after
+seventeen additional PRs merged. Later build fixes are recorded below.
 
 ## Scope and evidence
 
@@ -46,14 +46,17 @@ generated links.
     normal C++ landing page makes the native reference discoverable in both the
     Sphinx toctree and the generated agent index.
 11. Reduced Doxyfile to intentional settings, removed unused assets and CSS, and
-    removed duplicate pass/reference and backend examples. Retained the custom
-    C++ domain and XML fallback because they serve real references.
+    removed duplicate pass/reference and backend examples. The 2026-10-17
+    follow-up retained the C++ domain but removed the unused XML fallback and
+    QDMI domain after checking both supported Doxygen versions. It also replaced
+    the stale copied HTML header with the installed Doxygen version's header and
+    extended the link checker to catch missing scripts and stylesheets.
 12. Moved exhaustive Qiskit contracts out of the tutorial, repaired figure and
     equation references, added descriptive image alternatives, formatted counts
     and CLI results, and enlarged the QAOA plots. Pass examples show results;
     the reuse example checks that two allocations become one.
 
-## Reassessment on current main
+## September reassessment
 
 - All twelve finding groups still require the retained changes. The new DD
   allocation and execution optimizations do not establish universal operation
@@ -82,3 +85,25 @@ No remote hardware, authentication, calibration, or Slurm deployment was
 exercised. Provider setup remains an explicit recipe. No universal DD complexity
 bound is claimed or proved. The changes retain Sphinx, MyST notebooks, the
 existing theme, and native Doxygen rather than introducing another framework.
+
+## Build overhead follow-up (2026-10-17)
+
+Revalidated on upstream main `3bf8849e5` on 2026-10-18. All 18 notebooks ran,
+both Doxygen versions passed generated navigation checks, and Chrome inspection
+confirmed native light/dark rendering and return navigation.
+
+- The serialized llms.txt build now reuses the primary build's native API
+  output, avoiding a second QDMI inventory download and Doxygen run. All 764
+  native files stayed byte-identical. AutoAPI and notebook cache decisions
+  remain with their owning extensions; the primary build still executes all 18
+  notebooks.
+- A bounded, per-check cache removes repeated path resolution and file checks.
+  Six alternating runs on the 462-page site with Python 3.14 on this Linux
+  AArch64 host reduced median checker time from 1.335 s to 0.995 s. Peak memory
+  stayed near 25.5 MiB. An unbounded cache used about 39 MiB and was rejected.
+  These are local component measurements, not an end-to-end build speedup.
+- Sphinx doctrees now live outside the HTML output. This keeps about 19 MiB of
+  internal caches out of Read the Docs publication and offline ZIP contents.
+- The Markdown builder selects plain-text notebook results. Its missing MIME
+  priority previously omitted counts and IR listings while emitting warnings
+  only in the child log. Rich notebook rendering remains in HTML.

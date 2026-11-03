@@ -210,11 +210,11 @@ is not the same as wall time saved. Python process/import overhead remains.
 - PR #2230 already replaces the weak library cache with strong ownership,
   addressing a separately reproduced initialize-during-finalize race. Its
   current patch still keys by requested path, so finding 3 remains distinct.
-- PRs #2226, #2227, #2229, #2231, #2233, and #2373, plus issues #2271,
-  #2363/#2364, and #2367, cover adjacent payload, driver, staging, metadata,
-  batching, and allocation-failure work. Do not duplicate those scopes. The
-  inspected Qiskit changes in #2226 do not repair findings 1 or 2; #2233 does
-  not remove the SC name parser or operation-duration contract.
+- PRs #2226, #2227, #2229, #2231, #2233, and #2373, plus
+  issues #2271, #2363/#2364, and #2367, cover adjacent payload, driver, staging,
+  metadata, batching, and allocation-failure work. Do not duplicate those
+  scopes. The inspected Qiskit changes in #2226 do not repair findings 1 or
+  2; #2233 does not remove the SC name parser or operation-duration contract.
 - Dropping uncalibrated compiler placement lists would widen one-way CX to
   unrestricted support. `Target.cpp:690` and
   `PreservesOneWayDirectionalOperationSupport` show why those lists must stay.

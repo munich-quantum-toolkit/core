@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Execute a Bell circuit on the DDSIM device named by the license environment."""
+"""Execute a Bell circuit with one allocated DDSIM license."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ import os
 import time
 from pathlib import Path
 
-from mqt.core.qdmi import ProgramFormat, slurm
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import builtin_driver as qdmi_driver
 
 BELL_PROGRAM = """OPENQASM 2.0;
 include "qelib1.inc";
@@ -36,7 +37,8 @@ def main() -> None:
     args = parser.parse_args()
 
     job_id = os.environ["SLURM_JOB_ID"]
-    device = slurm.open_device_from_license()
+    device_id = os.environ["SLURM_JOB_LICENSES"].removesuffix(":1")
+    device = qdmi_driver.open_device(device_id)
     job = device.submit_job(BELL_PROGRAM, ProgramFormat.QASM2, SHOTS)
     if not job.wait(60):
         msg = "DDSIM did not complete the Bell circuit within 60 seconds"
@@ -58,7 +60,7 @@ def main() -> None:
         "node": os.environ["SLURM_JOB_NODELIST"],
         "shots": SHOTS,
     }
-    runtime = Path("/runtime")
+    runtime = Path("/jobs")
     result_path = runtime / f"ddsim-{job_id}.json"
     temporary = result_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")

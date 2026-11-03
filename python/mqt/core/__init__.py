@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"mqt.core._version"}
+
 import os
 import sys
 
@@ -20,7 +22,7 @@ if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] Native imports
     os.add_dll_directory(str(distribution("mqt-core").locate_file("mqt/core/bin")))
 
 
-from ._version import version as __version__
-from ._version import version_tuple as version_info
+from mqt.core._version import version as __version__
+from mqt.core._version import version_tuple as version_info
 
 __all__ = ["__version__", "version_info"]

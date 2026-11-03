@@ -18,6 +18,7 @@
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "gtest/gtest.h"
@@ -47,18 +48,17 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <ios>
 #include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -138,8 +138,8 @@ static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  constexpr std::array<const char*, 7> bases = {
-      "zyz", "zxz", "xzx", "xyx", "u", "zsxx", "r",
+  constexpr std::array<const char*, 8> bases = {
+      "zyz", "zxz", "xzx", "xyx", "u", "zsxx", "r", "gpi",
   };
   for (const char* basis : bases) {
     fn(StringRef{basis});
@@ -215,11 +215,13 @@ static void expectMatrixPreserved(func::FuncOp funcOp,
                                   StringRef label = {}) {
   // Logging of the matrices
   auto printMatrix = [](const Matrix2x2& matrix) {
-    std::ostringstream oss;
-    oss.precision(4);
-    oss << std::fixed << "[[" << matrix(0, 0) << ", " << matrix(0, 1) << "],\n"
-        << " [" << matrix(1, 0) << ", " << matrix(1, 1) << "]]";
-    return oss.str();
+    return llvm::formatv("[[({0:F4},{1:F4}), ({2:F4},{3:F4})],\n"
+                         " [({4:F4},{5:F4}), ({6:F4},{7:F4})]]",
+                         matrix(0, 0).real(), matrix(0, 0).imag(),
+                         matrix(0, 1).real(), matrix(0, 1).imag(),
+                         matrix(1, 0).real(), matrix(1, 0).imag(),
+                         matrix(1, 1).real(), matrix(1, 1).imag())
+        .str();
   };
   const auto printOriginal = printMatrix(original);
   const auto actual = compute1QUnitaryMatrix(funcOp.getBody());
@@ -295,6 +297,7 @@ static LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
   case ZSXX:
     return countZSXXGates(funcOp);
   case R:
+  case GPI:
     return countOps<ROp>(funcOp);
   }
   return 0;
@@ -560,6 +563,13 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
     return isa<RZOp, SXOp, XOp>(op);
   case R:
     return isa<ROp>(op);
+  case GPI:
+    if (auto gate = dyn_cast<ROp>(op)) {
+      const auto angle = mqt::valueToConstantDouble(gate.getTheta());
+      return angle &&
+             (*angle == std::numbers::pi || *angle == std::numbers::pi / 2.);
+    }
+    return false;
   }
   return false;
 }
@@ -771,6 +781,7 @@ struct DirectSynthesisCounts {
   size_t ry = 0;
   size_t rx = 0;
   size_t sx = 0;
+  size_t r = 0;
   bool gphase = false;
 };
 
@@ -808,6 +819,8 @@ expectedDirectSynthesisCounts(StringRef gate, SingleQubitBasis basis) {
       return {.rz = 2, .sx = 2, .gphase = true};
     }
     return {.rz = 3, .sx = 2, .gphase = true};
+  case GPI:
+    return {.r = 3, .gphase = gate == "p" || gate == "u" || gate == "u2"};
   case XZX:
   case XYX:
   case R:
@@ -823,10 +836,10 @@ static void expectDirectSynthesisCounts(func::FuncOp funcOp,
   EXPECT_EQ(countOps<RYOp>(funcOp), expected.ry);
   EXPECT_EQ(countOps<RXOp>(funcOp), expected.rx);
   EXPECT_EQ(countOps<SXOp>(funcOp), expected.sx);
+  EXPECT_EQ(countOps<ROp>(funcOp), expected.r);
   EXPECT_EQ(countOps<GPhaseOp>(funcOp), static_cast<size_t>(expected.gphase));
   EXPECT_EQ(countOps<U2Op>(funcOp), 0U);
   EXPECT_EQ(countOps<POp>(funcOp), 0U);
-  EXPECT_EQ(countOps<ROp>(funcOp), 0U);
 
   EXPECT_EQ(countOps<math::SinOp>(funcOp), 0U);
   EXPECT_EQ(countOps<math::CosOp>(funcOp), 0U);
@@ -1217,10 +1230,9 @@ TEST(FuseSingleQubitUnitaryRunsTest,
   fx.setUp();
   constexpr std::array boundValues = {0.37, -0.61, 0.83};
   const std::array directBases = {
-      std::pair{StringRef{"u"}, U},
-      std::pair{StringRef{"zyz"}, ZYZ},
-      std::pair{StringRef{"zxz"}, ZXZ},
-      std::pair{StringRef{"zsxx"}, ZSXX},
+      std::pair{StringRef{"u"}, U},     std::pair{StringRef{"zyz"}, ZYZ},
+      std::pair{StringRef{"zxz"}, ZXZ}, std::pair{StringRef{"zsxx"}, ZSXX},
+      std::pair{StringRef{"gpi"}, GPI},
   };
 
   for (const auto& gateCase : DYNAMIC_GATE_CASES) {
@@ -1657,7 +1669,7 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
   TestFixture fx;
   fx.setUp();
   SmallVector<CompilerTarget::SynthesisBasis> bases;
-  for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R}) {
+  for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R, GPI}) {
     bases.push_back({.singleQubit = basis});
   }
   for (const auto gate : {
@@ -1701,7 +1713,10 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
       function.walk([&](Operation* operation) {
         if (auto gate = dyn_cast<UnitaryOpInterface>(operation)) {
           for (auto parameter : gate.getParameters()) {
-            preservesAngle |= parameter == entry->getArgument(0);
+            preservesAngle |=
+                basis.singleQubit == GPI
+                    ? valueDependsOn(parameter, entry->getArgument(0))
+                    : parameter == entry->getArgument(0);
           }
         }
       });

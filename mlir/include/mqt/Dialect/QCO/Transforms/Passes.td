@@ -23,7 +23,7 @@ def CombineControlledGates
     second operation, retaining dominance of captured parameters. Bodies stay
     within their block; the pass does not combine across loop iterations.
 
-    The pass concatenates bodies in order. Canonicalization or rotation fusion
+    The pass concatenates bodies in order. Quantum simplification or rotation fusion
     can simplify the combined body. Target pipelines preserve native control
     groups and their bodies, including fixed-parameter operations. They retain
     native controlled U fusion, then unroll surviving composites before routing
@@ -100,7 +100,7 @@ def FuseSingleQubitUnitaryRuns
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
-      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
+      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r, gpi).">];
 }
 
 //===----------------------------------------------------------------------===//
@@ -125,37 +125,54 @@ def QuantumLoopUnroll
 // Payload legalization passes
 //===----------------------------------------------------------------------===//
 
-def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::arith::ArithDialect",
+class PayloadControlFlowPass<string argument>
+    : Pass<argument, "mlir::ModuleOp"> {
+  list<Option> payloadOptions = [Option<
+      "payloadSpec", "payload-spec", "std::string", "\"\"",
+      "Explicit #mqt.payload_spec; defaults to mqt.target_env.">];
+}
+
+def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::mqt::MQTDialect",
+                           "mlir::qtensor::QTensorDialect",
                            "mlir::scf::SCFDialect"];
   let summary =
       "Unroll static loops required by the payload or qubit placement";
   let description = [{
-    Reads the selected payload from `mqt.target_env` and fully unrolls static
-    `scf.for` operations that its counted-iteration capability does not cover.
-    Tensor-carrying loops remain indexed for Adaptive QIR on all-to-all targets
-    whose native operations have no site tuples. Other targets and payloads
-    require fixed quantum indices and specialize these loops. Scalar loops
+    Uses an explicit `payload-spec` attribute when set, otherwise reads
+    `mqt.target_env`. Explicit payloads do not require hardware metadata. Fully unrolls
+    static `scf.for` operations that its counted-iteration capability does not
+    cover. Local classical memory is promoted and static branches fold between
+    expansion rounds, exposing constant accesses and nested loop bounds.
+    In target-environment mode, tensor-carrying loops remain indexed for Adaptive
+    QIR on all-to-all targets whose native operations have no site tuples. Other
+    cases require fixed quantum indices and specialize these loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
+    Constant inner sweeps can become scalar-qubit loops after tensor cleanup,
+    preserving enclosing loops. This analysis stays within nested loop chains.
     The `max-operations` option limits cloned body operations to one billion by default.
     Run constant propagation and QCO cleanup again after this pass, then
-    `legalize-control-flow` to check the remaining branches and loops.
+    `legalize-qco-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
-  let options = [Option<"maxOperations", "max-operations", "uint64_t",
-                        "1'000'000'000",
-                        "Maximum number of cloned loop-body operations.">];
+  let options =
+      payloadOptions#[Option<"maxOperations", "max-operations", "uint64_t",
+                             "1'000'000'000",
+                             "Maximum number of cloned loop-body operations.">];
 }
 
-def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect",
+def LegalizeControlFlow : PayloadControlFlowPass<"legalize-qco-control-flow"> {
+  let options = payloadOptions;
+  let dependentDialects = ["mlir::mqt::MQTDialect", "mlir::qco::QCODialect",
+                           "mlir::scf::SCFDialect",
                            "mlir::arith::ArithDialect"];
-  let summary = "Legalize control flow for the selected payload";
+  let summary = "Legalize QCO and SCF control flow for the selected payload";
   let description = [{
-    Reads the selected payload from `mqt.target_env`. The pass retains covered
-    QCO and SCF branches and loops, lowers unsupported index switches to nested
+    Uses an explicit `payload-spec` attribute when set, otherwise reads
+    `mqt.target_env`. Explicit payloads do not require hardware metadata. The pass
+    retains covered QCO and SCF branches and loops, lowers unsupported index switches to nested
     forward branches when possible, and rejects residual structural control
     flow that the payload does not support.
     Switch expansion checks the selected forward-branching depth limit before
@@ -186,10 +203,13 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The entry function and supported structured-control-flow regions must each
     contain one block. Calls that carry qubits must be inlined before mapping.
-    Adaptive classical dependencies must be represented by SSA def-use chains.
-    Classical side effects must use CBit operations; opaque calls and other
-    memory effects must be lowered before mapping. Tensor allocations must
-    follow a flat extract/insert/deallocate chain without tensor control flow.
+    Classical side effects must use CBit operations, MemRef operations, or
+    `bufferization.materialize_in_destination` with
+    value-associated memory effects. The pass preserves their source order
+    across potentially aliased handles and includes their measurement feedback
+    in routing dependencies. Opaque calls and other memory effects must be
+    lowered before mapping. Tensor allocations must follow a flat
+    extract/insert/deallocate chain without tensor control flow.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the
@@ -268,7 +288,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
     potentially find a more optimal solution. This behavior is controlled by the `niterations` parameter.
 
-    Programs without nested control flow keep the identity layout immediately
+    Programs with supported control flow keep the identity layout immediately
     when all two-qubit interactions are already adjacent on the target.
     This avoids constructing and refining alternative layouts.
 
@@ -283,8 +303,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Set both `ntrials` and `seed` explicitly for reproducible results across
     machines with different CPU counts.
 
-    For programs with two-qubit interactions and no nested control flow on their
-    wires, the pass also constructs an interaction-weighted greedy layout.
+    For programs with two-qubit interactions, the pass also constructs an
+    interaction-weighted greedy layout. Statically counted scalar-qubit
+    `scf.for` loops contribute their body interactions weighted by the trip
+    count, including nested loops. Zero or unknown trip counts and other control
+    flow keep the identity/random fallback. Layout costs use saturating weights;
+    routing restores the layout at loop boundaries.
     For disjoint interaction paths and isolated qubits, it first tries to place
     them along one path through the target sites. The walk prefers neighbors
     with fewer unused edges and accepts only a complete placement; it does not
@@ -574,8 +598,8 @@ def DecomposeMultiControlled
     Decomposes multi-qubit controlled operations that act on at least
     `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
     Supported shapes: `qco.ctrl` with a sole `qco.x`, `qco.y`, `qco.z`,
-    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or constant-angle `qco.p` body, and
-    `qco.rccx`. Rotation angles may be constants or runtime SSA values,
+    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or `qco.p` body, and
+    `qco.rccx`. Rotation and phase angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
     Controls over composite bodies are distributed across their operations
     before decomposition, subject to the same width threshold. Nested inverse
@@ -594,7 +618,7 @@ def DecomposeMultiControlled
     | Phase | 3 | Optimized `C^2(P)` |
     | Phase | 4–5 | Vale (Barenco-relative residual) |
     | Phase | ≥6 | da Silva-Park SP22 linear-depth |
-    | Phase | any (`±π`) | Routed through the Z path |
+    | Constant phase | any (`±π`) | Routed through the Z path |
     | SWAP | ≥ `min-qubits` | `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)` |
 
     Width is the total number of qubits the gate acts on (controls plus
@@ -608,6 +632,9 @@ def DecomposeMultiControlled
     qubits. Each half-MCX may borrow controls from the opposite half and
     restores them coherently. The decomposition preserves phase, including
     the conditional phase of a rotation by `2π`.
+
+    Phase synthesis needs no additional qubits and uses a quadratic number of
+    gates. Runtime angles require only power-of-two scaling.
 
     For controlled SWAP, `C ∪ {b}` is the original control set together with
     SWAP target `b`, and the MCX target is the other SWAP qubit `a`. The

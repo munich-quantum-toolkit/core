@@ -22,8 +22,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void SdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* /*context*/) {
+void SdgOp::getOptimizationPatterns(RewritePatternSet& results,
+                                    MLIRContext* /*context*/) {
   results.add(&removeInversePairOneTargetZeroParameter<SOp, SdgOp>);
   results.add(&mergeOneTargetZeroParameter<ZOp, SdgOp>);
 }

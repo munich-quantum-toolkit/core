@@ -30,10 +30,9 @@ headers belong to the third-party include group.
 
 Keep private project headers in a separate group before third-party headers. The
 formatter recognizes dependency prefixes and treats remaining quoted includes as
-private headers. Match the local `qiskit/Qiskit.h` before the upstream `qiskit/`
-prefix. This keeps shared helpers such as `register_dd_export.hpp` before
-nanobind headers without treating them as the matching header of an unrelated
-source file.
+private headers, including `Target/Qiskit/Qiskit.h`. This keeps shared helpers
+such as `register_dd_export.hpp` before nanobind headers without treating them
+as the matching header of an unrelated source file.
 
 Remove eight redundant include-cleaner suppressions. Four JSON header includes
 need no suppression; two JSON aliases need a direct `json_fwd.hpp` include. The

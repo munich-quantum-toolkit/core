@@ -214,7 +214,7 @@ outcome = measure q;
 """
 
 feedback_qc = QCProgram.from_openqasm_str(feedback_source)
-feedback_qc.to_qiskit().draw("mpl")
+feedback_qc.to_qiskit(copy=True).draw("mpl")
 ```
 
 The output register is overwritten by the second measurement. The first result

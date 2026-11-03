@@ -12,6 +12,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
+#include "Result.hpp"
 #include "register_dd_export.hpp"
 
 #include "nanobind/nanobind.h"
@@ -29,13 +30,19 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
+using bindings::bindResult;
+using bindings::unwrap;
+
 using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold) {
+  if (!m.isTerminal() && numQubits <= static_cast<size_t>(m.p->v)) {
+    throw nb::value_error("num_qubits does not cover the matrix DD");
+  }
   if (numQubits > 20U) {
-    throw nb::value_error("num_qubits exceeds practical limit of 20");
+    throw nb::value_error("num_qubits exceeds the 20-qubit dense matrix limit");
   }
 
   if (numQubits == 0U) {
@@ -50,13 +57,13 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
 
   const auto dim = 1ULL << numQubits;
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
-  dd::traverseMatrix(
+  unwrap(dd::traverseMatrix(
       m, std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](const std::size_t i, const std::size_t j,
                       const std::complex<dd::fp>& c) {
         (*dataPtr)[(i * dim) + j] = c;
       },
-      numQubits, threshold);
+      numQubits, threshold));
   auto* const data = dataPtr->data();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
     delete static_cast<dd::CVec*>(ptr);
@@ -89,17 +96,19 @@ Returns:
   mat.def("size", nb::overload_cast<>(&dd::mEdge::size, nb::const_),
           "Get the size of the DD by traversing it once.");
 
-  mat.def("get_entry",
-          nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
-              &dd::getValueByIndex),
-          "num_qubits"_a, "row"_a, "col"_a,
-          "Get the entry of the matrix by row and column index.");
+  mat.def(
+      "get_entry",
+      bindResult(nb::overload_cast<const dd::mEdge&, size_t, size_t, size_t>(
+          &dd::getValueByIndex)),
+      "num_qubits"_a, "row"_a, "col"_a,
+      "Get the entry of the matrix by row and column index.");
 
-  mat.def("get_entry_by_path", &dd::mEdge::getValueByPath, "num_qubits"_a,
-          "decisions"_a, R"pb(Get the entry of the matrix by decisions.
+  mat.def("get_entry_by_path", bindResult(&dd::mEdge::getValueByPath),
+          "num_qubits"_a, "decisions"_a,
+          R"pb(Get the entry of the matrix by decisions.
 
 Args:
-    num_qubits: The number of qubits.
+    num_qubits: The number of qubits; must cover the matrix DD.
     decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
         Must be at least `num_qubits` long.
 
@@ -110,7 +119,7 @@ Returns:
           R"pb(Get the matrix represented by the DD.
 
 Args:
-    num_qubits: The number of qubits.
+    num_qubits: The number of qubits; must cover the matrix DD and be at most 20.
     threshold: The threshold for not including entries in the matrix. Defaults to 0.0.
 
 Returns:

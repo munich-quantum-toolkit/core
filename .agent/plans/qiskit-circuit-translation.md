@@ -102,8 +102,8 @@ repository lint, and `git diff --check` pass.
 `bindings/mlir/register_mlir.cpp` exposes `QCProgram.from_qiskit`,
 `QCProgram.to_qiskit`, and Qiskit input dispatch for `compile_program`.
 
-`bindings/mlir/qiskit/QiskitImport.cpp` and `QiskitExport.cpp` contain the
-generic directions. `QiskitVersion.cpp` selects a registered version.
+`bindings/mlir/Target/Qiskit/QiskitImport.cpp` and `QiskitExport.cpp` contain
+the generic directions. `QiskitVersion.cpp` selects a registered version.
 `Qiskit2_5.cpp` contains all Qiskit-native declarations and calls.
 `SupportedVersions.inc` is the version registry.
 

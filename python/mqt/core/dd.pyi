@@ -189,7 +189,7 @@ class MatrixDD:
         """Get the entry of the matrix by decisions.
 
         Args:
-            num_qubits: The number of qubits.
+            num_qubits: The number of qubits; must cover the matrix DD.
             decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
                 Must be at least `num_qubits` long.
 
@@ -203,7 +203,7 @@ class MatrixDD:
         """Get the matrix represented by the DD.
 
         Args:
-            num_qubits: The number of qubits.
+            num_qubits: The number of qubits; must cover the matrix DD and be at most 20.
             threshold: The threshold for not including entries in the matrix. Defaults to 0.0.
 
         Returns:
@@ -300,17 +300,18 @@ class DDPackage:
 
     Args:
         num_qubits: The maximum number of qubits that the DDPackage can handle.
-            Defaults to 32; use `resize` to change the capacity.
+            Defaults to 32; use `resize` to grow the capacity.
     """
 
     def __init__(self, num_qubits: int = 32) -> None: ...
     def resize(self, num_qubits: int) -> None:
-        """Resize the DDPackage to accommodate a different number of qubits.
+        """Grow the DDPackage to accommodate more qubits.
 
         Args:
-            num_qubits: The new number of qubits.
-                Must be greater than zero.
-                It is undefined behavior to resize the DDPackage to a smaller number of qubits and then perform operations on decision diagrams that are associated with qubits that are no longer present.
+            num_qubits: The requested capacity, at least the current capacity.
+
+        Raises:
+            ValueError: If num_qubits is less than the current capacity or exceeds the supported limit.
         """
 
     @property

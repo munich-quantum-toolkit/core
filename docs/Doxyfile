@@ -36,7 +36,7 @@ EXCLUDE_SYMBOLS        = std
 IMAGE_PATH             = _static
 USE_MDFILE_AS_MAINPAGE = ../doxygen/mainpage.md
 VERBATIM_HEADERS       = NO
-HTML_HEADER            = _templates/doxygen-header.html
+HTML_HEADER            = _build/doxygen-header.html
 HTML_EXTRA_STYLESHEET  = _static/mqt-doxygen.css
 HTML_EXTRA_FILES       = _static/cpp-api-navigation.js \
                          _static/mqt_light.png \
@@ -46,8 +46,6 @@ USE_MATHJAX            = YES
 MATHJAX_VERSION        = MathJax_3
 GENERATE_LATEX         = NO
 LATEX_BIB_STYLE        = plain
-GENERATE_XML           = YES
-XML_PROGRAMLISTING     = NO
 MACRO_EXPANSION        = YES
 INCLUDE_PATH           = ../include/mqt-core
 

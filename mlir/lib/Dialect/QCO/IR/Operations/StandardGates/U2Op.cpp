@@ -97,8 +97,8 @@ void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
 }
 
-void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* context) {
+void U2Op::getOptimizationPatterns(RewritePatternSet& results,
+                                   MLIRContext* context) {
   results.add<ReplaceU2WithH, ReplaceU2WithRX, ReplaceU2WithRY>(context);
 }
 

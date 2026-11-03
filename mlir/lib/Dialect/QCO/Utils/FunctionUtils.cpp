@@ -11,9 +11,7 @@
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
-#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
-#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -116,74 +114,4 @@ FailureOr<unsigned> mlir::qco::traceQubitArgument(func::FuncOp function,
     return failure();
   }
   return traceQubitArgument(function.getBody().front(), value);
-}
-
-bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
-  // Reject nesting at depth 64 to bound recursive stack use.
-  if (depth == 64) {
-    return false;
-  }
-  const auto isTensor = [](Value value) {
-    auto type = dyn_cast<RankedTensorType>(value.getType());
-    return type && isa<qco::QubitType>(type.getElementType());
-  };
-  unsigned extracted = 0;
-  while (tensor.hasOneUse()) {
-    auto* user = *tensor.user_begin();
-    if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
-      ++extracted;
-      tensor = extract.getOutTensor();
-    } else if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
-      if (extracted == 0) {
-        return false;
-      }
-      --extracted;
-      tensor = insert.getResult();
-    } else if (isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(
-                   user)) {
-      if (extracted != 0) {
-        return false;
-      }
-      const auto index =
-          llvm::count_if(user->getOperands().take_front(
-                             tensor.use_begin()->getOperandNumber()),
-                         isTensor);
-      for (Region& region : user->getRegions()) {
-        auto arguments =
-            llvm::filter_to_vector(region.getArguments(), isTensor);
-        if (index >= arguments.size() ||
-            !hasCompleteTensorLifetime(arguments[index], depth + 1)) {
-          return false;
-        }
-      }
-      auto results = llvm::filter_to_vector(user->getResults(), isTensor);
-      if (index >= results.size()) {
-        return false;
-      }
-      tensor = results[index];
-    } else if (auto call = dyn_cast<func::CallOp>(user)) {
-      if (extracted != 0) {
-        return false;
-      }
-      auto arguments = qco::getQuantumArgumentIndices(call.getOperandTypes());
-      auto* position =
-          llvm::find(arguments, tensor.use_begin()->getOperandNumber());
-      if (position == arguments.end() ||
-          call.getNumResults() < arguments.size()) {
-        return false;
-      }
-      const auto result = call.getNumResults() - arguments.size() +
-                          std::distance(arguments.begin(), position);
-      auto argument = qco::getCallArgumentForResult(call, result);
-      if (failed(argument)) {
-        return false;
-      }
-      tensor = call.getResult(result);
-    } else {
-      return isa<qtensor::DeallocOp, qco::YieldOp, scf::YieldOp,
-                 scf::ConditionOp, func::ReturnOp>(user) &&
-             extracted == 0;
-    }
-  }
-  return false;
 }

@@ -12,6 +12,15 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "mqt.core.plugins.qiskit.backend",
+    "mqt.core.plugins.qiskit.estimator",
+    "mqt.core.plugins.qiskit.exceptions",
+    "mqt.core.plugins.qiskit.job",
+    "mqt.core.plugins.qiskit.provider",
+    "mqt.core.plugins.qiskit.serializers",
+}
+
 from importlib import import_module
 from typing import TYPE_CHECKING
 
@@ -29,8 +38,9 @@ __all__ = [
 ]
 
 if TYPE_CHECKING or HAS_QISKIT:
-    from .backend import QDMIBackend
-    from .exceptions import (
+    from mqt.core.plugins.qiskit.backend import QDMIBackend
+    from mqt.core.plugins.qiskit.estimator import DDEstimator
+    from mqt.core.plugins.qiskit.exceptions import (
         CircuitValidationError,
         JobExecutionError,
         JobSubmissionError,
@@ -39,9 +49,9 @@ if TYPE_CHECKING or HAS_QISKIT:
         UnsupportedFormatError,
         UnsupportedOperationError,
     )
-    from .job import QDMIJob
-    from .provider import QDMIProvider
-    from .serializers import (
+    from mqt.core.plugins.qiskit.job import QDMIJob
+    from mqt.core.plugins.qiskit.provider import QDMIProvider
+    from mqt.core.plugins.qiskit.serializers import (
         ProgramSerializer,
         program_serializer,
         register_program_serializer,
@@ -50,6 +60,7 @@ if TYPE_CHECKING or HAS_QISKIT:
 
     __all__ += [
         "CircuitValidationError",
+        "DDEstimator",
         "JobExecutionError",
         "JobSubmissionError",
         "ProgramSerializer",

@@ -65,10 +65,10 @@ TEST(JobParameters, SetAndQueryBasics) {
           j.job, QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION, 0, nullptr, nullptr),
       QDMI_ERROR_NOTSUPPORTED);
 
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size),
             QDMI_SUCCESS);
-  EXPECT_GT(size, 0U);
+  ASSERT_GT(size, 1U);
   std::string id(size - 1, '\0');
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_ID, size, id.data(), nullptr),

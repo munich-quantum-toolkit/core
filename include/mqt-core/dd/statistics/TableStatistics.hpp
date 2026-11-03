@@ -69,7 +69,8 @@ struct TableStatistics : Statistics {
   /// Convert the entry size to MiB
   [[nodiscard]] double getEntrySizeMiB() const noexcept;
 
-  /// Get the amount of memory required for the table in MiB
+  /// Estimate memory for the configured bucket capacity in MiB. Lazy compute
+  /// tables may not have allocated their buckets yet.
   [[nodiscard]] double getMemoryMiB() const noexcept;
 
   /// Get a JSON-formatted string representation of the statistics

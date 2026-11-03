@@ -591,9 +591,14 @@ LogicalResult PowOp::verify() {
   return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
+void PowOp::getLoweringPatterns(RewritePatternSet& results,
+                                MLIRContext* context) {
+  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
+              MoveCtrlOutsidePow, NegPowToInvPow>(context);
+  getCanonicalizationPatterns(results, context);
+}
+
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-              MoveCtrlOutsidePow, NegPowToInvPow, EraseEmptyPow,
-              DropUnusedPowQubits>(context);
+  results.add<EraseEmptyPow, DropUnusedPowQubits>(context);
 }

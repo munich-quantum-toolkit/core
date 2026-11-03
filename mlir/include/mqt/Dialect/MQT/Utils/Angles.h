@@ -14,6 +14,7 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include <cstdint>
 #include <optional>
 
 namespace mlir::mqt {
@@ -33,7 +34,7 @@ inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
                                                        double factor);
 
 /// Named gates represented by a constant P-gate angle.
-enum class PhaseGate { Identity, Z, S, Sdg, T, Tdg };
+enum class PhaseGate : uint8_t { Identity, Z, S, Sdg, T, Tdg };
 
 /// Classify a finite phase angle modulo 2*π using the parameter tolerance.
 ///
@@ -46,7 +47,7 @@ enum class PhaseGate { Identity, Z, S, Sdg, T, Tdg };
 /// Check the compiler-wide global-phase angle contract.
 [[nodiscard]] bool isValidGlobalPhaseAngle(double theta);
 
-/// Verify the compiler-wide global-phase angle contract.
+/// Sanity-check direct constants against the global-phase angle contract.
 [[nodiscard]] LogicalResult verifyGlobalPhaseAngle(Operation* operation,
                                                    Value angle);
 

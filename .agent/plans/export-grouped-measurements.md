@@ -9,7 +9,7 @@ Export valid mapped QC programs whose measurement stores are separated by
 independent measurements or control flow. This change is stacked on the routing
 fix in PR [#2351](https://github.com/munich-quantum-toolkit/core/pull/2351). It
 adds no scheduling constraint to the mapper. The implementation belongs in
-`bindings/mlir/qiskit/QiskitExport.cpp`, with semantic regressions in
+`bindings/mlir/Target/Qiskit/QiskitExport.cpp`, with semantic regressions in
 `test/python/test_mlir_qiskit_translation.py`.
 
 ## Decisions

@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Open the SC device named by the license environment on a free processor."""
+"""Query the SC device with one allocated device license."""
 
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ import json
 import os
 from pathlib import Path
 
-from mqt.core.qdmi import slurm
+from mqt.core.qdmi import builtin_driver as qdmi_driver
 
 
 def main() -> None:
-    """Query the license-selected SC device and record the compute node."""
+    """Query the selected SC device and record the compute node."""
     job_id = os.environ["SLURM_JOB_ID"]
-    device = slurm.open_device_from_license()
+    device_id = os.environ["SLURM_JOB_LICENSES"].removesuffix(":1")
+    device = qdmi_driver.open_device(device_id)
     result = {
         "device": device.name(),
         "job_id": job_id,
@@ -28,7 +29,7 @@ def main() -> None:
         "node": os.environ["SLURM_JOB_NODELIST"],
         "qubits": device.qubits_num(),
     }
-    result_path = Path(f"/runtime/sc-{job_id}.json")
+    result_path = Path(f"/jobs/sc-{job_id}.json")
     temporary = result_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
     temporary.replace(result_path)

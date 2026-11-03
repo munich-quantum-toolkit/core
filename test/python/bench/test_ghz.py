@@ -58,10 +58,18 @@ def test_ghz_evaluation() -> None:
     """Evaluate counts against the GHZ reference distribution."""
     benchmark = _make_benchmark()
     evaluation = benchmark.evaluate({"000": 50, "011": 50})
+    assert evaluation.shots == 100
     assert isinstance(evaluation, bench.Evaluation)
     assert evaluation.total_variation_distance == pytest.approx(0.5)
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.5)
     assert evaluation.success_probability is None
+
+
+@pytest.mark.parametrize("outcome", ["01", "01x"])
+def test_probability_rejects_invalid_outcomes(outcome: str) -> None:
+    """Validate Python strings before calling the native scalar query."""
+    with pytest.raises(ValueError, match="outcome"):
+        _make_benchmark().probability(outcome)
 
 
 def test_importing_mlir_preserves_benchmark_overflow_error() -> None:

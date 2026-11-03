@@ -20,8 +20,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* /*context*/) {
+void SWAPOp::getOptimizationPatterns(RewritePatternSet& results,
+                                     MLIRContext* /*context*/) {
   results.add(+[](SWAPOp op, PatternRewriter& rewriter) {
     return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
   });

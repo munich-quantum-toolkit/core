@@ -18,6 +18,7 @@
 
 #include "gtest/gtest.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
@@ -41,20 +42,21 @@ static void expectCoherentModularMultiplier(const size_t bits,
   if (pattern.empty()) {
     pattern = std::string(bits, '+');
   }
-  const ModularMultiplier benchmark{{
+  const auto benchmark = llvm::cantFail(ModularMultiplier::create({
       .multiplier = dd::intToBinaryString(multiplier, bits),
       .modulus = dd::intToBinaryString(modulus, bits),
       .multiplicand = pattern,
       .control = controlInput,
-  }};
+  }));
   auto program = test::generateQCO(benchmark);
   ASSERT_TRUE(mlir::succeeded(program));
 
-  dd::Package package(0);
+  auto packageOwner = llvm::cantFail(dd::Package::create(0));
+  auto& package = *packageOwner;
   auto state = qco::simulateStatevector(
       mlir::mqt::getEntryPoint(program->module()), package);
   ASSERT_TRUE(succeeded(state));
-  const auto actual = dd::getVector(*state);
+  const auto actual = llvm::cantFail(dd::getVector(*state));
   package.decRef(*state);
 
   dd::CVec expected(size_t{1} << ((2U * bits) + 3U));
@@ -118,12 +120,12 @@ TEST(GenerateProgramTest, VerifiesEverySmallModularMultiplierBasisInput) {
       for (size_t multiplier = 1; multiplier < modulus; ++multiplier) {
         for (size_t input = 0; input < limit; ++input) {
           for (size_t control = 0; control < 2; ++control) {
-            const ModularMultiplier benchmark({
+            const auto benchmark = llvm::cantFail(ModularMultiplier::create({
                 .multiplier = dd::intToBinaryString(multiplier, bits),
                 .modulus = dd::intToBinaryString(modulus, bits),
                 .multiplicand = dd::intToBinaryString(input, bits),
                 .control = control == 0 ? '0' : '1',
-            });
+            }));
             const auto expected =
                 std::to_string(control) + dd::intToBinaryString(input, bits) +
                 dd::intToBinaryString(control * multiplier * input % modulus,
@@ -147,29 +149,31 @@ TEST(GenerateProgramTest, BoundsLargestModularMultiplierPayload) {
   constexpr size_t bits = ModularMultiplierOptions::MAX_BITS;
   const auto multiplier = std::string(bits - 1U, '0') + "1";
   const auto modulus = "1" + std::string(bits - 1U, '0');
-  auto program = generate(ModularMultiplier{{
+  auto program = generate(llvm::cantFail(ModularMultiplier::create({
       .multiplier = multiplier,
       .modulus = modulus,
       .multiplicand = std::string(bits, '+'),
       .control = '+',
-  }});
+  })));
   ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(program->str().size(), 16'384U);
 }
 
 TEST(GenerateProgramTest, SamplesModularMultiplierAgainstReference) {
-  test::expectSamplingMatchesReference(ModularMultiplier{{
-      .multiplier = "011",
-      .modulus = "101",
-      .multiplicand = "+++",
-      .control = '+',
-  }});
-  test::expectSamplingMatchesReference(ModularMultiplier{{
-      .multiplier = "010",
-      .modulus = "100",
-      .multiplicand = "+++",
-      .control = '+',
-  }});
+  test::expectSamplingMatchesReference(
+      llvm::cantFail(ModularMultiplier::create({
+          .multiplier = "011",
+          .modulus = "101",
+          .multiplicand = "+++",
+          .control = '+',
+      })));
+  test::expectSamplingMatchesReference(
+      llvm::cantFail(ModularMultiplier::create({
+          .multiplier = "010",
+          .modulus = "100",
+          .multiplicand = "+++",
+          .control = '+',
+      })));
 }
 
 } // namespace mqt::bench

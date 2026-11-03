@@ -17,6 +17,10 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
+
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -27,28 +31,28 @@
 namespace mlir::qco {
 
 class UnitaryOpInterface;
+namespace decomposition {
+struct PauliRotationCounts;
+} // namespace decomposition
 
-/// Immutable numerical costs prepared once before routing trials.
+/// Immutable Weyl coordinates prepared once before routing trials.
 ///
 /// Construction requires linear QCO IR. No IR handles survive construction;
 /// target support and operand direction remain the caller's responsibility.
 class NativeCostTable {
 public:
-  static std::unique_ptr<const NativeCostTable>
-  precompute(Operation* root, CompilerTarget::Entangler entangler,
-             uint64_t seed);
+  static std::unique_ptr<const NativeCostTable> precompute(Operation* root,
+                                                           uint64_t seed);
 
 private:
   friend class NativeCostAnalysis;
   struct Entry {
     Matrix4x4 matrix;
-    CompilerTarget::Entangler entangler;
-    std::optional<uint8_t> count;
+    std::optional<std::array<double, 3>> coordinates;
   };
 
-  [[nodiscard]] const std::optional<uint8_t>*
-  lookup(const Matrix4x4& matrix, CompilerTarget::Entangler entangler,
-         uint64_t hash) const;
+  [[nodiscard]] const std::optional<std::array<double, 3>>*
+  lookup(const Matrix4x4& matrix, uint64_t hash) const;
 
   uint64_t seed_ = 0;
   std::vector<Entry> entries_;
@@ -67,8 +71,8 @@ public:
 
   /// The optional shared table must outlive this analysis.
   ///
-  /// Routing uses compact counts with a local fallback; emission caches full
-  /// decompositions.
+  /// Routing uses compact coordinates with a local fallback; emission caches
+  /// full decompositions.
   explicit NativeCostAnalysis(uint64_t seed,
                               const NativeCostTable* shared = nullptr)
       : seed_(seed), shared_(shared) {}
@@ -85,9 +89,40 @@ public:
   entanglerOrientation(const CompilerTarget& target,
                        CompilerTarget::Entangler entangler, Sites sites);
 
+  /// Construct a recipe only if its count passes the optional benefit test.
+  ///
   /// The returned reference is invalidated by the next decomposition query.
   const std::optional<decomposition::TwoQubitNativeDecomposition>&
-  decompose(const Matrix4x4& matrix, CompilerTarget::Entangler entangler);
+  decompose(const Matrix4x4& matrix, CompilerTarget::Entangler entangler,
+            function_ref<bool(size_t)> improves = {});
+
+  struct Selection {
+    CompilerTarget::Entangler entangler;
+    bool reverse;
+    size_t count;
+  };
+
+  struct SelectedDecomposition {
+    Selection selection;
+    const decomposition::TwoQubitNativeDecomposition* native;
+  };
+
+  /// Choose the lowest two-qubit count; preserve target order on ties.
+  [[nodiscard]] std::optional<Selection>
+  select(const Matrix4x4& matrix, const CompilerTarget& target, Sites sites);
+  [[nodiscard]] static std::optional<Selection>
+  select(decomposition::PauliRotationCounts rotations,
+         const CompilerTarget& target, Sites sites);
+
+  /// Construct the cheapest supported recipe, trying the next on failure.
+  ///
+  /// The optional benefit test runs before factor construction. Rejection
+  /// stops selection, so accepting a count must also accept smaller counts.
+  /// The returned native pointer is invalidated by the next decomposition
+  /// query.
+  [[nodiscard]] std::optional<SelectedDecomposition>
+  decompose(const Matrix4x4& matrix, const CompilerTarget& target, Sites sites,
+            function_ref<bool(size_t)> improves = {});
 
   /// Native two-qubit count.
   ///
@@ -105,8 +140,18 @@ public:
                  const CompilerTarget& target, Sites sites);
 
 private:
-  std::optional<uint8_t> count(const Matrix4x4& matrix,
-                               CompilerTarget::Entangler entangler);
+  std::optional<std::array<double, 3>> coordinates(
+      const Matrix4x4& matrix,
+      std::optional<decomposition::TwoQubitWeylDecomposition>* computed =
+          nullptr);
+  SmallVector<Selection, 9> candidates(
+      const Matrix4x4& matrix, const CompilerTarget& target, Sites sites,
+      MutableArrayRef<std::optional<decomposition::TwoQubitWeylDecomposition>>
+          computed = {});
+  const std::optional<decomposition::TwoQubitNativeDecomposition>&
+  cachedDecompose(const Matrix4x4& matrix, CompilerTarget::Entangler entangler,
+                  std::optional<decomposition::TwoQubitWeylDecomposition>& weyl,
+                  function_ref<bool(size_t)> improves = {});
 
   struct DecompositionEntry {
     Matrix4x4 matrix;
@@ -116,10 +161,10 @@ private:
   static constexpr size_t CACHE_SIZE = 64;
   uint64_t seed_;
   const NativeCostTable* shared_;
-  std::vector<NativeCostTable::Entry> counts_;
-  std::vector<uint64_t> countHashes_;
-  size_t nextCount_ = 0;
-  std::optional<NativeCostTable::Entry> lastCount_;
+  std::vector<NativeCostTable::Entry> coordinates_;
+  std::vector<uint64_t> coordinateHashes_;
+  size_t nextCoordinates_ = 0;
+  std::optional<NativeCostTable::Entry> lastCoordinates_;
   std::vector<DecompositionEntry> decompositions_;
   std::vector<uint64_t> decompositionHashes_;
   size_t nextDecomposition_ = 0;

@@ -59,6 +59,10 @@ intermediate representation
   IR. A program representation used between a source language and final output
   so compiler analyses and transformations can operate on explicit structure.
 
+QPY
+  **Preferred term:** QPY. **Accepted aliases:** none. Qiskit's versioned binary
+  format for storing one or more quantum circuits.
+
 jeff
   **Preferred term:** jeff. **Accepted aliases:** none. A structured, extensible
   [interchange format for quantum programs](https://github.com/unitaryfoundation/jeff).
@@ -123,6 +127,13 @@ quantum assembly language
   QASM. A generic category of assembly-like languages for quantum programs. Do
   not use QASM as an alias for a specific OpenQASM version.
 
+QAN
+quantum access node
+  **Preferred term:** quantum access node. **Accepted abbreviation:** QAN. A
+  cluster node from which jobs can reach a quantum device service. Its Slurm
+  partition determines job placement; device credentials and site network
+  policies determine access.
+
 QDMI
 Quantum Device Management Interface
   **Preferred term:** Quantum Device Management Interface. **Accepted
@@ -133,14 +144,14 @@ Quantum Device Management Interface
 
 QDMI Client interface
   **Preferred term:** QDMI Client interface. The standard C interface consumed by
-  applications to open sessions, query devices, and manage jobs. Core's C++ and
+  applications to open sessions, query devices, and manage jobs. MQT Core's C++ and
   Python Client wrappers consume this interface; they are not a driver.
 
 QDMI driver
   **Preferred term:** QDMI driver. An implementation of the QDMI Client interface.
   The builtin MQT Core QDMI driver loads QDMI device libraries. A replacement driver owns
   its own discovery, configuration, and device access; applications must not
-  assume it provides Core's private driver extension.
+  assume it provides MQT Core's private driver extension.
 
 QDMI session
   **Preferred term:** QDMI session. A connection to a QDMI driver, represented
@@ -240,6 +251,12 @@ compiler target
   An immutable MQT description of the operations, topology, and properties that
   a compiler pipeline may use for one destination. It is a snapshot used for
   compilation, not a live device connection.
+
+GPI basis
+  **Preferred term:** GPI basis. **Accepted aliases:** none. A single-qubit
+  synthesis basis of equatorial rotations R(π, φ) and R(π/2, φ) with
+  unrestricted azimuth φ. See {doc}`mlir/target_compilation` for supported
+  native gate names and phase conventions.
 
 operation capability
   **Preferred term:** operation capability. **Accepted aliases:** none. A
@@ -402,6 +419,20 @@ continued fraction
   representation of a number by integer parts and reciprocals. Truncations,
   called convergents, give rational approximations used to recover candidate
   exponents from measured phases in Shor's algorithm.
+
+QAOA
+quantum approximate optimization algorithm
+  **Preferred term:** quantum approximate optimization algorithm. **Accepted
+  abbreviation:** QAOA. A variational algorithm that alternates cost and mixer
+  unitaries to prepare candidate solutions to a discrete optimization problem.
+
+quantum fan-out
+fan-out
+  **Preferred term:** quantum fan-out. **Accepted alias:** fan-out when the
+  quantum context is clear. CNOT gates with one shared control and distinct
+  targets. On zero targets, this copies a computational-basis bit; on a
+  superposition, it creates correlations rather than independent copies of an
+  unknown quantum state.
 
 semiclassical quantum Fourier transform
 semiclassical QFT

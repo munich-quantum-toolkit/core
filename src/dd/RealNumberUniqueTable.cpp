@@ -14,15 +14,18 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/RealNumber.hpp"
 
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <limits>
-#include <ostream>
 
 namespace dd {
 
@@ -84,18 +87,13 @@ RealNumber* RealNumberUniqueTable::lookupRoot(const fp val) {
     ++stats.hits;
     return it->second;
   }
-  try {
-    auto* entry = memoryManager->get<RealNumber>();
-    entry->value = val;
-    entry->LLBase::setNext(nullptr);
-    it->second = entry;
-    stats.trackInsert();
-    stats.numBuckets = table.size() + exactRoots.bucket_count();
-    return entry;
-  } catch (...) {
-    exactRoots.erase(it);
-    throw;
-  }
+  auto* entry = memoryManager->get<RealNumber>();
+  entry->value = val;
+  entry->LLBase::setNext(nullptr);
+  it->second = entry;
+  stats.trackInsert();
+  stats.numBuckets = table.size() + exactRoots.bucket_count();
+  return entry;
 }
 
 RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
@@ -250,32 +248,33 @@ void RealNumberUniqueTable::clear() noexcept {
 }
 
 void RealNumberUniqueTable::print() const {
-  const auto precision = std::cout.precision();
-  std::cout.precision(std::numeric_limits<dd::fp>::max_digits10);
+  const auto printEntry = [](const RealNumber* entry, llvm::StringRef prefix) {
+    llvm::SmallString<32> value;
+    llvm::APFloat(entry->value)
+        .toString(value, std::numeric_limits<fp>::max_digits10);
+    llvm::outs() << prefix << value << " " << reinterpret_cast<uintptr_t>(entry)
+                 << "\n";
+  };
   for (std::size_t key = 0; key < table.size(); ++key) {
     const auto* p = table[key];
     if (p != nullptr) {
-      std::cout << key << ": \n";
+      llvm::outs() << key << ": \n";
     }
-
     while (p != nullptr) {
-      std::cout << "\t\t" << p->value << " "
-                << reinterpret_cast<std::uintptr_t>(p) << "\n";
+      printEntry(p, "\t\t");
       p = p->next();
     }
-
     if (table[key] != nullptr) {
-      std::cout << "\n";
+      llvm::outs() << "\n";
     }
   }
   for (const auto& [value, entry] : exactRoots) {
-    std::cout << "root\t" << entry->value << " "
-              << reinterpret_cast<uintptr_t>(entry) << "\n";
+    printEntry(entry, "root\t");
   }
-  std::cout.precision(precision);
 }
 
-std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
+llvm::raw_ostream&
+RealNumberUniqueTable::printBucketDistribution(llvm::raw_ostream& os) {
   for (const auto* bucket : table) {
     if (bucket == nullptr) {
       os << "0\n";

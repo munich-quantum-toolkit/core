@@ -19,8 +19,11 @@ add_mlir_library(
   MLIRQCOUtils
   MLIRQTensorUtils
   MLIRArithDialect
+  MLIRAsmParser
+  MLIRBufferizationDialect
   MLIRCallInterfaces
   MLIRMathDialect
+  MLIRMemRefDialect
   MLIRMQTDialect
   MLIRMQTTransforms
   MLIRMQTUtils
@@ -40,15 +43,6 @@ file(GLOB_RECURSE PASSES_HEADERS_BUILD
 
 target_sources(
   MLIRQCOTransforms
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${PASSES_HEADERS_SOURCE}
-         FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_BUILD_INCLUDE_DIR}
-         FILES
-         ${PASSES_HEADERS_BUILD})
+  PUBLIC
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${PASSES_HEADERS_SOURCE}
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR} FILES ${PASSES_HEADERS_BUILD})

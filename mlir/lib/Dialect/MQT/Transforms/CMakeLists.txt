@@ -8,23 +8,33 @@
 
 add_mlir_library(
   MLIRMQTTransforms
+  SimplifyQuantum.cpp
+  DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
+  LegalizePayloadControlFlow.cpp
+  PromoteClassicalMemory.cpp
   SimplifyClassicalControl.cpp
   UnrollModifiers.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/Transforms
   LINK_LIBS
   PRIVATE
+  MQTCompilerTarget
   MLIRArithDialect
+  MLIRAsmParser
   MLIRCBitDialect
   MLIRFuncInlinerExtension
   MLIRIR
+  MLIRMathDialect
+  MLIRMemorySlotInterfaces
   MLIRLLVMIRTransforms
   MLIRMQTUtils
   MLIRPass
   MLIRQCDialect
   MLIRQCODialect
+  MLIRSCFDialect
   MLIRSideEffectInterfaces
+  MLIRTransforms
   MLIRTransformUtils
   DEPENDS
   MLIRMQTTransformsIncGen)
@@ -38,15 +48,6 @@ file(GLOB_RECURSE PASSES_HEADERS_BUILD
 
 target_sources(
   MLIRMQTTransforms
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${PASSES_HEADERS_SOURCE}
-         FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_BUILD_INCLUDE_DIR}
-         FILES
-         ${PASSES_HEADERS_BUILD})
+  PUBLIC
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${PASSES_HEADERS_SOURCE}
+  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR} FILES ${PASSES_HEADERS_BUILD})

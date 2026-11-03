@@ -44,15 +44,14 @@ compilerTargetFromDevice(const qdmi::Device& device);
 
 /// Open a QDMI device by stable ID and snapshot it as a compiler target.
 ///
-/// This adapter contains exceptions from the QDMI C++ API and returns
-/// them as LLVM errors. The returned target owns all queried metadata.
+/// The returned target owns all queried metadata. QDMI query errors are
+/// returned to the caller.
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDeviceId(std::string_view deviceId);
 
 /// List the stable IDs visible to a fresh QDMI session.
 ///
-/// This adapter contains exceptions from QDMI session discovery and
-/// returns them as LLVM errors.
+/// QDMI session discovery errors are returned to the caller.
 [[nodiscard]] llvm::Expected<std::vector<std::string>>
 registeredQDMIDeviceIds();
 
@@ -62,8 +61,8 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
 /// Snapshot the device and select its executable payload before compilation.
 ///
-/// Preference: Adaptive QIR (binary, text), OpenQASM 3, Base QIR (binary,
-/// text).
+/// Preference: Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, Base QIR
+/// (binary, text).
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,
     std::optional<QDMI_Program_Format> format = std::nullopt);
@@ -71,6 +70,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 /// Check equality of legality-relevant contracts, ignoring calibration data.
 ///
 /// Ordered site IDs and ordered operation operands retain their meaning.
+/// IQM JSON also requires unchanged site names.
 [[nodiscard]] llvm::Error
 validateTargetCompatibility(const TargetEnvironment& compiled,
                             const TargetEnvironment& destination);
@@ -80,7 +80,7 @@ class CompiledProgram {
 public:
   /// Compile and serialize for one selected hardware/payload contract.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
-  compile(CompilerInput&& program, const TargetEnvironment& environment,
+  compile(CompilerInput program, const TargetEnvironment& environment,
           const CompilationOptions& options = {});
 
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
@@ -102,7 +102,7 @@ private:
 
 /// Compile for a QDMI device.
 [[nodiscard]] llvm::Expected<CompiledProgram>
-compileProgram(CompilerInput&& program, const qdmi::Device& device,
+compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
                const CompilationOptions& options = {});
 
@@ -118,8 +118,7 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
 
 /// Compile and submit source using one snapshot of the destination.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
-    const qdmi::Device& device, CompilerInput&& program,
-    int64_t numShots = 1024,
+    const qdmi::Device& device, CompilerInput program, int64_t numShots = 1024,
     std::optional<QDMI_Program_Format> format = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,

@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/RandomSeed.h"
 
@@ -36,6 +37,7 @@
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
@@ -45,6 +47,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -109,6 +112,15 @@ LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
   return success(!result.wasInterrupted());
 }
 
+LogicalResult mlir::mqt::verifyEntryPointResults(func::FuncOp function) {
+  if (llvm::any_of(function.getResultTypes(), [](Type type) {
+        return isa<qc::QubitType, qco::QubitType>(getElementTypeOrSelf(type));
+      })) {
+    return function.emitError("'mqt.entry_point' cannot return quantum values");
+  }
+  return success();
+}
+
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   if (!isa<UnitAttr>(attribute.getValue())) {
@@ -124,6 +136,10 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' requires a public, defined module-level function";
+  }
+
+  if (failed(verifyEntryPointResults(function))) {
+    return failure();
   }
 
   for (Operation& candidate : moduleOp.getBody()->getOperations()) {
@@ -200,47 +216,7 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
   return verifyNoUnitaryRecursion<qc::CallOp>(function);
 }
 
-[[nodiscard]] static LogicalResult
-verifyQCOUnitaryQubitFlow(Operation* owner, ValueRange inputs,
-                          ValueRange outputs) {
-  for (auto [resultIndex, returned] : llvm::enumerate(outputs)) {
-    if (!isa<qco::QubitType>(returned.getType())) {
-      continue;
-    }
-    Value current = returned;
-    llvm::SmallDenseSet<Value> visited;
-    while (auto result = dyn_cast<OpResult>(current)) {
-      if (!visited.insert(current).second) {
-        return owner->emitError("unitary QCO result has cyclic qubit flow");
-      }
-      if (auto loop = dyn_cast<scf::ForOp>(result.getOwner())) {
-        current = loop.getInitArgs()[result.getResultNumber()];
-        continue;
-      }
-      auto unitary = dyn_cast<qco::UnitaryOpInterface>(result.getOwner());
-      if (!unitary) {
-        return owner->emitError()
-               << "unitary QCO result does not originate from a qubit "
-                  "argument";
-      }
-      current = unitary.getInputForOutput(current);
-      if (!current) {
-        return owner->emitError()
-               << "unitary QCO operation has no input corresponding to its "
-                  "returned qubit";
-      }
-    }
-    if (current != inputs[resultIndex]) {
-      return owner->emitError()
-             << "unitary QCO results must continue qubit arguments "
-                "positionally";
-    }
-  }
-  return success();
-}
-
-[[nodiscard]] static LogicalResult verifyQCOUnitaryBody(func::FuncOp function,
-                                                        unsigned firstQubit) {
+[[nodiscard]] static LogicalResult verifyQCOUnitaryBody(func::FuncOp function) {
   bool valid = true;
   function.walk([&](Operation* nested) {
     if (!valid || nested == function.getOperation()) {
@@ -251,11 +227,7 @@ verifyQCOUnitaryQubitFlow(Operation* owner, ValueRange inputs,
       return;
     }
     if (auto loop = dyn_cast<scf::ForOp>(nested)) {
-      valid = loop.getStaticTripCount().has_value() &&
-              succeeded(verifyQCOUnitaryQubitFlow(
-                  loop, loop.getRegionIterArgs(),
-                  cast<scf::YieldOp>(loop.getBody()->getTerminator())
-                      .getOperands()));
+      valid = loop.getStaticTripCount().has_value();
       return;
     }
     valid =
@@ -269,10 +241,8 @@ verifyQCOUnitaryQubitFlow(Operation* owner, ValueRange inputs,
            << "unitary QCO function body contains an unsupported operation";
   }
 
-  auto returnOp = cast<func::ReturnOp>(function.getBody().front().back());
-  if (failed(verifyQCOUnitaryQubitFlow(
-          function, function.getArguments().drop_front(firstQubit),
-          returnOp.getOperands()))) {
+  DenseMap<Value, Value> origins;
+  if (failed(qco::collectWireOrigins(function, origins))) {
     return failure();
   }
   return verifyNoUnitaryRecursion<qco::CallOp>(function);
@@ -348,7 +318,7 @@ verifyUnitaryFunction(Operation* operation, const NamedAttribute attribute) {
     }
   }
   return usesQC ? verifyQCUnitaryBody(function)
-                : verifyQCOUnitaryBody(function, firstQubit);
+                : verifyQCOUnitaryBody(function);
 }
 
 [[nodiscard]] static LogicalResult verifyName(Operation* operation,

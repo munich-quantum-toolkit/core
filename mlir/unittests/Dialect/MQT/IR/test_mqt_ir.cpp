@@ -18,6 +18,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include "gtest/gtest.h"
@@ -499,6 +500,29 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
       }
     }
   )mlir"));
+  for (const auto* type : {
+           "!qc.qubit",
+           "memref<2x!qc.qubit>",
+           "!qco.qubit",
+           "tensor<2x!qco.qubit>",
+       }) {
+    SCOPED_TRACE(type);
+    const auto source =
+        "module { func.func @helper(%value: " + std::string(type) + ") -> " +
+        type + " { return %value : " + type + " } }";
+    auto moduleOp = parse(source);
+    ASSERT_TRUE(moduleOp);
+    mqt::setEntryPoint(moduleOp->lookupSymbol<func::FuncOp>("helper"));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          StringRef(diagnostic.str())
+              .contains("'mqt.entry_point' cannot return quantum values");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    EXPECT_TRUE(diagnosed);
+  }
 }
 
 TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
@@ -751,7 +775,9 @@ TEST_F(MQTIRTest, RejectsNonUnitaryLoopBodiesAndQubitPermutations) {
     std::string diagnostics;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
       diagnostics += diagnostic.str();
-      rejectedBody |= StringRef(diagnostic.str()).contains("unitary QC");
+      rejectedBody |= StringRef(diagnostic.str()).contains("unitary QC") ||
+                      StringRef(diagnostic.str())
+                          .contains("positional quantum state correspondence");
       return success();
     });
     EXPECT_FALSE(parse(source));
@@ -786,10 +812,11 @@ TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
 }
 
 TEST_F(MQTIRTest, RejectsCyclicUnitaryQubitFlow) {
-  bool sawCycle = false;
+  bool sawInvalidFlow = false;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    sawCycle |= StringRef(diagnostic.str())
-                    .contains("unitary QCO result has cyclic qubit flow");
+    sawInvalidFlow |=
+        StringRef(diagnostic.str())
+            .contains("must return its quantum arguments positionally");
     return success();
   });
   EXPECT_FALSE(parse(R"mlir(
@@ -800,7 +827,7 @@ TEST_F(MQTIRTest, RejectsCyclicUnitaryQubitFlow) {
       return %b : !qco.qubit
     }
   )mlir"));
-  EXPECT_TRUE(sawCycle);
+  EXPECT_TRUE(sawInvalidFlow);
 }
 
 TEST_F(MQTIRTest, RejectsMalformedUnitaryBodyOperations) {

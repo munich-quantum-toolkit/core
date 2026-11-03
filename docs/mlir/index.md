@@ -26,6 +26,15 @@ hardware. Passes that are not tied to a single dialect are documented on the
 {doc}`passes <Transforms>` page. For interoperability, we provide
 {doc}`conversions <Conversions>` between dialects.
 
+QC and QCO entry functions return classical program data and cannot return
+qubits or quantum registers. Helper functions may pass and return quantum state.
+Programs without results use a void entry function; a returned integer zero is
+still data. The C++ program builders infer the entry signature in `finalize()`
+from its return values. Scalar results survive OpenQASM, QC, QCO, and jeff
+interchange. Each exporter defines its supported result types;
+{doc}`QIR <../qir/index>` accepts direct measurements and CBit registers and
+creates its runtime exit status during conversion.
+
 ## Quantum resource contract
 
 QC, QCO, and QTensor share these requirements for semantic round trips:
@@ -46,13 +55,18 @@ QC, QCO, and QTensor share these requirements for semantic round trips:
 - Quantum results of helpers and structured control flow correspond to quantum
   inputs in the same order. Updated quantum arguments form a suffix after the
   ordinary function results. Quantum values in QCO have exactly one use.
+  `qco::verifyLinearity` checks both use counts and positional correspondence
+  after ordinary MLIR verification. Public QCO program boundaries run this
+  check; parsing MLIR alone does not establish it.
 
 Indices must be in bounds. Distinct runtime indices used together must select
 non-overlapping resources; extraction and reinsertion indices must select the
-same slot. These are program preconditions. Conversions diagnose known
-violations and unsupported IR shapes, but do not prove arbitrary index
-relationships or insert runtime checks. Type checking and linearity alone do not
-establish this contract.
+same slot. Bounds and non-overlap are program preconditions. QCO-to-QC proves
+restoration from identical SSA values, equal constants, or arithmetic equality
+supported by MLIR value-bounds analysis; unproved restoration fails before
+rewriting. Other conversions diagnose known violations and unsupported IR
+shapes, but do not prove arbitrary index relationships or insert runtime checks.
+Type checking and linearity alone do not establish this contract.
 
 Slot identity refers to the underlying register and index. A view or slice may
 renumber those indices; it does not change the qubits they denote. Overlapping

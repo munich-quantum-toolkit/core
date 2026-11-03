@@ -35,13 +35,17 @@
 
 namespace mlir::qc {
 
-static cbit::StoreOp measurementDestination(MeasureOp measure) {
+static cbit::StoreOp measurementDestination(MeasureOp measure,
+                                            bool allowOtherUses) {
+  if (!allowOtherUses && !measure.getResult().hasOneUse()) {
+    return {};
+  }
   cbit::StoreOp destination;
   for (auto* user : measure.getResult().getUsers()) {
-    if (auto store = dyn_cast<cbit::StoreOp>(user)) {
-      if (destination) {
-        return {};
-      }
+    if (auto store = dyn_cast<cbit::StoreOp>(user);
+        store && store->getBlock() == measure->getBlock() &&
+        (!allowOtherUses || getConstantIntValue(store.getIndex())) &&
+        (!destination || store->isBeforeInBlock(destination))) {
       destination = store;
     }
   }
@@ -53,13 +57,13 @@ DenseMap<Operation*, cbit::StoreOp> findMeasurementStores(func::FuncOp function,
   DenseMap<Operation*, cbit::StoreOp> destinations;
   function.walk([&](Block* block) {
     auto measurements = block->getOps<qc::MeasureOp>();
-    if (llvm::all_of(measurements, [](MeasureOp measure) {
-          auto store = measurementDestination(measure);
+    if (llvm::all_of(measurements, [&](MeasureOp measure) {
+          auto store = measurementDestination(measure, allowOtherUses);
           return !store || store == measure->getNextNode();
         })) {
       for (auto measure : measurements) {
-        if (auto store = measurementDestination(measure);
-            store && (allowOtherUses || measure.getResult().hasOneUse())) {
+        if (auto store = measurementDestination(measure, allowOtherUses);
+            store) {
           destinations.try_emplace(measure, store);
         }
       }
@@ -124,9 +128,8 @@ DenseMap<Operation*, cbit::StoreOp> findMeasurementStores(func::FuncOp function,
              accesses.positions[accesses.next] < destination;
     };
     for (auto measure : measurements) {
-      auto destination = measurementDestination(measure);
-      if (!destination ||
-          (!allowOtherUses && !measure.getResult().hasOneUse())) {
+      auto destination = measurementDestination(measure, allowOtherUses);
+      if (!destination) {
         continue;
       }
       if (destination == measure->getNextNode()) {

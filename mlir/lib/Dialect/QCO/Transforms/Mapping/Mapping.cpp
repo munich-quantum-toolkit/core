@@ -24,6 +24,7 @@
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Layout.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
@@ -31,12 +32,15 @@
 #include "mqt/Support/RandomSeed.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/Location.h"
@@ -110,8 +114,8 @@ struct Computation {
 /// Consume source labels while the existing placement loop replaces roots.
 class LayoutRecorder {
 public:
-  LayoutRecorder(func::FuncOp function, const CompilerTarget& target)
-      : module_(function->getParentOfType<ModuleOp>()) {
+  LayoutRecorder(func::FuncOp func, const CompilerTarget& target)
+      : module_(func->getParentOfType<ModuleOp>()) {
     auto count =
         module_->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
     if (!count) {
@@ -131,7 +135,7 @@ public:
     auto initial = circuit.getAs<DenseI64ArrayAttr>("initial");
     circuitRouting_ = circuit.getAs<DenseI64ArrayAttr>("routing");
     // Layout positions are compact; source labels can have gaps after cleanup.
-    for (Operation& operation : function.getBody().front()) {
+    for (Operation& operation : func.getBody().front()) {
       if (auto indices = operation.getAttrOfType<DenseI64ArrayAttr>(
               mqt::kSourceQubitIndicesAttr)) {
         llvm::append_range(circuitSources_, indices.asArrayRef());
@@ -222,34 +226,48 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
   if (!llvm::hasSingleElement(func.getBody())) {
     return func.emitError("mapping requires a single-block entry function");
   }
+
   const auto result =
-      func.walk([](Operation* operation) {
-        if (isa<CallOpInterface>(operation) &&
-            (llvm::any_of(operation->getOperandTypes(), isLinearQubitType) ||
-             llvm::any_of(operation->getResultTypes(), isLinearQubitType))) {
-          operation->emitError("inline calls that carry qubits before mapping");
+      func.walk([](Operation* op) {
+        if (isa<CallOpInterface>(op) &&
+            (llvm::any_of(op->getOperandTypes(), isLinearQubitType) ||
+             llvm::any_of(op->getResultTypes(), isLinearQubitType))) {
+          op->emitError("inline calls that carry qubits before mapping");
           return WalkResult::interrupt();
         }
-        if (operation->getNumRegions() == 0 &&
+
+        if (op->getNumRegions() == 0 &&
             !isa<QCODialect, qtensor::QTensorDialect, cbit::CBitDialect>(
-                operation->getDialect()) &&
-            !isMemoryEffectFree(operation)) {
-          operation->emitError(
-              "mapping supports classical side effects only through CBit "
-              "operations; lower other side effects before mapping");
-          return WalkResult::interrupt();
+                op->getDialect()) &&
+            !isMemoryEffectFree(op)) {
+          const auto effects = getEffectsRecursively(op);
+          if ((!isa<memref::MemRefDialect>(op->getDialect()) &&
+               !isa<bufferization::MaterializeInDestinationOp>(op)) ||
+              !effects || llvm::any_of(*effects, [](const auto& effect) {
+                auto value = effect.getValue();
+                return !value || !isa<BaseMemRefType>(value.getType());
+              })) {
+            op->emitError(
+                "mapping supports classical side effects only through CBit "
+                "operations, MemRef operations, or tensor initializers with "
+                "value-associated MemRef effects; lower other side effects "
+                "before mapping");
+            return WalkResult::interrupt();
+          }
         }
-        if (auto unitary = dyn_cast<UnitaryOpInterface>(operation);
-            unitary && !isa<BarrierOp>(operation) &&
-            unitary.getNumQubits() > 2) {
+
+        if (auto unitary = dyn_cast<UnitaryOpInterface>(op);
+            unitary && !isa<BarrierOp>(op) && unitary.getNumQubits() > 2) {
           unitary.emitError()
               << "cannot route an operation acting on "
               << unitary.getNumQubits()
               << " qubits; decompose it to one- and two-qubit operations first";
           return WalkResult::interrupt();
         }
+
         return WalkResult::advance();
       });
+
   return result.wasInterrupted() ? failure() : success();
 }
 
@@ -271,7 +289,7 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
 static FailureOr<Computation> discoverComputation(func::FuncOp func) {
   Computation computation;
 
-  for (Operation& op : func.getBody().front()) {
+  for (Operation& op : func.getOps()) {
     TypeSwitch<Operation*>(&op)
         .Case([&](AllocOp alloc) {
           computation.scalarAllocations.emplace_back(alloc);
@@ -332,6 +350,7 @@ static LogicalResult checkCapacity(func::FuncOp func,
            << "target site count exceeds mapping index capacity ("
            << +std::numeric_limits<QubitIndex>::max() << ")";
   }
+
   if (computation.wires.size() <= target.numSites()) {
     return success();
   }
@@ -349,9 +368,8 @@ static LogicalResult checkCapacity(func::FuncOp func,
 static FailureOr<Wires> applyPlacement(Region& body,
                                        const CompilerTarget& target,
                                        const Layout<QubitIndex>& layout,
-                                       Computation& computation,
+                                       const Computation& computation,
                                        IRRewriter& rewriter) {
-  LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
   SmallVector<Value> staticQubits;
   const auto nhardware = layout.nHardwareQubits();
   staticQubits.reserve(nhardware);
@@ -366,6 +384,7 @@ static FailureOr<Wires> applyPlacement(Region& body,
 
   size_t prog = 0;
 
+  LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
   for (auto alloc : computation.scalarAllocations) {
     const auto vertex = layout.getHardwareIndex(prog++);
     recorder.record(alloc, 0, vertex);
@@ -375,7 +394,7 @@ static FailureOr<Wires> applyPlacement(Region& body,
     rewriter.eraseOp(alloc);
   }
 
-  for (auto& tensor : computation.tensorAllocations) {
+  for (const auto& tensor : computation.tensorAllocations) {
     for (Operation* operation : tensor.operations) {
       TypeSwitch<Operation*>(operation)
           .Case([&](ExtractOp op) {
@@ -411,21 +430,22 @@ static FailureOr<Wires> applyPlacement(Region& body,
   if (failed(recorder.finish())) {
     return failure();
   }
+
   return map_to_vector(staticQubits,
                        [](Value qubit) { return WireIterator(qubit); });
 }
 
 /// Assign allocation slots to sites without traversing or expanding their uses.
-static LogicalResult placeIndexedAllocations(func::FuncOp function,
-                                             const CompilerTarget& target) {
-  LayoutRecorder recorder(function, target);
+static LogicalResult placeIndexedAllocations(func::FuncOp func,
+                                             const CompilerTarget& target,
+                                             IRRewriter& rewriter) {
   SmallVector<Operation*> allocations;
   size_t required = 0;
-  for (Operation& operation : function.getBody().front()) {
+  for (Operation& op : func.getOps()) {
     size_t width = 0;
-    if (isa<AllocOp>(operation)) {
+    if (isa<AllocOp>(op)) {
       width = 1;
-    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation)) {
+    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
       auto type = tensor.getResult().getType();
       if (!type.hasStaticShape()) {
         return tensor.emitError(
@@ -436,53 +456,57 @@ static LogicalResult placeIndexedAllocations(func::FuncOp function,
       continue;
     }
     if (required > target.numSites() || width > target.numSites() - required) {
-      return function.emitError()
+      return func.emitError()
              << "requires more program qubits than the target site count of "
              << target.numSites();
     }
     required += width;
-    allocations.push_back(&operation);
+    allocations.push_back(&op);
   }
-  IRRewriter rewriter(function.getContext());
+
   size_t vertex = 0;
-  for (Operation* allocation : allocations) {
-    rewriter.setInsertionPoint(allocation);
+  LayoutRecorder recorder(func, target);
+  for (Operation* alloc : allocations) {
+    rewriter.setInsertionPoint(alloc);
     int64_t slot = 0;
     const auto nextQubit = [&] {
-      recorder.record(allocation, slot++, vertex);
-      return StaticOp::create(rewriter, allocation->getLoc(),
+      recorder.record(alloc, slot++, vertex);
+      return StaticOp::create(rewriter, alloc->getLoc(),
                               target.siteForVertex(vertex++));
     };
-    if (isa<AllocOp>(allocation)) {
+    if (isa<AllocOp>(alloc)) {
       auto qubit = nextQubit();
-      allocation->removeAttr(mqt::kSourceQubitIndicesAttr);
-      qubit->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
-      rewriter.replaceOp(allocation, qubit.getQubit());
+      alloc->removeAttr(mqt::kSourceQubitIndicesAttr);
+      qubit->setDiscardableAttrs(alloc->getDiscardableAttrDictionary());
+      rewriter.replaceOp(alloc, qubit.getQubit());
       continue;
     }
-    auto type = cast<RankedTensorType>(allocation->getResult(0).getType());
+    auto type = cast<RankedTensorType>(alloc->getResult(0).getType());
     SmallVector<Value> qubits;
     qubits.reserve(static_cast<size_t>(type.getNumElements()));
     for (int64_t index = 0; index < type.getNumElements(); ++index) {
       qubits.push_back(nextQubit().getQubit());
     }
-    auto tensor = qtensor::FromElementsOp::create(
-        rewriter, allocation->getLoc(), type, qubits);
-    allocation->removeAttr(mqt::kSourceQubitIndicesAttr);
-    tensor->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
-    rewriter.replaceOp(allocation, tensor.getResult());
+    auto tensor = qtensor::FromElementsOp::create(rewriter, alloc->getLoc(),
+                                                  type, qubits);
+    alloc->removeAttr(mqt::kSourceQubitIndicesAttr);
+    tensor->setDiscardableAttrs(alloc->getDiscardableAttrDictionary());
+    rewriter.replaceOp(alloc, tensor.getResult());
   }
+
   return recorder.finish();
 }
 
-static bool needsPlacement(func::FuncOp function) {
-  if (!function.getOps<StaticOp>().empty()) {
+/// Returns true, if a function has not been placed before.
+static bool needsPlacement(func::FuncOp func) {
+  if (!func.getOps<StaticOp>().empty()) {
     return false;
   }
-  auto moduleOp = function->getParentOfType<ModuleOp>();
+
+  auto moduleOp = func->getParentOfType<ModuleOp>();
   return moduleOp->hasAttr(mqt::kSourceQubitCountAttr) ||
-         !function.getOps<AllocOp>().empty() ||
-         !function.getOps<qtensor::AllocOp>().empty();
+         !func.getOps<AllocOp>().empty() ||
+         !func.getOps<qtensor::AllocOp>().empty();
 }
 
 namespace {
@@ -491,9 +515,6 @@ struct PlacementPass final
     : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
 
-  explicit PlacementPass(const CompilerTarget& compilerTarget)
-      : target(compilerTarget) {}
-
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, qtensor::QTensorDialect>();
   }
@@ -501,7 +522,8 @@ struct PlacementPass final
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+    if (failed(verifyLinearity(moduleOp)) ||
+        failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
     }
@@ -517,15 +539,24 @@ protected:
       return;
     }
 
-    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
-    if (environment && environment.environment().supportsIndexedQubits()) {
-      if (failed(placeIndexedAllocations(func, target))) {
+    const auto& targetAnalysis = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!targetAnalysis) {
+      moduleOp.emitError() << "expected a valid mqt.target_env: "
+                           << targetAnalysis.error();
+      signalPassFailure();
+      return;
+    }
+
+    IRRewriter rewriter(&getContext());
+    const auto& target = targetAnalysis.environment().target();
+    if (targetAnalysis.environment().supportsIndexedQubits()) {
+      if (failed(placeIndexedAllocations(func, target, rewriter))) {
         signalPassFailure();
       }
       return;
     }
 
-    auto computation = discoverComputation(func);
+    const auto computation = discoverComputation(func);
     if (failed(computation) ||
         failed(checkCapacity(func, target, *computation))) {
       signalPassFailure();
@@ -533,21 +564,19 @@ protected:
     }
 
     const auto layout = Layout<QubitIndex>::identity(computation->wires.size());
-    IRRewriter rewriter(&getContext());
     if (failed(applyPlacement(func.getFunctionBody(), target, layout,
                               *computation, rewriter))) {
       signalPassFailure();
     }
   }
-
-private:
-  CompilerTarget target;
 };
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using Window = SmallVector<QubitIndexPair>;
   using Score = std::pair<size_t, size_t>;
+
+  enum class RoutingMode : bool { Cold, Hot };
 
   /// Invocation data is prepared before trials, then borrowed read-only.
   struct Environment {
@@ -563,7 +592,7 @@ private:
               CompilerTarget::NativeOperations::Kind::Explicit) {
         return;
       }
-      nativeCosts = NativeCostTable::precompute(root, *basis->entangler, seed);
+      nativeCosts = NativeCostTable::precompute(root, seed);
 
       // Uniform SWAP costs keep the distance heuristic in native-gate units.
       NativeCostAnalysis analysis(seed, nativeCosts.get());
@@ -578,8 +607,7 @@ private:
     }
   };
 
-  enum class RoutingMode : bool { Cold, Hot };
-
+  /// Describes a control-flow operation that acts on qubits.
   struct CompositeUnitary {
     /// The composite op (e.g. SCF).
     Operation* op = nullptr;
@@ -641,12 +669,6 @@ private:
 
   /// Describes a node in the A* search graph.
   struct Node {
-    struct ComparePointer {
-      bool operator()(const Node* lhs, const Node* rhs) const {
-        return lhs->f > rhs->f;
-      }
-    };
-
     Layout<QubitIndex> layout;
     QubitIndexPair swap;
     Node* parent = nullptr;
@@ -725,6 +747,7 @@ private:
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
+
       return costs;
     }
   };
@@ -761,8 +784,14 @@ private:
     }
 
   private:
+    struct CompareNodePointer {
+      bool operator()(const Node* lhs, const Node* rhs) const {
+        return lhs->f > rhs->f;
+      }
+    };
+
     /// Priority queue of node pointers managed by the caller.
-    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer> queue;
+    llvm::PriorityQueue<Node*, std::vector<Node*>, CompareNodePointer> queue;
     /// Maps a layout to the node that reached it using the lowest cost.
     DenseMap<ArrayRef<QubitIndex>, Node*> best;
   };
@@ -894,6 +923,53 @@ private:
     const CompilerTarget* target_;
   };
 
+  /// A stateful iterator over routing boundaries in a block.
+  ///
+  /// A routing boundary is a control flow operation (IfOp, IndexSwitchOp,
+  /// scf::ForOp, scf::WhileOp) that produces qubit types. These boundaries
+  /// delimit regions where qubit routing must account for control flow.
+  template <WireDirection Direction> struct Boundary {
+    /// Initialize the routing boundary.
+    explicit Boundary(Block& block) {
+      if constexpr (Direction == WireDirection::Forward) {
+        boundary_ = findNextBoundary(&block.front());
+      } else {
+        boundary_ = findNextBoundary(&block.back());
+      }
+    }
+
+    /// Advance before rewriting the current routing boundary.
+    void advance() {
+      assert(boundary_ != nullptr && "cannot advance an exhausted boundary");
+      boundary_ = findNextBoundary(next(boundary_));
+    }
+
+    /// Return the current boundary operation, or nullptr if exhausted.
+    [[nodiscard]] Operation* operation() const { return boundary_; }
+
+  private:
+    /// Starting from op, walk the IR in block-order until a boundary operation
+    /// is discovered or the block is exhausted.
+    Operation* findNextBoundary(Operation* op) {
+      for (; op != nullptr; op = next(op)) {
+        if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
+            any_of(op->getResultTypes(),
+                   [](Type type) { return isa<QubitType>(type); })) {
+          return op;
+        }
+      }
+      return nullptr;
+    }
+
+    /// Return the next (or previous) operation in block-order.
+    static Operation* next(Operation* op) {
+      return Direction == WireDirection::Forward ? op->getNextNode()
+                                                 : op->getPrevNode();
+    }
+
+    Operation* boundary_;
+  };
+
 public:
   /// Construct default mapping pass.
   MappingPass() = default;
@@ -912,7 +988,8 @@ protected:
       return;
     }
 
-    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+    if (failed(verifyLinearity(moduleOp)) ||
+        failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
     }
@@ -968,10 +1045,10 @@ protected:
       signalPassFailure();
       return;
     }
-    RoutingState state(std::move(*wires), layout, env);
 
+    RoutingState state(std::move(*wires), layout, env);
     const auto stats = route<WireDirection::Forward, RoutingMode::Hot>(
-        state, arena, env, &rewriter);
+        func.getFunctionBody().front(), state, arena, env, &rewriter);
 
     assert((!expectedScore ||
             (state.costs ? state.costs->score() : std::nullopt)
@@ -1005,6 +1082,23 @@ protected:
   }
 
 private:
+  /// Return true, if a precedes b (or b precedes a for backwards iteration).
+  template <WireDirection Direction>
+  static bool precedes(Operation* a, Operation* b) {
+    if constexpr (Direction == WireDirection::Forward) {
+      return a->isBeforeInBlock(b);
+    }
+    return b->isBeforeInBlock(a);
+  }
+
+  /// Return values carried by a supported region terminator.
+  static ValueRange yieldedValues(Block& block) {
+    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
+        .Case([](scf::YieldOp op) { return op.getResults(); })
+        .Case([](scf::ConditionOp op) { return op.getArgs(); })
+        .Case([](YieldOp op) { return op.getTargets(); });
+  }
+
   /// Return the qubit values in `values`, preserving their relative order.
   static SmallVector<Value> getQubitValues(ValueRange values) {
     return llvm::filter_to_vector(
@@ -1147,46 +1241,71 @@ private:
     return newWhileOp;
   }
 
-  /// Thread the value before the next pending operation through the region.
-  ///
-  /// In particular, terminal measurements must remain after the region.
-  static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
-    --iterator;
-    while (iterator.operation() != nullptr &&
-           !iterator.operation()->isBeforeInBlock(boundary)) {
-      --iterator;
-    }
-    return iterator.qubit();
-  }
-
-  /// Return an initial layout and whether it is known to need no routing.
-  ///
-  /// Otherwise, place frequently interacting qubits near each other. Nested
-  /// control flow has no single interaction frequency, so leave those programs
-  /// to the identity and random starts.
-  [[nodiscard]] std::optional<std::pair<Layout<QubitIndex>, bool>>
-  generateGreedyLayout(Wires wires, const Environment& env) const {
-    DenseMap<QubitIndexPair, size_t> weights;
+  /// Collect bounded interaction frequencies through wire-preserving loops.
+  static bool
+  collectInteractionWeights(Wires wires,
+                            DenseMap<QubitIndexPair, size_t>& weights,
+                            size_t repetitions, size_t maximumWeight) {
     bool supported = true;
     walkProgramGraph<WireDirection::Forward>(
         MutableArrayRef(wires.data(), wires.size()),
         [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
           for (const auto& [op, indices] : frontier) {
-            if (op->getNumRegions() != 0 && !isa<UnitaryOpInterface>(op)) {
+            if (auto loop = dyn_cast<scf::ForOp>(op)) {
+              const auto tripCount = loop.getStaticTripCount();
+              if (!tripCount || tripCount->isZero()) {
+                supported = false;
+                return WalkResult::interrupt();
+              }
+              Wires children(wires.size());
+              for (size_t index : indices) {
+                const auto position =
+                    cast<OpResult>(wires[index].qubit()).getResultNumber();
+                auto argument = loop.getRegionIterArgs()[position];
+                children[index] = WireIterator(argument);
+              }
+              const size_t iterations =
+                  tripCount->getLimitedValue(maximumWeight);
+              const size_t weight = repetitions > maximumWeight / iterations
+                                        ? maximumWeight
+                                        : repetitions * iterations;
+              if (!collectInteractionWeights(std::move(children), weights,
+                                             weight, maximumWeight)) {
+                supported = false;
+                return WalkResult::interrupt();
+              }
+            } else if (op->getNumRegions() != 0 &&
+                       !isa<UnitaryOpInterface>(op)) {
               supported = false;
               return WalkResult::interrupt();
             }
             if (indices.size() == 2 && !isa<BarrierOp>(op) &&
                 isa<UnitaryOpInterface>(op)) {
-              ++weights[std::minmax(indices[0], indices[1])];
+              auto& weight = weights[std::minmax(indices[0], indices[1])];
+              weight += std::min(repetitions, maximumWeight - weight);
             }
             released.emplace_back(op);
           }
           return WalkResult::advance();
         });
-    if (!supported) {
+    return supported;
+  }
+
+  /// Return an initial layout and whether it is known to need no routing.
+  ///
+  /// Counted scalar loops contribute weighted interactions. Other regions use
+  /// identity and random starts.
+  [[nodiscard]] std::optional<std::pair<Layout<QubitIndex>, bool>>
+  generateGreedyLayout(const Wires& wires, const Environment& env) const {
+    DenseMap<QubitIndexPair, size_t> weights;
+    // Bound both sums over neighbors and their distance-weighted costs.
+    const size_t maximumWeight = std::numeric_limits<size_t>::max() /
+                                 std::max(wires.size(), size_t{1}) /
+                                 env.target.numSites();
+    if (!collectInteractionWeights(wires, weights, 1, maximumWeight)) {
       return std::nullopt;
     }
+
     if (llvm::all_of(weights, [&](const auto& interaction) {
           const auto [a, b] = interaction.first;
           return env.target.areAdjacent(a, b);
@@ -1375,14 +1494,15 @@ private:
 
     assert(ntrials == trials.size());
 
+    Block& block = func.getFunctionBody().front();
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
       Arena arena(env.target.numSites(), searchMemoryLimit);
 
       {
         auto state = RoutingState::fromLayout(wires, t.layout, env);
         for (size_t i = 0; i < niterations; ++i) {
-          route<WireDirection::Forward>(state, arena, env);
-          route<WireDirection::Backward>(state, arena, env);
+          route<WireDirection::Forward>(block, state, arena, env);
+          route<WireDirection::Backward>(block, state, arena, env);
         }
         t.layout = std::move(state.layout);
       }
@@ -1391,7 +1511,8 @@ private:
       // preserving only the initial layout selected for final placement.
       auto state = RoutingState::fromLayout(wires, t.layout, env);
 
-      const auto score = route<WireDirection::Forward>(state, arena, env);
+      const auto score =
+          route<WireDirection::Forward>(block, state, arena, env);
       const auto quality = state.costs ? state.costs->score() : std::nullopt;
       t.score = quality.value_or(
           std::pair{std::numeric_limits<size_t>::max(), score.nswaps});
@@ -1624,19 +1745,11 @@ private:
     return curr;
   }
 
-  template <WireDirection Direction>
-  static bool precedes(Operation* a, Operation* b) {
-    if constexpr (Direction == WireDirection::Forward) {
-      return a->isBeforeInBlock(b);
-    }
-    return b->isBeforeInBlock(a);
-  }
-
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
   Window getWindow(Wires wires, const Layout<QubitIndex>& layout,
-                   Operation* boundary) {
+                   const Boundary<Direction>& boundary) {
     Window window;
 
     SmallVector<QubitIndexPair> prev;
@@ -1647,14 +1760,16 @@ private:
         [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
           for (const auto& [op, indices] : frontier) {
             if (indices.size() == 1 &&
-                (boundary == nullptr || precedes<Direction>(op, boundary))) {
+                (boundary.operation() == nullptr ||
+                 precedes<Direction>(op, boundary.operation()))) {
               released.emplace_back(op);
             }
           }
 
           if (released.empty()) {
             for (const auto& [op, indices] : frontier) {
-              if (boundary != nullptr && !precedes<Direction>(op, boundary)) {
+              if (boundary.operation() != nullptr &&
+                  !precedes<Direction>(op, boundary.operation())) {
                 continue;
               }
               if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
@@ -1722,9 +1837,7 @@ private:
                                       DenseMap<Operation*, bool>& cache) {
     SmallVector<MeasureOp> measurements;
     bool needsRouting = false;
-    WireIterator it(measurement.getQubitOut());
-    for (; it != std::default_sentinel; ++it) {
-      Operation* op = it.operation();
+    for (auto* op : WireRange(measurement.getQubitOut())) {
       if (const auto cached = cache.find(op); cached != cache.end()) {
         needsRouting = cached->second;
         break;
@@ -1751,7 +1864,7 @@ private:
 
     SetVector<Operation*> worklist;
 
-    DenseSet<TypedValue<cbit::RegisterType>> processed;
+    DenseSet<Value> processed;
 
     size_t cursor = 0;
     const auto resultNeedsRouting = [&](MeasureOp next) {
@@ -1768,7 +1881,7 @@ private:
           return true;
         }
 
-        // Captures and nested register accesses also constrain their enclosing
+        // Captures and nested memory accesses also constrain their enclosing
         // composite, whose placement threads every physical wire through it.
 
         if (op->getBlock() != block) {
@@ -1785,17 +1898,16 @@ private:
 
         for (const auto& effect : *effects) {
           auto value = effect.getValue();
-          auto reg = dyn_cast_if_present<TypedValue<cbit::RegisterType>>(value);
-          if (!reg) {
+          if (!value ||
+              !isa<cbit::RegisterType, BaseMemRefType>(value.getType())) {
             continue;
           }
 
-          auto [it, inserted] = processed.insert(reg);
-          if (!inserted) {
+          if (!processed.insert(value).second) {
             continue;
           }
 
-          for (Operation* user : reg.getUsers()) {
+          for (Operation* user : value.getUsers()) {
             Operation* ancestor = block->findAncestorOpInBlock(*user);
             if (user == op ||
                 (ancestor && !measurement->isBeforeInBlock(ancestor))) {
@@ -1823,18 +1935,24 @@ private:
   /// sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   std::optional<CompositeUnitary>
-  advance(RoutingState& state, Operation* boundary, const Environment& env) {
+  advance(RoutingState& state, const Boundary<Direction>& boundary,
+          const Environment& env, bool classicalAliases) {
     auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
     // Advancement only moves iterators. Discard classifications before routing
     // inserts SWAPs or replaces composites.
     DenseMap<Operation*, bool> measurementRouting;
+    const auto needsRouting = [&](MeasureOp measurement) {
+      // Aliases can hide feedback from the storage handle's SSA use chain.
+      return classicalAliases ||
+             measurementNeedsRouting(measurement, measurementRouting);
+    };
 
     // The wire traversal does not follow classical dependencies. Defer a
     // composite until earlier routing work is complete, but let independent
     // composites pass terminal wires. Reverse block order for backward routing.
 
-    const auto defer = [&wires, &measurementRouting](Operation* candidate) {
+    const auto defer = [&](Operation* candidate) {
       return any_of(wires, [&](WireIterator& it) {
         if (it == std::default_sentinel) {
           return false;
@@ -1852,8 +1970,7 @@ private:
         }
         if constexpr (Direction == WireDirection::Forward) {
           if (auto measurement = dyn_cast<MeasureOp>(op);
-              measurement &&
-              !measurementNeedsRouting(measurement, measurementRouting)) {
+              measurement && !needsRouting(measurement)) {
             return false;
           }
           return op->isBeforeInBlock(candidate);
@@ -1870,35 +1987,34 @@ private:
                                            SmallVectorImpl<Operation*>&
                                                released) {
       for (const auto& [op, indices] : frontier) {
-        if (boundary != nullptr && precedes<Direction>(boundary, op)) {
+        if (boundary.operation() != nullptr &&
+            precedes<Direction>(boundary.operation(), op)) {
           continue;
         }
 
         const auto release =
             TypeSwitch<Operation*, bool>(op)
-                .Case([](BarrierOp&) { return true; })
-                .Case([&](UnitaryOpInterface&) {
+                .Case([](BarrierOp) { return true; })
+                .Case([&](UnitaryOpInterface) {
                   if (indices.size() == 1) {
                     return true;
                   }
-
                   return env.target.areAdjacent(indices[0], indices[1]);
                 })
-                .Case([](ResetOp&) { return true; })
-                .Case([&](MeasureOp& m) {
+                .Case([](ResetOp) { return true; })
+                .Case([&](MeasureOp m) {
                   if (Direction == WireDirection::Backward) {
                     return true;
                   }
-
-                  return measurementNeedsRouting(m, measurementRouting);
+                  return needsRouting(m);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
-                    [](auto&) { return Direction == WireDirection::Forward; })
+                    [](auto) { return Direction == WireDirection::Forward; })
                 .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
                                scf::ConditionOp>(
-                    [](auto&) { return Direction == WireDirection::Backward; })
+                    [](auto) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                    [&](auto& cf) {
+                    [&](auto cf) {
                       if (!defer(cf) &&
                           (!composite ||
                            precedes<Direction>(op, composite->op))) {
@@ -1940,21 +2056,36 @@ private:
   /// Keeps the parent cursors at the corresponding physical results.
   void place(CompositeUnitary& composite, RoutingState& parent,
              IRRewriter& rewriter) {
-    SmallVector<unsigned> resultNumbers(parent.wires.size());
     SmallVector<Value> addons;
-    for (auto [site, wire] : enumerate(parent.wires)) {
-      if (wire.operation() == composite.op) {
-        resultNumbers[site] = cast<OpResult>(wire.qubit()).getResultNumber();
+    SmallVector<unsigned> resultNumbers(parent.wires.size());
+
+    for (size_t site = 0; site < parent.wires.size(); ++site) {
+      WireIterator it(parent.wires[site]);
+      if (it.operation() == composite.op) {
+        resultNumbers[site] = cast<OpResult>(it.qubit()).getResultNumber();
       } else {
         resultNumbers[site] = composite.op->getNumResults() + addons.size();
-        addons.push_back(valueBeforeBoundary(wire, composite.op));
+
+        // Thread the value before the next pending operation through the
+        // region. Particularly, terminal measurements must remain after the
+        // region.
+
+        --it;
+        while (it.operation() != nullptr &&
+               !it.operation()->isBeforeInBlock(composite.op)) {
+          --it;
+        }
+
+        addons.push_back(it.qubit());
       }
     }
+
     composite.op =
         TypeSwitch<Operation*, Operation*>(composite.op)
             .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
                 [&](auto op) { return extend(op, addons, rewriter); });
     composite.indices = to_vector(llvm::seq(parent.wires.size()));
+
     for (auto [site, result] : enumerate(resultNumbers)) {
       parent.wires[site] = WireIterator(composite.op->getResult(result));
     }
@@ -2014,14 +2145,6 @@ private:
     }
   }
 
-  /// Values carried by a supported region terminator.
-  static ValueRange yieldedValues(Block& block) {
-    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
-        .Case([](scf::YieldOp op) { return op.getResults(); })
-        .Case([](scf::ConditionOp op) { return op.getArgs(); })
-        .Case([](YieldOp op) { return op.getTargets(); });
-  }
-
   /// Construct child states, route their bodies, reconcile layouts, then
   /// publish the physical result order to the parent.
   template <WireDirection Direction, RoutingMode Mode>
@@ -2076,7 +2199,8 @@ private:
         }
       }
 
-      totalStats.merge(route<Direction, Mode>(child, arena, env, rewriter));
+      totalStats.merge(
+          route<Direction, Mode>(region.front(), child, arena, env, rewriter));
     }
 
     Layout<QubitIndex> exit =
@@ -2144,51 +2268,29 @@ private:
     return totalStats;
   }
 
-  /// Regions fence every traversal, independent of native-cost availability.
-  template <WireDirection Direction>
-  static Operation* nextRoutingBoundary(Operation* op) {
-    for (; op != nullptr; op = Direction == WireDirection::Forward
-                                   ? op->getNextNode()
-                                   : op->getPrevNode()) {
-      if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
-          any_of(op->getResultTypes(),
-                 [](Type type) { return isa<QubitType>(type); })) {
-        return op;
-      }
-    }
-    return nullptr;
-  }
-
   /// Advance executable operations, route ready regions, or search for SWAPs
   /// that release the next interaction.
   ///
   /// Finish terminal measurements last.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  Statistics route(RoutingState& state, Arena& arena, const Environment& env,
-                   IRRewriter* rewriter = nullptr) {
+  Statistics route(Block& block, RoutingState& state, Arena& arena,
+                   const Environment& env, IRRewriter* rewriter = nullptr) {
     if (state.costs) {
       state.costs->reset(Direction);
     }
-    Operation* boundary = nullptr;
-    for (auto& wire : state.wires) {
-      if (wire != std::default_sentinel) {
-        auto* block = wire.qubit().getParentBlock();
-        boundary = nextRoutingBoundary<Direction>(
-            Direction == WireDirection::Forward ? &block->front()
-                                                : &block->back());
-        break;
-      }
-    }
 
     Statistics stats;
+    Boundary<Direction> boundary(block);
+    const bool classicalAliases = Direction == WireDirection::Forward &&
+                                  hasPotentialClassicalAliases(block);
+
     while (true) {
-      auto composite = advance<Direction>(state, boundary, env);
+      auto composite =
+          advance<Direction>(state, boundary, env, classicalAliases);
       if (composite) {
-        assert(composite->op == boundary);
-        boundary = nextRoutingBoundary<Direction>(
-            Direction == WireDirection::Forward ? boundary->getNextNode()
-                                                : boundary->getPrevNode());
+        assert(composite->op == boundary.operation());
+        boundary.advance();
 
         if constexpr (Mode == RoutingMode::Hot) {
           place(*composite, state, *rewriter);
@@ -2196,6 +2298,7 @@ private:
 
         stats.merge(routeComposite<Direction, Mode>(*composite, state, arena,
                                                     env, rewriter));
+
         for (auto& wire : state.wires) {
           if (wire != std::default_sentinel &&
               wire.operation() == composite->op) {
@@ -2203,17 +2306,16 @@ private:
                                  WireTraversalTraits<Direction>::stride());
           }
         }
-        continue;
-      }
+      } else {
+        const auto window =
+            getWindow<Direction>(state.wires, state.layout, boundary);
+        if (window.empty()) {
+          break;
+        }
 
-      const auto window =
-          getWindow<Direction>(state.wires, state.layout, boundary);
-      if (window.empty()) {
-        break;
+        const auto swaps = search(window, state, arena, env);
+        insertSWAPs<Mode>(swaps, state, stats, rewriter);
       }
-
-      const auto swaps = search(window, state, arena, env);
-      insertSWAPs<Mode>(swaps, state, stats, rewriter);
     }
 
     if constexpr (Direction == WireDirection::Forward) {
@@ -2235,8 +2337,8 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target) {
-  return std::make_unique<PlacementPass>(target);
+std::unique_ptr<Pass> createPlacementPass() {
+  return std::make_unique<PlacementPass>();
 }
 
 } // namespace mlir::qco

@@ -93,8 +93,8 @@ void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 
-void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
+void ROp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* context) {
   results.add<ReplaceRWithRX, ReplaceRWithRY, MergeSubsequentR>(context);
 }
 

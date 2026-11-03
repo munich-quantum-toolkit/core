@@ -99,7 +99,7 @@ SmallVector<Value> qftAdder(qc::QCProgramBuilder& builder,
   auto result = builder.allocClassicalBitRegister(
       static_cast<int64_t>(benchmark.output().width), benchmark.output().name);
 
-  detail::forwardQFT(builder, sum, sumQubits);
+  detail::qft(builder, sum, sumQubits);
   if (addend) {
     addQuantumRegister(builder, addend, sum, qubits, carry);
   } else {
@@ -114,7 +114,7 @@ SmallVector<Value> qftAdder(qc::QCProgramBuilder& builder,
           builder.p(angle, builder.loadQubit(sum, target));
         });
   }
-  detail::inverseQFT(builder, sum, sumQubits);
+  detail::qft(builder, sum, sumQubits, true);
 
   builder.measureQubitRegister(sum, result, sumQubits);
   if (addend) {

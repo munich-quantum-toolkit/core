@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -19,6 +21,7 @@
 
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
@@ -29,6 +32,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
@@ -40,6 +44,77 @@ using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
+
+/// Expose adjacent controlled inverse or rotation pairs to gate simplification.
+struct SimplifyAdjacentControls final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumControls() == 0) {
+      return failure();
+    }
+    auto next = dyn_cast<CtrlOp>(*op.getOutputControl(0).user_begin());
+    if (!next || next->getBlock() != op->getBlock() ||
+        op.getNumControls() != next.getNumControls() ||
+        !llvm::equal(op.getOutputQubits(), next.getInputQubits())) {
+      return failure();
+    }
+    auto first = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto second = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*next.getBody());
+    if (!first || !second ||
+        !llvm::equal(first.getInputQubits(), op.getBody()->getArguments()) ||
+        !llvm::equal(second.getInputQubits(), next.getBody()->getArguments())) {
+      return failure();
+    }
+    const auto inverse =
+        TypeSwitch<Operation*, bool>(first)
+            .Case<HOp, XOp, YOp, ZOp, SWAPOp, ECROp, RCCXOp>([&](auto gate) {
+              return isa<decltype(gate)>(second.getOperation());
+            })
+            .Case([&](SOp) { return isa<SdgOp>(second.getOperation()); })
+            .Case([&](SdgOp) { return isa<SOp>(second.getOperation()); })
+            .Case([&](TOp) { return isa<TdgOp>(second.getOperation()); })
+            .Case([&](TdgOp) { return isa<TOp>(second.getOperation()); })
+            .Case([&](SXOp) { return isa<SXdgOp>(second.getOperation()); })
+            .Case([&](SXdgOp) { return isa<SXOp>(second.getOperation()); })
+            .Default(false);
+    const auto rotation =
+        TypeSwitch<Operation*, bool>(first)
+            .Case<POp, RXOp, RYOp, RZOp, RXXOp, RYYOp, RZZOp, RZXOp>(
+                [&](auto gate) {
+                  auto other = dyn_cast<decltype(gate)>(second.getOperation());
+                  if (!other) {
+                    return false;
+                  }
+                  const auto lhs = mqt::valueToDouble(gate.getTheta());
+                  const auto rhs = mqt::valueToDouble(other.getTheta());
+                  return lhs && rhs && mqt::addConstantAngles(*lhs, *rhs);
+                })
+            .Default(false);
+    if (!inverse && !rotation) {
+      return failure();
+    }
+    if (!inverse) {
+      auto moduleOp = op->getParentOfType<ModuleOp>();
+      // Target-aware combining preserves native fixed-angle gates.
+      if (moduleOp && moduleOp->hasAttr("mqt.target_env")) {
+        return failure();
+      }
+    }
+
+    // Moving the shell preserves dominance of the second body's parameters.
+    rewriter.moveOpBefore(op, next);
+    rewriter.modifyOpInPlace(op, [&] {
+      auto* yield = op.getBody()->getTerminator();
+      SmallVector<Value> values(yield->getOperands());
+      rewriter.inlineBlockBefore(next.getBody(), yield, values);
+      rewriter.eraseOp(yield);
+    });
+    rewriter.replaceOp(next, op.getResults());
+    return success();
+  }
+};
 
 /// Merge nested control modifiers into a single one.
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
@@ -279,10 +354,10 @@ LogicalResult CtrlOp::verifyRegions() {
   return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
-void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl, DropUnusedTargets>(
-      context);
+void CtrlOp::getLoweringPatterns(RewritePatternSet& results,
+                                 MLIRContext* context) {
+  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  getCanonicalizationPatterns(results, context);
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
@@ -315,4 +390,15 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   }
 
   return std::nullopt;
+}
+
+void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<EraseEmptyCtrl, DropUnusedTargets>(context);
+}
+
+void CtrlOp::getOptimizationPatterns(RewritePatternSet& results,
+                                     MLIRContext* context) {
+  getLoweringPatterns(results, context);
+  results.add<SimplifyAdjacentControls>(context);
 }

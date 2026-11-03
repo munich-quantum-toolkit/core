@@ -22,8 +22,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* /*context*/) {
+void HOp::getOptimizationPatterns(RewritePatternSet& results,
+                                  MLIRContext* /*context*/) {
   results.add(&removeInversePairOneTargetZeroParameter<HOp, HOp>);
 }
 

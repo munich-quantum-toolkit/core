@@ -26,6 +26,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <cstddef>
@@ -75,12 +76,7 @@ generateQCO(const Benchmark& benchmark) {
   if (mlir::failed(program)) {
     return mlir::failure();
   }
-  auto compiled = mlir::runDefaultPipeline(
-      mlir::CompilerInput{std::move(*program)}, mlir::ProgramFormat::QCO);
-  if (mlir::failed(compiled)) {
-    return mlir::failure();
-  }
-  return std::get<mlir::QCOProgram>(std::move(*compiled));
+  return std::move(*program).intoQCO();
 }
 
 template <class Benchmark>
@@ -92,7 +88,8 @@ void expectSamplingMatchesReference(const Benchmark& benchmark,
   auto counts =
       mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
   ASSERT_TRUE(mlir::succeeded(counts));
-  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, tolerance);
+  EXPECT_LT(llvm::cantFail(benchmark.evaluate(*counts)).totalVariationDistance,
+            tolerance);
 }
 
 template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {
@@ -110,13 +107,15 @@ template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {
 inline void expectJeffRoundTrip(mlir::QCProgram&& program) {
   auto compiled = mlir::runDefaultPipeline(
       mlir::CompilerInput{std::move(program)}, mlir::ProgramFormat::Jeff);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
   ASSERT_TRUE(std::holds_alternative<mlir::JeffProgram>(*compiled));
   auto& jeff = std::get<mlir::JeffProgram>(*compiled);
   const auto bytes = jeff.toBytes();
   ASSERT_FALSE(bytes.empty());
   auto restored = mlir::JeffProgram::fromBytes(bytes);
-  ASSERT_TRUE(mlir::succeeded(restored));
+  ASSERT_TRUE(static_cast<bool>(restored))
+      << llvm::toString(restored.takeError());
   EXPECT_EQ(restored->toBytes(), bytes);
 }
 

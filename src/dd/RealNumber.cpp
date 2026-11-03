@@ -13,11 +13,11 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/LinkedListBase.hpp"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
-#include <istream>
-#include <ostream>
 
 namespace dd {
 namespace {
@@ -112,17 +112,13 @@ bool RealNumber::approximatelyZero(const RealNumber* e) noexcept {
   return e == &constants::zero || approximatelyZero(val(e));
 }
 
-void RealNumber::writeBinary(const RealNumber* e, std::ostream& os) {
+void RealNumber::writeBinary(const RealNumber* e, llvm::raw_ostream& os) {
   const auto temp = val(e);
   writeBinary(temp, os);
 }
 
-void RealNumber::writeBinary(const fp num, std::ostream& os) {
+void RealNumber::writeBinary(const fp num, llvm::raw_ostream& os) {
   os.write(reinterpret_cast<const char*>(&num), sizeof(fp));
-}
-
-void RealNumber::readBinary(dd::fp& num, std::istream& is) {
-  is.read(reinterpret_cast<char*>(&num), sizeof(fp));
 }
 
 namespace constants {

@@ -9,7 +9,6 @@
  */
 
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -38,19 +37,9 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
-LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
-                               SmallVectorImpl<OpFoldResult>& results) {
-  if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
-    results.emplace_back(getInputQubit(0));
-    results.emplace_back(getInputQubit(1));
-    return success();
-  }
-  return failure();
-}
-
-void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                             MLIRContext* /*context*/) {
+void XXPlusYYOp::getOptimizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* /*context*/) {
+  results.add(removeZeroRotation<XXPlusYYOp>);
   results.add(&mergeXXPlusMinusYY<XXPlusYYOp>);
 }
 

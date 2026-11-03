@@ -18,16 +18,19 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/IR/ValueBoundsOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
@@ -35,6 +38,7 @@
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Interfaces/ValueBoundsOpInterface.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 
@@ -59,6 +63,11 @@ enum class AllocationMode : std::uint8_t {
   Unset,   //!< No allocation mode has been established yet.
   Static,  //!< The module uses static qubit allocation.
   Dynamic, //!< The module uses dynamic qubit allocation.
+};
+
+struct ConversionRequirements {
+  AllocationMode allocationMode = AllocationMode::Unset;
+  bool needsWireOrigins = false;
 };
 
 /// Track function argument positions and the module's allocation mode.
@@ -93,11 +102,22 @@ private:
 };
 } // namespace
 
-/// Determines allocation mode independently of conversion traversal order.
-[[nodiscard]] static FailureOr<AllocationMode>
-collectAllocationMode(ModuleOp moduleOp) {
-  auto mode = AllocationMode::Unset;
+/// Determine allocation mode and required wire checks before conversion.
+[[nodiscard]] static FailureOr<ConversionRequirements>
+collectConversionRequirements(ModuleOp moduleOp) {
+  ConversionRequirements requirements;
   auto result = moduleOp.walk([&](Operation* op) {
+    if (!requirements.needsWireOrigins) {
+      if (isa<qtensor::ExtractOp, qtensor::InsertOp>(op)) {
+        requirements.needsWireOrigins = true;
+      } else if (op->getNumRegions() != 0 &&
+                 !isa<ModuleOp, qco::UnitaryOpInterface>(op)) {
+        auto function = dyn_cast<func::FuncOp>(op);
+        requirements.needsWireOrigins =
+            !function ||
+            !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
+      }
+    }
     const auto requested = isa<qco::StaticOp>(op) ? AllocationMode::Static
                            : isa<qco::AllocOp, qtensor::AllocOp>(op)
                                ? AllocationMode::Dynamic
@@ -105,18 +125,19 @@ collectAllocationMode(ModuleOp moduleOp) {
     if (requested == AllocationMode::Unset) {
       return WalkResult::advance();
     }
-    if (mode != AllocationMode::Unset && mode != requested) {
+    if (requirements.allocationMode != AllocationMode::Unset &&
+        requirements.allocationMode != requested) {
       op->emitOpError("cannot mix static and dynamic qubit allocation modes "
                       "in QCO program");
       return WalkResult::interrupt();
     }
-    mode = requested;
+    requirements.allocationMode = requested;
     return WalkResult::advance();
   });
   if (result.wasInterrupted()) {
     return failure();
   }
-  return mode;
+  return requirements;
 }
 
 /// Move a region, replace its block arguments with @p replacementValues,
@@ -249,113 +270,29 @@ public:
 
 } // namespace
 
-/// Proves the positional wire correspondence required by reference semantics.
-///
-/// Region arguments are local roots; a region result is tied to its input only
-/// after both the region body and its terminator have been checked.
+/// Prove slot identity before lowering tensors to references.
 [[nodiscard]] static LogicalResult
-collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
+verifyTensorSlots(ModuleOp moduleOp, const DenseMap<Value, Value>& origins) {
   const auto origin = [&](Value value) {
     auto known = origins.lookup(value);
     return known ? known : value;
   };
-  const auto quantum = [](ValueRange values) {
-    SmallVector<Value> result;
-    llvm::copy_if(values, std::back_inserter(result), [](Value value) {
-      return isQuantumStateType(value.getType());
-    });
-    return result;
-  };
-  const auto corresponds = [&](ValueRange inputs, ValueRange outputs) {
-    auto quantumInputs = quantum(inputs);
-    auto quantumOutputs = quantum(outputs);
-    if (quantumInputs.size() != quantumOutputs.size()) {
-      return false;
+  auto result = moduleOp.walk([&](qtensor::InsertOp insert) {
+    auto extract =
+        origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
+    if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
+      insert.emitOpError(
+          "must restore the extracted qubit to its original register slot");
+      return WalkResult::interrupt();
     }
-    return llvm::all_of(llvm::zip_equal(quantumInputs, quantumOutputs),
-                        [&](auto pair) {
-                          auto [input, output] = pair;
-                          return input.getType() == output.getType() &&
-                                 origin(input) == origin(output);
-                        });
-  };
-  const auto tie = [&](ValueRange inputs, ValueRange outputs) {
-    auto quantumInputs = quantum(inputs);
-    auto quantumOutputs = quantum(outputs);
-    if (quantumInputs.size() != quantumOutputs.size()) {
-      return;
-    }
-    for (auto [input, output] :
-         llvm::zip_equal(quantumInputs, quantumOutputs)) {
-      origins[output] = origin(input);
-    }
-  };
-  auto result = moduleOp.walk([&](Operation* op, const WalkStage& stage) {
-    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      tie(unitary.getInputQubits(), unitary.getOutputQubits());
-      return WalkResult::skip();
-    }
-    if (!stage.isAfterAllRegions()) {
-      return WalkResult::advance();
-    }
-    bool positional = true;
-    if (auto loop = dyn_cast<scf::ForOp>(op)) {
-      positional = corresponds(loop.getRegionIterArgs(),
-                               loop.getBody()->getTerminator()->getOperands());
-      tie(loop.getInitArgs(), loop.getResults());
-    } else if (auto loop = dyn_cast<scf::WhileOp>(op)) {
-      auto before = quantum(loop.getBeforeArguments());
-      auto after = quantum(loop.getAfterArguments());
-      positional =
-          before.size() == after.size() &&
-          llvm::equal(ValueRange(before).getTypes(),
-                      ValueRange(after).getTypes()) &&
-          corresponds(loop.getBeforeArguments(),
-                      loop.getConditionOp().getArgs()) &&
-          corresponds(loop.getAfterArguments(), loop.getYieldOp().getResults());
-      tie(loop.getInits(), loop.getResults());
-    } else if (isa<qco::IfOp, qco::IndexSwitchOp>(op)) {
-      for (auto& region : op->getRegions()) {
-        positional &=
-            region.hasOneBlock() &&
-            corresponds(region.front().getArguments(),
-                        region.front().getTerminator()->getOperands());
-      }
-      tie(op->getOperands(), op->getResults());
-    } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
-      tie(ValueRange{measure.getQubitIn()}, ValueRange{measure.getQubitOut()});
-    } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
-      tie(ValueRange{reset.getQubitIn()}, ValueRange{reset.getQubitOut()});
-    } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-      origins[extract->getResult(0)] = origin(extract.getTensor());
-    } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-      auto extract =
-          origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
-      if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
-        insert.emitOpError(
-            "must restore the extracted qubit to its original register slot");
-        return WalkResult::interrupt();
-      }
-      const auto source = getConstantIntValue(extract.getIndex());
-      const auto dest = getConstantIntValue(insert.getIndex());
-      if (source && dest && *source != *dest) {
-        insert.emitOpError(
-            "must restore the extracted qubit to its original register slot");
-        return WalkResult::interrupt();
-      }
-      // Equality of dynamic slot indices is a program precondition.
-      origins[insert.getResult()] = origin(insert.getDest());
-    } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      for (auto [index, result] : llvm::enumerate(call.getResults())) {
-        if (auto argument = qco::getCallArgumentForResult(call, index);
-            succeeded(argument)) {
-          origins[result] = origin(call.getOperand(*argument));
-        }
-      }
-    }
-    if (!positional) {
-      op->emitOpError("QCO-to-QC requires positional quantum state "
-                      "correspondence through region terminators");
+    auto source = extract.getIndex();
+    auto dest = insert.getIndex();
+    if (!isEqualConstantIntOrValue(source, dest) &&
+        !ValueBoundsConstraintSet::compare(source, ValueBoundsConstraintSet::EQ,
+                                           dest)) {
+      insert.emitOpError(
+          "cannot prove restoration to the original register slot; reuse the "
+          "extraction index or an equivalent affine expression");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();
@@ -364,25 +301,13 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
 }
 
 [[nodiscard]] static LogicalResult
-collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
-                              const DenseMap<Value, Value>& origins) {
+collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
     auto& qubitArguments = state.qubitArguments[function];
     qubitArguments =
         qco::getQuantumArgumentIndices(function.getArgumentTypes());
-    if (function.getNumResults() < qubitArguments.size()) {
-      return function.emitOpError(
-          "must return one trailing quantum value for each quantum argument");
-    }
-    auto returnedTypes =
-        function.getResultTypes().take_back(qubitArguments.size());
-    for (auto [argument, result] :
-         llvm::zip_equal(qubitArguments, returnedTypes)) {
+    for (auto argument : qubitArguments) {
       const auto type = function.getArgumentTypes()[argument];
-      if (type != result) {
-        return function.emitOpError(
-            "must return one trailing quantum value for each quantum argument");
-      }
       if (auto tensor = dyn_cast<RankedTensorType>(type)) {
         if (!function.isPrivate() || tensor.getRank() != 1 ||
             !tensor.hasStaticShape() || tensor.getEncoding()) {
@@ -416,27 +341,6 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
           attrs && !attrs.empty()) {
         return function.emitOpError(
             "cannot preserve attributes on pass-through qubit results in QC");
-      }
-    }
-    if (function.isDeclaration()) {
-      continue;
-    }
-    if (!function.getBody().hasOneBlock()) {
-      return function.emitOpError()
-             << "with qubit arguments must have one outer block";
-    }
-    auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
-    if (!returnOp) {
-      return function.emitOpError("must terminate with func.return");
-    }
-    auto returnedQubits =
-        returnOp.getOperands().take_back(qubitArguments.size());
-    for (auto [argument, value] :
-         llvm::zip_equal(qubitArguments, returnedQubits)) {
-      auto origin = origins.lookup(value);
-      if ((origin ? origin : value) != function.getArgument(argument)) {
-        return function.emitOpError()
-               << "must return its qubit arguments positionally";
       }
     }
   }
@@ -1373,28 +1277,38 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 
+  void getDependentDialects(DialectRegistry& registry) const override {
+    QCOToQCBase::getDependentDialects(registry);
+    arith::registerValueBoundsOpInterfaceExternalModels(registry);
+  }
+
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
 
-    const auto allocationMode = collectAllocationMode(moduleOp);
-    if (failed(allocationMode)) {
+    const auto requirements = collectConversionRequirements(moduleOp);
+    if (failed(requirements)) {
       signalPassFailure();
       return;
     }
-    LoweringState state(*allocationMode);
-    {
+    LoweringState state(requirements->allocationMode);
+    // Flat owned circuits without register accesses have no wire checks.
+    if (requirements->needsWireOrigins) {
       DenseMap<Value, Value> origins;
       if (failed(collectWireOrigins(moduleOp, origins)) ||
-          failed(collectFunctionQubitArguments(moduleOp, state, origins))) {
+          failed(verifyTensorSlots(moduleOp, origins))) {
         signalPassFailure();
         return;
       }
     }
+    if (failed(collectFunctionQubitArguments(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
     const auto tensors = moduleOp.walk([&](Operation* op) {
       if (isa<qtensor::FromElementsOp>(op) &&
-          *allocationMode != AllocationMode::Static) {
+          requirements->allocationMode != AllocationMode::Static) {
         op->emitOpError("QCO-to-QC requires static qubits in tensors of "
                         "existing qubits; run placement before conversion");
         return WalkResult::interrupt();

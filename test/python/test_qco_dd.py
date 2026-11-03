@@ -10,14 +10,13 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 import qiskit
-from packaging import version
 from qiskit import QuantumCircuit
+from qiskit_support import supports_qiskit_translation
 
 from mqt.core.dd import DDPackage
 from mqt.core.mlir import (
@@ -33,10 +32,7 @@ from mqt.core.mlir import (
 )
 
 requires_qiskit_translation = pytest.mark.skipif(
-    not (
-        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
-        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-    ),
+    not supports_qiskit_translation(),
     reason=f"no Qiskit translation is registered for {qiskit.__version__}",
 )
 

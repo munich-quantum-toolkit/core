@@ -15,32 +15,24 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 namespace mlir::qc {
 
 #define GEN_PASS_DEF_SHRINKQUBITREGISTERSPASS
 #include "mqt/Dialect/QC/Transforms/Passes.h.inc"
-
-/// Return the constant index of a one-dimensional `memref.load`
-/// operation.
-[[nodiscard]] static std::optional<int64_t>
-getLoadIndex(memref::LoadOp loadOp) {
-  if (loadOp.getIndices().size() != 1) {
-    return std::nullopt;
-  }
-  return getConstantIntValue(loadOp.getIndices().front());
-}
 
 namespace {
 /// Shrink static qubit registers to actually read indices.
@@ -81,14 +73,13 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
       if (!loadOp) {
         return failure();
       }
-      auto index = getLoadIndex(loadOp);
+      auto index = getConstantIntValue(loadOp.getIndices().front());
       if (!index || *index < 0 || *index >= memRefType.getDimSize(0)) {
         return failure();
       }
       loadOps.push_back(loadOp);
       if (!loadOp.getResult().use_empty() &&
-          !newIndexByOldIndex.contains(*index)) {
-        newIndexByOldIndex.try_emplace(*index, 0U);
+          newIndexByOldIndex.try_emplace(*index, 0U).second) {
         liveIndices.push_back(*index);
       }
     }
@@ -102,17 +93,13 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
       return success();
     }
 
-    llvm::sort(liveIndices);
-    if (static_cast<int64_t>(liveIndices.size()) == memRefType.getDimSize(0) &&
-        llvm::all_of(llvm::enumerate(liveIndices), [](const auto& indexed) {
-          return static_cast<int64_t>(indexed.index()) == indexed.value();
-        })) {
+    if (std::cmp_equal(liveIndices.size(), memRefType.getDimSize(0))) {
       return failure();
     }
+    llvm::sort(liveIndices);
 
-    newIndexByOldIndex.clear();
     for (size_t i = 0; i < liveIndices.size(); ++i) {
-      newIndexByOldIndex.try_emplace(liveIndices[i], i);
+      newIndexByOldIndex[liveIndices[i]] = i;
     }
 
     rewriter.setInsertionPoint(allocOp);
@@ -129,15 +116,17 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
         continue;
       }
 
-      const auto oldIndex = *getLoadIndex(loadOp);
+      const auto oldIndex = *getConstantIntValue(loadOp.getIndices().front());
       const auto newIndex =
           static_cast<int64_t>(newIndexByOldIndex.lookup(oldIndex));
       rewriter.setInsertionPoint(loadOp);
-      auto indexConst =
-          arith::ConstantIndexOp::create(rewriter, loadOp.getLoc(), newIndex);
-      auto newLoad = memref::LoadOp::create(rewriter, loadOp.getLoc(),
-                                            newAlloc.getResult(),
-                                            ValueRange{indexConst.getResult()});
+      auto index = loadOp.getIndices().front();
+      if (newIndex != oldIndex) {
+        index =
+            arith::ConstantIndexOp::create(rewriter, loadOp.getLoc(), newIndex);
+      }
+      auto newLoad = memref::LoadOp::create(
+          rewriter, loadOp.getLoc(), newAlloc.getResult(), ValueRange{index});
       rewriter.replaceOp(loadOp, newLoad);
     }
 
@@ -153,10 +142,21 @@ struct ShrinkQubitRegistersPass final
     : impl::ShrinkQubitRegistersPassBase<ShrinkQubitRegistersPass> {
 protected:
   void runOnOperation() override {
+    SmallVector<Operation*> candidates;
+    getOperation()->walk(
+        [&](memref::DeallocOp op) { candidates.push_back(op); });
+    if (candidates.empty()) {
+      markAllAnalysesPreserved();
+      return;
+    }
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkQubitRegister>(&getContext());
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+    GreedyRewriteConfig config;
+    config.setScope(&getOperation().getRegion());
+    config.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
+    if (failed(
+            applyOpPatternsGreedily(candidates, std::move(patterns), config))) {
       signalPassFailure();
     }
   }

@@ -20,7 +20,6 @@
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
-#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -29,7 +28,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/WalkResult.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -209,18 +207,13 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   // Fold tensor accesses before SCCP; defer liveness until after placement.
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createCombineControlledGates(target));
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
-  // Unrolling exposes static tensor slots and unreachable callees.
-  pm.addPass(mqt::createSimplifyClassicalControl());
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setUseTopDownTraversal().setMaxIterations(
-          GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(createCSEPass());
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(createSymbolDCEPass());
+  // Unrolling exposes static register indices and tensor slots.
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createElideTerminalSwapsPass());
@@ -246,7 +239,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
-    pm.addPass(qco::createPlacementPass(target));
+    pm.addPass(qco::createPlacementPass());
     break;
   }
   qco::populateTargetNativeSynthesisPipeline(pm);
@@ -263,6 +256,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   // Placement changes region results; run liveness once afterwards.
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createCombineControlledGates(target));
+  pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
@@ -273,7 +267,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
-  pm.addPass(qco::createPlacementPass(target));
+  pm.addPass(qco::createPlacementPass());
   qco::populateTargetNativeSynthesisPipeline(pm);
 }
 

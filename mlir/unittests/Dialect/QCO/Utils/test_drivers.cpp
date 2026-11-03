@@ -13,7 +13,9 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
 #include "gtest/gtest.h"
@@ -29,6 +31,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 
@@ -63,7 +66,7 @@ protected:
   /// Construct the test program.
   [[maybe_unused]] [[nodiscard]] OwningOpRef<ModuleOp> getProgram() const {
     QCOProgramBuilder builder(context.get());
-    builder.initialize(SmallVector<Type>(4, builder.getI1Type()));
+    builder.initialize();
 
     SmallVector<Value> qubits(4);
     SmallVector<Value> bits(4);
@@ -158,6 +161,49 @@ TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
   }));
 }
 
+TEST_F(DriversFixture, ProgramWalkWaitsForAllYieldInputs) {
+  for (const bool stagger : {false, true}) {
+    SCOPED_TRACE(stagger ? "staggered arrivals" : "simultaneous arrivals");
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto q0 = builder.allocQubit();
+    auto q1 = builder.allocQubit();
+    SmallVector<WireIterator> wires;
+    builder.scfFor(0, 2, 1, {q0, q1}, [&](Value, ValueRange args) {
+      wires.emplace_back(args[0]);
+      wires.emplace_back(args[1]);
+      return SmallVector<Value>{
+          args[0],
+          stagger ? builder.h(builder.h(args[1])) : args[1],
+      };
+    });
+    auto moduleOp = builder.finalize();
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+
+    size_t yieldVisits = 0;
+    walkProgramGraph<WireDirection::Forward>(
+        wires,
+        [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (isa<scf::YieldOp>(op)) {
+              ++yieldVisits;
+              EXPECT_EQ(indices.size(), 2U);
+              EXPECT_TRUE(llvm::all_of(wires, [op](WireIterator& it) {
+                return it != std::default_sentinel && it.operation() == op;
+              }));
+            }
+            released.emplace_back(op);
+          }
+          return WalkResult::advance();
+        });
+    EXPECT_EQ(yieldVisits, 1U);
+    EXPECT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+      return it == std::default_sentinel;
+    }));
+  }
+}
+
 TEST_F(DriversFixture, StopProgramWalkWithInterrupt) {
   auto mod = getProgram();
   auto wires = getWires(*mod);
@@ -196,8 +242,18 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   auto mod = getProgram();
   auto wires = getWires(*mod);
   SmallVector<DenseSet<std::pair<size_t, size_t>>> layers;
+  size_t iteration = 0;
+  Operation* held = nullptr;
   const auto callback = [&](const Frontier& frontier,
                             SmallVectorImpl<Operation*>& released) {
+    if (iteration++ == 0) {
+      held = *frontier.keys().begin();
+      llvm::append_range(released, llvm::drop_begin(frontier.keys()));
+      return WalkResult::advance();
+    }
+    if (iteration == 2) {
+      EXPECT_TRUE(frontier.contains(held));
+    }
     for (const auto& [op, indices] : frontier) {
       if (indices.size() == 1) {
         released.emplace_back(op);
@@ -234,6 +290,7 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   for_each(wires, [&](WireIterator& it) { --it; });
 
   layers.clear();
+  iteration = 0;
 
   walkProgramGraph<WireDirection::Backward>(wires, callback);
 
@@ -242,57 +299,4 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
   ASSERT_TRUE(layers[1].contains(std::make_pair(1, 2)));
   ASSERT_TRUE(layers[2].contains(std::make_pair(0, 1)));
   ASSERT_TRUE(layers[2].contains(std::make_pair(2, 3)));
-}
-
-TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
-
-  SmallVector<WireIterator> wires;
-  SmallVector<Value> qubits(3);
-  SmallVector<Value> bits(3);
-
-  for (size_t i = 0; i < 3; ++i) {
-    qubits[i] = builder.allocQubit();
-    wires.emplace_back(qubits[i]);
-  }
-
-  qubits[0] = builder.h(qubits[0]);
-  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
-
-  for (size_t i = 0; i < 3; ++i) {
-    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
-  }
-
-  [[maybe_unused]] auto mod = builder.finalize(bits);
-
-  size_t iteration = 0;
-  DenseSet<Operation*> prev;
-  DenseSet<Operation*> curr;
-  walkProgramGraph<WireDirection::Forward>(
-      wires,
-      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
-        if (iteration++ == 0) {
-          EXPECT_GE(frontier.size(), 2U);
-          if (frontier.size() < 2) {
-            return WalkResult::interrupt();
-          }
-
-          released.emplace_back(*frontier.keys().begin());
-          for (Operation* op : llvm::drop_begin(frontier.keys())) {
-            prev.insert(op);
-          }
-          return WalkResult::advance();
-        }
-
-        for (Operation* op : frontier.keys()) {
-          curr.insert(op);
-        }
-
-        return WalkResult::interrupt();
-      });
-
-  EXPECT_GE(curr.size(), prev.size());
-  EXPECT_TRUE(
-      llvm::all_of(prev, [&](Operation* op) { return curr.contains(op); }));
 }

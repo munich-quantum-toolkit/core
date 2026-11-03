@@ -160,6 +160,12 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
                               });
   };
   parseSource(mainBufferId);
+  if (!failedParsing && builder.getIncludes().empty() &&
+      builder.getBody().size() <= EXPANDED_STATEMENT_LIMIT) {
+    result.sources = std::move(sources);
+    result.syntax = builder.takeProgram();
+    return result;
+  }
 
   llvm::SmallSet<unsigned, 8> parsedBuffers;
   llvm::SmallVector<unsigned> includeTargets;
@@ -229,6 +235,7 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
   std::vector<std::optional<detail::SyntaxIncludeContextId>>
       expandedIncludeContexts;
   std::vector<detail::SyntaxIncludeContext> includeContexts;
+  const bool hasCustomIncludes = parsedSources.size() > 1;
   llvm::SmallSet<unsigned, 8> activeBuffers;
   const auto appendBodyRange =
       [&](const size_t begin, const size_t end, const llvm::SMLoc location,
@@ -243,8 +250,10 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
         const auto* const bodyEnd = std::next(builder.getBody().begin(),
                                               static_cast<std::ptrdiff_t>(end));
         expandedBody.insert(expandedBody.end(), bodyBegin, bodyEnd);
-        expandedIncludeContexts.insert(expandedIncludeContexts.end(), count,
-                                       includeContext);
+        if (hasCustomIncludes) {
+          expandedIncludeContexts.insert(expandedIncludeContexts.end(), count,
+                                         includeContext);
+        }
         return true;
       };
   const auto appendSource =
@@ -269,7 +278,9 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
           return false;
         }
         expandedBody.push_back(*includeMarkers[includeIndex]);
-        expandedIncludeContexts.push_back(includeContext);
+        if (hasCustomIncludes) {
+          expandedIncludeContexts.push_back(includeContext);
+        }
       } else if (includeTargets[includeIndex] != 0) {
         const auto target = includeTargets[includeIndex];
         if (activeBuffers.contains(target)) {

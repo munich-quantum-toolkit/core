@@ -12,6 +12,12 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {
+    "mqt.core.plugins.pennylane.device",
+    "mqt.core.plugins.pennylane.exceptions",
+    "mqt.core.plugins.pennylane.job",
+}
+
 from importlib import import_module
 from typing import TYPE_CHECKING
 
@@ -27,8 +33,8 @@ else:
 __all__ = ["HAS_PENNYLANE"]
 
 if TYPE_CHECKING or HAS_PENNYLANE:
-    from .device import DDSIMDevice, QDMIDevice
-    from .exceptions import (
+    from mqt.core.plugins.pennylane.device import DDSIMDevice, QDMIDevice
+    from mqt.core.plugins.pennylane.exceptions import (
         PennyLaneConfigurationError,
         PennyLaneExecutionError,
         PennyLaneTranslationError,
@@ -37,7 +43,7 @@ if TYPE_CHECKING or HAS_PENNYLANE:
         PennyLaneValidationError,
         QDMIPluginError,
     )
-    from .job import PennyLaneJob
+    from mqt.core.plugins.pennylane.job import PennyLaneJob
 
     __all__ += [
         "DDSIMDevice",

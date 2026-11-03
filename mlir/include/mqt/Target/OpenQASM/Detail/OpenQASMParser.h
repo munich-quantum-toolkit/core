@@ -24,6 +24,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SMLoc.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +60,7 @@ private:
   static constexpr size_t BLOCK_DEPTH_LIMIT = 64;
   static constexpr size_t RECURSIVE_EXPRESSION_DEPTH_LIMIT = 256;
   static constexpr size_t MODIFIER_DEPTH_LIMIT = 64;
+  static constexpr size_t ARRAY_RANK_LIMIT = 7;
 
   //===--- Token scaffolding --------------------------------------------===//
 
@@ -118,6 +120,8 @@ private:
       return parseVersion();
     case TokenKind::Include:
       return parseInclude();
+    case TokenKind::Array:
+      return parseArrayDeclaration();
     case TokenKind::Const:
     case TokenKind::Bool:
     case TokenKind::Int:
@@ -143,8 +147,7 @@ private:
     case TokenKind::Gate:
       return parseGateStatement();
     case TokenKind::Opaque:
-      return sink.error(current().loc,
-                        "opaque gate declarations are not supported");
+      return parseGateStatement(/*opaque=*/true);
     case TokenKind::Barrier:
       return parseBarrier();
     case TokenKind::Reset:
@@ -242,47 +245,77 @@ private:
 
   [[nodiscard]] LogicalResult
   parseSubscript(std::optional<SyntaxExpressionId>& index,
-                 std::optional<Slice>& slice) {
+                 std::optional<Slice>& slice,
+                 std::vector<SyntaxExpressionId>* additional = nullptr) {
     if (failed(expect(TokenKind::LBracket))) {
       return failure();
     }
-    std::optional<SyntaxExpressionId> first;
-    if (current().kind != TokenKind::Colon) {
-      auto expression = parseExpression();
-      if (failed(expression)) {
+    auto first = parseArrayIndex(&slice);
+    if (failed(first)) {
+      return failure();
+    }
+    if (!slice || additional != nullptr) {
+      index = *first;
+    }
+    while (additional != nullptr && current().kind == TokenKind::Comma) {
+      advance();
+      if (current().kind == TokenKind::RBracket) {
+        break;
+      }
+      if (additional->size() + 1 >= ARRAY_RANK_LIMIT) {
+        return sink.error(current().loc, "arrays support at most 7 indices");
+      }
+      auto next = parseArrayIndex();
+      if (failed(next)) {
         return failure();
       }
-      first = expression;
+      additional->push_back(*next);
     }
+    return expect(TokenKind::RBracket);
+  }
+
+  [[nodiscard]] FailureOr<SyntaxExpressionId>
+  parseArrayIndex(std::optional<Slice>* slice = nullptr) {
+    SyntaxExpression range;
+    range.kind = Expr::Kind::Range;
+    range.location = current().loc;
     if (current().kind != TokenKind::Colon) {
-      index = first;
-      return expect(TokenKind::RBracket);
+      auto first = parseExpression();
+      if (failed(first)) {
+        return failure();
+      }
+      if (current().kind != TokenKind::Colon) {
+        return *first;
+      }
+      range.lhs = *first;
     }
     advance();
-    Slice range{.start = first};
-    if (current().kind != TokenKind::RBracket) {
-      if (current().kind != TokenKind::Colon) {
-        auto expression = parseExpression();
-        if (failed(expression)) {
+    if (current().kind != TokenKind::Colon &&
+        current().kind != TokenKind::Comma &&
+        current().kind != TokenKind::RBracket) {
+      auto stop = parseExpression();
+      if (failed(stop)) {
+        return failure();
+      }
+      range.rhs = *stop;
+    }
+    if (current().kind == TokenKind::Colon) {
+      range.step = range.rhs;
+      range.rhs.reset();
+      advance();
+      if (current().kind != TokenKind::Comma &&
+          current().kind != TokenKind::RBracket) {
+        auto stop = parseExpression();
+        if (failed(stop)) {
           return failure();
         }
-        range.stop = expression;
-      }
-      if (current().kind == TokenKind::Colon) {
-        advance();
-        range.step = range.stop;
-        range.stop.reset();
-        if (current().kind != TokenKind::RBracket) {
-          auto stop = parseExpression();
-          if (failed(stop)) {
-            return failure();
-          }
-          range.stop = stop;
-        }
+        range.rhs = *stop;
       }
     }
-    slice = range;
-    return expect(TokenKind::RBracket);
+    if (slice != nullptr) {
+      *slice = Slice{.start = range.lhs, .step = range.step, .stop = range.rhs};
+    }
+    return sink.addExpression(range);
   }
 
   //===--- Version ------------------------------------------------------===//
@@ -349,6 +382,118 @@ private:
   }
 
   //===--- Declarations -------------------------------------------------===//
+
+  [[nodiscard]] LogicalResult parseArrayDeclaration() {
+    const auto loc = current().loc;
+    advance(); // array
+    if (failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    SyntaxArrayDeclaration declaration;
+    switch (current().kind) {
+    case TokenKind::Bool:
+      declaration.kind = ScalarKind::Bool;
+      break;
+    case TokenKind::Int:
+      declaration.kind = ScalarKind::Int;
+      break;
+    case TokenKind::Uint:
+      declaration.kind = ScalarKind::Uint;
+      break;
+    case TokenKind::Float:
+      declaration.kind = ScalarKind::Float;
+      break;
+    case TokenKind::Angle:
+      declaration.kind = ScalarKind::Angle;
+      break;
+    default:
+      return sink.error(current().loc, "unsupported array element type");
+    }
+    advance();
+    if (current().kind == TokenKind::LBracket) {
+      auto width = parseDesignator();
+      if (failed(width)) {
+        return failure();
+      }
+      declaration.elementWidth.emplace(*width);
+    }
+    if (failed(expect(TokenKind::Comma))) {
+      return failure();
+    }
+    while (true) {
+      if (declaration.dimensions.size() >= ARRAY_RANK_LIMIT) {
+        return sink.error(current().loc, "arrays support at most 7 dimensions");
+      }
+      auto length = parseExpression();
+      if (failed(length)) {
+        return failure();
+      }
+      declaration.dimensions.push_back(*length);
+      if (current().kind != TokenKind::Comma) {
+        break;
+      }
+      advance();
+      if (current().kind == TokenKind::RBracket) {
+        break;
+      }
+    }
+    if (failed(expect(TokenKind::RBracket))) {
+      return failure();
+    }
+    if (current().kind != TokenKind::Identifier) {
+      return expectedIdentifier("expected array identifier");
+    }
+    declaration.identifier = current().identifier;
+    advance();
+    if (current().kind == TokenKind::Equals) {
+      advance();
+      auto initializer = parseArrayInitializer(0);
+      if (failed(initializer)) {
+        return failure();
+      }
+      declaration.initializer.emplace(std::move(*initializer));
+    }
+    if (failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    return sink.arrayDecl(loc, std::move(declaration));
+  }
+
+  [[nodiscard]] FailureOr<SyntaxArrayInitializer>
+  parseArrayInitializer(size_t depth) {
+    const auto location = current().loc;
+    if (current().kind != TokenKind::LBrace) {
+      auto value = parseExpression();
+      if (failed(value)) {
+        return failure();
+      }
+      return SyntaxArrayInitializer{.location = location, .value = *value};
+    }
+    if (depth >= ARRAY_RANK_LIMIT) {
+      return sink.error(location,
+                        "array initializer nesting exceeds 7 dimensions");
+    }
+    advance();
+    std::vector<SyntaxArrayInitializer> elements;
+    while (current().kind != TokenKind::RBrace) {
+      auto element = parseArrayInitializer(depth + 1);
+      if (failed(element)) {
+        return failure();
+      }
+      elements.push_back(std::move(*element));
+      if (current().kind != TokenKind::Comma) {
+        break;
+      }
+      advance();
+    }
+    if (failed(expect(TokenKind::RBrace))) {
+      return failure();
+    }
+    return SyntaxArrayInitializer{
+        .location = location,
+        .value = std::move(elements),
+    };
+  }
 
   /// Parse a scalar declaration with an optional input/output qualifier.
   [[nodiscard]] LogicalResult parseScalarDeclaration(const IOQualifier io) {
@@ -628,7 +773,7 @@ private:
     const auto compoundLocation = current().loc;
     const auto compoundSpelling = current().spelling;
     if (compound) {
-      if (target->index || target->slice) {
+      if (target->slice) {
         return sink.error(current().loc,
                           "indexed compound assignments are not supported");
       }
@@ -675,8 +820,11 @@ private:
       }
       SyntaxExpression previous;
       previous.location = loc;
-      previous.kind = Expr::Kind::Identifier;
+      previous.kind =
+          target->index ? Expr::Kind::Index : Expr::Kind::Identifier;
       previous.identifier = target->identifier;
+      previous.lhs = target->index;
+      previous.additionalIndices = target->additionalIndices;
       assignedValue = makeBinary(*kind, sink.addExpression(previous),
                                  assignedValue, compoundLocation);
     }
@@ -750,9 +898,9 @@ private:
 
   //===--- Gate definitions and calls -----------------------------------===//
 
-  [[nodiscard]] LogicalResult parseGateStatement() {
+  [[nodiscard]] LogicalResult parseGateStatement(bool opaque = false) {
     const auto loc = current().loc;
-    advance(); // gate
+    advance(); // gate or opaque
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected gate name");
     }
@@ -777,11 +925,16 @@ private:
     if (failed(parseIdentifierList(targets))) {
       return failure();
     }
+    if (opaque) {
+      return sink.gateDefinition(
+          loc, id, parameters, targets,
+          [this] { return expect(TokenKind::Semicolon); },
+          /*opaque=*/true);
+    }
     if (current().kind != TokenKind::LBrace) {
       return sink.error(current().loc,
                         "expected '{' to begin gate definition body");
     }
-
     return sink.gateDefinition(loc, id, parameters, targets,
                                [this] { return parseBlock(); });
   }
@@ -846,6 +999,9 @@ private:
 
     // Parse parameters
     if (current().kind == TokenKind::LParen) {
+      // OpenQASM 2 gate parameters use real arithmetic for integer literals.
+      llvm::SaveAndRestore parameterGuard(realGateParameters,
+                                          sink.isOpenQASM2());
       advance();
       while (current().kind != TokenKind::RParen) {
         auto parameter = parseExpression();
@@ -964,7 +1120,8 @@ private:
     reference.identifier = current().identifier;
     advance();
     if (current().kind == TokenKind::LBracket) {
-      if (failed(parseSubscript(reference.index, reference.slice))) {
+      if (failed(parseSubscript(reference.index, reference.slice,
+                                &reference.additionalIndices))) {
         return failure();
       }
     }
@@ -1090,21 +1247,55 @@ private:
     if (current().kind == TokenKind::UnsupportedKeyword) {
       return unsupportedKeyword();
     }
-    if (current().kind != TokenKind::Int && current().kind != TokenKind::Uint) {
-      return sink.error(current().loc, "expected 'int' or 'uint' after 'for'");
+    SyntaxFor loop;
+    switch (current().kind) {
+    case TokenKind::Int:
+      loop.type = ScalarKind::Int;
+      break;
+    case TokenKind::Uint:
+      loop.type = ScalarKind::Uint;
+      break;
+    case TokenKind::Float:
+      loop.type = ScalarKind::Float;
+      break;
+    case TokenKind::Bool:
+      loop.type = ScalarKind::Bool;
+      break;
+    case TokenKind::Angle:
+      loop.type = ScalarKind::Angle;
+      break;
+    default:
+      return sink.error(current().loc, "expected a scalar type after 'for'");
     }
-    const bool isUnsigned = current().kind == TokenKind::Uint;
     advance(); // type
+    if (loop.type != ScalarKind::Bool &&
+        current().kind == TokenKind::LBracket) {
+      auto width = parseDesignator();
+      if (failed(width)) {
+        return failure();
+      }
+      loop.width = *width;
+    }
 
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected loop variable");
     }
-    const auto iv = current();
+    loop.inductionVariable = current().identifier;
     advance(); // identifier
 
-    if (failed(expect(TokenKind::In)) || failed(expect(TokenKind::LBracket))) {
+    if (failed(expect(TokenKind::In))) {
       return failure();
     }
+    if (current().kind != TokenKind::LBracket) {
+      auto iterable = parseExpression();
+      if (failed(iterable)) {
+        return failure();
+      }
+      loop.iterable = *iterable;
+      return sink.forStmt(loc, std::move(loop),
+                          [this] { return parseBlock(); });
+    }
+    advance(); // [
     auto start = parseExpression();
     if (failed(start)) {
       return failure();
@@ -1139,8 +1330,10 @@ private:
       return failure();
     }
 
-    return sink.forStmt(loc, iv.identifier, isUnsigned, *start, step, stop,
-                        [this] { return parseBlock(); });
+    loop.start = *start;
+    loop.step = step;
+    loop.stop = stop;
+    return sink.forStmt(loc, std::move(loop), [this] { return parseBlock(); });
   }
 
   [[nodiscard]] LogicalResult parseWhile() {
@@ -1164,6 +1357,24 @@ private:
 
   /// Parse an expression using OpenQASM's precedence hierarchy.
   [[nodiscard]] FailureOr<SyntaxExpressionId> parseExpression() {
+    auto lhs = parseLogicalOr();
+    if (failed(lhs)) {
+      return failure();
+    }
+    SyntaxExpressionId result = *lhs;
+    while (current().kind == TokenKind::DoublePlus) {
+      const auto loc = current().loc;
+      advance();
+      auto rhs = parseLogicalOr();
+      if (failed(rhs)) {
+        return failure();
+      }
+      result = makeBinary(Expr::Kind::Concat, result, *rhs, loc);
+    }
+    return result;
+  }
+
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseLogicalOr() {
     auto lhs = parseLogicalAnd();
     if (failed(lhs)) {
       return failure();
@@ -1223,7 +1434,7 @@ private:
       return failure();
     }
     SyntaxExpressionId result = *lhs;
-    while (current().kind == TokenKind::Caret) {
+    while (!sink.isOpenQASM2() && current().kind == TokenKind::Caret) {
       const auto loc = current().loc;
       advance();
       auto rhs = parseBitwiseAnd();
@@ -1410,7 +1621,9 @@ private:
 
   [[nodiscard]] FailureOr<SyntaxExpressionId> parsePower() {
     auto lhs = parsePrimary();
-    if (failed(lhs) || current().kind != TokenKind::DoubleAsterisk) {
+    if (failed(lhs) ||
+        (current().kind != TokenKind::DoubleAsterisk &&
+         !(sink.isOpenQASM2() && current().kind == TokenKind::Caret))) {
       return lhs;
     }
     const auto loc = current().loc;
@@ -1456,6 +1669,14 @@ private:
         expr.wideInteger = current().stringValue;
       }
       advance();
+      if (realGateParameters) {
+        const auto integer = sink.addExpression(expr);
+        return sink.addExpression({
+            .kind = Expr::Kind::FloatCast,
+            .location = expr.location,
+            .rhs = integer,
+        });
+      }
       return sink.addExpression(expr);
     case TokenKind::Bool:
     case TokenKind::Bit:
@@ -1492,18 +1713,21 @@ private:
     }
     case TokenKind::Identifier: {
       if (peek().kind == TokenKind::LParen) {
-        const auto kind = getMathFunctionKind(current().identifier);
+        const auto name = current().identifier;
+        const auto kind = getMathFunctionKind(
+            sink.isOpenQASM2() && name == "ln" ? "log" : name);
         if (!kind) {
           return sink.error(current().loc, Twine("unknown function '") +
                                                current().identifier + "'");
         }
-        return parseMathCall(*kind, expr);
+        return parseBuiltinCall(*kind, expr);
       }
       expr.kind = Expr::Kind::Identifier;
       expr.identifier = current().identifier;
       advance();
       if (current().kind == TokenKind::LBracket) {
-        if (failed(parseSubscript(expr.lhs, expr.slice))) {
+        if (failed(parseSubscript(expr.lhs, expr.slice,
+                                  &expr.additionalIndices))) {
           return failure();
         }
         expr.kind = expr.slice ? Expr::Kind::Slice : Expr::Kind::Index;
@@ -1512,7 +1736,9 @@ private:
     }
     // `pow` is also a gate modifier, so it has a dedicated token.
     case TokenKind::Pow:
-      return parseMathCall(Expr::Kind::BuiltinPow, expr);
+      return parseBuiltinCall(Expr::Kind::BuiltinPow, expr);
+    case TokenKind::SizeOf:
+      return parseBuiltinCall(Expr::Kind::SizeOf, expr);
     case TokenKind::LParen: {
       advance();
       auto inner = parseExpression();
@@ -1531,9 +1757,9 @@ private:
     }
   }
 
-  /// Parse the argument list of a call to the built-in math function @p kind.
+  /// Parse the argument list of a call to the built-in function @p kind.
   [[nodiscard]] FailureOr<SyntaxExpressionId>
-  parseMathCall(Expr::Kind kind, SyntaxExpression expr) {
+  parseBuiltinCall(Expr::Kind kind, SyntaxExpression expr) {
     expr.kind = kind;
     advance(); // function name
 
@@ -1548,7 +1774,8 @@ private:
     expr.lhs = *lhs;
 
     if (kind == Expr::Kind::BuiltinMod || kind == Expr::Kind::BuiltinPow ||
-        kind == Expr::Kind::RotateLeft || kind == Expr::Kind::RotateRight) {
+        kind == Expr::Kind::RotateLeft || kind == Expr::Kind::RotateRight ||
+        (kind == Expr::Kind::SizeOf && current().kind == TokenKind::Comma)) {
       if (failed(expect(TokenKind::Comma))) {
         return failure();
       }
@@ -1582,6 +1809,7 @@ private:
   SyntaxBuilder& sink;
   Token currentToken;
   Token nextToken;
+  bool realGateParameters = false;
   size_t blockDepth = 0;
   size_t recursiveExpressionDepth = 0;
 };

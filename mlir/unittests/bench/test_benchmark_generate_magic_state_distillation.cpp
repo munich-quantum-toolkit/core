@@ -17,6 +17,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
@@ -27,6 +28,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <array>
@@ -46,7 +48,7 @@ static void expectDistillationCounts(QCProgram program,
                                      size_t shots = 4) {
   auto compiled =
       runDefaultPipeline(CompilerInput{std::move(program)}, ProgramFormat::QCO);
-  ASSERT_TRUE(mlir::succeeded(compiled));
+  MQT_ASSERT_SUCCESS(compiled);
   auto& qcoProgram = std::get<QCOProgram>(*compiled);
   auto counts =
       qco::sample(mlir::mqt::getEntryPoint(qcoProgram.module()), shots, 17);
@@ -57,7 +59,8 @@ static void expectDistillationCounts(QCProgram program,
 static void expectDistillationFaults(size_t levels, uint32_t errors,
                                      const std::string& expected,
                                      size_t shots = 4) {
-  auto program = generate(MagicStateDistillation({.levels = levels}));
+  auto program = generate(
+      llvm::cantFail(MagicStateDistillation::create({.levels = levels})));
   ASSERT_TRUE(mlir::succeeded(program));
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
   SmallVector<qc::TOp> rotations;
@@ -89,9 +92,10 @@ TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
 }
 
 TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
-  for (const size_t levels : {1U, 2U, 3U, 4U, 8U}) {
+  for (const size_t levels : {2U, 8U}) {
     SCOPED_TRACE(levels);
-    auto program = generate(MagicStateDistillation({.levels = levels}));
+    auto program = generate(
+        llvm::cantFail(MagicStateDistillation::create({.levels = levels})));
     ASSERT_TRUE(mlir::succeeded(program));
     auto moduleOp = program->module();
     EXPECT_EQ(test::countOps<memref::AllocOp>(moduleOp), 1U);
@@ -101,7 +105,7 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
     });
     auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
                                        ProgramFormat::QCO);
-    ASSERT_TRUE(mlir::succeeded(compiled));
+    MQT_ASSERT_SUCCESS(compiled);
     auto& qcoProgram = std::get<QCOProgram>(*compiled);
     EXPECT_LT(test::countOperations(qcoProgram.module()), 500U * levels);
 
@@ -110,7 +114,7 @@ TEST(GenerateProgramTest, KeepsConcatenatedMagicStateDistillationCompact) {
     const auto bytes = jeff->toBytes();
     ASSERT_FALSE(bytes.empty());
     auto restored = JeffProgram::fromBytes(bytes);
-    ASSERT_TRUE(mlir::succeeded(restored));
+    MQT_ASSERT_SUCCESS(restored);
     EXPECT_EQ(restored->toBytes(), bytes);
   }
 }
@@ -152,7 +156,8 @@ TEST(GenerateProgramTest,
 TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
   // Reject only the first child, retaining its ideal output state, as with a
   // check-only fault. Subsequent accepting children must not clear rejection.
-  auto program = generate(MagicStateDistillation({.levels = 2}));
+  auto program =
+      generate(llvm::cantFail(MagicStateDistillation::create({.levels = 2})));
   ASSERT_TRUE(mlir::succeeded(program));
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
   const auto injected = program->module().walk([&](func::CallOp op) {

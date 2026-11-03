@@ -912,6 +912,9 @@ def UnitaryOp : QCOp<"unitary", traits = [UnitaryOpInterface]> {
   let assemblyFormat = "$matrix $qubits attr-dict `:` type($qubits)";
 
   let extraClassDeclaration = [{
+    /// Populate explicit quantum simplification patterns.
+    static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubits().size(); }
         static size_t getNumControls() { return 0; }
@@ -926,7 +929,6 @@ def UnitaryOp : QCOp<"unitary", traits = [UnitaryOpInterface]> {
         static StringRef getBaseSymbol() { return "unitary"; }
     }];
 
-  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 
@@ -1075,6 +1077,10 @@ def CtrlOp
     }];
 
   let extraClassDeclaration = [{
+    /// Populate modifier lowering without combining adjacent gates.
+    static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
+
         size_t getNumBodyUnitaries();
         [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -1136,6 +1142,10 @@ def InvOp : QCOp<"inv",
     }];
 
   let extraClassDeclaration = [{
+    /// Populate modifier lowering without combining adjacent gates.
+    static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
+
         size_t getNumBodyUnitaries();
         [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }
@@ -1202,6 +1212,10 @@ def PowOp : QCOp<"pow",
     }];
 
   let extraClassDeclaration = [{
+    /// Populate modifier lowering without combining adjacent gates.
+    static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
+
+
           size_t getNumBodyUnitaries();
           [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
           size_t getNumQubits() { return getNumTargets(); }

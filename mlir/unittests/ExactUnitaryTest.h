@@ -20,6 +20,8 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cmath>
 #include <cstddef>
 #include <memory>
@@ -40,14 +42,15 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
       *expectedModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   auto actualFunc =
       *actualModule.getBody()->getOps<mlir::func::FuncOp>().begin();
-  auto package = std::make_unique<dd::Package>(numQubits);
+  auto package = llvm::cantFail(dd::Package::create(numQubits));
   const auto expected = mlir::qco::buildFunctionality(expectedFunc, *package);
   const auto actual = mlir::qco::buildFunctionality(actualFunc, *package);
   ASSERT_TRUE(mlir::succeeded(expected));
   ASSERT_TRUE(mlir::succeeded(actual));
 
-  const auto expectedMatrix = dd::getMatrix(*expected, numQubits);
-  const auto actualMatrix = dd::getMatrix(*actual, numQubits);
+  const auto expectedMatrix =
+      llvm::cantFail(dd::getMatrix(*expected, numQubits));
+  const auto actualMatrix = llvm::cantFail(dd::getMatrix(*actual, numQubits));
   ASSERT_EQ(expectedMatrix.size(), actualMatrix.size());
   for (std::size_t row = 0; row < expectedMatrix.size(); ++row) {
     ASSERT_EQ(expectedMatrix[row].size(), actualMatrix[row].size());

@@ -1,126 +1,108 @@
-# Use QDMI devices with Slurm
+# Hybrid quantum-classical workflows with Slurm
 
-This example uses Slurm 25.11 or newer on Ubuntu 26.04. It has one controller,
-two compute nodes, and two CPUs on each compute node.
+Use Slurm to coordinate scientific workflows that combine classical computation
+with quantum devices. Submit from a login node, compile and offload circuits on
+{term}`quantum access nodes <quantum access node>` (QANs), and share inputs and
+results with classical compute jobs. Every QAN uses
+**QDMI as its device interface**. One software environment can connect DDSIM,
+IQM, Amazon Braket, and other QDMI device implementations.
 
-A Slurm license controls admission to a cluster-wide resource. In this setup,
-the license name is a stable QDMI device ID. A license does not show provider
-availability. It does not show the device queue. The QDMI provider supplies that
-information when its interface supports it.
+```{figure} ../_static/slurm-playground.svg
+:alt: Login, classical, and quantum access nodes share application files and results. QANs connect to individual devices through one QDMI interface. Slurm schedules jobs and records accounting data.
 
-## Understand the control boundaries
-
-This example is suitable for admission and accounting tests on a cooperative
-cluster. It does not make a Slurm license an access-control credential. The
-controls are independent:
-
-- Slurm admits jobs and accounts for the configured license count.
-- The MQT Core adapter uses the license environment to select a client-visible
-  QDMI device.
-- The QDMI provider reports device availability and queue data.
-- The provider or the operating system authorizes access to the device.
-
-`SLURM_JOB_LICENSES` is process-mutable. A job can change it before it calls
-`slurm.open_device_from_license()`. Thus, the function does not prove that Slurm
-allocated the named license. It does not authenticate the user. It does not
-authorize access. A lookup through another Slurm interface would not make MQT
-Core an access-control boundary because a program can also call
-`mqt.core.qdmi.open_device(device_id)` directly.
-
-## Install the software
-
-Install the same MQT Core package on each compute node. The package contains the
-MQT Core QDMI interface and the bundled QDMI devices. You can use a shared
-software environment or install the same wheel on each node.
-
-Install Slurm, Munge, and systemd. Start Munge before Slurm. Use the same Munge
-key on all nodes. Keep this key outside the QDMI device configuration.
-
-Use the unified cgroup v2 hierarchy. Add these settings to `slurm.conf`:
-
-```ini
-ProctrackType=proctrack/cgroup
-TaskPlugin=task/cgroup,task/affinity
-JobAcctGatherType=jobacct_gather/cgroup
-SelectType=select/cons_tres
-SelectTypeParameters=CR_CPU
+A shared filesystem connects workflow stages; QDMI connects quantum devices.
 ```
 
-Use the cgroup plugin to constrain processors and memory. For example, use this
-`cgroup.conf`:
+| Setting            | Purpose                                                  |
+| ------------------ | -------------------------------------------------------- |
+| **Partition**      | Place applications on classical or quantum access nodes. |
+| **Device license** | Limit concurrent allocations for a QDMI device.          |
+| **Credentials**    | Authenticate with the device service.                    |
 
-```ini
-CgroupPlugin=autodetect
-ConstrainCores=yes
-ConstrainRAMSpace=yes
-ConstrainSwapSpace=yes
+The playground names each Slurm license after its QDMI device ID. Licenses
+coordinate allocations within the cluster; they neither authorize device access
+nor reserve capacity at a remote service. An availability monitor keeps new jobs
+pending while a device is unavailable.
+
+Already have a cluster? Start with [job submission](#submit-your-first-job) or
+[site configuration](#deploy-on-an-existing-cluster). Otherwise, the
+[playground sources](https://github.com/munich-quantum-toolkit/core/tree/main/examples/slurm)
+provide a cluster to experiment with:
+
+| Host                     | Role                                                             |
+| ------------------------ | ---------------------------------------------------------------- |
+| `login`                  | User shell, Slurm clients, and shared software environment       |
+| `controller`             | Scheduling and device availability monitors                      |
+| `node` (two by default)  | Classical computation in the `compute` partition                 |
+| `qan` (two by default)   | Compilation and access to all devices in the `quantum` partition |
+| `accounting`, `database` | Persistent job and resource accounting with SlurmDBD and MariaDB |
+
+## Start the cluster and log in
+
+Use Docker Engine on Linux or Docker Desktop on macOS, with Docker Compose.
+Docker builds MQT Core from your checkout, downloads LLVM/MLIR with
+[setup-mlir](https://github.com/munich-quantum-software/setup-mlir), and
+installs one workload environment with uv. Apple Silicon uses native Linux
+ARM64. Build tools and source trees stay outside the runtime image; later builds
+reuse caches.
+
+The containers need a rootful Linux Docker engine with cgroup v2 and privileged
+access for systemd and Slurm resource isolation. The Compose settings follow
+[Docker Desktop's systemd setup](https://docs.docker.com/desktop/release-notes/#430).
+Disable Enhanced Container Isolation and allocate at least four CPUs and 12 GiB
+of RAM to Docker for small demonstrations. Use trusted development workloads.
+
+From the MQT Core checkout:
+
+```bash
+sh examples/slurm/prepare.sh
+docker compose -f examples/slurm/compose.yml up --build -d --wait
+docker compose -f examples/slurm/compose.yml exec --user 10000:10000 login bash --login
 ```
 
-This fixture has no local device file. For strict isolation of a local device,
-configure it as a Slurm GRES with a `File=` entry. Also set
-`ConstrainDevices=yes` for the cgroup task plugin. Slurm can then restrict the
-device files that a job can open. See the [Slurm GRES configuration]
-documentation. A remote QPU has no local device file, so the provider must
-enforce its authorization.
+Jobs run as `mqt-dev` (UID/GID 10000). Each classical node advertises two CPUs
+and 2 GiB of scheduled memory; each QAN advertises four CPUs and 8 GiB. All
+containers share the Docker engine's resources: scaling nodes does not add
+physical capacity. Cgroup v2 enforces allocations.
 
-Run `slurmd -C` on each compute node and use its output for the `NodeName`
-record. The MQT Core test uses two CPUs on `node1` and `node2`.
+The shared environment at `/opt/venv` is on `PATH`; jobs need no activation or
+package installation. `/jobs` holds shared application files and results, backed
+by `build/slurm/jobs` on the host. The MQT Core checkout is mounted read-only at
+`/workspace`.
 
-## Register the devices
+## Submit your first job
 
-MQT Core installs persistent definitions for `mqt.ddsim.default`,
-`mqt.sc.default`, `mqt.sc.iqm.garnet`, and `mqt.sc.iqm.emerald`, so these four
-devices need no further registry file. Verify their stable IDs before you
-configure Slurm:
+In the login shell, inspect partitions and licenses:
 
-```console
-python -c "from mqt.core.qdmi import builtin_driver; print(*builtin_driver.registered_device_ids(), sep='\n')"
+```bash
+sinfo
+scontrol show licenses
 ```
 
-For an external provider, install its shared library and QDMI manifest. You can
-also add one trusted system registry file at `/etc/mqt-core/qdmi.json`. The `id`
-field in that file is the stable device ID. Use the same ID as the local Slurm
-license name. Do not put short-lived access tokens in this file. Use the
-authentication method that the provider documents for batch jobs.
+Save these two files in `/jobs`, then run `sbatch --wait job.sh`:
 
-The Slurm adapter does not supply credentials. IQM can use its configured token
-source. Amazon Braket uses the AWS credential provider chain, such as an
-instance role, workload identity, or AWS profile. A job can also export provider
-configuration. Use provider-scoped credentials with minimum permissions. Do not
-store access tokens or AWS access keys in a persistent device definition.
+```{code-block} bash
+:caption: job.sh
 
-Add the licenses to `slurm.conf` on the controller:
+#!/bin/bash
+#SBATCH --partition=quantum
+#SBATCH --licenses=mqt.ddsim.default
+#SBATCH --time=00:05:00
+set -eu
 
-```ini
-Licenses=mqt.ddsim.default:2,mqt.sc.default:1
+srun python workload.py
 ```
 
-The DDSIM count is two. Therefore, Slurm can admit two jobs that each request
-one DDSIM license. These jobs can run on different nodes. The count is a local
-cluster policy. It is not a DDSIM property and it is not a per-node count.
+```{code-block} python
+:caption: workload.py
 
-Restart `slurmctld` after you first add the licenses. Reconfigure the compute
-nodes as required by your Slurm installation. Then inspect the configured
-resources:
+import os
 
-```console
-scontrol show lic
-```
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import builtin_driver as qdmi_driver
 
-The initial report must contain these values:
-
-```text
-LicenseName=mqt.ddsim.default Total=2 Used=0 Free=2 Remote=no
-LicenseName=mqt.sc.default Total=1 Used=0 Free=1 Remote=no
-```
-
-## Submit a DDSIM job
-
-Save this program as `bell.py` in a location that all compute nodes can read:
-
-```python
-from mqt.core.qdmi import ProgramFormat, slurm
-
+device_id = os.environ["SLURM_JOB_LICENSES"].removesuffix(":1")
+device = qdmi_driver.open_device(device_id)
 program = """OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[2];
@@ -129,141 +111,245 @@ h q[0];
 cx q[0], q[1];
 measure q -> c;
 """
-
-device = slurm.open_device_from_license()
-job = device.submit_job(program, ProgramFormat.QASM2, num_shots=256)
+job = device.submit_job(program, ProgramFormat.QASM2, 1024)
 if not job.wait(60):
-    raise RuntimeError("DDSIM did not finish within 60 seconds")
-
-counts = job.get_counts()
-if sum(counts.values()) != 256 or not set(counts) <= {"00", "11"}:
-    raise RuntimeError(f"Invalid Bell results: {counts}")
-print(counts)
+    raise TimeoutError("The quantum job did not finish within 60 seconds")
+print(job.get_counts())
 ```
 
-Save this batch script as `bell.sbatch`:
+The Bell-circuit counts appear in `slurm-JOBID.out`. This example requests
+**one unit of one local device license** and reads its ID from
+[`SLURM_JOB_LICENSES`](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_JOB_LICENSES).
+Applications using several devices request their licenses together, accept
+explicit device IDs, and open independent driver sessions. Each session
+initializes only its selected device.
+
+Pass the same `device` to a {doc}`Qiskit <qdmi_backend>` or
+{doc}`PennyLane <pennylane_device>` adapter. C++ applications use
+{cpp-api:func}`qdmi::builtin_driver::openDevice`.
+
+(multiple-device-implementations)=
+
+## Connect quantum devices
+
+Add implementations to `MQT_CORE_SLURM_PACKAGES` using
+[uv requirements](https://docs.astral.sh/uv/pip/dependencies/). For example,
+save this as `devices.txt` to build both implementations from their sources:
+
+```{code-block} text
+:caption: devices.txt
+
+iqm-qdmi @ git+https://github.com/iqm-finland/QDMI-on-IQM.git@main
+amazon-braket-qdmi @ git+https://github.com/munich-quantum-software/amazon-braket-qdmi-device.git@main
+```
+
+Use a full commit SHA instead of `main` to fix the revision. For published
+packages, use names such as `iqm-qdmi` with optional version constraints. For a
+local checkout, set `MQT_CORE_SLURM_WORKLOAD` to its absolute parent directory
+and use a path such as `/workload/QDMI-on-IQM` in the requirements. Source
+packages are compiled inside Docker for its architecture. MQT Core's Qiskit and
+PennyLane extras are already installed; add any application-specific
+dependencies to the same list.
+
+Configure device license counts and accounting records in
+`build/slurm/slurm.conf` before starting the updated cluster:
+
+```ini
+Licenses=mqt.ddsim.default:2,mqt.sc.default:1,iqm.emerald.mock:1,amazon.braket.sv1:2
+AccountingStorageTRES=license/mqt.ddsim.default,license/mqt.sc.default,license/iqm.emerald.mock,license/amazon.braket.sv1
+```
+
+Installed packages supply device manifests. Shared endpoints and presets belong
+in `build/slurm/qdmi.json`, mounted at `/etc/mqt-core/qdmi.json`; see
+{doc}`configuration` for the format and precedence. Keep credentials outside
+this catalogue and the image. Rebuild with the selected packages:
 
 ```bash
-#!/bin/bash
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --licenses=mqt.ddsim.default:1
-#SBATCH --output=bell-%j.out
-
-set -euo pipefail
-python bell.py
+export MQT_CORE_SLURM_PACKAGES="$(cat devices.txt)"
+docker compose -f examples/slurm/compose.yml up --build -d --wait
 ```
 
-The adapter reads `SLURM_JOB_LICENSES` and selects the persistent device
-definition with the same ID. It requires one unambiguous QDMI device license. It
-opens a fresh device session and checks the device status. The function accepts
-`IDLE` and `BUSY`. This check is not authorization. The provider can still
-reject a later submission or put the quantum task in its device queue.
+All implementations share `/opt/venv`, and every QAN can reach them. Adding a
+device requires its implementation, catalogue entry, license, and credentials;
+it does not require a new partition or node type. Classical nodes use an
+internal network; QANs, the login node, and the monitoring controller also have
+outbound connectivity.
 
-Submit the job with this command:
+### Supply credentials
 
-```console
-sbatch bell.sbatch
+Monitors use site credentials independently of jobs. Put their references in the
+private `build/slurm/qdmi.env` file, using systemd `EnvironmentFile` syntax:
+
+```ini
+IQM_TOKENS_FILE=/run/credentials/iqm.json
+AWS_SHARED_CREDENTIALS_FILE=/run/credentials/aws
+AWS_PROFILE=site-monitor
 ```
 
-The same open handle works with application adapters. Pass it to
-{py:class}`mqt.core.plugins.qiskit.backend.QDMIBackend` or to the PennyLane
-{py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`. See the
-{doc}`pennylane_device` guide for the PennyLane constructor.
+Mount those files read-only into the controller through a Compose overlay. Users
+authenticate on the login node through each device implementation's usual
+mechanism. Slurm
+[exports the submission environment by default](https://slurm.schedmd.com/sbatch.html#OPT_export);
+credential files must also be readable by the user on the relevant QAN. IQM and
+AWS settings can coexist. A daemon's environment does not configure user jobs.
 
-Open the selected device once per application process and reuse its handle for
-subsequent quantum jobs. The adapter validates the license locally, opens only
-the selected device, and queries its status once. Device selection uses the
-ordinary QDMI driver lookup and needs no controller RPC. Provider initialization
-and network requests can still dominate opening time; use provider-supported
-timeout settings for network requests.
+Request the selected device's license when submitting a compatible application:
 
-## Check concurrent jobs
-
-For a scheduling test, add a sufficiently long classical post-processing step
-after the Python command. For example, add `sleep 120` to `bell.sbatch`. Then
-submit two jobs:
-
-```console
-sbatch --nodelist=node1 bell.sbatch
-sbatch --nodelist=node2 bell.sbatch
+```bash
+sbatch --partition=quantum --licenses=iqm.emerald.mock iqm-job.sh
+squeue --me
 ```
 
-Both jobs can run because two DDSIM licenses exist. Each job uses one CPU. One
-CPU remains free on each node. Submit a third DDSIM job. Slurm keeps it pending
-until one DDSIM license becomes free.
+## Admit jobs while devices are operational
 
-Use these commands to inspect the state:
+A license count limits concurrent Slurm allocations, not the number of circuits
+an application can submit. Choose counts according to site policy and service
+capacity. The playground runs one administrative monitor per device. It probes
+QDMI in a bounded child process and updates a
+[license-only reservation](https://slurm.schedmd.com/reservations.html):
 
-```console
-squeue --format="%.18i %.9T %.20R %.12N %.20L"
-scontrol show lic mqt.ddsim.default
-scontrol show node node1
-scontrol show node node2
+| Probe result       | Scheduling behavior                                           |
+| ------------------ | ------------------------------------------------------------- |
+| `IDLE` or `BUSY`   | Release the reservation; jobs can acquire the device license  |
+| Failure or timeout | Keep all units reserved; new jobs wait with reason `Licenses` |
+| Monitor stopped    | Reserve all units until monitoring resumes successfully       |
+
+`BUSY` means operational; the remote service may queue a submitted job. Waiting
+jobs occupy no compute nodes. Reservations affect new allocations, while running
+jobs and other device licenses continue unaffected.
+
+The controller reserves licenses before opening the partitions. Each
+`qdmi-availability@ID:COUNT.service` checks its device every 30 seconds with a
+ten-second probe timeout. Systemd restarts failed monitors and closes admission
+when a monitor stops. Probe output is suppressed because device diagnostics can
+contain credentials; service failures appear in the journal. From an
+administrator shell on the controller, exercise admission with:
+
+```bash
+systemctl stop qdmi-availability@mqt.ddsim.default:2.service
+systemctl start qdmi-availability@mqt.ddsim.default:2.service
 ```
 
-The third job must have state `PENDING` and reason `Licenses`. The license
-report must show `Total=2 Used=2 Free=0`. The node records must still show one
-free CPU on each node. A job that requests `mqt.sc.default:1` can use one of
-these CPUs because it uses a different license.
+Open that shell with
+`docker compose -f examples/slurm/compose.yml exec controller bash`. The monitor
+maintains `qdmi-unavailable-ID`; do not create a conflicting reservation.
+Inspect both `Free` and `Reserved` in `scontrol show licenses`, since reserved
+tokens can still appear in `Free`.
 
-When one DDSIM job ends, Slurm returns its license. The pending job can then
-start without a change to the device registry or `slurm.conf`.
+:::{important}
+Availability is a snapshot for the monitor's identity, not user authorization.
+Applications must handle expired credentials, device failures, and remote
+queueing. Controller communication failures require administrator attention: a
+failed reservation update can leave the last scheduler state in effect.
+:::
 
-## Diagnose a failure
+## Chain quantum and classical stages
 
-First, run `scontrol show job <job-id>`. Check `JobState`, `Reason`, `Licenses`,
-and `NodeList`. Use `scontrol show lic` to compare the total, used, and free
-counts. Use `scontrol show node` to check CPU allocation.
+A quantum-assisted AFQMC application can measure a trial state on a QAN, save
+results to `/jobs`, and propagate classical walkers on compute nodes. Submit its
+two batch scripts from the login shell:
 
-If a node is down, check `systemctl status munge slurmd` and the Slurm journal
-on that node. Check that `/sys/fs/cgroup/cgroup.controllers` exists. Check that
-all nodes use the same Munge key and the same `slurm.conf`.
-
-If MQT Core cannot select a device, print `SLURM_JOB_LICENSES` inside the batch
-job and list the IDs visible to `Session`. Use this value only to diagnose
-selection. It is not proof of the Slurm allocation. The license name and stable
-ID must match exactly. Do not add a generic device license. Do not use a Slurm
-OR license expression for device selection because the environment does not
-identify a single selected device in that case.
-
-[Slurm GRES configuration]: https://slurm.schedmd.com/gres.conf.html
-
-## Run the integration tests
-
-From a source checkout on a Linux Docker host with cgroup v2, build one wheel
-and run the fixture:
-
-```console
-uv build --wheel --out-dir test/slurm/dist -Ccmake.define.DEPLOY=ON
-uv run --no-project --python 3.14 test/slurm/run_integration.py
+```bash
+measurement=$(sbatch --parsable --partition=quantum --licenses=iqm.emerald.mock measure.sh)
+sbatch --partition=compute --dependency=afterok:"$measurement" propagate.sh
 ```
 
-Keep exactly one wheel in `test/slurm/dist`. The fixture installs that wheel in
-one controller and two compute containers. It checks admission, license
-contention, independent SC execution, Bell results, and terminal job states and
-exit codes. It uses privileged containers to exercise real Slurm cgroups; it is
-an isolated test cluster, not a production deployment template.
+The scripts choose their resources and agree on an output path. The classical
+stage starts only after successful measurement and holds no quantum license.
+Scientific code, validation, and dependencies belong with the application.
 
-Each invocation uses its own Docker project, Munge key, and directory below
-`test/slurm/runtime`. Successful runs remove their containers, images, and
-artifacts; failures retain artifacts and print the project and runtime path.
-Docker's build cache remains available to later runs. Commands have 30-second
-deadlines, image build/startup has a ten-minute deadline, and diagnostics and
-cleanup have separate short deadlines. Batch jobs request a five-minute time
-limit. An interrupted command terminates its process group, including a Docker
-Compose child.
+For tightly coupled iterations, use a
+[heterogeneous allocation](https://slurm.schedmd.com/heterogeneous_jobs.html)
+that includes both node types. Licenses belong to its first component and are
+retained for the allocation. An `srun` step cannot move an ordinary compute job
+into a QAN partition.
 
-The runner prints setup, execution, and total durations. Its inexpensive
-failure-path tests can run before building a wheel:
+## Inspect and operate the cluster
 
-```console
-uv run --no-project --with 'pytest>=9.0.1' --python 3.14 pytest -o addopts= -q test/python/test_slurm_integration.py
+From the login shell, inspect completed jobs and allocated license resources:
+
+```bash
+sacct -X --format=JobID,JobName,Partition,State,ExitCode,Elapsed,AllocTRES%80
 ```
 
-CI enables the existing sccache compiler integration and reports cache counters.
-Compare compiler requests, hits, and wall time before attributing a build-time
-change to caching. The fixture's bounded polling targets its private controller;
-do not copy these loops into production monitoring. See the
-[Slurm RPC performance guidance](https://slurm.schedmd.com/squeue.html#SECTION_PERFORMANCE).
+SlurmDBD records these in MariaDB under the `research` account. Database and
+controller state persist in named volumes. Job scripts and environments are not
+archived; applications should save software versions, input digests, and remote
+job IDs alongside results, without credentials.
+
+Scale nodes from the host:
+
+```bash
+docker compose -f examples/slurm/compose.yml up -d --wait --scale node=4 --scale qan=3
+```
+
+The cluster accepts up to 128 registered nodes. Drain nodes and wait for their
+jobs before scaling down. Remove stopped dynamic nodes with
+`scontrol delete NodeName=...` when retaining controller state.
+
+`docker compose -f examples/slurm/compose.yml down` stops the cluster and keeps
+accounting. To discard it, including accounting history:
+
+```bash
+docker compose -f examples/slurm/compose.yml down --volumes
+rm -r build/slurm
+```
+
+Images and build caches remain. For independent clusters, choose a Compose
+`--project-name`, set `MQT_CORE_SLURM_RUNTIME` to an absolute directory, and
+pass that directory to `prepare.sh`.
+
+## Deploy on an existing cluster
+
+Provide one versioned, administrator-owned environment on login and quantum
+access nodes. Expose its executables through the default `PATH` or a software
+module, and maintain the catalogue in `/etc/mqt-core/qdmi.json`. Shared files
+and matching numeric user/group IDs make scripts, inputs, and credential files
+available across nodes. Where several environments exist, users select a module
+before `sbatch` or load it in their batch script; see the
+[GWDG module guide](https://docs.hpc.gwdg.de/software_stacks/module_basics/index.html).
+
+Use matching Slurm versions across hosts; the playground uses Slurm 25.11 or
+newer. Login nodes need Slurm clients, compute nodes need `slurmd`, and a
+monitor host needs the device libraries and site credentials. Run monitors
+outside Slurm daemons and initialize reservations before opening queues.
+SlurmDBD provides persistent accounting but is not required for static local
+licenses.
+
+:::{dropdown} CPU and memory isolation with cgroup v2
+For allocation-based CPU and memory limits, configure:
+
+```ini
+# slurm.conf
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+JobAcctGatherType=jobacct_gather/cgroup
+SelectType=select/cons_tres
+SelectTypeParameters=CR_CPU_Memory
+```
+
+```ini
+# cgroup.conf
+CgroupPlugin=autodetect
+ConstrainCores=yes
+ConstrainRAMSpace=yes
+ConstrainSwapSpace=yes
+```
+
+`autodetect` selects the host's cgroup implementation; cgroup v1 is deprecated.
+Set resources, partitions, accounts, and limits for the site. Keep scheduler
+authentication, such as Munge, separate from device credentials. See the
+[Slurm administration guide](https://slurm.schedmd.com/quickstart_admin.html)
+and [cgroup configuration](https://slurm.schedmd.com/cgroup.conf.html).
+:::
+
+## Integration tests
+
+`test/slurm/run_integration.py` exercises login submission, partition placement,
+license contention, unavailable-device admission and recovery, environment
+export, and accounting with DDSIM and SC.
+
+The IQM and Braket repositories install their device packages into the same
+cluster and execute authenticated Emerald Resonance mock and SV1 workloads. They
+supply credentials through a Compose overlay. These tests can incur service
+charges.

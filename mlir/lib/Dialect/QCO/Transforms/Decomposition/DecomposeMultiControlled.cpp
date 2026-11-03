@@ -37,6 +37,7 @@
 #include <numbers>
 #include <optional>
 #include <utility>
+#include <variant>
 
 namespace mlir::qco {
 
@@ -68,7 +69,7 @@ public:
     setWire(q, XOp::create(*builder_, loc_, wire(q)).getOutputQubit(0));
   }
 
-  void p(size_t q, double theta) {
+  void p(size_t q, const mqt::FloatParameter& theta) {
     setWire(q, POp::create(*builder_, loc_, wire(q), theta).getOutputQubit(0));
   }
 
@@ -98,7 +99,7 @@ public:
     setWire(target, ctrlOp.getTargetsOut()[0]);
   }
 
-  void cp(size_t control, size_t target, double theta) {
+  void cp(size_t control, size_t target, const mqt::FloatParameter& theta) {
     auto ctrlOp =
         CtrlOp::create(*builder_, loc_, wire(control), wire(target),
                        [&](Value targetArg) -> Value {
@@ -109,16 +110,16 @@ public:
     setWire(target, ctrlOp.getTargetsOut()[0]);
   }
 
-  void crz(size_t control, size_t target, double theta) {
-    const double half = theta / 2.0;
+  void crz(size_t control, size_t target, const mqt::FloatParameter& theta) {
+    const auto half = mqt::scaleParameter(*builder_, loc_, theta, 0.5);
     p(target, half);
     cx(control, target);
-    p(target, -half);
+    p(target, mqt::scaleParameter(*builder_, loc_, half, -1.0));
     cx(control, target);
   }
 
   // Controlled-RX via RX(θ) = H RZ(θ) H, reusing crz.
-  void crx(size_t control, size_t target, double theta) {
+  void crx(size_t control, size_t target, const mqt::FloatParameter& theta) {
     h(target);
     crz(control, target, theta);
     h(target);
@@ -146,7 +147,8 @@ public:
     setWire(target, rccxOp.getOutputQubit(2));
   }
 
-  void ccp(double theta, size_t c0, size_t c1, size_t target) {
+  void ccp(const mqt::FloatParameter& theta, size_t c0, size_t c1,
+           size_t target) {
     emitCtrl({c0, c1}, target,
              [theta](OpBuilder& builder, Location loc, Value arg) {
                return POp::create(builder, loc, arg, theta).getOutputQubit(0);
@@ -269,7 +271,7 @@ enum class PlanOpKind : uint8_t {
 struct PlanOp {
   PlanOpKind kind{};
   SmallVector<size_t, 4> wires;
-  double angle = 0.0;
+  mqt::FloatParameter angle = 0.0;
 };
 
 /// Ordered plan ops lowered by `lowerPlan`.
@@ -281,7 +283,7 @@ struct CircuitPlan {
 
 struct ControlledGateSpec {
   ControlledTarget gate;
-  std::optional<double> theta;
+  mqt::FloatParameter theta = 0.0;
 };
 
 struct BorrowedControlPartition {
@@ -712,7 +714,9 @@ synthesizeThreeControlled(OpBuilder& builder, Location loc, ValueRange controls,
 }
 
 // Barenco residual for up to three controls: an RCCX peel followed by CX.
-static void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
+static void appendMcpBarencoRelative(CircuitPlan& plan, OpBuilder& builder,
+                                     Location loc,
+                                     const mqt::FloatParameter& theta,
                                      size_t numControls, size_t target) {
   if (numControls == 1) {
     plan.append({.kind = PlanOpKind::CP, .wires = {0, target}, .angle = theta});
@@ -720,7 +724,7 @@ static void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
   }
 
   const size_t peeled = numControls - 1;
-  const double half = theta / 2.0;
+  const auto half = mqt::scaleParameter(builder, loc, theta, 0.5);
 
   const auto appendPeelMcx = [&] {
     if (peeled == 2) {
@@ -733,10 +737,13 @@ static void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
   plan.append(
       {.kind = PlanOpKind::CP, .wires = {peeled, target}, .angle = half});
   appendPeelMcx();
-  plan.append(
-      {.kind = PlanOpKind::CP, .wires = {peeled, target}, .angle = -half});
+  plan.append({
+      .kind = PlanOpKind::CP,
+      .wires = {peeled, target},
+      .angle = mqt::scaleParameter(builder, loc, half, -1.0),
+  });
   appendPeelMcx();
-  appendMcpBarencoRelative(plan, half, peeled, target);
+  appendMcpBarencoRelative(plan, builder, loc, half, peeled, target);
 }
 
 // Maslov relative-phase C^3(X) (arXiv:1508.03273 Fig. 4); `invert` = adjoint.
@@ -774,7 +781,7 @@ static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
   for (size_t i = ops.size(); i-- > 0;) {
     PlanOp op = ops[i];
     if (op.kind == PlanOpKind::P) {
-      op.angle = -op.angle;
+      op.angle = -std::get<double>(op.angle);
     }
     plan.append(std::move(op));
   }
@@ -812,7 +819,8 @@ static CircuitPlan planMczRelativePhaseK4() {
   return plan;
 }
 
-static CircuitPlan mczCoreForWidth(size_t numControls);
+static CircuitPlan mczCoreForWidth(OpBuilder& builder, Location loc,
+                                   size_t numControls);
 
 static SmallVector<Value>
 synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
@@ -822,7 +830,7 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
 
   const size_t targetIdx = controls.size();
   GateEmitter emitter(builder, loc, wires);
-  const CircuitPlan plan = mczCoreForWidth(controls.size());
+  const CircuitPlan plan = mczCoreForWidth(builder, loc, controls.size());
   if (gate == ControlledTarget::X) {
     emitter.h(targetIdx);
     lowerPlan(emitter, plan);
@@ -841,8 +849,6 @@ synthesizeMultiControlled(OpBuilder& builder, Location loc, ValueRange controls,
 static constexpr size_t K_MCP_SP22_MIN_CONTROLS = 5;
 // No-ancilla MCX/MCZ uses SP22 MCP(π) through this control count.
 static constexpr size_t K_MCX_SP22_MAX_CONTROLS = 32;
-
-static CircuitPlan planMcp(double theta, size_t numControls);
 
 //===----------------------------------------------------------------------===//
 // Vale multi-controlled phase
@@ -926,11 +932,13 @@ static constexpr size_t K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS = 4;
 ///
 /// Controls then target. Caller appends the residual. Only three or four
 /// controls reach this shell, so each half uses CX or CCX.
-static void appendValeFig7Shell(CircuitPlan& plan, double theta,
+static void appendValeFig7Shell(CircuitPlan& plan, OpBuilder& builder,
+                                Location loc, const mqt::FloatParameter& theta,
                                 size_t numControls) {
   const size_t target = numControls;
   const auto [k1, k2] = partitionControls(numControls);
-  const double quarter = theta / 4.0;
+  const auto quarter = mqt::scaleParameter(builder, loc, theta, 0.25);
+  const auto negativeQuarter = mqt::scaleParameter(builder, loc, quarter, -1.0);
   const auto appendHalfMcx = [&](size_t begin, size_t count) {
     if (count == 1) {
       plan.append({.kind = PlanOpKind::CX, .wires = {begin, target}});
@@ -939,52 +947,38 @@ static void appendValeFig7Shell(CircuitPlan& plan, double theta,
     plan.append({.kind = PlanOpKind::CCX, .wires = {begin, begin + 1, target}});
   };
   appendHalfMcx(0, k1);
-  plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = -quarter});
+  plan.append(
+      {.kind = PlanOpKind::P, .wires = {target}, .angle = negativeQuarter});
   appendHalfMcx(k1, k2);
   plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = quarter});
   appendHalfMcx(0, k1);
-  plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = -quarter});
+  plan.append(
+      {.kind = PlanOpKind::P, .wires = {target}, .angle = negativeQuarter});
   appendHalfMcx(k1, k2);
   plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = quarter});
-}
-
-/// Vale Fig. 7 + recursive `planMcp(θ/2)` residual on the control register.
-static CircuitPlan planMcpVale(double theta, size_t numControls) {
-  CircuitPlan plan;
-  // Fig. 7 shell (8 ops) + optimized C²P residual at the production width k=3.
-  plan.ops.reserve(18);
-  appendValeFig7Shell(plan, theta, numControls);
-  appendPlanOps(plan, planMcp(theta / 2.0, numControls - 1));
-  return plan;
-}
-
-/// Vale shell with Barenco-relative (RCCX) residual.
-static CircuitPlan planMcpValeRelativeResidual(double theta,
-                                               size_t numControls) {
-  CircuitPlan plan;
-  plan.ops.reserve(17);
-  appendValeFig7Shell(plan, theta, numControls);
-  appendMcpBarencoRelative(plan, theta / 2.0, numControls - 1, numControls - 1);
-  return plan;
 }
 
 /// Optimized ancilla-free `C^2(P(θ))`.
 ///
 /// Wires: `c0`, `c1`, target.
-static CircuitPlan planMcpTwoControlled(double theta) {
+static CircuitPlan planMcpTwoControlled(OpBuilder& builder, Location loc,
+                                        const mqt::FloatParameter& theta) {
   CircuitPlan plan;
   plan.ops.reserve(10);
-  const double quarter = theta / 4.0;
-  const double half = theta / 2.0;
+  const auto quarter = mqt::scaleParameter(builder, loc, theta, 0.25);
+  const auto negativeQuarter = mqt::scaleParameter(builder, loc, quarter, -1.0);
+  const auto half = mqt::scaleParameter(builder, loc, theta, 0.5);
   constexpr size_t c0 = 0;
   constexpr size_t c1 = 1;
   constexpr size_t target = 2;
   plan.append({.kind = PlanOpKind::CX, .wires = {c0, target}});
-  plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = -quarter});
+  plan.append(
+      {.kind = PlanOpKind::P, .wires = {target}, .angle = negativeQuarter});
   plan.append({.kind = PlanOpKind::CX, .wires = {c1, target}});
   plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = quarter});
   plan.append({.kind = PlanOpKind::CX, .wires = {c0, target}});
-  plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = -quarter});
+  plan.append(
+      {.kind = PlanOpKind::P, .wires = {target}, .angle = negativeQuarter});
   plan.append({.kind = PlanOpKind::CX, .wires = {c1, target}});
   plan.append({.kind = PlanOpKind::P, .wires = {target}, .angle = quarter});
   plan.append({.kind = PlanOpKind::CRZ, .wires = {c0, c1}, .angle = half});
@@ -994,16 +988,24 @@ static CircuitPlan planMcpTwoControlled(double theta) {
 
 /// General-angle MCP for `2 ≤ k < K_MCP_SP22_MIN_CONTROLS`: optimized C²P at
 /// k=2, Vale at k=3, Vale + Barenco-relative residual at k=4.
-static CircuitPlan planMcp(double theta, size_t numControls) {
+static CircuitPlan planMcp(OpBuilder& builder, Location loc,
+                           const mqt::FloatParameter& theta,
+                           size_t numControls) {
   assert(numControls >= 2 && numControls < K_MCP_SP22_MIN_CONTROLS &&
          "planMcp covers only the pre-SP22 MCP band");
   if (numControls == 2) {
-    return planMcpTwoControlled(theta);
+    return planMcpTwoControlled(builder, loc, theta);
   }
+  CircuitPlan plan;
+  appendValeFig7Shell(plan, builder, loc, theta, numControls);
+  const auto half = mqt::scaleParameter(builder, loc, theta, 0.5);
   if (numControls == K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS) {
-    return planMcpValeRelativeResidual(theta, numControls);
+    appendMcpBarencoRelative(plan, builder, loc, half, numControls - 1,
+                             numControls - 1);
+  } else {
+    appendPlanOps(plan, planMcp(builder, loc, half, numControls - 1));
   }
-  return planMcpVale(theta, numControls);
+  return plan;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1044,14 +1046,21 @@ static CircuitPlan buildSp22Q(size_t m) {
 /// SP22 LDD MCP (arXiv:2203.11882 Them. 1): CP ladder + CRX `Q_n` conjugation.
 ///
 /// Controls `0..n-1`, target `n`; requires `n >= 5`.
-static CircuitPlan planMcpSp22(double theta, size_t numControls) {
+static CircuitPlan planMcpSp22(OpBuilder& builder, Location loc,
+                               const mqt::FloatParameter& theta,
+                               size_t numControls) {
   CircuitPlan plan;
   const size_t n = numControls;
   const size_t target = n;
   plan.ops.reserve((2 * n * n) - (2 * n) + 1);
 
-  const auto rootAngle = [&](double base, size_t exponent) {
-    return std::ldexp(base, -static_cast<int>(exponent));
+  const auto rootAngle = [&](double sign, size_t exponent) {
+    if (const auto* constant = std::get_if<double>(&theta)) {
+      return mqt::FloatParameter{
+          std::ldexp(sign * *constant, -static_cast<int>(exponent))};
+    }
+    return mqt::scaleParameter(builder, loc, theta,
+                               std::ldexp(sign, -static_cast<int>(exponent)));
   };
 
   // P_n(U)
@@ -1059,7 +1068,7 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
     plan.append({
         .kind = PlanOpKind::CP,
         .wires = {c, target},
-        .angle = rootAngle(theta, n - c),
+        .angle = rootAngle(1.0, n - c),
     });
   }
 
@@ -1067,7 +1076,7 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
   plan.append({
       .kind = PlanOpKind::CP,
       .wires = {0, target},
-      .angle = rootAngle(theta, n - 1),
+      .angle = rootAngle(1.0, n - 1),
   });
 
   // Q_n
@@ -1079,50 +1088,47 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
     plan.append({
         .kind = PlanOpKind::CP,
         .wires = {c, target},
-        .angle = rootAngle(-theta, n - c),
+        .angle = rootAngle(-1.0, n - c),
     });
   }
 
   // Q_n^dagger
   for (size_t i = qn.ops.size(); i-- > 0;) {
     const PlanOp& op = qn.ops[i];
-    plan.append({.kind = op.kind, .wires = op.wires, .angle = -op.angle});
+    plan.append({
+        .kind = op.kind,
+        .wires = op.wires,
+        .angle = -std::get<double>(op.angle),
+    });
   }
 
   return plan;
 }
 
 // MCZ core: k=4 relative-phase C^4(Z); SP22 MCP(π) for 5..32; else HP24.
-static CircuitPlan mczCoreForWidth(size_t numControls) {
+static CircuitPlan mczCoreForWidth(OpBuilder& builder, Location loc,
+                                   size_t numControls) {
   if (numControls == 4) {
     return planMczRelativePhaseK4();
   }
   if (numControls >= K_MCP_SP22_MIN_CONTROLS &&
       numControls <= K_MCX_SP22_MAX_CONTROLS) {
-    return planMcpSp22(K_PI, numControls);
+    return planMcpSp22(builder, loc, K_PI, numControls);
   }
   return planHp24Core(numControls);
 }
 
-// General-angle MCP: SP22 at k >= 5, else C²P / Vale (relative residual at 4).
-static void emitMcpDefault(GateEmitter& emitter, double phi,
-                           size_t numControls) {
-  if (numControls >= K_MCP_SP22_MIN_CONTROLS) {
-    lowerPlan(emitter, planMcpSp22(phi, numControls));
-    return;
-  }
-  lowerPlan(emitter, planMcp(phi, numControls));
-}
-
-static SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
-                                                         Location loc,
-                                                         ValueRange controls,
-                                                         Value target,
-                                                         double theta) {
+static SmallVector<Value>
+synthesizeMultiControlledPhase(OpBuilder& builder, Location loc,
+                               ValueRange controls, Value target,
+                               const mqt::FloatParameter& theta) {
   SmallVector<Value> wires(controls.begin(), controls.end());
   wires.push_back(target);
   GateEmitter emitter(builder, loc, wires);
-  emitMcpDefault(emitter, theta, controls.size());
+  const auto numControls = controls.size();
+  lowerPlan(emitter, numControls >= K_MCP_SP22_MIN_CONTROLS
+                         ? planMcpSp22(builder, loc, theta, numControls)
+                         : planMcp(builder, loc, theta, numControls));
   return wires;
 }
 
@@ -1130,29 +1136,24 @@ static SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
 // CtrlOp body matchers
 //===----------------------------------------------------------------------===//
 
-/// Match a supported controlled-target body: Pauli-X, Pauli-Z, or a
-/// constant-theta phase.
+/// Match a supported controlled-target body: Pauli-X, Pauli-Z, or phase.
 static std::optional<ControlledGateSpec>
 matchControlledTarget(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
     return ControlledGateSpec{
         .gate = ControlledTarget::X,
-        .theta = std::nullopt,
     };
   }
   if (isa<ZOp>(inner.getOperation())) {
     return ControlledGateSpec{
         .gate = ControlledTarget::Z,
-        .theta = std::nullopt,
     };
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
-    if (const auto theta = mlir::mqt::valueToDouble(pOp.getTheta())) {
-      return ControlledGateSpec{
-          .gate = ControlledTarget::Phase,
-          .theta = theta,
-      };
-    }
+    return ControlledGateSpec{
+        .gate = ControlledTarget::Phase,
+        .theta = mqt::foldParameter(pOp.getTheta()),
+    };
   }
   return std::nullopt;
 }
@@ -1295,17 +1296,20 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     // A compile-time phase of ±π is exactly Z; route it through the
     // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase at
     // 5 qubits, SP22 at 6–33 qubits, else HP24).
-    if (gate == ControlledTarget::Phase && spec->theta &&
-        std::abs(std::abs(*spec->theta) - K_PI) <=
+    const auto theta = mqt::parameterToConstantDouble(spec->theta);
+    if (gate == ControlledTarget::Phase && theta &&
+        std::abs(std::abs(*theta) - K_PI) <=
             mqt::PARAMETER_COMPARISON_TOLERANCE) {
       gate = ControlledTarget::Z;
     }
 
     rewriter.setInsertionPoint(op);
     if (gate == ControlledTarget::Phase) {
+      mqt::hoistSupportingOpsBefore(*op.getBody(), inner.getOperation(), op,
+                                    rewriter);
       rewriter.replaceOp(op, synthesizeMultiControlledPhase(
                                  rewriter, op.getLoc(), op.getControlsIn(),
-                                 op.getInputTarget(0), *spec->theta));
+                                 op.getInputTarget(0), spec->theta));
       return success();
     }
     if (numControls < 3) {
@@ -1391,9 +1395,9 @@ protected:
         .add<DecomposeControlledGatePattern, DecomposeRCCXPattern,
              UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
             &getContext(), minQubits, nativeTarget);
-    CtrlOp::getCanonicalizationPatterns(patterns, &getContext());
-    InvOp::getCanonicalizationPatterns(patterns, &getContext());
-    PowOp::getCanonicalizationPatterns(patterns, &getContext());
+    CtrlOp::getOptimizationPatterns(patterns, &getContext());
+    InvOp::getLoweringPatterns(patterns, &getContext());
+    PowOp::getLoweringPatterns(patterns, &getContext());
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();

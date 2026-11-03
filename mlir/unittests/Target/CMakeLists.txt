@@ -6,4 +6,5 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(IQM)
 add_subdirectory(OpenQASM)

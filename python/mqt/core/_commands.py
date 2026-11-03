@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"importlib.metadata", "pathlib", "subprocess", "typing"}
+
 import os
+import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
@@ -28,10 +31,14 @@ def benchmark() -> NoReturn:
 
 
 def run_tool(name: str) -> NoReturn:
-    """Replace this process with a bundled native tool."""
+    """Run a bundled native tool and preserve its exit status."""
     suffix = ".exe" if sys.platform == "win32" else ""
     executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/{name}{suffix}")))
-    os.execv(executable, [str(executable), *sys.argv[1:]])  # ruff: ignore[start-process-with-no-shell]
+    arguments = [str(executable), *sys.argv[1:]]
+    if sys.platform == "win32":
+        # Windows exec exits the launcher without waiting for the native tool.
+        sys.exit(subprocess.run(arguments, check=False).returncode)  # ruff: ignore[subprocess-without-shell-equals-true]
+    os.execv(executable, arguments)  # ruff: ignore[start-process-with-no-shell]
 
 
 def include_dir() -> Path:

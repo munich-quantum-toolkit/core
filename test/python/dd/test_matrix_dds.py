@@ -26,6 +26,8 @@ def test_matrix_array_ownership() -> None:
     """Test matrix array ownership and the zero-qubit export."""
     package = DDPackage(1)
     zero_qubit_matrix = package.identity().get_matrix(0)
+    with pytest.raises(ValueError, match="20-qubit"):
+        package.identity().get_matrix(21)
     assert zero_qubit_matrix.dtype == np.complex128
     assert zero_qubit_matrix.shape == (1, 1)
     assert zero_qubit_matrix.flags.c_contiguous
@@ -35,6 +37,11 @@ def test_matrix_array_ownership() -> None:
     expected = np.array([[0, 1], [1, 0]], dtype=np.complex128)
     matrix_dd = package.single_qubit_gate(expected, 0)
     matrix = matrix_dd.get_matrix(1)
+    two_qubit_package = DDPackage(2)
+    two_qubit_dd = two_qubit_package.single_qubit_gate(expected, 1)
+    for width in (0, 1):
+        with pytest.raises(ValueError, match="does not cover"):
+            two_qubit_dd.get_matrix(width)
     assert matrix.dtype == np.complex128
     assert matrix.shape == (2, 2)
     assert matrix.flags.c_contiguous
@@ -242,3 +249,13 @@ def test_invalid_identity_path(decisions: str) -> None:
     with pytest.raises(ValueError, match="invalid digit"):
         identity.get_entry_by_path(1, decisions)
     assert identity.get_entry_by_path(1, "3ignored") == 1
+
+
+def test_untracked_release() -> None:
+    """Reject an unbalanced release at the Python boundary."""
+    package = DDPackage(1)
+    gate = package.single_qubit_gate(np.array([[0, 1], [1, 0]], dtype=np.complex128), 0)
+    package.inc_ref_mat(gate)
+    package.dec_ref_mat(gate)
+    with pytest.raises(ValueError, match="Edge is not part of the root set"):
+        package.dec_ref_mat(gate)

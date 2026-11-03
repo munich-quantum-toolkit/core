@@ -28,6 +28,9 @@ packaged device definitions. Treat `MQT_CORE_QDMI_CONFIG_JSON` as trusted input
 too.
 :::
 
+Decimal numbers in JSON configuration require the C numeric locale
+(`LC_NUMERIC=C`).
+
 ## Device definitions
 
 The following `qdmi.json` registers one device:
@@ -63,7 +66,8 @@ child IDs.
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through
-`custom5`.
+`custom5`. Custom session parameters are strings; the device interprets their
+contents.
 
 `device-config` selects exactly one device configuration source:
 
@@ -165,9 +169,9 @@ print(builtin_driver.registered_device_ids())
 
 The list includes configured devices that are unavailable or need credentials.
 Use `builtin_driver.open_device(device_id, ...)` to open only the selected
-device. Core supplies `mqt.ddsim.default` for local execution. Other configured
-IDs may refer to simulator or compilation-only devices, including the models
-described in {doc}`sc_device`.
+device. MQT Core supplies `mqt.ddsim.default` for local execution. Other
+configured IDs may refer to simulator or compilation-only devices, including the
+models described in {doc}`sc_device`.
 
 With the MQT Core driver, standard `Session` enumeration initializes configured
 devices and skips those that fail to open. Another driver may present a
@@ -190,49 +194,6 @@ enumerated ID.
 Multiple definitions may refer to the same library and prefix. MQT Core reuses
 the initialized library while creating a fresh QDMI device session, with its own
 session parameters, for every definition.
-
-## Selecting a device from a Slurm license environment
-
-MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
-licenses for cluster-wide admission. The license name must equal one stable ID
-reported by the selected QDMI driver. Each job must request one license. For
-example:
-
-```bash
-sbatch --licenses=mqt.ddsim.default:1 simulation.sh
-```
-
-The job can then open the named device:
-
-```python
-from mqt.core.qdmi import slurm
-
-device = slurm.open_device_from_license()
-```
-
-The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
-`qdmi/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
-`<device-id>` or `<device-id>:1`. They reject remote, compound, and non-unit
-license values.
-
-The adapter opens a fresh device session from the persistent definition. It does
-not replace configuration or inject credentials. Each device implementation
-defines its own credential sources. The adapter accepts QDMI device status
-`IDLE` and `BUSY`. It rejects all other device states.
-
-`SLURM_JOB_LICENSES` is process-mutable. The adapter uses this value only for
-device selection. It does not verify that Slurm allocated the license. It does
-not authenticate the caller or authorize access to the device. Provider
-credentials must authorize remote devices. The operating system must isolate a
-local device when access requires enforcement. A caller can also bypass this
-adapter and call {py:func}`~mqt.core.qdmi.open_device` with a stable device ID.
-A different Slurm lookup would therefore not make MQT Core an access control
-boundary.
-
-A cluster can configure more than one license for a device. For example,
-`mqt.ddsim.default:2` permits two independent jobs to request one license each.
-The count is a Slurm admission limit. It is not an access permission, a device
-availability check, or a device queue length.
 
 ## Native applications
 

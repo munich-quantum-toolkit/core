@@ -7,8 +7,8 @@ native ARM64, Python 3.14, Qiskit 2.5.2, LLVM/MLIR 23.1.
 
 ## Outcome and contracts
 
-The audit covered `bindings/mlir/qiskit/`, the version registry and vendored
-headers, `scripts/qiskit_c_api_adopt.py`, dependency declarations,
+The audit covered `bindings/mlir/Target/Qiskit/`, the version registry and
+vendored headers, `scripts/qiskit_c_api_adopt.py`, dependency declarations,
 documentation, and translation, loop, integer-interchange, and adoption tests.
 It traced standard-gate descriptors, reusable function bindings, CBit storage,
 and resource mapping where they constrain translation.

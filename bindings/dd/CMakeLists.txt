@@ -6,25 +6,15 @@
 #
 # Licensed under the MIT License
 
-if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
-  file(GLOB_RECURSE DD_SOURCES **.cpp)
+file(GLOB_RECURSE DD_SOURCES **.cpp)
 
-  add_mqt_python_binding(
-    CORE
-    ${MQT_CORE_TARGET_NAME}-dd-bindings
-    ${DD_SOURCES}
-    MODULE_NAME
-    dd
-    INSTALL_DIR
-    .
-    LINK_LIBS
-    MQT::CoreDDPython)
+target_sources(${MQT_CORE_TARGET_NAME}-bindings PRIVATE ${DD_SOURCES})
+target_link_libraries(${MQT_CORE_TARGET_NAME}-bindings PRIVATE MQT::CoreDD)
 
-  # install the Python stub file in editable mode for better IDE support
-  if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
-    install(
-      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/dd.pyi
-      DESTINATION .
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
-  endif()
+# install the Python stub file in editable mode for better IDE support
+if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
+  install(
+    FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/dd.pyi
+    DESTINATION .
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
 endif()

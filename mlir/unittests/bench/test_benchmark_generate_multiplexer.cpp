@@ -23,6 +23,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
 #include <numbers>
@@ -33,7 +34,7 @@ namespace mqt::bench {
 using namespace mlir;
 
 TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
-  auto program = generate(Multiplexer{{.qubits = 3}});
+  auto program = generate(llvm::cantFail(Multiplexer::create({.qubits = 3})));
   ASSERT_TRUE(mlir::succeeded(program));
   auto moduleOp = program->module();
 
@@ -81,8 +82,8 @@ TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
 }
 
 TEST(GenerateProgramTest, SerializesTheLargestQuantumMultiplexer) {
-  auto program =
-      generate(Multiplexer{{.qubits = MultiplexerOptions::MAX_QUBITS}});
+  auto program = generate(llvm::cantFail(
+      Multiplexer::create({.qubits = MultiplexerOptions::MAX_QUBITS})));
   ASSERT_TRUE(mlir::succeeded(program));
   EXPECT_LT(test::countOperations(program->module()), 150U);
 
@@ -90,7 +91,8 @@ TEST(GenerateProgramTest, SerializesTheLargestQuantumMultiplexer) {
 }
 
 TEST(GenerateProgramTest, SamplesMultiplexerAgainstReference) {
-  test::expectSamplingMatchesReference(Multiplexer{{.qubits = 3}});
+  test::expectSamplingMatchesReference(
+      llvm::cantFail(Multiplexer::create({.qubits = 3})));
 }
 
 } // namespace mqt::bench

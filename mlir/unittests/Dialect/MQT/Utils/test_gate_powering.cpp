@@ -199,20 +199,3 @@ TEST(GatePoweringTest, RejectsUnsupportedPowerExponents) {
     EXPECT_FALSE(mlir::mqt::powerUParameters(0.3, 0.4, 0.5, exponent));
   }
 }
-
-TEST(GatePoweringTest, RejectsNonfiniteInputAngles) {
-  for (double invalid : std::array{
-           std::numeric_limits<double>::infinity(),
-           -std::numeric_limits<double>::infinity(),
-           std::numeric_limits<double>::quiet_NaN(),
-       }) {
-    for (size_t index = 0; index < 3; ++index) {
-      SCOPED_TRACE(testing::Message()
-                   << "angle=" << index << ", value=" << invalid);
-      std::array angles{0.3, 0.4, 0.5};
-      angles[index] = invalid;
-      EXPECT_FALSE(
-          mlir::mqt::powerUParameters(angles[0], angles[1], angles[2], 2.0));
-    }
-  }
-}

@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Target/QIR/Capabilities.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -29,6 +30,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/VersionTuple.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <optional>
@@ -42,40 +44,103 @@ namespace mlir {
                                  "Invalid payload specification: " + message);
 }
 
-[[nodiscard]] static std::optional<std::string>
-normalizePayloadVersion(llvm::StringRef version) {
-  llvm::VersionTuple parsed;
-  if (parsed.tryParse(version) || parsed.getBuild() ||
-      parsed.getAsString() != version) {
-    return std::nullopt;
-  }
-  return llvm::VersionTuple(parsed.getMajor(), parsed.getMinor().value_or(0),
-                            parsed.getSubminor().value_or(0))
-      .getAsString();
-}
-
 [[nodiscard]] static bool containsNull(const llvm::StringRef value) {
   return value.contains('\0');
+}
+
+llvm::Expected<PayloadSpecification>
+PayloadSpecification::forProgramFormat(ProgramFormat format,
+                                       PayloadEncoding encoding) {
+  switch (format) {
+  case ProgramFormat::OpenQASM2:
+    return PayloadSpecification::create(
+        {.id = "openqasm", .version = ">=2,<3", .encoding = encoding},
+        {
+            {
+                .id = ProgramCapability::FORWARD_BRANCHING.str(),
+                .constraints =
+                    {
+                        {
+                            .id = ProgramConstraint::MAX_NESTING_DEPTH.str(),
+                            .value = 1,
+                        },
+                    },
+            },
+        });
+  case ProgramFormat::OpenQASM3:
+    return PayloadSpecification::create(
+        {
+            .id = "openqasm",
+            .version = ">=3,<4",
+            .profile = "",
+            .encoding = encoding,
+        },
+        {
+            {.id = ProgramCapability::FORWARD_BRANCHING.str()},
+            {.id = ProgramCapability::COUNTED_ITERATION.str()},
+            {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+            {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
+        });
+  case ProgramFormat::IQMJSON:
+    return create({.id = "iqm-json", .encoding = encoding});
+  case ProgramFormat::QIRBase:
+    return PayloadSpecification::create({
+        .id = "qir",
+        .version = ">=2,<3",
+        .profile = "base",
+        .encoding = encoding,
+    });
+  case ProgramFormat::QIRAdaptive: {
+    std::vector<ProgramCapability> capabilities{
+        {.id = ProgramCapability::FORWARD_BRANCHING.str()},
+        {.id = ProgramCapability::COUNTED_ITERATION.str()},
+        {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+    };
+    for (const auto& [flag, id] : qir::OPTIONAL_CAPABILITIES) {
+      capabilities.push_back({.id = id});
+    }
+    return PayloadSpecification::create(
+        {
+            .id = "qir",
+            .version = ">=2,<3",
+            .profile = "adaptive",
+            .encoding = encoding,
+        },
+        std::move(capabilities));
+  }
+  default:
+    return llvm::createStringError(
+        llvm::errc::invalid_argument,
+        "Compiler output has no executable payload specification");
+  }
 }
 
 llvm::Expected<PayloadSpecification>
 PayloadSpecification::create(PayloadFormat format,
                              std::vector<ProgramCapability> capabilities,
                              const bool optionalCapabilitiesKnown) {
-  if (format.id.empty() || format.version.empty()) {
-    return invalidPayload("Payload format requires an ID and version");
+  if (format.id.empty()) {
+    return invalidPayload("Payload format requires an ID");
   }
   if (containsNull(format.id) || containsNull(format.version) ||
       containsNull(format.profile)) {
     return invalidPayload(
         "Payload format fields must not contain null characters");
   }
-  auto version = normalizePayloadVersion(format.version);
-  if (!version) {
-    return invalidPayload(
-        "Payload format version must use major[.minor[.patch]]");
+  const auto versions = mqt::PayloadVersionRange::parse(format.version);
+  if (!format.version.empty()) {
+    if (!versions) {
+      return invalidPayload("Payload version requires a numeric ceiling or >=, "
+                            "<, <= constraints");
+    }
+    llvm::VersionTuple numeric;
+    format.version = !numeric.tryParse(format.version)
+                         ? llvm::VersionTuple(numeric.getMajor(),
+                                              numeric.getMinor().value_or(0),
+                                              numeric.getSubminor().value_or(0))
+                               .getAsString()
+                         : versions->str();
   }
-  format.version = std::move(*version);
   switch (format.encoding) {
   case PayloadEncoding::Text:
   case PayloadEncoding::Binary:
@@ -93,6 +158,12 @@ PayloadSpecification::create(PayloadFormat format,
     if (containsNull(capability.id)) {
       return invalidPayload(
           "Program capability ID must not contain a null character");
+    }
+    if (format.id == "openqasm" && !format.version.empty() &&
+        versions->withinMajor(3) &&
+        !versions->contains(llvm::VersionTuple(3, 1)) &&
+        capability.id == ProgramCapability::MULTIWAY_BRANCHING) {
+      return invalidPayload("OpenQASM 3.0 does not support multiway branching");
     }
     const auto capabilityKey =
         std::pair(llvm::StringRef(capability.id), capability.value);
@@ -118,7 +189,8 @@ PayloadSpecification::create(PayloadFormat format,
     }
   }
 
-  return PayloadSpecification(std::move(format), std::move(capabilities),
+  return PayloadSpecification(std::move(format), versions,
+                              std::move(capabilities),
                               optionalCapabilitiesKnown);
 }
 
@@ -168,21 +240,45 @@ PayloadSpecification::create(const mqt::PayloadSpecAttr attribute) {
 }
 
 PayloadSpecification::PayloadSpecification(
-    PayloadFormat format, std::vector<ProgramCapability> capabilities,
+    PayloadFormat format, std::optional<mqt::PayloadVersionRange> versions,
+    std::vector<ProgramCapability> capabilities,
     const bool optionalCapabilitiesKnown)
-    : format_(std::move(format)), capabilities_(std::move(capabilities)),
+    : format_(std::move(format)), versionRange_(versions),
+      capabilities_(std::move(capabilities)),
       optionalCapabilitiesKnown_(optionalCapabilitiesKnown) {}
+
+const std::optional<mqt::PayloadVersionRange>&
+PayloadSpecification::versionRange() const noexcept {
+  return versionRange_;
+}
 
 const PayloadFormat& PayloadSpecification::format() const noexcept {
   return format_;
 }
 
 llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
-  if (format_.id == "openqasm" && format_.version == "3.1.0" &&
+  if (format_.id == "iqm-json" && format_.version.empty() &&
+      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
+    return ProgramFormat::IQMJSON;
+  }
+  if (format_.id == "openqasm" && versionRange_ &&
+      versionRange_->withinMajor(2) &&
+      versionRange_->contains(llvm::VersionTuple(2, 0)) &&
+      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
+    return ProgramFormat::OpenQASM2;
+  }
+  if (format_.id == "openqasm" && versionRange_ &&
+      versionRange_->withinMajor(3) &&
+      versionRange_->select(
+          {llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
+          llvm::VersionTuple(3)) &&
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;
   }
-  if (format_.id == "qir" && format_.version == "2.1.0") {
+  if (format_.id == "qir" && versionRange_ && versionRange_->withinMajor(2) &&
+      versionRange_->select(
+          {llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
+          llvm::VersionTuple(2))) {
     if (format_.profile == "base") {
       return ProgramFormat::QIRBase;
     }
@@ -200,6 +296,45 @@ PayloadSpecification::capabilities() const noexcept {
 
 bool PayloadSpecification::optionalCapabilitiesKnown() const noexcept {
   return optionalCapabilitiesKnown_;
+}
+
+PayloadSpecification PayloadSpecification::restrictCapabilities(
+    const PayloadSpecification& other) const {
+  const bool sameFormat = format_.id == other.format_.id &&
+                          versionRange_ == other.versionRange_ &&
+                          format_.profile == other.format_.profile;
+  std::vector<ProgramCapability> capabilities;
+  for (const auto& capability : capabilities_) {
+    if (!sameFormat && capability.id != ProgramCapability::FORWARD_BRANCHING &&
+        capability.id != ProgramCapability::COUNTED_ITERATION &&
+        capability.id != ProgramCapability::CONDITIONAL_LOOP &&
+        capability.id != ProgramCapability::MULTIWAY_BRANCHING) {
+      capabilities.push_back(capability);
+      continue;
+    }
+    const auto* const found =
+        llvm::find_if(other.capabilities(), [&](const auto& entry) {
+          return entry.id == capability.id && entry.value == capability.value;
+        });
+    if (found == other.capabilities().end()) {
+      continue;
+    }
+    auto restricted = capability;
+    for (const auto& constraint : found->constraints) {
+      const auto existing =
+          llvm::find_if(restricted.constraints, [&](const auto& entry) {
+            return entry.id == constraint.id;
+          });
+      if (existing == restricted.constraints.end()) {
+        restricted.constraints.push_back(constraint);
+      } else {
+        existing->value = std::min(existing->value, constraint.value);
+      }
+    }
+    capabilities.push_back(std::move(restricted));
+  }
+  return {format_, versionRange_, std::move(capabilities),
+          optionalCapabilitiesKnown_ && other.optionalCapabilitiesKnown_};
 }
 
 bool PayloadSpecification::supportsUnrestrictedMultiwayBranching()

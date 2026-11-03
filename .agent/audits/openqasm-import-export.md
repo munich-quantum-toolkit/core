@@ -8,7 +8,7 @@ native ARM64 and LLVM/MLIR 23.1.0.
 ## Scope and disposition
 
 The scope covers `mlir/lib/Target/OpenQASM`, QC OpenQASM translation,
-`bindings/mlir/qiskit`, their corresponding unit tests, and
+`bindings/mlir/Target/Qiskit`, their corresponding unit tests, and
 `test/python/test_mlir_qiskit_translation.py`. The supported language subset is
 in `docs/mlir/OpenQASM.md`; the Qiskit boundary is in
 `docs/mlir/python_compiler_collection.md`. This audit does not establish full

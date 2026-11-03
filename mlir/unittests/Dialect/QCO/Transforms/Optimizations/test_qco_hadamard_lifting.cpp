@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 
 #include "Support/IRVerification.h"
 
@@ -86,14 +87,14 @@ protected:
 TEST_F(QCOHadamardLiftingTest, MeasuresBlockArguments) {
   auto parsed = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @direct(%q: !qco.qubit) -> (!qco.qubit, i1) {
+      func.func @direct(%q: !qco.qubit) -> (i1, !qco.qubit) {
         %out, %bit = qco.measure %q : !qco.qubit
-        return %out, %bit : !qco.qubit, i1
+        return %bit, %out : i1, !qco.qubit
       }
-      func.func @hadamard(%q: !qco.qubit) -> (!qco.qubit, i1) {
+      func.func @hadamard(%q: !qco.qubit) -> (i1, !qco.qubit) {
         %h = qco.h %q : !qco.qubit
         %out, %bit = qco.measure %h : !qco.qubit
-        return %out, %bit : !qco.qubit, i1
+        return %bit, %out : i1, !qco.qubit
       }
     }
   )mlir",
@@ -118,18 +119,18 @@ TEST_F(QCOHadamardLiftingTest, LeavesUnsupportedControlShapesUnchanged) {
   for (const auto* source : {
            R"mlir(
         func.func @test(%control: !qco.qubit, %unused: !qco.qubit, %target: !qco.qubit)
-            -> (!qco.qubit, !qco.qubit, !qco.qubit, i1) {
+            -> (i1, !qco.qubit, !qco.qubit, !qco.qubit) {
           %c, %u, %t = qco.ctrl(%control) targets(%a = %unused, %b = %target) {
             %x = qco.x %b : !qco.qubit
             qco.yield %a, %x : !qco.qubit, !qco.qubit
           } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
           %h = qco.h %u : !qco.qubit
           %out, %bit = qco.measure %h : !qco.qubit
-          return %c, %out, %t, %bit : !qco.qubit, !qco.qubit, !qco.qubit, i1
+          return %bit, %c, %out, %t : i1, !qco.qubit, !qco.qubit, !qco.qubit
         }
       )mlir",
            R"mlir(
-        func.func @test(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        func.func @test(%q: !qco.qubit) -> (i1, !qco.qubit) {
           %t = "qco.ctrl"(%q) <{operandSegmentSizes = array<i32: 0, 1>, resultSegmentSizes = array<i32: 0, 1>}> ({
           ^bb0(%a: !qco.qubit):
             %x = qco.x %a : !qco.qubit
@@ -137,7 +138,7 @@ TEST_F(QCOHadamardLiftingTest, LeavesUnsupportedControlShapesUnchanged) {
           }) : (!qco.qubit) -> !qco.qubit
           %h = qco.h %t : !qco.qubit
           %out, %bit = qco.measure %h : !qco.qubit
-          return %out, %bit : !qco.qubit, i1
+          return %bit, %out : i1, !qco.qubit
         }
       )mlir",
        }) {
@@ -349,7 +350,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
   q[1] = programBuilder.h(q1);
   programBuilder.measure(q[1], b, 0);
-  programBuilder.retype(b.getType());
+
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
@@ -360,7 +361,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto [q1Ref, q0Ref] = referenceBuilder.cx(qRef[1], qRef[0]);
   referenceBuilder.h(q0Ref);
   referenceBuilder.measure(q1Ref, bRef, 0);
-  referenceBuilder.retype(bRef.getType());
+
   reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -380,7 +381,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   });
   q[1] = programBuilder.h(q0);
   programBuilder.measure(q[1], b, 0);
-  programBuilder.retype(b.getType());
+
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
@@ -393,7 +394,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
       });
   referenceBuilder.h(q1Ref);
   referenceBuilder.measure(q02Ref[0], bRef, 0);
-  referenceBuilder.retype(bRef.getType());
+
   reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -417,7 +418,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   q[4] = programBuilder.s(q[4]);
   programBuilder.measure(q[4], b, 1);
   programBuilder.measure(q[5], b, 2);
-  programBuilder.retype(b.getType());
+
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(6);
@@ -431,7 +432,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   qRef[4] = referenceBuilder.s(qRef[4]);
   referenceBuilder.measure(qRef[4], bRef, 1);
   referenceBuilder.measure(qRef[5], bRef, 2);
-  referenceBuilder.retype(bRef.getType());
+
   reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -458,7 +459,7 @@ TEST_F(QCOHadamardLiftingTest,
   programBuilder.measure(q[2], b, 2);
   programBuilder.measure(q34[0], b, 3);
   programBuilder.s(q34[1]);
-  programBuilder.retype(b.getType());
+
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(5);
@@ -477,7 +478,7 @@ TEST_F(QCOHadamardLiftingTest,
   referenceBuilder.measure(qRef32[1], bRef, 2);
   referenceBuilder.measure(qRef32[0], bRef, 3);
   referenceBuilder.s(qRef[4]);
-  referenceBuilder.retype(bRef.getType());
+
   reference = referenceBuilder.finalize({bRef});
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());

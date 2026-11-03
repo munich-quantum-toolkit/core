@@ -24,7 +24,6 @@
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/IRMapping.h"
-#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
@@ -51,13 +50,12 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mqt/Dialect/MQT/Transforms/Passes.h.inc"
 
-/// Hoist eager parameter computation from a verified modifier in dependency
-/// order.
-template <typename UnitaryOpInterface>
+/// Hoist eager classical computation from a verified modifier in source order.
+template <typename UnitaryInterface>
 static void hoistClassicalOps(Block& body, Operation* modifier,
                               RewriterBase& rewriter) {
-  for (auto& op : llvm::make_early_inc_range(body)) {
-    if (!isa<UnitaryOpInterface>(op) && !op.hasTrait<OpTrait::IsTerminator>()) {
+  for (auto& op : llvm::make_early_inc_range(body.without_terminator())) {
+    if (!isa<UnitaryInterface>(op)) {
       rewriter.moveOpBefore(&op, modifier);
     }
   }

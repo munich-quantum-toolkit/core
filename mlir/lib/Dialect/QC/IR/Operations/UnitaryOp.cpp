@@ -40,7 +40,7 @@ LogicalResult UnitaryOp::verify() {
                                        getQubits());
 }
 
-void UnitaryOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
+void UnitaryOp::getOptimizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
   results.add<EraseIdentityUnitary>(context);
 }

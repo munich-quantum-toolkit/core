@@ -29,6 +29,11 @@ differences between these guides; neither upstream document is imported in full.
 
 - Use C++20 standard-library facilities before adding a project abstraction or
   dependency.
+- Use LLVM `raw_ostream` for output, `MemoryBuffer` for file input, and
+  `StringRef` for borrowed text. Reuse synchronized diagnostics for concurrent
+  logging. STL stream headers are forbidden, including in tests. Use GoogleTest
+  scoped traces for test context. Keep owned strings where needed; use
+  `SmallString` for suitable temporary buffers.
 - Keep variables local, initialize them when declared, and give each name one
   clear meaning.
 - Use `auto` when the initializer makes the type clear or when spelling the type
@@ -304,13 +309,24 @@ version and release date before publishing. Version tags drive package metadata;
 do not edit generated version files to stage a release. Release preparation does
 not itself publish a release.
 
+## Python test selection
+
+`pytest` runs package tests by default. Repository-script tests use the
+`linkcheck`, `slurm`, and `qiskit_c_api` markers registered in `pyproject.toml`.
+In a source checkout, use `pytest -m linkcheck` to select one suite or
+`pytest -m ""` to run all suites. The command-line marker expression replaces
+the default selection, including when selecting a test file explicitly.
+`nox -s tests` includes the link-checker and Qiskit C API tests; the Slurm
+workflow runs its own script tests with `-m slurm`.
+
 ## Documentation validation
 
-Install Python 3.14, LLVM/MLIR 23.1, and Doxygen before building the complete
-documentation. The Doxygen configuration is validated with Ubuntu 24.04's
-version 1.9.8 and version 1.17. Use `uvx nox --non-interactive -s docs` to build
-generated references and execute the MyST notebooks. This command fails on
-Sphinx and Doxygen diagnostics and checks local links in the generated HTML,
+Install Python 3.14 and Doxygen before building the complete documentation.
+LLVM/MLIR follows the {ref}`source-build SDK setup <setting-up-mlir>`. The
+Doxygen configuration is validated with Ubuntu 24.04's version 1.9.8 and version
+1.17. Use `uvx nox --non-interactive -s docs` to build generated references and
+execute the MyST notebooks. This command fails on Sphinx and Doxygen diagnostics
+and checks local links, scripts, and stylesheets in the generated HTML,
 including the native C++ reference. Use
 `uvx nox --non-interactive -s docs -- -b linkcheck` to check external links
 separately.
@@ -404,17 +420,21 @@ what failed and, when useful, which form is supported.
 
 Every `!qco.qubit` and one-dimensional qubit tensor or vector SSA value in valid
 QCO IR has exactly one use, including block arguments. `qco::verifyLinearity`
-owns this whole-IR check; ordinary MLIR operation verification alone does not
-establish it. Builders and transformations must preserve the invariant, and
-public QCO pipeline boundaries must validate it.
+owns this whole-IR check and positional quantum state correspondence through
+`scf.for`, both `scf.while` regions, `qco.if`, and `qco.index_switch`. Functions
+return their quantum arguments as trailing results in argument order. Classical
+state can change shape across `scf.while` regions. Ordinary MLIR operation
+verification alone does not establish these QCO invariants. Builders and
+transformations must preserve the invariant, and public QCO pipeline boundaries
+must validate it.
 
 Rewrites on valid QCO IR can use `*value.user_begin()` to obtain the sole
 consumer, or `*value.use_begin()` for its `OpOperand` and operand number. Do not
 repeat `hasOneUse()` guards in these rewrites. Keep linearity checks in the
 verifier and optional debug assertions at internal boundaries. This rule does
-not apply to QC references or classical SSA values, and does not permit assuming
-that results preserve wire order: linearity and wire correspondence are separate
-contracts.
+not apply to QC references or classical SSA values, and permits relying on the
+positional correspondence checked by `qco::verifyLinearity`. Exactly-one-use and
+wire correspondence remain separate checks.
 
 When forwarding a linear value requires deleting its producer, use a rewrite
 that removes both operations. A fold can only change its root; do not rely on

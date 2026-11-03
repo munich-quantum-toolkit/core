@@ -20,10 +20,12 @@ add_mlir_conversion_library(
   MLIRQCOUtils
   MLIRQTensorDialect
   MLIRArithDialect
+  MLIRArithValueBoundsOpInterfaceImpl
   MLIRFuncDialect
   MLIRFunctionInterfaces
   MLIRMemRefDialect
   MLIRMQTDialect
-  MLIRTransforms)
+  MLIRTransforms
+  MLIRValueBoundsOpInterface)
 
 mqt_mlir_target_use_project_options(MLIRQCOToQC)

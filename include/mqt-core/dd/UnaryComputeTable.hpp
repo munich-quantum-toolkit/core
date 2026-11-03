@@ -16,9 +16,12 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
+#include "llvm/Support/Error.h"
+
 #include <bit>
 #include <cstddef>
-#include <stdexcept>
+#include <functional>
+#include <system_error>
 #include <vector>
 
 namespace dd {
@@ -32,25 +35,33 @@ public:
   /// Default number of buckets for the compute table
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 32768U;
 
-  /// Default constructor
-  explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
-    // numBuckets must be a power of two
+  UnaryComputeTable() : UnaryComputeTable(DEFAULT_NUM_BUCKETS) {}
+
+  [[nodiscard]] static llvm::Expected<UnaryComputeTable>
+  create(const size_t numBuckets) {
     if (!std::has_single_bit(numBuckets)) {
-      throw std::invalid_argument("Number of buckets must be a power of two.");
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Number of buckets must be a power of two.");
     }
-    stats.entrySize = sizeof(Entry);
-    stats.numBuckets = numBuckets;
-    valid = std::vector(numBuckets, false);
-    table = std::vector<Entry>(numBuckets);
+    return UnaryComputeTable(numBuckets);
   }
 
+private:
+  friend class Package;
+  explicit UnaryComputeTable(const size_t numBuckets) {
+    stats.entrySize = sizeof(Entry);
+    stats.numBuckets = numBuckets;
+  }
+
+public:
   /// An entry in the compute table
   struct Entry {
     OperandType operand{};
     ResultType result{};
   };
 
-  /// Get a reference to the underlying table
+  /// Get the underlying storage, empty until the first insertion.
   [[nodiscard]] const auto& getTable() const { return table; }
 
   /// Get a reference to the statistics
@@ -68,6 +79,7 @@ public:
   /// @param operand The operand
   /// @param result The result of the operation
   void insert(const OperandType& operand, const ResultType& result) {
+    allocate();
     const auto key = hash(operand);
     if (valid[key]) {
       ++stats.collisions;
@@ -85,6 +97,9 @@ public:
   ResultType* lookup(const OperandType& operand) {
     ResultType* result = nullptr;
     ++stats.lookups;
+    if (table.empty()) {
+      return result;
+    }
     const auto key = hash(operand);
 
     if (!valid[key]) {
@@ -109,6 +124,16 @@ public:
   }
 
 private:
+  void allocate() {
+    if (!table.empty()) {
+      return;
+    }
+    std::vector<Entry> entries(stats.numBuckets);
+    std::vector<bool> occupied(stats.numBuckets, false);
+    table.swap(entries);
+    valid.swap(occupied);
+  }
+
   /// The actual table storing the entries
   std::vector<Entry> table;
   /// Dynamic bitset to mark valid entries
