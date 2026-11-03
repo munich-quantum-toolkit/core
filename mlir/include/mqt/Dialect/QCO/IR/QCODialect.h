@@ -40,6 +40,25 @@
 
 namespace mlir::qco {
 
+/// Check whether a region captures a qubit or one-dimensional qubit container.
+///
+/// Includes uses in nested regions, but permits values defined in the scope.
+[[nodiscard]] bool hasLinearQubitCapture(Operation* operation);
+
+/// Require quantum values to enter regions through explicit block arguments.
+///
+/// Classical captures and quantum values defined within the scope are allowed.
+[[nodiscard]] LogicalResult verifyQubitScope(Operation* operation);
+
+/// Prevent implicit quantum captures while allowing classical captures.
+template <typename ConcreteType>
+class QubitScope : public OpTrait::TraitBase<ConcreteType, QubitScope> {
+public:
+  static LogicalResult verifyRegionTrait(Operation* operation) {
+    return verifyQubitScope(operation);
+  }
+};
+
 /// Trait for operations with a fixed number of target qubits and
 /// parameters
 ///

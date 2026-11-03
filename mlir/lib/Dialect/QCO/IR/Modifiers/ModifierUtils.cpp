@@ -21,7 +21,6 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -66,16 +65,6 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   if (!llvm::equal(body.getTerminator()->getOperandTypes(),
                    body.getArgumentTypes())) {
     return modifierOp->emitOpError("yield types must match body arguments");
-  }
-
-  SetVector<Value> captures;
-  getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
-  if (llvm::any_of(captures, [](Value value) {
-        return isa<QubitType>(value.getType());
-      })) {
-    return modifierOp->emitOpError(
-        "body must not capture qubits from above; use only its aliased block "
-        "arguments");
   }
 
   const auto hasNonUnitaryOperation =

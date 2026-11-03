@@ -142,6 +142,10 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
 // Traits
 //===----------------------------------------------------------------------===//
 
+def QubitScope : NativeOpTrait<"QubitScope"> {
+  let cppNamespace = "::mlir::qco";
+}
+
 class TargetAndParameterArityTrait<int T, int P>
     : ParamNativeOpTrait<"TargetAndParameterArityTrait",
                          !cast<string>(T)#", "#!cast<string>(P)> {
@@ -1254,7 +1258,7 @@ def YieldOp
 def CtrlOp
     : QCOOp<"ctrl",
             traits =
-                [UnitaryOpInterface, AttrSizedOperandSegments,
+                [UnitaryOpInterface, QubitScope, AttrSizedOperandSegments,
                  AttrSizedResultSegments,
                  RangedTypesMatchWith<"control qubit types match",
                                       "controls_in", "controls_out", "$_self">,
@@ -1353,7 +1357,7 @@ def CtrlOp
 }
 
 def InvOp
-    : QCOOp<"inv", traits = [UnitaryOpInterface,
+    : QCOOp<"inv", traits = [UnitaryOpInterface, QubitScope,
                              SingleBlockImplicitTerminator<"YieldOp">,
                              RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary =
@@ -1437,7 +1441,7 @@ def InvOp
 
 def PowOp
     : QCOOp<"pow",
-            traits = [UnitaryOpInterface,
+            traits = [UnitaryOpInterface, QubitScope,
                       SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                       RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary = "Raise a unitary operation to a power";
@@ -1561,7 +1565,8 @@ def IfOp
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
                     DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
-                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
+                    QubitScope, SingleBlock,
+                    SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
                     AttrSizedResultSegments]> {
 
@@ -1574,6 +1579,8 @@ def IfOp
         classical SSA values. Classical results precede the linear results.
         The number and types of the linear results must match the input qubit
         and qtensor values.
+        Classical values may be captured from above; quantum values must enter
+        each branch through its block arguments or be defined within it.
 
         Example:
         ```mlir
@@ -1703,7 +1710,7 @@ def IndexSwitchOp
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
                     DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
-                    SingleBlockImplicitTerminator<"YieldOp">,
+                    QubitScope, SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
                     AttrSizedResultSegments]> {
 
@@ -1717,6 +1724,8 @@ def IndexSwitchOp
         The operation may additionally return ordinary classical SSA values.
         Classical results precede the linear results. The number and types of
         the linear results must match the input qubit and qtensor values.
+        Classical values may be captured from above; quantum values must enter
+        each branch through its block arguments or be defined within it.
 
         The operation has one region for each case value plus a default region. Each region
         must terminate with a `qco.yield` operation that yields values matching the operation's
