@@ -185,6 +185,72 @@ TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedTargetRequirements) {
   }
 }
 
+TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedSwitchBounds) {
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  for (const auto& [maximum, branching] : {
+           std::tuple{1U, false},
+           std::tuple{2U, false},
+           std::tuple{1U, true},
+       }) {
+    SCOPED_TRACE(maximum);
+    SCOPED_TRACE(branching);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qc.static 0 : !qc.qubit
+        %bit = qc.measure %q : !qc.qubit -> i1
+        %index = arith.index_castui %bit : i1 to index
+        scf.index_switch %index
+        case 0 {
+          qc.x %q : !qc.qubit
+          scf.yield
+        }
+        case 1 {
+          qc.h %q : !qc.qubit
+          scf.yield
+        }
+        default {
+          qc.z %q : !qc.qubit
+          scf.yield
+        }
+        return
+      }
+    })mlir",
+                                                &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::vector<ProgramCapability> capabilities{
+        {
+            .id = ProgramCapability::MULTIWAY_BRANCHING.str(),
+            .constraints = {{.id = "max-case-count", .value = maximum}},
+        },
+        {.id = "qir.int-computations"},
+    };
+    if (branching) {
+      capabilities.push_back(
+          {.id = ProgramCapability::FORWARD_BRANCHING.str()});
+    }
+    const auto payload = llvm::cantFail(PayloadSpecification::create(
+        {.id = "qir", .version = "2.1", .profile = "adaptive"},
+        std::move(capabilities)));
+    attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
+    if (maximum == 1U && !branching) {
+      expectConversionFailure(*moduleOp, "scf.index_switch");
+      continue;
+    }
+    ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    bool hasSwitch = false;
+    moduleOp->walk([&](LLVM::SwitchOp) { hasSwitch = true; });
+    EXPECT_EQ(hasSwitch, maximum == 2U);
+    bool hasBranch = false;
+    moduleOp->walk([&](LLVM::CondBrOp) { hasBranch = true; });
+    EXPECT_EQ(hasBranch, branching);
+  }
+}
+
 TEST_F(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
