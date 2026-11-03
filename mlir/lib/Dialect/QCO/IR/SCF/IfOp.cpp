@@ -336,18 +336,14 @@ OpResult IfOp::getTiedResult(OpOperand* qubit) {
 }
 
 Value IfOp::getInputForOutput(Value output) {
-  auto result = dyn_cast<OpResult>(output);
-  auto* input = result ? getTiedQubit(result) : nullptr;
-  return input != nullptr ? input->get() : Value{};
+  if (auto result = dyn_cast<OpResult>(output)) {
+    return getTiedQubit(result)->get();
+  }
+  return {};
 }
 
 Value IfOp::getOutputForInput(Value input) {
-  for (auto& use : input.getUses()) {
-    if (auto result = getTiedResult(&use)) {
-      return result;
-    }
-  }
-  return {};
+  return getTiedResult(&*input.use_begin());
 }
 
 OpOperand* IfOp::getTiedQubit(OpResult result) {

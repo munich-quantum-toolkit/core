@@ -260,18 +260,14 @@ OpOperand* IndexSwitchOp::getTiedTarget(OpResult result) {
 }
 
 Value IndexSwitchOp::getInputForOutput(Value output) {
-  auto result = dyn_cast<OpResult>(output);
-  auto* input = result ? getTiedTarget(result) : nullptr;
-  return input != nullptr ? input->get() : Value{};
+  if (auto result = dyn_cast<OpResult>(output)) {
+    return getTiedTarget(result)->get();
+  }
+  return {};
 }
 
 Value IndexSwitchOp::getOutputForInput(Value input) {
-  for (auto& use : input.getUses()) {
-    if (auto result = getTiedResult(&use)) {
-      return result;
-    }
-  }
-  return {};
+  return getTiedResult(&*input.use_begin());
 }
 
 BlockArgument IndexSwitchOp::getTiedCaseBlockArgument(OpOperand* target,
