@@ -13,6 +13,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
@@ -183,6 +184,24 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   }
 };
 
+/// Remove branches that only forward their input quantum values.
+struct RemoveIdentityBranches : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    for (Block* block : {op.thenBlock(), op.elseBlock()}) {
+      if (!llvm::hasSingleElement(*block) ||
+          !llvm::equal(block->getTerminator()->getOperands(),
+                       block->getArguments())) {
+        return failure();
+      }
+    }
+    rewriter.replaceOp(op, op.getQubits());
+    return success();
+  }
+};
+
 /// Forward redundant classical results.
 ///
 /// Replace a result with a value yielded by both branches or with an earlier
@@ -269,7 +288,8 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   populateFoldStaticIfPatterns(results);
-  results.add<ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
+  results.add<RemoveIdentityBranches, ForwardClassicalResults,
+              RemoveUnusedClassicalResults>(context);
 }
 
 void mlir::qco::populateFoldStaticIfPatterns(RewritePatternSet& patterns) {
