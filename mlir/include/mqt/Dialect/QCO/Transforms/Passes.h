@@ -18,6 +18,7 @@
 
 #include "llvm/Support/Threading.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 

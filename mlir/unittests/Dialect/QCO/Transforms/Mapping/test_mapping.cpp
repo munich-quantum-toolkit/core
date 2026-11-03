@@ -3564,11 +3564,11 @@ TEST_F(MappingPassFixture, LookaheadAllocationFollowsCircuitSize) {
   }
 }
 
-TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
-  const auto expectedTrials =
-      llvm::hardware_concurrency().compute_thread_count();
-  ASSERT_GT(expectedTrials, 0U);
+TEST_F(MappingPassFixture, DefaultSearchBudgetIsIndependentOfThreading) {
+  const size_t expectedTrials =
+      std::max(8U, llvm::hardware_concurrency().compute_thread_count());
   EXPECT_EQ(MappingPassOptions{}.ntrials, expectedTrials);
+  EXPECT_EQ(MappingPassOptions{}.niterations, 2U);
 
   const auto target = getSquareGridTarget(3);
   QCOProgramBuilder builder(context.get());
@@ -3593,7 +3593,7 @@ TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
     ASSERT_TRUE(succeeded(verify(*automatic)));
     for (const auto& options : {
              MappingPassOptions{},
-             MappingPassOptions{.ntrials = expectedTrials},
+             MappingPassOptions{.niterations = 2, .ntrials = expectedTrials},
          }) {
       OwningOpRef<ModuleOp> explicitOptions = input->clone();
       PassManager pm(context.get());
@@ -3881,10 +3881,12 @@ TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
     for (bool multithreading : {false, true}) {
       context->enableMultithreading(multithreading);
       OwningOpRef<ModuleOp> moduleOp = input->clone();
-      ASSERT_TRUE(succeeded(
-          runMapping(*moduleOp, target,
-                     MappingPassOptions{
-                         .ntrials = 4, .seed = 42, .searchMemoryLimit = 0})));
+      ASSERT_TRUE(
+          succeeded(runMapping(*moduleOp, target,
+                               MappingPassOptions{.niterations = 1,
+                                                  .ntrials = 4,
+                                                  .seed = 42,
+                                                  .searchMemoryLimit = 0})));
       PassManager native(context.get());
       populateTargetNativeSynthesisPipeline(native);
       ASSERT_TRUE(succeeded(native.run(*moduleOp)));

@@ -3299,23 +3299,36 @@ TEST_F(CompilerPipelineTest, PipelineVerificationFollowsAssertionMode) {
 }
 
 TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
+  EXPECT_EQ(MappingOptions{}.iterations, 2U);
   const TargetEnvironment environment(makeSparseUCZTarget(true),
                                       makePayloadSpecification());
-  OpPassManager pm("builtin.module");
-  populateTargetCompilationPipeline(pm, environment,
-                                    MappingOptions{
-                                        .trials = 3,
-                                        .iterations = 2,
-                                        .lookahead = 0,
-                                        .searchMemoryLimit = 1024,
-                                    });
-  std::string pipeline;
-  llvm::raw_string_ostream stream(pipeline);
-  pm.printAsTextualPipeline(stream);
-  EXPECT_NE(pipeline.find("ntrials=3"), std::string::npos);
-  EXPECT_NE(pipeline.find("niterations=2"), std::string::npos);
-  EXPECT_NE(pipeline.find("nlookahead=0"), std::string::npos);
-  EXPECT_NE(pipeline.find("search-memory-limit=1024"), std::string::npos);
+  for (const auto& options : {
+           MappingOptions{},
+           MappingOptions{
+               .trials = 3,
+               .iterations = 1,
+               .lookahead = 0,
+               .searchMemoryLimit = 1024,
+           },
+       }) {
+    OpPassManager pm("builtin.module");
+    populateTargetCompilationPipeline(pm, environment, options);
+    std::string pipeline;
+    llvm::raw_string_ostream stream(pipeline);
+    pm.printAsTextualPipeline(stream);
+    EXPECT_NE(
+        pipeline.find("ntrials=" + std::to_string(options.trials.value_or(
+                                       qco::MappingPassOptions{}.ntrials))),
+        std::string::npos);
+    EXPECT_NE(
+        pipeline.find("niterations=" + std::to_string(options.iterations)),
+        std::string::npos);
+    EXPECT_NE(pipeline.find("nlookahead=" + std::to_string(options.lookahead)),
+              std::string::npos);
+    EXPECT_NE(pipeline.find("search-memory-limit=" +
+                            std::to_string(options.searchMemoryLimit)),
+              std::string::npos);
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetPipelineOverridesStoredSeed) {
