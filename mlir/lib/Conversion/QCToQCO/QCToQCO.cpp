@@ -334,7 +334,6 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
     }
 
     const auto access = accessIt->second;
-    Value* cachedQubit = nullptr;
     if (auto reg = state.scalarRegisterQubits.find(access.reg);
         reg != state.scalarRegisterQubits.end()) {
       auto& slot = reg->second[*getConstantIntValue(access.index)];
@@ -344,15 +343,11 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
         continue;
       }
       slot.index = access.index;
-      cachedQubit = &slot.qubit;
     }
     auto tensor = lookupMappedTensor(state, anchor, access.reg);
     auto extract = qtensor::ExtractOp::create(rewriter, anchor->getLoc(),
                                               tensor, access.index);
     assignMappedTensor(state, anchor, access.reg, extract.getOutTensor());
-    if (cachedQubit != nullptr) {
-      *cachedQubit = extract.getResult();
-    }
     materialized.values.push_back(extract.getResult());
     materialized.accesses.emplace_back(access);
   }
