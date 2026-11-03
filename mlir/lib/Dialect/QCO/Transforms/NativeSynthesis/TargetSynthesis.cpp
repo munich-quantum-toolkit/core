@@ -1542,10 +1542,6 @@ protected:
           return capability.id == ProgramCapability::FORWARD_BRANCHING &&
                  capability.value == 0 && capability.constraints.empty();
         });
-    if (indexed && canEmitRuntimeBranches) {
-      IRRewriter loopRewriter(&getContext());
-      decomposition::synthesizePhaseFanoutLoops(loopRewriter, moduleOp, target);
-    }
     auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
       signalPassFailure();

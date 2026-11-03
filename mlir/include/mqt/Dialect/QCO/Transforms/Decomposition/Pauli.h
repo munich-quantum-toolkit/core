@@ -123,14 +123,6 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const CompilerTarget::SynthesisBasis& basis, bool reverse,
                    bool allowRuntimeApproximation = false);
 
-/// Synthesize diagonal fanout loops with a shared fixed-slot basis change.
-///
-/// Requires indexed synthesis, unrestricted forward branching, and an existing
-/// pre-loop insert at the invariant slot. Local Z rotations share a
-/// loop-carried angle normalized modulo 4π.
-void synthesizePhaseFanoutLoops(RewriterBase& rewriter, ModuleOp moduleOp,
-                                const CompilerTarget& target);
-
 /// Compose adjacent commuting Pauli operations with runtime parameters when
 /// their native two-qubit count decreases.
 ///

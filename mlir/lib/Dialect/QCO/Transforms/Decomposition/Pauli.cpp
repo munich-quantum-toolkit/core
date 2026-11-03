@@ -18,11 +18,8 @@
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
-#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -36,7 +33,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -774,11 +770,10 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
 }
 
 // Omit the sole entangling Pauli only when it meets the Weyl fidelity floor.
-static SmallVector<Value> emitRuntimePauliSequence(
+static SmallVector<Value, 2> emitRuntimePauliSequence(
     RewriterBase& rewriter, Location loc, ValueRange inputs,
-    const PauliRotationSequence& sequence, TypeRange classicalTypes,
-    function_ref<SmallVector<Value>(ValueRange, const PauliRotationSequence&)>
-        emit) {
+    const PauliRotationSequence& sequence,
+    const CompilerTarget::SynthesisBasis& basis, bool reverse) {
   auto reduced = sequence;
   auto* term = llvm::find_if(reduced.rotations, [](const auto& rotation) {
     return rotation.axes[0] != PauliAxis::I && rotation.axes[1] != PauliAxis::I;
@@ -790,14 +785,14 @@ static SmallVector<Value> emitRuntimePauliSequence(
                               rotation.axes[1] != PauliAxis::I;
                      }) != 1 ||
       !std::isnormal(term->angleScale)) {
-    return emit(inputs, sequence);
+    return emitPauliSequence(rewriter, loc, inputs, sequence, basis, reverse);
   }
   // One omitted Pauli rotation has 1 - F <= (scale * angle)^2 / 5.
   const double bound = std::nextafter(
       std::sqrt(5. * (1. - WEYL_DEFAULT_FIDELITY)) / std::abs(term->angleScale),
       0.);
   if (!std::isfinite(bound) || bound <= 0.) {
-    return emit(inputs, sequence);
+    return emitPauliSequence(rewriter, loc, inputs, sequence, basis, reverse);
   }
   reduced.rotations.erase(term);
   auto lower = mqt::constantFromScalar(rewriter, loc, -bound);
@@ -807,14 +802,16 @@ static SmallVector<Value> emitRuntimePauliSequence(
   auto below = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OLE,
                                      sequence.angle, upper);
   auto small = arith::AndIOp::create(rewriter, loc, above, below);
-  auto branch = IfOp::create(rewriter, loc, classicalTypes, inputs.getTypes(),
+  auto branch = IfOp::create(rewriter, loc, TypeRange{}, inputs.getTypes(),
                              small, inputs);
   const OpBuilder::InsertionGuard guard(rewriter);
   for (auto [index, region] : llvm::enumerate(branch->getRegions())) {
     auto* block =
         rewriter.createBlock(&region, {}, inputs.getTypes(),
                              SmallVector<Location>(inputs.size(), loc));
-    auto values = emit(block->getArguments(), index == 0 ? reduced : sequence);
+    auto values =
+        emitPauliSequence(rewriter, loc, block->getArguments(),
+                          index == 0 ? reduced : sequence, basis, reverse);
     YieldOp::create(rewriter, loc, values);
   }
   return {branch.result_begin(), branch.result_end()};
@@ -830,241 +827,11 @@ emitPauliRotations(RewriterBase& rewriter, Operation* operation,
   auto inputs = cast<UnitaryOpInterface>(operation).getInputQubits();
   if (allowRuntimeApproximation &&
       !mqt::valueToConstantDouble(sequence.angle)) {
-    auto values = emitRuntimePauliSequence(
-        rewriter, operation->getLoc(), inputs, sequence, {},
-        [&](ValueRange arguments, const PauliRotationSequence& retained) {
-          auto wires = emitPauliSequence(rewriter, operation->getLoc(),
-                                         arguments, retained, basis, reverse);
-          return SmallVector<Value>(wires.begin(), wires.end());
-        });
-    return {values.begin(), values.end()};
+    return emitRuntimePauliSequence(rewriter, operation->getLoc(), inputs,
+                                    sequence, basis, reverse);
   }
   return emitPauliSequence(rewriter, operation->getLoc(), inputs, sequence,
                            basis, reverse);
-}
-
-namespace {
-
-struct PhaseFanout {
-  CtrlOp phase;
-  qtensor::InsertOp input;
-  HOp initial;
-  size_t tensorArgument;
-  size_t fixedWire;
-  Value fixedIndex;
-};
-
-} // namespace
-
-static std::optional<PhaseFanout>
-matchPhaseFanout(scf::ForOp loop, const CompilerTarget& target) {
-  SmallVector<qtensor::ExtractOp, 2> extracts;
-  SmallVector<qtensor::InsertOp, 2> inserts;
-  CtrlOp phase;
-  for (auto& operation : *loop.getBody()) {
-    if (auto extract = dyn_cast<qtensor::ExtractOp>(operation)) {
-      extracts.push_back(extract);
-    } else if (auto insert = dyn_cast<qtensor::InsertOp>(operation)) {
-      inserts.push_back(insert);
-    } else if (auto controlled = dyn_cast<CtrlOp>(operation)) {
-      if (phase || controlled.getNumControls() != 1 ||
-          controlled.getNumTargets() != 1 ||
-          !isa_and_nonnull<POp>(
-              mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody())
-                  .getOperation())) {
-        return std::nullopt;
-      }
-      phase = controlled;
-    } else if (!isa<scf::YieldOp>(operation) &&
-               (isa<UnitaryOpInterface>(operation) ||
-                operation.getNumRegions() != 0 ||
-                !isMemoryEffectFree(&operation))) {
-      return std::nullopt;
-    }
-  }
-  if (!phase || extracts.size() != 2 || inserts.size() != 2 ||
-      target.supports(phase) ||
-      extracts[1].getTensor() != extracts[0].getOutTensor() ||
-      inserts[0].getDest() != extracts[1].getOutTensor() ||
-      inserts[1].getDest() != inserts[0].getResult()) {
-    return std::nullopt;
-  }
-  auto argument = dyn_cast<BlockArgument>(extracts[0].getTensor());
-  if (!argument || argument.getOwner() != loop.getBody() ||
-      argument.getArgNumber() == 0) {
-    return std::nullopt;
-  }
-  const size_t tensorArgument = argument.getArgNumber() - 1;
-  auto yield = cast<scf::YieldOp>(loop.getBody()->getTerminator());
-  if (yield.getOperand(tensorArgument) != inserts[1].getResult()) {
-    return std::nullopt;
-  }
-  auto inputs = phase.getInputQubits();
-  auto outputs = phase.getOutputQubits();
-  std::array<qtensor::ExtractOp, 2> wires;
-  for (size_t wire = 0; wire < 2; ++wire) {
-    auto* found = llvm::find_if(extracts, [&](auto extract) {
-      return extract.getResult() == inputs[wire];
-    });
-    if (found == extracts.end() || !llvm::any_of(inserts, [&](auto insert) {
-          return insert.getScalar() == outputs[wire] &&
-                 isEqualConstantIntOrValue(insert.getIndex(),
-                                           found->getIndex());
-        })) {
-      return std::nullopt;
-    }
-    wires[wire] = *found;
-  }
-  auto sequence = getPauliRotations(phase);
-  if (!sequence || mqt::valueToConstantDouble(sequence->angle)) {
-    return std::nullopt;
-  }
-  for (size_t fixedWire : {size_t{1}, size_t{0}}) {
-    auto index = wires[fixedWire].getIndex();
-    if (!loop.isDefinedOutsideOfLoop(index)) {
-      continue;
-    }
-    auto input =
-        loop.getInitArgs()[tensorArgument].getDefiningOp<qtensor::InsertOp>();
-    if (!input || !isEqualConstantIntOrValue(input.getIndex(), index)) {
-      continue;
-    }
-    // This existing insert establishes index validity for a zero-trip loop.
-    return PhaseFanout{
-        .phase = phase,
-        .input = input,
-        .initial = input.getScalar().getDefiningOp<HOp>(),
-        .tensorArgument = tensorArgument,
-        .fixedWire = fixedWire,
-        .fixedIndex = index,
-    };
-  }
-  return std::nullopt;
-}
-
-static Value boundedRotation(OpBuilder& builder, Location loc, Value angle) {
-  const double limit = 2. * std::numbers::pi;
-  if (auto constant = mqt::valueToConstantDouble(angle)) {
-    return mqt::variantToValue(
-        builder, loc, normalizeRotationParameter(builder, loc, *constant));
-  }
-  auto lower = mqt::constantFromScalar(builder, loc, -limit);
-  auto upper = mqt::constantFromScalar(builder, loc, limit);
-  auto above = arith::CmpFOp::create(builder, loc, arith::CmpFPredicate::OGE,
-                                     angle, lower);
-  auto below = arith::CmpFOp::create(builder, loc, arith::CmpFPredicate::OLE,
-                                     angle, upper);
-  auto bounded = arith::AndIOp::create(builder, loc, above, below);
-  auto branch = scf::IfOp::create(
-      builder, loc, bounded,
-      [&](OpBuilder& nested, Location nestedLoc) {
-        scf::YieldOp::create(nested, nestedLoc, angle);
-      },
-      [&](OpBuilder& nested, Location nestedLoc) {
-        auto normalized = mqt::variantToValue(
-            nested, nestedLoc,
-            normalizeRotationParameter(nested, nestedLoc, angle));
-        scf::YieldOp::create(nested, nestedLoc, normalized);
-      });
-  return branch.getResult(0);
-}
-
-void synthesizePhaseFanoutLoops(RewriterBase& rewriter, ModuleOp moduleOp,
-                                const CompilerTarget& target) {
-  const auto& basis = target.synthesisBasis();
-  if (!basis || !basis->entangler) {
-    return;
-  }
-  SmallVector<scf::ForOp> loops;
-  moduleOp.walk<WalkOrder::PostOrder>(
-      [&](scf::ForOp loop) { loops.push_back(loop); });
-  for (auto loop : loops) {
-    if (loop->getParentOfType<UnitaryOpInterface>()) {
-      continue;
-    }
-    auto match = matchPhaseFanout(loop, target);
-    if (!match) {
-      continue;
-    }
-    auto loc = loop.getLoc();
-    rewriter.setInsertionPoint(loop);
-    auto zero = mqt::constantFromScalar(rewriter, loc, 0.);
-    auto inputs = llvm::to_vector(loop.getInitArgs());
-    inputs.push_back(zero);
-    auto replacement = scf::ForOp::create(
-        rewriter, loc, loop.getLowerBound(), loop.getUpperBound(),
-        loop.getStep(), inputs, nullptr, loop.getUnsignedCmp());
-    replacement->setDiscardableAttrs(loop->getDiscardableAttrDictionary());
-    if (!replacement.getBody()->empty()) {
-      rewriter.eraseOp(replacement.getBody()->getTerminator());
-    }
-    rewriter.mergeBlocks(loop.getBody(), replacement.getBody(),
-                         replacement.getBody()->getArguments().drop_back());
-    if (match->initial) {
-      rewriter.replaceOp(match->initial, match->initial.getQubitIn());
-    } else {
-      rewriter.setInsertionPoint(match->input);
-      auto hadamard = HOp::create(rewriter, loc, match->input.getScalar());
-      rewriter.modifyOpInPlace(match->input, [&] {
-        match->input.getScalarMutable().assign(hadamard.getQubitOut());
-      });
-    }
-    hoistPauliAngle(rewriter, match->phase);
-    rewriter.setInsertionPoint(match->phase);
-    auto sequence = *getPauliRotations(match->phase);
-    auto pending = replacement.getRegionIterArgs().back();
-    const SmallVector<Type, 1> classicalTypes{pending.getType()};
-    auto values = emitRuntimePauliSequence(
-        rewriter, loc, match->phase.getInputQubits(), sequence, classicalTypes,
-        [&](ValueRange arguments, const PauliRotationSequence& retained) {
-          auto remaining = retained;
-          Value accumulated = pending;
-          llvm::erase_if(remaining.rotations, [&](auto term) {
-            if (term.axes[match->fixedWire] != PauliAxis::Z ||
-                term.axes[1 - match->fixedWire] != PauliAxis::I) {
-              return false;
-            }
-            auto scale =
-                mqt::constantFromScalar(rewriter, loc, term.angleScale);
-            auto angle =
-                arith::MulFOp::create(rewriter, loc, retained.angle, scale);
-            auto contribution = boundedRotation(rewriter, loc, angle);
-            auto added =
-                arith::AddFOp::create(rewriter, loc, accumulated, contribution);
-            accumulated = boundedRotation(rewriter, loc, added);
-            return true;
-          });
-          for (auto& term : remaining.rotations) {
-            if (term.axes[match->fixedWire] == PauliAxis::Z) {
-              term.axes[match->fixedWire] = PauliAxis::X;
-            }
-          }
-          auto wires = emitPauliSequence(rewriter, loc, arguments, remaining,
-                                         *basis, match->fixedWire == 0);
-          return SmallVector<Value>{accumulated, wires[0], wires[1]};
-        });
-    rewriter.replaceOp(match->phase, ValueRange(values).drop_front());
-    auto yield = cast<scf::YieldOp>(replacement.getBody()->getTerminator());
-    rewriter.modifyOpInPlace(
-        yield, [&] { yield.getResultsMutable().append(values[0]); });
-    rewriter.setInsertionPointAfter(replacement);
-    SmallVector<Value> results;
-    llvm::append_range(results, replacement.getResults().drop_back());
-    auto extract = qtensor::ExtractOp::create(
-        rewriter, loc, results[match->tensorArgument], match->fixedIndex);
-    auto theta = mqt::constantFromScalar(rewriter, loc, std::numbers::pi / 2.);
-    auto lambda = mqt::constantFromScalar(rewriter, loc, std::numbers::pi);
-    auto sum = replacement.getResults().back();
-    // H RX(a) = exp(-ia/2) U(pi/2,a,pi), including its global phase.
-    auto boundary =
-        UOp::create(rewriter, loc, extract.getResult(), theta, sum, lambda);
-    auto minusHalf = mqt::constantFromScalar(rewriter, loc, -0.5);
-    emitGPhaseIfNeeded(rewriter, loc,
-                       arith::MulFOp::create(rewriter, loc, sum, minusHalf));
-    results[match->tensorArgument] = qtensor::InsertOp::create(
-        rewriter, loc, boundary, extract.getOutTensor(), match->fixedIndex);
-    rewriter.replaceOp(loop, results);
-  }
 }
 
 std::optional<PauliRotationCounts>

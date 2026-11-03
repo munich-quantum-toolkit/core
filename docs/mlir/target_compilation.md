@@ -304,10 +304,7 @@ rotations and global phase. This is not a whole-circuit error bound; repeated
 approximations can accumulate.
 
 Synthesis forwards phase-only U factors into neighboring U gates without runtime
-arithmetic. On indexed Adaptive QIR targets with unrestricted forward branching,
-a controlled-phase loop can share a basis change on an invariant tensor slot
-with a pre-loop insertion. Synthesis accumulates local rotations modulo 4π and
-applies them at loop exit, preserving complete tensors at region boundaries.
+arithmetic.
 
 Synthesis merges Z rotations through diagonal entanglers on native RZ targets.
 Equatorial R targets use at most two R gates per single-qubit unitary and absorb
