@@ -202,7 +202,7 @@ mqt\.core\.mlir\.__prefix__$:
         options: CompilationOptions
 
 mqt\.core\.mlir\.compile_program$:
-    \from mqt.core.plugins.qiskit.backend import QDMIBackend
+    \import mqt.core.plugins.qiskit.backend
     \from typing import overload, Literal
     \from collections.abc import Sequence
     @overload
@@ -289,7 +289,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: _CompilerInput,
         *,
-        target: QDMIBackend,
+        target: mqt.core.plugins.qiskit.backend.QDMIBackend,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> CompiledProgram: ...
@@ -426,7 +426,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: QDMIBackend,
+        target: mqt.core.plugins.qiskit.backend.QDMIBackend,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[CompiledProgram]: ...

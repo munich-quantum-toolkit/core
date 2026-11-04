@@ -624,7 +624,7 @@ def test_compiled_alternative_format_runs_on_ddsim() -> None:
     circuit.measure(0, 0)
     artifact = serialize_program(
         circuit,
-        target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QASM3),
+        target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE),
     )
     default = backend.compile(circuit)
     assert isinstance(default, CompiledProgram)

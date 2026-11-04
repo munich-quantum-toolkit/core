@@ -478,9 +478,9 @@ TEST(CompilerQDMIAdapterTest,
       QDMI_PROGRAM_FORMAT_QIRBASESTRING,
       QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
       QDMI_PROGRAM_FORMAT_IQMJSON,
-      QDMI_PROGRAM_FORMAT_QASM3,
       QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+      QDMI_PROGRAM_FORMAT_QASM3,
   };
   while (!formats.empty()) {
     const auto environment =
@@ -801,9 +801,9 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_TRUE(
       llvm::errorToBool(mlir::submitProgram(device, compiled, -1).takeError()));
   EXPECT_EQ(creations, 0);
-  EXPECT_EQ(compiled.programFormat(), QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE);
+  EXPECT_EQ(compiled.programFormat(), QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_GE(compiled.payload().size(), 4);
-  EXPECT_EQ(compiled.payload().substr(0, 2), "BC");
+  EXPECT_TRUE(compiled.payload().starts_with("OPENQASM 3;"));
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 32));
   EXPECT_EQ(creations, 1);
   EXPECT_TRUE(llvm::cantFail(job.wait()));
@@ -1284,7 +1284,7 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
   }
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsScalarProgramOutputs) {
+TEST(CompilerQDMIAdapterTest, RejectsScalarQIROutputs) {
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
   for (const auto value : {0, 7}) {
@@ -1310,7 +1310,8 @@ TEST(CompilerQDMIAdapterTest, RejectsScalarProgramOutputs) {
     MQT_ASSERT_SUCCESS(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(mlir::succeeded(qco));
-    auto rejected = mlir::compileProgram(qco->copy(), device);
+    auto rejected = mlir::compileProgram(qco->copy(), device,
+                                         QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE);
     ASSERT_FALSE(static_cast<bool>(rejected));
     llvm::consumeError(rejected.takeError());
     auto portable = std::move(*qco).intoQC();

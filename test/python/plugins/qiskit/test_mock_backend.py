@@ -473,6 +473,7 @@ def test_backend_serialization_without_supported_formats() -> None:
         ([ProgramFormat.QASM2], ProgramFormat.QASM2),
         ([ProgramFormat.QASM3], ProgramFormat.QASM3),
         ([ProgramFormat.QASM2, ProgramFormat.QASM3], ProgramFormat.QASM3),
+        ([ProgramFormat.QPY, ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3], ProgramFormat.QASM3),
     ],
 )
 def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: ProgramFormat) -> None:
@@ -728,7 +729,7 @@ def test_backend_qasm_serialization_failure(monkeypatch: pytest.MonkeyPatch) -> 
     assert str(error.value.__cause__) == "Simulated conversion failure"
 
 
-def test_backend_submits_qpy_and_prefers_it_to_qasm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch) -> None:
     """QPY submission preserves the circuit and metadata within the version cap."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
@@ -736,7 +737,7 @@ def test_backend_submits_qpy_and_prefers_it_to_qasm(monkeypatch: pytest.MonkeyPa
     qc.metadata = {"experiment": "QPY submission"}
 
     device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
-    monkeypatch.setattr(device, "supported_program_formats", lambda: [ProgramFormat.QASM3, ProgramFormat.QPY])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [ProgramFormat.QPY])
     submissions = _record_submissions(device)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
@@ -763,7 +764,7 @@ def test_backend_qpy_serialization_failure(monkeypatch: pytest.MonkeyPatch) -> N
     circuit.x(0)
     monkeypatch.setattr(qpy, "dump", Mock(side_effect=ValueError("QPY encoding failed")))
     device = MockQDMIDevice(num_qubits=1, operations=["x", "measure"])
-    monkeypatch.setattr(device, "supported_program_formats", lambda: [ProgramFormat.QPY, ProgramFormat.QASM3])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [ProgramFormat.QPY])
     submissions = _record_submissions(device)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
     with pytest.raises(TranslationError, match="Failed to serialize circuit"):

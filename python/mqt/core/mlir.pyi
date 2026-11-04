@@ -20,8 +20,8 @@ import qiskit.transpiler
 from numpy.typing import NDArray
 
 import mqt.core.dd
+import mqt.core.plugins.qiskit.backend
 import mqt.core.qdmi
-from mqt.core.plugins.qiskit.backend import QDMIBackend
 from mqt.core.qdmi import Device
 
 _CompilerInput: TypeAlias = (
@@ -1632,7 +1632,7 @@ def compile_program(
 def compile_program(
     program: _CompilerInput,
     *,
-    target: QDMIBackend,
+    target: mqt.core.plugins.qiskit.backend.QDMIBackend,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> CompiledProgram: ...
@@ -1768,7 +1768,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_CompilerInputT],
     *,
-    target: QDMIBackend,
+    target: mqt.core.plugins.qiskit.backend.QDMIBackend,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[CompiledProgram]: ...
@@ -1851,7 +1851,7 @@ def compile_program(
             Custom pipelines require no target.
         options: Shared compilation controls.
 
-    Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
+    Device defaults prefer OpenQASM 3, Adaptive QIR (binary, text), QPY, IQM JSON, then Base QIR
     (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
     An explicit output
     need not be a device's execution format. Jeff output does not retain hardware
