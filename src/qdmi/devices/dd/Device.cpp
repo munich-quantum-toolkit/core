@@ -414,9 +414,13 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   // Target facts that QDMI v1.3 cannot encode compactly.
   // TODO(#2093): Remove this compatibility marker when QDMI standardizes
   // explicit unrestricted connectivity and operation applicability.
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM1,
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM2,
                       "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
                       size, value, sizeRet)
+  ADD_STRING_PROPERTY(
+      QDMI_DEVICE_PROPERTY_CUSTOM3,
+      R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching"},{"id":"counted-iteration"},{"id":"conditional-loop"},{"id":"multiway-branching"},{"id":"classical-assignment"},{"id":"qir.dynamic-qubit-management"},{"id":"qir.dynamic-result-management"},{"id":"qir.arrays"},{"id":"qir.ir-functions"},{"id":"qir.multiple-return-points"},{"id":"qir.int-computations"},{"id":"qir.float-computations"}]})",
+      prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS,
                     QDMI_Program_Format, SUPPORTED_PROGRAM_FORMATS, prop, size,
                     value, sizeRet)

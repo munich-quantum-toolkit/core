@@ -63,15 +63,22 @@ Discovery opens fresh sessions without explicit authentication parameters.
 
 ## Device Capabilities and Target
 
-`backend.target` describes native instructions, ordered placements, parameter
-constraints, and available calibration. Qubit indices are physical site IDs; a
-disabled site leaves a hole. Devices with sparse site IDs must report explicit
-gate placements. Durations are converted to seconds using the device's duration
-unit and optional scale factor. Invalid units/scales fail target construction.
+`backend.target` projects Core's device snapshot into Qiskit instructions,
+ordered placements, parameter constraints, and calibration. Qubit indices remain
+physical site IDs. Only sites with single-qubit gates and measurement are
+placeable; disabled sites leave holes. Durations and coherence times use the
+snapshot's timing unit and scale factor.
 
-Compatible aliases contribute their combined placements. Conflicting gate
-variants must have distinct Target names. Control-flow operations require
-explicit Target support; advertising QASM3 or QPY alone does not enable them.
+Core resolves device aliases. Fixed parameter variants retain separate Target
+names, and unrecognized native operations become opaque Qiskit gates. Control
+flow and classical assignment follow the selected payload's capabilities.
+All-to-all devices do not materialize a coupling map.
+
+Star-topology devices expose single-qubit gates and measurement in the Qiskit
+target. Use `backend.run(backend.compile(qc))` for circuits with two-qubit
+gates; Core inserts the required MOVE operations. Qiskit `transpile` and
+primitives with two-qubit gates are unsupported on these devices. See
+[resonator routing](../mlir/target_compilation.md).
 
 ## Circuit Execution
 

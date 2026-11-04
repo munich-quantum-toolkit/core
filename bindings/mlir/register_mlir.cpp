@@ -658,6 +658,7 @@ payloadForOutput(OutputFormat output) {
             {.id = mlir::ProgramCapability::COUNTED_ITERATION.str()},
             {.id = mlir::ProgramCapability::CONDITIONAL_LOOP.str()},
             {.id = mlir::ProgramCapability::MULTIWAY_BRANCHING.str()},
+            {.id = mlir::ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
         }));
   }
 }
@@ -1335,6 +1336,8 @@ void registerMLIR(nb::module_& m) {
           .def_rw("capability_id", &mlir::ProgramCapability::id)
           .def_rw("value", &mlir::ProgramCapability::value)
           .def_rw("constraints", &mlir::ProgramCapability::constraints);
+  programCapability.attr("CLASSICAL_ASSIGNMENT") =
+      mlir::ProgramCapability::CLASSICAL_ASSIGNMENT.str();
   programCapability.attr("FORWARD_BRANCHING") =
       mlir::ProgramCapability::FORWARD_BRANCHING.str();
   programCapability.attr("COUNTED_ITERATION") =
@@ -1866,6 +1869,9 @@ Raises:
           "The target name, if available.")
       .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
                    "The target timing unit, if available.")
+      .def_prop_ro("placeable_sites", &mlir::CompilerTarget::placeableSites,
+                   "Sites supporting a compiler-targetable single-qubit gate "
+                   "and measurement.")
       .def_prop_ro("num_sites", &mlir::CompilerTarget::numSites,
                    "The number of target sites.")
       .def_prop_ro(
@@ -2795,27 +2801,6 @@ declarations do not validate arbitrary LLVM; executable QIR must be trusted.)pb"
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.expectation_values` for observable, state preparation,
 and error contracts.)pb");
-
-  m.def(
-      "_operation_parameter_constraints",
-      [](const std::optional<nb::bytes>& metadata, size_t numParameters) {
-        const auto text =
-            metadata ? llvm::StringRef(metadata->c_str(), metadata->size())
-                     : llvm::StringRef{};
-        nb::list result;
-        for (const auto& alternative :
-             unwrap(mlir::parseOperationParameterConstraints(text,
-                                                             numParameters))) {
-          result.append(nb::make_tuple(alternative.fixed, alternative.bounds));
-        }
-        return result;
-      },
-      "metadata"_a, "num_parameters"_a,
-      nb::sig(
-          "def _operation_parameter_constraints(metadata: bytes | None, "
-          "num_parameters: int) -> "
-          "list[tuple[list[float | None], list[tuple[float, float] | None]]]"),
-      "Parse the temporary QDMI operation parameter constraints.");
 
   nb::class_<mlir::ResultLayout>(
       m, "ResultLayout", "Reconstruct logical bits from receiver samples.")

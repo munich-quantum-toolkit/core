@@ -3297,6 +3297,11 @@ public:
         capabilities.push_back({.id = controlFlowCapability(kind).str()});
       }
     }
+    if (target.is_none() ||
+        nb::cast<bool>(
+            target.attr("operation_names").attr("__contains__")("store"))) {
+      capabilities.push_back({.id = Capability::CLASSICAL_ASSIGNMENT.str()});
+    }
     return unwrap(mlir::PayloadSpecification::create(
         {
             .id = "qiskit",

@@ -181,3 +181,17 @@ All session keywords map to standard QDMI parameters. They are `token`,
 `auth_file`, `auth_url`, `username`, `password`, `project_id`, and `custom1`
 through `custom5`. The selected driver defines validation, precedence, and the
 meaning of these values.
+
+## Temporary compiler metadata
+
+These versioned properties carry compiler facts until QDMI standardizes them.
+Device payload capabilities are opt-in: a program format alone does not enable
+control flow or classical assignment. DDSIM advertises its supported
+capabilities; hardware-only SC models have no executable payload contract.
+
+| Property            | Contract                                             |
+| ------------------- | ---------------------------------------------------- |
+| Device `CUSTOM2`    | `mqt.compiler-target.v1:all-to-all-homogeneous`      |
+| Device `CUSTOM3`    | `mqt.payload-capabilities.v1` JSON                   |
+| Operation `CUSTOM1` | `mqt.compiler-target.v1:arbitrary-positive-controls` |
+| Operation `CUSTOM2` | `mqt.operation-parameters.v1` JSON                   |

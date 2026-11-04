@@ -687,15 +687,20 @@ TEST_P(DeviceTest, ChildDevices) {
 
 TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
   EXPECT_EQ(value(device.queryCustomProperty<std::vector<std::byte>>(
-                CustomProperty::Custom2)),
+                CustomProperty::Custom5)),
             std::nullopt);
 }
 
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
   EXPECT_EQ(
-      value(device.queryCustomProperty<std::string>(CustomProperty::Custom1)),
+      value(device.queryCustomProperty<std::string>(CustomProperty::Custom2)),
       "mqt.compiler-target.v1:all-to-all-homogeneous");
+  const auto capabilities =
+      value(device.queryCustomProperty<std::string>(CustomProperty::Custom3));
+  ASSERT_TRUE(capabilities.has_value());
+  EXPECT_THAT(*capabilities, testing::HasSubstr("mqt.payload-capabilities.v1"));
+  EXPECT_THAT(*capabilities, testing::HasSubstr("classical-assignment"));
 }
 #endif
 

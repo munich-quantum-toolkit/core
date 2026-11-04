@@ -50,6 +50,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -245,7 +246,8 @@ TEST(CompilerQDMIAdapterTest, RetainsSparseOperationsWithoutChangingBasis) {
   ASSERT_TRUE(target.synthesisBasis()->entangler);
   EXPECT_EQ(target.synthesisBasis()->entangler->gate,
             CompilerTarget::GateKind::CZ);
-  EXPECT_FALSE(target.supportsOperation("prx_12", 1, 2, {0}));
+  EXPECT_TRUE(target.supportsOperation("prx_12", 1, 2, {0}));
+  EXPECT_FALSE(target.supportsOperation("prx_12", 1, 2, {1}));
   EXPECT_TRUE(target.supportsOperation("move", 2, 0, {1, 2}));
   EXPECT_FALSE(target.supportsOperation("move", 2, 0, {2, 1}));
 }
@@ -281,8 +283,8 @@ TEST(CompilerQDMIAdapterTest, PreservesNonhomogeneousOperationSupport) {
 TEST(CompilerQDMIAdapterTest, CompilesWithSiteRestrictedAdditionalOperations) {
   const auto device = openScDevice("site-restricted-additional-sc.json");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
-  ASSERT_EQ(target.operations().size(), 3U);
-  EXPECT_FALSE(target.supportsOperation("measure_012", 1, 0, {0}));
+  ASSERT_EQ(target.operations().size(), 4U);
+  EXPECT_TRUE(target.supportsOperation("measure_012", 1, 0, {0}));
   EXPECT_FALSE(target.supportsOperation("measure_012", 1, 0, {1}));
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_TRUE(target.synthesisBasis()->entangler);
@@ -548,15 +550,16 @@ TEST(CompilerQDMIAdapterTest,
   const auto adaptive =
       llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
-  ASSERT_EQ(adaptive.capabilities().size(), 11);
+  ASSERT_EQ(adaptive.capabilities().size(), 12);
   EXPECT_EQ(adaptive.capabilities().front().id, "forward-branching");
   const auto qasm = llvm::cantFail(
       mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
   EXPECT_EQ(qasm.format().version, ">=3.0.0,<4.0.0");
-  ASSERT_EQ(qasm.capabilities().size(), 4);
+  ASSERT_EQ(qasm.capabilities().size(), 5);
   EXPECT_EQ(qasm.capabilities()[1].id, "counted-iteration");
   EXPECT_EQ(qasm.capabilities()[2].id, "conditional-loop");
   EXPECT_EQ(qasm.capabilities()[3].id, "multiway-branching");
+  EXPECT_EQ(qasm.capabilities()[4].id, "classical-assignment");
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -2119,5 +2122,151 @@ TEST(CompilerQDMIAdapterTest, SubmitsCompatibleProgramsTogether) {
               (std::vector<std::string>{"01", "01", "01"}));
     EXPECT_EQ(llvm::cantFail(job->getShots(1)),
               (std::vector<std::string>{"10", "10", "10"}));
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      query;
+  static thread_local bool queryFailure;
+  static thread_local bool absentMetadata;
+  absentMetadata = false;
+  query = api->device_session_query_device_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_device_property = query; });
+  api->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) -> int {
+    if (property != QDMI_DEVICE_PROPERTY_CUSTOM3) {
+      return query(session, property, size, value, sizeRet);
+    }
+    if (absentMetadata) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    if (queryFailure) {
+      return QDMI_ERROR_FATAL;
+    }
+    constexpr std::string_view metadata =
+        R"({"schema":"mqt.payload-capabilities.v1","capabilities":null})";
+    if (sizeRet != nullptr) {
+      *sizeRet = metadata.size() + 1;
+    }
+    if (value != nullptr) {
+      if (size < metadata.size() + 1) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, metadata.data(), metadata.size() + 1);
+    }
+    return QDMI_SUCCESS;
+  };
+  for (const bool failure : {false, true}) {
+    SCOPED_TRACE(failure);
+    queryFailure = failure;
+    auto environment =
+        mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3);
+    EXPECT_FALSE(static_cast<bool>(environment));
+    llvm::consumeError(environment.takeError());
+  }
+  absentMetadata = true;
+  const auto environment = llvm::cantFail(
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3));
+  EXPECT_TRUE(environment.payloadSpecification().capabilities().empty());
+  auto conditional = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; "
+      "c[0] = measure $0; if (c[0]) { x $1; }"));
+  auto rejected =
+      mlir::CompiledProgram::serialize(std::move(conditional), environment);
+  EXPECT_FALSE(static_cast<bool>(rejected));
+  llvm::consumeError(rejected.takeError());
+}
+
+TEST(CompilerQDMIAdapterTest, AppliesDevicePayloadConstraints) {
+  const auto baseline = llvm::cantFail(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
+  constexpr llvm::StringLiteral metadata =
+      R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":{"max-control-flow-nesting-depth":1,"max-condition-width":32,"requires-register-equality":1,"unitary-only-branches":1}}]})";
+  auto restricted = mlir::parsePayloadCapabilities(metadata, baseline);
+  ASSERT_TRUE(static_cast<bool>(restricted));
+  ASSERT_EQ(restricted->capabilities().size(), 1U);
+  EXPECT_EQ(restricted->capabilities().front().id, "forward-branching");
+  EXPECT_EQ(restricted->capabilities().front().constraints.size(), 4U);
+  for (const auto* const foreign : {
+           "vendor metadata",
+           R"({"schema":"vendor.v1","note":"mqt.payload-capabilities.v1"})",
+       }) {
+    auto unrelated = mlir::parsePayloadCapabilities(foreign, baseline);
+    ASSERT_TRUE(static_cast<bool>(unrelated));
+    EXPECT_TRUE(unrelated->capabilities().empty());
+  }
+  auto explicitDefault = mlir::parsePayloadCapabilities(
+      R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","value":0}]})",
+      baseline);
+  ASSERT_TRUE(static_cast<bool>(explicitDefault));
+  ASSERT_EQ(explicitDefault->capabilities().size(), 1U);
+  EXPECT_EQ(explicitDefault->capabilities().front().value, 0U);
+  for (
+      const auto* const invalid : {
+          R"({"schema":"mqt.payload-capabilities.v1")",
+          R"(["mqt.payload-capabilities.v1"])",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":null})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[null]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","value":-1}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":[]}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":{"requires-register-equality":0}}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching"},{"id":"forward-branching"}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":{"max-condition-width":-1}}]})",
+      }) {
+    SCOPED_TRACE(invalid);
+    auto rejected = mlir::parsePayloadCapabilities(invalid, baseline);
+    EXPECT_FALSE(static_cast<bool>(rejected));
+    llvm::consumeError(rejected.takeError());
+  }
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      34, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("x", 1, 0)),
+          llvm::cantFail(Capability::create("cx", 2, 0)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create("reset", 1, 0)),
+      })));
+  const mlir::TargetEnvironment environment(target, *restricted);
+  for (const auto& [condition, body, width, accepted] : {
+           std::tuple{"c == 1", "x $0;", 32, true},
+           std::tuple{"1 == c", "x $0;", 2, true},
+           std::tuple{"c[0]", "x $0;", 2, true},
+           std::tuple{"!c[0]", "x $0;", 2, true},
+           std::tuple{"c[0] && c[1]", "x $0;", 2, false},
+           std::tuple{"c == 1", "x $0;", 33, false},
+           std::tuple{"c == 1", "if (c == 2) { x $0; }", 2, false},
+           std::tuple{"c == 1", "reset $0;", 2, false},
+           std::tuple{"c == 1", "c[0] = measure $0;", 2, false},
+           std::tuple{"c < 2", "x $0;", 2, false},
+       }) {
+    SCOPED_TRACE(condition);
+    SCOPED_TRACE(body);
+    SCOPED_TRACE(width);
+    const auto size = std::to_string(width);
+    std::string code =
+        "OPENQASM 3; include \"stdgates.inc\"; bit[" + size + "] c;";
+    for (int site = 0; site < width; ++site) {
+      code += "c[" + std::to_string(site) + "] = measure $" +
+              std::to_string(site) + ";";
+    }
+    code += "if (" + std::string(condition) + ") { " + body + " }";
+    auto source = mlir::QCProgram::fromOpenQASMString(code);
+    MQT_ASSERT_SUCCESS(source);
+    auto serialized =
+        mlir::CompiledProgram::serialize(source->copy(), environment);
+    const bool succeeded = static_cast<bool>(serialized);
+    const auto error =
+        succeeded ? std::string{} : llvm::toString(serialized.takeError());
+    EXPECT_EQ(succeeded, accepted) << error;
   }
 }

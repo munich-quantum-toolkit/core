@@ -57,6 +57,12 @@ struct ProgramConstraint {
   static constexpr llvm::StringLiteral MAX_ITERATION_COUNT =
       "max-iteration-count";
   static constexpr llvm::StringLiteral MAX_CASE_COUNT = "max-case-count";
+  static constexpr llvm::StringLiteral MAX_CONDITION_WIDTH =
+      "max-condition-width";
+  static constexpr llvm::StringLiteral REQUIRES_REGISTER_EQUALITY =
+      "requires-register-equality";
+  static constexpr llvm::StringLiteral UNITARY_ONLY_BRANCHES =
+      "unitary-only-branches";
 
   std::string id;
   uint64_t value = 0;
@@ -74,6 +80,9 @@ struct ProgramCapability {
   static constexpr llvm::StringLiteral MULTIWAY_BRANCHING =
       "multiway-branching";
 
+  static constexpr llvm::StringLiteral CLASSICAL_ASSIGNMENT =
+      "classical-assignment";
+
   std::string id;
   uint64_t value = 0;
   std::vector<ProgramConstraint> constraints;
@@ -81,6 +90,9 @@ struct ProgramCapability {
   friend bool operator==(const ProgramCapability&,
                          const ProgramCapability&) = default;
 };
+
+/// Whether a capability describes classical control flow or assignment.
+[[nodiscard]] bool isControlFlowCapability(llvm::StringRef id);
 
 /// Context-free selected execution payload contract.
 ///

@@ -48,6 +48,14 @@ namespace mlir {
   return value.contains('\0');
 }
 
+bool isControlFlowCapability(const llvm::StringRef id) {
+  return id == ProgramCapability::FORWARD_BRANCHING ||
+         id == ProgramCapability::COUNTED_ITERATION ||
+         id == ProgramCapability::CONDITIONAL_LOOP ||
+         id == ProgramCapability::MULTIWAY_BRANCHING ||
+         id == ProgramCapability::CLASSICAL_ASSIGNMENT;
+}
+
 llvm::Expected<PayloadSpecification>
 PayloadSpecification::forProgramFormat(ProgramFormat format,
                                        PayloadEncoding encoding) {
@@ -80,6 +88,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
             {.id = ProgramCapability::COUNTED_ITERATION.str()},
             {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
             {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
+            {.id = ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
         });
   case ProgramFormat::IQMJSON:
     return create({.id = "iqm-json", .encoding = encoding});
@@ -95,6 +104,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
         {.id = ProgramCapability::FORWARD_BRANCHING.str()},
         {.id = ProgramCapability::COUNTED_ITERATION.str()},
         {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+        {.id = ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
     };
     for (const auto& [flag, id] : qir::OPTIONAL_CAPABILITIES) {
       capabilities.push_back({.id = id});
@@ -305,10 +315,7 @@ PayloadSpecification PayloadSpecification::restrictCapabilities(
                           format_.profile == other.format_.profile;
   std::vector<ProgramCapability> capabilities;
   for (const auto& capability : capabilities_) {
-    if (!sameFormat && capability.id != ProgramCapability::FORWARD_BRANCHING &&
-        capability.id != ProgramCapability::COUNTED_ITERATION &&
-        capability.id != ProgramCapability::CONDITIONAL_LOOP &&
-        capability.id != ProgramCapability::MULTIWAY_BRANCHING) {
+    if (!sameFormat && !isControlFlowCapability(capability.id)) {
       capabilities.push_back(capability);
       continue;
     }

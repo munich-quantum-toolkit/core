@@ -14,33 +14,26 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "inspect",
-    "math",
     "mqt.core.mlir",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
-    "mqt.core.qdmi",
     "mqt.core.qdmi.builtin_driver",
     "numbers",
     "qiskit.circuit",
     "qiskit.circuit.library",
     "qiskit.primitives",
     "qiskit.transpiler",
-    "warnings",
 }
 
-import inspect
-import warnings
-from functools import cached_property
-from math import isfinite
 from numbers import Integral
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from qiskit.circuit import (
     Barrier,
     BreakLoopOp,
     ContinueLoopOp,
     ControlFlowOp,
+    ControlledGate,
     ForLoopOp,
     Gate,
     IfElseOp,
@@ -56,13 +49,14 @@ from qiskit.circuit.library import (
     get_standard_gate_name_mapping,
 )
 from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
-from qiskit.providers import BackendV2, Options
+from qiskit.providers import BackendV2, Options, QubitProperties
 from qiskit.transpiler import InstructionProperties, Target
 
 from mqt.core.mlir import (
     CompiledProgram,
+    CompilerTarget,
+    ProgramCapability,
     TargetEnvironment,
-    _operation_parameter_constraints,
     compile_program,
     serialize_program,
 )
@@ -73,19 +67,19 @@ from mqt.core.plugins.qiskit.exceptions import (
     UnsupportedOperationError,
 )
 from mqt.core.plugins.qiskit.job import QDMIJob
-from mqt.core.qdmi import CustomProperty
-from mqt.core.qdmi import Device as QDMIDevice
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, MutableSet, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
     from typing import Unpack
 
     from qiskit.circuit import Instruction
     from qiskit.circuit.parameterexpression import ParameterValueType
+    from qiskit.transpiler import CouplingMap
 
     from mqt.core.mlir import CompilationOptions
     from mqt.core.plugins.qiskit.provider import QDMIProvider
+    from mqt.core.qdmi import Device as QDMIDevice
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
 
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
@@ -95,55 +89,6 @@ __all__ = ["QDMIBackend"]
 
 def __dir__() -> list[str]:
     return __all__
-
-
-def _build_gate_mappings_for_backend(
-    gate_aliases: dict[str, set[str]],
-    extra_gates: dict[str, Instruction | type[Instruction]],
-) -> tuple[dict[str, set[str]], dict[str, Instruction | type[Instruction]]]:
-    """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
-
-    Uses Qiskit's standard gate mapping as the canonical source of truth,
-    combined with a list of device-specific aliases and gates.
-
-    Args:
-        gate_aliases: Maps canonical names to their aliases.
-        extra_gates: Maps names of gates outside Qiskit's standard library to
-            the gate that represents them.
-
-    Returns:
-        Tuple of (qiskit_to_qdmi_map, operation_to_gate_map).
-    """
-    canonical_gates = get_standard_gate_name_mapping()
-
-    canonical_gates.update({
-        "mcx": MCXGate,
-        "mcphase": MCPhaseGate,
-        "mcp": MCPhaseGate,
-        "mcx_gray": MCXGate,
-        "if_else": IfElseOp,
-        "for_loop": ForLoopOp,
-        "while_loop": WhileLoopOp,
-        "switch_case": SwitchCaseOp,
-        "break_loop": BreakLoopOp,
-        "continue_loop": ContinueLoopOp,
-        "store": Store,
-    })
-    canonical_gates.update(extra_gates)
-
-    qiskit_to_qdmi: dict[str, set[str]] = {}
-    operation_to_gate: dict[str, Instruction | type[Instruction]] = {}
-
-    for canonical_name, gate in canonical_gates.items():
-        all_names = {canonical_name}
-        if canonical_name in gate_aliases:
-            all_names.update(gate_aliases[canonical_name])
-
-        for name in all_names:
-            qiskit_to_qdmi[name] = all_names.copy()
-            operation_to_gate[name] = gate
-
-    return qiskit_to_qdmi, operation_to_gate
 
 
 class QDMIBackend(BackendV2):
@@ -167,56 +112,6 @@ class QDMIBackend(BackendV2):
         >>> backend = QDMIBackend.from_device_id("mqt.ddsim.default")
     """
 
-    @staticmethod
-    def is_convertible(device: QDMIDevice) -> bool:
-        """Returns whether a device can be represented in Qiskit's Target model."""
-        # Zoned operations cannot easily be represented in Qiskit's Target model
-        return not any(op.is_zoned() for op in device.operations())
-
-    _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
-        "id": {"i"},
-        "p": {"phase"},
-        "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
-        "u": {"u3"},
-        "cx": {"cnot"},
-        "global_phase": {"gphase"},  # Qiskit canonical name
-        "gphase": {"global_phase"},  # OpenQASM canonical name
-        "mcphase": {"mcp"},  # Qiskit canonical name
-        "mcp": {"mcphase"},  # OpenQASM canonical name
-        "mcx_gray": {"mcx"},
-        "mcx_vchain": {"mcx"},
-        "mcx_recursive": {"mcx"},
-    }
-
-    #: Gates outside Qiskit's standard library that the device natively supports.
-    #: A subclass for a device with such a gate sets this to map the device
-    #: operation name to the gate that represents it in the Target.
-    _EXTRA_GATES: ClassVar[dict[str, Instruction | type[Instruction]]] = {}
-
-    _QDMI_TO_QISKIT_GATE_MAP: ClassVar[dict[str, str]] = {
-        "i": "id",
-        "prx": "r",
-        "mcp": "mcphase",
-        "u3": "u",
-        "gphase": "global_phase",
-    }
-
-    _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
-    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction | type[Instruction]]]
-
-    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES, _EXTRA_GATES)
-
-    def __init_subclass__(cls, **kwargs: Any) -> None:  # ruff:ignore[any-type]
-        """Rebuild the gate mappings so a subclass sees its own aliases and gates.
-
-        Args:
-            **kwargs: Keyword arguments for the base implementation.
-        """
-        super().__init_subclass__(**kwargs)
-        cls._QISKIT_TO_QDMI_GATE_MAP, cls._OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(
-            cls._GATE_ALIASES, cls._EXTRA_GATES
-        )
-
     def __init__(
         self,
         device: QDMIDevice,
@@ -232,27 +127,18 @@ class QDMIBackend(BackendV2):
             device_id: Stable ID for the opened device, if known.
 
         Raises:
-            UnsupportedDeviceError: If the device cannot supply an executable Qiskit backend.
+            UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
         """
-        if not self.is_convertible(device):
-            msg = f"Device '{device.name()}' cannot be represented in Qiskit's Target model"
-            raise UnsupportedDeviceError(msg)
-
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
         self._device_id = device_id
-        sites = device.sites()
-        self._native_width = max((site.index() for site in sites), default=-1) + 1
-        self._has_sparse_sites = self._native_width != len(sites)
-        self._parameter_aliases: dict[str, str] = {}
-        self._parameter_bounds: dict[str, list[tuple[float, float] | None]] = {}
-        self.last_job: QDMIJob | None = None
-
-        self._target = self._build_target()
         try:
             self._environment = TargetEnvironment.from_device(device)
         except ValueError as exc:
             raise UnsupportedDeviceError(str(exc)) from exc
+        self._native_width = max((site.id for site in self._environment.target.sites), default=-1) + 1
+        self.last_job: QDMIJob | None = None
+        self._target = self._build_target()
 
     @classmethod
     def from_device_id(
@@ -358,278 +244,203 @@ class QDMIBackend(BackendV2):
             raise CircuitValidationError(msg)
         return {}
 
-    def _target_num_qubits(self) -> int:
-        """Number of addressable qubits to expose in the Target.
-
-        Subclasses may override this to hide device sites that should not be
-        directly addressable by the transpiler (e.g. computational
-        resonators on star-topology architectures).
-
-        Returns:
-            Number of qubits to expose in the Target.
-        """
-        return self._native_width
-
     def _build_target(self) -> Target:
-        """Construct a Qiskit Target from device capabilities.
+        """Project the shared device snapshot into Qiskit's physical positions.
 
         Returns:
-            Target object with device operations and properties.
+            The placeable native operations and their calibration.
 
         Raises:
-            UnsupportedOperationError: If aliases map to unequal Qiskit instructions.
+            UnsupportedDeviceError: If no computational sites remain.
+            UnsupportedOperationError: If Qiskit cannot represent a capability.
         """
-        self._duration_conversion: tuple[float, float] | None = None
-        target = Target(
-            description=f"QDMI device: {self._device.name()}",
-            num_qubits=self._target_num_qubits(),
-        )
-
-        seen_gate_names: set[str] = set()
-        instructions: dict[
-            str,
-            tuple[
-                Instruction | type[Instruction],
-                dict[tuple[int, ...] | None, InstructionProperties | None],
-                list[tuple[float, float] | None] | None,
-            ],
+        snapshot = self._environment.target
+        self._placeable_sites = set(snapshot.placeable_sites)
+        if not self._placeable_sites:
+            msg = "The device has no sites with single-qubit gates and measurement."
+            raise UnsupportedDeviceError(msg)
+        width = max(self._placeable_sites) + 1
+        target = Target(description=f"QDMI device: {self.name}", num_qubits=width)
+        standard: dict[str, Instruction | type[Instruction]] = get_standard_gate_name_mapping()
+        standard.update({"gphase": standard["global_phase"], "mcx": MCXGate, "mcp": MCPhaseGate})
+        variants: dict[
+            tuple[str, int | None, int, tuple[float | None, ...], tuple[tuple[float, float] | None, ...]],
+            tuple[Instruction | type[Instruction], dict[tuple[int, ...] | None, InstructionProperties], str],
         ] = {}
-        for op in self._device.operations():
-            # Preserve per-operation subclass filtering before merging aliases.
-            operation_target = Target(num_qubits=target.num_qubits)
-            self._add_operation_to_target(operation_target, op, seen_gate_names)
-            for name in operation_target.operation_names:
-                gate = operation_target.operation_from_name(name)
-                bounds = self._parameter_bounds.get(name)
-                previous, properties, previous_bounds = instructions.setdefault(name, (gate, {}, bounds))
-                if gate != previous or bounds != previous_bounds:
-                    msg = f"Device aliases for '{name}' map to incompatible Qiskit instructions."
+        self._operation_names: dict[str, str] = {}
+        reserved_names = {operation.canonical_name for operation in snapshot.operations}
+        used_names: set[str] = set()
+        projections: list[tuple[CompilerTarget.OperationCapability, Instruction | type[Instruction], str]] = []
+        for capability in snapshot.operations:
+            name = capability.canonical_name
+            if name == "barrier":
+                continue
+            gate = standard.get(name)
+            variadic = capability.arity.kind == CompilerTarget.OperationArityKind.VARIADIC
+            if gate is None or (isinstance(gate, type) and not variadic):
+                if variadic:
+                    msg = f"Qiskit cannot represent variadic native operation {capability.name!r}."
                     raise UnsupportedOperationError(msg)
-                for qargs, calibration in operation_target[name].items():
-                    properties.setdefault(qargs, calibration)
-
-        for name, (gate, properties, bounds) in instructions.items():
-            if inspect.isclass(gate):
+                gate = None
+            elif not isinstance(gate, type) and (
+                gate.num_qubits != capability.arity.value or len(gate.params) != capability.num_parameters
+            ):
+                gate = None
+            if gate is None:
+                gate = Gate(
+                    name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
+                )
+            name = ("mcphase" if name == "mcp" else name) if isinstance(gate, type) else gate.name
+            self._operation_names[capability.name] = name
+            projections.append((capability, gate, name))
+            if variadic and not isinstance(gate, type):
+                projections.extend(
+                    (capability, controlled, controlled.name)
+                    for controlled in standard.values()
+                    if isinstance(controlled, ControlledGate)
+                    and controlled.base_gate is not None
+                    and controlled.base_gate.name == gate.name
+                    and len(controlled.params) == capability.num_parameters
+                    and controlled.ctrl_state == (1 << controlled.num_ctrl_qubits) - 1
+                )
+                if name in {"x", "p"}:
+                    projections.append((
+                        capability,
+                        MCXGate if name == "x" else MCPhaseGate,
+                        "mcx" if name == "x" else "mcphase",
+                    ))
+        projections.sort(
+            key=lambda item: any(value is not None for value in (*item[0].fixed_parameters, *item[0].parameter_bounds))
+        )
+        variant_counts: dict[str, int] = {}
+        for capability, projected_gate, name in projections:
+            gate = projected_gate
+            fixed = capability.fixed_parameters
+            bounds = capability.parameter_bounds
+            key = (
+                name,
+                None if isinstance(gate, type) else gate.num_qubits,
+                capability.num_parameters,
+                tuple(fixed),
+                tuple(bounds),
+            )
+            if key not in variants:
+                if not isinstance(gate, type):
+                    gate = gate.copy()
+                    if fixed:
+                        gate.params = [
+                            value if value is not None else parameter
+                            for parameter, value in zip(gate.params, fixed, strict=True)
+                        ]
+                variant = name
+                if variant in used_names:
+                    suffix = variant_counts.get(name, 1)
+                    variant = f"{name}_{suffix}"
+                    while variant in reserved_names or variant in used_names:
+                        suffix += 1
+                        variant = f"{name}_{suffix}"
+                    variant_counts[name] = suffix + 1
+                used_names.add(variant)
+                variants[key] = (gate, {}, variant)
+            _, properties, _ = variants[key]
+            placements = capability.site_tuples
+            if placements:
+                loci = [
+                    (tuple(item.sites), item.duration, item.fidelity)
+                    for item in placements
+                    if set(item.sites) <= self._placeable_sites
+                ]
+            else:
+                loci = [(None, None, None)]
+            for locus, duration, fidelity in loci:
+                seconds = self._duration_seconds(capability.duration if duration is None else duration)
+                effective_fidelity = capability.fidelity if fidelity is None else fidelity
+                properties.setdefault(
+                    locus,
+                    InstructionProperties(
+                        duration=seconds, error=None if effective_fidelity is None else 1.0 - effective_fidelity
+                    ),
+                )
+        for (_, _, _, _, bounds), (gate, properties, name) in variants.items():
+            if not properties:
+                continue
+            if isinstance(gate, type):
                 target.add_instruction(gate, name=name)
             else:
                 target.add_instruction(
-                    gate, {None: properties[None]} if None in properties else properties, name=name, angle_bounds=bounds
+                    gate,
+                    {None: properties[None]} if None in properties else properties,
+                    name=name,
+                    angle_bounds=list(bounds) or None,
                 )
-
-        if "measure" not in seen_gate_names:
-            warnings.warn(
-                f"{self._device.name()} does not define a measurement operation. This may limit practical usage.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-        if "barrier" not in target.operation_names:
-            target.add_instruction(Barrier, name="barrier")
+        capabilities = {capability.capability_id for capability in self._environment.payload_specification.capabilities}
+        for capability, name, instruction in (
+            (ProgramCapability.FORWARD_BRANCHING, "if_else", IfElseOp),
+            (ProgramCapability.COUNTED_ITERATION, "for_loop", ForLoopOp),
+            (ProgramCapability.CONDITIONAL_LOOP, "while_loop", WhileLoopOp),
+            (ProgramCapability.CONDITIONAL_LOOP, "break_loop", BreakLoopOp),
+            (ProgramCapability.CONDITIONAL_LOOP, "continue_loop", ContinueLoopOp),
+            (ProgramCapability.MULTIWAY_BRANCHING, "switch_case", SwitchCaseOp),
+        ):
+            if capability in capabilities:
+                target.add_instruction(instruction, name=name)
+        if ProgramCapability.CLASSICAL_ASSIGNMENT in capabilities:
+            target.add_instruction(Store, name="store")
+        target.add_instruction(Barrier, name="barrier")
+        if any(site.t1 is not None or site.t2 is not None for site in snapshot.sites):
+            properties = [QubitProperties() for _ in range(width)]
+            for site in snapshot.sites:
+                if site.id in self._placeable_sites:
+                    properties[site.id] = QubitProperties(
+                        t1=self._duration_seconds(site.t1), t2=self._duration_seconds(site.t2)
+                    )
+            target.qubit_properties = properties
+        self._target_names: dict[str, list[str]] = {}
+        self._target_classes: list[tuple[type[Instruction], str]] = []
+        for name in target.operation_names:
+            operation = target.operation_from_name(name)
+            if isinstance(operation, type):
+                self._target_classes.append((operation, name))
+                self._target_names.setdefault(name, []).append(name)
+            else:
+                self._target_names.setdefault(operation.name, []).append(name)
         return target
 
-    def _add_operation_to_target(
-        self, target: Target, op: QDMIDevice.Operation, seen_gate_names: MutableSet[str], *, native: bool = False
-    ) -> None:
-        """Represent one device operation before compatible aliases are merged.
-
-        Subclasses may override this to customize how an individual device
-        operation is represented in the Target, e.g. substituting fictional
-        pairs of qubit sites for an operation that natively acts on non-qubit
-        sites (such as a qubit-resonator gate).
-
-        Args:
-            target: An empty Target for this operation's placements and properties.
-            op: The device operation to add.
-            seen_gate_names: Names represented by earlier operations (mutated in place).
-            native: Also represent opaque gates with a fixed advertised arity.
-
-        Raises:
-            UnsupportedOperationError: If parameter bounds are invalid.
-        """
-        op_name = op.name().lower()
-
-        # Barriers are scheduling directives, not executable device operations.
-        if op_name == "barrier":
-            return
-
-        if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
-            op_name = self._QDMI_TO_QISKIT_GATE_MAP[op_name]
-
-        gate = self._map_operation_to_gate(op_name)
-        if gate is None and native and (arity := op.qubits_num()) is not None:
-            gate = Gate(op_name, arity, [Parameter(f"p{i}") for i in range(op.parameters_num())])
-        if gate is None:
-            warnings.warn(
-                f"Device operation '{op_name}' cannot be mapped to a Qiskit gate and will be skipped",
-                UserWarning,
-                stacklevel=2,
-            )
-            return
-
-        is_class = inspect.isclass(gate)
-
-        gate_name = op_name if is_class else gate.name
-        seen_gate_names.add(gate_name)
-
-        site_tuples = self._get_operation_site_tuples(op)
-
-        # Globally supported gates (such as MCX) must specify a name and no properties
-        if is_class:
-            target.add_instruction(gate, name=op_name)
-            return
-
-        properties: dict[tuple[int, ...] | None, InstructionProperties | None] = {}
-        for sites in [None] if site_tuples is None else site_tuples:
-            qarg = None if sites is None else tuple(site.index() for site in sites)
-            duration = self._duration_seconds(op.duration() if sites is None else op.duration(sites=sites))
-            fidelity = op.fidelity() if sites is None else op.fidelity(sites=sites)
-            properties[qarg] = None
-            if duration is not None or fidelity is not None:
-                properties[qarg] = InstructionProperties(
-                    duration=duration, error=1.0 - fidelity if fidelity is not None else None
-                )
-        alternatives = _operation_parameter_constraints(
-            op.query_custom_property(CustomProperty.CUSTOM2, bytes), op.parameters_num()
-        )
-        if not alternatives:
-            target.add_instruction(gate, properties)
-            return
-        for index, (fixed, bounds) in enumerate(alternatives):
-            for parameter, bound in enumerate(bounds):
-                fixed_value = fixed[parameter] if fixed else None
-                if bound is not None and (
-                    not all(isfinite(value) for value in bound)
-                    or bound[0] > bound[1]
-                    or (fixed_value is not None and not bound[0] <= fixed_value <= bound[1])
-                ):
-                    msg = f"Invalid parameter bounds for operation {op.name()!r}"
-                    raise UnsupportedOperationError(msg)
-            variant = gate.copy()
-            if fixed:
-                variant.params = [
-                    parameter if value is None else value
-                    for parameter, value in zip(variant.params, fixed, strict=True)
-                ]
-            name = gate.name if len(alternatives) == 1 else f"{op_name}_{index}"
-            self._parameter_aliases[name] = op.name().lower()
-            if bounds:
-                self._parameter_bounds[name] = bounds
-            target.add_instruction(variant, properties, name=name, angle_bounds=bounds or None)
-
     def _duration_seconds(self, duration: int | None) -> float | None:
-        """Convert a raw QDMI duration to Qiskit's seconds.
+        """Convert snapshot timing metadata to seconds.
 
         Returns:
-            The duration in seconds, or None when it is unavailable.
+            The duration in seconds, or None for absent metadata.
 
         Raises:
-            UnsupportedOperationError: If the duration unit or scale is invalid.
+            UnsupportedOperationError: If the reported unit is unsupported.
         """
         if duration is None:
             return None
-        if self._duration_conversion is None:
-            unit = self._device.duration_unit()
-            seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
-            if unit not in seconds_per_unit:
-                msg = f"Cannot convert operation duration with device duration unit {unit!r} to seconds"
-                raise UnsupportedOperationError(msg)
-            scale = self._device.duration_scale_factor()
-            if scale is None:
-                scale = 1.0
-            if not isfinite(scale) or scale <= 0:
-                msg = f"Device duration scale factor must be positive and finite, got {scale!r}"
-                raise UnsupportedOperationError(msg)
-            self._duration_conversion = scale, seconds_per_unit[unit]
-        scale, seconds_per_unit_value = self._duration_conversion
-        return duration * scale * seconds_per_unit_value
-
-    def _get_operation_site_tuples(self, op: QDMIDevice.Operation) -> Sequence[tuple[QDMIDevice.Site, ...]] | None:
-        """Read explicit operation placements without widening their support.
-
-        Returns:
-            Ordered site tuples, or None when placements are unspecified.
-
-        Raises:
-            UnsupportedOperationError: If a site tuple is incomplete or a two-qubit
-                operation omits placements on a device with a coupling map or sparse site IDs.
-        """
-        arity = op.qubits_num()
-        if arity == 0:
-            return None
-        if arity == 2:
-            result = op.site_pairs()
-            if result is None and self._device.coupling_map() is not None:
-                msg = f"Operation '{op.name()}' omits site pairs on a device with a coupling map."
-                raise UnsupportedOperationError(msg)
-        else:
-            sites = op.sites() if arity is not None else None
-            if sites is not None and arity is not None:
-                if len(sites) % arity:
-                    msg = f"Operation '{op.name()}' has an incomplete {arity}-qubit site tuple"
-                    raise UnsupportedOperationError(msg)
-                result = [tuple(sites[i : i + arity]) for i in range(0, len(sites), arity)]
-            else:
-                result = None
-        if result is None and self._has_sparse_sites:
-            msg = f"Operation '{op.name()}' must report explicit placements on a device with sparse site IDs."
+        unit = self._environment.target.duration_unit
+        seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
+        if unit is None or unit.unit not in seconds_per_unit:
+            msg = "Cannot convert device timing metadata to seconds without a supported duration unit."
             raise UnsupportedOperationError(msg)
-        return result
+        return duration * unit.scale_factor * seconds_per_unit[unit.unit]
 
-    @classmethod
-    def _map_operation_to_gate(cls, op_name: str) -> Instruction | type[Instruction] | None:
-        """Map a device operation name to a Qiskit gate.
-
-        Args:
-            op_name: Device operation name.
-
-        Returns:
-            Qiskit gate instance or None if not mappable.
-        """
-        return cls._OPERATION_TO_GATE_MAP.get(op_name.lower())
-
-    @classmethod
-    def _map_qiskit_gate_to_operation_names(cls, qiskit_gate_name: str) -> set[str]:
-        """Map a Qiskit gate name to possible QDMI device operation names.
-
-        This is the inverse of _map_operation_to_gate, accounting for the fact that
-        different devices may use different naming conventions for the same operation.
-
-        Args:
-            qiskit_gate_name: Qiskit gate name.
-
-        Returns:
-            Set of possible QDMI device operation names that could map to this gate.
-        """
-        return cls._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
-
-    @cached_property
-    def _native_operations(self) -> dict[str, Target]:
-        """Keep native constraints separate from provider transpilation targets.
-
-        Returns:
-            One Qiskit target per native operation, including parameter variants.
-        """
-        targets = {}
-        for operation in self._device.operations():
-            target = Target(num_qubits=self._native_width)
-            QDMIBackend._add_operation_to_target(self, target, operation, set(), native=True)
-            targets[operation.name().lower()] = target
-        return targets
+    @property
+    def coupling_map(self) -> CouplingMap | None:
+        """Explicit coupling constraints, without expanding all-to-all devices."""
+        if self._environment.target.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL:
+            return None
+        return super().coupling_map
 
     def validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
-        """Check supported operations, including operations inside control flow.
-
-        This checks operation names and control-flow support without modifying
-        the circuit. It does not bind parameters or compile the circuit.
+        """Check operations and native placements against the snapshot target.
 
         Args:
-            circuit: Circuit to check, including nested control-flow bodies.
-            native: Also check circuit width, parameters, and ordered placements against
-                the device. Circuit indices denote device qubits in this case.
+            circuit: Native or logical circuit to check.
+            native: Also check physical sites and parameter values.
 
         Raises:
-            CircuitValidationError: If the circuit exceeds the native device width.
-            UnsupportedOperationError: If an operation, parameter, or placement is unsupported.
+            CircuitValidationError: If the circuit exceeds the device width.
+            UnsupportedOperationError: If an instruction is not supported.
         """
         if native and circuit.num_qubits > self._native_width:
             msg = (
@@ -637,36 +448,36 @@ class QDMIBackend(BackendV2):
                 f"but the native device has {self._native_width} addressable positions."
             )
             raise CircuitValidationError(msg)
-        device_ops = {operation.name().lower() for operation in self._device.operations()}
-
-        pending = [(circuit, tuple(range(circuit.num_qubits)) if native else ())]
+        pending = [(circuit, tuple(range(circuit.num_qubits)))]
         while pending:
             block, indices = pending.pop()
             for instruction in block.data:
                 operation = instruction.operation
                 if operation.name == "barrier":
                     continue
-                qargs = tuple(indices[block.find_bit(bit).index] for bit in instruction.qubits) if native else ()
+                qargs = tuple(indices[block.find_bit(bit).index] for bit in instruction.qubits)
                 if isinstance(operation, ControlFlowOp):
                     if operation.name not in self._target.operation_names:
                         msg = f"Unsupported control flow operation: '{operation.name}'"
                         raise UnsupportedOperationError(msg)
                     pending.extend((body, qargs) for body in reversed(operation.blocks))
                     continue
-                name = self._parameter_aliases.get(operation.name, operation.name)
-                names = self._map_qiskit_gate_to_operation_names(name) & device_ops
-                if not names:
-                    msg = f"Unsupported operation: '{operation.name}'"
-                    raise UnsupportedOperationError(msg)
-                if native and not any(
-                    target.instruction_supported(variant, qargs=qargs, parameters=operation.params)
-                    for target in (self._native_operations[name] for name in names)
-                    for variant in target.operation_names
-                ):
-                    msg = (
-                        f"Operation '{operation.name}' with parameters {operation.params} is not advertised "
-                        f"on native device qubits {qargs}."
+                operation_name = self._operation_names.get(operation.name, operation.name)
+                names = self._target_names.get(operation_name)
+                if names is None:
+                    names = [name for gate, name in self._target_classes if isinstance(operation, gate)]
+                supported = (not native or set(qargs) <= self._placeable_sites) and any(
+                    self._target.instruction_supported(
+                        name, **({"qargs": qargs, "parameters": operation.params} if native else {})
                     )
+                    for name in names
+                )
+                if not supported:
+                    msg = (
+                        f"Operation '{operation.name}' with parameters {operation.params} "
+                        f"is not advertised on native device qubits {qargs}."
+                    )
+                    msg += " Use backend.compile to compile and place logical circuits."
                     raise UnsupportedOperationError(msg)
 
     def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]
@@ -674,10 +485,8 @@ class QDMIBackend(BackendV2):
 
         Called once per circuit in :meth:`run`, after parameter binding and
         before operation-support validation and program conversion.
-        Subclasses may override this to transform a circuit into a
-        device-native equivalent, e.g. inserting MOVE gates and widening the
-        circuit to address computational resonators. The default
-        implementation is the identity function.
+        Subclasses may override this to enforce receiver-specific input
+        requirements. The default implementation returns the circuit unchanged.
 
         Args:
             circuit: The bound circuit to preprocess.

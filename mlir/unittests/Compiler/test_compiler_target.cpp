@@ -1827,4 +1827,23 @@ TEST(PayloadSpecificationTest, NumericReceiverVersionRanges) {
   }
 }
 
+TEST(CompilerTargetTest, CanonicalizesNativeProviderAliases) {
+  for (const auto& [name, canonical] : {
+           std::pair{"phase", "p"},
+           std::pair{"cphase", "cp"},
+           std::pair{"cv", "csx"},
+           std::pair{"global_phase", "gphase"},
+           std::pair{"mcphase", "mcp"},
+           std::pair{"mcx_gray", "mcx"},
+           std::pair{"mcx_vchain", "mcx"},
+           std::pair{"mcx_recursive", "mcx"},
+       }) {
+    SCOPED_TRACE(name);
+    const auto operation = llvm::cantFail(
+        mlir::CompilerTarget::OperationCapability::create(name, 1, 0));
+    EXPECT_EQ(operation.canonicalName(), canonical);
+    EXPECT_EQ(operation.name(), name);
+  }
+}
+
 } // namespace mqt::test::compiler

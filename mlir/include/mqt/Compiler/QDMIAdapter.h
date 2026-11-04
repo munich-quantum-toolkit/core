@@ -57,8 +57,7 @@ struct OperationParameterConstraints {
 /// Remove this compatibility contract when QDMI standardizes parameter domains.
 [[nodiscard]] llvm::Expected<
     llvm::SmallVector<OperationParameterConstraints, 1>>
-parseOperationParameterConstraints(llvm::StringRef metadata,
-                                   size_t numParameters);
+parseOperationParameterConstraints(llvm::StringRef text, size_t numParameters);
 
 /// Snapshot a circuit-model QDMI device as an MQT compiler target.
 ///
@@ -86,6 +85,11 @@ registeredQDMIDeviceIds();
 /// Compiler-supported capabilities of a QDMI program format.
 [[nodiscard]] llvm::Expected<PayloadSpecification>
 payloadSpecificationForProgramFormat(QDMI_Program_Format format);
+
+/// Apply versioned device payload capabilities; unrelated metadata is ignored.
+[[nodiscard]] llvm::Expected<PayloadSpecification>
+parsePayloadCapabilities(llvm::StringRef text,
+                         const PayloadSpecification& baseline);
 
 /// Snapshot the device and select its executable payload before compilation.
 ///

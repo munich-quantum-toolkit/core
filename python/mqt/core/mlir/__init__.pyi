@@ -172,6 +172,8 @@ class ProgramCapability:
     @constraints.setter
     def constraints(self, arg: Sequence[ProgramConstraint], /) -> None: ...
 
+    CLASSICAL_ASSIGNMENT: str = "classical-assignment"
+
     FORWARD_BRANCHING: str = "forward-branching"
 
     COUNTED_ITERATION: str = "counted-iteration"
@@ -597,6 +599,10 @@ class CompilerTarget:
     @property
     def duration_unit(self) -> CompilerTarget.DurationUnit | None:
         """The target timing unit, if available."""
+
+    @property
+    def placeable_sites(self) -> list[int]:
+        """Sites supporting a compiler-targetable single-qubit gate and measurement."""
 
     @property
     def num_sites(self) -> int:
@@ -1515,11 +1521,6 @@ def expectation_values(
     {py:meth}`QCOProgram.expectation_values` for observable, state preparation,
     and error contracts.
     """
-
-def _operation_parameter_constraints(
-    metadata: bytes | None, num_parameters: int
-) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
-    """Parse the temporary QDMI operation parameter constraints."""
 
 class ResultLayout:
     """Reconstruct logical bits from receiver samples."""

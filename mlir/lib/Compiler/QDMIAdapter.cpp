@@ -14,8 +14,8 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
-#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
@@ -86,7 +86,7 @@ metadataText(const std::optional<std::vector<std::byte>>& metadata) {
 [[nodiscard]] static Expected<bool>
 hasAllToAllHomogeneousMetadata(const qdmi::Device& device) {
   auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
-      qdmi::CustomProperty::Custom1);
+      qdmi::CustomProperty::Custom2);
   if (!metadata) {
     return metadata.takeError();
   }
@@ -312,55 +312,6 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
   return result;
 }
 
-template <typename Op>
-[[nodiscard]] static bool matchesBaseSymbol(StringRef name) {
-  if constexpr (requires { Op::getBaseSymbol(); }) {
-    return Op::getBaseSymbol() == name;
-  }
-  return false;
-}
-
-template <typename... Ops>
-[[nodiscard]] static bool hasBaseSymbol(StringRef name) {
-  return (matchesBaseSymbol<Ops>(name) || ...);
-}
-
-[[nodiscard]] static bool isKnownOperation(StringRef name) {
-  const auto canonical = name.trim().lower();
-  name = canonical;
-  if (name == "measure" || name == "reset" || name == "sqrt_iswap" ||
-      name == "move") {
-    return true;
-  }
-  if (name == "i") {
-    name = "id";
-  }
-  if (name == "prx") {
-    name = "r";
-  }
-  if (name == "u1") {
-    name = "p";
-  }
-  if (name == "u3") {
-    name = "u";
-  }
-  if (name == "cnot") {
-    name = "cx";
-  }
-  if (name == "ccnot") {
-    name = "ccx";
-  }
-  if (name.starts_with("cc")) {
-    name = name.drop_front(2);
-  } else if (name.starts_with("c")) {
-    name = name.drop_front();
-  }
-  return hasBaseSymbol<
-#define GET_OP_LIST
-#include "mqt/Dialect/QCO/IR/QCOOps.cpp.inc"
-      >(name);
-}
-
 [[nodiscard]] static Expected<CompilerTarget::NativeOperations>
 snapshotOperations(const std::vector<qdmi::Operation>& operations,
                    StringRef deviceName, bool homogeneousOperationSupport,
@@ -373,7 +324,18 @@ snapshotOperations(const std::vector<qdmi::Operation>& operations,
       return operationNameResult.takeError();
     }
     auto operationName = std::move(*operationNameResult);
-    if (!isKnownOperation(operationName)) {
+    if (llvm::is_contained(
+            {
+                "barrier",
+                "if_else",
+                "for_loop",
+                "while_loop",
+                "switch_case",
+                "break_loop",
+                "continue_loop",
+                "store",
+            },
+            StringRef(operationName))) {
       continue;
     }
     auto zoned = operation.isZoned();
@@ -715,7 +677,8 @@ static bool supportsCapability(const ProgramCapability& compiled,
     }
     if (limit.id == ProgramConstraint::MAX_NESTING_DEPTH ||
         limit.id == ProgramConstraint::MAX_ITERATION_COUNT ||
-        limit.id == ProgramConstraint::MAX_CASE_COUNT) {
+        limit.id == ProgramConstraint::MAX_CASE_COUNT ||
+        limit.id == ProgramConstraint::MAX_CONDITION_WIDTH) {
       return required->value <= limit.value;
     }
     return required->value == limit.value;
@@ -772,6 +735,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
             {.id = ProgramCapability::COUNTED_ITERATION.str()},
             {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
             {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
+            {.id = ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
         });
   case QDMI_PROGRAM_FORMAT_IQMJSON:
     return PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON,
@@ -795,6 +759,87 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
         std::make_error_code(std::errc::invalid_argument),
         "MQT compiler cannot emit the requested QDMI program format");
   }
+}
+
+Expected<PayloadSpecification>
+parsePayloadCapabilities(StringRef text, const PayloadSpecification& baseline) {
+  const auto withoutControlFlow = [&] {
+    std::vector<ProgramCapability> capabilities;
+    for (const auto& capability : baseline.capabilities()) {
+      if (!isControlFlowCapability(capability.id)) {
+        capabilities.push_back(capability);
+      }
+    }
+    return PayloadSpecification::create(baseline.format(),
+                                        std::move(capabilities), true);
+  };
+  text = metadataText(text);
+  constexpr StringLiteral schema = "mqt.payload-capabilities.v1";
+  if (!text.contains(schema)) {
+    return withoutControlFlow();
+  }
+  const auto invalid = [] {
+    return createStringError("Invalid mqt.payload-capabilities.v1 metadata");
+  };
+  auto parsed = llvm::json::parse(text);
+  if (!parsed) {
+    return parsed.takeError();
+  }
+  const auto* object = parsed->getAsObject();
+  if (object == nullptr) {
+    return invalid();
+  }
+  if (object->getString("schema") != schema) {
+    return withoutControlFlow();
+  }
+  const auto* entries = object->getArray("capabilities");
+  if (entries == nullptr) {
+    return invalid();
+  }
+  std::vector<ProgramCapability> capabilities;
+  for (const auto& entry : *entries) {
+    const auto* fields = entry.getAsObject();
+    if (fields == nullptr) {
+      return invalid();
+    }
+    const auto id = fields->getString("id");
+    if (!id || id->empty()) {
+      return invalid();
+    }
+    ProgramCapability capability{.id = id->str()};
+    if (const auto* value = fields->get("value")) {
+      const auto integer = value->getAsUINT64();
+      if (!integer) {
+        return invalid();
+      }
+      capability.value = *integer;
+    }
+    if (const auto* value = fields->get("constraints")) {
+      const auto* constraints = value->getAsObject();
+      if (constraints == nullptr) {
+        return invalid();
+      }
+      for (const auto& [name, limit] : *constraints) {
+        const auto integer = limit.getAsUINT64();
+        if (!integer) {
+          return invalid();
+        }
+        if ((name.str() == ProgramConstraint::REQUIRES_REGISTER_EQUALITY ||
+             name.str() == ProgramConstraint::UNITARY_ONLY_BRANCHES) &&
+            *integer != 1U) {
+          return invalid();
+        }
+        capability.constraints.push_back({.id = name.str(), .value = *integer});
+      }
+    }
+    capabilities.push_back(std::move(capability));
+  }
+  auto reported = PayloadSpecification::create(baseline.format(),
+                                               std::move(capabilities), true);
+  if (!reported) {
+    return reported.takeError();
+  }
+  return baseline.restrictCapabilities(*reported);
 }
 
 static Expected<TargetEnvironment>
@@ -829,6 +874,15 @@ snapshotTargetEnvironment(const qdmi::Device& device,
         "and output");
   }
   auto payload = payloadSpecificationForProgramFormat(*format);
+  if (!payload) {
+    return payload.takeError();
+  }
+  auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
+      qdmi::CustomProperty::Custom3);
+  if (!metadata) {
+    return metadata.takeError();
+  }
+  payload = parsePayloadCapabilities(metadataText(*metadata), *payload);
   if (!payload) {
     return payload.takeError();
   }
@@ -955,6 +1009,11 @@ CompiledProgram::serialize(QCProgram program,
   if (failed(runWithPassManager(program.module(), populateQCCleanupPipeline,
                                 "failed to clean up native QC", options,
                                 true))) {
+    return diagnostics.takeError(
+        std::make_error_code(std::errc::invalid_argument));
+  }
+  if (failed(mqt::legalizePayloadControlFlow(
+          program.module(), environment.payloadSpecification()))) {
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));
   }

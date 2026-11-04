@@ -384,7 +384,7 @@ def test_primitive_seed_is_not_silently_ignored(recording_backend: RecordingBack
 
 def test_counts_only_device() -> None:
     """A counts-only device supports Estimator but must not fake Sampler shots."""
-    backend = QDMIBackend(cast("Device", MockQDMIDevice(operations=["measure"])))
+    backend = QDMIBackend(cast("Device", MockQDMIDevice(operations=["measure", "x"])))
     qc = QuantumCircuit(1, 1)
     qc.measure(0, 0)
     assert sum(backend.run(qc, shots=4).result().get_counts().values()) == 4
@@ -609,7 +609,7 @@ def test_compiled_environment_preflight(recording_backend: RecordingBackend) -> 
     equivalent = serialize_program(circuit, target=TargetEnvironment.from_device(backend.device))
     backend.run(equivalent, shots=1)
     assert len(jobs) == 1
-    other = QDMIBackend(cast("Device", MockQDMIDevice(num_qubits=1, operations=["measure"])))
+    other = QDMIBackend(cast("Device", MockQDMIDevice(num_qubits=1, operations=["measure", "x"])))
     incompatible = serialize_program(circuit, target=TargetEnvironment.from_device(other.device))
     with pytest.raises(ValueError, match=r"incompatible.*ordered site"):
         backend.run([equivalent, incompatible], shots=1)
