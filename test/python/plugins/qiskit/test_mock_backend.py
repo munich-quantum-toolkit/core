@@ -1238,3 +1238,39 @@ def test_qasm3_rejects_empty_register_before_submission() -> None:
     with pytest.raises(TranslationError, match="does not support empty classical registers"):
         backend.run(circuit)
     assert not submissions
+
+
+@pytest.mark.parametrize(
+    ("fixed", "bounds", "valid"), [(None, [0, 1], True), (None, [1, 0], False), (2, [0, 1], False)]
+)
+def test_native_parameter_bounds(
+    monkeypatch: pytest.MonkeyPatch, fixed: float | None, bounds: list[float], *, valid: bool
+) -> None:
+    """Device parameter bounds constrain native calls and reject inconsistent metadata."""
+    metadata = json.dumps({
+        "schema": "mqt.operation-parameters.v1",
+        "alternatives": [{"fixed": [fixed], "bounds": [bounds]}],
+    }).encode()
+    device = MockQDMIDevice(num_qubits=1, operations=["rx", "measure"])
+    monkeypatch.setattr(device.operations()[0], "query_custom_property", lambda *_args: metadata)
+    if not valid:
+        with pytest.raises(UnsupportedOperationError, match="Invalid parameter bounds"):
+            QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+        return
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(1)
+    circuit.rx(0.5, 0)
+    backend.validate_circuit(circuit, native=True)
+    circuit.rx(2, 0)
+    with pytest.raises(UnsupportedOperationError):
+        backend.validate_circuit(circuit, native=True)
+
+
+def test_native_opaque_gate_validation() -> None:
+    """An opaque native gate remains usable without a Qiskit transpilation mapping."""
+    device = MockQDMIDevice(num_qubits=2, operations=["hop", "measure"])
+    with pytest.warns(UserWarning, match="cannot be mapped"):
+        backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(2)
+    circuit.append(Gate("hop", 2, []), [0, 1])
+    backend.validate_circuit(circuit, native=True)
