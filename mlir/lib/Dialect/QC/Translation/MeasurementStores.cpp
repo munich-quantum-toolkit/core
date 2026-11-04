@@ -40,12 +40,24 @@ namespace mlir::qc {
 // register bit is safe only while it retains the measured value. Conservatively
 // keep a snapshot if a derived value escapes the block or the bit is
 // overwritten.
-static bool canReuseMeasurementBit(MeasureOp measure,
-                                   cbit::StoreOp destination) {
+static bool
+canReuseMeasurementBit(MeasureOp measure, cbit::StoreOp destination,
+                       DenseMap<Value, bool>& nonEscapingRegisters) {
   const auto index = getConstantIntValue(destination.getIndex());
   if (!index) {
     return false;
   }
+  const auto [local, inserted] =
+      nonEscapingRegisters.try_emplace(destination.getReg(), false);
+  if (inserted) {
+    local->second =
+        destination.getReg().getDefiningOp<cbit::AllocOp>() &&
+        llvm::all_of(destination.getReg().getUsers(), [](Operation* user) {
+          return isa<cbit::LoadOp, cbit::ReadOp, cbit::StoreOp, cbit::WriteOp,
+                     func::ReturnOp>(user);
+        });
+  }
+  const bool localRegister = local->second;
   SmallVector<Operation*> pending(measure.getResult().getUsers());
   llvm::SmallPtrSet<Operation*, 16> visited;
   while (!pending.empty()) {
@@ -66,6 +78,15 @@ static bool canReuseMeasurementBit(MeasureOp measure,
     const auto result = op->walk<WalkOrder::PreOrder>([&](Operation*
                                                               candidate) {
       if (candidate == destination || isa<qc::UnitaryOpInterface>(candidate)) {
+        return WalkResult::skip();
+      }
+      // A call without classical references cannot access an unescaped
+      // register.
+      if (auto call = dyn_cast<func::CallOp>(candidate);
+          call && localRegister && call.getNumResults() == 0 &&
+          llvm::all_of(call.getOperandTypes(), [](Type type) {
+            return type.isF64() || isa<qc::QubitType>(type);
+          })) {
         return WalkResult::skip();
       }
       if (auto store = dyn_cast<cbit::StoreOp>(candidate);
@@ -96,8 +117,9 @@ static bool canReuseMeasurementBit(MeasureOp measure,
   return true;
 }
 
-static cbit::StoreOp measurementDestination(MeasureOp measure,
-                                            bool allowOtherUses) {
+static cbit::StoreOp
+measurementDestination(MeasureOp measure, bool allowOtherUses,
+                       DenseMap<Value, bool>& nonEscapingRegisters) {
   cbit::StoreOp destination;
   for (auto* user : measure.getResult().getUsers()) {
     if (auto store = dyn_cast<cbit::StoreOp>(user);
@@ -108,7 +130,7 @@ static cbit::StoreOp measurementDestination(MeasureOp measure,
     }
   }
   if (destination && !allowOtherUses && !measure.getResult().hasOneUse() &&
-      !canReuseMeasurementBit(measure, destination)) {
+      !canReuseMeasurementBit(measure, destination, nonEscapingRegisters)) {
     return {};
   }
   return destination;
@@ -117,14 +139,17 @@ static cbit::StoreOp measurementDestination(MeasureOp measure,
 DenseMap<Operation*, cbit::StoreOp> findMeasurementStores(func::FuncOp function,
                                                           bool allowOtherUses) {
   DenseMap<Operation*, cbit::StoreOp> destinations;
+  DenseMap<Value, bool> nonEscapingRegisters;
   function.walk([&](Block* block) {
     auto measurements = block->getOps<qc::MeasureOp>();
     if (llvm::all_of(measurements, [&](MeasureOp measure) {
-          auto store = measurementDestination(measure, allowOtherUses);
+          auto store = measurementDestination(measure, allowOtherUses,
+                                              nonEscapingRegisters);
           return !store || store == measure->getNextNode();
         })) {
       for (auto measure : measurements) {
-        if (auto store = measurementDestination(measure, allowOtherUses);
+        if (auto store = measurementDestination(measure, allowOtherUses,
+                                                nonEscapingRegisters);
             store) {
           destinations.try_emplace(measure, store);
         }
@@ -190,7 +215,8 @@ DenseMap<Operation*, cbit::StoreOp> findMeasurementStores(func::FuncOp function,
              accesses.positions[accesses.next] < destination;
     };
     for (auto measure : measurements) {
-      auto destination = measurementDestination(measure, allowOtherUses);
+      auto destination =
+          measurementDestination(measure, allowOtherUses, nonEscapingRegisters);
       if (!destination) {
         continue;
       }

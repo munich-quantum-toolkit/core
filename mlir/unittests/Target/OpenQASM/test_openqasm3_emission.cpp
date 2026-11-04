@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/MeasurementStores.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
@@ -850,6 +851,78 @@ TEST(OpenQASM3EmissionTest, ReusesMeasurementBitForControlFlow) {
   expectOneSample(*restored, "11");
 }
 
+TEST(OpenQASM3EmissionTest, InlinesAdjacentRegisterConditions) {
+  MLIRContext context;
+  auto moduleOp = qc::translateOpenQASMToQC(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[2] flag; bit[2] out; "
+      "x $3; flag[0] = measure $0; flag[1] = measure $3; "
+      "if (flag == 2) { x $4; } else { x $2; } "
+      "out[0] = measure $4; out[1] = measure $2;",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("output "), std::string::npos) << *emitted;
+  EXPECT_EQ(emitted->find("_mqt_v"), std::string::npos) << *emitted;
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  expectOneSample(*restored, "0110");
+}
+
+TEST(OpenQASM3EmissionTest, KeepsMeasuredSnapshotWhenRegisterEscapes) {
+  for (const bool escapes : {false, true}) {
+    SCOPED_TRACE(escapes);
+    std::string source = R"mlir(module {
+      func.func private @retain(!cbit.reg<1>)
+      func.func private @mutate_retained()
+      func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %q = qc.alloc : !qc.qubit
+        %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+    )mlir";
+    if (escapes) {
+      source += "func.call @retain(%bits) : (!cbit.reg<1>) -> ()";
+    }
+    source += R"mlir(
+        %measured = qc.measure %q : !qc.qubit -> i1
+        cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+        func.call @mutate_retained() : () -> ()
+        scf.if %measured { qc.x %q : !qc.qubit }
+        qc.dealloc %q : !qc.qubit
+        return %bits : !cbit.reg<1>
+      }
+    })mlir";
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+    EXPECT_EQ(qc::findMeasurementStores(function).empty(), escapes);
+  }
+}
+
+TEST(OpenQASM3EmissionTest, ReusesMeasurementAcrossOpaqueQuantumCalls) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @opaque_x(!qc.qubit) attributes {mqt.source_name = "x"}
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %q = qc.static 3 : !qc.qubit
+      %other = qc.static 4 : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %measured = qc.measure %q : !qc.qubit -> i1
+      cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+      scf.if %measured { func.call @opaque_x(%other) : (!qc.qubit) -> () }
+      return %bits : !cbit.reg<1>
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("output "), std::string::npos) << *emitted;
+  EXPECT_EQ(emitted->find("_mqt_b"), std::string::npos) << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, KeepsMeasuredSnapshotAcrossNestedWrites) {
   for (const bool nestedWrite : {false, true}) {
     SCOPED_TRACE(nestedWrite);
@@ -982,11 +1055,11 @@ real = 3.0;
   auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_NE(emitted->find("output bit[1] measured;"), std::string::npos);
-  EXPECT_NE(emitted->find("output bit[1] vector;"), std::string::npos);
-  EXPECT_NE(emitted->find("output bool _mqt_out"), std::string::npos);
-  EXPECT_NE(emitted->find("output int _mqt_out"), std::string::npos);
-  EXPECT_NE(emitted->find("output float _mqt_out"), std::string::npos);
+  EXPECT_NE(emitted->find("bit[1] measured;"), std::string::npos);
+  EXPECT_NE(emitted->find("bit[1] vector;"), std::string::npos);
+  EXPECT_NE(emitted->find("bool _mqt_out"), std::string::npos);
+  EXPECT_NE(emitted->find("int _mqt_out"), std::string::npos);
+  EXPECT_NE(emitted->find("float _mqt_out"), std::string::npos);
   EXPECT_EQ(emitted->find("output uint "), std::string::npos);
   EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }

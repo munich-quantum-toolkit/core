@@ -1375,6 +1375,39 @@ private:
     return true;
   }
 
+  // A single-use expression may move into its adjacent statement. Following
+  // the entire chain prevents an inline read from crossing a later write, and
+  // excluding loop consumers preserves bounds and conditions evaluated again.
+  // Keep snapshots for statement/type-conversion handling and expansions that
+  // duplicate operands.
+  [[nodiscard]] static Operation* inlineConsumer(Operation& operation) {
+    auto* current = &operation;
+    for (size_t depth = 0; depth + 1 < MAX_EXPRESSION_NESTING; ++depth) {
+      if (current->getNumResults() != 1 || !current->getResult(0).hasOneUse() ||
+          isa<arith::FPToSIOp, arith::FPToUIOp, arith::SelectOp,
+              arith::ShRSIOp>(current)) {
+        return nullptr;
+      }
+      auto* user = *current->getResult(0).getUsers().begin();
+      auto* next = current->getNextNode();
+      while (next != nullptr && isa<arith::ConstantOp>(next)) {
+        next = next->getNextNode();
+      }
+      if (next != user || user->getBlock() != operation.getBlock()) {
+        return nullptr;
+      }
+      if (isa<scf::IfOp, cbit::StoreOp, qc::UnitaryOpInterface, func::CallOp>(
+              user)) {
+        return user;
+      }
+      if (!isInlineExpressionOperation(*user) || !isMemoryEffectFree(user)) {
+        return nullptr;
+      }
+      current = user;
+    }
+    return nullptr;
+  }
+
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
     if (version2_ && isa<scf::ForOp, scf::WhileOp, scf::IndexSwitchOp,
@@ -1394,7 +1427,8 @@ private:
     if (!version2_ && !gateNames_.contains(function) &&
         isInlineExpressionOperation(operation) &&
         !isa<arith::ConstantOp>(&operation) && operation.getNumResults() == 1 &&
-        !wideBridge && !operation.getResult(0).use_empty()) {
+        !wideBridge && !operation.getResult(0).use_empty() &&
+        inlineConsumer(operation) == nullptr) {
       return materialize(operation.getResult(0));
     }
     if (auto alloc = dyn_cast<cbit::AllocOp>(&operation);
@@ -1845,21 +1879,24 @@ private:
       return found->second;
     }
     if (auto load = value.getDefiningOp<memref::LoadOp>()) {
-      if (load.getOperation() != expressionConsumer) {
+      if (load.getOperation() != expressionConsumer &&
+          inlineConsumer(*load.getOperation()) != expressionConsumer) {
         return failExpression(
             value, "array load requires a snapshot at its definition");
       }
       return emitArrayElement(load.getMemRef(), load.getIndices());
     }
     if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
-      if (load.getOperation() != expressionConsumer) {
+      if (load.getOperation() != expressionConsumer &&
+          inlineConsumer(*load.getOperation()) != expressionConsumer) {
         return failExpression(value,
                               "bit load requires a snapshot at its definition");
       }
       return emitBitReference(load.getReg(), load.getIndex());
     }
     if (auto read = value.getDefiningOp<cbit::ReadOp>()) {
-      if (read.getOperation() != expressionConsumer) {
+      if (read.getOperation() != expressionConsumer &&
+          inlineConsumer(*read.getOperation()) != expressionConsumer) {
         return failExpression(
             value, "register read requires a snapshot at its definition");
       }
