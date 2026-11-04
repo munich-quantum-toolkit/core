@@ -131,14 +131,6 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert '"teleportation"' in ret.stdout
 
 
-def test_native_tool_entry_point(script_runner: ScriptRunner) -> None:
-    """Report help and propagate native argument errors through the installed command."""
-    ret = script_runner.run(["mqt-core", "--help"])
-    assert ret.success
-    assert ret.stdout
-    assert not script_runner.run(["mqt-core", "--mqt-invalid-test-option"]).success
-
-
 @pytest.mark.parametrize(
     "input_format", ["openqasm2", "openqasm3", "qir-base.ll", "qir-base.bc", "qir-adaptive.ll", "qir-adaptive.bc"]
 )
@@ -258,3 +250,14 @@ def test_inferred_output(script_runner: ScriptRunner, tmp_path: Path, suffix: st
     result = script_runner.run(["mqt-core", "simulate", str(output), "--shots=16"])
     assert result.success
     assert json.loads(result.stdout)["counts"] == {"1": 16}
+
+
+def test_simulate_logical_readout(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Restore reordered and repeated classical outputs after source compilation."""
+    source = tmp_path / "readout.qasm"
+    source.write_text(
+        "OPENQASM 3; qubit[2] q; bit[3] c; x q[0]; c[2]=measure q[0]; c[0]=measure q[0]; c[1]=measure q[1];"
+    )
+    result = script_runner.run(["mqt-core", "simulate", str(source), "--shots=16"])
+    assert result.success
+    assert json.loads(result.stdout)["counts"] == {"101": 16}

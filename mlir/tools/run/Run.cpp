@@ -10,6 +10,7 @@
 
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/ResultLayout.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "qdmi/QDMI.hpp"
 
@@ -37,31 +38,28 @@
 
 static llvm::Expected<qdmi::Job>
 submit(const qdmi::Device& device, const std::string& path, int64_t shots,
-       const std::optional<qdmi::CustomJobParameter>& seed) {
+       const std::optional<qdmi::CustomJobParameter>& seed,
+       std::optional<mlir::ResultLayout>& layout) {
+  const auto submitSource = [&](auto program) -> llvm::Expected<qdmi::Job> {
+    if (!program) {
+      return program.takeError();
+    }
+    auto compiled = mlir::compileProgram(std::move(*program), device);
+    if (!compiled) {
+      return compiled.takeError();
+    }
+    layout = compiled->resultLayout();
+    return mlir::submitProgram(device, *compiled, shots, seed);
+  };
   const auto extension = llvm::sys::path::extension(path);
   if (extension == ".qasm") {
-    auto program = mlir::QCProgram::fromOpenQASMFile(path);
-    if (!program) {
-      return program.takeError();
-    }
-    return mlir::submitProgram(device, std::move(*program), shots, std::nullopt,
-                               seed);
+    return submitSource(mlir::QCProgram::fromOpenQASMFile(path));
   }
   if (extension == ".jeff") {
-    auto program = mlir::JeffProgram::fromFile(path);
-    if (!program) {
-      return program.takeError();
-    }
-    return mlir::submitProgram(device, std::move(*program), shots, std::nullopt,
-                               seed);
+    return submitSource(mlir::JeffProgram::fromFile(path));
   }
   if (extension == ".mlir") {
-    auto program = mlir::QCProgram::fromMLIRFile(path);
-    if (!program) {
-      return program.takeError();
-    }
-    return mlir::submitProgram(device, std::move(*program), shots, std::nullopt,
-                               seed);
+    return submitSource(mlir::QCProgram::fromMLIRFile(path));
   }
   auto buffer = llvm::MemoryBuffer::getFileOrSTDIN(path);
   if (!buffer) {
@@ -163,11 +161,15 @@ int mqtCoreRunProgram(int argc, char** argv) {
       seed.getNumOccurrences() != 0
           ? std::optional<qdmi::CustomJobParameter>(seed.getValue())
           : std::nullopt;
-  const auto job = exitOnError(submit(device, input, shots, randomSeed));
+  std::optional<mlir::ResultLayout> layout;
+  const auto job =
+      exitOnError(submit(device, input, shots, randomSeed, layout));
   exitOnError(job.wait());
   llvm::json::Object counts;
   for (const auto& [bits, count] : exitOnError(job.getCounts())) {
-    counts[bits] = count;
+    const auto logical = layout ? exitOnError(layout->decodeBits(bits)) : bits;
+    const auto previous = counts.getInteger(logical).value_or(0);
+    counts[logical] = previous + static_cast<int64_t>(count);
   }
   llvm::outs() << llvm::json::Value(llvm::json::Object{
                       {"schema_version", 1},

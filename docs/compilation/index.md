@@ -1,9 +1,9 @@
 # Compilation and execution
 
 Start with a quantum program, compile it for a simulator or device, and inspect
-its results. The MQT Compiler Collection accepts OpenQASM, Qiskit circuits, and
-typed program objects. Python, command-line, and C++ interfaces share its MLIR
-compiler infrastructure; see {cite:p}`MQTCompilerCollection2026`.
+its results. MQT Core accepts OpenQASM, Qiskit circuits, and typed program
+objects. Python, command-line, and C++ interfaces share its MLIR compiler
+infrastructure; see {cite:p}`MQTCompilerCollection2026`.
 
 ## Start with a result
 

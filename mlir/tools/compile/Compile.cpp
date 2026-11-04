@@ -71,18 +71,6 @@ using namespace mlir;
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, OpenQASM, Jeff };
 enum class InputDialect : std::uint8_t { QC, QCO };
-enum class OutputFormat : std::uint8_t {
-  QCImport,
-  QC,
-  QCO,
-  QCOOptimized,
-  OpenQASM3,
-  OpenQASM2,
-  IQMJSON,
-  QIRBase,
-  QIRAdaptive,
-  Jeff,
-};
 
 struct ParsedProgram {
   OwningOpRef<ModuleOp> mod;
@@ -124,36 +112,19 @@ parseInputFormat(const StringRef format, const StringRef filename) {
 }
 
 /// Parse an output format.
-[[nodiscard]] static std::optional<OutputFormat>
+[[nodiscard]] static std::optional<ProgramFormat>
 parseOutputFormat(const StringRef format) {
-  if (format == "qc-import") {
-    return OutputFormat::QCImport;
-  }
-  if (format == "qc") {
-    return OutputFormat::QC;
-  }
-  if (format == "qco") {
-    return OutputFormat::QCO;
-  }
-  if (format == "qco-optimized") {
-    return OutputFormat::QCOOptimized;
-  }
-  if (format == "openqasm2") {
-    return OutputFormat::OpenQASM2;
-  }
-  if (format == "openqasm3") {
-    return OutputFormat::OpenQASM3;
-  }
-  if (format == "qir-base") {
-    return OutputFormat::QIRBase;
-  }
-  if (format == "qir-adaptive") {
-    return OutputFormat::QIRAdaptive;
-  }
-  if (format == "jeff") {
-    return OutputFormat::Jeff;
-  }
-  return std::nullopt;
+  return llvm::StringSwitch<std::optional<ProgramFormat>>(format)
+      .Case("qc-import", ProgramFormat::QCImport)
+      .Case("qc", ProgramFormat::QC)
+      .Case("qco", ProgramFormat::QCO)
+      .Case("qco-optimized", ProgramFormat::QCOOptimized)
+      .Case("openqasm2", ProgramFormat::OpenQASM2)
+      .Case("openqasm3", ProgramFormat::OpenQASM3)
+      .Case("qir-base", ProgramFormat::QIRBase)
+      .Case("qir-adaptive", ProgramFormat::QIRAdaptive)
+      .Case("jeff", ProgramFormat::Jeff)
+      .Default(std::nullopt);
 }
 
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
@@ -520,11 +491,11 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   }
   const auto extension = llvm::sys::path::extension(outputFilename);
   const auto inferredOutput =
-      llvm::StringSwitch<std::optional<OutputFormat>>(extension)
-          .Case(".jeff", OutputFormat::Jeff)
-          .Case(".qasm", OutputFormat::OpenQASM3)
-          .Cases({".bc", ".ll"}, OutputFormat::QIRAdaptive)
-          .Case(".json", OutputFormat::IQMJSON)
+      llvm::StringSwitch<std::optional<ProgramFormat>>(extension)
+          .Case(".jeff", ProgramFormat::Jeff)
+          .Case(".qasm", ProgramFormat::OpenQASM3)
+          .Cases({".bc", ".ll"}, ProgramFormat::QIRAdaptive)
+          .Case(".json", ProgramFormat::IQMJSON)
           .Default(std::nullopt);
   auto parsedOutputFormat =
       outputFormat.getNumOccurrences() == 0 && inferredOutput
@@ -563,7 +534,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
       std::optional<QDMI_Program_Format> format;
       if (outputFormat.getNumOccurrences() == 0 && inferredOutput) {
         switch (*inferredOutput) {
-        case OutputFormat::QIRAdaptive: {
+        case ProgramFormat::QIRAdaptive: {
           auto supported = device->getSupportedProgramFormats();
           if (!supported) {
             return supported.takeError();
@@ -577,13 +548,13 @@ int mqtCoreRunCompiler(int argc, char** argv) {
           format = llvm::is_contained(*supported, adaptive) ? adaptive : base;
           break;
         }
-        case OutputFormat::OpenQASM3:
+        case ProgramFormat::OpenQASM3:
           format = QDMI_PROGRAM_FORMAT_QASM3;
           break;
-        case OutputFormat::IQMJSON:
+        case ProgramFormat::IQMJSON:
           format = QDMI_PROGRAM_FORMAT_IQMJSON;
           break;
-        case OutputFormat::Jeff:
+        case ProgramFormat::Jeff:
           return llvm::createStringError(
               "jeff export cannot be combined with a QDMI device target");
         default:
@@ -662,31 +633,13 @@ int mqtCoreRunCompiler(int argc, char** argv) {
       return 1;
     }
     if (outputFormat.getNumOccurrences() == 0) {
-      switch (*compilerOutput) {
-      case ProgramFormat::OpenQASM2:
-        parsedOutputFormat = OutputFormat::OpenQASM2;
-        break;
-      case ProgramFormat::OpenQASM3:
-        parsedOutputFormat = OutputFormat::OpenQASM3;
-        break;
-      case ProgramFormat::IQMJSON:
-        parsedOutputFormat = OutputFormat::IQMJSON;
-        break;
-      case ProgramFormat::QIRBase:
-        parsedOutputFormat = OutputFormat::QIRBase;
-        break;
-      case ProgramFormat::QIRAdaptive:
-        parsedOutputFormat = OutputFormat::QIRAdaptive;
-        break;
-      default:
-        llvm_unreachable("Unsupported target compiler output");
-      }
+      parsedOutputFormat = *compilerOutput;
     }
     targetEnvironment.emplace(std::move(*compilerTarget),
                               std::move(*selectedPayload));
   }
 
-  if (*parsedOutputFormat == OutputFormat::IQMJSON &&
+  if (*parsedOutputFormat == ProgramFormat::IQMJSON &&
       (!targetEnvironment ||
        targetEnvironment->target().nativeOperationsKind() ==
            CompilerTarget::NativeOperations::Kind::Unrestricted)) {
@@ -762,14 +715,14 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return failed(writeOutput(std::move(program.mod), outputFilename)) ? 1 : 0;
   }
 
-  if (*parsedOutputFormat == OutputFormat::QCImport &&
+  if (*parsedOutputFormat == ProgramFormat::QCImport &&
       program.dialect != InputDialect::QC) {
     llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
     return 1;
   }
   if (passPipeline.getNumOccurrences() != 0 &&
-      (*parsedOutputFormat == OutputFormat::QCImport ||
-       *parsedOutputFormat == OutputFormat::QCO)) {
+      (*parsedOutputFormat == ProgramFormat::QCImport ||
+       *parsedOutputFormat == ProgramFormat::QCO)) {
     llvm::errs() << "--pass-pipeline requires an output that passes through "
                     "QCO optimization.\n";
     return 1;
@@ -783,7 +736,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat != OutputFormat::QCImport &&
+  if (*parsedOutputFormat != ProgramFormat::QCImport &&
       program.dialect == InputDialect::QC &&
       failed(runPasses(
           [](OpPassManager& pm) {
@@ -793,14 +746,14 @@ int mqtCoreRunCompiler(int argc, char** argv) {
           true))) {
     return 1;
   }
-  if (*parsedOutputFormat != OutputFormat::QCImport &&
+  if (*parsedOutputFormat != ProgramFormat::QCImport &&
       failed(qco::verifyLinearity(*program.mod))) {
     return 1;
   }
 
   const bool requiresPostQcoPasses =
-      *parsedOutputFormat != OutputFormat::QCImport &&
-      *parsedOutputFormat != OutputFormat::QCO;
+      *parsedOutputFormat != ProgramFormat::QCImport &&
+      *parsedOutputFormat != ProgramFormat::QCO;
   if (targetEnvironment) {
     if (failed(runPasses(
             [&](OpPassManager& pm) {
@@ -813,8 +766,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
       return 1;
     }
   } else if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-               if (*parsedOutputFormat == OutputFormat::QIRBase ||
-                   *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+               if (*parsedOutputFormat == ProgramFormat::QIRBase ||
+                   *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
                  pm.addPass(createInlinerPass());
                }
                populateQCOCleanupPipeline(pm);
@@ -835,7 +788,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat == OutputFormat::Jeff &&
+  if (*parsedOutputFormat == ProgramFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
         pm.addPass(mlir::mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
@@ -845,12 +798,12 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if ((*parsedOutputFormat == OutputFormat::QC ||
-       *parsedOutputFormat == OutputFormat::OpenQASM2 ||
-       *parsedOutputFormat == OutputFormat::OpenQASM3 ||
-       *parsedOutputFormat == OutputFormat::IQMJSON ||
-       *parsedOutputFormat == OutputFormat::QIRBase ||
-       *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
+  if ((*parsedOutputFormat == ProgramFormat::QC ||
+       *parsedOutputFormat == ProgramFormat::OpenQASM2 ||
+       *parsedOutputFormat == ProgramFormat::OpenQASM3 ||
+       *parsedOutputFormat == ProgramFormat::IQMJSON ||
+       *parsedOutputFormat == ProgramFormat::QIRBase ||
+       *parsedOutputFormat == ProgramFormat::QIRAdaptive) &&
       failed(runPasses([](OpPassManager& pm) {
         pm.addPass(createQCOToQC());
         populateQCCleanupPipeline(pm);
@@ -859,11 +812,11 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if ((*parsedOutputFormat == OutputFormat::QIRBase ||
-       *parsedOutputFormat == OutputFormat::QIRAdaptive ||
-       *parsedOutputFormat == OutputFormat::IQMJSON) &&
+  if ((*parsedOutputFormat == ProgramFormat::QIRBase ||
+       *parsedOutputFormat == ProgramFormat::QIRAdaptive ||
+       *parsedOutputFormat == ProgramFormat::IQMJSON) &&
       failed(runPasses([&](OpPassManager& pm) {
-        const bool adaptive = *parsedOutputFormat == OutputFormat::QIRAdaptive;
+        const bool adaptive = *parsedOutputFormat == ProgramFormat::QIRAdaptive;
         const auto payload =
             llvm::cantFail(PayloadSpecification::forProgramFormat(
                 adaptive ? ProgramFormat::QIRAdaptive
@@ -876,7 +829,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat == OutputFormat::OpenQASM2 &&
+  if (*parsedOutputFormat == ProgramFormat::OpenQASM2 &&
       failed(runPasses([&](OpPassManager& pm) {
         const auto payload = llvm::cantFail(
             PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM2));
@@ -887,11 +840,11 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   }
 
   // Write the output
-  if (*parsedOutputFormat == OutputFormat::Jeff) {
+  if (*parsedOutputFormat == ProgramFormat::Jeff) {
     if (failed(writeJeffOutput(*program.mod, outputFilename))) {
       return 1;
     }
-  } else if (*parsedOutputFormat == OutputFormat::IQMJSON) {
+  } else if (*parsedOutputFormat == ProgramFormat::IQMJSON) {
     llvm::LLVMContext llvmContext;
     auto llvmModule = mlir::qir::translateQIRToLLVM(*program.mod, llvmContext);
     if (!llvmModule) {
@@ -912,8 +865,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     }
     output->os() << *source;
     output->keep();
-  } else if (*parsedOutputFormat == OutputFormat::OpenQASM3 ||
-             *parsedOutputFormat == OutputFormat::OpenQASM2) {
+  } else if (*parsedOutputFormat == ProgramFormat::OpenQASM3 ||
+             *parsedOutputFormat == ProgramFormat::OpenQASM2) {
     std::string errorMessage;
     auto output = openOutputFile(outputFilename, &errorMessage);
     if (!output) {
@@ -921,7 +874,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                    << "': " << errorMessage << "\n";
       return 1;
     }
-    auto source = *parsedOutputFormat == OutputFormat::OpenQASM2
+    auto source = *parsedOutputFormat == ProgramFormat::OpenQASM2
                       ? qc::translateQCToOpenQASM2(std::move(program.mod))
                       : qc::translateQCToOpenQASM3(std::move(program.mod));
     if (failed(source)) {
@@ -929,8 +882,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     }
     output->os() << *source;
     output->keep();
-  } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
-             *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+  } else if (*parsedOutputFormat == ProgramFormat::QIRBase ||
+             *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
     const auto qirEncoding =
         targetEnvironment
             ? targetEnvironment->payloadSpecification().format().encoding

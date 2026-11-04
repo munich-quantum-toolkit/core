@@ -154,6 +154,11 @@ serialized device programs. The device must support the submitted format.
 Results are printed as counts JSON. `simulate` uses the same execution path with
 DDSIM. `--seed` is specific to DDSIM.
 
+Source execution reconstructs logical readout using the compiler's result
+layout. Serialized payloads return raw device counts: a payload file does not
+retain that mapping. Run the source directly to preserve its logical output
+order and repeated measurements.
+
 To keep the compiled IQM circuit for inspection or repeated submission:
 
 ```sh

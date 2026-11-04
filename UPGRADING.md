@@ -354,9 +354,9 @@ users do not need to install LLVM separately.
 
 For an LLVM-free C++ build, set `BUILD_MQT_CORE_MLIR=OFF`. This retains the DD
 and QDMI libraries and the superconducting device model, but omits the compiler,
-compiler-backed benchmark generation, `mqt-cc`, and the DDSIM device. DDSIM
-requires MLIR for OpenQASM as well as QIR execution. Do not rely on an old DDSIM
-build option to enable it without MLIR.
+compiler-backed benchmark generation, the MQT Core command-line tools, and the
+DDSIM device. DDSIM requires MLIR for OpenQASM as well as QIR execution. Do not
+rely on an old DDSIM build option to enable it without MLIR.
 
 Prebuilt LLVM/MLIR distributions are available from
 [setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
