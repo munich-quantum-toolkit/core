@@ -37,7 +37,9 @@ def test_header_drift(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCapture
             return BytesIO(json.dumps({"info": {"version": "0.16.0"}}).encode())
         assert "/v0.16.0/" in url
         name = f"include/{url.rsplit('/', 1)[1]}"
-        return BytesIO(b"changed header" if name == changed else (snapshot / name).read_bytes())
+        # GitHub serves LF bytes even when Git checks out headers with CRLF.
+        content = (snapshot / name).read_text(encoding="utf-8").encode("utf-8")
+        return BytesIO(b"changed header" if name == changed else content)
 
     monkeypatch.setattr(module.urllib.request, "urlopen", download)
     assert module.main() == int(changed is not None)

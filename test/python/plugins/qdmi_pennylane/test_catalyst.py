@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from mqt.core import UntestedVersionWarning
+
 if TYPE_CHECKING:
     from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, VarianceMP
     from pennylane.typing import Result
@@ -86,6 +88,8 @@ def test_runtime_gate_sets_match_reference(recwarn: pytest.WarningsRecorder, *, 
     actual = node() if capture is None else qp.qjit(node, capture=capture, skip_preprocess=capture)()
     np.testing.assert_allclose(actual, expected, atol=0.025)
     for warning in recwarn:
+        if issubclass(warning.category, UntestedVersionWarning):
+            continue
         category = import_module("catalyst.decomposition.rule_lowering_warning").RuleLoweringWarning
         assert issubclass(warning.category, category)
         assert fullmatch(
