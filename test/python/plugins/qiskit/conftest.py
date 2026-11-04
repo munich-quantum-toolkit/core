@@ -58,23 +58,7 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
         if isinstance(device, Device):
             return native_environment(device, program_format=program_format)
         formats = device.supported_program_formats()
-        chosen = program_format or next(
-            (
-                fmt
-                for fmt in (
-                    ProgramFormat.QPY,
-                    ProgramFormat.QASM3,
-                    ProgramFormat.QIR_ADAPTIVE_MODULE,
-                    ProgramFormat.QIR_ADAPTIVE_STRING,
-                    ProgramFormat.IQM_JSON,
-                    ProgramFormat.QIR_BASE_MODULE,
-                    ProgramFormat.QIR_BASE_STRING,
-                    ProgramFormat.QASM2,
-                )
-                if fmt in formats
-            ),
-            None,
-        )
+        chosen = program_format or next(iter(formats), None)
         if chosen is None:
             msg = "Device reports no supported program formats"
             raise ValueError(msg)

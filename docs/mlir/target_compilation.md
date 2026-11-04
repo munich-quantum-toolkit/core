@@ -83,16 +83,18 @@ designations when every eligible value is an output. See {doc}`OpenQASM` and
 Use {py:func}`~mqt.core.mlir.serialize_program` for an already-native Qiskit
 circuit or `QCProgram`. It serializes without synthesis, routing, or quantum
 optimization. The caller is responsible for native gate and placement validity;
-the Qiskit backend checks these before any serializer runs.
+the Qiskit backend checks these before serialization.
 
 Static programs use canonical terminal readout: one register with measurements
 in ascending physical-site order. This supports measured subsets, destination
 permutations, repeated terminal measurements, and zero-filled output slots.
-Gates may follow measurements of other qubits. Calls after a measurement retain
-their original order because callees can touch hidden static sites. Dynamic
-programs retain their classical outputs; the selected exporter checks whether
-the receiver supports them. Provider transports handle service-specific
-requirements such as simulator qubit declarations and all-qubit measurement.
+Gates and bodyless native calls on unmeasured qubits are scheduled before
+terminal measurements. A native call cannot reuse a measured qubit. Calls to
+defined functions decline terminal normalization because they can access hidden
+static sites. Dynamic programs retain their classical outputs; the selected
+exporter checks whether the receiver supports them. Provider transports handle
+service-specific requirements such as simulator qubit declarations and all-qubit
+measurement.
 
 OpenQASM 3 uses plain classical declarations as implicit outputs unless a
 non-output classical variable is emitted at global scope. In that case, output

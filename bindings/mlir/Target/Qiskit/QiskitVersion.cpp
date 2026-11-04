@@ -27,26 +27,74 @@
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
 
-std::unique_ptr<VersionedTranslation> selectTranslation() {
-  const auto qiskit = nb::module_::import_("qiskit");
-  const auto version = nb::cast<uint32_t>(
-      nb::module_::import_("qiskit._accelerate.capi").attr("API_VERSION"));
-  using Factory = std::unique_ptr<VersionedTranslation> (*)();
+namespace {
+using Factory = std::unique_ptr<VersionedTranslation> (*)();
+
+struct Selection {
   Factory factory = nullptr;
-  uint32_t selectedMinimum = 0;
+  uint32_t minimum = 0;
+};
+} // namespace
+
+[[nodiscard]] static Selection selectVersion(uint32_t version) {
+  Selection selected;
   if ((version >> 24U) == 2U) {
-#define MQT_QISKIT_VERSION(minor, patch, minimum, range)                       \
+#define MQT_QISKIT_VERSION(minor, patch, release, range)                       \
   {                                                                            \
     constexpr auto min =                                                       \
         (2U << 24U) | (minor##U << 16U) | (patch##U << 8U) | 0xf0U;            \
-    if (version >= min && min > selectedMinimum) {                             \
-      factory = createQiskit2_##minor;                                         \
-      selectedMinimum = min;                                                   \
+    if (version >= min && min > selected.minimum) {                            \
+      selected = {createQiskit2_##minor, min};                                 \
     }                                                                          \
   }
 #include "SupportedVersions.inc"
 #undef MQT_QISKIT_VERSION
   }
+  return selected;
+}
+
+bool supportsVersion(llvm::StringRef version) {
+  uint32_t major = 0;
+  uint32_t minor = 0;
+  uint32_t patch = 0;
+  if (version.consumeInteger(10, major) || !version.consume_front(".") ||
+      version.consumeInteger(10, minor)) {
+    return false;
+  }
+  if (version.consume_front(".") && version.consumeInteger(10, patch)) {
+    return false;
+  }
+  if (major > 255 || minor > 255 || patch > 255) {
+    return false;
+  }
+  const bool prerelease =
+      version.consume_front("a") || version.consume_front("b") ||
+      version.consume_front("rc") || version.consume_front(".dev");
+  if (prerelease || version.consume_front(".post")) {
+    unsigned serial = 0;
+    if (version.consumeInteger(10, serial)) {
+      return false;
+    }
+  }
+  if (version.consume_front("+")) {
+    if (version.empty() || version.find_first_not_of(
+                               "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"
+                               "VWXYZ0123456789.-") != llvm::StringRef::npos) {
+      return false;
+    }
+  } else if (!version.empty()) {
+    return false;
+  }
+  const auto stage = prerelease ? 0U : 0xf0U;
+  return selectVersion((major << 24U) | (minor << 16U) | (patch << 8U) | stage)
+             .factory != nullptr;
+}
+
+std::unique_ptr<VersionedTranslation> selectTranslation() {
+  const auto qiskit = nb::module_::import_("qiskit");
+  const auto version = nb::cast<uint32_t>(
+      nb::module_::import_("qiskit._accelerate.capi").attr("API_VERSION"));
+  const auto [factory, selectedMinimum] = selectVersion(version);
   if (factory != nullptr) {
     static bool warned = false;
     if (!warned && (version >> 16U) > (selectedMinimum >> 16U)) {

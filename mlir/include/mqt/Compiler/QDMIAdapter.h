@@ -89,7 +89,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
 /// Snapshot the device and select its executable payload before compilation.
 ///
-/// Preference: Adaptive QIR (binary, text), QPY, OpenQASM 3, IQM JSON, Base QIR
+/// Preference: QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, Base QIR
 /// (binary, text), OpenQASM 2.
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,

@@ -63,6 +63,7 @@ from mqt.core.mlir import (
     sample,
     serialize_program,
     simulate,
+    submit_program,
 )
 from mqt.core.qdmi import ProgramFormat, open_device
 
@@ -4912,7 +4913,7 @@ def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool)
     assert sample(source, shots=8) == {"0111": 8}
 
 
-def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
+def test_native_openqasm_preserves_physical_sites_and_phase() -> None:
     """Native export preserves idle-site holes and exact gate/global phases."""
     circuit = QuantumCircuit(4, global_phase=0.37)
     circuit.h(0)
@@ -5145,16 +5146,14 @@ def test_qpy_compilation_and_native_readout() -> None:
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
 @pytest.mark.parametrize("native", [False, True])
 def test_zero_readout_retains_known_classical_outputs(program_format: ProgramFormat, *, native: bool) -> None:
-    """Unmeasured initialized bits need a layout without inventing measurements."""
+    """Measurement-free programs retain their outputs without a result layout."""
     circuit = QuantumCircuit(1, 2)
     circuit.x(0)
     target = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
     environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
     program = serialize_program(circuit, target=environment) if native else compile_program(circuit, target=environment)
     assert program.result_width == 2
-    assert program.result_layout is not None
-    assert program.result_layout.raw_width == 2
-    assert program.result_layout.decode_bits("00") == "00"
+    assert program.result_layout is None
     if program_format == ProgramFormat.QPY:
         assert isinstance(program.payload, bytes)
         restored = qpy.load(BytesIO(program.payload))[0]
@@ -5197,3 +5196,46 @@ else:
 PayloadSpecification.from_program_format(ProgramFormat.QASM3)
 """
     subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Fixed script in an isolated interpreter.
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [
+        ("2.4.9", False),
+        ("2.5.0rc1", False),
+        ("2.5.0", True),
+        ("2.7.0.dev1", True),
+        ("3.0.0rc1", False),
+        ("3.0.0", False),
+        ("unknown", False),
+        ("2.6.0garbage", False),
+    ],
+)
+def test_qpy_hook_requires_supported_qiskit(version: str, *, supported: bool) -> None:
+    """Unsupported installed versions leave non-Qiskit payload formats available."""
+    script = f"""
+import importlib.metadata
+import sys
+original = importlib.metadata.version
+importlib.metadata.version = lambda name: {version!r} if name == 'qiskit' else original(name)
+from mqt.core.mlir import PayloadSpecification
+from mqt.core.qdmi import ProgramFormat
+assert 'qiskit' not in sys.modules
+try:
+    PayloadSpecification.from_program_format(ProgramFormat.QPY)
+except RuntimeError:
+    assert not {supported!r}
+else:
+    assert {supported!r}
+PayloadSpecification.from_program_format(ProgramFormat.QASM3)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Isolate module initialization.
+
+
+def test_measurement_free_source_submission() -> None:
+    """Initialized classical outputs do not require an explicit result layout."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    job = submit_program(circuit, target="mqt.ddsim.default", num_shots=3)
+    assert job.wait()
+    assert job.get_shots() == ["0"] * 3

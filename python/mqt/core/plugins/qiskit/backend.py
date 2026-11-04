@@ -698,6 +698,11 @@ class QDMIBackend(BackendV2):
         Returns:
             One compiled program, or an ordered list for a sequence.
         """
+        circuits = (
+            self._preprocess_circuit(circuits)
+            if isinstance(circuits, QuantumCircuit)
+            else [self._preprocess_circuit(circuit) for circuit in circuits]
+        )
         if options is None:
             return compile_program(circuits, target=self._environment)
         return compile_program(circuits, target=self._environment, options=options)
@@ -828,10 +833,6 @@ class QDMIBackend(BackendV2):
                 raise CircuitValidationError(msg)
 
             bound_circuit = self._preprocess_circuit(bound_circuit)
-            if [bit for register in bound_circuit.cregs for bit in register] != bound_circuit.clbits:
-                msg = "Classical registers must partition circuit.clbits in register order."
-                raise CircuitValidationError(msg)
-
             self.validate_circuit(bound_circuit, native=True)
 
             try:

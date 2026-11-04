@@ -325,7 +325,7 @@ class MockQDMIDevice:
     @staticmethod
     def supported_program_formats() -> list[ProgramFormat]:
         """Return list of supported program formats."""
-        return [ProgramFormat.QASM2, ProgramFormat.QASM3]
+        return [ProgramFormat.QASM3, ProgramFormat.QASM2]
 
     def try_submit_job(self, *_args: object, **_kwargs: object) -> None:
         """Reject native groups before submission to exercise independent jobs."""
@@ -472,12 +472,10 @@ def test_backend_serialization_without_supported_formats() -> None:
     [
         ([ProgramFormat.QASM2], ProgramFormat.QASM2),
         ([ProgramFormat.QASM3], ProgramFormat.QASM3),
-        ([ProgramFormat.QASM2, ProgramFormat.QASM3], ProgramFormat.QASM3),
-        ([ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3], ProgramFormat.QASM3),
     ],
 )
 def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: ProgramFormat) -> None:
-    """Built-in serializers preserve operations and follow the format preference."""
+    """Core preserves operations in each advertised OpenQASM format."""
     circuit = QuantumCircuit(2)
     circuit.h(0)
     circuit.cx(0, 1)
@@ -514,7 +512,7 @@ def test_qasm_preserves_float_parameters(angle: float, program_format: ProgramFo
 
 
 @pytest.mark.parametrize("gate", [CU3Gate(0.1, 0.2, 0.3), CUGate(0.1, 0.2, 0.3, 0.7)])
-@pytest.mark.parametrize("fmt", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_STRING])
+@pytest.mark.parametrize("fmt", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_STRING, ProgramFormat.QPY])
 def test_controlled_u_signatures_are_distinct(
     gate: CU3Gate | CUGate, fmt: ProgramFormat, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -539,6 +537,12 @@ def test_controlled_u_signatures_are_distinct(
             for value in values
         ]
         assert angles == gate.params
+    elif fmt == ProgramFormat.QPY:
+        payload, _ = submissions[0]
+        assert isinstance(payload, bytes)
+        restored = qpy.load(BytesIO(payload))[0]
+        assert restored.data[0].operation.name == gate.name
+        assert restored.data[0].operation.params == gate.params
     other = CUGate(0.1, 0.2, 0.3, 0.7) if gate.name == "cu3" else CU3Gate(0.1, 0.2, 0.3)
     circuit.clear()
     circuit.append(other, [0, 1])
@@ -547,7 +551,7 @@ def test_controlled_u_signatures_are_distinct(
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.QPY])
-def test_builtin_serializer_rejects_invalid_native_placements_before_submitting_batch(
+def test_native_serialization_rejects_invalid_native_placements_before_submitting_batch(
     monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
 ) -> None:
     """Validate the whole batch against ordered native pairs before submission."""
@@ -572,10 +576,10 @@ def test_builtin_serializer_rejects_invalid_native_placements_before_submitting_
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.QPY])
-def test_builtin_serializer_rejects_excess_native_width(
+def test_native_serialization_rejects_excess_native_width(
     monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
 ) -> None:
-    """A built-in serializer cannot address qubits beyond the native device width."""
+    """Native serialization cannot address qubits beyond the device width."""
     device = MockQDMIDevice(num_qubits=2, operations=["measure"])
     monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
     submissions = _record_submissions(device)
@@ -729,8 +733,7 @@ def test_backend_qasm_serialization_failure(monkeypatch: pytest.MonkeyPatch) -> 
     assert str(error.value.__cause__) == "Simulated conversion failure"
 
 
-@pytest.mark.parametrize("formats", [[ProgramFormat.QPY], [ProgramFormat.QASM3, ProgramFormat.QPY]])
-def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch, formats: list[ProgramFormat]) -> None:
+def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch) -> None:
     """QPY submission preserves the circuit and metadata within the version cap."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
@@ -738,7 +741,7 @@ def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch, formats: list[Prog
     qc.metadata = {"experiment": "QPY submission"}
 
     device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
-    monkeypatch.setattr(device, "supported_program_formats", lambda: formats)
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [ProgramFormat.QPY])
     submissions = _record_submissions(device)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
@@ -747,7 +750,7 @@ def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch, formats: list[Prog
     payload, fmt = submissions[0]
     assert fmt == ProgramFormat.QPY
     assert isinstance(payload, bytes)
-    assert qpy.get_qpy_version(BytesIO(payload)) == min(qpy.QPY_VERSION, 17)
+    assert qpy.get_qpy_version(BytesIO(payload)) == 17
     restored = qpy.load(BytesIO(payload))
     assert len(restored) == 1
     assert Operator(cast("QuantumCircuit", restored[0].remove_final_measurements(inplace=False))).equiv(

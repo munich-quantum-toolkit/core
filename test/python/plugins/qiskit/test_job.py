@@ -25,8 +25,15 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.mlir import CompiledProgram, TargetEnvironment, compile_program, serialize_program
-from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend, QDMIJob
+from mqt.core.mlir import CompilationOptions, CompiledProgram, TargetEnvironment, compile_program, serialize_program
+from mqt.core.plugins.qiskit import (
+    CircuitValidationError,
+    JobExecutionError,
+    JobSubmissionError,
+    QDMIBackend,
+    QDMIJob,
+    TranslationError,
+)
 from mqt.core.qdmi import Job, ProgramFormat
 
 pytestmark = pytest.mark.usefixtures("mock_device_snapshot")
@@ -433,7 +440,7 @@ def test_reject_nonpartitioned_classical_bits(recording_backend: RecordingBacken
     qc = QuantumCircuit(1)
     qc.add_bits([Clbit(), Clbit()])
     qc.add_register(ClassicalRegister(bits=qc.clbits[::-1], name="reversed"))
-    with pytest.raises(CircuitValidationError, match="partition"):
+    with pytest.raises(TranslationError, match="loose classical bits before contiguous registers"):
         backend.run(qc, memory=True)
     loose = QuantumCircuit(1)
     loose.add_bits([Clbit()])
@@ -631,7 +638,7 @@ def test_compiled_alternative_format_runs_on_ddsim() -> None:
         circuit,
         target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE),
     )
-    default = backend.compile(circuit)
+    default = backend.compile(circuit, options=CompilationOptions(seed=42))
     assert isinstance(default, CompiledProgram)
     assert default.program_format != artifact.program_format
     assert backend.run(artifact, shots=4).result().get_counts() == {"1": 4}
@@ -661,4 +668,56 @@ def test_compiled_unsupported_format_preflight(
     monkeypatch.setattr(TargetEnvironment, "from_device", snapshot)
     with pytest.raises(ValueError, match="does not support QASM2"):
         backend.run([valid, alternative], shots=4)
+    assert not jobs
+
+
+def test_compiled_batch_rejects_non_circuit_inputs(recording_backend: RecordingBackend) -> None:
+    """Invalid later entries and artifact bindings cannot partially dispatch a batch."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    program = backend.compile(circuit)
+    assert isinstance(program, CompiledProgram)
+    with pytest.raises(CircuitValidationError, match="Parameter bindings do not apply"):
+        backend.run([circuit, program], parameter_values=[{}, {}])
+    with pytest.raises(CircuitValidationError, match="QuantumCircuit or CompiledProgram"):
+        backend.run([program, "invalid"])  # ty: ignore[invalid-argument-type] Exercise invalid user input.
+    assert not jobs
+
+
+def test_job_requires_bit_results(recording_backend: RecordingBackend) -> None:
+    """Native numeric outputs cannot be silently treated as Qiskit bitstrings."""
+    backend, jobs, _ = recording_backend
+    with pytest.raises(ValueError, match="at least one compiled program"):
+        QDMIJob(backend, [], shots=1, memory=False)
+    program = compile_program(
+        "OPENQASM 3; output int[32] result; result = 7;",
+        target=TargetEnvironment.from_device(backend.device),
+    )
+    assert program.result_width is None
+    with pytest.raises(JobError, match="Boolean or classical-bit outputs"):
+        backend.run(program)
+    assert not jobs
+
+
+@pytest.mark.parametrize("sequence", [False, True])
+def test_compile_applies_provider_preprocessing(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, *, sequence: bool
+) -> None:
+    """Provider input requirements apply before either compilation or submission."""
+    backend, jobs, _ = recording_backend
+
+    def require_measurement(circuit: QuantumCircuit) -> QuantumCircuit:
+        if "measure" not in circuit.count_ops():
+            msg = "At least one measurement is required"
+            raise CircuitValidationError(msg)
+        return circuit
+
+    monkeypatch.setattr(backend, "_preprocess_circuit", require_measurement)
+    circuit = QuantumCircuit(1, 1)
+    with pytest.raises(CircuitValidationError, match="measurement"):
+        backend.compile([circuit] if sequence else circuit)
+    circuit.measure(0, 0)
+    prepared = backend.compile([circuit] if sequence else circuit)
+    assert isinstance(prepared, list if sequence else CompiledProgram)
     assert not jobs

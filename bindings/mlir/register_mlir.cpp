@@ -45,6 +45,7 @@
 #include "Array.hpp"
 #include "Result.hpp"
 #include "Target/Qiskit/Qiskit.h"
+#include "Target/Qiskit/QiskitVersion.h"
 
 #include "capnp/common.h"
 #include "capnp/message.h"
@@ -1245,8 +1246,11 @@ void registerMLIR(nb::module_& m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
   const auto metadata = nb::module_::import_("importlib.metadata");
   try {
-    metadata.attr("distribution")("qiskit");
-    mlir::setQPYExporter(&exportQPY);
+    const auto version =
+        nb::cast<std::string>(metadata.attr("version")("qiskit"));
+    if (bindings::qiskit::supportsVersion(version)) {
+      mlir::setQPYExporter(&exportQPY);
+    }
   } catch (const nb::python_error& error) {
     if (!error.matches(metadata.attr("PackageNotFoundError"))) {
       throw;

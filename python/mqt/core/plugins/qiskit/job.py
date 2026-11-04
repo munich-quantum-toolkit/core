@@ -15,7 +15,6 @@ from __future__ import annotations
 
 __lazy_modules__ = {
     "collections",
-    "copy",
     "datetime",
     "mqt.core.mlir",
     "mqt.core.plugins.qdmi_batch",
@@ -28,7 +27,6 @@ __lazy_modules__ = {
 
 import datetime as dt
 from collections import Counter
-from copy import deepcopy
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, cast
 
@@ -131,17 +129,15 @@ class QDMIJob(JobV1):
                     )
                 program._validate_environment(environments[program.program_format])  # ruff:ignore[private-member-access] Preflight the entire batch.
         self._headers: list[dict[str, Any]] = [
-            deepcopy(
-                getattr(
-                    program,
-                    "_qiskit_header",
-                    {
-                        "name": f"circuit-{index}",
-                        "memory_slots": program.result_width,
-                        "creg_sizes": [["c", program.result_width]] if program.result_width else [],
-                        "metadata": {},
-                    },
-                )
+            getattr(
+                program,
+                "_qiskit_header",
+                {
+                    "name": f"circuit-{index}",
+                    "memory_slots": program.result_width,
+                    "creg_sizes": [["c", program.result_width]] if program.result_width else [],
+                    "metadata": {},
+                },
             )
             for index, program in enumerate(self._programs)
         ]

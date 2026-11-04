@@ -254,9 +254,7 @@ normalizeTerminalReadout(ModuleOp moduleOp) {
   }
   auto& [function, returnOp, measuredSites, oldReadout, layout] = *plan;
   if (measuredSites.empty()) {
-    // Keep explicit outputs: some executors sample every qubit when none exist.
-    layout.rawWidth = layout.bits.size();
-    return layout;
+    return std::nullopt;
   }
   OpBuilder builder(returnOp);
   auto raw = cbit::AllocOp::create(
