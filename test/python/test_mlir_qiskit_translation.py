@@ -4706,6 +4706,16 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     if basis == "fixed_rx":
         assert set(exported.count_ops()) <= {"rx", "rz", "cz"}
         assert all(gate.operation.params == [np.pi / 2] for gate in exported.data if gate.operation.name == "rx")
+    payload = compile_program(
+        circuit,
+        target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY)),
+        options=None,
+    )
+    assert isinstance(payload.payload, bytes)
+    restored = qpy.load(BytesIO(payload.payload))[0]
+    assert restored.layout is not None
+    assert sorted(restored.layout.initial_index_layout()) == list(range(5))
+    assert sorted(restored.layout.final_index_layout(filter_ancillas=False)) == list(range(5))
     layout = exported.layout
     assert layout is not None
     assert sorted(layout.initial_index_layout()) == list(range(5))
@@ -4713,6 +4723,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     assert sorted(layout.final_index_layout(filter_ancillas=False)) == list(range(5))
     expected = QuantumCircuit(5)
     expected.compose(circuit, [0, 1, 2], inplace=True)
+    np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator(expected).data, atol=1e-12)
     np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
     qc = program.to_qc()
     np.testing.assert_allclose(
@@ -5175,32 +5186,11 @@ def test_compiled_loose_classical_bits_remain_available_to_native_clients() -> N
     assert sample(program.payload, shots=1) == {"0": 1}
 
 
-def test_qpy_selection_without_optional_qiskit() -> None:
-    """Absent Qiskit leaves native payload selection and OpenQASM available."""
-    script = """
-import importlib.metadata
-original = importlib.metadata.distribution
-def installed(name):
-    if name == 'qiskit':
-        raise importlib.metadata.PackageNotFoundError(name)
-    return original(name)
-importlib.metadata.distribution = installed
-from mqt.core.mlir import PayloadSpecification
-from mqt.core.qdmi import ProgramFormat
-try:
-    PayloadSpecification.from_program_format(ProgramFormat.QPY)
-except RuntimeError as error:
-    assert 'Python Qiskit bindings' in str(error)
-else:
-    raise AssertionError('unavailable QPY was selected')
-PayloadSpecification.from_program_format(ProgramFormat.QASM3)
-"""
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Fixed script in an isolated interpreter.
-
-
 @pytest.mark.parametrize(
     ("version", "supported"),
     [
+        ("not installed", False),
+        (None, False),
         ("2.4.9", False),
         ("2.5.0rc1", False),
         ("2.5.0", True),
@@ -5211,13 +5201,19 @@ PayloadSpecification.from_program_format(ProgramFormat.QASM3)
         ("2.6.0garbage", False),
     ],
 )
-def test_qpy_hook_requires_supported_qiskit(version: str, *, supported: bool) -> None:
+def test_qpy_hook_requires_supported_qiskit(version: str | None, *, supported: bool) -> None:
     """Unsupported installed versions leave non-Qiskit payload formats available."""
     script = f"""
 import importlib.metadata
 import sys
 original = importlib.metadata.version
-importlib.metadata.version = lambda name: {version!r} if name == 'qiskit' else original(name)
+def installed(name):
+    if name != 'qiskit':
+        return original(name)
+    if {version!r} == 'not installed':
+        raise importlib.metadata.PackageNotFoundError(name)
+    return {version!r}
+importlib.metadata.version = installed
 from mqt.core.mlir import PayloadSpecification
 from mqt.core.qdmi import ProgramFormat
 assert 'qiskit' not in sys.modules

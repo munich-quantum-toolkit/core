@@ -584,7 +584,7 @@ def test_backend_classical_assignments(ddsim_backend: QDMIBackend, *, compile_fi
         ProgramFormat.QIR_ADAPTIVE_MODULE,
     ],
 )
-def test_qir_serializers_execute_register_order(
+def test_qir_payloads_execute_register_order(
     ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
 ) -> None:
     """Both QIR encodings retain asymmetric output registers and bound angles."""

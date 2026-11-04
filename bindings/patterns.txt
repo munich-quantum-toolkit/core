@@ -199,7 +199,7 @@ mqt\.core\.mlir\.__prefix__$:
     class _CompileOptions(TypedDict, total=False, closed=True):
         copy: bool
         qco_pipeline: str
-        options: CompilationOptions
+        options: CompilationOptions | None
 
 mqt\.core\.mlir\.compile_program$:
     \import mqt.core.plugins.qiskit.backend

@@ -54,7 +54,7 @@ _SourceT = TypeVar("_SourceT", str, os.PathLike[str])
 class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
-    options: CompilationOptions
+    options: CompilationOptions | None
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""

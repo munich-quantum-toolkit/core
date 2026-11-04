@@ -703,8 +703,6 @@ class QDMIBackend(BackendV2):
             if isinstance(circuits, QuantumCircuit)
             else [self._preprocess_circuit(circuit) for circuit in circuits]
         )
-        if options is None:
-            return compile_program(circuits, target=self._environment)
         return compile_program(circuits, target=self._environment, options=options)
 
     def run(

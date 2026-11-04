@@ -803,10 +803,13 @@ payloadForOutput(OutputFormat output) {
 }
 
 /// Compile a scalar input or a homogeneous sequence using one target snapshot.
-[[nodiscard]] static nb::object compilePythonProgram(
-    PythonInputTypes& types, const nb::handle program, const nb::handle target,
-    std::optional<OutputFormat> output, bool copy,
-    const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
+[[nodiscard]] static nb::object
+compilePythonProgram(PythonInputTypes& types, const nb::handle program,
+                     const nb::handle target,
+                     std::optional<OutputFormat> output, bool copy,
+                     const std::string& qcoPipeline,
+                     std::optional<mlir::CompilationOptions> suppliedOptions) {
+  const auto options = suppliedOptions.value_or(mlir::CompilationOptions{});
   if (!target.is_none() && qcoPipeline != "mqt-qco-default") {
     throw nb::value_error(
         "A custom QCO pipeline cannot be combined with a target");
@@ -1246,9 +1249,9 @@ void registerMLIR(nb::module_& m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
   const auto metadata = nb::module_::import_("importlib.metadata");
   try {
-    const auto version =
-        nb::cast<std::string>(metadata.attr("version")("qiskit"));
-    if (bindings::qiskit::supportsVersion(version)) {
+    const auto version = metadata.attr("version")("qiskit");
+    if (nb::isinstance<nb::str>(version) &&
+        bindings::qiskit::supportsVersion(nb::cast<std::string>(version))) {
       mlir::setQPYExporter(&exportQPY);
     }
   } catch (const nb::python_error& error) {
@@ -2858,8 +2861,7 @@ and error contracts.)pb");
       "compile_program", PythonInputAdapter<&compilePythonProgram>{inputTypes},
       "program"_a, nb::kw_only(), "target"_a = nb::none(),
       "output"_a = nb::none(), "copy"_a = false,
-      "qco_pipeline"_a = "mqt-qco-default",
-      "options"_a = mlir::CompilationOptions{},
+      "qco_pipeline"_a = "mqt-qco-default", "options"_a = nb::none(),
       R"pb(Compile a program or a homogeneous sequence for an optional hardware target.
 
 A sequence returns a list in input order, including for empty and singleton
