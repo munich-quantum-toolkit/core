@@ -187,9 +187,6 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
       layout.bits.push_back(site);
     }
   }
-  if (measuredSites.empty()) {
-    return failure();
-  }
 
   return TerminalReadoutPlan{
       function,
@@ -256,6 +253,11 @@ normalizeTerminalReadout(ModuleOp moduleOp) {
     return std::nullopt;
   }
   auto& [function, returnOp, measuredSites, oldReadout, layout] = *plan;
+  if (measuredSites.empty()) {
+    // Keep explicit outputs: some executors sample every qubit when none exist.
+    layout.rawWidth = layout.bits.size();
+    return layout;
+  }
   OpBuilder builder(returnOp);
   auto raw = cbit::AllocOp::create(
       builder, returnOp.getLoc(),

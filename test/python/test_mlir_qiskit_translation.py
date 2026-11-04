@@ -5142,6 +5142,30 @@ def test_qpy_compilation_and_native_readout() -> None:
     assert restored.count_ops() == {"x": 1, "measure": 2}
 
 
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
+@pytest.mark.parametrize("native", [False, True])
+def test_zero_readout_retains_known_classical_outputs(program_format: ProgramFormat, *, native: bool) -> None:
+    """Unmeasured initialized bits need a layout without inventing measurements."""
+    circuit = QuantumCircuit(1, 2)
+    circuit.x(0)
+    target = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
+    environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
+    program = serialize_program(circuit, target=environment) if native else compile_program(circuit, target=environment)
+    assert program.result_width == 2
+    assert program.result_layout is not None
+    assert program.result_layout.raw_width == 2
+    assert program.result_layout.decode_bits("00") == "00"
+    if program_format == ProgramFormat.QPY:
+        assert isinstance(program.payload, bytes)
+        restored = qpy.load(BytesIO(program.payload))[0]
+        assert restored.num_clbits == 2
+        assert restored.count_ops() == {"x": 1}
+    else:
+        assert isinstance(program.payload, str)
+        assert "bit[0]" not in program.payload
+        assert "measure" not in program.payload
+
+
 def test_compiled_loose_classical_bits_remain_available_to_native_clients() -> None:
     """Native payloads retain bits that cannot form partitioned Qiskit headers."""
     circuit = QuantumCircuit(1)

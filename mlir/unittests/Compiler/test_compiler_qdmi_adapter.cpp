@@ -1536,6 +1536,41 @@ TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, PreservesKnownZeroOutputsWithoutMeasurements) {
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  for (const auto format :
+       {QDMI_PROGRAM_FORMAT_QASM3, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING}) {
+    SCOPED_TRACE(format);
+    auto program =
+        llvm::cantFail(mlir::QCProgram::fromMLIRString(R"mlir(module {
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %q = qc.static 0 : !qc.qubit
+        qc.x %q : !qc.qubit
+        return %c : !cbit.reg<2>
+      }
+    })mlir"));
+    auto compiled =
+        mlir::CompiledProgram::serialize(std::move(program), device, format);
+    MQT_ASSERT_SUCCESS(compiled);
+    EXPECT_EQ(compiled->resultWidth(), 2);
+    ASSERT_TRUE(compiled->resultLayout());
+    const auto& layout = *compiled->resultLayout();
+    EXPECT_EQ(layout.rawWidth, 2);
+    EXPECT_EQ(layout.bits,
+              (std::vector<std::optional<size_t>>{std::nullopt, std::nullopt}));
+    EXPECT_EQ(llvm::cantFail(layout.decodeBits("00")), "00");
+    auto job = llvm::cantFail(device.submitJob(compiled->payload(), format, 3));
+    ASSERT_TRUE(llvm::cantFail(job.wait()));
+    const auto shots = llvm::cantFail(job.getShots());
+    EXPECT_EQ(shots, std::vector<std::string>(3, "00"));
+    for (const auto& shot : shots) {
+      EXPECT_EQ(llvm::cantFail(layout.decodeBits(shot)), "00");
+    }
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, DefaultSerializationPreservesDynamicReadout) {
   auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
       "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; x $0; "
