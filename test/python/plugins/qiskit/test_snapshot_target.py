@@ -14,6 +14,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from qiskit import transpile
 from qiskit.circuit import Gate, QuantumCircuit
 
 from mqt.core.mlir import (
@@ -139,7 +140,8 @@ def test_snapshot_without_placeable_sites_is_rejected(monkeypatch: pytest.Monkey
         backend_for_snapshot(monkeypatch, target)
 
 
-def test_snapshot_control_flow_uses_payload_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("declared", [False, True])
+def test_snapshot_control_flow_uses_payload_capabilities(monkeypatch: pytest.MonkeyPatch, *, declared: bool) -> None:
     """A payload's forward branching enables if_else without loop support."""
     target = CompilerTarget(
         1,
@@ -153,14 +155,14 @@ def test_snapshot_control_flow_uses_payload_capabilities(monkeypatch: pytest.Mon
         target,
         PayloadSpecification(
             PayloadFormat("openqasm", version="3.0"),
-            [ProgramCapability(ProgramCapability.FORWARD_BRANCHING)],
+            [ProgramCapability(ProgramCapability.FORWARD_BRANCHING)] if declared else [],
             optional_capabilities_known=True,
         ),
     )
     monkeypatch.setattr(TargetEnvironment, "from_device", lambda _device: environment)
     device = SimpleNamespace(name=lambda: "snapshot", version=lambda: "1.0")
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Prepared snapshot fixture.
-    assert "if_else" in backend.target.operation_names
+    assert ("if_else" in backend.target.operation_names) is declared
     assert "store" not in backend.target.operation_names
     assert not {"while_loop", "for_loop", "switch_case"} & backend.target.operation_names
 
@@ -200,7 +202,10 @@ def test_device_snapshot_retains_opaque_native_gates(monkeypatch: pytest.MonkeyP
             {"name": name, "numQubits": len(sites), "numParameters": parameters, "sites": [sites]}
             for name, parameters, sites in signatures
         ]
-        + [{"name": "measure", "numQubits": 1, "numParameters": 0}],
+        + [
+            {"name": "measure", "numQubits": 1, "numParameters": 0},
+            {"name": "x", "numQubits": 1, "numParameters": 0},
+        ],
     }
     device = open_device("mqt.sc.default", device_config=json.dumps(config))
     target = CompilerTarget.from_device(device)
@@ -239,17 +244,25 @@ def test_snapshot_variant_names_preserve_native_names(monkeypatch: pytest.Monkey
             capability("cx", 2, 0, [[0, 1]]),
             capability("barrier", CompilerTarget.OperationArity.variadic(1), 0),
             capability("h", 2, 0, [[0, 1]]),
+            capability("zz", 2, 0, [[0, 1]]),
         ]),
     )
     backend = backend_for_snapshot(monkeypatch, target)
     assert backend.target.operation_from_name("rx_3").params == []
-    assert "h" not in backend.target.operation_names
+    assert backend.target.operation_from_name("h").num_qubits == 2
+    assert backend.target.operation_from_name("rzz").params == []
     assert "barrier" in backend.target.operation_names
     circuit = QuantumCircuit(2)
     circuit.rx(0.5, 0)
     circuit.rx(0.8, 1)
     circuit.append(Gate("rx_3", 1, []), [0])
+    circuit.append(Gate("zz", 2, []), [0, 1])
     backend.validate_circuit(circuit, native=True)
+    program = serialize_program(
+        circuit, target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QASM3))
+    )
+    assert isinstance(program.payload, str)
+    assert "zz $0, $1;" in program.payload
     coupling = backend.coupling_map
     assert coupling is not None
     assert set(coupling.get_edges()) == {(0, 1)}
@@ -285,3 +298,138 @@ def test_snapshot_timing_requires_physical_unit(monkeypatch: pytest.MonkeyPatch)
     )
     with pytest.raises(UnsupportedOperationError, match="supported duration unit"):
         backend_for_snapshot(monkeypatch, target)
+
+
+def test_braket_aliases_global_duration_and_native_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native Braket spellings share compiler meaning and global calibration."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("cnot", 2, 0),
+            capability("v", 1, 0, duration=12),
+            capability("phaseshift", 1, 1),
+            capability("measure", 1, 0),
+        ]),
+        duration_unit=CompilerTarget.DurationUnit("ns", 1.0),
+    )
+    backend = backend_for_snapshot(monkeypatch, target)
+    assert {"cx", "sx", "p"} <= backend.target.operation_names
+    assert backend.target["sx"][None].duration == pytest.approx(12e-9)
+    circuit = QuantumCircuit(2)
+    circuit.sx(0)
+    circuit.p(0.3, 0)
+    circuit.cx(0, 1)
+    backend.validate_circuit(circuit, native=True)
+
+
+def test_ddsim_target_names_and_native_mcphase() -> None:
+    """The complete target vocabulary preserves Qiskit's variadic phase gate."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"))
+    assert set(backend.target.operation_names) == {
+        "barrier",
+        "break_loop",
+        "c3sx",
+        "ccx",
+        "ccz",
+        "ch",
+        "continue_loop",
+        "cp",
+        "crx",
+        "cry",
+        "crz",
+        "cs",
+        "csdg",
+        "cswap",
+        "csx",
+        "cu1",
+        "cu3",
+        "cx",
+        "cy",
+        "cz",
+        "dcx",
+        "ecr",
+        "for_loop",
+        "global_phase",
+        "h",
+        "id",
+        "if_else",
+        "iswap",
+        "mcphase",
+        "mcx",
+        "measure",
+        "p",
+        "r",
+        "rccx",
+        "reset",
+        "rx",
+        "rxx",
+        "ry",
+        "ryy",
+        "rz",
+        "rzx",
+        "rzz",
+        "s",
+        "sdg",
+        "store",
+        "swap",
+        "switch_case",
+        "sx",
+        "sxdg",
+        "t",
+        "tdg",
+        "u",
+        "u2",
+        "while_loop",
+        "x",
+        "xx_minus_yy",
+        "xx_plus_yy",
+        "y",
+        "z",
+    }
+    circuit = QuantumCircuit(4)
+    circuit.mcp(0.3, [0, 1, 2], 3)
+    assert transpile(circuit, backend, optimization_level=0).count_ops() == {"mcphase": 1}
+
+
+def test_sparse_global_gates_do_not_enumerate_placements(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing computational site does not expand global three-qubit support."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        127,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("x", 1, 0),
+            capability("measure", 1, 0, [[site] for site in range(126)]),
+            capability("ccx", 3, 0),
+        ]),
+    )
+    backend = backend_for_snapshot(monkeypatch, target)
+    assert set(backend.target["ccx"]) == {None}
+    circuit = QuantumCircuit(127)
+    circuit.ccx(0, 1, 126)
+    with pytest.raises(UnsupportedOperationError, match="not advertised"):
+        backend.validate_circuit(circuit, native=True)
+
+
+def test_parameter_variant_names_are_local_and_keep_unrestricted_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Adding unrelated calibrated gates does not rename an RX parameter variant."""
+    capability = CompilerTarget.OperationCapability
+    names = []
+    for unrelated in [[], [capability("p", 1, 1, fixed_parameters=[0.2])]]:
+        target = CompilerTarget(
+            1,
+            connectivity=CompilerTarget.Connectivity.all_to_all(),
+            native_operations=CompilerTarget.NativeOperations([
+                *unrelated,
+                capability("rx", 1, 1, fixed_parameters=[0.5]),
+                capability("rx", 1, 1),
+                capability("measure", 1, 0),
+            ]),
+        )
+        backend = backend_for_snapshot(monkeypatch, target)
+        names.append({name for name in backend.target.operation_names if name.startswith("rx")})
+        assert backend.target.instruction_supported("rx", (0,), parameters=[0.8])
+        assert backend.target.operation_from_name("rx_1").params == [0.5]
+    assert names == [{"rx", "rx_1"}, {"rx", "rx_1"}]

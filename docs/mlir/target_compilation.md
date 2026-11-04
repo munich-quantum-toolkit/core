@@ -370,8 +370,10 @@ attached layout; later transformations clear it. See
 `id`, optional unsigned `value` (default zero), and an optional `constraints`
 object mapping constraint IDs to unsigned limits. This temporary contract is not
 part of the QDMI standard. The reported list restricts the selected format's
-capabilities; absent capabilities are unavailable. Unknown schemas are ignored,
-and malformed recognized metadata is rejected.
+capabilities; absent capabilities are unavailable. Without recognized metadata,
+control flow and classical assignment are disabled. Unknown schemas are ignored,
+and malformed recognized metadata is rejected. See the
+[temporary property slots](../qdmi/driver.md#temporary-compiler-metadata).
 
 For example, a device supporting only unnested register comparisons can report:
 

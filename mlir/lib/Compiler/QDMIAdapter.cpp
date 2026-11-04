@@ -86,7 +86,7 @@ metadataText(const std::optional<std::vector<std::byte>>& metadata) {
 [[nodiscard]] static Expected<bool>
 hasAllToAllHomogeneousMetadata(const qdmi::Device& device) {
   auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
-      qdmi::CustomProperty::Custom1);
+      qdmi::CustomProperty::Custom2);
   if (!metadata) {
     return metadata.takeError();
   }
@@ -763,10 +763,28 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
 
 Expected<PayloadSpecification>
 parsePayloadCapabilities(StringRef text, const PayloadSpecification& baseline) {
+  const auto withoutControlFlow = [&] {
+    std::vector<ProgramCapability> capabilities;
+    for (const auto& capability : baseline.capabilities()) {
+      if (!llvm::is_contained(
+              {
+                  ProgramCapability::FORWARD_BRANCHING,
+                  ProgramCapability::COUNTED_ITERATION,
+                  ProgramCapability::CONDITIONAL_LOOP,
+                  ProgramCapability::MULTIWAY_BRANCHING,
+                  ProgramCapability::CLASSICAL_ASSIGNMENT,
+              },
+              llvm::StringRef(capability.id))) {
+        capabilities.push_back(capability);
+      }
+    }
+    return PayloadSpecification::create(baseline.format(),
+                                        std::move(capabilities), true);
+  };
   text = metadataText(text);
   constexpr StringLiteral schema = "mqt.payload-capabilities.v1";
   if (!text.contains(schema)) {
-    return baseline;
+    return withoutControlFlow();
   }
   const auto invalid = [] {
     return createStringError("Invalid mqt.payload-capabilities.v1 metadata");
@@ -780,7 +798,7 @@ parsePayloadCapabilities(StringRef text, const PayloadSpecification& baseline) {
     return invalid();
   }
   if (object->getString("schema") != schema) {
-    return baseline;
+    return withoutControlFlow();
   }
   const auto* entries = object->getArray("capabilities");
   if (entries == nullptr) {

@@ -550,7 +550,7 @@ TEST(CompilerQDMIAdapterTest,
   const auto adaptive =
       llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
-  ASSERT_EQ(adaptive.capabilities().size(), 11);
+  ASSERT_EQ(adaptive.capabilities().size(), 12);
   EXPECT_EQ(adaptive.capabilities().front().id, "forward-branching");
   const auto qasm = llvm::cantFail(
       mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
@@ -2133,6 +2133,8 @@ TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
   static thread_local decltype(QDMI_device_session_query_device_property)*
       query;
   static thread_local bool queryFailure;
+  static thread_local bool absentMetadata;
+  absentMetadata = false;
   query = api->device_session_query_device_property;
   const auto restore = llvm::make_scope_exit(
       [&] { api->device_session_query_device_property = query; });
@@ -2141,6 +2143,9 @@ TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
          size_t size, void* value, size_t* sizeRet) -> int {
     if (property != QDMI_DEVICE_PROPERTY_CUSTOM3) {
       return query(session, property, size, value, sizeRet);
+    }
+    if (absentMetadata) {
+      return QDMI_ERROR_NOTSUPPORTED;
     }
     if (queryFailure) {
       return QDMI_ERROR_FATAL;
@@ -2166,6 +2171,17 @@ TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
     EXPECT_FALSE(static_cast<bool>(environment));
     llvm::consumeError(environment.takeError());
   }
+  absentMetadata = true;
+  const auto environment = llvm::cantFail(
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3));
+  EXPECT_TRUE(environment.payloadSpecification().capabilities().empty());
+  auto conditional = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; "
+      "c[0] = measure $0; if (c[0]) { x $1; }"));
+  auto rejected =
+      mlir::CompiledProgram::serialize(std::move(conditional), environment);
+  EXPECT_FALSE(static_cast<bool>(rejected));
+  llvm::consumeError(rejected.takeError());
 }
 
 TEST(CompilerQDMIAdapterTest, AppliesDevicePayloadConstraints) {
@@ -2184,7 +2200,7 @@ TEST(CompilerQDMIAdapterTest, AppliesDevicePayloadConstraints) {
        }) {
     auto unrelated = mlir::parsePayloadCapabilities(foreign, baseline);
     ASSERT_TRUE(static_cast<bool>(unrelated));
-    EXPECT_EQ(unrelated->capabilities(), baseline.capabilities());
+    EXPECT_TRUE(unrelated->capabilities().empty());
   }
   auto explicitDefault = mlir::parsePayloadCapabilities(
       R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","value":0}]})",

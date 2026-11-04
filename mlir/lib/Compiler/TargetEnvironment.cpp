@@ -96,6 +96,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
         {.id = ProgramCapability::FORWARD_BRANCHING.str()},
         {.id = ProgramCapability::COUNTED_ITERATION.str()},
         {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+        {.id = ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
     };
     for (const auto& [flag, id] : qir::OPTIONAL_CAPABILITIES) {
       capabilities.push_back({.id = id});

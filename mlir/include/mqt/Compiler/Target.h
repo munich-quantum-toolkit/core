@@ -28,9 +28,6 @@
 
 namespace mlir {
 
-/// Resolve native operation aliases to the compiler vocabulary.
-[[nodiscard]] std::string canonicalOperationName(llvm::StringRef name);
-
 class MLIRContext;
 class Operation;
 

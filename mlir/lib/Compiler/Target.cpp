@@ -179,15 +179,19 @@ static std::optional<double> synthesisParameter(GateKind gate,
   return std::nullopt;
 }
 
-std::string canonicalOperationName(StringRef name) {
+[[nodiscard]] static std::string canonicalOperationName(StringRef name) {
   const auto canonical = name.trim().lower();
   return llvm::StringSwitch<std::string>(canonical)
       .Case("prx", "r")
       .Case("i", "id")
-      .Cases({"u1", "phaseshift"}, "p")
+      .Cases({"u1", "phase", "phaseshift"}, "p")
       .Case("u3", "u")
       .Case("cnot", "cx")
-      .Case("cphaseshift", "cp")
+      .Cases({"cphase", "cphaseshift"}, "cp")
+      .Case("cv", "csx")
+      .Case("global_phase", "gphase")
+      .Case("mcphase", "mcp")
+      .Cases({"mcx_gray", "mcx_vchain", "mcx_recursive"}, "mcx")
       .Case("si", "sdg")
       .Case("ti", "tdg")
       .Case("v", "sx")

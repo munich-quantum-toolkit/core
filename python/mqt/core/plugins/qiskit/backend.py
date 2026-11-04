@@ -14,7 +14,6 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "itertools",
     "mqt.core.mlir",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
@@ -26,7 +25,6 @@ __lazy_modules__ = {
     "qiskit.transpiler",
 }
 
-from itertools import permutations
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
@@ -289,8 +287,10 @@ class QDMIBackend(BackendV2):
             if not isinstance(gate, type) and (
                 gate.num_qubits != capability.arity.value or len(gate.params) != capability.num_parameters
             ):
-                continue
-            name = name if isinstance(gate, type) else gate.name
+                gate = Gate(
+                    name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
+                )
+            name = ("mcphase" if name == "mcp" else name) if isinstance(gate, type) else gate.name
             self._operation_names[capability.name] = name
             projections.append((capability, gate, name))
             if variadic and not isinstance(gate, type):
@@ -307,8 +307,12 @@ class QDMIBackend(BackendV2):
                     projections.append((
                         capability,
                         MCXGate if name == "x" else MCPhaseGate,
-                        "mcx" if name == "x" else "mcp",
+                        "mcx" if name == "x" else "mcphase",
                     ))
+        projections.sort(
+            key=lambda item: any(value is not None for value in (*item[0].fixed_parameters, *item[0].parameter_bounds))
+        )
+        variant_counts: dict[str, int] = {}
         for capability, projected_gate, name in projections:
             gate = projected_gate
             fixed = capability.fixed_parameters
@@ -330,11 +334,12 @@ class QDMIBackend(BackendV2):
                         ]
                 variant = name
                 if variant in used_names:
-                    suffix = len(variants)
+                    suffix = variant_counts.get(name, 1)
                     variant = f"{name}_{suffix}"
                     while variant in reserved_names or variant in used_names:
                         suffix += 1
                         variant = f"{name}_{suffix}"
+                    variant_counts[name] = suffix + 1
                 used_names.add(variant)
                 variants[key] = (gate, {}, variant)
             _, properties, _ = variants[key]
@@ -344,13 +349,6 @@ class QDMIBackend(BackendV2):
                     (tuple(item.sites), item.duration, item.fidelity)
                     for item in placements
                     if set(item.sites) <= self._placeable_sites
-                ]
-            elif (
-                len(self._placeable_sites) != width and capability.arity.kind == CompilerTarget.OperationArityKind.FIXED
-            ):
-                loci = [
-                    (tuple(sites), None, None)
-                    for sites in permutations(sorted(self._placeable_sites), capability.arity.value)
                 ]
             else:
                 loci = [(None, None, None)]
@@ -386,7 +384,7 @@ class QDMIBackend(BackendV2):
         ):
             if capability in capabilities:
                 target.add_instruction(instruction, name=name)
-        if ProgramCapability.CLASSICAL_ASSIGNMENT in capabilities or "qir.int-computations" in capabilities:
+        if ProgramCapability.CLASSICAL_ASSIGNMENT in capabilities:
             target.add_instruction(Store, name="store")
         target.add_instruction(Barrier, name="barrier")
         if any(site.t1 is not None or site.t2 is not None for site in snapshot.sites):
@@ -397,6 +395,15 @@ class QDMIBackend(BackendV2):
                         t1=self._duration_seconds(site.t1), t2=self._duration_seconds(site.t2)
                     )
             target.qubit_properties = properties
+        self._target_names: dict[str, list[str]] = {}
+        self._target_classes: list[tuple[type[Instruction], str]] = []
+        for name in target.operation_names:
+            operation = target.operation_from_name(name)
+            if isinstance(operation, type):
+                self._target_classes.append((operation, name))
+                self._target_names.setdefault(name, []).append(name)
+            else:
+                self._target_names.setdefault(operation.name, []).append(name)
         return target
 
     def _duration_seconds(self, duration: int | None) -> float | None:
@@ -456,24 +463,21 @@ class QDMIBackend(BackendV2):
                     pending.extend((body, qargs) for body in reversed(operation.blocks))
                     continue
                 operation_name = self._operation_names.get(operation.name, operation.name)
+                names = self._target_names.get(operation_name)
+                if names is None:
+                    names = [name for gate, name in self._target_classes if isinstance(operation, gate)]
                 supported = (not native or set(qargs) <= self._placeable_sites) and any(
                     self._target.instruction_supported(
                         name, **({"qargs": qargs, "parameters": operation.params} if native else {})
                     )
-                    for name in self._target.operation_names
-                    if (
-                        (name == operation_name or isinstance(operation, gate))
-                        if isinstance(gate := self._target.operation_from_name(name), type)
-                        else gate.name == operation_name
-                    )
+                    for name in names
                 )
                 if not supported:
                     msg = (
                         f"Operation '{operation.name}' with parameters {operation.params} "
                         f"is not advertised on native device qubits {qargs}."
                     )
-                    if any(op.name == "move" for op in self._environment.target.operations):
-                        msg += " Use backend.compile for devices that route through resonators."
+                    msg += " Use backend.compile to compile and place logical circuits."
                     raise UnsupportedOperationError(msg)
 
     def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]
@@ -481,10 +485,8 @@ class QDMIBackend(BackendV2):
 
         Called once per circuit in :meth:`run`, after parameter binding and
         before operation-support validation and program conversion.
-        Subclasses may override this to transform a circuit into a
-        device-native equivalent, e.g. inserting MOVE gates and widening the
-        circuit to address computational resonators. The default
-        implementation is the identity function.
+        Subclasses may override this to enforce receiver-specific input
+        requirements. The default implementation returns the circuit unchanged.
 
         Args:
             circuit: The bound circuit to preprocess.
