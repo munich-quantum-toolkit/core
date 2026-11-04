@@ -222,3 +222,66 @@ def test_device_snapshot_retains_opaque_native_gates(monkeypatch: pytest.MonkeyP
     circuit.append(Gate("ms", 2, [0.25] * 3), [1, 0])
     with pytest.raises(UnsupportedOperationError, match="ms"):
         backend.validate_circuit(circuit, native=True)
+
+
+def test_snapshot_variant_names_preserve_native_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fixed-parameter variants cannot shadow a device's real native gate."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("x", 1, 0),
+            capability("measure", 1, 0),
+            capability("rx", 1, 1, [[0]], fixed_parameters=[0.5]),
+            capability("rx", 1, 1, [[1]], fixed_parameters=[0.8]),
+            capability("rx_3", 1, 0, [[0]]),
+            capability("cx", 2, 0, [[0, 1]]),
+            capability("barrier", CompilerTarget.OperationArity.variadic(1), 0),
+            capability("h", 2, 0, [[0, 1]]),
+        ]),
+    )
+    backend = backend_for_snapshot(monkeypatch, target)
+    assert backend.target.operation_from_name("rx_3").params == []
+    assert "h" not in backend.target.operation_names
+    assert "barrier" in backend.target.operation_names
+    circuit = QuantumCircuit(2)
+    circuit.rx(0.5, 0)
+    circuit.rx(0.8, 1)
+    circuit.append(Gate("rx_3", 1, []), [0])
+    backend.validate_circuit(circuit, native=True)
+    coupling = backend.coupling_map
+    assert coupling is not None
+    assert set(coupling.get_edges()) == {(0, 1)}
+
+
+def test_snapshot_unknown_variadic_gate_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An opaque signature cannot advertise an unbounded Qiskit gate arity."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("x", 1, 0),
+            capability("measure", 1, 0),
+            capability("custom", CompilerTarget.OperationArity.variadic(1), 0),
+        ]),
+    )
+    with pytest.raises(UnsupportedOperationError, match="variadic native operation 'custom'"):
+        backend_for_snapshot(monkeypatch, target)
+
+
+def test_snapshot_timing_requires_physical_unit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Calibration values cannot be presented as seconds without physical units."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("x", 1, 0, [CompilerTarget.SiteTuple([0], duration=20)]),
+            capability("measure", 1, 0),
+        ]),
+        duration_unit=CompilerTarget.DurationUnit("dt", 1.0),
+    )
+    with pytest.raises(UnsupportedOperationError, match="supported duration unit"):
+        backend_for_snapshot(monkeypatch, target)

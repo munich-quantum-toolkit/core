@@ -2125,6 +2125,49 @@ TEST(CompilerQDMIAdapterTest, SubmitsCompatibleProgramsTogether) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      query;
+  static thread_local bool queryFailure;
+  query = api->device_session_query_device_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_device_property = query; });
+  api->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) -> int {
+    if (property != QDMI_DEVICE_PROPERTY_CUSTOM3) {
+      return query(session, property, size, value, sizeRet);
+    }
+    if (queryFailure) {
+      return QDMI_ERROR_FATAL;
+    }
+    constexpr char metadata[] =
+        R"({"schema":"mqt.payload-capabilities.v1","capabilities":null})";
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(metadata);
+    }
+    if (value != nullptr) {
+      if (size < sizeof(metadata)) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, metadata, sizeof(metadata));
+    }
+    return QDMI_SUCCESS;
+  };
+  for (const bool failure : {false, true}) {
+    SCOPED_TRACE(failure);
+    queryFailure = failure;
+    auto environment =
+        mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QASM3);
+    EXPECT_FALSE(static_cast<bool>(environment));
+    llvm::consumeError(environment.takeError());
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, AppliesDevicePayloadConstraints) {
   const auto baseline = llvm::cantFail(
       mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
@@ -2135,15 +2178,34 @@ TEST(CompilerQDMIAdapterTest, AppliesDevicePayloadConstraints) {
   ASSERT_EQ(restricted->capabilities().size(), 1U);
   EXPECT_EQ(restricted->capabilities().front().id, "forward-branching");
   EXPECT_EQ(restricted->capabilities().front().constraints.size(), 4U);
-  auto unrelated = mlir::parsePayloadCapabilities("vendor metadata", baseline);
-  ASSERT_TRUE(static_cast<bool>(unrelated));
-  EXPECT_EQ(unrelated->capabilities(), baseline.capabilities());
+  for (const auto* const foreign : {
+           "vendor metadata",
+           R"({"schema":"vendor.v1","note":"mqt.payload-capabilities.v1"})",
+       }) {
+    auto unrelated = mlir::parsePayloadCapabilities(foreign, baseline);
+    ASSERT_TRUE(static_cast<bool>(unrelated));
+    EXPECT_EQ(unrelated->capabilities(), baseline.capabilities());
+  }
+  auto explicitDefault = mlir::parsePayloadCapabilities(
+      R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","value":0}]})",
+      baseline);
+  ASSERT_TRUE(static_cast<bool>(explicitDefault));
+  ASSERT_EQ(explicitDefault->capabilities().size(), 1U);
+  EXPECT_EQ(explicitDefault->capabilities().front().value, 0U);
   for (
       const auto* const invalid : {
+          R"({"schema":"mqt.payload-capabilities.v1")",
+          R"(["mqt.payload-capabilities.v1"])",
           R"({"schema":"mqt.payload-capabilities.v1","capabilities":null})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[null]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","value":-1}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":[]}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":{"requires-register-equality":0}}]})",
+          R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching"},{"id":"forward-branching"}]})",
           R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{}]})",
           R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching","constraints":{"max-condition-width":-1}}]})",
       }) {
+    SCOPED_TRACE(invalid);
     auto rejected = mlir::parsePayloadCapabilities(invalid, baseline);
     EXPECT_FALSE(static_cast<bool>(rejected));
     llvm::consumeError(rejected.takeError());
@@ -2161,6 +2223,10 @@ TEST(CompilerQDMIAdapterTest, AppliesDevicePayloadConstraints) {
   const mlir::TargetEnvironment environment(target, *restricted);
   for (const auto& [condition, body, width, accepted] : {
            std::tuple{"c == 1", "x $0;", 32, true},
+           std::tuple{"1 == c", "x $0;", 2, true},
+           std::tuple{"c[0]", "x $0;", 2, true},
+           std::tuple{"!c[0]", "x $0;", 2, true},
+           std::tuple{"c[0] && c[1]", "x $0;", 2, false},
            std::tuple{"c == 1", "x $0;", 33, false},
            std::tuple{"c == 1", "if (c == 2) { x $0; }", 2, false},
            std::tuple{"c == 1", "reset $0;", 2, false},
