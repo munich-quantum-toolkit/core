@@ -19,7 +19,6 @@ import hashlib
 import json
 import logging
 import sys
-import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -63,7 +62,7 @@ def main() -> int:
     """
     try:
         return _check_headers()
-    except (urllib.error.URLError, TimeoutError) as error:
+    except OSError as error:
         LOGGER.log(logging.ERROR, "Could not check Catalyst ABI: %s", error)
         return 2
 

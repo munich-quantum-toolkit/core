@@ -80,3 +80,22 @@ def test_download_failure(
 
     monkeypatch.setattr(canary.urllib.request, "urlopen", download)
     assert canary.main() == 2
+
+
+def test_connection_reset_during_read(canary: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A disconnected response is a download failure, not ABI drift."""
+
+    class DisconnectedResponse(BytesIO):
+        @staticmethod
+        def read(_size: int | None = -1, /) -> bytes:
+            msg = "connection reset during read"
+            raise ConnectionResetError(msg)
+
+    def download(url: str, *, timeout: int) -> BytesIO:
+        assert timeout == 30
+        if url == "https://pypi.org/pypi/pennylane-catalyst/json":
+            return BytesIO(json.dumps({"info": {"version": "0.16.0"}}).encode())
+        return DisconnectedResponse()
+
+    monkeypatch.setattr(canary.urllib.request, "urlopen", download)
+    assert canary.main() == 2

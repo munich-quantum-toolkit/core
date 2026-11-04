@@ -64,13 +64,13 @@ compiled = compile_program(bell_qasm, target=environment)
 print(f"Selected format: {compiled.program_format}")
 ```
 
-Device defaults prefer QPY when a supported Qiskit version is installed, OpenQASM 3, Adaptive
-Profile QIR (binary, then text), IQM JSON, Base Profile QIR (binary, then text),
-then OpenQASM 2. An environment selects an executable device format and can be
-reused for compilation and serialization. `output` selects an inspection or
-interchange representation. `QC_IMPORT` and raw `QCO` stop before target
-compilation and cannot take a target. jeff output does not retain hardware
-placement.
+Device defaults prefer QPY when a supported Qiskit version is installed,
+OpenQASM 3, Adaptive Profile QIR (binary, then text), IQM JSON, Base Profile QIR
+(binary, then text), then OpenQASM 2. An environment selects an executable
+device format and can be reused for compilation and serialization. `output`
+selects an inspection or interchange representation. `QC_IMPORT` and raw `QCO`
+stop before target compilation and cannot take a target. jeff output does not
+retain hardware placement.
 
 OpenQASM includes its standard gate library. Targeted output retains native
 calls; nonstandard names require receiver definitions, and standard names must
