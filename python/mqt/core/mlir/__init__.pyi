@@ -10,10 +10,11 @@
 
 import enum
 import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from typing import Annotated, Any, Literal, Self, SupportsFloat, TypeAlias, TypedDict, TypeVar, Unpack, overload
 
 import numpy as np
+import pennylane.tape
 import qiskit.circuit
 import qiskit.providers
 import qiskit.transpiler
@@ -22,6 +23,7 @@ from numpy.typing import NDArray
 import mqt.core.dd
 import mqt.core.plugins.qiskit.backend
 import mqt.core.qdmi
+from mqt.core.mlir import _pennylane as _pennylane
 from mqt.core.qdmi import Device
 
 _CompilerInput: TypeAlias = (
@@ -869,6 +871,21 @@ class QCProgram(Program):
             native: Whether the circuit is already compiled for a device. Fixes circuit
                 indices to device qubits and preserves gate names and operands without
                 importing definitions. The caller validates device support and placements.
+        """
+
+    @staticmethod
+    def from_pennylane(tape: pennylane.tape.QuantumScript, *, wires: Sequence[Hashable] | None = None) -> QCProgram:
+        """Translate a preprocessed PennyLane {py:class}`~pennylane.tape.QuantumScript` to QC MLIR.
+
+        The tape must contain supported native gates after decomposition, measurement
+        basis rotations, and mid-circuit measurement deferral. Touched wires are measured;
+        untouched wires contribute known zeros. Results follow the supplied wire order
+        (the tape's wire order by default).
+        PennyLane's terminal measurements are evaluated from these samples by the device.
+
+        Args:
+            tape: Preprocessed tape to import.
+            wires: Wire order for the measured results. Defaults to the tape's wire order.
         """
 
     def copy(self) -> QCProgram:

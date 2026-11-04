@@ -1048,23 +1048,15 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
 }
 
 static Expected<qdmi::Job>
-submitPayload(const qdmi::Device& device, const CompiledProgram& program,
-              int64_t numShots,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5) {
-  if (qdmi::isBinaryProgramFormat(program.programFormat())) {
-    const auto payload = std::as_bytes(std::span(program.payload()));
-    return device.submitJob(payload, program.programFormat(),
-                            static_cast<size_t>(numShots), custom1, custom2,
-                            custom3, custom4, custom5);
+requireSubmission(Expected<std::optional<qdmi::Job>> submitted) {
+  if (!submitted) {
+    return submitted.takeError();
   }
-  const auto& payload = program.payload();
-  return device.submitJob(payload, program.programFormat(),
-                          static_cast<size_t>(numShots), custom1, custom2,
-                          custom3, custom4, custom5);
+  if (!*submitted) {
+    return createStringError(
+        "Device declined the compiled program before submission");
+  }
+  return std::move(**submitted);
 }
 
 Expected<qdmi::Job>
@@ -1075,21 +1067,9 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
               const std::optional<qdmi::CustomJobParameter>& custom3,
               const std::optional<qdmi::CustomJobParameter>& custom4,
               const std::optional<qdmi::CustomJobParameter>& custom5) {
-  if (numShots < 0) {
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "num_shots must be nonnegative");
-  }
-  auto destination =
-      snapshotTargetEnvironment(device, program.programFormat(), false);
-  if (!destination) {
-    return destination.takeError();
-  }
-  if (auto error =
-          validateTargetCompatibility(program.environment(), *destination)) {
-    return error;
-  }
-  return submitPayload(device, program, numShots, custom1, custom2, custom3,
-                       custom4, custom5);
+  return requireSubmission(trySubmitPrograms(device, {&program}, numShots,
+                                             custom1, custom2, custom3, custom4,
+                                             custom5));
 }
 
 Expected<qdmi::Job>
@@ -1114,8 +1094,63 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
                              "Compile explicitly and retain the result layout "
                              "before submitting this program");
   }
-  return submitPayload(device, *compiled, numShots, custom1, custom2, custom3,
-                       custom4, custom5);
+  return requireSubmission(
+      trySubmitPrograms(device, {&*compiled}, numShots, custom1, custom2,
+                        custom3, custom4, custom5, &compiled->environment()));
+}
+
+llvm::Expected<std::optional<qdmi::Job>>
+trySubmitPrograms(const qdmi::Device& device,
+                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
+                  const std::optional<qdmi::CustomJobParameter>& custom1,
+                  const std::optional<qdmi::CustomJobParameter>& custom2,
+                  const std::optional<qdmi::CustomJobParameter>& custom3,
+                  const std::optional<qdmi::CustomJobParameter>& custom4,
+                  const std::optional<qdmi::CustomJobParameter>& custom5,
+                  const TargetEnvironment* destination) {
+  if (numShots < 0 || programs.empty() ||
+      llvm::is_contained(programs, nullptr)) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "A program batch requires non-null programs and nonnegative num_shots");
+  }
+  const auto format = programs.front()->programFormat();
+  std::optional<TargetEnvironment> snapshot;
+  if (destination == nullptr) {
+    auto environment = snapshotTargetEnvironment(device, format, false);
+    if (!environment) {
+      return environment.takeError();
+    }
+    snapshot = std::move(*environment);
+    destination = &*snapshot;
+  }
+  for (const auto* program : programs) {
+    if (program->programFormat() != format) {
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "A program batch must use the same payload format");
+    }
+    if (auto error =
+            validateTargetCompatibility(program->environment(), *destination)) {
+      return error;
+    }
+  }
+  if (qdmi::isBinaryProgramFormat(format)) {
+    std::vector<std::span<const std::byte>> payloads;
+    payloads.reserve(programs.size());
+    for (const auto* program : programs) {
+      payloads.push_back(std::as_bytes(std::span(program->payload())));
+    }
+    return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
+                               custom1, custom2, custom3, custom4, custom5);
+  }
+  std::vector<std::string> payloads;
+  payloads.reserve(programs.size());
+  for (const auto* program : programs) {
+    payloads.push_back(program->payload());
+  }
+  return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
+                             custom1, custom2, custom3, custom4, custom5);
 }
 
 } // namespace mlir

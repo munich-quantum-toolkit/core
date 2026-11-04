@@ -64,12 +64,13 @@ compiled = compile_program(bell_qasm, target=environment)
 print(f"Selected format: {compiled.program_format}")
 ```
 
-Device defaults prefer QPY, OpenQASM 3, Adaptive Profile QIR (binary, then
-text), IQM JSON, Base Profile QIR (binary, then text), then OpenQASM 2. An
-environment selects an executable device format and can be reused for
-compilation and serialization. `output` selects an inspection or interchange
-representation. `QC_IMPORT` and raw `QCO` stop before target compilation and
-cannot take a target. jeff output does not retain hardware placement.
+Device defaults prefer QPY when a supported Qiskit version is installed,
+OpenQASM 3, Adaptive Profile QIR (binary, then text), IQM JSON, Base Profile QIR
+(binary, then text), then OpenQASM 2. An environment selects an executable
+device format and can be reused for compilation and serialization. `output`
+selects an inspection or interchange representation. `QC_IMPORT` and raw `QCO`
+stop before target compilation and cannot take a target. jeff output does not
+retain hardware placement.
 
 OpenQASM includes its standard gate library. Targeted output retains native
 calls; nonstandard names require receiver definitions, and standard names must
@@ -83,7 +84,7 @@ designations when every eligible value is an output. See {doc}`OpenQASM` and
 Use {py:func}`~mqt.core.mlir.serialize_program` for an already-native Qiskit
 circuit or `QCProgram`. It serializes without synthesis, routing, or quantum
 optimization. The caller is responsible for native gate and placement validity;
-the Qiskit backend checks these before serialization.
+the Qiskit backend checks these before native serialization.
 
 Static programs use canonical terminal readout: one register with measurements
 in ascending physical-site order. This supports measured subsets, destination

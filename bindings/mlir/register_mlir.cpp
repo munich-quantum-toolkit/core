@@ -44,6 +44,7 @@
 
 #include "Array.hpp"
 #include "Result.hpp"
+#include "Target/PennyLane/PennyLane.h"
 #include "Target/Qiskit/Qiskit.h"
 #include "Target/Qiskit/QiskitVersion.h"
 
@@ -2094,6 +2095,23 @@ Args:
     native: Whether the circuit is already compiled for a device. Fixes circuit
         indices to device qubits and preserves gate names and operands without
         importing definitions. The caller validates device support and placements.)pb")
+      .def_static(
+          "from_pennylane", &bindings::pennylane::importCircuit, "tape"_a,
+          nb::kw_only(), "wires"_a = nb::none(),
+          nb::sig("def from_pennylane(tape: pennylane.tape.QuantumScript, *, "
+                  "wires: collections.abc.Sequence[collections.abc.Hashable] | "
+                  "None = None) -> QCProgram"),
+          R"pb(Translate a preprocessed PennyLane {py:class}`~pennylane.tape.QuantumScript` to QC MLIR.
+
+The tape must contain supported native gates after decomposition, measurement
+basis rotations, and mid-circuit measurement deferral. Touched wires are measured;
+untouched wires contribute known zeros. Results follow the supplied wire order
+(the tape's wire order by default).
+PennyLane's terminal measurements are evaluated from these samples by the device.
+
+Args:
+    tape: Preprocessed tape to import.
+    wires: Wire order for the measured results. Defaults to the tape's wire order.)pb")
       .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def(
@@ -2930,6 +2948,7 @@ Args:
 binary QIR; omitting it selects a supported native format. A compiled program
 retains its payload and must match the destination contract. Job results are raw;
 apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb");
-}
 
+  bindings::pennylane::registerBindings(m);
+}
 } // namespace mqt
