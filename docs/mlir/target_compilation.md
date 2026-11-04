@@ -40,8 +40,9 @@ print(f"Counts: {job.get_counts()}")
 {py:class}`~mqt.core.mlir.CompilerTarget`,
 {py:class}`~mqt.core.mlir.TargetEnvironment`, or Qiskit backend/target. Device,
 environment, and `QDMIBackend` targets return a `CompiledProgram`; other Qiskit
-backends and targets return a `QuantumCircuit`. An explicit `output` selects another representation. For a
-`CompilerTarget`, the default preserves the input's program family.
+backends and targets return a `QuantumCircuit`. An explicit `output` selects
+another representation. For a `CompilerTarget`, the default preserves the
+input's program family.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain
