@@ -26,6 +26,7 @@ from mqt.core.mlir import (
     OutputFormat,
     QCProgram,
     QIRProfile,
+    TargetEnvironment,
     compile_program,
     sample,
     submit_program,
@@ -338,11 +339,18 @@ def test_result_bit_order(program_format: ProgramFormat, *, swapped: bool) -> No
         f"x q[0]; a[{int(swapped)}] = measure q[0]; "
         f"a[{int(not swapped)}] = measure q[1]; b = measure q[2];"
     )
-    job = submit_program(source, target="mqt.ddsim.default", num_shots=4, program_format=program_format)
+    environment = TargetEnvironment.from_device("mqt.ddsim.default", program_format=program_format)
+    compiled = compile_program(source, target=environment)
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
     job.wait()
+    shots = job.get_shots()
+    counts = job.get_counts()
+    if (layout := compiled.result_layout) is not None:
+        shots = [layout.decode_bits(bits) for bits in shots]
+        counts = {layout.decode_bits(bits): count for bits, count in counts.items()}
     expected = "010" if swapped else "001"
-    assert job.get_shots() == [expected] * 4
-    assert job.get_counts() == {expected: 4}
+    assert shots == [expected] * 4
+    assert counts == {expected: 4}
 
 
 @pytest.mark.parametrize("data_qubits", [1, 4])
