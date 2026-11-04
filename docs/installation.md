@@ -176,17 +176,28 @@ launcher.
 ### Export jeff and QPY
 
 The native compiler can export `jeff`. The Python command can additionally
-export Qiskit's QPY format when the `qiskit` extra is installed:
+export Qiskit's QPY format when Qiskit is installed:
 
 ```sh
-uvx mqt-core compile circuit.qasm --emit=jeff -o circuit.jeff
-uvx --from 'mqt-core[qiskit]' mqt-core compile circuit.qasm --emit=qpy -o circuit.qpy
+uvx mqt-core compile circuit.qasm -o circuit.jeff
+uvx --with=qiskit mqt-core compile circuit.qasm -o circuit.qpy
 ```
 
-A `.qpy` output filename also selects QPY when `--emit` is omitted. QPY export
-uses the native compiler's optimized QCO output and Qiskit's serializer; it does
-not embed Python in the native executable. QPY submission does not require
-Qiskit on the client when the destination device accepts QPY directly.
+When `--emit` is omitted, `.jeff`, `.qasm`, `.ll`, `.bc`, and `.qpy` select
+jeff, OpenQASM 3, textual QIR, QIR bitcode, and QPY respectively. Untargeted QIR
+defaults to the Adaptive profile; use `--emit=qir-base` to select Base. For a
+QDMI device, QIR uses Adaptive when supported and Base otherwise, with the
+encoding selected by the extension. `.json` selects IQM JSON and requires a
+suitable target. Explicit `--emit` or `--payload-spec` settings take precedence.
+Without a recognized extension, untargeted compilation defaults to QC MLIR and
+device compilation selects a supported payload.
+
+`--with=qiskit` installs the optional serializer directly. Installing
+`mqt-core[qiskit]` instead also applies Core's Qiskit dependency requirements.
+QPY export uses the native compiler's optimized QCO output and Qiskit's
+serializer; it does not embed Python in the native executable. QPY submission
+does not require Qiskit on the client when the destination device accepts QPY
+directly.
 
 ### Building from source
 

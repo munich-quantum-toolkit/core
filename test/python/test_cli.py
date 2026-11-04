@@ -233,8 +233,28 @@ def test_compile_qpy_and_jeff(script_runner: ScriptRunner, tmp_path: Path) -> No
     probabilities = Statevector.from_instruction(circuit).probabilities_dict()
     assert probabilities == pytest.approx({"00": 0.5, "11": 0.5})
     output = tmp_path / "bell.jeff"
-    result = script_runner.run(["mqt-core", "compile", str(source), "--emit=jeff", "-o", str(output)])
+    result = script_runner.run(["mqt-core", "compile", str(source), "-o", str(output)])
     assert result.success
     result = script_runner.run(["mqt-core", "simulate", str(output), "--shots=128"])
     assert result.success
     assert sum(json.loads(result.stdout)["counts"].values()) == 128
+
+
+@pytest.mark.parametrize("suffix", ["ll", "bc", "qasm"])
+@pytest.mark.parametrize("target", [[], ["--qdmi-device=mqt.ddsim.default"]])
+def test_inferred_output(script_runner: ScriptRunner, tmp_path: Path, suffix: str, target: list[str]) -> None:
+    """Infer executable formats and preserve the requested QIR encoding."""
+    source = tmp_path / "input.qasm"
+    source.write_text('OPENQASM 3; include "stdgates.inc"; qubit q; bit c; x q; c=measure q;')
+    output = tmp_path / f"output.{suffix}"
+    result = script_runner.run(["mqt-core", "compile", str(source), *target, "-o", str(output)])
+    assert result.success
+    if suffix == "bc":
+        assert output.read_bytes().startswith(b"BC\xc0\xde")
+    elif suffix == "ll":
+        assert '"qir_profiles"="adaptive_profile"' in output.read_text()
+    else:
+        assert output.read_text().startswith("OPENQASM 3")
+    result = script_runner.run(["mqt-core", "simulate", str(output), "--shots=16"])
+    assert result.success
+    assert json.loads(result.stdout)["counts"] == {"1": 16}

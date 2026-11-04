@@ -47,6 +47,8 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -335,7 +337,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
 
   llvm::cl::opt<std::string> outputFormat(
       "emit",
-      llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
+      llvm::cl::desc("Output checkpoint (default: infer from -o, otherwise "
+                     "qc): qc-import, qc, "
                      "qco, qco-optimized, qir-base, "
                      "qir-adaptive, openqasm2, openqasm3, or jeff "
                      "(Python launcher also supports qpy with Qiskit)"),
@@ -515,7 +518,18 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                     "qiskit extra.\n";
     return 1;
   }
-  auto parsedOutputFormat = parseOutputFormat(outputFormat);
+  const auto extension = llvm::sys::path::extension(outputFilename);
+  const auto inferredOutput =
+      llvm::StringSwitch<std::optional<OutputFormat>>(extension)
+          .Case(".jeff", OutputFormat::Jeff)
+          .Case(".qasm", OutputFormat::OpenQASM3)
+          .Cases({".bc", ".ll"}, OutputFormat::QIRAdaptive)
+          .Case(".json", OutputFormat::IQMJSON)
+          .Default(std::nullopt);
+  auto parsedOutputFormat =
+      outputFormat.getNumOccurrences() == 0 && inferredOutput
+          ? inferredOutput
+          : parseOutputFormat(outputFormat);
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
@@ -546,7 +560,37 @@ int mqtCoreRunCompiler(int argc, char** argv) {
       if (!payloadSpecification.empty()) {
         return compilerTargetFromDevice(*device);
       }
-      auto environment = targetEnvironmentFromDevice(*device);
+      std::optional<QDMI_Program_Format> format;
+      if (outputFormat.getNumOccurrences() == 0 && inferredOutput) {
+        switch (*inferredOutput) {
+        case OutputFormat::QIRAdaptive: {
+          auto supported = device->getSupportedProgramFormats();
+          if (!supported) {
+            return supported.takeError();
+          }
+          const auto adaptive = extension == ".bc"
+                                    ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                                    : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+          const auto base = extension == ".bc"
+                                ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                                : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+          format = llvm::is_contained(*supported, adaptive) ? adaptive : base;
+          break;
+        }
+        case OutputFormat::OpenQASM3:
+          format = QDMI_PROGRAM_FORMAT_QASM3;
+          break;
+        case OutputFormat::IQMJSON:
+          format = QDMI_PROGRAM_FORMAT_IQMJSON;
+          break;
+        case OutputFormat::Jeff:
+          return llvm::createStringError(
+              "jeff export cannot be combined with a QDMI device target");
+        default:
+          llvm_unreachable("Unexpected inferred output format");
+        }
+      }
+      auto environment = targetEnvironmentFromDevice(*device, format);
       if (!environment) {
         return environment.takeError();
       }
@@ -643,8 +687,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   }
 
   if (*parsedOutputFormat == OutputFormat::IQMJSON &&
-      targetEnvironment->target().nativeOperationsKind() ==
-          CompilerTarget::NativeOperations::Kind::Unrestricted) {
+      (!targetEnvironment ||
+       targetEnvironment->target().nativeOperationsKind() ==
+           CompilerTarget::NativeOperations::Kind::Unrestricted)) {
     llvm::errs() << "IQM JSON requires explicit native IQM operations.\n";
     return 1;
   }
