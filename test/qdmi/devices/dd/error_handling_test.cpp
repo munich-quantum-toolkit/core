@@ -168,8 +168,10 @@ TEST_F(ErrorHandling, CustomEnums) {
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                   s.session, prop, 0, nullptr, nullptr),
-              prop == QDMI_DEVICE_PROPERTY_CUSTOM1 ? QDMI_SUCCESS
-                                                   : QDMI_ERROR_NOTSUPPORTED)
+              prop == QDMI_DEVICE_PROPERTY_CUSTOM2 ||
+                      prop == QDMI_DEVICE_PROPERTY_CUSTOM3
+                  ? QDMI_SUCCESS
+                  : QDMI_ERROR_NOTSUPPORTED)
         << prop;
   }
 
