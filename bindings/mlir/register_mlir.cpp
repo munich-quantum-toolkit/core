@@ -1244,10 +1244,14 @@ exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
 void registerMLIR(nb::module_& m) {
 
   m.doc() = "MQT Core MLIR compiler bindings.";
-  if (!nb::module_::import_("importlib.util")
-           .attr("find_spec")("qiskit")
-           .is_none()) {
+  const auto metadata = nb::module_::import_("importlib.metadata");
+  try {
+    metadata.attr("distribution")("qiskit");
     mlir::setQPYExporter(&exportQPY);
+  } catch (const nb::python_error& error) {
+    if (!error.matches(metadata.attr("PackageNotFoundError"))) {
+      throw;
+    }
   }
 
   nb::module_::import_("typing");

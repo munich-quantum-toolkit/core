@@ -5154,9 +5154,13 @@ def test_compiled_header_rejects_loose_classical_bits() -> None:
 def test_qpy_selection_without_optional_qiskit() -> None:
     """Absent Qiskit leaves native payload selection and OpenQASM available."""
     script = """
-import importlib.util
-original = importlib.util.find_spec
-importlib.util.find_spec = lambda name, *args: None if name == 'qiskit' else original(name, *args)
+import importlib.metadata
+original = importlib.metadata.distribution
+def installed(name):
+    if name == 'qiskit':
+        raise importlib.metadata.PackageNotFoundError(name)
+    return original(name)
+importlib.metadata.distribution = installed
 from mqt.core.mlir import PayloadSpecification
 from mqt.core.qdmi import ProgramFormat
 try:
