@@ -46,6 +46,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -332,32 +333,27 @@ static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
   });
   if (target.connectivityKind() !=
       CompilerTarget::Connectivity::Kind::AllToAll) {
-    std::map<CompilerTarget::SiteId, SmallVector<CompilerTarget::SiteId>>
-        neighbors;
+    llvm::EquivalenceClasses<CompilerTarget::SiteId> components;
+    for (const auto site : placeable) {
+      components.insert(site);
+    }
     for (const auto& [a, b] : edges) {
-      neighbors[a].push_back(b);
-      neighbors[b].push_back(a);
+      components.unionSets(a, b);
     }
     std::set<CompilerTarget::SiteId> visited;
-    SmallVector<CompilerTarget::SiteId> largest;
+    auto largest = placeable.front();
+    size_t largestSize = 0;
     for (const auto site : placeable) {
-      if (!visited.insert(site).second) {
-        continue;
-      }
-      SmallVector<CompilerTarget::SiteId> component{site};
-      for (size_t i = 0; i < component.size(); ++i) {
-        for (const auto neighbor : neighbors[component[i]]) {
-          if (visited.insert(neighbor).second) {
-            component.push_back(neighbor);
-          }
+      if (visited.insert(components.getLeaderValue(site)).second) {
+        const auto size = llvm::range_size(components.members(site));
+        if (size > largestSize) {
+          largest = site;
+          largestSize = size;
         }
-      }
-      if (component.size() > largest.size()) {
-        largest = std::move(component);
       }
     }
     std::erase_if(placeable, [&](auto site) {
-      return !llvm::is_contained(largest, site);
+      return !components.isEquivalent(largest, site);
     });
     std::erase_if(edges, [&](const auto& edge) {
       return !llvm::is_contained(placeable, edge.first) ||

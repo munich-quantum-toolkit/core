@@ -22,6 +22,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -32,58 +33,87 @@ using namespace mlir;
 
 namespace {
 
-enum class Scenario : uint8_t {
-  Star,
-  Reversed,
-  SingleMove,
-  TwoResonators,
-  Swap,
-  EarlyMeasurement,
-  Isolated,
+struct Scenario {
+  const char* name;
+  std::vector<int64_t> qubits;
+  std::vector<std::vector<int64_t>> moves;
+  std::vector<std::vector<int64_t>> czs;
+  const char* source;
+  size_t expectedMoves = 2;
+  bool reversed = false;
+};
+
+constexpr const char* BELL_SOURCE =
+    "OPENQASM 3; include \"stdgates.inc\"; qubit[2] q; bit[2] c; "
+    "h q[0]; h q[1]; cz q[0],q[1]; c=measure q;";
+constexpr const char* EARLY_MEASUREMENT_SOURCE =
+    "OPENQASM 3; include \"stdgates.inc\"; qubit[3] q; bit[3] c; "
+    "h q[0]; c[0]=measure q[0]; h q[1]; h q[2]; cz q[1],q[2]; "
+    "c[1]=measure q[1]; c[2]=measure q[2];";
+
+const std::vector<Scenario> SCENARIOS{
+    {"Star", {5, 17}, {{5, 2}, {17, 2}}, {{5, 2}, {17, 2}}, BELL_SOURCE},
+    {
+        "Reversed",
+        {5, 17},
+        {{5, 2}, {17, 2}},
+        {{2, 5}, {2, 17}},
+        BELL_SOURCE,
+        2,
+        true,
+    },
+    {"SingleMove", {5, 17}, {{5, 2}}, {{5, 2}, {17, 2}}, BELL_SOURCE},
+    {
+        "TwoResonators",
+        {5, 17, 19},
+        {{5, 2}, {17, 3}},
+        {{17, 2}, {19, 3}},
+        "OPENQASM 3; include \"stdgates.inc\"; qubit[3] q; bit[3] c; "
+        "h q[0]; cz q[0],q[1]; cz q[1],q[2]; c=measure q;",
+        4,
+    },
+    {
+        "Swap",
+        {5, 17},
+        {{5, 2}, {17, 2}},
+        {{5, 2}, {17, 2}},
+        "OPENQASM 3; include \"stdgates.inc\"; bit[2] c; h $5; swap $5,$17; "
+        "c[0]=measure $5; c[1]=measure $17;",
+        6,
+    },
+    {
+        "EarlyMeasurement",
+        {5, 17, 19},
+        {{5, 2}, {17, 3}},
+        {{17, 2}, {19, 3}},
+        EARLY_MEASUREMENT_SOURCE,
+    },
+    {
+        "Isolated",
+        {5, 17, 19},
+        {{5, 2}, {17, 2}},
+        {{5, 2}, {17, 2}},
+        BELL_SOURCE,
+    },
 };
 
 } // namespace
 
-static CompilerTarget starTarget(Scenario scenario) {
+static CompilerTarget starTarget(const Scenario& scenario) {
   using Capability = CompilerTarget::OperationCapability;
   using Tuple = CompilerTarget::SiteTuple;
-  std::vector unary{
-      llvm::cantFail(Tuple::create({5})),
-      llvm::cantFail(Tuple::create({17})),
-  };
-  std::vector pairs{
-      llvm::cantFail(Tuple::create({5, 2})),
-      llvm::cantFail(Tuple::create({17, 2})),
-  };
-  std::vector reversePairs{
-      llvm::cantFail(Tuple::create({2, 5})),
-      llvm::cantFail(Tuple::create({2, 17})),
-  };
-  if (scenario == Scenario::SingleMove) {
-    pairs.pop_back();
+  std::vector<Tuple> unary;
+  unary.reserve(scenario.qubits.size());
+  for (const auto site : scenario.qubits) {
+    unary.push_back(llvm::cantFail(Tuple::create({site})));
   }
-  if (scenario == Scenario::TwoResonators ||
-      scenario == Scenario::EarlyMeasurement) {
-    pairs.back() = llvm::cantFail(Tuple::create({17, 3}));
-    unary.push_back(llvm::cantFail(Tuple::create({19})));
-  }
-  if (scenario == Scenario::Isolated) {
-    unary.push_back(llvm::cantFail(Tuple::create({19})));
-  }
-  std::vector operations{
-      llvm::cantFail(Capability::create("r", 1, 2, unary)),
-      llvm::cantFail(Capability::create("measure", 1, 0, unary)),
-      llvm::cantFail(Capability::create(
-          "cz", 2, 0,
-          scenario == Scenario::Reversed ? reversePairs
-          : (scenario == Scenario::TwoResonators || scenario == Scenario::EarlyMeasurement)
-              ? std::vector{llvm::cantFail(Tuple::create({17, 2})),
-                            llvm::cantFail(Tuple::create({19, 3})),}
-              : std::vector{llvm::cantFail(Tuple::create({5, 2})),
-                            llvm::cantFail(Tuple::create({17, 2})),})),
-      llvm::cantFail(Capability::create("move", 2, 0, pairs)),
-      llvm::cantFail(
-          Capability::create("barrier", Capability::Arity::variadic(1), 0)),
+  const auto tuples = [](const auto& pairs) {
+    std::vector<Tuple> result;
+    result.reserve(pairs.size());
+    for (const auto& pair : pairs) {
+      result.push_back(llvm::cantFail(Tuple::create(pair)));
+    }
+    return result;
   };
   return llvm::cantFail(CompilerTarget::create(
       "star",
@@ -97,7 +127,15 @@ static CompilerTarget starTarget(Scenario scenario) {
       },
       CompilerTarget::Connectivity::fromCouplings(
           {{5, 2}, {17, 2}, {17, 3}, {19, 3}, {4, 2}}),
-      CompilerTarget::NativeOperations::fromOperations(operations)));
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("r", 1, 2, unary)),
+          llvm::cantFail(Capability::create("measure", 1, 0, unary)),
+          llvm::cantFail(Capability::create("cz", 2, 0, tuples(scenario.czs))),
+          llvm::cantFail(
+              Capability::create("move", 2, 0, tuples(scenario.moves))),
+          llvm::cantFail(
+              Capability::create("barrier", Capability::Arity::variadic(1), 0)),
+      })));
 }
 
 namespace {
@@ -106,31 +144,14 @@ class ResonatorRouting : public testing::TestWithParam<Scenario> {};
 
 TEST_P(ResonatorRouting,
        CompilesThroughVirtualConnectivityAndKeepsReadoutOnQubits) {
-  const auto scenario = GetParam();
+  const auto& scenario = GetParam();
   const auto target = starTarget(scenario);
-  EXPECT_EQ(target.placeableSites(), ((scenario == Scenario::TwoResonators ||
-                                       scenario == Scenario::EarlyMeasurement ||
-                                       scenario == Scenario::Isolated)
-                                          ? std::vector<int64_t>{5, 17, 19}
-                                          : std::vector<int64_t>{5, 17}));
+  EXPECT_EQ(target.placeableSites(), scenario.qubits);
   TargetEnvironment environment(
       target, llvm::cantFail(
                   PayloadSpecification::create({.id = "iqm-json"}, {}, true)));
-  const std::string source =
-      scenario == Scenario::EarlyMeasurement
-          ? "OPENQASM 3; include \"stdgates.inc\"; qubit[3] q; bit[3] c; "
-            "h q[0]; c[0]=measure q[0]; h q[1]; h q[2]; cz q[1],q[2]; "
-            "c[1]=measure q[1]; c[2]=measure q[2];"
-      : scenario == Scenario::TwoResonators
-          ? "OPENQASM 3; include \"stdgates.inc\"; qubit[3] q; bit[3] c; h "
-            "q[0]; cz q[0],q[1]; cz q[1],q[2]; c=measure q;"
-      : scenario == Scenario::Swap
-          ? "OPENQASM 3; include \"stdgates.inc\"; bit[2] c; h $5; swap "
-            "$5,$17; c[0]=measure $5; c[1]=measure $17;"
-          : "OPENQASM 3; include \"stdgates.inc\"; qubit[2] q; bit[2] c; h "
-            "q[0]; h q[1]; cz q[0],q[1]; c=measure q;";
-  auto output =
-      runDefaultPipeline(CompilerInput(OpenQASMProgram(source)), environment);
+  auto output = runDefaultPipeline(
+      CompilerInput(OpenQASMProgram(scenario.source)), environment);
   ASSERT_TRUE(static_cast<bool>(output)) << llvm::toString(output.takeError());
   const auto value = llvm::cantFail(
       llvm::json::parse(std::get<IQMJSONProgram>(*output).source()));
@@ -148,10 +169,8 @@ TEST_P(ResonatorRouting,
     }
     if (name == "cz") {
       const auto& locus = *instruction.getArray("locus");
-      EXPECT_TRUE((scenario == Scenario::Reversed ? locus.front()
-                                                  : locus.back()) == "CR" ||
-                  (scenario == Scenario::Reversed ? locus.front()
-                                                  : locus.back()) == "CR2");
+      EXPECT_TRUE((scenario.reversed ? locus.front() : locus.back()) == "CR" ||
+                  (scenario.reversed ? locus.front() : locus.back()) == "CR2");
       ASSERT_GT(index, 0U);
       ASSERT_LT(index + 1, instructions.size());
       EXPECT_EQ(instructions[index - 1].getAsObject()->getString("name"),
@@ -170,35 +189,33 @@ TEST_P(ResonatorRouting,
       }
     }
   }
-  EXPECT_EQ(moves, scenario == Scenario::TwoResonators ? 4U
-                   : scenario == Scenario::Swap        ? 6U
-                                                       : 2U);
+  EXPECT_EQ(moves, scenario.expectedMoves);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Placements, ResonatorRouting,
-    testing::Values(Scenario::Star, Scenario::Reversed, Scenario::SingleMove,
-                    Scenario::TwoResonators, Scenario::Swap,
-                    Scenario::EarlyMeasurement, Scenario::Isolated),
-    [](const testing::TestParamInfo<Scenario>& info) {
-      switch (info.param) {
-      case Scenario::Star:
-        return "Star";
-      case Scenario::Reversed:
-        return "Reversed";
-      case Scenario::SingleMove:
-        return "SingleMove";
-      case Scenario::TwoResonators:
-        return "TwoResonators";
-      case Scenario::Swap:
-        return "Swap";
-      case Scenario::EarlyMeasurement:
-        return "EarlyMeasurement";
-      case Scenario::Isolated:
-        return "Isolated";
-      }
-      return "Unknown";
-    });
+INSTANTIATE_TEST_SUITE_P(Placements, ResonatorRouting,
+                         testing::ValuesIn(SCENARIOS),
+                         [](const testing::TestParamInfo<Scenario>& info) {
+                           return info.param.name;
+                         });
+
+TEST(ResonatorRouting, RawAdaptiveQIRSchedulesReadoutAfterMoves) {
+  const TargetEnvironment environment(
+      starTarget(SCENARIOS[5]),
+      llvm::cantFail(
+          PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive)));
+  auto output = runDefaultPipeline(
+      CompilerInput(OpenQASMProgram(EARLY_MEASUREMENT_SOURCE)),
+      ProgramFormat::QIRAdaptive, environment);
+  ASSERT_TRUE(static_cast<bool>(output)) << llvm::toString(output.takeError());
+  auto ir = std::move(std::get<QIRProgram>(*output)).intoLLVMIR();
+  ASSERT_TRUE(succeeded(ir));
+  const auto lastMove = ir->rfind("call void @__quantum__qis__move__body");
+  const auto firstMeasure =
+      ir->find("call void @__quantum__qis__measure__body");
+  ASSERT_NE(lastMove, std::string::npos);
+  ASSERT_NE(firstMeasure, std::string::npos) << *ir;
+  EXPECT_LT(lastMove, firstMeasure);
+}
 
 TEST(ResonatorPlacement, PlacementRequiresGateAndMeasurement) {
   using Capability = CompilerTarget::OperationCapability;
@@ -293,7 +310,7 @@ TEST(ResonatorPlacement, PreservesExistingMoveSymbol) {
   builder.setInsertionPointToStart(original.addEntryBlock());
   func::ReturnOp::create(builder, module.getLoc());
   TargetEnvironment environment(
-      starTarget(Scenario::Star),
+      starTarget(SCENARIOS.front()),
       llvm::cantFail(PayloadSpecification::create({.id = "qasm3"}, {}, true)));
   auto output = runDefaultPipeline(CompilerInput(std::move(program)),
                                    ProgramFormat::QC, environment);

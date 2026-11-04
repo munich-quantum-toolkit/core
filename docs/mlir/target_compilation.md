@@ -58,12 +58,13 @@ gate and measurement. With explicit couplings, it uses their largest connected
 component, including connections through resonators. Targets with ordered
 `move(qubit, resonator)` placements can route CZ gates through idle resonators.
 Core emits closed `move; cz; move` sandwiches before readout. Use
-`compile_program(circuit, target=device)` with `submit_program`, or the
-PennyLane device. Qiskit `transpile` does not support these targets. Native
-circuits that already contain MOVE use `serialize_program` instead. QCO and Jeff
-compiler checkpoints retain virtual CZs; MOVE insertion happens when producing
-QC and executable payloads. The `mqt-cc` target pass pipeline does not provide
-this placement reduction or MOVE insertion.
+`compile_program(circuit, target=device)` with `submit_program`,
+`backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
+Qiskit `transpile` does not support these targets. Native circuits that already
+contain MOVE use `serialize_program` instead. QCO and Jeff compiler checkpoints
+retain virtual CZs; MOVE insertion happens when producing QC and executable
+payloads. The `mqt-cc` target pass pipeline does not provide this placement
+reduction or MOVE insertion.
 
 IQM execution requires its default
 [full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)

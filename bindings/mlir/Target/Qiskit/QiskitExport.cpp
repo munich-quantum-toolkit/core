@@ -3005,7 +3005,6 @@ exportCircuitImpl(mlir::QCProgram program,
   }
   emitCircuit(circuit, *writer);
   if (layout && layout->sites && target != nullptr &&
-      layout->initial.size() == layout->sites->size() &&
       llvm::all_of(*layout->sites, [&](auto site) {
         return target->vertexForSite(site).has_value();
       })) {
@@ -3030,9 +3029,7 @@ exportCircuitImpl(mlir::QCProgram program,
     layout->sites.reset();
     writer->setLayout(*layout);
   } else if (layout && layout->initial.size() == state.numQubits &&
-             (layout->sites ? target != nullptr &&
-                                  llvm::equal(*layout->sites, target->siteIds())
-                            : target == nullptr)) {
+             !layout->sites && target == nullptr) {
     writer->setLayout(*layout);
   }
   return writer->finish();
