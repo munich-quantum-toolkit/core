@@ -48,6 +48,14 @@ namespace mlir {
   return value.contains('\0');
 }
 
+bool isControlFlowCapability(const llvm::StringRef id) {
+  return id == ProgramCapability::FORWARD_BRANCHING ||
+         id == ProgramCapability::COUNTED_ITERATION ||
+         id == ProgramCapability::CONDITIONAL_LOOP ||
+         id == ProgramCapability::MULTIWAY_BRANCHING ||
+         id == ProgramCapability::CLASSICAL_ASSIGNMENT;
+}
+
 llvm::Expected<PayloadSpecification>
 PayloadSpecification::forProgramFormat(ProgramFormat format,
                                        PayloadEncoding encoding) {
@@ -307,11 +315,7 @@ PayloadSpecification PayloadSpecification::restrictCapabilities(
                           format_.profile == other.format_.profile;
   std::vector<ProgramCapability> capabilities;
   for (const auto& capability : capabilities_) {
-    if (!sameFormat && capability.id != ProgramCapability::FORWARD_BRANCHING &&
-        capability.id != ProgramCapability::COUNTED_ITERATION &&
-        capability.id != ProgramCapability::CONDITIONAL_LOOP &&
-        capability.id != ProgramCapability::MULTIWAY_BRANCHING &&
-        capability.id != ProgramCapability::CLASSICAL_ASSIGNMENT) {
+    if (!sameFormat && !isControlFlowCapability(capability.id)) {
       capabilities.push_back(capability);
       continue;
     }

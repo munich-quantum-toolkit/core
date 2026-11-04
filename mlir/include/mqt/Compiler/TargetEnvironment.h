@@ -91,6 +91,9 @@ struct ProgramCapability {
                          const ProgramCapability&) = default;
 };
 
+/// Whether a capability describes classical control flow or assignment.
+[[nodiscard]] bool isControlFlowCapability(llvm::StringRef id);
+
 /// Context-free selected execution payload contract.
 ///
 /// Producers must include every effective capability, including

@@ -281,12 +281,12 @@ class QDMIBackend(BackendV2):
                 if variadic:
                     msg = f"Qiskit cannot represent variadic native operation {capability.name!r}."
                     raise UnsupportedOperationError(msg)
-                gate = Gate(
-                    name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
-                )
-            if not isinstance(gate, type) and (
+                gate = None
+            elif not isinstance(gate, type) and (
                 gate.num_qubits != capability.arity.value or len(gate.params) != capability.num_parameters
             ):
+                gate = None
+            if gate is None:
                 gate = Gate(
                     name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
                 )

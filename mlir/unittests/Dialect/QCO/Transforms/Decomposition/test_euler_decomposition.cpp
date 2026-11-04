@@ -1734,11 +1734,14 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
           1000.,
           -1000.,
       };
-      // Phase-based synthesis adds gphase(-theta/2), limited to 1e4 after
-      // binding.
-      if (!basis.phaseRotation) {
-        angles.push_back(1e300);
-      }
+      angles.append({
+          1e300,
+          -1e300,
+          std::numeric_limits<double>::max(),
+          -std::numeric_limits<double>::max(),
+          std::nextafter(4. * std::numbers::pi, 0.),
+          std::nextafter(4. * std::numbers::pi, 100.),
+      });
       for (const double angle : angles) {
         SCOPED_TRACE(angle);
         OwningOpRef bound = moduleOp->clone();

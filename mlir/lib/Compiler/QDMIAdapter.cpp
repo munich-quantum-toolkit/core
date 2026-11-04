@@ -766,15 +766,7 @@ parsePayloadCapabilities(StringRef text, const PayloadSpecification& baseline) {
   const auto withoutControlFlow = [&] {
     std::vector<ProgramCapability> capabilities;
     for (const auto& capability : baseline.capabilities()) {
-      if (!llvm::is_contained(
-              {
-                  ProgramCapability::FORWARD_BRANCHING,
-                  ProgramCapability::COUNTED_ITERATION,
-                  ProgramCapability::CONDITIONAL_LOOP,
-                  ProgramCapability::MULTIWAY_BRANCHING,
-                  ProgramCapability::CLASSICAL_ASSIGNMENT,
-              },
-              llvm::StringRef(capability.id))) {
+      if (!isControlFlowCapability(capability.id)) {
         capabilities.push_back(capability);
       }
     }

@@ -649,7 +649,7 @@ emitEulerPlan(OpBuilder& builder, Location loc, Value qubit,
 static void emitParameterPhase(OpBuilder& builder, Location loc,
                                const RotationParameter& phase) {
   if (!isConstantParameter(phase)) {
-    GPhaseOp::create(builder, loc, mqt::variantToValue(builder, loc, phase));
+    emitGPhaseIfNeeded(builder, loc, mqt::variantToValue(builder, loc, phase));
   }
 }
 
