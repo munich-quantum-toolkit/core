@@ -66,8 +66,9 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 /// Populates patterns that compose profitable parameterized single-qubit runs.
 ///
 /// The patterns emit @p basis directly. @p target supplies native gate support.
-/// Native fusion preserves supported parameterized runs and uses direct Euler
-/// identities. General quaternion composition is reserved for controlled U
+/// Native fusion uses direct Euler identities and forwards phase-only U factors
+/// when no angle addition is needed. Other supported parameterized runs are
+/// preserved. General quaternion composition is reserved for controlled U
 /// bodies and standalone fusion without a target.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,

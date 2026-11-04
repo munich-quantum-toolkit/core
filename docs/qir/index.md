@@ -409,12 +409,12 @@ random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
 result bits directly and formats textual records only when capture is enabled.
 
-For sampling programs that cannot use terminal sampling, the JIT applies LLVM O1
-optimization with automatic loop unrolling disabled. This reduces repeated
-classical work at the cost of additional compilation time. State extraction and
-programs eligible for terminal sampling skip this optimization. Exported QIR
-uses profile-preserving cleanup, including promotion of local classical storage
-to SSA values; host optimization applies only to the JIT's private module.
+For sampling programs that cannot use terminal sampling, the JIT runs LLVM's O1
+module simplification pipeline with automatic loop unrolling disabled. Inlining
+and loop simplification reduce repeated classical work. State extraction and
+programs eligible for terminal sampling skip this pipeline. Exported QIR uses
+profile-preserving cleanup, including promotion of local classical storage to
+SSA values. The JIT simplifies its private module before native code generation.
 
 ### Sampling and state extraction
 
@@ -427,16 +427,16 @@ branches, resets, dynamic resources, global destructors, Boolean output records,
 and generic controlled argument arrays exclude this terminal optimization.
 
 With capture disabled, `JitSession::sampleCounts` can group shots by measurement
-outcomes and replay deterministic prefixes for sibling paths. After LLVM O1,
-eligible programs use only local stack memory, defined constant globals, direct
-supported QIR calls, and deterministic scalar LLVM intrinsics. Remaining helper
-calls, heap-allocated classical arrays, lifecycle hooks, native effects, and
-pointer-address observations exclude grouping. If such a program also has no
-result reads or explicit resets, a trial defers measurements and collects the
-output projection, including dynamically allocated result arrays. Gates on
-measured wires or reuse of released qubits reject the trial. Successful trials
-sample a histogram directly from the retained DD; rejected trials use ordinary
-grouped sampling. Other supported programs execute once per shot.
+outcomes and replay deterministic prefixes for sibling paths. After
+simplification, eligible programs use only local stack memory, defined constant
+globals, direct supported QIR calls, and deterministic scalar LLVM intrinsics.
+Remaining helper calls, heap-allocated classical arrays, lifecycle hooks, native
+effects, and pointer-address observations exclude grouping. If such a program
+also has no result reads or explicit resets, a trial defers measurements and
+collects the output projection, including dynamically allocated result arrays.
+Gates on measured wires or reuse of released qubits reject the trial. Successful
+trials sample a histogram directly from the retained DD; rejected trials use
+ordinary grouped sampling. Other supported programs execute once per shot.
 
 A fixed seed reproduces outcomes for the same execution path; sequences need not
 match across different sampling algorithms or software versions.

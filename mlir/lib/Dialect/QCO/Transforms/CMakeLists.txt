@@ -28,6 +28,7 @@ add_mlir_library(
   MLIRMQTTransforms
   MLIRMQTUtils
   MLIRSCFDialect
+  MLIRSCFTransforms
   MLIRSCFUtils
   MLIRTransforms
   MLIRTransformUtils

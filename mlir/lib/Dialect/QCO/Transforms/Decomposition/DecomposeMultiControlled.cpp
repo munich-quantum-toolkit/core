@@ -16,8 +16,11 @@
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
+#include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
@@ -28,12 +31,15 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <optional>
 #include <utility>
@@ -1189,13 +1195,101 @@ synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
 // Patterns and pass
 //===----------------------------------------------------------------------===//
 
+namespace {
+
+// Cache backward paths so native gate chains do not retrace their prefixes.
+class StaticSites final : public RewriterBase::Listener {
+public:
+  std::optional<CompilerTarget::SiteId> lookup(Value value) {
+    SmallVector<Value> path;
+    const auto site = [&]() -> std::optional<CompilerTarget::SiteId> {
+      while (true) {
+        if (const auto known = sites_.find(value); known != sites_.end()) {
+          return known->second;
+        }
+        path.push_back(value);
+        if (auto site = value.getDefiningOp<StaticOp>()) {
+          return site.getIndex();
+        }
+        // Entry sites follow verified positional wires; final target
+        // conformance still checks every branch join and loop backedge.
+        if (auto argument = dyn_cast<BlockArgument>(value)) {
+          auto* parent = argument.getOwner()->getParentOp();
+          if (auto loop = dyn_cast<scf::ForOp>(parent)) {
+            value = loop.getTiedLoopInit(argument)->get();
+          } else if (auto loop = dyn_cast<scf::WhileOp>(parent)) {
+            auto inputs = argument.getOwner() == loop.getBeforeBody()
+                              ? loop.getInits()
+                              : loop.getConditionOp().getArgs();
+            value = inputs[argument.getArgNumber()];
+          } else if (auto branch = dyn_cast<IfOp>(parent)) {
+            value = branch.getQubits()[argument.getArgNumber()];
+          } else if (auto branch = dyn_cast<IndexSwitchOp>(parent)) {
+            value = branch.getTargets()[argument.getArgNumber()];
+          } else {
+            return std::nullopt;
+          }
+          continue;
+        }
+        if (auto loop = value.getDefiningOp<scf::WhileOp>()) {
+          const auto result = cast<OpResult>(value).getResultNumber();
+          auto argument = traceQubitArgument(
+              *loop.getBeforeBody(), loop.getConditionOp().getArgs()[result]);
+          if (failed(argument)) {
+            return std::nullopt;
+          }
+          value = loop.getInits()[*argument];
+          continue;
+        }
+        WireIterator iterator(value);
+        --iterator;
+        if (iterator == std::default_sentinel) {
+          return std::nullopt;
+        }
+        value = iterator.qubit();
+      }
+    }();
+    if (site) {
+      for (Value visited : path) {
+        sites_.try_emplace(visited, *site);
+      }
+    }
+    return site;
+  }
+
+  void notifyOperationModified(Operation*) override { sites_.clear(); }
+  void notifyOperationErased(Operation*) override { sites_.clear(); }
+  void notifyBlockErased(Block*) override { sites_.clear(); }
+
+private:
+  DenseMap<Value, CompilerTarget::SiteId> sites_;
+};
+
+} // namespace
+
 static bool isWithinTargetNativeUnitary(UnitaryOpInterface op,
-                                        const CompilerTarget* target) {
+                                        const CompilerTarget* target,
+                                        StaticSites* staticSites) {
   if (target == nullptr) {
     return false;
   }
   for (; op; op = op->getParentOfType<UnitaryOpInterface>()) {
     if (target->supports(op.getOperation())) {
+      return true;
+    }
+    if (staticSites == nullptr) {
+      continue;
+    }
+    SmallVector<CompilerTarget::SiteId, 3> sites;
+    for (Value qubit : op.getInputQubits()) {
+      const auto site = staticSites->lookup(qubit);
+      if (!site) {
+        break;
+      }
+      sites.push_back(*site);
+    }
+    if (sites.size() == op.getNumQubits() &&
+        target->supports(op.getOperation(), sites)) {
       return true;
     }
   }
@@ -1207,15 +1301,16 @@ namespace {
 template <typename ModifierOp>
 struct UnrollControlledModifier final : OpRewritePattern<ModifierOp> {
   UnrollControlledModifier(MLIRContext* context, uint64_t minQubits,
-                           const CompilerTarget* target)
+                           const CompilerTarget* target,
+                           StaticSites* staticSites)
       : OpRewritePattern<ModifierOp>(context), minQubits_(minQubits),
-        target_(target) {}
+        target_(target), staticSites_(staticSites) {}
 
   LogicalResult matchAndRewrite(ModifierOp op,
                                 PatternRewriter& rewriter) const override {
     auto control = op->template getParentOfType<CtrlOp>();
     if (!control || control.getNumQubits() < minQubits_ ||
-        isWithinTargetNativeUnitary(op, target_)) {
+        isWithinTargetNativeUnitary(op, target_, staticSites_)) {
       return failure();
     }
     return mqt::unrollModifier(op, rewriter);
@@ -1224,21 +1319,23 @@ struct UnrollControlledModifier final : OpRewritePattern<ModifierOp> {
 private:
   uint64_t minQubits_;
   const CompilerTarget* target_;
+  StaticSites* staticSites_;
 };
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
                                           uint64_t minQubits,
-                                          const CompilerTarget* target)
+                                          const CompilerTarget* target,
+                                          StaticSites* staticSites)
       : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits),
-        target_(target) {}
+        target_(target), staticSites_(staticSites) {}
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumQubits() < minQubits_) {
       return failure();
     }
-    if (isWithinTargetNativeUnitary(op, target_)) {
+    if (isWithinTargetNativeUnitary(op, target_, staticSites_)) {
       return failure();
     }
 
@@ -1335,20 +1432,22 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 private:
   uint64_t minQubits_;
   const CompilerTarget* target_;
+  StaticSites* staticSites_;
 };
 
 struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
   explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits,
-                                const CompilerTarget* target)
+                                const CompilerTarget* target,
+                                StaticSites* staticSites)
       : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits),
-        target_(target) {}
+        target_(target), staticSites_(staticSites) {}
 
   LogicalResult matchAndRewrite(RCCXOp op,
                                 PatternRewriter& rewriter) const override {
     if (RCCXOp::getNumQubits() < minQubits_) {
       return failure();
     }
-    if (isWithinTargetNativeUnitary(op, target_)) {
+    if (isWithinTargetNativeUnitary(op, target_, staticSites_)) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
@@ -1361,6 +1460,7 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
 private:
   uint64_t minQubits_;
   const CompilerTarget* target_;
+  StaticSites* staticSites_;
 };
 
 struct DecomposeMultiControlled final
@@ -1390,16 +1490,27 @@ protected:
             ? &*target_
             : nullptr;
 
+    const bool traceStaticSites =
+        hasStatic && nativeTarget != nullptr &&
+        llvm::any_of(nativeTarget->operations(), [&](const auto& capability) {
+          return !capability.siteTuples().empty() &&
+                 capability.arity().value() >= minQubits;
+        });
+    StaticSites staticSites;
     RewritePatternSet patterns(&getContext());
     patterns
         .add<DecomposeControlledGatePattern, DecomposeRCCXPattern,
              UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
-            &getContext(), minQubits, nativeTarget);
+            &getContext(), minQubits, nativeTarget,
+            traceStaticSites ? &staticSites : nullptr);
     CtrlOp::getOptimizationPatterns(patterns, &getContext());
     InvOp::getLoweringPatterns(patterns, &getContext());
     PowOp::getLoweringPatterns(patterns, &getContext());
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(
+            getOperation(), std::move(patterns),
+            GreedyRewriteConfig{}.setListener(traceStaticSites ? &staticSites
+                                                               : nullptr)))) {
       signalPassFailure();
     }
   }

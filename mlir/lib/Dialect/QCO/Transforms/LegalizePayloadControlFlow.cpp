@@ -21,6 +21,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/Utils/Utils.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
@@ -34,7 +35,6 @@
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
-#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
@@ -132,14 +132,6 @@ using mqt::getExactConstantTripCount;
 using mqt::PayloadControlFeature;
 using mqt::PayloadControlSupport;
 
-[[nodiscard]] static bool hasLinearQubitCapture(Operation* operation) {
-  bool hasCapture = false;
-  visitUsedValuesDefinedAbove(operation->getRegions(), [&](OpOperand* operand) {
-    hasCapture |= isLinearQubitType(operand->get().getType());
-  });
-  return hasCapture;
-}
-
 [[nodiscard]] static bool hasLinearBranchState(Operation* operation) {
   return llvm::any_of(operation->getResultTypes(), isLinearQubitType) ||
          hasLinearQubitCapture(operation);
@@ -207,6 +199,94 @@ static void inlineDefaultRegion(Operation* operation, Block& block,
 }
 
 namespace {
+
+class UpliftStaticWhile final : public OpRewritePattern<scf::WhileOp> {
+public:
+  UpliftStaticWhile(MLIRContext* context, const PayloadControlSupport& support)
+      : OpRewritePattern(context), support_(&support) {}
+
+  LogicalResult matchAndRewrite(scf::WhileOp loop,
+                                PatternRewriter& rewriter) const override {
+    if (support_->coversIteration(PayloadControlFeature::ConditionalLoop, loop,
+                                  loop.getStaticTripCount())) {
+      return failure();
+    }
+    auto condition = loop.getConditionOp();
+    auto comparison = condition.getCondition().getDefiningOp<arith::CmpIOp>();
+    if (!comparison ||
+        ValueRange(loop.getBeforeArguments()) != condition.getArgs()) {
+      return failure();
+    }
+    using Predicate = arith::CmpIPredicate;
+    auto predicate = comparison.getPredicate();
+    if (predicate != Predicate::slt && predicate != Predicate::sgt) {
+      return failure();
+    }
+    auto induction = dyn_cast<BlockArgument>(predicate == Predicate::slt
+                                                 ? comparison.getLhs()
+                                                 : comparison.getRhs());
+    if (!induction || induction.getOwner() != loop.getBeforeBody()) {
+      return failure();
+    }
+    const auto index = induction.getArgNumber();
+    auto increment =
+        loop.getYieldOp().getOperand(index).getDefiningOp<arith::AddIOp>();
+    if (!increment) {
+      return failure();
+    }
+    auto bodyInduction = loop.getAfterArguments()[index];
+    auto step = increment.getLhs() == bodyInduction ? increment.getRhs()
+                                                    : increment.getLhs();
+    const auto lower =
+        getConstantAPIntValue(getAsOpFoldResult(loop.getInits()[index]));
+    const auto upper = getConstantAPIntValue(
+        getAsOpFoldResult(predicate == Predicate::slt ? comparison.getRhs()
+                                                      : comparison.getLhs()));
+    const auto stride = getConstantAPIntValue(getAsOpFoldResult(step));
+    if (!lower || !upper || !stride || !stride->first.isStrictlyPositive()) {
+      return failure();
+    }
+
+    // A wrapping while counter is not a finite counted loop. Use wider
+    // arithmetic to prove that even its final increment stays representable.
+    const auto width = lower->first.getBitWidth();
+    const auto start = lower->first.sext(width + 2);
+    const auto end = upper->first.sext(width + 2);
+    const auto incrementValue = stride->first.sext(width + 2);
+    const auto iterations =
+        start.slt(end) ? (end - start + incrementValue - 1).sdiv(incrementValue)
+                       : llvm::APInt(width + 2, 0);
+    const auto exitValue = start + iterations * incrementValue;
+    if (!exitValue.isSignedIntN(width)) {
+      return failure();
+    }
+
+    SmallVector<OpOperand*> exitUses;
+    for (OpOperand& use : loop.getResult(index).getUses()) {
+      exitUses.push_back(&use);
+    }
+    auto counted = scf::upliftWhileToForLoop(rewriter, loop);
+    if (failed(counted)) {
+      return failure();
+    }
+    if (!exitUses.empty()) {
+      // LLVM 23 reconstructs the last body index, not the exit value. Use the
+      // proven constant until all supported LLVM versions preserve this result.
+      rewriter.setInsertionPointAfter(*counted);
+      auto constant = arith::ConstantOp::create(
+          rewriter, counted->getLoc(),
+          rewriter.getIntegerAttr(counted->getInductionVar().getType(),
+                                  exitValue.trunc(width)));
+      for (OpOperand* use : exitUses) {
+        rewriter.modifyOpInPlace(use->getOwner(), [&] { use->set(constant); });
+      }
+    }
+    return success();
+  }
+
+private:
+  const PayloadControlSupport* support_;
+};
 
 class LowerQCOIndexSwitch final : public OpConversionPattern<IndexSwitchOp> {
 public:
@@ -324,6 +404,12 @@ protected:
     while (true) {
       if (failed(runPipeline(cleanup, getOperation())) ||
           failed(foldStaticBranches(getOperation()))) {
+        signalPassFailure();
+        return;
+      }
+      RewritePatternSet patterns(&getContext());
+      patterns.add<UpliftStaticWhile>(&getContext(), *support);
+      if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
         signalPassFailure();
         return;
       }

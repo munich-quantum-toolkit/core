@@ -222,12 +222,16 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   // Unrolling exposes static register indices and tensor slots.
   populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
-  pm.addPass(qco::createDecomposeMultiControlled(target));
   qco::ElidePermutationsOptions permutationOptions;
   permutationOptions.trackOutputPermutation = true;
   permutationOptions.terminalOnly =
       target.connectivityKind() == CompilerTarget::Connectivity::Kind::Explicit;
   pm.addPass(qco::createElidePermutations(permutationOptions));
+  if (target.connectivityKind() ==
+      CompilerTarget::Connectivity::Kind::AllToAll) {
+    pm.addPass(qco::createPlacementPass());
+  }
+  pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   // U fusion shrinks runs before routing. Other bases can expand symbolic
   // runs, so emit them once during native synthesis, after cleanup.
@@ -250,7 +254,6 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
-    pm.addPass(qco::createPlacementPass());
     break;
   }
   qco::populateTargetNativeSynthesisPipeline(pm);
@@ -270,17 +273,17 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
-  pm.addPass(qco::createDecomposeMultiControlled(target));
   qco::ElidePermutationsOptions permutationOptions;
   permutationOptions.trackOutputPermutation = true;
   pm.addPass(qco::createElidePermutations(permutationOptions));
+  pm.addPass(qco::createPlacementPass());
+  pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   if (const auto basis = target.synthesisBasis();
       basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
-  pm.addPass(qco::createPlacementPass());
   qco::populateTargetNativeSynthesisPipeline(pm);
 }
 

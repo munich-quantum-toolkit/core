@@ -630,10 +630,10 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
 
 
 def test_mapping_options_defaults() -> None:
-    """Keep the public mapping defaults independent of CPU count except trials."""
+    """Use the pass trial budget and two refinement rounds by default."""
     options = MappingOptions()
     assert options.trials is None
-    assert options.iterations == 1
+    assert options.iterations == 2
     assert options.lookahead == 20
     assert options.search_memory_limit == 256 * 1024 * 1024
 

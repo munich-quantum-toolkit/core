@@ -116,13 +116,14 @@ Add `--emit=qco-optimized -o mapped.mlir` to write the mapped QCO program with
 layout metadata. The payload specification still defines the target's execution
 capabilities.
 
-Trials must be positive. Omitted trials use the logical CPU count; iterations
-default to one forward/backward refinement round. Zero iterations score each
-initial layout directly. Lookahead is the number of additional two-qubit gates
-considered during routing. It defaults to 20; zero considers only the current
-gate. All-to-all placement ignores valid mapping controls. Repeatable mapping
-requires the same build, input, target, seed, and mapping controls, including an
-explicit trial count. Layouts may change between releases.
+Trials must be positive. Omitted trials use the available logical CPU count,
+with a minimum of eight; iterations default to two forward/backward refinement
+rounds. Zero iterations score each initial layout directly. Lookahead is the
+number of additional two-qubit gates considered during routing. It defaults to
+20; zero considers only the current gate. All-to-all placement ignores valid
+mapping controls. Repeatable mapping requires the same build, input, target,
+seed, and mapping controls, including an explicit trial count. Layouts may
+change between releases.
 
 For explicit native gate sets with a usable entangler basis, routing ranks its
 candidates by estimated native two-qubit gate count, using qubit-dependency
@@ -235,7 +236,9 @@ compiler-target operations.
 nonempty list has one entry per parameter; `None` leaves a parameter
 unrestricted. An omitted or empty list leaves every parameter unrestricted.
 Multiple capabilities for the same operation form a union of supported values
-and placements. For example, these capabilities accept four RX angles:
+and placements. A homogeneous synthesis basis can combine site coverage from
+records with the same native name and parameter constraints. For example, these
+capabilities accept four RX angles:
 
 ```python
 from math import pi
@@ -294,10 +297,15 @@ Bind parameters before compilation to use fractional entanglers directly. Qiskit
 import conservatively recognizes this interval through its public bound
 predicates.
 
-Resynthesis of constant two-qubit gates uses an average gate fidelity floor of
-`1 - 1e-12` per decomposition, including direct Pauli lowering. It may remove
-small entangling angles or shorten near-Clifford rotations. This is a local
-bound, not a whole-circuit error budget; unbound angles are not approximated.
+Two-qubit synthesis uses a `1 - 1e-12` average gate fidelity floor per
+decomposition. It can omit small entangling angles or shorten near-Clifford
+rotations. Adaptive QIR and OpenQASM 3 with unrestricted forward branching can
+also omit the sole entangling term for a small runtime angle, preserving local
+rotations and global phase. This is not a whole-circuit error bound; repeated
+approximations can accumulate.
+
+Synthesis forwards phase-only U factors into neighboring U gates without runtime
+arithmetic.
 
 Synthesis merges Z rotations through diagonal entanglers on native RZ targets.
 Equatorial R targets use at most two R gates per single-qubit unitary and absorb
@@ -312,13 +320,12 @@ Use plain tuples for placements without calibration. Use
 calibration to a placement; both forms can appear in the same list.
 
 Routing uses undirected adjacency; native synthesis repairs unsupported operand
-directions. Target compilation requires a known static physical site for each
-qubit. Structured branch exits must agree on sites, and loop backedges must
-preserve the entry sites. Unsupported or inconsistent site transfers are
-diagnosed, including after all-to-all placement. A synthesis basis must provide
-the same one-qubit gate family on every site. Its entangler is optional:
-one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
-on every routing edge in at least one direction.
+directions. For statically addressed qubits, structured branch exits must agree
+on sites and loop backedges must preserve their entry sites. Unsupported or
+inconsistent site transfers are diagnosed. A synthesis basis must provide the
+same one-qubit gate family on every site. Its entangler is optional: one-qubit
+synthesis does not need one. Two-qubit synthesis requires an entangler on every
+routing edge in at least one direction.
 
 On explicit coupling graphs, source SWAPs before later interactions are kept:
 they can already provide useful routing. Only terminal straight-line SWAP
@@ -326,13 +333,20 @@ permutations are removed, with output order recorded in the qubit layout.
 All-to-all targets also elide nonterminal permutations through supported tensor
 accesses and structured control flow.
 
-Mapping explores one initial-layout trial per available logical CPU by default,
-using LLVM's affinity-aware CPU count with a minimum of one. An explicit
-`ntrials` value overrides this default. Set both `ntrials` and `seed` on the
-`place-and-route` pass for reproducible results across machines. Disabling
-multithreading runs the same trials sequentially. The trial budget includes a
+Mapping explores at least eight initial-layout trials with two forward/backward
+refinement rounds per trial by default. The trial count uses LLVM's
+affinity-aware logical CPU count, with a minimum of eight. An explicit `ntrials`
+value overrides this default, including values below eight. Set both `ntrials`
+and `seed` on the `place-and-route` pass for reproducible results across
+machines. Disabling multithreading runs the same trials sequentially. Trials
+share the MLIR context's thread pool; increasing the trial count does not create
+a larger pool. Process affinity can restrict execution to selected cores,
+including performance cores on heterogeneous CPUs. The trial budget includes a
 greedy layout when available, followed by identity if a slot remains and random
 layouts for the remaining slots. Every trial uses the same refinement count.
+Each trial retains the start layout with the lowest native two-qubit gate count
+across its forward refinement routes and final scoring route, using depth to
+break ties. Retention does not add routing passes.
 
 Each routing search limits its estimated node and layout storage to 256 MiB by
 default. When the budget is exhausted, it checks queued states before falling
@@ -519,24 +533,24 @@ reorder the before-region results. Untouched slots remain outside the control
 flow. Runtime indices and incomplete or nested tensor updates do not match this
 scalarization.
 
-For Adaptive QIR on an all-to-all target whose operations have empty
-`site_tuples`, placement assigns physical sites to the allocation's slots and
-retains indexed registers. Loop bodies do not grow with their iteration counts.
-The site list requires space proportional to the register width. Capacity,
-physical site IDs, qubit origins, native operations, and payload limits are
-still checked. This path uses target metadata and does not depend on a device
-name.
+Adaptive QIR retains indexed registers on all-to-all targets when the synthesis
+basis and any advertised measurement or reset cover their possible sites, or
+when all operations have unrestricted sites. Coverage may be explicit. Placement
+assigns physical sites to register slots and checks capacity and native
+operations; loop bodies do not grow with iteration counts. Site-restricted gates
+remain native only at proven sites. Runtime angles can prevent constant-angle
+simplification and increase the executed gate count.
 
-Other payloads, explicit topology, and site-specific operations require exact
-quantum addresses. Bounded specialization exposes those addresses before
-placement or routing. Residual unsupported tensor control flow produces a
-diagnostic before allocation changes. Mapped OpenQASM uses static physical
-qubits; indexed tensor loops must fit the default one-billion-operation
-unrolling budget. Runtime-dependent indices that cannot be specialized are
-unsupported. Logical qubit indices can remain dynamic in targetless OpenQASM
-export. Constant rank-one `f64` table reads use switches that group equal
-entries and require unrestricted multiway branching from the selected payload.
-Their size grows with the table data and number of reads.
+Other payloads, explicit topology, and targets that require known sites for
+synthesis or measurement/reset need exact quantum addresses. Bounded
+specialization exposes those addresses before placement or routing. Residual
+unsupported tensor control flow produces a diagnostic before allocation changes.
+Mapped OpenQASM uses static physical qubits; indexed tensor loops must fit the
+default one-billion-operation unrolling budget. Runtime-dependent indices that
+cannot be specialized are unsupported. Logical qubit indices can remain dynamic
+in targetless OpenQASM export. Constant rank-one `f64` table reads use switches
+that group equal entries and require unrestricted multiway branching from the
+selected payload. Their size grows with the table data and number of reads.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and
@@ -555,9 +569,11 @@ unusable. A capability absent from the selected specification is unsupported.
 QIR profile conversion attaches metadata and validates the emitted capabilities
 and receiver version against a matching target payload. Adaptive conversion
 checks counted-loop bounds before lowering, including loops introduced by
-classical copies. Residual `scf.while` operations require unconstrained emitted
-loop capabilities because QIR classifies loops by data dependence. See
-{doc}`Conversions` for profile requirements.
+classical copies. It checks switch limits and lowers oversized switches to
+conditional branches when the target permits that expansion. Residual
+`scf.while` operations require unconstrained emitted loop capabilities because
+QIR classifies loops by data dependence. See {doc}`Conversions` for profile
+requirements.
 
 An explicit output combines the output format's capabilities with the target's
 contract. Matching language versions and profiles retain only capabilities
@@ -752,21 +768,21 @@ marked as unknown. The compiler selects the emitted version from the features
 used by the program. Use `TargetEnvironment` and `PayloadSpecification` for
 staged compilation with explicit restrictions.
 
-QIR submission requires a parameterless entry point. QC-to-QIR conversion
-records direct measurements and CBit-register results, then emits runtime status
-0 for successful execution. Adaptive Profile also records computed Boolean
-(`i1`) results. All explicit QC and QCO returns are program data; other scalar
-entry results, including a constant-zero `i64`, are unsupported with or without
-a target. Keep other classical temporaries local, or select OpenQASM 3 for wider
-scalar outputs. In OpenQASM 3, declare `output bit` registers explicitly when
-global scalar variables are only temporaries. See the
-{doc}`QIR execution contracts <../qir/index>`.
+QC-to-QIR conversion requires a parameterless entry point. Bind any program
+parameters first. The converter records direct measurements and CBit-register
+results, then emits runtime status 0 for successful execution. Adaptive Profile
+also records computed Boolean (`i1`) results. All explicit QC and QCO returns
+are program data; other scalar entry results, including a constant-zero `i64`,
+are unsupported with or without a target. Keep other classical temporaries
+local, or select OpenQASM 3 for wider scalar outputs. In OpenQASM 3, declare
+`output bit` registers explicitly when global scalar variables are only
+temporaries. See the {doc}`QIR execution contracts <../qir/index>`.
 
-The adapter accepts circuit-model devices whose two-qubit operations cover every
-topology edge in at least one operand orientation and preserves the exact
-ordered tuples reported by the device. Operations with arity above two must
-report every ordered tuple of distinct sites. Neutral-atom zone models require a
-different compilation model and are rejected with a diagnostic.
+The adapter preserves ordered placements for recognized circuit operations.
+Compilation requires a single-qubit basis on every site and, for two-qubit
+synthesis, an entangler on every edge. Unknown operations are ignored, as are
+operations with unreported sites unless homogeneous support is declared.
+Neutral-atom zone models require a different compilation model and are rejected.
 
 QDMI 1.3 cannot report an operation-arity range. The bundled DDSIM device uses
 an exact, versioned custom-operation marker to state that each canonical

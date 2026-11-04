@@ -11,6 +11,7 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/QDMI.hpp"
 
@@ -20,11 +21,9 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/CheckedArithmetic.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
@@ -36,7 +35,6 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -151,135 +149,6 @@ snapshotSiteIndex(const qdmi::Site& site, SiteIndices& indices) {
   return *index;
 }
 
-[[nodiscard]] static CompilerTarget::Coupling
-canonicalCoupling(CompilerTarget::SiteId first, CompilerTarget::SiteId second) {
-  return first < second ? CompilerTarget::Coupling{first, second}
-                        : CompilerTarget::Coupling{second, first};
-}
-
-[[nodiscard]] static std::optional<size_t>
-allToAllCouplingCount(size_t numSites) {
-  if (numSites < 2) {
-    return 0;
-  }
-  const auto first = numSites % 2 == 0 ? numSites / 2 : numSites;
-  const auto second = numSites % 2 == 0 ? numSites - 1 : (numSites - 1) / 2;
-  return llvm::checkedMulUnsigned(first, second);
-}
-
-[[nodiscard]] static Error validateHomogeneousSupport(
-    StringRef operationName, size_t arity,
-    const std::vector<qdmi::Site>& flattenedSites,
-    const DenseSet<CompilerTarget::SiteId>& knownSites,
-    const std::optional<std::set<CompilerTarget::Coupling>>& couplings,
-    StringRef deviceName, SiteIndices& indices) {
-  if (auto error = requireRepresentableOperation(
-          flattenedSites.size() % arity == 0, deviceName, operationName,
-          "the reported site list is not divisible by the fixed arity")) {
-    return error;
-  }
-  if (arity > 2) {
-    std::set<std::vector<CompilerTarget::SiteId>> supportedTuples;
-    for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
-      std::vector<CompilerTarget::SiteId> tuple;
-      tuple.reserve(arity);
-      for (size_t index = 0; index < arity; ++index) {
-        auto siteId =
-            snapshotSiteIndex(flattenedSites[offset + index], indices);
-        if (!siteId) {
-          return siteId.takeError();
-        }
-        if (auto error = requireRepresentableOperation(
-                knownSites.contains(*siteId) &&
-                    !llvm::is_contained(tuple, *siteId),
-                deviceName, operationName,
-                "each higher-arity site tuple must contain distinct device "
-                "sites")) {
-          return error;
-        }
-        tuple.emplace_back(*siteId);
-      }
-      if (auto error = requireRepresentableOperation(
-              supportedTuples.emplace(std::move(tuple)).second, deviceName,
-              operationName,
-              "the reported higher-arity site tuples must be unique")) {
-        return error;
-      }
-    }
-
-    auto expectedTuples = std::optional<size_t>{1};
-    for (size_t index = 0; index < arity && expectedTuples; ++index) {
-      if (index >= knownSites.size()) {
-        expectedTuples = 0;
-        break;
-      }
-      expectedTuples =
-          llvm::checkedMulUnsigned(*expectedTuples, knownSites.size() - index);
-    }
-    return requireRepresentableOperation(
-        expectedTuples && supportedTuples.size() == *expectedTuples, deviceName,
-        operationName,
-        "support is not homogeneous across all ordered tuples of distinct "
-        "device sites");
-  }
-
-  if (arity == 1) {
-    DenseSet<CompilerTarget::SiteId> supportedSites;
-    supportedSites.reserve(flattenedSites.size());
-    for (const auto& site : flattenedSites) {
-      auto siteId = snapshotSiteIndex(site, indices);
-      if (!siteId) {
-        return siteId.takeError();
-      }
-      const auto inserted = supportedSites.insert(*siteId).second;
-      if (auto error = requireRepresentableOperation(
-              knownSites.contains(*siteId) && inserted, deviceName,
-              operationName,
-              "the reported one-qubit sites must be unique device sites")) {
-        return error;
-      }
-    }
-    return requireRepresentableOperation(
-        supportedSites.size() == knownSites.size(), deviceName, operationName,
-        "support is not homogeneous across all device sites");
-  }
-
-  std::set<CompilerTarget::Coupling> reportedTuples;
-  std::set<CompilerTarget::Coupling> supportedCouplings;
-  for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
-    auto first = snapshotSiteIndex(flattenedSites[offset], indices);
-    if (!first) {
-      return first.takeError();
-    }
-    auto second = snapshotSiteIndex(flattenedSites[offset + 1], indices);
-    if (!second) {
-      return second.takeError();
-    }
-    const auto inserted = reportedTuples.insert({*first, *second}).second;
-    const auto validTuple = *first != *second && knownSites.contains(*first) &&
-                            knownSites.contains(*second) && inserted;
-    if (auto error = requireRepresentableOperation(
-            validTuple, deviceName, operationName,
-            "the reported two-qubit sites must be "
-            "unique pairs of device sites")) {
-      return error;
-    }
-    supportedCouplings.insert(canonicalCoupling(*first, *second));
-  }
-
-  auto coversTarget = false;
-  if (!couplings) {
-    const auto expected = allToAllCouplingCount(knownSites.size());
-    coversTarget = expected && supportedCouplings.size() == *expected;
-  } else {
-    coversTarget = supportedCouplings == *couplings;
-  }
-  return requireRepresentableOperation(
-      coversTarget, deviceName, operationName,
-      couplings ? "support is not homogeneous across all topology edges"
-                : "support is not homogeneous across all-to-all site pairs");
-}
-
 [[nodiscard]] static Expected<std::optional<CompilerTarget::DurationUnit>>
 snapshotDurationUnit(const qdmi::Device& device) {
   auto unitResult = device.getDurationUnit();
@@ -362,24 +231,69 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
   return result;
 }
 
-[[nodiscard]] static Expected<CompilerTarget::NativeOperations>
-snapshotOperations(
-    const std::vector<qdmi::Operation>& operations,
-    const std::vector<CompilerTarget::Site>& deviceSites,
-    const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
-    StringRef deviceName, bool homogeneousOperationSupport,
-    SiteIndices& indices, bool includeCalibration) {
-  DenseSet<CompilerTarget::SiteId> knownSites;
-  std::optional<std::set<CompilerTarget::Coupling>> expectedCouplings;
-  if (couplings) {
-    expectedCouplings.emplace();
-    for (const auto& [first, second] : *couplings) {
-      expectedCouplings->insert(canonicalCoupling(first, second));
-    }
+template <typename Op>
+[[nodiscard]] static bool matchesBaseSymbol(StringRef name) {
+  if constexpr (requires { Op::getBaseSymbol(); }) {
+    return Op::getBaseSymbol() == name;
   }
+  return false;
+}
+
+template <typename... Ops>
+[[nodiscard]] static bool hasBaseSymbol(StringRef name) {
+  return (matchesBaseSymbol<Ops>(name) || ...);
+}
+
+[[nodiscard]] static bool isKnownOperation(StringRef name) {
+  const auto canonical = name.trim().lower();
+  name = canonical;
+  if (name == "measure" || name == "reset" || name == "sqrt_iswap") {
+    return true;
+  }
+  if (name == "i") {
+    name = "id";
+  }
+  if (name == "prx") {
+    name = "r";
+  }
+  if (name == "u1") {
+    name = "p";
+  }
+  if (name == "u3") {
+    name = "u";
+  }
+  if (name == "cnot") {
+    name = "cx";
+  }
+  if (name == "ccnot") {
+    name = "ccx";
+  }
+  if (name.starts_with("cc")) {
+    name = name.drop_front(2);
+  } else if (name.starts_with("c")) {
+    name = name.drop_front();
+  }
+  return hasBaseSymbol<
+#define GET_OP_LIST
+#include "mqt/Dialect/QCO/IR/QCOOps.cpp.inc"
+      >(name);
+}
+
+[[nodiscard]] static Expected<CompilerTarget::NativeOperations>
+snapshotOperations(const std::vector<qdmi::Operation>& operations,
+                   StringRef deviceName, bool homogeneousOperationSupport,
+                   SiteIndices& indices, bool includeCalibration) {
   std::vector<CompilerTarget::OperationCapability> targetOperations;
   targetOperations.reserve(operations.size());
   for (const auto& operation : operations) {
+    auto operationNameResult = operation.getName();
+    if (!operationNameResult) {
+      return operationNameResult.takeError();
+    }
+    auto operationName = std::move(*operationNameResult);
+    if (!isKnownOperation(operationName)) {
+      continue;
+    }
     auto zoned = operation.isZoned();
     if (!zoned) {
       return zoned.takeError();
@@ -396,11 +310,6 @@ snapshotOperations(
     if (!arity) {
       continue;
     }
-    auto operationNameResult = operation.getName();
-    if (!operationNameResult) {
-      return operationNameResult.takeError();
-    }
-    auto operationName = std::move(*operationNameResult);
     auto hasArbitraryPositiveControlsResult =
         hasArbitraryPositiveControlsMetadata(operation);
     if (!hasArbitraryPositiveControlsResult) {
@@ -423,11 +332,8 @@ snapshotOperations(
     if (*arity > 0 && flattenedSites && flattenedSites->empty()) {
       continue;
     }
-    if (auto error = requireRepresentableOperation(
-            *arity == 0 || flattenedSites || homogeneousOperationSupport,
-            deviceName, operationName,
-            "the supported sites are not reported")) {
-      return error;
+    if (*arity != 0 && !flattenedSites && !homogeneousOperationSupport) {
+      continue;
     }
     const bool queryCalibration =
         includeCalibration || hasArbitraryPositiveControls;
@@ -454,15 +360,9 @@ snapshotOperations(
         return error;
       }
     } else if (flattenedSites) {
-      if (knownSites.empty()) {
-        knownSites.reserve(deviceSites.size());
-        for (const auto& site : deviceSites) {
-          knownSites.insert(site.id());
-        }
-      }
-      if (auto error = validateHomogeneousSupport(
-              operationName, *arity, *flattenedSites, knownSites,
-              expectedCouplings, deviceName, indices)) {
+      if (auto error = requireRepresentableOperation(
+              flattenedSites->size() % *arity == 0, deviceName, operationName,
+              "the reported site list is not divisible by the fixed arity")) {
         return error;
       }
       auto tuples = snapshotOperationSites(
@@ -606,9 +506,9 @@ snapshotCompilerTarget(const qdmi::Device& device,
   if (!deviceOperations) {
     return deviceOperations.takeError();
   }
-  auto operations = snapshotOperations(
-      *deviceOperations, sites, couplings, deviceName,
-      hasHomogeneousAllToAllMetadata, indices, includeCalibration);
+  auto operations = snapshotOperations(*deviceOperations, deviceName,
+                                       hasHomogeneousAllToAllMetadata, indices,
+                                       includeCalibration);
   if (!operations) {
     return operations.takeError();
   }

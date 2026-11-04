@@ -149,12 +149,16 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
       origins[output] = origin(input);
     }
   };
+  const auto tieWires = [&](WireOpInterface wires) {
+    for (auto [input, output] :
+         llvm::zip_equal(wires.getInputQubits(), wires.getOutputQubits())) {
+      origins[output] = origin(input);
+    }
+  };
   auto result = root->walk([&](Operation* op, const WalkStage& stage) {
-    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      for (auto [input, output] : llvm::zip_equal(unitary.getInputQubits(),
-                                                  unitary.getOutputQubits())) {
-        origins[output] = origin(input);
-      }
+    if (auto wires = dyn_cast<WireOpInterface>(op);
+        wires && (op->getNumRegions() == 0 || isa<UnitaryOpInterface>(op))) {
+      tieWires(wires);
       return WalkResult::skip();
     }
     if (!stage.isAfterAllRegions()) {
@@ -178,7 +182,7 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
             corresponds(region.front().getArguments(),
                         region.front().getTerminator()->getOperands());
       }
-      tie(op->getOperands(), op->getResults());
+      tieWires(cast<WireOpInterface>(op));
     } else if (auto function = dyn_cast<func::FuncOp>(op)) {
       auto arguments = getQuantumArgumentIndices(function.getArgumentTypes());
       if (arguments.empty()) {
@@ -212,10 +216,6 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
         function.emitOpError("must return its quantum arguments positionally");
         return WalkResult::interrupt();
       }
-    } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
-      tie(ValueRange{measure.getQubitIn()}, ValueRange{measure.getQubitOut()});
-    } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
-      tie(ValueRange{reset.getQubitIn()}, ValueRange{reset.getQubitOut()});
     } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
       auto tensor = origin(extract.getTensor());
       // Graph regions need not place definitions before uses.

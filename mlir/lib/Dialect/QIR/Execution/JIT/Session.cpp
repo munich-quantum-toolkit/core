@@ -1093,8 +1093,8 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
       pipeline.addPass(
           llvm::createModuleToFunctionPassAdaptor(llvm::MemCpyOptPass()));
       if (execution == Execution::Sampling) {
-        pipeline.addPass(passBuilder.buildPerModuleDefaultPipeline(
-            llvm::OptimizationLevel::O1));
+        pipeline.addPass(passBuilder.buildModuleSimplificationPipeline(
+            llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None));
       }
       pipeline.run(module, moduleAnalyses);
       sampleBranches_ =

@@ -1568,27 +1568,6 @@ def test_custom_gate_with_standard_name_is_not_mistranslated() -> None:
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
-def test_custom_gate_export_rejects_duplicate_qargs() -> None:
-    """Reject a call Qiskit cannot apply to distinct Gate inputs."""
-    program = QCProgram.from_mlir_str(
-        """module {
-  func.func private @pair(%a: !qc.qubit, %b: !qc.qubit) attributes {mqt.unitary} {
-    return
-  }
-  func.func @main() attributes {mqt.entry_point} {
-    %q = qc.alloc : !qc.qubit
-    qc.call @pair(%q, %q) : !qc.qubit, !qc.qubit
-    qc.dealloc %q : !qc.qubit
-    return
-  }
-}
-"""
-    )
-
-    with pytest.raises(RuntimeError, match="uses the same qubit more than once"):
-        program.to_qiskit()
-
-
 def test_custom_gate_export_drops_unreferenced_functions() -> None:
     """Drop helper definitions that the exported circuit does not use."""
     program = QCProgram.from_mlir_str(

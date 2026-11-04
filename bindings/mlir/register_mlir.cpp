@@ -1836,9 +1836,9 @@ and nested modules.)pb")
            "iterations"_a = mlir::MappingOptions{}.iterations,
            "lookahead"_a = mlir::MappingOptions{}.lookahead,
            "search_memory_limit"_a = mlir::MappingOptions{}.searchMemoryLimit)
-      .def_rw(
-          "trials", &mlir::MappingOptions::trials,
-          "Positive trial count; None uses the available logical CPU count.")
+      .def_rw("trials", &mlir::MappingOptions::trials,
+              "Positive trial count; None uses the available logical CPU "
+              "count, with a minimum of 8.")
       .def_rw("iterations", &mlir::MappingOptions::iterations,
               "Forward/backward refinement rounds; zero scores each start "
               "directly.")

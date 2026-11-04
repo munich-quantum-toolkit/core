@@ -130,7 +130,7 @@ static llvm::cl::opt<uint64_t>
 static llvm::cl::opt<size_t> mappingTrials(
     "mapping-trials",
     llvm::cl::desc(
-        "Positive native mapping trial count (default: logical CPUs)"));
+        "Positive native mapping trial count (default: max(8, logical CPUs))"));
 static llvm::cl::opt<size_t> mappingIterations(
     "mapping-iterations",
     llvm::cl::desc(

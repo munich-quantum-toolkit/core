@@ -230,13 +230,21 @@ TEST(CompilerQDMIAdapterTest, ConvertsUnknownDeviceFailureToError) {
   EXPECT_NE(message.find("mqt.unknown.device"), std::string::npos);
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
+TEST(CompilerQDMIAdapterTest, RetainsSparseOperationsWithoutChangingBasis) {
+  const auto device = openScDevice("sparse-extra-sc.json");
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_TRUE(target.synthesisBasis()->entangler);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate,
+            CompilerTarget::GateKind::CZ);
+  EXPECT_FALSE(target.supportsOperation("prx_12", 1, 2, {0}));
+}
+
+TEST(CompilerQDMIAdapterTest, DoesNotTreatMissingEdgesAsHomogeneous) {
   const auto device = openScDevice("heterogeneous-sc.json");
-  auto target = mlir::compilerTargetFromDevice(device);
-  ASSERT_FALSE(target);
-  const auto message = llvm::toString(target.takeError());
-  EXPECT_NE(message.find("homogeneous"), std::string::npos);
-  EXPECT_NE(message.find("all topology edges"), std::string::npos);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_FALSE(target.synthesisBasis()->entangler);
 }
 
 TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
@@ -265,6 +273,40 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->entangler->gate,
             CompilerTarget::GateKind::CX);
+}
+
+TEST(CompilerQDMIAdapterTest, OmitsOperationsWithUnknownSites) {
+  const auto device = openScDevice("sparse-extra-sc.json");
+  const auto operations = llvm::cantFail(device.getOperations());
+  static thread_local QDMI_Operation missingSiteOperation = nullptr;
+  for (const auto& operation : operations) {
+    if (llvm::cantFail(operation.getName()) == "h") {
+      missingSiteOperation = operation;
+    }
+  }
+  ASSERT_NE(missingSiteOperation, nullptr);
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_operation_property)*
+      query = nullptr;
+  query = api->device_session_query_operation_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_operation_property = query; });
+  api->device_session_query_operation_property =
+      [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
+         const QDMI_Site* sites, size_t numParams, const double* params,
+         QDMI_Operation_Property property, size_t size, void* value,
+         size_t* sizeRet) -> int {
+    if (operation == missingSiteOperation &&
+        property == QDMI_OPERATION_PROPERTY_SITES) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    return query(session, operation, numSites, sites, numParams, params,
+                 property, size, value, sizeRet);
+  };
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_FALSE(target.supportsOperation("h", 1, 0));
 }
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {

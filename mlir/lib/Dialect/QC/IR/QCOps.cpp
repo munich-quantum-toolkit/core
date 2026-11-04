@@ -17,17 +17,23 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Region.h"
+#include "mlir/IR/Types.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/InliningUtils.h"
 
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
+
+#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -116,9 +122,45 @@ void QCDialect::initialize() {
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+LogicalResult mlir::qc::verifyDistinctQubitOperands(Operation* op,
+                                                    ValueRange operands) {
+  if (operands.size() < 2) {
+    return success();
+  }
+  llvm::SmallDenseSet<Value, 4> qubits;
+  llvm::SmallDenseSet<uint64_t, 4> staticIndices;
+  for (Value qubit : operands) {
+    if (!isa<QubitType>(qubit.getType())) {
+      continue;
+    }
+    if (!qubits.insert(qubit).second) {
+      return op->emitOpError("requires distinct qubit operands");
+    }
+    auto ref = qubit.getDefiningOp<StaticOp>();
+    if (!ref) {
+      continue;
+    }
+    // The producer may not have been verified yet.
+    auto index = ref->getAttrOfType<IntegerAttr>(ref.getIndexAttrName());
+    if (!index || !index.getType().isSignlessInteger(64) ||
+        index.getValue().isNegative()) {
+      continue;
+    }
+    if (!staticIndices.insert(index.getValue().getZExtValue()).second) {
+      return op->emitOpError(
+          "requires distinct qubit operands; references have the same static "
+          "index");
+    }
+  }
+  return success();
+}
+
 LogicalResult mlir::qc::verifyUnitaryOpInterface(Operation* op) {
-  return mqt::verifyFiniteConstantParameters(
-      op, cast<UnitaryOpInterface>(op).getParameters());
+  auto unitary = cast<UnitaryOpInterface>(op);
+  if (failed(verifyDistinctQubitOperands(op, unitary.getQubits()))) {
+    return failure();
+  }
+  return mqt::verifyFiniteConstantParameters(op, unitary.getParameters());
 }
 
 #include "mqt/Dialect/QC/IR/QCInterfaces.cpp.inc"
