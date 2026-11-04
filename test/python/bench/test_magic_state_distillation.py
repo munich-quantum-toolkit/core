@@ -62,13 +62,13 @@ def test_distillation_direct_sampling() -> None:
     assert sample(benchmark.generate(), shots=16, seed=17) == {"00": 16}
 
 
-@pytest.mark.parametrize("program_format", [None, ProgramFormat.QASM3])
+@pytest.mark.parametrize("program_format", [None, ProgramFormat.QIR_ADAPTIVE_MODULE])
 def test_distillation_ddsim(program_format: ProgramFormat | None) -> None:
     """Compile and execute the same circuit through both DDSIM payload paths."""
     benchmark = magic_state_distillation.MagicStateDistillation()
     device = open_device("mqt.ddsim.default")
     job = submit_program(benchmark.generate(), target=device, program_format=program_format, num_shots=16, custom1=17)
     if program_format is None:
-        assert job.program_format in {ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QIR_ADAPTIVE_STRING}
+        assert job.program_format == ProgramFormat.QASM3
     job.wait()
     assert job.get_counts() == {"00": 16}

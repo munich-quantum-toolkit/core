@@ -371,7 +371,7 @@ def test_submission_forms(form: str) -> None:
         program = compile_program(BELL, target=device)
         assert_type(program, CompiledProgram)
         assert isinstance(program, CompiledProgram)
-        assert program.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
+        assert program.program_format == ProgramFormat.QASM3
         job = submit_program(program, target=device, custom1=7)
     elif form == "source":
         job = submit_program(BELL, target=device, custom1=7)
@@ -395,10 +395,10 @@ def test_compiled_program_reopens_device() -> None:
     by_device = compile_program(BELL, target=device)
     by_id = compile_program(BELL, target="mqt.ddsim.default")
     assert by_id.payload == by_device.payload
-    assert by_id.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
-    assert isinstance(by_id.payload, bytes)
+    assert by_id.program_format == ProgramFormat.QASM3
+    assert isinstance(by_id.payload, str)
     with pytest.raises(AttributeError):
-        by_id.payload = b"changed"  # ty: ignore[invalid-assignment]
+        by_id.payload = "changed"  # ty: ignore[invalid-assignment]
     del device
     gc.collect()
     job = submit_program(by_id, target=open_device("mqt.ddsim.default"), num_shots=0)
@@ -418,7 +418,7 @@ def test_rejects_invalid_submission_options() -> None:
     compiled = compile_program(source, target=device, copy=True)
     assert source.is_valid
     with pytest.raises(ValueError, match="conflicts"):
-        submit_program(compiled, target=device, program_format=ProgramFormat.QASM3)
+        submit_program(compiled, target=device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
 
 
 @pytest.mark.parametrize(
@@ -517,13 +517,14 @@ def test_compiled_terminal_sampling_retains_state(program_format: ProgramFormat)
 
 
 def test_adaptive_payload_supports_optional_computations() -> None:
-    """DDSIM accepts optional computations in the preferred Adaptive payload."""
+    """DDSIM accepts optional computations in an explicit Adaptive payload."""
     source = (
         'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q; '
         "if (true) { int[32] k = int[32](c); if (k + 1 == 2) { x q; } } c = measure q;"
     )
     device = open_device("mqt.ddsim.default")
-    compiled = compile_program(source, target=device)
+    environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
+    compiled = compile_program(source, target=environment)
     assert compiled.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
     assert "qir.int-computations" in {c.capability_id for c in compiled.payload_specification.capabilities}
     job = submit_program(compiled, target=device, num_shots=16)
@@ -539,7 +540,7 @@ def test_adaptive_payload_supports_optional_computations() -> None:
     ],
 )
 def test_default_payload_supports_loops(body: str, counts: dict[str, int]) -> None:
-    """The preferred Adaptive payload retains counted and measurement-controlled loops."""
+    """The default payload retains counted and measurement-controlled loops."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; ' + body
     job = submit_program(source, target="mqt.ddsim.default", num_shots=8)
     job.wait()
@@ -554,7 +555,10 @@ def test_qir_artifact_rejects_unsupported_entry_result(
     source = f"OPENQASM 3.0; qubit q; bit c = measure q; int[{width}] k = int[{width}](c);"
     program = compile_program(source, output=OutputFormat.QCO) if staged else source
     with pytest.raises(ValueError, match="QIR entry return supports only direct measurements") as error:
-        compile_program(program, target="mqt.ddsim.default")
+        compile_program(
+            program,
+            target=TargetEnvironment.from_device("mqt.ddsim.default", program_format=ProgramFormat.QIR_ADAPTIVE_MODULE),
+        )
     assert "scalar program outputs" in str(error.value)
     assert not capfd.readouterr().err
 
