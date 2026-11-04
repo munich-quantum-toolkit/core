@@ -16,7 +16,14 @@ from types import SimpleNamespace
 import pytest
 from qiskit.circuit import Gate, QuantumCircuit
 
-from mqt.core.mlir import CompilerTarget, PayloadFormat, PayloadSpecification, ProgramCapability, TargetEnvironment
+from mqt.core.mlir import (
+    CompilerTarget,
+    PayloadFormat,
+    PayloadSpecification,
+    ProgramCapability,
+    TargetEnvironment,
+    serialize_program,
+)
 from mqt.core.plugins.qiskit import QDMIBackend
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError, UnsupportedOperationError
 from mqt.core.qdmi import ProgramFormat
@@ -204,6 +211,14 @@ def test_device_snapshot_retains_opaque_native_gates(monkeypatch: pytest.MonkeyP
         assert set(backend.target[name]) == {tuple(sites)}
         circuit.append(Gate(name, len(sites), [0.25] * parameters), sites)
     backend.validate_circuit(circuit, native=True)
+    program = serialize_program(
+        circuit, target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QASM3))
+    )
+    assert isinstance(program.payload, str)
+    assert "gpi(0.25) $0;" in program.payload
+    assert "ms(0.25, 0.25, 0.25) $0, $1;" in program.payload
+    assert "xy(0.25) $1, $0;" in program.payload
+    assert "custom_native $0;" in program.payload
     circuit.append(Gate("ms", 2, [0.25] * 3), [1, 0])
     with pytest.raises(UnsupportedOperationError, match="ms"):
         backend.validate_circuit(circuit, native=True)

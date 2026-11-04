@@ -324,10 +324,18 @@ snapshotOperations(const std::vector<qdmi::Operation>& operations,
       return operationNameResult.takeError();
     }
     auto operationName = std::move(*operationNameResult);
-    if (llvm::is_contained({"barrier", "if_else", "for_loop", "while_loop",
-                            "switch_case", "break_loop", "continue_loop",
-                            "store"},
-                           StringRef(operationName))) {
+    if (llvm::is_contained(
+            {
+                "barrier",
+                "if_else",
+                "for_loop",
+                "while_loop",
+                "switch_case",
+                "break_loop",
+                "continue_loop",
+                "store",
+            },
+            StringRef(operationName))) {
       continue;
     }
     auto zoned = operation.isZoned();
