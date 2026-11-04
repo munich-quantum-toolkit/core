@@ -324,7 +324,8 @@ template <typename... Ops>
 [[nodiscard]] static bool isKnownOperation(StringRef name) {
   const auto canonical = name.trim().lower();
   name = canonical;
-  if (name == "measure" || name == "reset" || name == "sqrt_iswap") {
+  if (name == "measure" || name == "reset" || name == "sqrt_iswap" ||
+      name == "move") {
     return true;
   }
   if (name == "i") {

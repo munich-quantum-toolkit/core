@@ -240,6 +240,8 @@ TEST(CompilerQDMIAdapterTest, RetainsSparseOperationsWithoutChangingBasis) {
   EXPECT_EQ(target.synthesisBasis()->entangler->gate,
             CompilerTarget::GateKind::CZ);
   EXPECT_FALSE(target.supportsOperation("prx_12", 1, 2, {0}));
+  EXPECT_TRUE(target.supportsOperation("move", 2, 0, {1, 2}));
+  EXPECT_FALSE(target.supportsOperation("move", 2, 0, {2, 1}));
 }
 
 TEST(CompilerQDMIAdapterTest, DoesNotTreatMissingEdgesAsHomogeneous) {
@@ -1860,9 +1862,11 @@ TEST(CompilerQDMIAdapterTest, SerializesNativeIQMMoveWithReadoutLayout) {
   using Capability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(
       "resonator",
-      {llvm::cantFail(Site::create(0, "QB1")),
-       llvm::cantFail(Site::create(1, "QB2")),
-       llvm::cantFail(Site::create(2, "CR1"))},
+      {
+          llvm::cantFail(Site::create(0, "QB1")),
+          llvm::cantFail(Site::create(1, "QB2")),
+          llvm::cantFail(Site::create(2, "CR1")),
+      },
       CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
           llvm::cantFail(Capability::create("r", 1, 2)),

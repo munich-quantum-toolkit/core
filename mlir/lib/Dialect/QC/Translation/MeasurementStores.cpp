@@ -61,7 +61,8 @@ static bool canReuseMeasurementBit(MeasureOp measure,
       llvm::append_range(pending, result.getUsers());
     }
   }
-  for (auto* op = measure->getNextNode(); op; op = op->getNextNode()) {
+  for (auto* op = measure->getNextNode(); op != nullptr;
+       op = op->getNextNode()) {
     const auto result = op->walk<WalkOrder::PreOrder>([&](Operation*
                                                               candidate) {
       if (candidate == destination || isa<qc::UnitaryOpInterface>(candidate)) {

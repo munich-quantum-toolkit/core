@@ -873,7 +873,7 @@ TEST(OpenQASM3EmissionTest, KeepsMeasuredSnapshotAcrossNestedWrites) {
     }
     source += "cbit.store %false, %bits[%zero] : !cbit.reg<2>";
     if (nestedWrite) {
-      source += "}";
+      source += '}';
     }
     source += R"mlir(
         scf.if %condition { qc.x %other : !qc.qubit }
