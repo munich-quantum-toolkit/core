@@ -341,11 +341,6 @@ void QDMIDevice::MatrixOperation(
 void QDMIDevice::SetBasisState(DataView<int8_t, 1>& state,
                                std::vector<QubitIdType>& wires) {
   require(!result_, "Operations after terminal readout are unsupported.");
-  require(recorder_.canPrepareBasisState(),
-          "Basis state preparation must precede all other operations.");
-  require(state.size() == wires.size() && !wires.empty(),
-          "Basis state length must match its wires.");
-  [[maybe_unused]] const auto indices = wireIndices(wires);
   std::vector<int8_t> values;
   values.reserve(state.size());
   for (const auto bit : state) {

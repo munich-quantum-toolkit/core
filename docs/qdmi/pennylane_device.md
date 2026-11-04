@@ -32,8 +32,11 @@ For compilation with `qp.qjit`, also install Catalyst:
 uv pip install "mqt-core[pennylane,catalyst]"
 ```
 
-Catalyst is optional for ordinary QNodes. The extra installs Catalyst 0.15.x on
-supported Python versions and platforms. See the
+Catalyst is optional for ordinary QNodes. The extra installs a stable Catalyst
+release from 0.15 and below 1.0 on supported Python versions and platforms. Core
+tests the 0.15.0 device interface and warns once when loading a newer version;
+an ABI change can crash the process. The upstream canary checks for header
+drift. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
 for platform requirements.
 
@@ -106,9 +109,9 @@ samples are reconstructed without temporal shot order. Terminal measurements of
 a compiled circuit share one provider readout.
 
 Ordinary QNodes compile only the tape's wires, unless a measurement requests all
-device wires. Catalyst omits readout of untouched wires and supplies their known
-zero values locally. Both paths retain the compiler's result layout before
-selecting PennyLane wires. See
+device wires. Both paths omit readout of untouched wires and supply their known
+zero values locally; entirely untouched tapes need no provider job. Both paths
+retain the compiler's result layout before selecting PennyLane wires. See
 [terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 Hardware parameter constraints come from the provider's QDMI operation metadata.

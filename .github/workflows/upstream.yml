@@ -15,6 +15,18 @@ concurrency:
 permissions: {}
 
 jobs:
+  catalyst-abi-check:
+    name: Catalyst device ABI
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - run: uv run scripts/catalyst_abi_check.py
+
   catalyst-upstream-tests:
     name: 🐍⚛️ Catalyst development
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@a4b4977405c7685f95e127cdb6db396bbadce787 # v2.5.5
@@ -44,11 +56,11 @@ jobs:
 
   create-issue-on-failure:
     name: Create issue on failure
-    needs: qiskit-upstream-tests
+    needs: [qiskit-upstream-tests, catalyst-upstream-tests, catalyst-abi-check]
     if: ${{ always() }}
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-issue.yml@a4b4977405c7685f95e127cdb6db396bbadce787 # v2.5.5
     with:
-      tests-result: ${{ needs.qiskit-upstream-tests.result }}
+      tests-result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
     permissions:
       contents: read
       issues: write # Needed to create/update issues

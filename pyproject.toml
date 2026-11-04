@@ -97,17 +97,13 @@ email = "marcel@mq.sc"
 [project.optional-dependencies]
 catalyst = [
   # Catalyst and its pinned JAX wheels support these platforms on CPython 3.11-3.14.
-  # The alpha boundary admits 0.16 development wheels as an early ABI check
-  # against the vendored 0.15 headers, while excluding 0.16 alpha releases.
   """\
-  pennylane-catalyst>=0.15,<0.16.0a0; python_version<'3.15' and ((sys_platform=='linux' and \
-  (platform_machine=='x86_64' or platform_machine=='aarch64')) or (sys_platform=='darwin' and \
-  platform_machine=='arm64'))\
+  pennylane-catalyst>=0.15,<1; python_version<'3.15' and ((sys_platform=='linux' and (platform_machine=='x86_64' or \
+  platform_machine=='aarch64')) or (sys_platform=='darwin' and platform_machine=='arm64'))\
   """,
 ]
 pennylane = [
-  # Admit the next development series while excluding its first alpha and release.
-  "pennylane>=0.45.1,<0.46.0a0",
+  "pennylane>=0.45.1,<1",
 ]
 qiskit = [
   "qiskit>=2.5,<3",
@@ -146,7 +142,7 @@ docs = [
   "myst-nb>=1.4",
   "ninja>=1.13",
   "openqasm-pygments>=0.2",
-  "pennylane>=0.45.1,<0.46.0a0",
+  "pennylane>=0.45.1,<1",
   "pygraphviz>=2",
   "qiskit[visualization]>=2.5,<3",
   "sphinx>=9",
@@ -172,7 +168,7 @@ test-base = [
   "numpy>=2.1; python_version>='3.13'",
   "numpy>=2.3.2; python_version>='3.14'",
   "numpy>=2.5.2; python_version>='3.15'",
-  "pennylane>=0.45.1,<0.46.0a0",
+  "pennylane>=0.45.1,<1",
   "pygraphviz>=2.0.2",
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
@@ -449,9 +445,9 @@ error-on-warning = true
 [tool.pytest]
 addopts = [
   "-ra",
-  "--numprocesses=auto",                      # Automatically use all available CPU cores for parallel testing
+  "--numprocesses=auto",                                      # Automatically use all available CPU cores for parallel testing
   "-m",
-  "not (linkcheck or slurm or qiskit_c_api)",
+  "not (linkcheck or slurm or qiskit_c_api or catalyst_abi)",
 ]
 filterwarnings = [
   "error",
@@ -464,6 +460,7 @@ markers = [
   "linkcheck: documentation link-checker tests (requires a source checkout)",
   "slurm: Slurm integration-script tests (requires a source checkout)",
   "qiskit_c_api: Qiskit C API adoption-script tests (requires a source checkout)",
+  "catalyst_abi: Catalyst ABI maintenance-script tests (requires a source checkout)",
 ]
 minversion = "9.0"
 strict = true

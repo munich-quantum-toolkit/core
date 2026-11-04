@@ -2104,8 +2104,9 @@ Args:
           R"pb(Translate a preprocessed PennyLane {py:class}`~pennylane.tape.QuantumScript` to QC MLIR.
 
 The tape must contain supported native gates after decomposition, measurement
-basis rotations, and mid-circuit measurement deferral. All wires are measured
-and returned in the supplied order (the tape's wire order by default).
+basis rotations, and mid-circuit measurement deferral. Touched wires are measured;
+untouched wires contribute known zeros. Results follow the supplied wire order
+(the tape's wire order by default).
 PennyLane's terminal measurements are evaluated from these samples by the device.
 
 Args:
@@ -2932,36 +2933,6 @@ Args:
     program: A native Qiskit circuit or QC program with static target sites.
     target: The destination device, registered device ID, or TargetEnvironment.
 )pb");
-
-  m.def(
-      "try_submit_programs",
-      [](const std::vector<const mlir::CompiledProgram*>& programs,
-         const nb::object& target, int64_t numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto device = resolveDevice(target);
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        const nb::gil_scoped_release release;
-        return unwrap(mlir::trySubmitPrograms(device, programs, numShots,
-                                              params[0], params[1], params[2],
-                                              params[3], params[4]));
-      },
-      "programs"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
-      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
-      R"pb(Submit compatible compiled programs together when supported.
-
-Returns ``None`` if the provider declines a multi-program job before submission.
-Programs must share a payload format. ``target`` accepts a device ID or an open
-device. Other validation or submission failures raise an exception.)pb");
 
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
         "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,

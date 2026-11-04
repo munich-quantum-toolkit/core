@@ -204,6 +204,7 @@ def catalyst_dev(session: nox.Session) -> None:
     _run_tests(
         session,
         uv_run_args=[
+            "--prerelease=allow",
             "--with",
             os.environ.get("CATALYST_WHEEL", "pennylane-catalyst>=0.16.0.dev0"),
             "--index=https://test.pypi.org/simple",

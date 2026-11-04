@@ -21,11 +21,14 @@ __lazy_modules__ = {
     "numbers",
     "operator",
     "packaging.specifiers",
+    "packaging.version",
     "pennylane.transforms",
     "pennylane.transforms.core",
+    "warnings",
 }
 
 import operator
+import warnings
 from importlib.metadata import version
 from numbers import Integral
 from pathlib import Path
@@ -33,11 +36,12 @@ from typing import TYPE_CHECKING, Any
 
 import pennylane as qp
 from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 from pennylane.devices import Device, ExecutionConfig
 from pennylane.transforms import defer_measurements
 from pennylane.transforms.core import CompilePipeline
 
-from mqt.core import mlir
+from mqt.core import UntestedVersionWarning, mlir
 from mqt.core.mlir import QCProgram, compile_program
 from mqt.core.mlir._pennylane import Context
 from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
@@ -147,6 +151,7 @@ class QDMIDevice(Device):
     """
 
     config_filepath = str(Path(__file__).with_name("capabilities.toml"))
+    _warned_catalyst_version = False
 
     @staticmethod
     def get_c_interface() -> tuple[str, str]:
@@ -156,10 +161,19 @@ class QDMIDevice(Device):
             PennyLaneConfigurationError: If Catalyst uses an unsupported device ABI.
         """
         installed = version("pennylane-catalyst")
-        supported = SpecifierSet(">=0.15,<0.16.0a0")
+        supported = SpecifierSet(">=0.15,<1")
         if not supported.contains(installed, prereleases=True):
             msg = f"Catalyst {installed} has an unsupported device ABI; requires {supported}."
             raise ConfigurationError(msg)
+        if Version(installed) > Version("0.15.0") and not QDMIDevice._warned_catalyst_version:
+            warnings.warn(
+                f"pennylane-catalyst {installed} is newer than the tested device interface 0.15.0. "
+                "MQT Core will try it, but an interface change can crash the process. "
+                "Report problems at https://github.com/munich-quantum-toolkit/core/issues.",
+                UntestedVersionWarning,
+                stacklevel=2,
+            )
+            QDMIDevice._warned_catalyst_version = True
         return "MQTQDMI", mlir.__file__
 
     def __init__(
@@ -227,7 +241,6 @@ class QDMIDevice(Device):
             )
         except (RuntimeError, ValueError) as exc:
             raise ConfigurationError(str(exc)) from exc
-        self._job_parameters = job_parameters
         self.device_kwargs = {"context": self._context.id}
         self._submitted_jobs = 0
         self._execution_time = 0.0
@@ -268,22 +281,31 @@ class QDMIDevice(Device):
         """
         return self.wires if any(not measurement.wires for measurement in tape.measurements) else tape.wires
 
-    def _prepare(self, tapes: Sequence[QuantumScript]) -> list[CompiledProgram]:
+    def _prepare(self, tapes: Sequence[QuantumScript]) -> list[CompiledProgram | None]:
         """Compile preprocessed tapes using one snapshot of the QDMI target.
 
         Returns:
-            Programs ready for submission to this device, in input order.
+            Programs ready for submission, or None for locally known samples.
 
         Raises:
             PennyLaneTranslationError: If an operation or target cannot be compiled.
         """
-        try:
-            return compile_program(
-                [QCProgram.from_pennylane(tape, wires=self._tape_wires(tape)) for tape in tapes],
-                target=self._context.environment,
-            )
-        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-            raise TranslationError(str(exc)) from exc
+        environment = self._context.environment
+        prepared = []
+        for tape in tapes:
+            if not tape.measurements:
+                prepared.append(None)
+                continue
+            try:
+                program = QCProgram.from_pennylane(tape, wires=self._tape_wires(tape))
+                prepared.append(
+                    compile_program(program, target=environment)
+                    if program.operation_counts().get("qc.measure", 0)
+                    else None
+                )
+            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+                raise TranslationError(str(exc)) from exc
+        return prepared
 
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:

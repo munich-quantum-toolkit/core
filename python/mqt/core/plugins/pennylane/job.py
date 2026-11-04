@@ -10,27 +10,34 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = {"mqt.core.mlir._pennylane", "mqt.core.plugins.pennylane.exceptions", "mqt.core.plugins.qdmi_batch"}
+__lazy_modules__ = {
+    "mqt.core.mlir._pennylane",
+    "mqt.core.plugins.pennylane.exceptions",
+    "mqt.core.plugins.qdmi_batch",
+    "mqt.core.qdmi",
+    "numpy",
+}
 
 from contextlib import contextmanager
 from time import monotonic
 from typing import TYPE_CHECKING, cast
 
+import numpy as np
+
 from mqt.core.mlir._pennylane import samples
 from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError
-from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
+from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
-    import numpy as np
     from pennylane.measurements import SampleMeasurement
     from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
 
     from mqt.core.mlir import CompiledProgram
     from mqt.core.plugins.pennylane.device import QDMIDevice
-    from mqt.core.qdmi import Job
 
 __all__ = ["PennyLaneJob"]
 
@@ -48,7 +55,7 @@ class PennyLaneJob:
     def __init__(
         self,
         device: QDMIDevice,
-        prepared: Sequence[tuple[CompiledProgram, tuple[int, ...]]],
+        prepared: Sequence[tuple[CompiledProgram | None, tuple[int, ...]]],
         tapes: Sequence[QuantumScript],
         *,
         single: bool,
@@ -59,13 +66,31 @@ class PennyLaneJob:
         self._tapes = tuple(tapes)
         self._wires = tuple(device._tape_wires(tape) for tape in tapes)  # ruff:ignore[private-member-access] Match the compiled tape wire order.
         self._single = single
-        self._prepared = tuple((program, shots) for program, copies in prepared for shots in copies)
+        self._prepared = tuple(
+            (program, shots, len(wires))
+            for (program, copies), wires in zip(prepared, self._wires, strict=True)
+            for shots in copies
+        )
         self._batch: Batch[np.ndarray] = Batch(
-            [BatchEntry(index, copy) for index, (_, copies) in enumerate(prepared) for copy in range(len(copies))],
+            [
+                BatchEntry(
+                    index,
+                    copy,
+                    attempts=(
+                        JobAttempt(
+                            status=Job.Status.DONE, result=np.zeros((shots, len(self._wires[index])), dtype=np.int8)
+                        ),
+                    )
+                    if program is None
+                    else (),
+                )
+                for index, (program, copies) in enumerate(prepared)
+                for copy, shots in enumerate(copies)
+            ],
             submit=self._submit,
             decode=self._samples,
             submit_programs=self._submit_programs,
-            group_by=[(program.program_format, shots) for program, shots in self._prepared],
+            group_by=[(program.program_format if program else None, shots) for program, shots, _ in self._prepared],
             submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             max_retries=max_retries,
@@ -78,21 +103,23 @@ class PennyLaneJob:
         return self._batch.entries
 
     def _submit(self, index: int) -> Job:
-        program, shots = self._prepared[index]
+        program, shots, _ = self._prepared[index]
+        assert program is not None
         return self._device._context.submit(program, shots)  # ruff:ignore[private-member-access] Retained session and target snapshot.
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
-        _, shots = self._prepared[indices[0]]
+        _, shots, _ = self._prepared[indices[0]]
+        programs = [self._prepared[index][0] for index in indices]
+        assert all(program is not None for program in programs)
         return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.
-            [self._prepared[index][0] for index in indices], shots
+            cast("list[CompiledProgram]", programs), shots
         )
 
     def _samples(self, index: int, job: Job, program_index: int) -> np.ndarray:
         """Return a shot-by-wire sample array in the device's logical wire order."""
-        program, shots = self._prepared[index]
-        return samples(
-            job, len(self._wires[self.entries[index].input_index]), shots, program_index, program.result_layout
-        )
+        program, shots, width = self._prepared[index]
+        assert program is not None
+        return samples(job, width, shots, program_index, program.result_layout)
 
     def _record_submission(self, indices: Sequence[int]) -> None:
         self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.

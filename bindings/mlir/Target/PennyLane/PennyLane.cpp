@@ -13,6 +13,7 @@
 #include "mqt/Compiler/ResultLayout.h"
 #include "qdmi/QDMI.hpp"
 
+#include "../../../qdmi/Parameters.hpp"
 #include "CircuitRecorder.h"
 #include "QDMIDevice.h"
 
@@ -40,13 +41,13 @@ namespace mqt::bindings::pennylane {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using PythonJobParameter =
-    std::variant<std::string, bool, int, double, nb::bytes>;
+using mqt::bindings::PythonCustomJobParameter;
 using Samples =
     nb::ndarray<nb::numpy, int8_t, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
 
+// Contexts outlive Python calls, so byte parameters need owned storage.
 static std::optional<catalyst::JobParameter>
-ownJobParameter(const std::optional<PythonJobParameter>& parameter) {
+ownJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
   if (!parameter) {
     return std::nullopt;
   }
@@ -162,11 +163,11 @@ void registerBindings(nb::module_& m) {
       "_pennylane", "Runtime support for the PennyLane QDMI device.");
   nb::class_<catalyst::Context>(pennylane, "Context")
       .def(nb::new_([](qdmi::Device device,
-                       const std::optional<PythonJobParameter>& custom1,
-                       const std::optional<PythonJobParameter>& custom2,
-                       const std::optional<PythonJobParameter>& custom3,
-                       const std::optional<PythonJobParameter>& custom4,
-                       const std::optional<PythonJobParameter>& custom5,
+                       const std::optional<PythonCustomJobParameter>& custom1,
+                       const std::optional<PythonCustomJobParameter>& custom2,
+                       const std::optional<PythonCustomJobParameter>& custom3,
+                       const std::optional<PythonCustomJobParameter>& custom4,
+                       const std::optional<PythonCustomJobParameter>& custom5,
                        std::optional<QDMI_Program_Format> programFormat) {
              catalyst::JobParameters parameters{
                  ownJobParameter(custom1), ownJobParameter(custom2),

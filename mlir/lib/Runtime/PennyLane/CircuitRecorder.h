@@ -71,6 +71,7 @@ private:
   std::vector<intptr_t> ids_;
   std::vector<bool> touched_;
   intptr_t nextQubit_ = 0;
+  size_t recordings_ = 0;
   bool initialState_ = true;
 };
 

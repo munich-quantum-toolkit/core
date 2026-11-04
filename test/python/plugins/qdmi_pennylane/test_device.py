@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import warnings
 from importlib.util import find_spec
 from typing import TYPE_CHECKING, cast
 
@@ -18,6 +19,7 @@ import pennylane as qp
 import pytest
 from qiskit import QuantumCircuit
 
+from mqt.core import UntestedVersionWarning
 from mqt.core.mlir import TargetEnvironment, serialize_program
 from mqt.core.plugins.pennylane import (
     PennyLaneConfigurationError,
@@ -32,7 +34,7 @@ if TYPE_CHECKING:
     from pennylane.typing import Result, ResultBatch
 
 
-@pytest.mark.parametrize("installed", ["0.14.1", "0.16.0"])
+@pytest.mark.parametrize("installed", ["0.14.1", "1.0.0"])
 def test_rejects_incompatible_catalyst_abi(monkeypatch: pytest.MonkeyPatch, installed: str) -> None:
     """Reject unsupported runtimes before they can call an incompatible C++ vtable."""
     monkeypatch.setattr("mqt.core.plugins.pennylane.device.version", lambda _name: installed)
@@ -146,7 +148,7 @@ def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPa
     readings = iter([0.0, 0.5, 0.5, 1.5, 10.0, 11.0, 11.0, 12.25])
     monkeypatch.setattr("mqt.core.plugins.pennylane.job.monotonic", lambda: next(readings))
     device = QDMIDevice("mqt.ddsim.default", wires=2)
-    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[(5, 2), 7])
+    tape = qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[0, 1])], shots=[(5, 2), 7])
     device.execute(tape)
     device.execute(tape)
     assert device.submitted_jobs == 4
@@ -235,3 +237,31 @@ def test_openqasm2_execution(*, compiled: bool) -> None:
 
     execute = qp.qjit(circuit) if compiled else circuit
     np.testing.assert_array_equal(execute(), np.tile([1, 0], (16, 1)))
+
+
+def test_warns_once_for_new_catalyst_abi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Newer compatible-major runtimes warn before attempting their interface."""
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device.version", lambda _name: "0.16.0")
+    monkeypatch.setattr(QDMIDevice, "_warned_catalyst_version", False)
+    with pytest.warns(UntestedVersionWarning, match="interface change can crash"):
+        assert QDMIDevice.get_c_interface()[0] == "MQTQDMI"
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        QDMIDevice.get_c_interface()
+    assert not recorded
+
+
+@pytest.mark.parametrize("measured", [False, True])
+def test_local_results_need_no_provider_job(*, measured: bool) -> None:
+    """Empty readout and untouched measured wires are completed locally."""
+    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[1, 0])] if measured else [], shots=[2, 3])
+    result = device.execute(tape)
+    if measured:
+        for shots, samples in zip((2, 3), result, strict=True):
+            np.testing.assert_array_equal(samples, np.zeros((shots, 2)))
+    else:
+        assert result == ((), ())
+    assert device.submitted_jobs == 0
+    assert device.last_job is not None
+    assert all(entry.result is not None for entry in device.last_job.entries)

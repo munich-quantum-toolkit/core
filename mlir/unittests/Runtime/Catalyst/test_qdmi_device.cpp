@@ -303,3 +303,21 @@ TEST(CatalystQDMI, FactoryRetainsContextAndRejectsInvalidLifetimes) {
   second.reset();
   EXPECT_THROW(createDevice(kwargs.c_str()), std::runtime_error);
 }
+
+TEST(CatalystRecorder, ReleasesInternedAttributesPeriodically) {
+  mqt::pennylane::CircuitRecorder recorder;
+  std::shared_ptr<mlir::MLIRContext> firstContext;
+  for (size_t recording = 0; recording <= 256; ++recording) {
+    const auto wires = recorder.allocate(1);
+    recorder.namedOperation("RX", {static_cast<double>(recording)}, wires);
+    auto program = recorder.takeProgram();
+    if (recording == 0) {
+      firstContext = program.context();
+    } else if (recording < 256) {
+      EXPECT_EQ(program.context(), firstContext);
+    } else {
+      EXPECT_NE(program.context(), firstContext);
+    }
+    recorder.release(wires);
+  }
+}

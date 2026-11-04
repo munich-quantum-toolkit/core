@@ -115,7 +115,9 @@ std::vector<intptr_t> CircuitRecorder::allocate(size_t count) {
   require(count > 0 && count <= static_cast<size_t>(INTPTR_MAX) -
                                     static_cast<size_t>(nextQubit_),
           "Qubit allocation exceeds the supported range.");
-  if (!compiler_) {
+  // shortcut: retain uniqued attributes for at most 256 recordings; use a
+  // per-recording context if individual circuits need a tighter memory bound.
+  if (recordings_++ % 256 == 0) {
     compiler_ = mlir::createCompilerContext();
   }
   builder_ = std::make_unique<mlir::qc::QCProgramBuilder>(compiler_.get());
