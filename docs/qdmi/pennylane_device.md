@@ -15,9 +15,10 @@ circuits for the selected device and reconstructs finite-shot measurement
 results.
 
 The QDMI device must provide gate and topology metadata usable by MQT Core's
-compiler, accept at least one format Core can emit (QIR, OpenQASM 2/3, or IQM
-JSON), and return computational-basis samples or counts. The examples use the
-local [DD-based simulator device](ddsim_device.md) and require no credentials or
+compiler, accept a
+[supported executable format](../mlir/target_compilation.md#choose-a-format),
+and return computational-basis samples or counts. The examples use the local
+[DD-based simulator device](ddsim_device.md) and require no credentials or
 remote resources.
 
 Install MQT Core with the optional PennyLane dependency:
@@ -34,9 +35,9 @@ uv pip install "mqt-core[pennylane,catalyst]"
 
 Catalyst is optional for ordinary QNodes. The extra installs a stable Catalyst
 release from 0.15 and below 1.0 on supported Python versions and platforms. Core
-tests the 0.15.0 device interface and warns once when loading a newer version;
-an ABI change can crash the process. The upstream canary checks for header
-drift. See the
+tests the 0.15.0 device interface and warns once when loading a newer minor
+version; an ABI change can crash the process. The upstream canary checks for
+header drift. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
 for platform requirements.
 
@@ -99,14 +100,14 @@ unsupported target configurations fail before submission; all programs in an
 ordinary QNode batch are prepared before any jobs are submitted. The device
 retains one target snapshot for its lifetime.
 
-The compiler selects an advertised format in this order: Adaptive Profile QIR
-binary/text, OpenQASM 3, IQM JSON, then Base Profile QIR binary/text, and
-OpenQASM 2. IQM targets must provide physical site names and supported gate
-metadata. Terminal readout follows ascending physical site IDs; the compiled
-result layout restores logical output order. Results follow PennyLane's wire
-order regardless of physical placement. If the provider returns only counts,
-samples are reconstructed without temporal shot order. Terminal measurements of
-a compiled circuit share one provider readout.
+The compiler uses Core's
+[format preference](../mlir/target_compilation.md#choose-a-format). IQM targets
+must provide physical site names and supported gate metadata. Terminal readout
+follows ascending physical site IDs; the compiled result layout restores logical
+output order. Results follow PennyLane's wire order regardless of physical
+placement. If the provider returns only counts, samples are reconstructed
+without temporal shot order. Terminal measurements of a compiled circuit share
+one provider readout.
 
 Ordinary QNodes compile only the tape's wires, unless a measurement requests all
 device wires. Both paths omit readout of untouched wires and supply their known
