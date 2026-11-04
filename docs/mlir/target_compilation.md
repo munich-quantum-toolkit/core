@@ -361,3 +361,36 @@ physical sites; compilation preserves those IDs and does not attach a layout.
 Static and dynamic qubits cannot be mixed. Compilation rejects an already
 attached layout; later transformations clear it. See
 [transpiler layouts](qiskit.md#transpiler-layouts) for the full contract.
+
+### Temporary QDMI payload contract
+
+`QDMI_DEVICE_PROPERTY_CUSTOM3` can supply NUL-terminated UTF-8 JSON with schema
+`mqt.payload-capabilities.v1` and a `capabilities` array. Each entry contains an
+`id`, optional unsigned `value` (default zero), and an optional `constraints`
+object mapping constraint IDs to unsigned limits. This temporary contract is not
+part of the QDMI standard. The reported list restricts the selected format's
+capabilities; absent capabilities are unavailable. Unknown schemas are ignored,
+and malformed recognized metadata is rejected.
+
+For example, a device supporting only unnested register comparisons can report:
+
+```json
+{
+  "schema": "mqt.payload-capabilities.v1",
+  "capabilities": [{
+    "id": "forward-branching",
+    "constraints": {
+      "max-control-flow-nesting-depth": 1,
+      "max-condition-width": 32,
+      "requires-register-equality": 1,
+      "unitary-only-branches": 1
+    }
+  }]
+}
+```
+
+`max-condition-width` bounds integer widths used by the condition.
+`requires-register-equality` and `unitary-only-branches` accept the value `1`;
+they require comparisons of a classical register or bit with a constant and
+exclude measurements, resets, and classical writes inside branches. These
+constraints apply to compilation and native serialization, including QPY.

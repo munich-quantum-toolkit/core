@@ -606,7 +606,16 @@ emitEulerPlan(OpBuilder& builder, Location loc, Value qubit,
     }
     switch (kind) {
     case Kind::RZ:
-      qubit = RZOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
+      if (basis.phaseRotation) {
+        qubit =
+            POp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
+        phase = addRotationParameters(
+            builder, loc, phase,
+            mqt::scaleParameter(builder, loc, theta, -0.5));
+      } else {
+        qubit =
+            RZOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
+      }
       break;
     case Kind::RY:
       qubit = RYOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
@@ -782,6 +791,11 @@ Value synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
     return RYOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
   }
   if (axis == PauliAxis::Z && supportsZ) {
+    if (basis.phaseRotation) {
+      emitParameterPhase(builder, loc,
+                         mqt::scaleParameter(builder, loc, angle, -0.5));
+      return POp::create(builder, loc, qubit, rotationAngle).getQubitOut();
+    }
     return RZOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
   }
   // Pick a native rotation and a constant frame; rotationAngle remains
@@ -887,7 +901,9 @@ void synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op,
     const CompilerTarget::SynthesisBasis& basis) {
   assert(canSynthesizeParameterizedUnitary1Q(op));
-  if (isSingleQubitBasisGate(op, basis.singleQubit)) {
+  if ((isSingleQubitBasisGate(op, basis.singleQubit) &&
+       !(basis.phaseRotation && isa<RZOp>(op))) ||
+      (basis.phaseRotation && isa<POp>(op))) {
     return;
   }
   auto unitary = cast<UnitaryOpInterface>(op);

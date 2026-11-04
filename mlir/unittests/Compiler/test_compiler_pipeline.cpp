@@ -6147,6 +6147,57 @@ ctrl @ ry(phi) q[0], q[1];
   }
 }
 
+TEST_F(CompilerPipelineTest,
+       BraketPhaseBasisPreservesUnitaryAndNativeSpelling) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("v", 1, 0)),
+          llvm::cantFail(Capability::create("phaseshift", 1, 1)),
+          llvm::cantFail(Capability::create("cnot", 2, 0)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+      })));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_TRUE(target.synthesisBasis()->phaseRotation);
+  const TargetEnvironment environment(
+      target, llvm::cantFail(payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QASM3)));
+  const std::string source = R"(OPENQASM 3;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+p(0.731) q[1];
+)";
+  auto input = QCProgram::fromOpenQASMString(source);
+  MQT_ASSERT_SUCCESS(input);
+  auto original = input->copy().intoQCO();
+  ASSERT_TRUE(succeeded(original));
+  std::vector phaseOperations(target.operations().begin(),
+                              target.operations().end());
+  phaseOperations.push_back(llvm::cantFail(Capability::create("gphase", 0, 1)));
+  const auto phaseTarget = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(phaseOperations)));
+  auto compiled = original->copy();
+  ASSERT_TRUE(succeeded(compiled.compileForTarget(
+      TargetEnvironment(phaseTarget, environment.payloadSpecification()))));
+  expectFullUnitaryEqual(original->module(), compiled.module(), 2);
+
+  auto measured =
+      QCProgram::fromOpenQASMString(source + "bit[2] c; c = measure q;\n");
+  MQT_ASSERT_SUCCESS(measured);
+  auto payload = CompiledProgram::compile(std::move(*measured), environment);
+  MQT_ASSERT_SUCCESS(payload);
+  const auto& text = payload->payload();
+  EXPECT_NE(text.find("v "), std::string::npos);
+  EXPECT_NE(text.find("cnot "), std::string::npos);
+  EXPECT_NE(text.find("phaseshift("), std::string::npos);
+  EXPECT_EQ(text.find("gphase("), std::string::npos);
+  EXPECT_EQ(text.find("rz("), std::string::npos);
+}
+
 TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
   auto ownedContext = createCompilerContext();
   auto moduleOp = QCOProgramBuilder::build(
@@ -6786,6 +6837,21 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
       },
       Case{
+          .name = "rx-p",
+          .nativeGates = {{"rx", 1}, {"phaseshift", 1}},
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZXZ,
+      },
+      Case{
+          .name = "ry-p",
+          .nativeGates = {{"ry", 1}, {"phaseshift", 1}},
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
+      },
+      Case{
+          .name = "v-p",
+          .nativeGates = {{"v", 0}, {"phaseshift", 1}},
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
+      },
+      Case{
           .name = "r",
           .nativeGates = {{"r", 2}},
           .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
@@ -6823,8 +6889,11 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
     });
     EXPECT_GT(gateCount, 0U);
     EXPECT_LE(gateCount,
-              testCase.resolvedBasis == CompilerTarget::SingleQubitBasis::U
-                  ? 1U
+              testCase.resolvedBasis == CompilerTarget::SingleQubitBasis::U ? 1U
+              : target.synthesisBasis()->phaseRotation &&
+                      testCase.resolvedBasis ==
+                          CompilerTarget::SingleQubitBasis::ZSXX
+                  ? 5U
                   : 3U);
 
     auto main = compiled.lookupSymbol<func::FuncOp>("main");

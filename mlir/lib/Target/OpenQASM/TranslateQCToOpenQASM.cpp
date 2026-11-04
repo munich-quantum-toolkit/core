@@ -274,6 +274,14 @@ public:
 
 private:
   [[nodiscard]] LogicalResult checkBranch(Operation* operation) {
+    if (controlSupport_) {
+      if (auto branch = dyn_cast<scf::IfOp>(operation);
+          branch && !controlSupport_->coversBranch(
+                        operation, branch.getCondition(), controlDepth_ + 1)) {
+        return fail(operation,
+                    "branch exceeds payload condition or body limits");
+      }
+    }
     if (controlSupport_ &&
         !controlSupport_->coversDepth(
             mqt::PayloadControlFeature::ForwardBranching, controlDepth_ + 1)) {

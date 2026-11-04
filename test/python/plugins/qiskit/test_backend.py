@@ -618,7 +618,7 @@ def test_qir_serializer_profile_controls_feedback(
         circuit.barrier(0)
     circuit.measure(0, 1)
     if fmt == ProgramFormat.QIR_BASE_STRING:
-        with pytest.raises(TranslationError, match="failed to convert QC to QIR"):
+        with pytest.raises(TranslationError, match="failed to legalize operation 'scf.if'"):
             ddsim_backend.run(circuit, shots=8)
     else:
         assert ddsim_backend.run(circuit, shots=8).result().get_counts() == {"01": 8}

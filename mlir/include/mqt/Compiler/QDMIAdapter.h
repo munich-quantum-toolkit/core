@@ -87,6 +87,11 @@ registeredQDMIDeviceIds();
 [[nodiscard]] llvm::Expected<PayloadSpecification>
 payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
+/// Apply versioned device payload capabilities; unrelated metadata is ignored.
+[[nodiscard]] llvm::Expected<PayloadSpecification>
+parsePayloadCapabilities(llvm::StringRef text,
+                         const PayloadSpecification& baseline);
+
 /// Snapshot the device and select its executable payload before compilation.
 ///
 /// Preference: QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, Base QIR

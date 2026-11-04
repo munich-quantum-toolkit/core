@@ -31,6 +31,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/CheckedArithmetic.h"
 #include "llvm/Support/Error.h"
 
@@ -178,20 +179,24 @@ static std::optional<double> synthesisParameter(GateKind gate,
   return std::nullopt;
 }
 
-[[nodiscard]] static std::string canonicalOperationName(StringRef name) {
-  auto canonical = name.trim().lower();
-  if (canonical == "prx") {
-    canonical = "r";
-  } else if (canonical == "i") {
-    canonical = "id";
-  } else if (canonical == "u1") {
-    canonical = "p";
-  } else if (canonical == "u3") {
-    canonical = "u";
-  } else if (canonical == "cnot") {
-    canonical = "cx";
-  }
-  return canonical;
+std::string canonicalOperationName(StringRef name) {
+  const auto canonical = name.trim().lower();
+  return llvm::StringSwitch<std::string>(canonical)
+      .Case("prx", "r")
+      .Case("i", "id")
+      .Cases({"u1", "phaseshift"}, "p")
+      .Case("u3", "u")
+      .Case("cnot", "cx")
+      .Case("cphaseshift", "cp")
+      .Case("si", "sdg")
+      .Case("ti", "tdg")
+      .Case("v", "sx")
+      .Case("vi", "sxdg")
+      .Case("xx", "rxx")
+      .Case("yy", "ryy")
+      .Case("zz", "rzz")
+      .Case("ccnot", "ccx")
+      .Default(canonical);
 }
 
 [[nodiscard]] static llvm::Error invalidTarget(const Twine& message) {
@@ -996,13 +1001,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   std::optional<SingleQubitBasis> singleQubit;
   std::optional<QuarterTurnGates> quarterTurnGates;
   bool hasHalfTurn = true;
+  const bool hasRZ = supportsOnEverySite(GateKind::RZ);
+  const bool phaseRotation = !hasRZ && supportsEveryPlacement("p", 1, 1);
+  const bool hasZRotation = hasRZ || phaseRotation;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
-  } else if (supportsOnEverySite(GateKind::RX) &&
-             supportsOnEverySite(GateKind::RZ)) {
+  } else if (supportsOnEverySite(GateKind::RX) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZXZ;
-  } else if (supportsOnEverySite(GateKind::SX) &&
-             supportsOnEverySite(GateKind::RZ)) {
+  } else if (supportsOnEverySite(GateKind::SX) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZSXX;
     hasHalfTurn = supportsOnEverySite(GateKind::X);
   } else if (supportsOnEverySite(GateKind::R)) {
@@ -1010,10 +1016,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   } else if (supportsOnEverySite(GateKind::RX) &&
              supportsOnEverySite(GateKind::RY)) {
     singleQubit = SingleQubitBasis::XYX;
-  } else if (supportsOnEverySite(GateKind::RY) &&
-             supportsOnEverySite(GateKind::RZ)) {
+  } else if (supportsOnEverySite(GateKind::RY) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZYZ;
-  } else if (supportsOnEverySite(GateKind::RZ)) {
+  } else if (hasZRotation) {
     for (const auto gate : {GateKind::RX, GateKind::RY, GateKind::R}) {
       // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
       const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
@@ -1141,6 +1146,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
           entanglers.empty() ? std::nullopt : std::optional{entanglers.front()},
       .quarterTurnGates = quarterTurnGates,
       .hasHalfTurn = hasHalfTurn,
+      .phaseRotation = phaseRotation,
   };
 }
 

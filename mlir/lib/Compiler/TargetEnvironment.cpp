@@ -80,6 +80,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
             {.id = ProgramCapability::COUNTED_ITERATION.str()},
             {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
             {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
+            {.id = ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
         });
   case ProgramFormat::IQMJSON:
     return create({.id = "iqm-json", .encoding = encoding});
@@ -308,7 +309,8 @@ PayloadSpecification PayloadSpecification::restrictCapabilities(
     if (!sameFormat && capability.id != ProgramCapability::FORWARD_BRANCHING &&
         capability.id != ProgramCapability::COUNTED_ITERATION &&
         capability.id != ProgramCapability::CONDITIONAL_LOOP &&
-        capability.id != ProgramCapability::MULTIWAY_BRANCHING) {
+        capability.id != ProgramCapability::MULTIWAY_BRANCHING &&
+        capability.id != ProgramCapability::CLASSICAL_ASSIGNMENT) {
       capabilities.push_back(capability);
       continue;
     }

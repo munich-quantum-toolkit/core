@@ -178,8 +178,7 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
 
 [[nodiscard]] static bool isLegal(IfOp operation,
                                   const PayloadControlSupport& support) {
-  return support.coversDepth(PayloadControlFeature::ForwardBranching,
-                             operation);
+  return support.coversBranch(operation, operation.getCondition());
 }
 
 [[nodiscard]] static bool isLegal(IndexSwitchOp operation,

@@ -28,6 +28,9 @@
 
 namespace mlir {
 
+/// Resolve native operation aliases to the compiler vocabulary.
+[[nodiscard]] std::string canonicalOperationName(llvm::StringRef name);
+
 class MLIRContext;
 class Operation;
 
@@ -364,6 +367,8 @@ public:
     std::optional<QuarterTurnGates> quarterTurnGates;
     /// Whether the Euler recipe can emit a half turn in one native gate.
     bool hasHalfTurn = true;
+    /// Emit Z rotations as phase gates with their compensating global phase.
+    bool phaseRotation = false;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
