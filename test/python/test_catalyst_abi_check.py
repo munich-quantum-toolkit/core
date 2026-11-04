@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from email.message import Message
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -42,8 +43,14 @@ def canary() -> ModuleType:
 
 
 @pytest.mark.parametrize("changed", [None, "include/QuantumDevice.hpp"])
+@pytest.mark.parametrize("missing", [False, True])
 def test_header_drift(
-    canary: ModuleType, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, changed: str | None
+    canary: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    changed: str | None,
+    *,
+    missing: bool,
 ) -> None:
     """The canary accepts identical headers and names an altered ABI header."""
     root = Path(__file__).parents[2]
@@ -55,6 +62,9 @@ def test_header_drift(
             return BytesIO(json.dumps({"info": {"version": "0.16.0"}}).encode())
         assert "/v0.16.0/" in url
         name = f"include/{url.rsplit('/', 1)[1]}"
+        if name == changed and missing:
+            with HTTPError(url, 404, "Not Found", Message(), BytesIO()) as error:
+                raise error
         # GitHub serves LF bytes even when Git checks out headers with CRLF.
         content = (snapshot / name).read_text(encoding="utf-8").encode("utf-8")
         return BytesIO(b"changed header" if name == changed else content)
@@ -99,3 +109,19 @@ def test_connection_reset_during_read(canary: ModuleType, monkeypatch: pytest.Mo
 
     monkeypatch.setattr(canary.urllib.request, "urlopen", download)
     assert canary.main() == 2
+
+
+@pytest.mark.parametrize("metadata", [False, True])
+@pytest.mark.parametrize("status", [404, 503])
+def test_http_failure(canary: ModuleType, monkeypatch: pytest.MonkeyPatch, status: int, *, metadata: bool) -> None:
+    """Only a missing ABI header is drift; metadata and server errors are failures."""
+
+    def download(url: str, *, timeout: int) -> BytesIO:
+        assert timeout == 30
+        if not metadata and url == "https://pypi.org/pypi/pennylane-catalyst/json":
+            return BytesIO(json.dumps({"info": {"version": "0.16.0"}}).encode())
+        with HTTPError(url, status, "Unavailable", Message(), BytesIO()) as error:
+            raise error
+
+    monkeypatch.setattr(canary.urllib.request, "urlopen", download)
+    assert canary.main() == (1 if not metadata and status == 404 else 2)

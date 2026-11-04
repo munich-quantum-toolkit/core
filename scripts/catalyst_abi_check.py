@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -31,6 +32,9 @@ def _check_headers() -> int:
 
     Returns:
         Zero for unchanged headers or one for drift.
+
+    Raises:
+        urllib.error.HTTPError: A header request failed with a status other than 404.
     """
     snapshot = max(VENDOR.iterdir(), key=lambda path: tuple(map(int, path.name.split("."))))
     provenance = json.loads((snapshot / "PROVENANCE.json").read_text())
@@ -44,9 +48,14 @@ def _check_headers() -> int:
             continue
         path = f"{source['directory']}/{name.removeprefix('include/')}"
         url = f"https://raw.githubusercontent.com/{repository}/v{release}/{path}"
-        with urllib.request.urlopen(url, timeout=30) as response:
-            if hashlib.sha256(response.read()).hexdigest() != expected:
-                changed.append(name)
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                if hashlib.sha256(response.read()).hexdigest() != expected:
+                    changed.append(name)
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            changed.append(name)
     if changed:
         LOGGER.error("Catalyst %s differs from vendored %s: %s", release, snapshot.name, ", ".join(changed))
         return 1
