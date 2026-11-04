@@ -473,7 +473,7 @@ def test_backend_serialization_without_supported_formats() -> None:
         ([ProgramFormat.QASM2], ProgramFormat.QASM2),
         ([ProgramFormat.QASM3], ProgramFormat.QASM3),
         ([ProgramFormat.QASM2, ProgramFormat.QASM3], ProgramFormat.QASM3),
-        ([ProgramFormat.QPY, ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3], ProgramFormat.QASM3),
+        ([ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QASM3], ProgramFormat.QASM3),
     ],
 )
 def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: ProgramFormat) -> None:
@@ -729,7 +729,8 @@ def test_backend_qasm_serialization_failure(monkeypatch: pytest.MonkeyPatch) -> 
     assert str(error.value.__cause__) == "Simulated conversion failure"
 
 
-def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("formats", [[ProgramFormat.QPY], [ProgramFormat.QASM3, ProgramFormat.QPY]])
+def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch, formats: list[ProgramFormat]) -> None:
     """QPY submission preserves the circuit and metadata within the version cap."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
@@ -737,7 +738,7 @@ def test_backend_submits_qpy(monkeypatch: pytest.MonkeyPatch) -> None:
     qc.metadata = {"experiment": "QPY submission"}
 
     device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure"])
-    monkeypatch.setattr(device, "supported_program_formats", lambda: [ProgramFormat.QPY])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: formats)
     submissions = _record_submissions(device)
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 

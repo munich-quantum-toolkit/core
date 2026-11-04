@@ -64,8 +64,8 @@ compiled = compile_program(bell_qasm, target=environment)
 print(f"Selected format: {compiled.program_format}")
 ```
 
-Device defaults prefer OpenQASM 3, Adaptive Profile QIR (binary, then text),
-QPY, IQM JSON, Base Profile QIR (binary, then text), then OpenQASM 2. An
+Device defaults prefer QPY, OpenQASM 3, Adaptive Profile QIR (binary, then
+text), IQM JSON, Base Profile QIR (binary, then text), then OpenQASM 2. An
 environment selects an executable device format and can be reused for
 compilation and serialization. `output` selects an inspection or interchange
 representation. `QC_IMPORT` and raw `QCO` stop before target compilation and

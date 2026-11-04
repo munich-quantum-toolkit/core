@@ -2887,7 +2887,7 @@ Args:
         Custom pipelines require no target.
     options: Shared compilation controls.
 
-Device defaults prefer OpenQASM 3, Adaptive QIR (binary, text), QPY, IQM JSON, then Base QIR
+Device defaults prefer QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, then Base QIR
 (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
 An explicit output
 need not be a device's execution format. Jeff output does not retain hardware

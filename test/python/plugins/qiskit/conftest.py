@@ -62,10 +62,10 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
             (
                 fmt
                 for fmt in (
+                    ProgramFormat.QPY,
                     ProgramFormat.QASM3,
                     ProgramFormat.QIR_ADAPTIVE_MODULE,
                     ProgramFormat.QIR_ADAPTIVE_STRING,
-                    ProgramFormat.QPY,
                     ProgramFormat.IQM_JSON,
                     ProgramFormat.QIR_BASE_MODULE,
                     ProgramFormat.QIR_BASE_STRING,
