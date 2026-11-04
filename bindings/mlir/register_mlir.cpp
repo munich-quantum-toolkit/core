@@ -672,6 +672,16 @@ payloadForOutput(OutputFormat output) {
                                                nb::handle target) {
   auto result = nb::cast(std::move(compiled));
   if (nb::hasattr(program, "cregs")) {
+    nb::list bits;
+    for (auto reg : program.attr("cregs")) {
+      for (auto bit : reg) {
+        bits.append(bit);
+      }
+    }
+    if (!nb::cast<bool>(bits.attr("__eq__")(program.attr("clbits")))) {
+      throw nb::value_error("Classical registers must partition circuit.clbits "
+                            "in register order");
+    }
     nb::dict header;
     header["name"] = program.attr("name");
     header["memory_slots"] = program.attr("num_clbits");

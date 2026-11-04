@@ -17,6 +17,7 @@ __lazy_modules__ = {
     "collections",
     "copy",
     "datetime",
+    "mqt.core.mlir",
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.qdmi",
@@ -35,6 +36,7 @@ from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
+from mqt.core.mlir import TargetEnvironment
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -110,12 +112,21 @@ class QDMIJob(JobV1):
         self._backend: QDMIBackend = backend
         self._programs = tuple(programs)
         environment = backend._environment  # ruff:ignore[private-member-access] Shared immutable backend snapshot.
+        environments = {
+            program.program_format: environment
+            for program in self._programs
+            if getattr(program, "_environment", None) is environment
+        }
         for program in self._programs:
             if program.result_width is None:
                 msg = "Qiskit results require Boolean or classical-bit outputs."
                 raise JobError(msg)
             if getattr(program, "_environment", None) is not environment:
-                program._validate_environment(environment)  # ruff:ignore[private-member-access] Preflight the entire batch.
+                if program.program_format not in environments:
+                    environments[program.program_format] = TargetEnvironment.from_device(
+                        backend.device, program_format=program.program_format
+                    )
+                program._validate_environment(environments[program.program_format])  # ruff:ignore[private-member-access] Preflight the entire batch.
         self._headers: list[dict[str, Any]] = [
             deepcopy(
                 getattr(

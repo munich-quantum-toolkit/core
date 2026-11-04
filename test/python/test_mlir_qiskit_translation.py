@@ -64,7 +64,7 @@ from mqt.core.mlir import (
     serialize_program,
     simulate,
 )
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import ProgramFormat, open_device
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -5140,3 +5140,31 @@ def test_qpy_compilation_and_native_readout() -> None:
     assert isinstance(program.payload, bytes)
     restored = qpy.load(BytesIO(program.payload))[0]
     assert restored.count_ops() == {"x": 1, "measure": 2}
+
+
+def test_compiled_header_rejects_loose_classical_bits() -> None:
+    """Compiled Qiskit headers cannot omit unregistered output bits."""
+    circuit = QuantumCircuit(1)
+    circuit.add_bits([Clbit()])
+    circuit.measure(0, 0)
+    with pytest.raises(ValueError, match="registers must partition"):
+        compile_program(circuit, target=open_device("mqt.ddsim.default"))
+
+
+def test_qpy_selection_without_optional_qiskit() -> None:
+    """Absent Qiskit leaves native payload selection and OpenQASM available."""
+    script = """
+import importlib.util
+original = importlib.util.find_spec
+importlib.util.find_spec = lambda name, *args: None if name == 'qiskit' else original(name, *args)
+from mqt.core.mlir import PayloadSpecification
+from mqt.core.qdmi import ProgramFormat
+try:
+    PayloadSpecification.from_program_format(ProgramFormat.QPY)
+except RuntimeError as error:
+    assert 'Python Qiskit bindings' in str(error)
+else:
+    raise AssertionError('unavailable QPY was selected')
+PayloadSpecification.from_program_format(ProgramFormat.QASM3)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Fixed script in an isolated interpreter.

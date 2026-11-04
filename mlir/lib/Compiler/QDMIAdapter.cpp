@@ -759,17 +759,19 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
                             : PayloadEncoding::Text;
   switch (format) {
   case QDMI_PROGRAM_FORMAT_QPY:
-    if (!qpyExporter) {
+    if (qpyExporter.load() == nullptr) {
       return createStringError(
           std::make_error_code(std::errc::not_supported),
           "QPY output requires the Python Qiskit bindings");
     }
     return PayloadSpecification::create(
         {.id = "qpy", .version = "17", .encoding = PayloadEncoding::Binary},
-        {{.id = ProgramCapability::FORWARD_BRANCHING.str()},
-         {.id = ProgramCapability::COUNTED_ITERATION.str()},
-         {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
-         {.id = ProgramCapability::MULTIWAY_BRANCHING.str()}});
+        {
+            {.id = ProgramCapability::FORWARD_BRANCHING.str()},
+            {.id = ProgramCapability::COUNTED_ITERATION.str()},
+            {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+            {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
+        });
   case QDMI_PROGRAM_FORMAT_IQMJSON:
     return PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON,
                                                   encoding);
@@ -810,7 +812,8 @@ snapshotTargetEnvironment(const qdmi::Device& device,
   }
   if (!format) {
     for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
-      if ((candidate != QDMI_PROGRAM_FORMAT_QPY || qpyExporter) &&
+      if ((candidate != QDMI_PROGRAM_FORMAT_QPY ||
+           qpyExporter.load() != nullptr) &&
           llvm::is_contained(supported, candidate)) {
         format = candidate;
         break;

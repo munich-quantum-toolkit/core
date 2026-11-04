@@ -609,3 +609,46 @@ def test_generic_compiled_header(recording_backend: RecordingBackend, width: int
     assert result.results is not None
     assert result.results[0].header["memory_slots"] == width
     assert result.results[0].header["creg_sizes"] == ([["c", width]] if width else [])
+
+
+def test_compiled_alternative_format_runs_on_ddsim() -> None:
+    """Artifacts use any supported transport, regardless of the backend default."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    artifact = serialize_program(
+        circuit,
+        target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QASM3),
+    )
+    default = backend.compile(circuit)
+    assert isinstance(default, CompiledProgram)
+    assert default.program_format != artifact.program_format
+    assert backend.run(artifact, shots=4).result().get_counts() == {"1": 4}
+
+
+def test_compiled_unsupported_format_preflight(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unsupported later artifact cannot dispatch an earlier valid one."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    valid = backend.compile(circuit)
+    assert isinstance(valid, CompiledProgram)
+    alternative = serialize_program(
+        circuit,
+        target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QASM2),
+    )
+    original = TargetEnvironment.from_device
+
+    def snapshot(device: Device, *, program_format: ProgramFormat | None = None) -> TargetEnvironment:
+        if program_format == ProgramFormat.QASM2:
+            msg = "Device does not support QASM2"
+            raise ValueError(msg)
+        return original(device, program_format=program_format)
+
+    monkeypatch.setattr(TargetEnvironment, "from_device", snapshot)
+    with pytest.raises(ValueError, match="does not support QASM2"):
+        backend.run([valid, alternative], shots=4)
+    assert not jobs
