@@ -172,6 +172,8 @@ class ProgramCapability:
     @constraints.setter
     def constraints(self, arg: Sequence[ProgramConstraint], /) -> None: ...
 
+    CLASSICAL_ASSIGNMENT: str = "classical-assignment"
+
     FORWARD_BRANCHING: str = "forward-branching"
 
     COUNTED_ITERATION: str = "counted-iteration"
@@ -1515,11 +1517,6 @@ def expectation_values(
     {py:meth}`QCOProgram.expectation_values` for observable, state preparation,
     and error contracts.
     """
-
-def _operation_parameter_constraints(
-    metadata: bytes | None, num_parameters: int
-) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
-    """Parse the temporary QDMI operation parameter constraints."""
 
 class ResultLayout:
     """Reconstruct logical bits from receiver samples."""
