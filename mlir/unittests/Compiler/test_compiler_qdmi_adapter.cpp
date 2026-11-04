@@ -2145,16 +2145,16 @@ TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
     if (queryFailure) {
       return QDMI_ERROR_FATAL;
     }
-    constexpr char metadata[] =
+    constexpr std::string_view metadata =
         R"({"schema":"mqt.payload-capabilities.v1","capabilities":null})";
     if (sizeRet != nullptr) {
-      *sizeRet = sizeof(metadata);
+      *sizeRet = metadata.size() + 1;
     }
     if (value != nullptr) {
-      if (size < sizeof(metadata)) {
+      if (size < metadata.size() + 1) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
-      std::memcpy(value, metadata, sizeof(metadata));
+      std::memcpy(value, metadata.data(), metadata.size() + 1);
     }
     return QDMI_SUCCESS;
   };
