@@ -110,6 +110,7 @@ add_mlir_library(
   MQTCompilerPipeline
   PARTIAL_SOURCES_INTENDED
   Pipeline.cpp
+  TerminalReadout.cpp
   TargetCompilation.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
@@ -140,4 +141,5 @@ target_sources(
   PUBLIC
   FILE_SET HEADERS
     BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/ResultLayout.h
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)

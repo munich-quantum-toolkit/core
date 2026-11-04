@@ -561,9 +561,11 @@ Output types follow a deliberately small canonical mapping:
 
 Outputs preserve function-result order, including mixed scalar and register
 results and constant-zero integers. Returning the same register more than once
-is diagnosed because OpenQASM outputs cannot preserve that aliasing. Programs
-without results keep generated classical temporaries in a local scope to avoid
-implicit outputs. Unused measurement results need no temporary.
+is diagnosed because OpenQASM outputs cannot preserve that aliasing.
+Declarations use plain `bit` unless a non-output classical temporary has global
+scope; then returned values use `output` qualifiers. Programs without results
+may expose global temporaries as implicit outputs. Unused measurement results
+need no temporary.
 
 Measurements write directly to a named register when their result has one store
 and that store can occur at the measurement without crossing a conflicting

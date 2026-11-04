@@ -190,7 +190,7 @@ mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
 mqt\.core\.mlir\.__prefix__$:
     \from typing import TypeAlias, TypeVar, TypedDict, Unpack
     _CompilerInput: TypeAlias = str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
-    _CompilerTarget: TypeAlias = CompilerTarget | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
+    _CompilerTarget: TypeAlias = CompilerTarget | TargetEnvironment | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
     _CompilerOutput: TypeAlias = qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
     _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _CompilerInputT = TypeVar("_CompilerInputT", str, os.PathLike[str], qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
@@ -199,9 +199,10 @@ mqt\.core\.mlir\.__prefix__$:
     class _CompileOptions(TypedDict, total=False, closed=True):
         copy: bool
         qco_pipeline: str
-        options: CompilationOptions
+        options: CompilationOptions | None
 
 mqt\.core\.mlir\.compile_program$:
+    \import mqt.core.plugins.qiskit.backend
     \from typing import overload, Literal
     \from collections.abc import Sequence
     @overload
@@ -273,7 +274,31 @@ mqt\.core\.mlir\.compile_program$:
         program: _CompilerInput,
         *,
         target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QPY],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> bytes: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: _CompilerTarget | None = None,
         output: Literal[OutputFormat.QISKIT],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> qiskit.circuit.QuantumCircuit: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: mqt.core.plugins.qiskit.backend.QDMIBackend,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> CompiledProgram: ...
+    @overload
+    def compile_program(
+        program: _CompilerInput,
+        *,
+        target: qiskit.transpiler.Target,
+        output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> qiskit.circuit.QuantumCircuit: ...
     @overload
@@ -283,12 +308,12 @@ mqt\.core\.mlir\.compile_program$:
         target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> qiskit.circuit.QuantumCircuit: ...
+    ) -> qiskit.circuit.QuantumCircuit | CompiledProgram: ...
     @overload
     def compile_program(
         program: _CompilerInput,
         *,
-        target: mqt.core.qdmi.Device | str,
+        target: mqt.core.qdmi.Device | str | TargetEnvironment,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> CompiledProgram: ...
@@ -386,7 +411,31 @@ mqt\.core\.mlir\.compile_program$:
         program: Sequence[_CompilerInputT],
         *,
         target: _CompilerTarget | None = None,
+        output: Literal[OutputFormat.QPY],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[bytes]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: _CompilerTarget | None = None,
         output: Literal[OutputFormat.QISKIT],
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: mqt.core.plugins.qiskit.backend.QDMIBackend,
+        output: None = None,
+        **kwargs: Unpack[_CompileOptions],
+    ) -> list[CompiledProgram]: ...
+    @overload
+    def compile_program(
+        program: Sequence[_CompilerInputT],
+        *,
+        target: qiskit.transpiler.Target,
+        output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[qiskit.circuit.QuantumCircuit]: ...
     @overload
@@ -396,12 +445,12 @@ mqt\.core\.mlir\.compile_program$:
         target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> list[qiskit.circuit.QuantumCircuit]: ...
+    ) -> list[qiskit.circuit.QuantumCircuit] | list[CompiledProgram]: ...
     @overload
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: mqt.core.qdmi.Device | str,
+        target: mqt.core.qdmi.Device | str | TargetEnvironment,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[CompiledProgram]: ...

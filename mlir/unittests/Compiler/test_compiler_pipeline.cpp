@@ -1007,10 +1007,9 @@ ratio = 2.0;
   ASSERT_TRUE(mlir::succeeded(restoredQC));
   auto emitted = std::move(*restoredQC).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(emitted));
-  EXPECT_NE(emitted->source().find("output int _mqt_out0;"), std::string::npos);
-  EXPECT_NE(emitted->source().find("output bit[2] bits;"), std::string::npos);
-  EXPECT_NE(emitted->source().find("output float _mqt_out1;"),
-            std::string::npos);
+  EXPECT_NE(emitted->source().find("int _mqt_out0;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("bit[2] bits;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("float _mqt_out1;"), std::string::npos);
   EXPECT_TRUE(
       static_cast<bool>(QCProgram::fromOpenQASMString(emitted->source())));
 }
@@ -2530,7 +2529,7 @@ bit[2] c = measure q;
   EXPECT_FALSE(directQC->isValid());
   EXPECT_TRUE(direct->source().starts_with("OPENQASM 3;\n"));
   EXPECT_EQ(direct->str(), direct->source());
-  EXPECT_NE(direct->source().find("output bit[2] c;"), std::string::npos);
+  EXPECT_NE(direct->source().find("bit[2] c;"), std::string::npos);
   EXPECT_TRUE(llvm::errorToBool(
       direct->write(std::filesystem::path(testing::TempDir()) / "missing" /
                     "typed_program_output.qasm")));
@@ -5343,7 +5342,8 @@ c = measure q;
                                         return success();
                                       });
       EXPECT_TRUE(failed(std::move(direct).intoOpenQASM3()));
-      EXPECT_TRUE(StringRef(diagnostics).contains("no known OpenQASM version"))
+      EXPECT_TRUE(
+          StringRef(diagnostics).contains("control flow is not supported"))
           << diagnostics;
     }
     auto output = runDefaultPipeline(
@@ -6093,7 +6093,8 @@ TEST_F(CompilerPipelineTest, TargetOpenQASMRetainsExportableControlledAngles) {
                              })));
   const TargetEnvironment environment(
       target, llvm::cantFail(PayloadSpecification::create(
-                  {.id = "openqasm", .version = "3.1.0", .profile = ""})));
+                  {.id = "openqasm", .version = "3.1.0", .profile = ""},
+                  {{.id = "forward-branching"}})));
   auto qc = QCProgram::fromOpenQASMString(R"(OPENQASM 3.1;
 include "stdgates.inc";
 input float[64] theta;

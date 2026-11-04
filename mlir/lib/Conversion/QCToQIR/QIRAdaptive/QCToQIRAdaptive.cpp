@@ -723,6 +723,9 @@ namespace {
 /// Matching target payloads are checked before and after lowering.
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
+  explicit QCToQIRAdaptive(const TargetEnvironment& target)
+      : environment(target) {}
+  std::optional<TargetEnvironment> environment;
 
   void getDependentDialects(DialectRegistry& registry) const override {
     QCToQIRAdaptiveBase::getDependentDialects(registry);
@@ -809,7 +812,8 @@ protected:
     const auto run = [&](OpPassManager& pm) {
       return runPipeline(pm, moduleOp);
     };
-    auto payload = prepareQIRTarget(moduleOp, "adaptive", run);
+    auto payload = prepareQIRTarget(moduleOp, "adaptive", run,
+                                    environment ? &*environment : nullptr);
     if (failed(payload)) {
       signalPassFailure();
       return;
@@ -826,9 +830,11 @@ protected:
       const FrozenRewritePatternSet frozen(std::move(patterns));
       walkAndApplyPatterns(moduleOp, frozen);
     }
-    if (failed(prepareClassicalResults(moduleOp, state,
-                                       /*allowComputedOutputs=*/true,
-                                       /*deferMeasurementStores=*/true))) {
+    if (failed(
+            prepareClassicalResults(moduleOp, state,
+                                    /*allowComputedOutputs=*/true,
+                                    /*deferMeasurementStores=*/true,
+                                    environment ? &*environment : nullptr))) {
       signalPassFailure();
       return;
     }
@@ -931,5 +937,10 @@ protected:
 };
 
 } // namespace
+
+std::unique_ptr<Pass>
+createQCToQIRAdaptive(const TargetEnvironment& environment) {
+  return std::make_unique<QCToQIRAdaptive>(environment);
+}
 
 } // namespace mlir

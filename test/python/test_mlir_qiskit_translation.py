@@ -26,11 +26,13 @@ import qiskit
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qpy, transpile
 from qiskit.circuit import (
     AnnotatedOperation,
+    Barrier,
     Clbit,
     ControlModifier,
     Gate,
     Instruction,
     InverseModifier,
+    Measure,
     Parameter,
     ParameterExpression,
     ParameterVector,
@@ -43,11 +45,13 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, Statevector, random_unitary
-from qiskit.transpiler import Layout, TranspileLayout
+from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
+    CompilationOptions,
     CompilerTarget,
+    MappingOptions,
     OutputFormat,
     PayloadEncoding,
     PayloadFormat,
@@ -57,8 +61,11 @@ from mqt.core.mlir import (
     TargetEnvironment,
     compile_program,
     sample,
+    serialize_program,
     simulate,
+    submit_program,
 )
+from mqt.core.qdmi import ProgramFormat, open_device
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -362,6 +369,7 @@ from qiskit.circuit import (
     AnnotatedOperation,
     ControlModifier,
     InverseModifier,
+    Measure,
     PowerModifier,
 )
 from qiskit.circuit.library import UnitaryGate
@@ -4290,8 +4298,8 @@ def test_named_non_f64_runtime_input_is_rejected_on_export() -> None:
     assert runtime.ir == source_ir
 
 
-def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
-    """Map large sparse target site IDs to dense physical-qubit indices."""
+def test_target_aware_qiskit_export_rejects_unrepresentable_site_ids() -> None:
+    """Reject physical site IDs outside Qiskit's supported address width."""
     target = CompilerTarget(
         "sparse target",
         [CompilerTarget.Site(10), CompilerTarget.Site(4294967296)],
@@ -4309,13 +4317,8 @@ def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
 """
     )
 
-    restored = program.to_qiskit(target=target)
-
-    assert restored.num_qubits == 2
-    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
-    assert restored.layout is None
-    assert restored.data[0].operation.name == "x"
-    assert restored.find_bit(restored.data[0].qubits[0]).index == 1
+    with pytest.raises(RuntimeError, match="target address width index cannot be represented"):
+        program.to_qiskit(target=target)
 
 
 def test_target_aware_qiskit_export_rejects_unknown_site() -> None:
@@ -4614,6 +4617,23 @@ def test_layout_output_order_round_trip() -> None:
     np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
 
 
+def test_physical_qasm_layout_without_input_count() -> None:
+    """Physical OpenQASM retains its layout and classical output order."""
+    circuit = QuantumCircuit(5, 3)
+    circuit.x(4)
+    circuit.measure([4, 1], [2, 0])
+    vars(circuit)["_layout"] = TranspileLayout(
+        Layout.from_qubit_list(circuit.qubits),
+        dict(zip(circuit.qubits, range(5), strict=True)),
+    )
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    assert circuit.layout is not None
+    assert restored.layout is not None
+    assert restored.layout.initial_index_layout() == circuit.layout.initial_index_layout()
+    assert restored.layout.final_index_layout() == list(range(5))
+    assert sample(circuit, shots=8, seed=1) == sample(restored, shots=8, seed=1) == {"100": 8}
+
+
 def test_transform_clears_layout() -> None:
     """Cleanup removes mapping metadata when qubit identity may change."""
     circuit = transpile(QuantumCircuit(2), initial_layout=[1, 0], optimization_level=0)
@@ -4663,9 +4683,9 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     )
     target = CompilerTarget(
         "sparse line",
-        [CompilerTarget.Site(site) for site in [10, 30, 20, 40]],
+        [CompilerTarget.Site(site) for site in [0, 2, 1, 4]],
         connectivity=(
-            CompilerTarget.Connectivity([(10, 30), (30, 20), (20, 40)])
+            CompilerTarget.Connectivity([(0, 2), (2, 1), (1, 4)])
             if routed
             else CompilerTarget.Connectivity.all_to_all()
         ),
@@ -4686,13 +4706,24 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     if basis == "fixed_rx":
         assert set(exported.count_ops()) <= {"rx", "rz", "cz"}
         assert all(gate.operation.params == [np.pi / 2] for gate in exported.data if gate.operation.name == "rx")
+    payload = compile_program(
+        circuit,
+        target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY)),
+        options=None,
+    )
+    assert isinstance(payload.payload, bytes)
+    restored = qpy.load(BytesIO(payload.payload))[0]
+    assert restored.layout is not None
+    assert sorted(restored.layout.initial_index_layout()) == list(range(5))
+    assert sorted(restored.layout.final_index_layout(filter_ancillas=False)) == list(range(5))
     layout = exported.layout
     assert layout is not None
-    assert sorted(layout.initial_index_layout()) == list(range(4))
-    assert len(layout.routing_permutation()) == 4
-    assert sorted(layout.final_index_layout(filter_ancillas=False)) == list(range(4))
-    expected = QuantumCircuit(4)
+    assert sorted(layout.initial_index_layout()) == list(range(5))
+    assert len(layout.routing_permutation()) == 5
+    assert sorted(layout.final_index_layout(filter_ancillas=False)) == list(range(5))
+    expected = QuantumCircuit(5)
     expected.compose(circuit, [0, 1, 2], inplace=True)
+    np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator(expected).data, atol=1e-12)
     np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
     qc = program.to_qc()
     np.testing.assert_allclose(
@@ -4719,14 +4750,14 @@ def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
     restored = QCProgram.from_mlir_str(program.to_qc().ir)
     exported = restored.to_qiskit(target=target, copy=True)
     assert exported.layout is not None
-    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(circuit).data, atol=1e-12)
+    expected = QuantumCircuit(max(sites) + 1)
+    expected.compose(circuit, range(2), inplace=True)
+    np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
 
     without_target = restored.to_qiskit(copy=True)
     assert without_target.layout is None
     assert without_target.num_qubits == max(sites) + 1
-    expected = QuantumCircuit(max(sites) + 1)
-    expected.compose(exported, qubits=sites, inplace=True)
-    np.testing.assert_allclose(Operator(without_target).data, Operator(expected).data, atol=1e-12)
+    np.testing.assert_allclose(Operator(without_target).data, Operator(exported).data, atol=1e-12)
 
     reversed_target = CompilerTarget(
         "reversed site order",
@@ -4736,9 +4767,7 @@ def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
     )
     reordered = restored.to_qiskit(target=reversed_target)
     assert reordered.layout is None
-    expected = QuantumCircuit(2)
-    expected.compose(exported, qubits=[1, 0], inplace=True)
-    np.testing.assert_allclose(Operator(reordered).data, Operator(expected).data, atol=1e-12)
+    np.testing.assert_allclose(Operator(reordered).data, Operator(exported).data, atol=1e-12)
 
 
 def test_native_compilation_rejects_imported_qiskit_layout() -> None:
@@ -4785,7 +4814,7 @@ result = measure flag;
         assert "syndrome" in [register.name for register in restored.cregs]
         assert "qubit flag;" in emitted
     assert emitted.index("for ") < emitted.index("\n  bit ")
-    assert "output bit[1] result;" in emitted
+    assert "bit[1] result;" in emitted
     assert sample(emitted, shots=8, seed=1) == {"0": 8}
 
 
@@ -4833,7 +4862,7 @@ result[2] = measure q[0];
     assert [parameter.name for parameter in circuit.parameters] == ["theta"]
     emitted = program.to_openqasm3().source
     assert "qubit[1] q;" in emitted
-    assert "output bit[3] result;" in emitted
+    assert "bit[3] result;" in emitted
     assert QCProgram.from_openqasm_str(emitted).to_qiskit().num_qubits == 3
 
 
@@ -4895,7 +4924,7 @@ def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool)
     assert sample(source, shots=8) == {"0111": 8}
 
 
-def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
+def test_native_openqasm_preserves_physical_sites_and_phase() -> None:
     """Native export preserves idle-site holes and exact gate/global phases."""
     circuit = QuantumCircuit(4, global_phase=0.37)
     circuit.h(0)
@@ -4904,7 +4933,7 @@ def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
     circuit.sxdg(3)
     source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
     assert "cx $2, $0;" in source
-    assert "sxdg $3;" in source
+    assert "inv @ sx $3;" in source
     np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
 
 
@@ -4976,3 +5005,233 @@ def test_native_import_never_reads_gate_definitions(width: int) -> None:
             QCProgram.from_qiskit(circuit, native=True)
     else:
         assert "device_gate $0;" in QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
+
+
+def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
+    """Keep physical addresses and local metadata through explicit compilation."""
+    sites = (0, 1, 3, 4)
+    target = Target(num_qubits=5)
+    target.add_instruction(Barrier(5))
+    target.add_instruction(library.RZGate(Parameter("theta")), {(site,): None for site in sites})
+    target.add_instruction(library.SXGate(), {(site,): None for site in sites})
+    target.add_instruction(library.CZGate(), dict.fromkeys(((0, 1), (1, 0), (1, 3), (3, 1), (3, 4), (4, 3))))
+    target.add_instruction(Measure(), {(site,): None for site in sites})
+    compiler_target = CompilerTarget.from_qiskit(target)
+    assert [site.id for site in compiler_target.sites] == list(sites)
+    circuit = QuantumCircuit(4, 4, name="source-header", metadata={"nested": [1]})
+    circuit.x(3)
+    circuit.cx(3, 0)
+    circuit.measure(range(4), range(4))
+
+    compiled = compile_program(circuit, target=target)
+
+    assert isinstance(compiled, QuantumCircuit)
+    assert compiled.num_qubits == 5
+    assert all(compiled.find_bit(qubit).index in sites for item in compiled.data for qubit in item.qubits)
+    assert compiled.layout is not None
+    assert sorted(compiled.layout.initial_index_layout()) == list(range(5))
+    assert sample(compiled, shots=8) == {"1001": 8}
+    logical = circuit.copy()
+    logical.remove_final_measurements()
+    physical = compiled.copy()
+    physical.remove_final_measurements()
+    expected = QuantumCircuit(5)
+    expected.compose(logical, range(4), inplace=True)
+    np.testing.assert_allclose(
+        Operator.from_circuit(physical).data,
+        Operator(expected).data,
+        atol=1e-12,
+    )
+    assert compiled.name == circuit.name
+    assert compiled.metadata == circuit.metadata
+    compiled.metadata["nested"].append(2)
+    assert circuit.metadata == {"nested": [1]}
+    artifact = serialize_program(
+        compiled,
+        target=TargetEnvironment(compiler_target, PayloadSpecification.from_program_format(ProgramFormat.QASM3)),
+    )
+    payload = artifact.payload
+    assert isinstance(payload, str)
+    raw_counts = sample(payload, shots=8)
+    assert artifact.result_layout is not None
+    counts = {artifact.result_layout.decode_bits(bits): count for bits, count in raw_counts.items()}
+    assert counts == {"1001": 8}
+
+
+@pytest.mark.parametrize("rotation", ["rx", "prx"])
+def test_compiler_target_qiskit_output_preserves_physical_sites(rotation: str) -> None:
+    """Explicit compiler targets retain native addresses for later serialization."""
+    target = CompilerTarget(
+        "sparse native target",
+        [CompilerTarget.Site(site) for site in (1, 2, 5)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(rotation, 1, 1 if rotation == "rx" else 2),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    circuit = QuantumCircuit(2)
+    circuit.rx(1.0, 0)
+    circuit.cz(0, 1)
+    circuit.measure_all()
+    native = compile_program(
+        circuit, target=target, options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1))
+    )
+    assert native.num_qubits == 6
+    assert native.layout is not None
+    artifact = serialize_program(
+        native, target=TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+    )
+    assert isinstance(artifact.payload, str)
+    parameters = "1.0" if rotation == "rx" else "1.0, 0.0"
+    assert f"{rotation}({parameters}) $1;" in artifact.payload
+    assert "cz $1, $2;" in artifact.payload
+    assert "c[0] = measure $1;" in artifact.payload
+    assert "c[1] = measure $2;" in artifact.payload
+
+
+def test_newer_qiskit_warns_once() -> None:
+    """Newer native interfaces warn once even when warnings are always enabled."""
+    script = """
+import importlib
+import warnings
+import qiskit
+from mqt.core import UntestedVersionWarning
+from mqt.core.mlir import QCProgram
+capi = importlib.import_module('qiskit._accelerate.capi')
+capi.API_VERSION = 0x026300F0
+qiskit.__version__ = '2.99.0'
+with warnings.catch_warnings(record=True) as seen:
+    warnings.simplefilter('always', UntestedVersionWarning)
+    for _ in range(2):
+        try:
+            QCProgram.from_qiskit(qiskit.QuantumCircuit(1))
+        except RuntimeError:
+            pass  # The real capsule deliberately retains its installed ABI.
+assert len(seen) == 1, seen
+assert seen[0].category is UntestedVersionWarning
+assert '2.99.0' in str(seen[0].message)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Fixed script in an isolated interpreter.
+
+
+def test_qpy_compilation_and_native_readout() -> None:
+    """QPY preserves dynamic control flow and native logical readout."""
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.x(1)
+    circuit.measure(1, 1)
+    payload = compile_program(circuit, output=OutputFormat.QPY)
+    assert isinstance(payload, bytes)
+    assert qpy.get_qpy_version(BytesIO(payload)) == 17
+    restored = qpy.load(BytesIO(payload))[0]
+    assert restored.count_ops() == circuit.count_ops()
+
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("x", 1, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
+    native = QuantumCircuit(2, 3)
+    native.metadata = {"labels": ["original"]}
+    native.x(0)
+    native.measure([0, 1], [2, 0])
+    program = serialize_program(native, target=environment)
+    assert program.program_format == ProgramFormat.QPY
+    assert program.result_width == 3
+    assert program.result_layout is not None
+    assert program.result_layout.decode_bits("01") == "100"
+    assert isinstance(program.payload, bytes)
+    restored = qpy.load(BytesIO(program.payload))[0]
+    assert restored.count_ops() == {"x": 1, "measure": 2}
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QPY])
+@pytest.mark.parametrize("native", [False, True])
+def test_zero_readout_retains_known_classical_outputs(program_format: ProgramFormat, *, native: bool) -> None:
+    """Measurement-free programs retain their outputs without a result layout."""
+    circuit = QuantumCircuit(1, 2)
+    circuit.x(0)
+    target = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
+    environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
+    program = serialize_program(circuit, target=environment) if native else compile_program(circuit, target=environment)
+    assert program.result_width == 2
+    assert program.result_layout is None
+    if program_format == ProgramFormat.QPY:
+        assert isinstance(program.payload, bytes)
+        restored = qpy.load(BytesIO(program.payload))[0]
+        assert restored.num_clbits == 2
+        assert restored.count_ops() == {"x": 1}
+    else:
+        assert isinstance(program.payload, str)
+        assert "bit[0]" not in program.payload
+        assert "measure" not in program.payload
+
+
+def test_compiled_loose_classical_bits_remain_available_to_native_clients() -> None:
+    """Native payloads retain bits that cannot form partitioned Qiskit headers."""
+    circuit = QuantumCircuit(1)
+    circuit.add_bits([Clbit()])
+    circuit.measure(0, 0)
+    program = compile_program(circuit, target=open_device("mqt.ddsim.default"))
+    assert program.result_width == 1
+    assert sample(program.payload, shots=1) == {"0": 1}
+
+
+@pytest.mark.parametrize(
+    ("version", "supported"),
+    [
+        ("not installed", False),
+        (None, False),
+        ("2.4.9", False),
+        ("2.5.0rc1", False),
+        ("2.5.0", True),
+        ("2.7.0.dev1", True),
+        ("3.0.0rc1", False),
+        ("3.0.0", False),
+        ("unknown", False),
+        ("2.6.0garbage", False),
+    ],
+)
+def test_qpy_hook_requires_supported_qiskit(version: str | None, *, supported: bool) -> None:
+    """Unsupported installed versions leave non-Qiskit payload formats available."""
+    script = f"""
+import importlib.metadata
+import sys
+original = importlib.metadata.version
+def installed(name):
+    if name != 'qiskit':
+        return original(name)
+    if {version!r} == 'not installed':
+        raise importlib.metadata.PackageNotFoundError(name)
+    return {version!r}
+importlib.metadata.version = installed
+from mqt.core.mlir import PayloadSpecification
+from mqt.core.qdmi import ProgramFormat
+assert 'qiskit' not in sys.modules
+try:
+    PayloadSpecification.from_program_format(ProgramFormat.QPY)
+except RuntimeError:
+    assert not {supported!r}
+else:
+    assert {supported!r}
+PayloadSpecification.from_program_format(ProgramFormat.QASM3)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Isolate module initialization.
+
+
+def test_measurement_free_source_submission() -> None:
+    """Initialized classical outputs do not require an explicit result layout."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    job = submit_program(circuit, target="mqt.ddsim.default", num_shots=3)
+    assert job.wait()
+    assert job.get_shots() == ["0"] * 3

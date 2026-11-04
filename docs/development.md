@@ -337,11 +337,13 @@ retaining packaged devices. Executable examples use local DDSIM and require no
 credentials. Configuration recipes for external providers do not execute.
 
 Use `{code-cell}` blocks in pages with MyST-NB front matter. Keep required setup
-visible or collapsible with `hide-input`, display useful computed output, and
-assert the demonstrated semantics. Use checked subprocess calls for CLI
-examples. Ordinary code fences document configuration or interfaces without
-executing them. Give figures descriptive alternative text and preserve full
-contracts in linked references when they would interrupt a tutorial.
+visible or collapsible with `hide-input` and display useful computed output. Use
+assertions when they check a property that the displayed output does not make
+clear. Link API names to their references, including external APIs when
+intersphinx provides them. Use checked subprocess calls for CLI examples.
+Ordinary code fences document configuration or interfaces without executing
+them. Give figures descriptive alternative text and preserve full contracts in
+linked references when they would interrupt a tutorial.
 
 ## MLIR
 

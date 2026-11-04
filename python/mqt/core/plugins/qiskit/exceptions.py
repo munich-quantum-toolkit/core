@@ -24,7 +24,6 @@ __all__ = [
     "QDMIQiskitError",
     "TranslationError",
     "UnsupportedDeviceError",
-    "UnsupportedFormatError",
     "UnsupportedOperationError",
 ]
 
@@ -38,7 +37,7 @@ class QDMIQiskitError(RuntimeError):
 
 
 class UnsupportedDeviceError(QDMIQiskitError):
-    """Raised when a QDMI device cannot be represented in Qiskit's Target model."""
+    """Raised when a QDMI device cannot supply an executable Qiskit backend."""
 
 
 class UnsupportedOperationError(QDMIQiskitError):
@@ -69,7 +68,3 @@ class JobExecutionError(JobError):
         """Retain the batch handle for inspection and recovery."""
         super().__init__(message)
         self.job = job
-
-
-class UnsupportedFormatError(QDMIQiskitError):
-    """Raised when an unsupported program format is requested."""

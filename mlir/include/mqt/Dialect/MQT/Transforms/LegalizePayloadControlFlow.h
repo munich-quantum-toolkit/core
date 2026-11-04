@@ -56,10 +56,17 @@ public:
 
   [[nodiscard]] bool coversDepth(PayloadControlFeature feature,
                                  Operation* operation) const;
+  [[nodiscard]] bool coversDepth(PayloadControlFeature feature,
+                                 uint64_t depth) const;
   [[nodiscard]] bool
   coversIteration(PayloadControlFeature feature, Operation* operation,
                   const std::optional<llvm::APInt>& tripCount) const;
+  [[nodiscard]] bool
+  coversIteration(PayloadControlFeature feature, uint64_t depth,
+                  const std::optional<llvm::APInt>& tripCount) const;
   [[nodiscard]] bool coversMultiwayBranching(Operation* operation,
+                                             uint64_t caseCount) const;
+  [[nodiscard]] bool coversMultiwayBranching(uint64_t depth,
                                              uint64_t caseCount) const;
 
   /// Check expansion of a switch with at least one explicit case.

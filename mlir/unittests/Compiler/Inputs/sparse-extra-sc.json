@@ -41,6 +41,12 @@
       "sites": [[0]]
     },
     {
+      "name": "move",
+      "numQubits": 2,
+      "numParameters": 0,
+      "sites": [[1, 2]]
+    },
+    {
       "name": "h",
       "numQubits": 1,
       "numParameters": 0

@@ -20,6 +20,7 @@ import qiskit.transpiler
 from numpy.typing import NDArray
 
 import mqt.core.dd
+import mqt.core.plugins.qiskit.backend
 import mqt.core.qdmi
 from mqt.core.qdmi import Device
 
@@ -27,7 +28,12 @@ _CompilerInput: TypeAlias = (
     str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
 )
 _CompilerTarget: TypeAlias = (
-    CompilerTarget | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
+    CompilerTarget
+    | TargetEnvironment
+    | qiskit.providers.BackendV2
+    | qiskit.transpiler.Target
+    | mqt.core.qdmi.Device
+    | str
 )
 _CompilerOutput: TypeAlias = (
     qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
@@ -48,7 +54,7 @@ _SourceT = TypeVar("_SourceT", str, os.PathLike[str])
 class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
-    options: CompilationOptions
+    options: CompilationOptions | None
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -94,6 +100,9 @@ class OutputFormat(enum.Enum):
 
     QISKIT = 10
     """A Qiskit QuantumCircuit."""
+
+    QPY = 11
+    """A QPY 17 binary circuit."""
 
 class PayloadEncoding(enum.Enum):
     """Payload representation encoding."""
@@ -178,6 +187,10 @@ class PayloadSpecification:
         capabilities: Sequence[ProgramCapability] = [],
         optional_capabilities_known: bool = False,
     ) -> None: ...
+    @staticmethod
+    def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification:
+        """The standard contract for a QDMI program format."""
+
     @property
     def format(self) -> PayloadFormat:
         """The selected payload format and receiver-version constraint."""
@@ -639,6 +652,12 @@ class TargetEnvironment:
     """A compiler target and its selected payload specification."""
 
     def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification) -> None: ...
+    @staticmethod
+    def from_device(
+        device: mqt.core.qdmi.Device | str, *, program_format: mqt.core.qdmi.ProgramFormat | None = None
+    ) -> TargetEnvironment:
+        """Snapshot a QDMI device and select its executable payload."""
+
     @property
     def target(self) -> CompilerTarget:
         """The compiler target."""
@@ -1480,8 +1499,38 @@ def expectation_values(
     and error contracts.
     """
 
+def _operation_parameter_constraints(
+    metadata: bytes | None, num_parameters: int
+) -> list[tuple[list[float | None], list[tuple[float, float] | None]]]:
+    """Parse the temporary QDMI operation parameter constraints."""
+
+class ResultLayout:
+    """Reconstruct logical bits from receiver samples."""
+
+    @property
+    def raw_width(self) -> int:
+        """The number of bits in each raw receiver sample."""
+
+    @property
+    def bits(self) -> list[int | None]:
+        """Raw indices or None for zero in LSB-first order."""
+
+    def decode_bits(self, raw: str) -> str:
+        """Decode one MSB-first binary sample to logical output order."""
+
 class CompiledProgram:
     """A compiled program ready for QDMI submission."""
+
+    @property
+    def result_width(self) -> int | None:
+        """Logical bit width, or None for non-bit outputs."""
+
+    def _validate_environment(self, environment: TargetEnvironment) -> None:
+        """Check destination compatibility before submission."""
+
+    @property
+    def result_layout(self) -> ResultLayout | None:
+        """Logical output reconstruction, or None for an identity layout."""
 
     @property
     def program_format(self) -> mqt.core.qdmi.ProgramFormat:
@@ -1568,7 +1617,31 @@ def compile_program(
     program: _CompilerInput,
     *,
     target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QPY],
+    **kwargs: Unpack[_CompileOptions],
+) -> bytes: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> qiskit.circuit.QuantumCircuit: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: mqt.core.plugins.qiskit.backend.QDMIBackend,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: qiskit.transpiler.Target,
+    output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> qiskit.circuit.QuantumCircuit: ...
 @overload
@@ -1578,12 +1651,12 @@ def compile_program(
     target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> qiskit.circuit.QuantumCircuit: ...
+) -> qiskit.circuit.QuantumCircuit | CompiledProgram: ...
 @overload
 def compile_program(
     program: _CompilerInput,
     *,
-    target: mqt.core.qdmi.Device | str,
+    target: mqt.core.qdmi.Device | str | TargetEnvironment,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> CompiledProgram: ...
@@ -1680,7 +1753,31 @@ def compile_program(
     program: Sequence[_CompilerInputT],
     *,
     target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QPY],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[bytes]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: mqt.core.plugins.qiskit.backend.QDMIBackend,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[CompiledProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: qiskit.transpiler.Target,
+    output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[qiskit.circuit.QuantumCircuit]: ...
 @overload
@@ -1690,12 +1787,12 @@ def compile_program(
     target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> list[qiskit.circuit.QuantumCircuit]: ...
+) -> list[qiskit.circuit.QuantumCircuit] | list[CompiledProgram]: ...
 @overload
 def compile_program(
     program: Sequence[_CompilerInputT],
     *,
-    target: mqt.core.qdmi.Device | str,
+    target: mqt.core.qdmi.Device | str | TargetEnvironment,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[CompiledProgram]: ...
@@ -1730,7 +1827,7 @@ def compile_program(
     Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
     An explicit ``output`` selects each result's representation. Without it, a
-    Qiskit target selects QuantumCircuit and a QDMI device selects
+    Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
     :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
     retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
@@ -1745,7 +1842,8 @@ def compile_program(
     Args:
         program: Source text, a file path, a Qiskit circuit, a typed compiler program,
             or a homogeneous sequence of these inputs.
-        target: A CompilerTarget, Qiskit BackendV2 or Target, QDMI Device, or device ID.
+        target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
+            QDMI Device, or device ID.
         output: The returned representation. QC_IMPORT and raw QCO are checkpoints
             before target compilation and cannot be combined with a target.
         copy: Preserve typed inputs by compiling copies. Defaults to False.
@@ -1753,11 +1851,25 @@ def compile_program(
             Custom pipelines require no target.
         options: Shared compilation controls.
 
-    Device defaults prefer Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, then Base QIR
-    (binary, text). Select an exact execution format with
-    :func:`submit_program` and its ``program_format`` argument. An explicit output
+    Device defaults prefer QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, then Base QIR
+    (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
+    An explicit output
     need not be a device's execution format. Jeff output does not retain hardware
     placement.
+    """
+
+def serialize_program(
+    program: QCProgram | qiskit.circuit.QuantumCircuit, *, target: TargetEnvironment | mqt.core.qdmi.Device | str
+) -> CompiledProgram:
+    """Serialize an already native circuit without compiling or routing it.
+
+    The caller supplies validated native operations and placements. Static programs
+    use canonical terminal readout and retain their logical result layout. Dynamic
+    programs retain their classical outputs. Inputs remain reusable.
+
+    Args:
+        program: A native Qiskit circuit or QC program with static target sites.
+        target: The destination device, registered device ID, or TargetEnvironment.
     """
 
 def submit_program(
@@ -1785,5 +1897,6 @@ def submit_program(
     ``target`` accepts a registered device ID or an open device. For source input,
     ``program_format`` selects the exact QDMI execution format, including text or
     binary QIR; omitting it selects a supported native format. A compiled program
-    retains its payload and must match the destination contract.
+    retains its payload and must match the destination contract. Job results are raw;
+    apply ``compiled.result_layout.decode_bits`` when a result layout is present.
     """

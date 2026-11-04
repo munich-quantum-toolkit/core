@@ -11,12 +11,20 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
 
 #include "Diagnostics.h"
+#include "Export.h"
+#include "TerminalReadout.h"
 
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -26,11 +34,14 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/VersionTuple.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -53,17 +64,23 @@ namespace mlir {
 /// TODO(#2093): Remove these compatibility markers when QDMI standardizes
 /// explicit unrestricted connectivity, operation applicability, and operation
 /// arity ranges.
-constexpr std::string_view ALL_TO_ALL_HOMOGENEOUS_METADATA =
+constexpr StringLiteral ALL_TO_ALL_HOMOGENEOUS_METADATA =
     "mqt.compiler-target.v1:all-to-all-homogeneous";
-constexpr std::string_view ARBITRARY_POSITIVE_CONTROLS_METADATA =
+constexpr StringLiteral ARBITRARY_POSITIVE_CONTROLS_METADATA =
     "mqt.compiler-target.v1:arbitrary-positive-controls";
 
-[[nodiscard]] static bool
-matchesMetadata(const std::optional<std::vector<std::byte>>& metadata,
-                const std::string_view expected) {
-  const auto expectedBytes =
-      std::as_bytes(std::span{expected.data(), expected.size() + 1});
-  return metadata && std::ranges::equal(*metadata, expectedBytes);
+[[nodiscard]] static StringRef metadataText(StringRef text) {
+  return text.ends_with('\0') ? text.drop_back() : text;
+}
+
+[[nodiscard]] static StringRef
+metadataText(const std::optional<std::vector<std::byte>>& metadata) {
+  if (!metadata) {
+    return {};
+  }
+  StringRef text(reinterpret_cast<const char*>(metadata->data()),
+                 metadata->size());
+  return metadataText(text);
 }
 
 [[nodiscard]] static Expected<bool>
@@ -73,7 +90,7 @@ hasAllToAllHomogeneousMetadata(const qdmi::Device& device) {
   if (!metadata) {
     return metadata.takeError();
   }
-  return matchesMetadata(*metadata, ALL_TO_ALL_HOMOGENEOUS_METADATA);
+  return metadataText(*metadata) == ALL_TO_ALL_HOMOGENEOUS_METADATA;
 }
 
 [[nodiscard]] static Expected<bool>
@@ -83,7 +100,71 @@ hasArbitraryPositiveControlsMetadata(const qdmi::Operation& operation) {
   if (!metadata) {
     return metadata.takeError();
   }
-  return matchesMetadata(*metadata, ARBITRARY_POSITIVE_CONTROLS_METADATA);
+  return metadataText(*metadata) == ARBITRARY_POSITIVE_CONTROLS_METADATA;
+}
+
+Expected<SmallVector<OperationParameterConstraints, 1>>
+parseOperationParameterConstraints(StringRef text, size_t numParameters) {
+  text = metadataText(text);
+  constexpr StringLiteral schema = "mqt.operation-parameters.v1";
+  if (!text.contains(schema)) {
+    return SmallVector<OperationParameterConstraints, 1>{};
+  }
+  const auto invalid = [] {
+    return createStringError("Invalid mqt.operation-parameters.v1 metadata");
+  };
+  auto parsed = llvm::json::parse(text);
+  if (!parsed) {
+    return parsed.takeError();
+  }
+  const auto* object = parsed->getAsObject();
+  if (object == nullptr || object->getString("schema") != schema) {
+    return SmallVector<OperationParameterConstraints, 1>{};
+  }
+  const auto* alternatives = object->getArray("alternatives");
+  if (alternatives == nullptr || alternatives->empty()) {
+    return invalid();
+  }
+  SmallVector<OperationParameterConstraints, 1> result;
+  result.reserve(alternatives->size());
+  for (const auto& alternative : *alternatives) {
+    const auto* fields = alternative.getAsObject();
+    if (fields == nullptr) {
+      return invalid();
+    }
+    OperationParameterConstraints constraints;
+    for (const auto* key : {"fixed", "bounds"}) {
+      const auto* value = fields->get(key);
+      if (value == nullptr) {
+        continue;
+      }
+      const auto* values = value->getAsArray();
+      if (values == nullptr || values->size() != numParameters) {
+        return invalid();
+      }
+      for (const auto& parameter : *values) {
+        if (StringRef(key) == "fixed") {
+          const auto fixed = parameter.getAsNumber();
+          if (!fixed && !parameter.getAsNull()) {
+            return invalid();
+          }
+          constraints.fixed.push_back(fixed);
+        } else if (parameter.getAsNull()) {
+          constraints.bounds.emplace_back();
+        } else {
+          const auto* bounds = parameter.getAsArray();
+          if (bounds == nullptr || bounds->size() != 2 ||
+              !(*bounds)[0].getAsNumber() || !(*bounds)[1].getAsNumber()) {
+            return invalid();
+          }
+          constraints.bounds.emplace_back(std::pair{
+              *(*bounds)[0].getAsNumber(), *(*bounds)[1].getAsNumber()});
+        }
+      }
+    }
+    result.push_back(std::move(constraints));
+  }
+  return result;
 }
 
 [[nodiscard]] static Error requireAdapterInput(bool condition,
@@ -101,7 +182,7 @@ hasArbitraryPositiveControlsMetadata(const qdmi::Operation& operation) {
   return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName +
                      "' cannot be used as an MQT compiler target: only "
-                     "circuit-model devices with one qubit per non-zone site "
+                     "circuit-model devices with non-zone sites "
                      "are supported (" +
                      detail + ")");
 }
@@ -247,7 +328,8 @@ template <typename... Ops>
 [[nodiscard]] static bool isKnownOperation(StringRef name) {
   const auto canonical = name.trim().lower();
   name = canonical;
-  if (name == "measure" || name == "reset" || name == "sqrt_iswap") {
+  if (name == "measure" || name == "reset" || name == "sqrt_iswap" ||
+      name == "move") {
     return true;
   }
   if (name == "i") {
@@ -387,14 +469,35 @@ snapshotOperations(const std::vector<qdmi::Operation>& operations,
     if (!numParameters) {
       return numParameters.takeError();
     }
-    auto targetOperation = CompilerTarget::OperationCapability::create(
-        std::move(operationName), targetArity, *numParameters,
-        std::move(siteTuples), includeCalibration ? duration : std::nullopt,
-        includeCalibration ? fidelity : std::nullopt);
-    if (!targetOperation) {
-      return targetOperation.takeError();
+    auto metadata = operation.queryCustomProperty<std::vector<std::byte>>(
+        qdmi::CustomProperty::Custom2);
+    if (!metadata) {
+      return metadata.takeError();
     }
-    targetOperations.emplace_back(std::move(*targetOperation));
+    auto constraints = parseOperationParameterConstraints(
+        *metadata
+            ? StringRef(reinterpret_cast<const char*>((*metadata)->data()),
+                        (*metadata)->size())
+            : StringRef(),
+        *numParameters);
+    if (!constraints) {
+      return constraints.takeError();
+    }
+    if (constraints->empty()) {
+      constraints->emplace_back();
+    }
+    for (auto& alternative : *constraints) {
+      auto targetOperation = CompilerTarget::OperationCapability::create(
+          operationName, targetArity, *numParameters, siteTuples,
+          includeCalibration ? duration : std::nullopt,
+          includeCalibration ? fidelity : std::nullopt,
+          std::move(alternative.fixed), std::nullopt,
+          std::move(alternative.bounds));
+      if (!targetOperation) {
+        return targetOperation.takeError();
+      }
+      targetOperations.emplace_back(std::move(*targetOperation));
+    }
   }
   return CompilerTarget::NativeOperations::fromOperations(targetOperations);
 }
@@ -434,8 +537,8 @@ snapshotCompilerTarget(const qdmi::Device& device,
     return numQubits.takeError();
   }
   if (auto error = requireCircuitDevice(
-          *numQubits == deviceSites.size(), deviceName,
-          "the qubit count does not match the regular-site count")) {
+          *numQubits <= deviceSites.size(), deviceName,
+          "the qubit count exceeds the regular-site count")) {
     return error;
   }
 
@@ -545,10 +648,15 @@ Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
   return session->getDeviceIds();
 }
 
+static std::atomic<QPYExporter> qpyExporter = nullptr;
+
+void setQPYExporter(QPYExporter exporter) { qpyExporter = exporter; }
+
 constexpr std::array PROGRAM_FORMAT_PREFERENCE{
+    QDMI_PROGRAM_FORMAT_QPY,
+    QDMI_PROGRAM_FORMAT_QASM3,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-    QDMI_PROGRAM_FORMAT_QASM3,
     QDMI_PROGRAM_FORMAT_IQMJSON,
     QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
     QDMI_PROGRAM_FORMAT_QIRBASESTRING,
@@ -592,14 +700,36 @@ static bool sameOperation(const CompilerTarget::OperationCapability& lhs,
   return sortedSites(lhs) == sortedSites(rhs);
 }
 
-static bool sameCapability(const ProgramCapability& lhs,
-                           const ProgramCapability& rhs) {
-  return lhs.id == rhs.id && lhs.value == rhs.value &&
-         std::ranges::is_permutation(lhs.constraints, rhs.constraints);
+static bool supportsCapability(const ProgramCapability& compiled,
+                               const ProgramCapability& destination) {
+  if (compiled.id != destination.id || compiled.value != destination.value) {
+    return false;
+  }
+  return llvm::all_of(destination.constraints, [&](const auto& limit) {
+    const auto required =
+        llvm::find_if(compiled.constraints, [&](const auto& constraint) {
+          return constraint.id == limit.id;
+        });
+    if (required == compiled.constraints.end()) {
+      return false;
+    }
+    if (limit.id == ProgramConstraint::MAX_NESTING_DEPTH ||
+        limit.id == ProgramConstraint::MAX_ITERATION_COUNT ||
+        limit.id == ProgramConstraint::MAX_CASE_COUNT) {
+      return required->value <= limit.value;
+    }
+    return required->value == limit.value;
+  });
 }
 
 static Expected<QDMI_Program_Format>
 qdmiFormatForPayload(const PayloadSpecification& payload) {
+  if (payload.format().id == "qpy" &&
+      payload.format().encoding == PayloadEncoding::Binary &&
+      payload.versionRange() &&
+      payload.versionRange()->contains(llvm::VersionTuple(17))) {
+    return QDMI_PROGRAM_FORMAT_QPY;
+  }
   auto output = payload.compilerOutput();
   if (!output) {
     return output.takeError();
@@ -629,6 +759,20 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
                             ? PayloadEncoding::Binary
                             : PayloadEncoding::Text;
   switch (format) {
+  case QDMI_PROGRAM_FORMAT_QPY:
+    if (qpyExporter.load() == nullptr) {
+      return createStringError(
+          std::make_error_code(std::errc::not_supported),
+          "QPY output requires the Python Qiskit bindings");
+    }
+    return PayloadSpecification::create(
+        {.id = "qpy", .version = "17", .encoding = PayloadEncoding::Binary},
+        {
+            {.id = ProgramCapability::FORWARD_BRANCHING.str()},
+            {.id = ProgramCapability::COUNTED_ITERATION.str()},
+            {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+            {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
+        });
   case QDMI_PROGRAM_FORMAT_IQMJSON:
     return PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON,
                                                   encoding);
@@ -669,7 +813,9 @@ snapshotTargetEnvironment(const qdmi::Device& device,
   }
   if (!format) {
     for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
-      if (llvm::is_contained(supported, candidate)) {
+      if ((candidate != QDMI_PROGRAM_FORMAT_QPY ||
+           qpyExporter.load() != nullptr) &&
+          llvm::is_contained(supported, candidate)) {
         format = candidate;
         break;
       }
@@ -738,8 +884,11 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
   if (a.format().id != b.format().id ||
       a.format().profile != b.format().profile ||
       a.format().encoding != b.format().encoding || !versionsCompatible ||
-      !std::ranges::is_permutation(a.capabilities(), b.capabilities(),
-                                   sameCapability)) {
+      !llvm::all_of(a.capabilities(), [&](const auto& capability) {
+        return llvm::any_of(b.capabilities(), [&](const auto& supported) {
+          return supportsCapability(capability, supported);
+        });
+      })) {
     return incompatible("payload format or capabilities differ");
   }
   return Error::success();
@@ -747,51 +896,144 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
 
 CompiledProgram::CompiledProgram(TargetEnvironment environment,
                                  std::string payload,
-                                 QDMI_Program_Format format)
+                                 QDMI_Program_Format format,
+                                 std::optional<ResultLayout> resultLayout,
+                                 std::optional<size_t> resultWidth)
     : environment_(std::move(environment)), payload_(std::move(payload)),
-      format_(format) {}
+      format_(format), resultLayout_(std::move(resultLayout)),
+      resultWidth_(resultWidth) {}
+
+static Expected<std::string> serializeQIR(QIRProgram program,
+                                          QDMI_Program_Format format) {
+  auto entryPoint = qir::getMainFunction(program.module());
+  if (!entryPoint || entryPoint.isVarArg() ||
+      entryPoint.getNumArguments() != 0 ||
+      !entryPoint.getFunctionType().getReturnType().isInteger(64)) {
+    return createStringError(
+        std::errc::invalid_argument,
+        "Compiled QDMI QIR requires an i64 () entry point");
+  }
+  const auto context = program.context();
+  CompilerDiagnostics diagnostics(context.get());
+  if (qdmi::isBinaryProgramFormat(format)) {
+    std::string bytes;
+    llvm::raw_string_ostream stream(bytes);
+    if (succeeded(std::move(program).intoBitcode(stream))) {
+      return bytes;
+    }
+  } else if (auto source = std::move(program).intoLLVMIR(); succeeded(source)) {
+    return std::move(*source);
+  }
+  return diagnostics.takeError(
+      std::make_error_code(std::errc::invalid_argument));
+}
 
 Expected<CompiledProgram>
 CompiledProgram::compile(CompilerInput program,
                          const TargetEnvironment& environment,
                          const CompilationOptions& options) {
+  auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
+                                   environment, options);
+  if (!native) {
+    return native.takeError();
+  }
+  return serialize(std::move(std::get<QCProgram>(*native)), environment,
+                   options);
+}
+
+Expected<CompiledProgram>
+CompiledProgram::serialize(QCProgram program,
+                           const TargetEnvironment& environment,
+                           const CompilationOptions& options) {
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();
   }
-  auto result = runDefaultPipeline(std::move(program), environment, options);
-  if (!result) {
-    return result.takeError();
-  }
-  if (auto* qasm = std::get_if<OpenQASMProgram>(&*result)) {
-    return CompiledProgram(environment, std::move(*qasm).intoSource(), *format);
-  }
-  if (auto* json = std::get_if<IQMJSONProgram>(&*result)) {
-    return CompiledProgram(environment, std::move(*json).intoSource(), *format);
-  }
-  auto& qir = std::get<QIRProgram>(*result);
-  auto entryPoint = qir::getMainFunction(qir.module());
-  if (!entryPoint || entryPoint.isVarArg() ||
-      entryPoint.getNumArguments() != 0 ||
-      !entryPoint.getFunctionType().getReturnType().isInteger(64)) {
-    return createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Compiled QDMI QIR requires an i64 () entry point; keep classical "
-        "temporaries local or select OpenQASM 3");
-  }
-  const auto context = qir.context();
+  const auto context = program.context();
   CompilerDiagnostics diagnostics(context.get());
-  if (qdmi::isBinaryProgramFormat(*format)) {
-    std::string bytes;
-    llvm::raw_string_ostream stream(bytes);
-    if (succeeded(std::move(qir).intoBitcode(stream))) {
-      return CompiledProgram(environment, std::move(bytes), *format);
-    }
-  } else if (auto text = std::move(qir).intoLLVMIR(); succeeded(text)) {
-    return CompiledProgram(environment, std::move(*text), *format);
+  // Native cleanup preserves physical site IDs and their recorded layout.
+  if (failed(runWithPassManager(program.module(), populateQCCleanupPipeline,
+                                "failed to clean up native QC", options,
+                                true))) {
+    return diagnostics.takeError(
+        std::make_error_code(std::errc::invalid_argument));
   }
-  return diagnostics.takeError(
-      std::make_error_code(std::errc::invalid_argument));
+  if (*format != QDMI_PROGRAM_FORMAT_IQMJSON &&
+      !environment.target().supportsOperation("gphase", 0, 1)) {
+    IRRewriter rewriter(context.get());
+    mqt::dropGlobalPhases(program.module(), rewriter);
+  }
+  std::optional<size_t> resultWidth = 0;
+  if (auto entry = mqt::getEntryPoint(program.module())) {
+    for (auto type : entry.getResultTypes()) {
+      if (auto reg = dyn_cast<cbit::RegisterType>(type)) {
+        *resultWidth += reg.getWidth();
+      } else if (type.isInteger(1)) {
+        ++*resultWidth;
+      } else {
+        resultWidth.reset();
+        break;
+      }
+    }
+  } else {
+    resultWidth.reset();
+  }
+  std::optional<ResultLayout> layout;
+  auto normalized = normalizeTerminalReadout(program.module());
+  if (!normalized) {
+    return normalized.takeError();
+  }
+  if (*normalized && !(*normalized)->isIdentity()) {
+    layout = std::move(**normalized);
+  }
+  if (*format == QDMI_PROGRAM_FORMAT_QPY) {
+    const auto exporter = qpyExporter.load();
+    if (exporter == nullptr) {
+      return createStringError(
+          std::make_error_code(std::errc::not_supported),
+          "QPY output requires the Python Qiskit bindings");
+    }
+    auto payload = exporter(std::move(program), environment);
+    if (!payload) {
+      return payload.takeError();
+    }
+    return CompiledProgram(environment, std::move(*payload), *format,
+                           std::move(layout), resultWidth);
+  }
+  auto output = environment.payloadSpecification().compilerOutput();
+  if (!output) {
+    return output.takeError();
+  }
+  auto exported =
+      exportQCProgram(std::move(program), *output, &environment, options);
+  if (failed(exported)) {
+    return diagnostics.takeError(
+        std::make_error_code(std::errc::invalid_argument));
+  }
+  Expected<std::string> payload = [&]() -> Expected<std::string> {
+    if (auto* qasm = std::get_if<OpenQASMProgram>(&*exported)) {
+      return std::move(*qasm).intoSource();
+    }
+    if (auto* json = std::get_if<IQMJSONProgram>(&*exported)) {
+      return std::move(*json).intoSource();
+    }
+    return serializeQIR(std::move(std::get<QIRProgram>(*exported)), *format);
+  }();
+  if (!payload) {
+    return payload.takeError();
+  }
+  return CompiledProgram(environment, std::move(*payload), *format,
+                         std::move(layout), resultWidth);
+}
+
+Expected<CompiledProgram>
+CompiledProgram::serialize(QCProgram program, const qdmi::Device& device,
+                           std::optional<QDMI_Program_Format> format) {
+  auto environment = snapshotTargetEnvironment(device, format, false);
+  if (!environment) {
+    return environment.takeError();
+  }
+  return serialize(std::move(program), *environment);
 }
 
 Expected<CompiledProgram>
@@ -851,8 +1093,8 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
 }
 
 Expected<qdmi::Job>
-submitProgram(const qdmi::Device& device, CompilerInput input, int64_t numShots,
-              std::optional<QDMI_Program_Format> format,
+submitProgram(const qdmi::Device& device, CompilerInput program,
+              int64_t numShots, std::optional<QDMI_Program_Format> format,
               const std::optional<qdmi::CustomJobParameter>& custom1,
               const std::optional<qdmi::CustomJobParameter>& custom2,
               const std::optional<qdmi::CustomJobParameter>& custom3,
@@ -863,9 +1105,14 @@ submitProgram(const qdmi::Device& device, CompilerInput input, int64_t numShots,
     return createStringError(std::make_error_code(std::errc::invalid_argument),
                              "num_shots must be nonnegative");
   }
-  auto compiled = compileProgram(std::move(input), device, format, options);
+  auto compiled = compileProgram(std::move(program), device, format, options);
   if (!compiled) {
     return compiled.takeError();
+  }
+  if (compiled->resultLayout()) {
+    return createStringError(std::errc::invalid_argument,
+                             "Compile explicitly and retain the result layout "
+                             "before submitting this program");
   }
   return submitPayload(device, *compiled, numShots, custom1, custom2, custom3,
                        custom4, custom5);

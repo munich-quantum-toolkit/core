@@ -13,6 +13,10 @@
 #include "mlir/Pass/Pass.h"
 
 namespace mlir {
+class TargetEnvironment;
+/// Lower with an existing environment without materializing its target in IR.
+std::unique_ptr<Pass>
+createQCToQIRAdaptive(const TargetEnvironment& environment);
 #define GEN_PASS_DECL_QCTOQIRADAPTIVE
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
 

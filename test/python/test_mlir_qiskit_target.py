@@ -101,6 +101,7 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
             "compiler": CompilerTarget.from_qiskit(backend),
         }[target_kind]
         compiled = compile_program(circuit, target=target, options=CompilationOptions(seed=7))
+        assert isinstance(compiled, QuantumCircuit)
         assert compiled.num_qubits == backend.num_qubits
         assert compiled.layout is not None
         assert len(compiled.layout.final_index_layout()) == circuit.num_qubits
@@ -183,6 +184,7 @@ def test_compile_program_qiskit_typed_input(*, copy: bool, control_flow: bool) -
     )
     backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"], control_flow=control_flow, seed=1)
     compiled = compile_program(source, target=backend, copy=copy)
+    assert isinstance(compiled, QuantumCircuit)
 
     assert_type(compiled, QuantumCircuit)
     assert source.is_valid is copy
@@ -631,11 +633,14 @@ def test_unknown_width_and_disconnected_topology() -> None:
     with pytest.raises(ValueError, match="connected"):
         CompilerTarget.from_qiskit(source)
 
-    source = Target(num_qubits=3)
-    source.add_instruction(CXGate(), {(0, 1): None})
-    source.add_instruction(Gate("custom_bridge", 2, []), {(1, 2): None})
-    with pytest.warns(UserWarning, match="custom_bridge"), pytest.raises(ValueError, match="connected"):
-        CompilerTarget.from_qiskit(source)
+    for placements in ({(1, 2): None}, None):
+        source = Target(num_qubits=3)
+        source.add_instruction(CXGate(), {(0, 1): None})
+        source.add_instruction(Gate("custom_bridge", 2, []), placements)
+        with pytest.warns(UserWarning, match="custom_bridge"), pytest.raises(ValueError, match="connected"):
+            CompilerTarget.from_qiskit(source)
+        with pytest.raises(ValueError, match="connected"):
+            CompilerTarget.from_qiskit(source, operation_names=["cx"])
 
 
 @pytest.mark.parametrize("name", ["gpi", "gpi2"])
@@ -1167,13 +1172,14 @@ def test_compile_program_sequence_qiskit_target_snapshot() -> None:
 
     backend = Backend(2, basis_gates=["u", "cx"], seed=1)
     backend.target_reads = 0
-    assert_type(compile_program(circuits[0], target=backend), QuantumCircuit)
+    assert isinstance(compile_program(circuits[0], target=backend), QuantumCircuit)
     scalar_reads = backend.target_reads
     backend.target_reads = 0
     pending.extend(circuits)
     inputs: Sequence[QuantumCircuit] = pending
     compiled = compile_program(inputs, target=backend)
-    assert_type(compiled, list[QuantumCircuit])
+    assert isinstance(compiled, list)
+    assert all(isinstance(circuit, QuantumCircuit) for circuit in compiled)
     assert backend.target_reads == scalar_reads > 0
     assert pending == []
     assert circuits == originals

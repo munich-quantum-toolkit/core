@@ -191,7 +191,9 @@ void attachTargetEnvironment(ModuleOp moduleOp,
 /// Cached, validated view of a module's canonical target environment.
 class TargetEnvironmentAnalysis {
 public:
-  explicit TargetEnvironmentAnalysis(Operation* operation);
+  /// Prefer the prepared environment; otherwise decode the module attribute.
+  explicit TargetEnvironmentAnalysis(
+      Operation* operation, const TargetEnvironment* environment = nullptr);
 
   /// Attach and cache a prepared environment without rebuilding its target.
   void initialize(const TargetEnvironment& environment);

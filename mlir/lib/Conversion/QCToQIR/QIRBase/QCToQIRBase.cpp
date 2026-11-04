@@ -456,6 +456,8 @@ namespace {
 /// Matching target payloads are checked before and after lowering.
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
+  explicit QCToQIRBase(const TargetEnvironment& target) : environment(target) {}
+  std::optional<TargetEnvironment> environment;
 
   void getDependentDialects(DialectRegistry& registry) const override {
     QCToQIRBaseBase::getDependentDialects(registry);
@@ -545,7 +547,8 @@ protected:
     const auto run = [&](OpPassManager& pm) {
       return runPipeline(pm, moduleOp);
     };
-    auto payload = prepareQIRTarget(moduleOp, "base", run);
+    auto payload = prepareQIRTarget(moduleOp, "base", run,
+                                    environment ? &*environment : nullptr);
     if (failed(payload)) {
       signalPassFailure();
       return;
@@ -558,7 +561,9 @@ protected:
     LoweringState state;
 
     // Stage 1.0: Prepare classical result registers
-    if (failed(prepareClassicalResults(moduleOp, state))) {
+    if (failed(
+            prepareClassicalResults(moduleOp, state, false, false,
+                                    environment ? &*environment : nullptr))) {
       signalPassFailure();
       return;
     }
@@ -639,5 +644,9 @@ protected:
 };
 
 } // namespace
+
+std::unique_ptr<Pass> createQCToQIRBase(const TargetEnvironment& environment) {
+  return std::make_unique<QCToQIRBase>(environment);
+}
 
 } // namespace mlir
