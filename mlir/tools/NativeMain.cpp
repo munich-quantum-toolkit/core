@@ -8,15 +8,20 @@
  * Licensed under the MIT License
  */
 
+#include "qdmi/QDMI.hpp"
+
 #include "NativeCommands.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <string>
 #include <string_view>
 
 static int printInstalledPath(const char* argv0, llvm::StringRef relativePath) {
@@ -36,17 +41,26 @@ static int printInstalledPath(const char* argv0, llvm::StringRef relativePath) {
 int main(int argc, char** argv) {
   // On Windows, InitLLVM reconstructs argc/argv from the process command line.
   const llvm::InitLLVM init(argc, argv);
+  llvm::cl::list<std::string> manifests(
+      "qdmi-manifest", llvm::cl::Hidden,
+      llvm::cl::desc("Register a QDMI provider manifest"),
+      llvm::cl::callback([](const std::string& path) {
+        llvm::ExitOnError("mqt-core: ")(
+            qdmi::builtin_driver::addManifest(path));
+      }));
   if (argc > 1 && std::string_view(argv[1]) == "compile") {
     return mqtCoreRunCompiler(argc - 1, argv + 1);
   }
   if (argc > 1 && std::string_view(argv[1]) == "bench") {
     return mqtCoreRunBench(argc - 1, argv + 1);
   }
-  if (argc > 1 && std::string_view(argv[1]) == "simulate") {
-    if (argc == 4 && std::string_view(argv[2]) == "--worker-socket") {
+  if (argc > 1 && (std::string_view(argv[1]) == "simulate" ||
+                   std::string_view(argv[1]) == "run")) {
+    if (std::string_view(argv[1]) == "simulate" && argc == 4 &&
+        std::string_view(argv[2]) == "--worker-socket") {
       return mqtCoreRunWorker(argv[3]);
     }
-    return mqtCoreRunSimulator(argc - 1, argv + 1);
+    return mqtCoreRunProgram(argc - 1, argv + 1);
   }
   if (argc == 2 && std::string_view(argv[1]) == "--version") {
     llvm::outs() << MQT_CORE_VERSION_STRING << '\n';
@@ -64,7 +78,8 @@ int main(int argc, char** argv) {
            "Commands:\n"
            "  compile        Compile quantum programs\n"
            "  bench          List, generate, and evaluate benchmarks\n"
-           "  simulate       Simulate OpenQASM or QIR files\n\n"
+           "  simulate       Simulate quantum programs with DDSIM\n"
+           "  run            Compile and run programs on a QDMI device\n\n"
            "Options:\n"
            "  --version      Print the MQT Core version\n"
            "  --include-dir  Print the installed native include directory\n"

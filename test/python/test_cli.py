@@ -19,6 +19,8 @@ from subprocess import check_output
 from typing import TYPE_CHECKING
 
 import pytest
+from qiskit import qpy
+from qiskit.quantum_info import Statevector
 
 from mqt.core import __version__ as mqt_core_version
 from mqt.core.mlir import CompilerTarget, QCProgram
@@ -175,3 +177,64 @@ def test_simulate_cli_errors(script_runner: ScriptRunner, tmp_path: Path, source
         result = script_runner.run(["mqt-core", "simulate", str(source), *arguments])
         assert not result.success
         assert result.stderr
+
+
+def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Discover a provider from wheel metadata and compile/run through its device ID."""
+    package = Path(str(distribution("mqt-core").locate_file("mqt/core")))
+    manifest = next(package.rglob("*ddsim*.qdmi.json"))
+    device = json.loads(manifest.read_text())["qdmi"]["devices"][0]
+    device["id"] = "cli.test.device"
+    device["library"] = str((manifest.parent / device["library"]).resolve())
+    provider = tmp_path / "cli_provider"
+    provider.mkdir()
+    (provider / "__init__.py").write_text("raise RuntimeError('provider must not be imported')")
+    (provider / "device.qdmi.json").write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": [device]}}))
+    metadata = tmp_path / "cli_provider-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Name: cli-provider\nVersion: 1.0\n")
+    (metadata / "entry_points.txt").write_text("[mqt.core.qdmi.manifests]\ncli = cli_provider\n")
+    (metadata / "RECORD").write_text("cli_provider/device.qdmi.json,,\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    result = script_runner.run(["mqt-core", "compile", "--qdmi-list-devices"])
+    assert result.success
+    assert "cli.test.device" in result.stdout
+    source = tmp_path / "bell.qasm"
+    source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;')
+    assert not script_runner.run(["mqt-core", "run", str(source)]).success
+    compiled = tmp_path / "bell.bc"
+    result = script_runner.run([
+        "mqt-core",
+        "compile",
+        str(source),
+        "--qdmi-device=cli.test.device",
+        "-o",
+        str(compiled),
+    ])
+    assert result.success
+    for program in [source, compiled]:
+        result = script_runner.run(["mqt-core", "run", str(program), "--qdmi-device=cli.test.device", "--shots=128"])
+        assert result.success
+        counts = json.loads(result.stdout)["counts"]
+        assert set(counts) == {"00", "11"}
+        assert sum(counts.values()) == 128
+
+
+def test_compile_qpy_and_jeff(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Export QPY with Qiskit and execute a jeff round trip."""
+    source = tmp_path / "bell.qasm"
+    source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;')
+    output = tmp_path / "bell.qpy"
+    result = script_runner.run(["mqt-core", "compile", str(source), "-o", str(output)])
+    assert result.success
+    with output.open("rb") as stream:
+        circuit = qpy.load(stream)[0]
+    circuit.remove_final_measurements()
+    probabilities = Statevector.from_instruction(circuit).probabilities_dict()
+    assert probabilities == pytest.approx({"00": 0.5, "11": 0.5})
+    output = tmp_path / "bell.jeff"
+    result = script_runner.run(["mqt-core", "compile", str(source), "--emit=jeff", "-o", str(output)])
+    assert result.success
+    result = script_runner.run(["mqt-core", "simulate", str(output), "--shots=128"])
+    assert result.success
+    assert sum(json.loads(result.stdout)["counts"].values()) == 128

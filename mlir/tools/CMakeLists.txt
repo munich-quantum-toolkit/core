@@ -9,7 +9,7 @@
 add_executable(
   mqt-core
   NativeMain.cpp
-  simulate/Simulate.cpp
+  run/Run.cpp
   compile/Compile.cpp
   ../bench/MQTCoreBench.cpp
   ../../src/qdmi/devices/dd/WorkerMain.cpp

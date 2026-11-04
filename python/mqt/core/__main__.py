@@ -10,7 +10,14 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = {"importlib.metadata", "pathlib", "subprocess", "typing"}
+__lazy_modules__ = {
+    "importlib.metadata",
+    "mqt.core._compile_qpy",
+    "mqt.core._qdmi_discovery",
+    "pathlib",
+    "subprocess",
+    "typing",
+}
 
 import os
 import subprocess
@@ -19,12 +26,26 @@ from importlib.metadata import distribution
 from pathlib import Path
 from typing import NoReturn
 
+from mqt.core._compile_qpy import compile_qpy
+from mqt.core._qdmi_discovery import discover_qdmi_manifests
+
 
 def main() -> NoReturn:
-    """Run the bundled MQT compiler, benchmark, or simulator command."""
+    """Run a bundled MQT Core command."""
     suffix = ".exe" if sys.platform == "win32" else ""
     executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/mqt-core{suffix}")))
     arguments = [str(executable), *sys.argv[1:]]
+    if len(arguments) > 1 and arguments[1] in {"compile", "run", "simulate"}:
+        manifests: list[str] = []
+        discover_qdmi_manifests(lambda path: manifests.append(f"--qdmi-manifest={path}"))
+        arguments[2:2] = manifests
+    if len(arguments) > 1 and arguments[1] == "compile":
+        try:
+            result = compile_qpy(arguments)
+        except (ValueError, RuntimeError, OSError) as error:
+            sys.exit(f"QPY export failed: {error}")
+        if result is not None:
+            sys.exit(result)
     if sys.platform == "win32":
         # Windows exec exits the launcher without waiting for the native tool.
         sys.exit(subprocess.run(arguments, check=False).returncode)  # ruff: ignore[subprocess-without-shell-equals-true]

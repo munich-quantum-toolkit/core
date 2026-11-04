@@ -38,8 +38,25 @@
 static llvm::Expected<qdmi::Job>
 submit(const qdmi::Device& device, const std::string& path, int64_t shots,
        const std::optional<qdmi::CustomJobParameter>& seed) {
-  if (llvm::sys::path::extension(path) == ".qasm") {
+  const auto extension = llvm::sys::path::extension(path);
+  if (extension == ".qasm") {
     auto program = mlir::QCProgram::fromOpenQASMFile(path);
+    if (!program) {
+      return program.takeError();
+    }
+    return mlir::submitProgram(device, std::move(*program), shots, std::nullopt,
+                               seed);
+  }
+  if (extension == ".jeff") {
+    auto program = mlir::JeffProgram::fromFile(path);
+    if (!program) {
+      return program.takeError();
+    }
+    return mlir::submitProgram(device, std::move(*program), shots, std::nullopt,
+                               seed);
+  }
+  if (extension == ".mlir") {
+    auto program = mlir::QCProgram::fromMLIRFile(path);
     if (!program) {
       return program.takeError();
     }
@@ -50,6 +67,16 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
   if (!buffer) {
     return llvm::errorCodeToError(buffer.getError());
   }
+  const auto bytes = (*buffer)->getBuffer();
+  if (extension == ".json") {
+    return device.submitJob(bytes.str(), QDMI_PROGRAM_FORMAT_IQMJSON,
+                            static_cast<size_t>(shots));
+  }
+  if (extension == ".qpy") {
+    return device.submitJob(
+        std::as_bytes(std::span(bytes.data(), bytes.size())),
+        QDMI_PROGRAM_FORMAT_QPY, static_cast<size_t>(shots));
+  }
   llvm::LLVMContext context;
   llvm::SMDiagnostic diagnostic;
   auto module =
@@ -57,7 +84,7 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
   if (!module) {
     std::string message;
     llvm::raw_string_ostream stream(message);
-    diagnostic.print("mqt-core simulate", stream);
+    diagnostic.print("mqt-core", stream);
     return llvm::createStringError(message);
   }
   std::optional<bool> adaptive;
@@ -81,7 +108,6 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
   if (!adaptive) {
     return llvm::createStringError("No QIR entry point found");
   }
-  const auto bytes = (*buffer)->getBuffer();
   const bool binary = llvm::identify_magic(bytes) == llvm::file_magic::bitcode;
   const auto format = *adaptive
                           ? (binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
@@ -96,30 +122,43 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
                           format, static_cast<size_t>(shots), seed);
 }
 
-int mqtCoreRunSimulator(int argc, char** argv) {
-  llvm::cl::OptionCategory category("Simulation options");
+int mqtCoreRunProgram(int argc, char** argv) {
+  const bool simulate = llvm::StringRef(argv[0]) == "simulate";
+  llvm::cl::OptionCategory category("Execution options");
+  llvm::cl::opt<std::string> deviceId(
+      "qdmi-device", llvm::cl::desc("QDMI device ID (required for run)"),
+      llvm::cl::init(simulate ? "mqt.ddsim.default" : ""),
+      llvm::cl::cat(category));
   llvm::cl::opt<std::string> input(
       llvm::cl::Positional, llvm::cl::Required,
-      llvm::cl::desc("<file.qasm|file.ll|file.bc>"), llvm::cl::cat(category));
+      llvm::cl::desc(
+          "<file.qasm|file.ll|file.bc|file.json|file.jeff|file.qpy|file.mlir>"),
+      llvm::cl::cat(category));
   llvm::cl::opt<int64_t> shots("shots", llvm::cl::init(1024),
                                llvm::cl::desc("Number of shots"),
                                llvm::cl::cat(category));
-  llvm::cl::opt<int> seed("seed", llvm::cl::desc("Random seed"),
+  llvm::cl::opt<int> seed("seed", llvm::cl::desc("Random seed (DDSIM only)"),
                           llvm::cl::cat(category));
   llvm::cl::HideUnrelatedOptions(category);
   if (!llvm::cl::ParseCommandLineOptions(
           argc, argv,
-          "Simulate with DDSIM and print benchmark-compatible counts JSON\n",
+          "Run a quantum program and print benchmark-compatible counts JSON\n",
           &llvm::errs())) {
     return 1;
   }
-  llvm::ExitOnError exitOnError("mqt-core simulate: ");
+  llvm::ExitOnError exitOnError("mqt-core: ");
+  if (deviceId.empty() || (simulate && deviceId != "mqt.ddsim.default") ||
+      (seed.getNumOccurrences() != 0 && deviceId != "mqt.ddsim.default")) {
+    llvm::errs()
+        << "run requires --qdmi-device; simulate and --seed require DDSIM\n";
+    return 1;
+  }
   if (shots <= 0) {
-    llvm::errs() << "mqt-core simulate: --shots must be positive\n";
+    llvm::errs() << "mqt-core: --shots must be positive\n";
     return 1;
   }
   const auto device =
-      exitOnError(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+      exitOnError(qdmi::builtin_driver::openDevice(deviceId.getValue()));
   const std::optional<qdmi::CustomJobParameter> randomSeed =
       seed.getNumOccurrences() != 0
           ? std::optional<qdmi::CustomJobParameter>(seed.getValue())

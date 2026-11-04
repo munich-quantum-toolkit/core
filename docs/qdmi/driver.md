@@ -74,6 +74,13 @@ Use {py:func}`mqt.core.qdmi.builtin_driver.registered_device_ids` to list
 enabled configured IDs without loading device libraries or contacting devices.
 Register manifests before the first enumeration or device opening.
 
+The Python `mqt-core` command forwards installed providers' advertised manifests
+to the native executable without importing provider modules. Its
+`compile --qdmi-list-devices` command enumerates these IDs without contacting
+the devices. `run source.qasm --qdmi-device=<id>` opens only the selected device
+and shares its session between compilation and submission. See the
+[CLI guide](../installation.md#run-on-a-qdmi-device).
+
 The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
 `qml.device("mqt.ddsim.default", wires=4)` use this opening API. Python
 {py:class}`mqt.core.typing.QDMISessionParameters` describes the supported

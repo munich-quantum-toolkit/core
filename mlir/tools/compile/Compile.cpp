@@ -337,7 +337,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
       "emit",
       llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
                      "qco, qco-optimized, qir-base, "
-                     "qir-adaptive, openqasm2, openqasm3, or jeff"),
+                     "qir-adaptive, openqasm2, openqasm3, or jeff "
+                     "(Python launcher also supports qpy with Qiskit)"),
       llvm::cl::value_desc("format"), llvm::cl::init("qc"));
 
   llvm::cl::opt<std::string> passPipeline(
@@ -485,7 +486,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
   if (qdmiListDevices) {
-    auto deviceIds = registeredQDMIDeviceIds();
+    auto deviceIds = qdmi::builtin_driver::registeredDeviceIds();
     if (!deviceIds) {
       llvm::errs() << "Failed to list configured QDMI devices: "
                    << llvm::toString(deviceIds.takeError()) << '\n';
@@ -505,6 +506,13 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   }
   if (isolated && *parsedInputFormat != InputFormat::MLIR) {
     llvm::errs() << "Isolated pipeline execution requires MLIR input.\n";
+    return 1;
+  }
+  if (outputFormat == "qpy" ||
+      (outputFormat.getNumOccurrences() == 0 &&
+       llvm::sys::path::extension(outputFilename) == ".qpy")) {
+    llvm::errs() << "QPY export requires the Python mqt-core command with the "
+                    "qiskit extra.\n";
     return 1;
   }
   auto parsedOutputFormat = parseOutputFormat(outputFormat);
@@ -531,12 +539,12 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   }
   if (!qdmiDevice.empty()) {
     auto target = [&]() -> llvm::Expected<CompilerTarget> {
-      if (!payloadSpecification.empty()) {
-        return compilerTargetFromDeviceId(qdmiDevice.getValue());
-      }
-      auto device = qdmi::Session::openDevice(qdmiDevice.getValue());
+      auto device = qdmi::builtin_driver::openDevice(qdmiDevice.getValue());
       if (!device) {
         return device.takeError();
+      }
+      if (!payloadSpecification.empty()) {
+        return compilerTargetFromDevice(*device);
       }
       auto environment = targetEnvironmentFromDevice(*device);
       if (!environment) {

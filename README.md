@@ -59,7 +59,8 @@ uvx mqt-core simulate circuit.bc --shots 1024
 ```
 
 OpenQASM files can also run directly with `uvx mqt-core simulate input.qasm`.
-See the
+Use `mqt-core run input.qasm --qdmi-device=<id>` to compile and submit through
+one QDMI device session. See the
 [command-line guide](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#command-line-tools)
 for installation paths and command options.
 
