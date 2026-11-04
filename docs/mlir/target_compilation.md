@@ -64,8 +64,8 @@ Core emits closed `move; cz; move` sandwiches before readout. Use
 Qiskit `transpile` does not support these targets. Native circuits that already
 contain MOVE use `serialize_program` instead. QCO and Jeff compiler checkpoints
 retain virtual CZs; MOVE insertion happens when producing QC and executable
-payloads. The command-line target pass pipeline does not
-provide this placement reduction or MOVE insertion.
+payloads. The command-line target pass pipeline does not provide this placement
+reduction or MOVE insertion.
 
 IQM execution requires its default
 [full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)
