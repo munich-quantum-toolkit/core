@@ -10,11 +10,14 @@
 
 #include "NativeCommands.h"
 
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <string_view>
 
 int main(int argc, char** argv) {
+  // On Windows, InitLLVM reconstructs argc/argv from the process command line.
+  const llvm::InitLLVM init(argc, argv);
   if (argc > 1 && std::string_view(argv[1]) == "compile") {
     return mqtCoreRunCompiler(argc - 1, argv + 1);
   }

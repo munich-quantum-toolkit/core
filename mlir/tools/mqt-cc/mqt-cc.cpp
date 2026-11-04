@@ -52,7 +52,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -314,7 +313,6 @@ writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
 }
 
 int mqtCoreRunCompiler(int argc, char** argv) {
-  const llvm::InitLLVM y(argc, argv);
 
   // Command-line options
   llvm::cl::opt<std::string> inputFilename(

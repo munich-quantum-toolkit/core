@@ -26,7 +26,6 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
@@ -375,7 +374,6 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
 } // namespace
 
 int mqtCoreRunSimulator(int argc, char** argv) {
-  const llvm::InitLLVM init(argc, argv);
   llvm::sys::DisableSystemDialogsOnCrash();
   if (argc != 2 || llvm::StringRef(std::span(argv, 2)[1]) == "--help") {
     llvm::outs() << "Usage: mqt-cc simulate <socket>\n"
