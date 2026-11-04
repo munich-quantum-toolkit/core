@@ -28,6 +28,8 @@
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
 
+#include "NativeCommands.h"
+
 #include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
 
@@ -63,94 +65,6 @@
 #include <utility>
 
 using namespace mlir;
-
-// Command-line options
-static llvm::cl::opt<std::string>
-    inputFilename(llvm::cl::Positional,
-                  llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
-                  llvm::cl::init("-"));
-
-static llvm::cl::opt<std::string> inputFormat(
-    "input-format",
-    llvm::cl::desc(
-        "Input format: auto, jeff, mlir, or openqasm (default: auto)"),
-    llvm::cl::value_desc("format"), llvm::cl::init("auto"));
-
-static llvm::cl::opt<std::string> outputFilename(
-    "o",
-    llvm::cl::desc("Output filename (for untargeted QIR, - and .ll write "
-                   "textual LLVM IR; .bc and other names write LLVM "
-                   "bitcode)"),
-    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
-
-static llvm::cl::opt<std::string>
-    outputFormat("emit",
-                 llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
-                                "qco, qco-optimized, qir-base, "
-                                "qir-adaptive, openqasm2, openqasm3, or jeff"),
-                 llvm::cl::value_desc("format"), llvm::cl::init("qc"));
-
-static llvm::cl::opt<std::string> passPipeline(
-    "pass-pipeline",
-    llvm::cl::desc("Module pipeline replacing the default QCO optimizations "
-                   "(e.g. builtin.module(canonicalize,cse))"));
-static llvm::cl::alias passesAlias("passes", llvm::cl::aliasopt(passPipeline),
-                                   llvm::cl::desc("Alias for --pass-pipeline"));
-static llvm::cl::opt<bool> runIsolatedPipeline(
-    "run-pipeline",
-    llvm::cl::desc("Run only --pass-pipeline on MLIR input and write MLIR"));
-static llvm::cl::opt<bool> runReproducer(
-    "run-reproducer",
-    llvm::cl::desc("Replay an MLIR file's recorded pipeline and verification "
-                   "settings, then write MLIR"));
-
-static llvm::cl::opt<bool>
-    qdmiListDevices("qdmi-list-devices",
-                    llvm::cl::desc("List configured QDMI device IDs and exit"),
-                    llvm::cl::init(false));
-
-static llvm::cl::opt<std::string> qdmiDevice(
-    "qdmi-device",
-    llvm::cl::desc("Compile for the QDMI device with this stable ID"),
-    llvm::cl::value_desc("id"), llvm::cl::init(""));
-
-static llvm::cl::opt<std::string> payloadSpecification(
-    "payload-spec",
-    llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
-    llvm::cl::value_desc("attribute"), llvm::cl::init(""));
-
-static llvm::cl::opt<std::string>
-    explicitTarget("target",
-                   llvm::cl::desc("Explicit #mqt.compilation_target attribute"),
-                   llvm::cl::value_desc("attribute"), llvm::cl::init(""));
-
-static llvm::cl::opt<uint64_t>
-    compilationSeedOption("seed",
-                          llvm::cl::desc("Override all compiler random seeds"));
-static llvm::cl::opt<size_t> mappingTrials(
-    "mapping-trials",
-    llvm::cl::desc(
-        "Positive native mapping trial count (default: max(8, logical CPUs))"));
-static llvm::cl::opt<size_t> mappingIterations(
-    "mapping-iterations",
-    llvm::cl::desc(
-        "Forward/backward layout refinement rounds; zero skips refinement"),
-    llvm::cl::init(MappingOptions{}.iterations));
-static llvm::cl::opt<size_t>
-    mappingLookahead("mapping-lookahead",
-                     llvm::cl::desc("Additional two-qubit gates considered "
-                                    "during routing (zero disables lookahead)"),
-                     llvm::cl::init(MappingOptions{}.lookahead));
-static llvm::cl::opt<size_t> mappingSearchMemoryLimit(
-    "mapping-search-memory-limit",
-    llvm::cl::desc("Estimated node and layout bytes per routing search, per "
-                   "concurrent trial (zero disables node expansion)"),
-    llvm::cl::init(MappingOptions{}.searchMemoryLimit));
-
-static llvm::cl::opt<std::string> qdmiConfig(
-    "qdmi-config",
-    llvm::cl::desc("Use an explicit QDMI registry configuration file"),
-    llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, OpenQASM, Jeff };
@@ -399,8 +313,92 @@ writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
   return success();
 }
 
-static int runCompiler(int argc, char** argv) {
+int mqtCoreRunCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
+
+  // Command-line options
+  llvm::cl::opt<std::string> inputFilename(
+      llvm::cl::Positional, llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
+      llvm::cl::init("-"));
+
+  llvm::cl::opt<std::string> inputFormat(
+      "input-format",
+      llvm::cl::desc(
+          "Input format: auto, jeff, mlir, or openqasm (default: auto)"),
+      llvm::cl::value_desc("format"), llvm::cl::init("auto"));
+
+  llvm::cl::opt<std::string> outputFilename(
+      "o",
+      llvm::cl::desc("Output filename (for untargeted QIR, - and .ll write "
+                     "textual LLVM IR; .bc and other names write LLVM "
+                     "bitcode)"),
+      llvm::cl::value_desc("filename"), llvm::cl::init("-"));
+
+  llvm::cl::opt<std::string> outputFormat(
+      "emit",
+      llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
+                     "qco, qco-optimized, qir-base, "
+                     "qir-adaptive, openqasm2, openqasm3, or jeff"),
+      llvm::cl::value_desc("format"), llvm::cl::init("qc"));
+
+  llvm::cl::opt<std::string> passPipeline(
+      "pass-pipeline",
+      llvm::cl::desc("Module pipeline replacing the default QCO optimizations "
+                     "(e.g. builtin.module(canonicalize,cse))"));
+  llvm::cl::alias passesAlias("passes", llvm::cl::aliasopt(passPipeline),
+                              llvm::cl::desc("Alias for --pass-pipeline"));
+  llvm::cl::opt<bool> runIsolatedPipeline(
+      "run-pipeline",
+      llvm::cl::desc("Run only --pass-pipeline on MLIR input and write MLIR"));
+  llvm::cl::opt<bool> runReproducer(
+      "run-reproducer",
+      llvm::cl::desc("Replay an MLIR file's recorded pipeline and verification "
+                     "settings, then write MLIR"));
+
+  llvm::cl::opt<bool> qdmiListDevices(
+      "qdmi-list-devices",
+      llvm::cl::desc("List configured QDMI device IDs and exit"),
+      llvm::cl::init(false));
+
+  llvm::cl::opt<std::string> qdmiDevice(
+      "qdmi-device",
+      llvm::cl::desc("Compile for the QDMI device with this stable ID"),
+      llvm::cl::value_desc("id"), llvm::cl::init(""));
+
+  llvm::cl::opt<std::string> payloadSpecification(
+      "payload-spec",
+      llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
+      llvm::cl::value_desc("attribute"), llvm::cl::init(""));
+
+  llvm::cl::opt<std::string> explicitTarget(
+      "target", llvm::cl::desc("Explicit #mqt.compilation_target attribute"),
+      llvm::cl::value_desc("attribute"), llvm::cl::init(""));
+
+  llvm::cl::opt<uint64_t> compilationSeedOption(
+      "seed", llvm::cl::desc("Override all compiler random seeds"));
+  llvm::cl::opt<size_t> mappingTrials(
+      "mapping-trials", llvm::cl::desc("Positive native mapping trial count "
+                                       "(default: max(8, logical CPUs))"));
+  llvm::cl::opt<size_t> mappingIterations(
+      "mapping-iterations",
+      llvm::cl::desc(
+          "Forward/backward layout refinement rounds; zero skips refinement"),
+      llvm::cl::init(MappingOptions{}.iterations));
+  llvm::cl::opt<size_t> mappingLookahead(
+      "mapping-lookahead",
+      llvm::cl::desc("Additional two-qubit gates considered "
+                     "during routing (zero disables lookahead)"),
+      llvm::cl::init(MappingOptions{}.lookahead));
+  llvm::cl::opt<size_t> mappingSearchMemoryLimit(
+      "mapping-search-memory-limit",
+      llvm::cl::desc("Estimated node and layout bytes per routing search, per "
+                     "concurrent trial (zero disables node expansion)"),
+      llvm::cl::init(MappingOptions{}.searchMemoryLimit));
+
+  llvm::cl::opt<std::string> qdmiConfig(
+      "qdmi-config",
+      llvm::cl::desc("Use an explicit QDMI registry configuration file"),
+      llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
   registerMQTCompilerPasses();
   // Driver-owned conversion stages must also be available for replay.
@@ -555,7 +553,7 @@ static int runCompiler(int argc, char** argv) {
                                ? Attribute{}
                                : parseAttribute(targetText, context.get());
     const auto targetAttr =
-        dyn_cast_if_present<mqt::CompilationTargetAttr>(attribute);
+        dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(attribute);
     if (!targetAttr) {
       llvm::errs()
           << "--target must be a valid #mqt.compilation_target attribute.\n";
@@ -574,7 +572,7 @@ static int runCompiler(int argc, char** argv) {
   if (!payloadSpecification.empty()) {
     const auto attribute = parseAttribute(payloadSpecification, context.get());
     const auto payloadAttr =
-        dyn_cast_if_present<mqt::PayloadSpecAttr>(attribute);
+        dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(attribute);
     if (!payloadAttr) {
       llvm::errs()
           << "--payload-spec must be a valid #mqt.payload_spec attribute.\n";
@@ -771,7 +769,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        pm.addPass(mlir::mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -881,5 +879,3 @@ static int runCompiler(int argc, char** argv) {
 
   return 0;
 }
-
-int main(int argc, char** argv) { return runCompiler(argc, argv); }

@@ -36,44 +36,19 @@ if(NOT TARGET ${TARGET_NAME})
   elseif(UNIX)
     target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
   endif()
-  set(WORKER_TARGET ${MQT_CORE_TARGET_NAME}-ddsim-worker)
-  add_executable(${WORKER_TARGET} WorkerMain.cpp WorkerProtocol.cpp)
-  target_compile_features(${WORKER_TARGET} PRIVATE cxx_std_20)
-  target_link_libraries(
-    ${WORKER_TARGET}
-    PRIVATE
-      MQT::CoreDD
-      MQT::CoreQDMICommon
-      MLIRQCODDFunctionality
-      MQTCompilerPrograms
-      MQT::CoreQIRJIT
-      MQT::CoreQIRRuntime
-      MQT::ProjectWarnings
-      MQT::ProjectOptions)
-  llvm_update_compile_flags(${WORKER_TARGET})
   if(WIN32)
     target_compile_definitions(${TARGET_NAME} PRIVATE NOMINMAX)
-    set(WORKER_DIRECTORY ${CMAKE_INSTALL_BINDIR})
-  else()
-    set(WORKER_DIRECTORY ${CMAKE_INSTALL_LIBDIR})
   endif()
-  set_target_properties(
-    ${WORKER_TARGET}
-    PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${WORKER_DIRECTORY}")
+  file(RELATIVE_PATH simulator_path "/${CMAKE_INSTALL_LIBDIR}"
+       "/${CMAKE_INSTALL_BINDIR}/mqt-cc${CMAKE_EXECUTABLE_SUFFIX}")
   target_compile_definitions(
     ${TARGET_NAME}
-    PRIVATE MQT_DDSIM_WORKER_NAME="${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
-  add_dependencies(${TARGET_NAME} ${WORKER_TARGET})
-  if(MQT_CORE_INSTALL)
-    install(
-      TARGETS ${WORKER_TARGET}
-      RUNTIME DESTINATION ${WORKER_DIRECTORY} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
-  endif()
+    PRIVATE
+      MQT_DDSIM_EXECUTABLE="mqt-cc${CMAKE_EXECUTABLE_SUFFIX}"
+      MQT_DDSIM_EXECUTABLE_RELATIVE="${simulator_path}")
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
-  set_property(
-    TARGET ${TARGET_NAME}
-    APPEND
-    PROPERTY QDMI_RUNTIME_FILES "${WORKER_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
+  set_property(TARGET ${TARGET_NAME} PROPERTY QDMI_RUNTIME_TARGETS MQT::mqt-cc)
+  set_property(TARGET ${TARGET_NAME} APPEND PROPERTY EXPORT_PROPERTIES QDMI_RUNTIME_TARGETS)
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

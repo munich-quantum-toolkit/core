@@ -79,11 +79,12 @@ def test_cli_execute_module() -> None:
 
 
 @pytest.mark.script_launch_mode("subprocess")
-def test_compiler_cli(script_runner: ScriptRunner, tmp_path: Path) -> None:
+@pytest.mark.parametrize("subcommand", [[], ["compile"]])
+def test_compiler_cli(script_runner: ScriptRunner, tmp_path: Path, subcommand: list[str]) -> None:
     """Compile OpenQASM with the compiler bundled in the wheel."""
     source = tmp_path / "bell.qasm"
     source.write_text('OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; cx q[0], q[1];')
-    ret = script_runner.run(["mqt-cc", str(source), "--emit=qco"])
+    ret = script_runner.run(["mqt-cc", *subcommand, str(source), "--emit=qco"])
     assert ret.success
     assert "qco.h" in ret.stdout
 
@@ -115,9 +116,10 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
 
 
 @pytest.mark.script_launch_mode("subprocess")
-def test_benchmark_cli(script_runner: ScriptRunner) -> None:
+@pytest.mark.parametrize("command", [["mqt-core-bench"], ["mqt-cc", "bench"]])
+def test_benchmark_cli(script_runner: ScriptRunner, command: list[str]) -> None:
     """Run the bundled benchmark driver through its console script."""
-    ret = script_runner.run(["mqt-core-bench", "list"])
+    ret = script_runner.run([*command, "list"])
     assert ret.success
     assert '"modular-multiplier"' in ret.stdout
     assert '"ghz"' in ret.stdout

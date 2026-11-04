@@ -33,6 +33,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -121,7 +122,12 @@ bool Worker::start() {
     qdmi::diagnostics::error("{0}", llvm::toString(modulePath.takeError()));
     return false;
   }
-  const auto executablePath = (*modulePath / MQT_DDSIM_WORKER_NAME).u8string();
+  auto executableFile = *modulePath / MQT_DDSIM_EXECUTABLE;
+  std::error_code errorCode;
+  if (!std::filesystem::exists(executableFile, errorCode)) {
+    executableFile = *modulePath / MQT_DDSIM_EXECUTABLE_RELATIVE;
+  }
+  const auto executablePath = executableFile.u8string();
   const std::string executable(executablePath.begin(), executablePath.end());
   {
     const std::scoped_lock lock(mutex_);
@@ -129,7 +135,8 @@ bool Worker::start() {
       return false;
     }
     std::string error;
-    process_ = llvm::sys::ExecuteNoWait(executable, {executable, socketPath},
+    process_ = llvm::sys::ExecuteNoWait(executable,
+                                        {executable, "simulate", socketPath},
                                         std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
       qdmi::diagnostics::error("Cannot start DDSIM worker: {0}", error);

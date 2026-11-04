@@ -27,14 +27,14 @@ def compiler() -> NoReturn:
 
 def benchmark() -> NoReturn:
     """Launch the bundled MQT benchmark driver."""
-    run_tool("mqt-core-bench")
+    run_tool("mqt-cc", "bench")
 
 
-def run_tool(name: str) -> NoReturn:
+def run_tool(name: str, *prefix: str) -> NoReturn:
     """Run a bundled native tool and preserve its exit status."""
     suffix = ".exe" if sys.platform == "win32" else ""
     executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/{name}{suffix}")))
-    arguments = [str(executable), *sys.argv[1:]]
+    arguments = [str(executable), *prefix, *sys.argv[1:]]
     if sys.platform == "win32":
         # Windows exec exits the launcher without waiting for the native tool.
         sys.exit(subprocess.run(arguments, check=False).returncode)  # ruff: ignore[subprocess-without-shell-equals-true]

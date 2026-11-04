@@ -30,7 +30,7 @@ function(mqt_configure_qdmi_device target)
   set_target_properties(
     ${target}
     PROPERTIES
-      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}"
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   target_compile_definitions(
     ${target}
@@ -207,6 +207,12 @@ function(mqt_copy_qdmi_runtime target)
         set(manifest "$<TARGET_FILE_DIR:${library}>/${manifest_name}")
       endif()
       list(APPEND files "${manifest}")
+      get_target_property(runtime_targets ${library_target} QDMI_RUNTIME_TARGETS)
+      if(runtime_targets)
+        foreach(runtime_target IN LISTS runtime_targets)
+          list(APPEND files "$<TARGET_FILE:${runtime_target}>")
+        endforeach()
+      endif()
       get_target_property(assets ${library_target} QDMI_RUNTIME_FILES)
       if(assets)
         foreach(asset IN LISTS assets)
