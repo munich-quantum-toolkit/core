@@ -2099,7 +2099,8 @@ TEST(CompilerQDMIAdapterTest, SubmitsCompatibleProgramsTogether) {
   constexpr auto source = "OPENQASM 3.0; include \"stdgates.inc\"; "
                           "qubit[2] q; bit[2] c; x q[0]; c = measure q;";
   const auto binary = llvm::cantFail(
-      mlir::compileProgram(mlir::OpenQASMProgram(source), device));
+      mlir::compileProgram(mlir::OpenQASMProgram(source), device,
+                           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   const auto text = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device,
                            QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING));
