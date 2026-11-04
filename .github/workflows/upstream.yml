@@ -59,7 +59,7 @@ jobs:
     name: Report Qiskit failure
     needs: qiskit-upstream-tests
     if: ${{ always() }}
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@f70a93d1ebb635bdad0c12b6150f5039ffb89950 # v2.5.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@f29527fbf2ea6ee400af2853bcf6e1aa7fc63c2b # v2.5.8
     with:
       tests-result: ${{ needs.qiskit-upstream-tests.result }}
       name: Qiskit
@@ -72,7 +72,7 @@ jobs:
     name: Report Catalyst failure
     needs: [catalyst-upstream-tests, catalyst-abi-check]
     if: ${{ always() }}
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@f70a93d1ebb635bdad0c12b6150f5039ffb89950 # v2.5.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@f29527fbf2ea6ee400af2853bcf6e1aa7fc63c2b # v2.5.8
     with:
       tests-result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
       name: Catalyst
