@@ -118,6 +118,9 @@ class QDMIJob(JobV1):
             if getattr(program, "_environment", None) is environment
         }
         for program in self._programs:
+            if getattr(program, "_qiskit_header", {}) is None:
+                msg = "Classical registers must partition circuit.clbits in register order for Qiskit results."
+                raise JobError(msg)
             if program.result_width is None:
                 msg = "Qiskit results require Boolean or classical-bit outputs."
                 raise JobError(msg)

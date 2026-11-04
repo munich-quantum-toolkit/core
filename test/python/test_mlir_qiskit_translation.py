@@ -5142,13 +5142,14 @@ def test_qpy_compilation_and_native_readout() -> None:
     assert restored.count_ops() == {"x": 1, "measure": 2}
 
 
-def test_compiled_header_rejects_loose_classical_bits() -> None:
-    """Compiled Qiskit headers cannot omit unregistered output bits."""
+def test_compiled_loose_classical_bits_remain_available_to_native_clients() -> None:
+    """Native payloads retain bits that cannot form partitioned Qiskit headers."""
     circuit = QuantumCircuit(1)
     circuit.add_bits([Clbit()])
     circuit.measure(0, 0)
-    with pytest.raises(ValueError, match="registers must partition"):
-        compile_program(circuit, target=open_device("mqt.ddsim.default"))
+    program = compile_program(circuit, target=open_device("mqt.ddsim.default"))
+    assert program.result_width == 1
+    assert sample(program.payload, shots=1) == {"0": 1}
 
 
 def test_qpy_selection_without_optional_qiskit() -> None:

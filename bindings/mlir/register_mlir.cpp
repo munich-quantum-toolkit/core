@@ -678,10 +678,8 @@ payloadForOutput(OutputFormat output) {
         bits.append(bit);
       }
     }
-    if (!nb::cast<bool>(bits.attr("__eq__")(program.attr("clbits")))) {
-      throw nb::value_error("Classical registers must partition circuit.clbits "
-                            "in register order");
-    }
+    const auto partitioned =
+        nb::cast<bool>(bits.attr("__eq__")(program.attr("clbits")));
     nb::dict header;
     header["name"] = program.attr("name");
     header["memory_slots"] = program.attr("num_clbits");
@@ -695,7 +693,8 @@ payloadForOutput(OutputFormat output) {
       registers.append(item);
     }
     header["creg_sizes"] = registers;
-    result.attr("_qiskit_header") = header;
+    result.attr("_qiskit_header") =
+        partitioned ? nb::object(header) : nb::none();
   }
   if (nb::isinstance<mlir::TargetEnvironment>(target)) {
     result.attr("_environment") = target;

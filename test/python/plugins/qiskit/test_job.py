@@ -432,6 +432,11 @@ def test_reject_nonpartitioned_classical_bits(recording_backend: RecordingBacken
     qc.add_register(ClassicalRegister(bits=qc.clbits[::-1], name="reversed"))
     with pytest.raises(CircuitValidationError, match="partition"):
         backend.run(qc, memory=True)
+    loose = QuantumCircuit(1)
+    loose.add_bits([Clbit()])
+    compiled = backend.compile(loose)
+    with pytest.raises(JobError, match="partition"):
+        backend.run(compiled, memory=True)
     assert not jobs
 
 
