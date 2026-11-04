@@ -1369,6 +1369,56 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, ValidatesOpaqueQIRGatesAgainstNativeSites) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      8, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(CompilerTarget::OperationCapability::create(
+              "hop", 2, 1,
+              {llvm::cantFail(CompilerTarget::SiteTuple::create({7, 2}))})),
+      })));
+  for (auto profile : {mlir::QIRProfile::Base, mlir::QIRProfile::Adaptive}) {
+    for (const bool reversed : {false, true}) {
+      auto program = mlir::QCProgram::fromMLIRString(
+          llvm::formatv(R"mlir(
+module {{
+  func.func private @gate(f64, !qc.qubit, !qc.qubit) attributes {{mqt.source_name = "hop"}
+  func.func @main() attributes {{mqt.entry_point} {{
+    %q = qc.static {0} : !qc.qubit
+    %r = qc.static {1} : !qc.qubit
+    %angle = arith.constant 0.25 : f64
+    func.call @gate(%angle, %q, %r) : (f64, !qc.qubit, !qc.qubit) -> ()
+    return
+  }
+})mlir",
+                        reversed ? 2 : 7, reversed ? 7 : 2)
+              .str());
+      MQT_ASSERT_SUCCESS(program);
+      mlir::attachTargetEnvironment(
+          program->module(),
+          mlir::TargetEnvironment(
+              target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                          profile == mlir::QIRProfile::Base
+                              ? QDMI_PROGRAM_FORMAT_QIRBASESTRING
+                              : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING))));
+      const auto context = program->context();
+      mlir::ScopedDiagnosticHandler handler(context.get(),
+                                            [](mlir::Diagnostic&) {});
+      auto qir = std::move(*program).intoQIR(profile);
+      if (reversed) {
+        EXPECT_TRUE(mlir::failed(qir));
+      } else {
+        ASSERT_TRUE(mlir::succeeded(qir));
+        auto text = std::move(*qir).intoLLVMIR();
+        ASSERT_TRUE(mlir::succeeded(text));
+        EXPECT_NE(text->find("@__quantum__qis__hop__body(double"),
+                  std::string::npos);
+        EXPECT_NE(text->find("i64 7 to ptr"), std::string::npos);
+      }
+    }
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
   const auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
