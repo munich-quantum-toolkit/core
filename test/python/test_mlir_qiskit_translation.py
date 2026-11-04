@@ -4671,7 +4671,8 @@ def test_transpiler_added_ancillas_and_routing_round_trip() -> None:
 
 @pytest.mark.parametrize("routed", [False, True])
 @pytest.mark.parametrize("basis", ["u", "fixed_rx"])
-def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) -> None:
+@pytest.mark.parametrize("disabled_site", [False, True])
+def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str, disabled_site: bool) -> None:
     """Qiskit removes initial placement and routing, including workspace swaps."""
     operations = (
         [CompilerTarget.OperationCapability("u", 1, 3), CompilerTarget.OperationCapability("cz", 2, 0)]
@@ -4684,14 +4685,14 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
     )
     target = CompilerTarget(
         "sparse line",
-        [CompilerTarget.Site(site) for site in [0, 2, 1, 4]],
+        [CompilerTarget.Site(site) for site in ([0, 2, 1, 4, 3] if disabled_site else [0, 2, 1, 4])],
         connectivity=(
-            CompilerTarget.Connectivity([(0, 2), (2, 1), (1, 4)])
+            CompilerTarget.Connectivity([(0, 2), (2, 1), (1, 4), *([(4, 3)] if disabled_site else [])])
             if routed
             else CompilerTarget.Connectivity.all_to_all()
         ),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("measure", 1, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0, site_tuples=[[site] for site in [0, 2, 1, 4]]),
             *operations,
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
@@ -4734,10 +4735,19 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
         atol=1e-12,
     )
 
+    if disabled_site:
+        environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
+        artifact = compile_program(circuit, target=environment)
+        payload = artifact.payload
+        assert isinstance(payload, bytes)
+        restored = qpy.load(BytesIO(payload))[0]
+        assert restored.layout is not None
+        np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator(expected).data, atol=1e-12)
+
 
 @pytest.mark.parametrize("sites", [[0, 1], [1, 0], [1, 3]])
-def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
-    """Only attach compiler layouts when exported wires use the recorded order."""
+def test_native_layout_uses_recorded_physical_sites(sites: list[int]) -> None:
+    """Physical layouts survive target reordering and omitted non-placeable sites."""
     target = CompilerTarget(
         "site order",
         [CompilerTarget.Site(site) for site in sites],
@@ -4768,8 +4778,8 @@ def test_native_layout_requires_matching_target_order(sites: list[int]) -> None:
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     reordered = restored.to_qiskit(target=reversed_target)
-    assert reordered.layout is None
-    np.testing.assert_allclose(Operator(reordered).data, Operator(exported).data, atol=1e-12)
+    assert reordered.layout is not None
+    np.testing.assert_allclose(Operator.from_circuit(reordered).data, Operator(expected).data, atol=1e-12)
 
 
 def test_native_compilation_rejects_imported_qiskit_layout() -> None:

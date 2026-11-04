@@ -13,6 +13,7 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
@@ -1382,6 +1383,14 @@ std::vector<SiteId> CompilerTarget::placeableSites() const {
     const auto name = op.canonicalName();
     if (!op.arity().accepts(1) || name == "reset" || name == "barrier") {
       continue;
+    }
+    if (name != "measure") {
+      const auto* gate = qc::lookupStandardGateByOperationSymbol(name);
+      if (gate == nullptr || gate->controlCount != 0 ||
+          gate->targetCount != 1 ||
+          gate->parameterCount != op.numParameters()) {
+        continue;
+      }
     }
     auto& supported = name == "measure" ? measured : unary;
     if (op.siteTuples().empty()) {

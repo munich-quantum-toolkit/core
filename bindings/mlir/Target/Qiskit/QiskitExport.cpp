@@ -3005,14 +3005,16 @@ exportCircuitImpl(mlir::QCProgram program,
   }
   emitCircuit(circuit, *writer);
   if (layout && layout->sites && target != nullptr &&
-      layout->initial.size() == target->numSites() &&
-      llvm::equal(*layout->sites, target->siteIds())) {
+      layout->initial.size() == layout->sites->size() &&
+      llvm::all_of(*layout->sites, [&](auto site) {
+        return target->vertexForSite(site).has_value();
+      })) {
     const auto& sites = *layout->sites;
     for (auto& site : layout->initial) {
       site = sites[static_cast<size_t>(site)];
     }
     for (uint32_t site = 0; site < state.numQubits; ++site) {
-      if (!target->vertexForSite(site)) {
+      if (!llvm::is_contained(sites, site)) {
         layout->initial.push_back(site);
       }
     }

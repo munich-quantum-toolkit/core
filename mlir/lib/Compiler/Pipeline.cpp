@@ -271,11 +271,10 @@ LogicalResult QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
 
 // Join native MOVE and CZ placements through non-placeable resonators.
 static void forEachVirtualCZ(
-    const CompilerTarget& target,
+    const CompilerTarget& target, ArrayRef<CompilerTarget::SiteId> sites,
     llvm::function_ref<void(CompilerTarget::SiteId, CompilerTarget::SiteId,
                             CompilerTarget::SiteId, bool)>
         visit) {
-  const auto sites = target.placeableSites();
   for (const auto& move : target.operations()) {
     if (move.canonicalName() != "move" ||
         move.arity() != CompilerTarget::OperationCapability::Arity::fixed(2) ||
@@ -309,13 +308,61 @@ static void forEachVirtualCZ(
 }
 
 static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
-  const auto placeable = target.placeableSites();
+  auto placeable = target.placeableSites();
   if (placeable.empty()) {
-    return createStringError(std::errc::invalid_argument,
-                             "target has no placeable sites");
+    return createStringError(
+        std::errc::invalid_argument,
+        "no site supports both a single-qubit gate and measure");
   }
   if (placeable.size() == target.numSites()) {
     return target;
+  }
+  std::set<CompilerTarget::Coupling> edges;
+  for (const auto& edge : target.couplings()) {
+    if (llvm::is_contained(placeable, edge.first) &&
+        llvm::is_contained(placeable, edge.second)) {
+      edges.insert(edge);
+    }
+  }
+  std::set<CompilerTarget::Coupling> virtualPairs;
+  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto, bool) {
+    virtualPairs.emplace(a, b);
+    virtualPairs.emplace(b, a);
+    edges.emplace(a, b);
+  });
+  if (target.connectivityKind() !=
+      CompilerTarget::Connectivity::Kind::AllToAll) {
+    std::map<CompilerTarget::SiteId, SmallVector<CompilerTarget::SiteId>>
+        neighbors;
+    for (const auto& [a, b] : edges) {
+      neighbors[a].push_back(b);
+      neighbors[b].push_back(a);
+    }
+    std::set<CompilerTarget::SiteId> visited;
+    SmallVector<CompilerTarget::SiteId> largest;
+    for (const auto site : placeable) {
+      if (!visited.insert(site).second) {
+        continue;
+      }
+      SmallVector<CompilerTarget::SiteId> component{site};
+      for (size_t i = 0; i < component.size(); ++i) {
+        for (const auto neighbor : neighbors[component[i]]) {
+          if (visited.insert(neighbor).second) {
+            component.push_back(neighbor);
+          }
+        }
+      }
+      if (component.size() > largest.size()) {
+        largest = std::move(component);
+      }
+    }
+    std::erase_if(placeable, [&](auto site) {
+      return !llvm::is_contained(largest, site);
+    });
+    std::erase_if(edges, [&](const auto& edge) {
+      return !llvm::is_contained(placeable, edge.first) ||
+             !llvm::is_contained(placeable, edge.second);
+    });
   }
   std::vector<CompilerTarget::Site> sites;
   for (const auto& site : target.sites()) {
@@ -326,6 +373,9 @@ static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
   using Capability = CompilerTarget::OperationCapability;
   std::vector<Capability> operations;
   for (const auto& op : target.operations()) {
+    if (op.arity().value() > placeable.size()) {
+      continue;
+    }
     std::vector<CompilerTarget::SiteTuple> tuples;
     for (const auto& tuple : op.siteTuples()) {
       if (llvm::all_of(tuple.sites(), [&](auto site) {
@@ -344,24 +394,12 @@ static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
         op.canonicalName().str(),
         {op.parameterBounds().begin(), op.parameterBounds().end()})));
   }
-  std::set<CompilerTarget::Coupling> edges;
-  for (const auto& edge : target.couplings()) {
-    if (llvm::is_contained(placeable, edge.first) &&
-        llvm::is_contained(placeable, edge.second)) {
-      edges.insert(edge);
-    }
-  }
-  std::set<CompilerTarget::Coupling> virtualPairs;
-  forEachVirtualCZ(target, [&](auto a, auto b, auto, bool) {
-    virtualPairs.emplace(a, b);
-    virtualPairs.emplace(b, a);
-    edges.emplace(a, b);
-  });
   std::vector<CompilerTarget::SiteTuple> virtualCZs;
-  virtualCZs.reserve(virtualPairs.size());
   for (const auto& [a, b] : virtualPairs) {
-    virtualCZs.push_back(
-        llvm::cantFail(CompilerTarget::SiteTuple::create({a, b})));
+    if (llvm::is_contained(placeable, a) && llvm::is_contained(placeable, b)) {
+      virtualCZs.push_back(
+          llvm::cantFail(CompilerTarget::SiteTuple::create({a, b})));
+    }
   }
   if (!virtualCZs.empty()) {
     operations.push_back(
@@ -384,9 +422,15 @@ static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
 
 static void insertResonatorMoves(ModuleOp module,
                                  const CompilerTarget& target) {
+  if (llvm::none_of(target.operations(), [](const auto& operation) {
+        return operation.canonicalName() == "move";
+      })) {
+    return;
+  }
   using SiteId = CompilerTarget::SiteId;
+  const auto placeable = target.placeableSites();
   std::map<std::pair<SiteId, SiteId>, std::pair<SiteId, bool>> routes;
-  forEachVirtualCZ(target, [&](auto a, auto b, auto r, bool first) {
+  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto r, bool first) {
     routes.try_emplace({a, b}, r, first);
   });
   if (routes.empty()) {
@@ -420,10 +464,8 @@ static void insertResonatorMoves(ModuleOp module,
     const auto [moving, stationary] = route->first;
     const auto [resonator, first] = route->second;
     if (!move) {
-      OpBuilder::InsertionGuard guard(builder);
-      builder.setInsertionPointToStart(module.getBody());
       SmallVector<Type, 2> types(2, qc::QubitType::get(module.getContext()));
-      move = func::FuncOp::create(builder, module.getLoc(), "move",
+      move = func::FuncOp::create(module.getLoc(), "move",
                                   builder.getFunctionType(types, {}));
       move.setPrivate();
       move->setAttr(mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),

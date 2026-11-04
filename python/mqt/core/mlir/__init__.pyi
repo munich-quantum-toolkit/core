@@ -599,10 +599,6 @@ class CompilerTarget:
         """The target timing unit, if available."""
 
     @property
-    def placeable_sites(self) -> list[int]:
-        """Sites supporting a single-qubit gate and measurement."""
-
-    @property
     def num_sites(self) -> int:
         """The number of target sites."""
 

@@ -4870,7 +4870,8 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
   for (const auto& [target, expected] : {
            std::pair{targetWith(1, {u, measure}), "target site count"},
            std::pair{targetWith(2, {u, localMeasure}), "target site count"},
-           std::pair{targetWith(2, {u}), "no placeable sites"},
+           std::pair{targetWith(2, {u}),
+                     "no site supports both a single-qubit gate and measure"},
        }) {
     auto qc = QCProgram::fromOpenQASMString(source);
     MQT_ASSERT_SUCCESS(qc);
