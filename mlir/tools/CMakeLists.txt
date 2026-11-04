@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-cc NativeCompilerMain.cpp mqt-cc/mqt-cc.cpp ../bench/MQTCoreBench.cpp)
+add_executable(mqt-cc NativeCompilerMain.cpp mqt-cc/mqt-cc.cpp ../bench/MQTCoreBench.cpp
+               ../../src/qdmi/devices/dd/WorkerMain.cpp ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
 add_executable(MQT::mqt-cc ALIAS mqt-cc)
 target_include_directories(mqt-cc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 mqt_mlir_target_use_project_options(mqt-cc)
@@ -23,18 +24,13 @@ target_link_libraries(
     MLIRJeffTranslation
     MLIRJeffToQCO
     MLIRBytecodeWriter
-    MLIRQIRTranslation)
-if(TARGET ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device)
-  target_sources(
-    mqt-cc
-    PRIVATE ../../src/qdmi/devices/dd/WorkerMain.cpp ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
-  target_compile_definitions(mqt-cc PRIVATE MQT_CORE_HAS_SIMULATOR)
-  target_link_libraries(
-    mqt-cc
-    PRIVATE
-      MQT::CoreDD MQT::CoreQDMICommon MQT::CoreQIRJIT MQT::CoreQIRRuntime MLIRQCODDFunctionality
-      MQTCompilerPrograms)
-endif()
+    MLIRQIRTranslation
+    MQT::CoreDD
+    MQT::CoreQDMICommon
+    MQT::CoreQIRJIT
+    MQT::CoreQIRRuntime
+    MLIRQCODDFunctionality
+    MQTCompilerPrograms)
 mlir_check_all_link_libraries(mqt-cc)
 set_target_properties(
   mqt-cc

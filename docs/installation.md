@@ -81,12 +81,11 @@ SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
 macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
 exports. Wheels include the QDMI driver and device bundles and the `mqt-cc`
-executable with `compile`, `bench`, and `simulate` subcommands. The
-`mqt-core-bench` Python entry point runs `mqt-cc bench`. Their CMake package
-exposes the QDMI C interfaces and the `MQT::mqt-cc` executable target. Native
-CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`. C++ development
-libraries and headers are available from source installations; the DD library is
-static.
+executable with `compile`, `bench`, and `simulate` subcommands. Their CMake
+package exposes the QDMI C interfaces and the `MQT::mqt-cc` executable target.
+Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`. C++
+development libraries and headers are available from source installations; the
+DD library is static.
 
 ### Building from source
 

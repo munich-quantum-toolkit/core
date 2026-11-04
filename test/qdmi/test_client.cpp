@@ -104,7 +104,6 @@ protected:
   void SetUp() override { operations = value(device.getOperations()); }
 };
 
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
   Device device;
@@ -157,7 +156,6 @@ cx q[0], q[1];
     return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0));
   }
 };
-#endif
 
 } // namespace
 
@@ -651,11 +649,9 @@ TEST_P(DeviceTest, CouplingMap) {
   EXPECT_NO_THROW(std::ignore = value(device.getCouplingMap()));
 }
 
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
   EXPECT_EQ(value(device.getQueueLength()), std::nullopt);
 }
-#endif
 
 TEST_P(DeviceTest, LengthUnit) {
   EXPECT_NO_THROW(std::ignore = value(device.getLengthUnit()));
@@ -691,7 +687,6 @@ TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
             std::nullopt);
 }
 
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
   EXPECT_EQ(
       value(device.queryCustomProperty<std::string>(CustomProperty::Custom2)),
@@ -702,7 +697,6 @@ TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
   EXPECT_THAT(*capabilities, testing::HasSubstr("mqt.payload-capabilities.v1"));
   EXPECT_THAT(*capabilities, testing::HasSubstr("classical-assignment"));
 }
-#endif
 
 TEST_P(SiteTest, Index) {
   for (const auto& site : sites) {
@@ -967,7 +961,6 @@ TEST_P(DeviceTest, RegularSitesAndZones) {
   }
 }
 
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, SubmitJobReturnsValidJob) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;
@@ -1252,7 +1245,6 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   ASSERT_NE(it11, sparseProbabilities.end());
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
-#endif
 
 TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_TOKEN), "TOKEN");

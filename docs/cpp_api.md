@@ -98,9 +98,8 @@ The application prints `DDSIM result: 1`.
 
 CMake provides the `MQT::mqt-cc` imported executable target. Use
 `mqt-cc compile` and `mqt-cc bench` in custom commands or from the command line.
-The Python entry point `mqt-core-bench` also runs `mqt-cc bench`. DDSIM launches
-`mqt-cc simulate <socket>` as a separate process using its internal worker
-protocol.
+DDSIM launches `mqt-cc simulate <socket>` as a separate process using its
+internal worker protocol.
 
 ```{code-cell} ipython3
 :tags: [remove-cell]

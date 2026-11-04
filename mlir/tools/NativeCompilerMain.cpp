@@ -24,17 +24,11 @@ int main(int argc, char** argv) {
   if (argc > 1 && std::string_view(argv[1]) == "bench") {
     return mqtCoreRunBench(argc - 1, argv + 1);
   }
-#ifdef MQT_CORE_HAS_SIMULATOR
   if (argc > 1 && std::string_view(argv[1]) == "simulate") {
     return mqtCoreRunSimulator(argc - 1, argv + 1);
   }
-#endif
   if (argc == 1 || std::string_view(argv[1]) == "--help") {
-    llvm::outs() << "Usage: mqt-cc {compile|bench"
-#ifdef MQT_CORE_HAS_SIMULATOR
-                 << "|simulate"
-#endif
-                 << "} [options]\n";
+    llvm::outs() << "Usage: mqt-cc {compile|bench|simulate} [options]\n";
     return 0;
   }
   return mqtCoreRunCompiler(argc, argv);

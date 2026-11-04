@@ -30,12 +30,12 @@ read.
 import json
 import subprocess
 
-catalog = subprocess.run(["mqt-core-bench", "list"], check=True, capture_output=True, text=True)
+catalog = subprocess.run(["mqt-cc", "bench", "list"], check=True, capture_output=True, text=True)
 print(json.dumps(json.loads(catalog.stdout), indent=2))
 ```
 
 ```{code-cell} ipython3
-description = subprocess.run(["mqt-core-bench", "describe", "qft"], check=True, capture_output=True, text=True)
+description = subprocess.run(["mqt-cc", "bench", "describe", "qft"], check=True, capture_output=True, text=True)
 print(json.dumps(json.loads(description.stdout), indent=2))
 ```
 
@@ -179,7 +179,7 @@ counts_path.write_text(
 
 ```{code-cell} ipython3
 generation = subprocess.run(
-    ["mqt-core-bench", "generate", "--instance-specification", str(instance_specification_path),
+    ["mqt-cc", "bench", "generate", "--instance-specification", str(instance_specification_path),
      "--format", "qc", "--output", str(output_directory)],
     check=True, capture_output=True, text=True,
 )
@@ -196,7 +196,7 @@ print("Manifest:", manifest_path.name)
 
 ```{code-cell} ipython3
 evaluation_result = subprocess.run(
-    ["mqt-core-bench", "evaluate", "--manifest", str(manifest_path), "--counts", str(counts_path)],
+    ["mqt-cc", "bench", "evaluate", "--manifest", str(manifest_path), "--counts", str(counts_path)],
     check=True, capture_output=True, text=True,
 )
 metrics = json.loads(evaluation_result.stdout)["metrics"]

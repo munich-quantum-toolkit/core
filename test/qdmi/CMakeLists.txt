@@ -56,9 +56,6 @@ if(TARGET MQT::CoreQDMI)
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE "MQT_CORE_QDMI_CLIENT_TEST_CONFIG=\"${client_test_config}\"")
-  if(TARGET MQT::CoreQDMI_DDSIM_Device)
-    target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_HAS_DDSIM_DEVICE)
-  endif()
   add_dependencies(${TARGET_NAME} mqt-core-qdmi-session-device)
   mqt_copy_qdmi_runtime(${TARGET_NAME})
   # Both executables share one output directory and one runtime staging owner.

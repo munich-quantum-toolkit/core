@@ -116,10 +116,9 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
 
 
 @pytest.mark.script_launch_mode("subprocess")
-@pytest.mark.parametrize("command", [["mqt-core-bench"], ["mqt-cc", "bench"]])
-def test_benchmark_cli(script_runner: ScriptRunner, command: list[str]) -> None:
+def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     """Run the bundled benchmark driver through its console script."""
-    ret = script_runner.run([*command, "list"])
+    ret = script_runner.run(["mqt-cc", "bench", "list"])
     assert ret.success
     assert '"modular-multiplier"' in ret.stdout
     assert '"ghz"' in ret.stdout
@@ -131,17 +130,10 @@ def test_benchmark_cli(script_runner: ScriptRunner, command: list[str]) -> None:
     assert '"teleportation"' in ret.stdout
 
 
-@pytest.mark.parametrize(
-    "tool",
-    [
-        "mqt-cc",
-        "mqt-core-bench",
-    ],
-)
 @pytest.mark.script_launch_mode("subprocess")
-def test_native_tool_entry_point(script_runner: ScriptRunner, tool: str) -> None:
+def test_native_tool_entry_point(script_runner: ScriptRunner) -> None:
     """Report help and propagate native argument errors through the installed command."""
-    ret = script_runner.run([tool, "--help"])
+    ret = script_runner.run(["mqt-cc", "--help"])
     assert ret.success
     assert ret.stdout
-    assert not script_runner.run([tool, "--mqt-invalid-test-option"]).success
+    assert not script_runner.run(["mqt-cc", "--mqt-invalid-test-option"]).success

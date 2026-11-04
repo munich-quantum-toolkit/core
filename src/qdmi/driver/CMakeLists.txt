@@ -50,9 +50,7 @@ if(NOT TARGET ${TARGET_NAME})
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 
   # Driver and devices share the build output directory.
-  if(QDMI_DEVICE_TARGETS)
-    add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
-  endif()
+  add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()

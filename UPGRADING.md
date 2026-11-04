@@ -442,7 +442,7 @@ source/destination edge pair with the destination edge and explicit
 source/destination IDs. Prefer `toDot` to assign IDs for a complete graph.
 
 The new typed benchmark API is available through `MQT::CoreBench` and
-`mqt.core.bench`; generation also requires the compiler. `mqt-core-bench` is its
+`mqt.core.bench`; generation also requires the compiler. `mqt-cc bench` is its
 command-line interface. These are not drop-in replacements for the circuit
 factories removed in v3.10.0. See the
 [benchmark guide](https://mqt.readthedocs.io/projects/core/en/latest/benchmarks.html)

@@ -119,7 +119,6 @@ PyPI = "https://pypi.org/project/mqt-core/"
 
 [project.scripts]
 mqt-cc = "mqt.core._commands:compiler"
-mqt-core-bench = "mqt.core._commands:benchmark"
 mqt-core-cli = "mqt.core.__main__:main"
 
 [project.entry-points."pennylane.plugins"]
