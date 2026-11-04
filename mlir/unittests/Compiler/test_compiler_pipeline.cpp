@@ -1007,10 +1007,9 @@ ratio = 2.0;
   ASSERT_TRUE(mlir::succeeded(restoredQC));
   auto emitted = std::move(*restoredQC).intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(emitted));
-  EXPECT_NE(emitted->source().find("output int _mqt_out0;"), std::string::npos);
-  EXPECT_NE(emitted->source().find("output bit[2] bits;"), std::string::npos);
-  EXPECT_NE(emitted->source().find("output float _mqt_out1;"),
-            std::string::npos);
+  EXPECT_NE(emitted->source().find("int _mqt_out0;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("bit[2] bits;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("float _mqt_out1;"), std::string::npos);
   EXPECT_TRUE(
       static_cast<bool>(QCProgram::fromOpenQASMString(emitted->source())));
 }

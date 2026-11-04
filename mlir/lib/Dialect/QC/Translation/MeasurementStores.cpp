@@ -25,6 +25,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -35,11 +36,67 @@
 
 namespace mlir::qc {
 
+// Inline expressions can defer an SSA use until a later statement. Reusing a
+// register bit is safe only while it retains the measured value. Conservatively
+// keep a snapshot if a derived value escapes the block or the bit is
+// overwritten.
+static bool canReuseMeasurementBit(MeasureOp measure,
+                                   cbit::StoreOp destination) {
+  const auto index = getConstantIntValue(destination.getIndex());
+  if (!index) {
+    return false;
+  }
+  SmallVector<Operation*> pending(measure.getResult().getUsers());
+  llvm::SmallPtrSet<Operation*, 16> visited;
+  while (!pending.empty()) {
+    auto* user = pending.pop_back_val();
+    if (!visited.insert(user).second) {
+      continue;
+    }
+    if (user->getBlock() != measure->getBlock() ||
+        user->hasTrait<OpTrait::IsTerminator>()) {
+      return false;
+    }
+    for (auto result : user->getResults()) {
+      llvm::append_range(pending, result.getUsers());
+    }
+  }
+  for (auto* op = measure->getNextNode(); op; op = op->getNextNode()) {
+    const auto result = op->walk<WalkOrder::PreOrder>([&](Operation*
+                                                              candidate) {
+      if (candidate == destination || isa<qc::UnitaryOpInterface>(candidate)) {
+        return WalkResult::skip();
+      }
+      if (auto store = dyn_cast<cbit::StoreOp>(candidate);
+          store && store.getReg() == destination.getReg()) {
+        const auto otherIndex = getConstantIntValue(store.getIndex());
+        return otherIndex && *otherIndex != *index ? WalkResult::skip()
+                                                   : WalkResult::interrupt();
+      }
+      if (auto memory = dyn_cast<MemoryEffectOpInterface>(candidate)) {
+        SmallVector<MemoryEffects::EffectInstance> effects;
+        memory.getEffects(effects);
+        for (const auto& effect : effects) {
+          if (isa<MemoryEffects::Write>(effect.getEffect()) &&
+              (!effect.getValue() ||
+               effect.getValue() == destination.getReg())) {
+            return WalkResult::interrupt();
+          }
+        }
+      } else if (!candidate->hasTrait<OpTrait::HasRecursiveMemoryEffects>()) {
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static cbit::StoreOp measurementDestination(MeasureOp measure,
                                             bool allowOtherUses) {
-  if (!allowOtherUses && !measure.getResult().hasOneUse()) {
-    return {};
-  }
   cbit::StoreOp destination;
   for (auto* user : measure.getResult().getUsers()) {
     if (auto store = dyn_cast<cbit::StoreOp>(user);
@@ -48,6 +105,10 @@ static cbit::StoreOp measurementDestination(MeasureOp measure,
         (!destination || store->isBeforeInBlock(destination))) {
       destination = store;
     }
+  }
+  if (destination && !allowOtherUses && !measure.getResult().hasOneUse() &&
+      !canReuseMeasurementBit(measure, destination)) {
+    return {};
   }
   return destination;
 }

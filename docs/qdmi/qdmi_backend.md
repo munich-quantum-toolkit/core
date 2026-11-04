@@ -203,7 +203,7 @@ Register a package serializer through its entry point:
 
 ```toml
 [project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+CUSTOM1 = "my_device.serializers:serialize_program"
 ```
 
 Or call

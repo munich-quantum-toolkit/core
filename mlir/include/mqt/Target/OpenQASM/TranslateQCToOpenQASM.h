@@ -46,9 +46,8 @@ FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp);
 FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
-LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&,
-                                     bool = true) = delete;
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp, bool = true) = delete;
+LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp) = delete;
 
 } // namespace qc
 } // namespace mlir

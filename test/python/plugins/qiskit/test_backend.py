@@ -382,7 +382,7 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
     assert sum(counts.values()) == 100
 
 
-def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBackend) -> None:
+def test_backend_qasm3_reconstructs_classical_bits(ddsim_backend: QDMIBackend) -> None:
     """Unwritten register and loose bits remain zero alongside a partial measurement."""
     qc = QuantumCircuit(1)
     qc.add_bits([Clbit()])

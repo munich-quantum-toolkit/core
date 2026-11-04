@@ -873,10 +873,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           throw std::runtime_error(
               "QC static qubit is not a site of the supplied compiler target");
         }
-        index = checkedIndex(staticQubit.getIndex(), "qubit");
-      } else {
-        index = checkedIndex(staticQubit.getIndex(), "qubit");
       }
+      index = checkedIndex(staticQubit.getIndex(), "qubit");
       if (index == std::numeric_limits<uint32_t>::max()) {
         throw std::runtime_error("qubit count cannot be represented by Qiskit");
       }
@@ -2903,13 +2901,9 @@ exportCircuitImpl(mlir::QCProgram program,
   ExportState state;
   collectParameters(function, state, function.getNumArguments());
   if (target != nullptr) {
-    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numSites()),
-                                   "target qubit count");
-    {
-      state.numQubits = checkedIndex(
-          static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
-          "target address width");
-    }
+    state.numQubits = checkedIndex(
+        static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
+        "target address width");
   }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);

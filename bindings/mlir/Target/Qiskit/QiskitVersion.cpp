@@ -48,6 +48,23 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
 #undef MQT_QISKIT_VERSION
   }
   if (factory != nullptr) {
+    static bool warned = false;
+    if (!warned && (version >> 16U) > (selectedMinimum >> 16U)) {
+      const auto warning =
+          nb::module_::import_("mqt.core").attr("UntestedVersionWarning");
+      const auto adapter =
+          "2." + std::to_string((selectedMinimum >> 16U) & 0xffU);
+      const auto message =
+          "Qiskit " + nb::cast<std::string>(qiskit.attr("__version__")) +
+          " is newer than the newest tested version " + adapter +
+          "; using the " + adapter +
+          " adapter. Report problems at "
+          "https://github.com/munich-quantum-toolkit/core/issues.";
+      if (PyErr_WarnEx(warning.ptr(), message.c_str(), 1) < 0) {
+        throw nb::python_error();
+      }
+      warned = true;
+    }
     return factory();
   }
   throw std::runtime_error(

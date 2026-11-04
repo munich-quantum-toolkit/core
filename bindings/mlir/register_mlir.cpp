@@ -2694,9 +2694,8 @@ and error contracts.)pb");
                      : llvm::StringRef{};
         nb::list result;
         for (const auto& alternative :
-             unwrap(mlir::parseOperationParameterConstraints(
-                 text.ends_with('\0') ? text.drop_back() : text,
-                 numParameters))) {
+             unwrap(mlir::parseOperationParameterConstraints(text,
+                                                             numParameters))) {
           result.append(nb::make_tuple(alternative.fixed, alternative.bounds));
         }
         return result;

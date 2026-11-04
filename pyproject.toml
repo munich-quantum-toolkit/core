@@ -443,6 +443,7 @@ addopts = [
 ]
 filterwarnings = [
   "error",
+  "default::mqt.core.UntestedVersionWarning",
   # Autograd 1.8 uses control flow that Python 3.14 reports while compiling the module.
   "ignore:'return' in a 'finally' block:SyntaxWarning",
 ]

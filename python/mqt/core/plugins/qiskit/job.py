@@ -276,7 +276,8 @@ class QDMIJob(JobV1):
             if len(shots) != self._shots:
                 msg = f"Invalid QDMI SHOTS result: expected {self._shots} shots, got {len(shots)}."
                 raise JobError(msg)
-            memory = [_encode_bits(bits, width, layout) for bits in shots]
+            encoded = {bits: _encode_bits(bits, width, layout) for bits in set(shots)}
+            memory = [encoded[bits] for bits in shots]
             data = {"memory": memory, "counts": dict(Counter(memory))}
         elif not width:
             data = {"counts": {}}

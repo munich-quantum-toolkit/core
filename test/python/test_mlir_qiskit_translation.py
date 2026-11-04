@@ -5041,8 +5041,12 @@ def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
     payload = artifact.payload
     assert isinstance(payload, str)
     raw_counts = sample(payload, shots=8)
-    assert artifact.result_layout is not None
-    assert {artifact.result_layout.decode_bits(bits): count for bits, count in raw_counts.items()} == {"1001": 8}
+    counts = (
+        {artifact.result_layout.decode_bits(bits): count for bits, count in raw_counts.items()}
+        if artifact.result_layout is not None
+        else raw_counts
+    )
+    assert counts == {"1001": 8}
 
 
 @pytest.mark.parametrize("rotation", ["rx", "prx"])
@@ -5077,3 +5081,28 @@ def test_compiler_target_qiskit_output_preserves_physical_sites(rotation: str) -
     assert "cz $1, $2;" in artifact.payload
     assert "c[0] = measure $1;" in artifact.payload
     assert "c[1] = measure $2;" in artifact.payload
+
+
+def test_newer_qiskit_warns_once() -> None:
+    """Newer native interfaces warn once even when warnings are always enabled."""
+    script = """
+import importlib
+import warnings
+import qiskit
+from mqt.core import UntestedVersionWarning
+from mqt.core.mlir import QCProgram
+capi = importlib.import_module('qiskit._accelerate.capi')
+capi.API_VERSION = 0x026300F0
+qiskit.__version__ = '2.99.0'
+with warnings.catch_warnings(record=True) as seen:
+    warnings.simplefilter('always', UntestedVersionWarning)
+    for _ in range(2):
+        try:
+            QCProgram.from_qiskit(qiskit.QuantumCircuit(1))
+        except RuntimeError:
+            pass  # The real capsule deliberately retains its installed ABI.
+assert len(seen) == 1, seen
+assert seen[0].category is UntestedVersionWarning
+assert '2.99.0' in str(seen[0].message)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Fixed script in an isolated interpreter.

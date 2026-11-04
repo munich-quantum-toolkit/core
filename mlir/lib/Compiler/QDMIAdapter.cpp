@@ -65,6 +65,10 @@ constexpr StringLiteral ALL_TO_ALL_HOMOGENEOUS_METADATA =
 constexpr StringLiteral ARBITRARY_POSITIVE_CONTROLS_METADATA =
     "mqt.compiler-target.v1:arbitrary-positive-controls";
 
+[[nodiscard]] static StringRef metadataText(StringRef text) {
+  return text.ends_with('\0') ? text.drop_back() : text;
+}
+
 [[nodiscard]] static StringRef
 metadataText(const std::optional<std::vector<std::byte>>& metadata) {
   if (!metadata) {
@@ -72,7 +76,7 @@ metadataText(const std::optional<std::vector<std::byte>>& metadata) {
   }
   StringRef text(reinterpret_cast<const char*>(metadata->data()),
                  metadata->size());
-  return text.ends_with('\0') ? text.drop_back() : text;
+  return metadataText(text);
 }
 
 [[nodiscard]] static Expected<bool>
@@ -97,6 +101,7 @@ hasArbitraryPositiveControlsMetadata(const qdmi::Operation& operation) {
 
 Expected<SmallVector<OperationParameterConstraints, 1>>
 parseOperationParameterConstraints(StringRef text, size_t numParameters) {
+  text = metadataText(text);
   constexpr StringLiteral schema = "mqt.operation-parameters.v1";
   if (!text.contains(schema)) {
     return SmallVector<OperationParameterConstraints, 1>{};
@@ -173,7 +178,7 @@ parseOperationParameterConstraints(StringRef text, size_t numParameters) {
   return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName +
                      "' cannot be used as an MQT compiler target: only "
-                     "circuit-model devices with one qubit per non-zone site "
+                     "circuit-model devices with non-zone sites "
                      "are supported (" +
                      detail + ")");
 }
@@ -523,8 +528,8 @@ snapshotCompilerTarget(const qdmi::Device& device,
     return numQubits.takeError();
   }
   if (auto error = requireCircuitDevice(
-          *numQubits == deviceSites.size(), deviceName,
-          "the qubit count does not match the regular-site count")) {
+          *numQubits <= deviceSites.size(), deviceName,
+          "the qubit count exceeds the regular-site count")) {
     return error;
   }
 
@@ -929,26 +934,24 @@ CompiledProgram::serialize(QCProgram program,
   }
   auto exported =
       exportQCProgram(std::move(program), *output, &environment, options);
-  if (succeeded(exported)) {
+  if (failed(exported)) {
+    return diagnostics.takeError(
+        std::make_error_code(std::errc::invalid_argument));
+  }
+  Expected<std::string> payload = [&]() -> Expected<std::string> {
     if (auto* qasm = std::get_if<OpenQASMProgram>(&*exported)) {
-      return CompiledProgram(environment, std::move(*qasm).intoSource(),
-                             *format, std::move(layout));
+      return std::move(*qasm).intoSource();
     }
     if (auto* json = std::get_if<IQMJSONProgram>(&*exported)) {
-      return CompiledProgram(environment, std::move(*json).intoSource(),
-                             *format, std::move(layout));
+      return std::move(*json).intoSource();
     }
-    auto payload =
-        serializeQIR(std::move(std::get<QIRProgram>(*exported)), *format);
-    if (!payload) {
-      return payload.takeError();
-    }
-    return CompiledProgram(environment, std::move(*payload), *format,
-                           std::move(layout));
+    return serializeQIR(std::move(std::get<QIRProgram>(*exported)), *format);
+  }();
+  if (!payload) {
+    return payload.takeError();
   }
-
-  return diagnostics.takeError(
-      std::make_error_code(std::errc::invalid_argument));
+  return CompiledProgram(environment, std::move(*payload), *format,
+                         std::move(layout));
 }
 
 Expected<CompiledProgram>

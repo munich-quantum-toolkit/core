@@ -1497,28 +1497,24 @@ TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
   auto program =
       mlir::QCProgram::fromModule(context, builder.finalize({zebra, a}));
   ASSERT_TRUE(mlir::succeeded(program));
-  {
-    {
-      auto compiled =
-          mlir::CompiledProgram::serialize(program->copy(), environment);
-      MQT_ASSERT_SUCCESS(compiled);
-      ASSERT_TRUE(compiled->resultLayout());
-      const auto& layout = *compiled->resultLayout();
-      EXPECT_EQ(layout.rawWidth, 2);
-      EXPECT_EQ(layout.bits.size(), 5);
-      EXPECT_EQ(llvm::cantFail(layout.decodeBits("10")), "10101");
-      EXPECT_EQ(compiled->payload().find("output "), std::string::npos);
-      EXPECT_EQ(compiled->payload().find("= \""), std::string::npos);
-      EXPECT_NE(compiled->payload().find("x $2;"), std::string::npos);
-      const auto device =
-          llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
-      auto job = llvm::cantFail(
-          device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
-      ASSERT_TRUE(llvm::cantFail(job.wait()));
-      for (const auto& shot : llvm::cantFail(job.getShots())) {
-        EXPECT_EQ(llvm::cantFail(layout.decodeBits(shot)), "10101");
-      }
-    }
+  auto compiled =
+      mlir::CompiledProgram::serialize(program->copy(), environment);
+  MQT_ASSERT_SUCCESS(compiled);
+  ASSERT_TRUE(compiled->resultLayout());
+  const auto& layout = *compiled->resultLayout();
+  EXPECT_EQ(layout.rawWidth, 2);
+  EXPECT_EQ(layout.bits.size(), 5);
+  EXPECT_EQ(llvm::cantFail(layout.decodeBits("10")), "10101");
+  EXPECT_EQ(compiled->payload().find("output "), std::string::npos);
+  EXPECT_EQ(compiled->payload().find("= \""), std::string::npos);
+  EXPECT_NE(compiled->payload().find("x $2;"), std::string::npos);
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto job = llvm::cantFail(
+      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+  ASSERT_TRUE(llvm::cantFail(job.wait()));
+  for (const auto& shot : llvm::cantFail(job.getShots())) {
+    EXPECT_EQ(llvm::cantFail(layout.decodeBits(shot)), "10101");
   }
 }
 
@@ -1533,6 +1529,7 @@ TEST(CompilerQDMIAdapterTest, DefaultSerializationPreservesDynamicReadout) {
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   MQT_ASSERT_SUCCESS(compiled);
   EXPECT_FALSE(compiled->resultLayout());
+  EXPECT_EQ(compiled->payload().find("if (true)"), std::string::npos);
   auto job = llvm::cantFail(
       device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
@@ -1557,6 +1554,7 @@ TEST(CompilerQDMIAdapterTest, SerializationHonorsPayloadControlFlow) {
   auto accepted = mlir::CompiledProgram::serialize(
       std::move(input), mlir::TargetEnvironment(target, full));
   MQT_ASSERT_SUCCESS(accepted);
+  EXPECT_EQ(accepted->payload().find("output "), std::string::npos);
 
   auto noOutput = llvm::cantFail(
       mlir::QCProgram::fromOpenQASMString("OPENQASM 3; qubit q; x q;"));
@@ -1595,6 +1593,12 @@ module {
                                  },
                          },
                      }));
+  auto singleBranch = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; bit c; c = measure $0; if (c) { x $1; }"));
+  auto acceptedBranch = mlir::CompiledProgram::serialize(
+      std::move(singleBranch), mlir::TargetEnvironment(target, bounded));
+  MQT_ASSERT_SUCCESS(acceptedBranch);
+  EXPECT_EQ(acceptedBranch->payload().find("if (true)"), std::string::npos);
   auto rejectedNested = mlir::CompiledProgram::serialize(
       std::move(nested), mlir::TargetEnvironment(target, bounded));
   EXPECT_FALSE(static_cast<bool>(rejectedNested));
@@ -1690,7 +1694,7 @@ TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
 TEST(CompilerQDMIAdapterTest, PreservesGeneralCallsAfterMeasurement) {
   const auto context = mlir::createCompilerContext();
   auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
-    func.func private @flip() {
+    func.func private @flip(%unused: !qc.qubit) {
       %q = qc.static 0 : !qc.qubit
       qc.x %q : !qc.qubit
       return
@@ -1701,7 +1705,8 @@ TEST(CompilerQDMIAdapterTest, PreservesGeneralCallsAfterMeasurement) {
       %q = qc.static 0 : !qc.qubit
       %bit = qc.measure %q : !qc.qubit -> i1
       cbit.store %bit, %c[%zero] : !cbit.reg<1>
-      func.call @flip() : () -> ()
+      %other = qc.static 1 : !qc.qubit
+      func.call @flip(%other) : (!qc.qubit) -> ()
       return %c : !cbit.reg<1>
     }
   })mlir",
@@ -1848,4 +1853,74 @@ TEST(CompilerQDMIAdapterTest, SnapshotsVersionedParameterConstraints) {
   metadata = "query-error";
   EXPECT_TRUE(
       llvm::errorToBool(mlir::compilerTargetFromDevice(device).takeError()));
+}
+
+TEST(CompilerQDMIAdapterTest, SerializesNativeIQMMoveWithReadoutLayout) {
+  using Site = CompilerTarget::Site;
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      "resonator",
+      {llvm::cantFail(Site::create(0, "QB1")),
+       llvm::cantFail(Site::create(1, "QB2")),
+       llvm::cantFail(Site::create(2, "CR1"))},
+      CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("r", 1, 2)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create(
+              "move", 2, 0,
+              {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 2}))})),
+      })));
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_IQMJSON)));
+  for (const bool reversed : {false, true}) {
+    auto program = llvm::cantFail(mlir::QCProgram::fromMLIRString(
+        llvm::formatv(R"mlir(module {{
+          func.func private @move(!qc.qubit, !qc.qubit)
+          func.func @main() -> !cbit.reg<2> attributes {{mqt.entry_point} {{
+            %q = qc.static 0 : !qc.qubit
+            %b = qc.static 1 : !qc.qubit
+            %r = qc.static 2 : !qc.qubit
+            %one = arith.constant 1.0 : f64
+            %zero = arith.constant 0.0 : f64
+            %i0 = arith.constant 0 : index
+            %i1 = arith.constant 1 : index
+            %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+            qc.r(%one, %zero) %q : !qc.qubit
+            func.call @move(%{0}, %{1}) : (!qc.qubit, !qc.qubit) -> ()
+            qc.ctrl(%b) targets(%t = %r) {{ qc.z %t : !qc.qubit qc.yield } : {{!qc.qubit}, {{!qc.qubit}
+            func.call @move(%{0}, %{1}) : (!qc.qubit, !qc.qubit) -> ()
+            %m0 = qc.measure %q : !qc.qubit -> i1
+            %m1 = qc.measure %b : !qc.qubit -> i1
+            cbit.store %m0, %c[%i1] : !cbit.reg<2>
+            cbit.store %m1, %c[%i0] : !cbit.reg<2>
+            return %c : !cbit.reg<2>
+          }
+        })mlir",
+                      reversed ? "r" : "q", reversed ? "q" : "r")
+            .str()));
+    auto compiled =
+        mlir::CompiledProgram::serialize(std::move(program), environment);
+    if (reversed) {
+      ASSERT_FALSE(static_cast<bool>(compiled));
+      EXPECT_NE(llvm::toString(compiled.takeError())
+                    .find("external gate is not native for the target"),
+                std::string::npos);
+      continue;
+    }
+    MQT_ASSERT_SUCCESS(compiled);
+    ASSERT_TRUE(compiled->resultLayout());
+    EXPECT_EQ(llvm::cantFail(compiled->resultLayout()->decodeBits("01")), "10");
+    EXPECT_NE(compiled->payload().find("\"angle\":1.0,\"phase\":0.0"),
+              std::string::npos);
+    const auto json = llvm::cantFail(llvm::json::parse(compiled->payload()));
+    const auto& instructions = *json.getAsObject()->getArray("instructions");
+    ASSERT_EQ(instructions.size(), 6);
+    EXPECT_EQ(instructions[1].getAsObject()->getString("name"), "move");
+    EXPECT_EQ(*instructions[1].getAsObject()->getArray("locus"),
+              (llvm::json::Array{"QB1", "CR1"}));
+    EXPECT_EQ(instructions[2].getAsObject()->getString("name"), "cz");
+  }
 }

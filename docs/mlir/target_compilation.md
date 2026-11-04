@@ -88,10 +88,16 @@ the Qiskit backend checks these before any serializer runs.
 Static programs use canonical terminal readout: one register with measurements
 in ascending physical-site order. This supports measured subsets, destination
 permutations, repeated terminal measurements, and zero-filled output slots.
-Gates may follow measurements of other qubits. Dynamic programs retain their
-classical outputs; the selected exporter checks whether the receiver supports
-them. Provider transports handle service-specific requirements such as simulator
-qubit declarations and all-qubit measurement.
+Gates may follow measurements of other qubits. Calls after a measurement retain
+their original order because callees can touch hidden static sites. Dynamic
+programs retain their classical outputs; the selected exporter checks whether
+the receiver supports them. Provider transports handle service-specific
+requirements such as simulator qubit declarations and all-qubit measurement.
+
+OpenQASM 3 uses plain classical declarations as implicit outputs unless a
+non-output classical variable is emitted at global scope. In that case, output
+qualifiers distinguish the returned values. Programs without outputs may expose
+unused temporaries as implicit outputs; no synthetic conditional scope is added.
 
 The compiled program retains a {py:class}`~mqt.core.mlir.ResultLayout` when raw
 measurement order differs from logical output order. QDMI jobs expose raw
@@ -201,14 +207,17 @@ behavior fails compilation. See `legalize-control-flow` and
 
 Select `OutputFormat.IQM_JSON` for an inspectable circuit or
 `ProgramFormat.IQM_JSON` for a compiled submission. The target supplies physical
-site names. The exporter supports constant native PRX/CZ calls and terminal
-measurement records; it discards global phase. Unsupported reset, feedback,
-MOVE, or classical result computation fails before submission.
+site names. The exporter supports constant native PRX, CZ and MOVE calls and
+terminal measurement records; it discards global phase. MOVE operands preserve
+the advertised qubit/resonator order. Native serialization does not route or
+synthesize MOVE; the IQM server checks MOVE pairing rules. Unsupported reset,
+feedback or classical result computation fails before submission.
 
-Raw IQM JSON export requires each output slot to be measured once. Optional
-terminal normalization also handles logical zero holes and permutations, using
-the retained result layout. QDMI-on-IQM owns service transport, authentication,
-calibration selection, and conversion of measurement columns to QDMI bitstrings.
+Raw IQM JSON export requires each output slot to be measured once.
+Compiled-program terminal normalization also handles logical zero holes and
+permutations, using the retained result layout. QDMI-on-IQM owns service
+transport, authentication, calibration selection, and conversion of measurement
+columns to QDMI bitstrings.
 
 ## Command line from a source build
 

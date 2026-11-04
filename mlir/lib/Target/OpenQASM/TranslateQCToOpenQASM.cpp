@@ -211,27 +211,6 @@ public:
       return failure();
     }
     measurementStores = findMeasurementStores(function, version2_);
-    implicitOutputs_ =
-        !outputs.empty() &&
-        llvm::all_of(outputs,
-                     [](const ProgramOutput& result) {
-                       return isa<cbit::RegisterType>(result.value.getType());
-                     }) &&
-        llvm::all_of(resourceOrder,
-                     [&](Value value) {
-                       const auto& resource = resources.at(value);
-                       return resource.kind == ResourceKind::Qubit ||
-                              (resource.kind == ResourceKind::Bit &&
-                               resource.output);
-                     }) &&
-        llvm::all_of(function.getBody().front(), [&](Operation& operation) {
-          return isa<UnitaryOpInterface, func::CallOp, qc::StaticOp,
-                     qc::AllocOp, qc::DeallocOp, cbit::AllocOp, cbit::StoreOp,
-                     memref::AllocOp, memref::LoadOp, memref::DeallocOp,
-                     arith::ConstantOp, func::ReturnOp>(operation) ||
-                 (isa<qc::MeasureOp>(operation) &&
-                  measurementStores.contains(&operation));
-        });
     if (version2_ && failed(prepareVersion2())) {
       return failure();
     }
@@ -251,14 +230,6 @@ public:
       return failure();
     }
     bodyOutput.flush();
-    if (outputs.empty() && !version2_ && needsClassicalScope_) {
-      if (failed(checkBranch(function))) {
-        return failure();
-      }
-      body.insert(classicalScopeStart_, "if (true) {\n");
-      body += "}\n";
-    }
-
     if (acceptedVersions_) {
       const auto selected = acceptedVersions_->select(
           version2_
@@ -286,6 +257,14 @@ public:
     emitFixedHelpers(sourceStream);
     for (const auto& definition : gateDefinitions_) {
       sourceStream << definition << "\n";
+    }
+    if (!version2_) {
+      for (const auto& result : outputs) {
+        if (hasNonOutputGlobals_) {
+          sourceStream << "output ";
+        }
+        sourceStream << result.kind << ' ' << result.name << ";\n";
+      }
     }
     sourceStream << body;
     return success();
@@ -324,10 +303,8 @@ private:
   std::optional<mqt::PayloadControlSupport> controlSupport_;
   uint64_t controlDepth_ = 0;
   bool version2_ = false;
-  bool implicitOutputs_ = false;
 
-  bool needsClassicalScope_ = false;
-  uint64_t classicalScopeStart_ = 0;
+  bool hasNonOutputGlobals_ = false;
   std::string deviceRegister_;
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
@@ -403,10 +380,6 @@ private:
         valueNames[value] = resource.name + "[0]";
       }
     }
-    return prepareVirtualQubits();
-  }
-
-  [[nodiscard]] LogicalResult prepareVirtualQubits() {
     const auto invalidDeviceIndex = function.walk([&](StaticOp qubit) {
       if (qubit.getIndex() == std::numeric_limits<int64_t>::max()) {
         std::ignore = fail(
@@ -1265,15 +1238,10 @@ private:
     for (auto argument : function.getArguments()) {
       *output << "input float[64] " << valueNames.at(argument) << ";\n";
     }
-    for (const auto& result : outputs) {
-      if (!implicitOutputs_) {
-        *output << "output ";
-      }
-      *output << result.kind << ' ' << result.name << ";\n";
-    }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
       if (resource.kind == ResourceKind::Array) {
+        hasNonOutputGlobals_ = true;
         auto type = cast<MemRefType>(value.getType());
         *output << "array[" << scalarKind(type.getElementType());
         for (auto extent : type.getShape()) {
@@ -1299,15 +1267,13 @@ private:
       }
       *output << ' ' << resource.name << ";\n";
     }
-    // Only declarations introduce implicit classical outputs on re-import.
-    classicalScopeStart_ = output->tell();
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
       if (resource.kind != ResourceKind::Bit) {
         continue;
       }
       if (!resource.output) {
-        needsClassicalScope_ = true;
+        hasNonOutputGlobals_ = true;
         *output << "bit[" << resource.width << "] " << resource.name << ";\n";
       }
       if (resource.initialization == cbit::Initialization::Zero) {
@@ -2394,6 +2360,7 @@ private:
       if (failed(target)) {
         return failure();
       }
+      valueNames.try_emplace(measurement.getResult(), *target);
       if (version2_) {
         *output << "measure " << *qubit << " -> " << *target << ";\n";
       } else {
@@ -2412,7 +2379,7 @@ private:
     if (!valueNames.contains(measurement.getResult())) {
       const auto name = uniqueName("b", nextBit);
       valueNames.try_emplace(measurement.getResult(), name);
-      needsClassicalScope_ |= controlDepth_ == 0;
+      hasNonOutputGlobals_ |= controlDepth_ == 0;
       *output << "bit " << name << ";\n";
     }
     *output << valueNames.at(measurement.getResult()) << " = measure " << *qubit
@@ -2452,7 +2419,7 @@ private:
       }
       auto name = uniqueName("v", nextScalar);
       valueNames[value] = name;
-      needsClassicalScope_ |= controlDepth_ == 0;
+      hasNonOutputGlobals_ |= controlDepth_ == 0;
       *output << *type << ' ' << name << ";\n";
     }
     return success();
@@ -2499,7 +2466,7 @@ private:
       *expression = *type + "(" + *expression + ")";
     }
     auto name = uniqueName("v", nextScalar);
-    needsClassicalScope_ |= controlDepth_ == 0;
+    hasNonOutputGlobals_ |= controlDepth_ == 0;
     *output << *type << ' ' << name << " = " << *expression << ";\n";
     valueNames[value] = std::move(name);
     return success();
@@ -2517,7 +2484,7 @@ private:
         return failure();
       }
       auto name = uniqueName("tmp", nextScalar);
-      needsClassicalScope_ |= controlDepth_ == 0;
+      hasNonOutputGlobals_ |= controlDepth_ == 0;
       *output << *type << ' ' << name << " = " << *expression << ";\n";
       temporaries.push_back(std::move(name));
     }
@@ -2774,7 +2741,7 @@ private:
       first = uniqueName("lower", nextScalar);
       const auto end = uniqueName("upper", nextScalar);
       // Snapshot bounds before the body can change their source storage.
-      needsClassicalScope_ |= controlDepth_ == 0;
+      hasNonOutputGlobals_ |= controlDepth_ == 0;
       *output << "int[64] " << first << " = " << boundType << '('
               << *lowerExpression << ");\n";
       *output << "int[64] " << end << " = " << boundType << '('
@@ -2876,7 +2843,7 @@ private:
       return failure();
     }
     const auto conditionName = uniqueName("cond", nextScalar);
-    needsClassicalScope_ |= controlDepth_ == 0;
+    hasNonOutputGlobals_ |= controlDepth_ == 0;
     *output << "bool " << conditionName << " = " << *condition << ";\n";
     if (failed(assignEdge(whileOp.getResults(), conditionOp.getArgs(),
                           conditionOp))) {
@@ -3629,7 +3596,7 @@ LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
   if (failed(verify(*moduleOp))) {
     return failure();
   }
-  return OpenQASMEmitter(*moduleOp, false).emit(output);
+  return OpenQASMEmitter(*moduleOp).emit(output);
 }
 
 FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {

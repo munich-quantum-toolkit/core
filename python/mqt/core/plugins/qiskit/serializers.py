@@ -31,7 +31,7 @@ serializer:
 
 ```toml
 [project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+CUSTOM1 = "my_device.serializers:serialize_program"
 ```
 
 :func:`register_program_serializer` does the same at run time. A registration

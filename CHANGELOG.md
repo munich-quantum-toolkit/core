@@ -10,13 +10,6 @@ releases may include breaking changes.
 
 ## Unreleased
 
-### Changed
-
-- Preserve physical site IDs in Qiskit exports, including gaps in sparse
-  targets. The register width is the largest site ID plus one.
-  ([#2886](https://github.com/munich-quantum-toolkit/core/pull/2886))
-  ([**@burgholzer**])
-
 ## [4.1.1] - 2026-10-13
 
 ### Fixed

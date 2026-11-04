@@ -124,18 +124,15 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
       oldReadout.push_back(&operation);
     } else if (isa<arith::ConstantOp, qc::BarrierOp>(operation)) {
       continue;
-    } else if (isa<qc::UnitaryOpInterface, qc::ResetOp, func::CallOp>(
-                   operation)) {
-      if (auto call = dyn_cast<func::CallOp>(operation);
-          call &&
-          (call.getNumResults() != 0 ||
-           !llvm::any_of(call.getOperandTypes(),
-                         [](Type type) { return isa<qc::QubitType>(type); }) ||
-           !llvm::all_of(call.getOperandTypes(), [](Type type) {
-             return type.isF64() || isa<qc::QubitType>(type);
-           }))) {
+    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+      // Calls can hide static sites or retain classical registers we rewrite.
+      if (!measuredSites.empty() || call.getNumResults() != 0 ||
+          !llvm::all_of(call.getOperandTypes(), [](Type type) {
+            return type.isF64() || isa<qc::QubitType>(type);
+          })) {
         return failure();
       }
+    } else if (isa<qc::UnitaryOpInterface, qc::ResetOp>(operation)) {
       for (auto operand : operation.getOperands()) {
         if (!isa<qc::QubitType>(operand.getType())) {
           continue;
