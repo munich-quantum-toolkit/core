@@ -418,6 +418,7 @@ def test_custom_names_and_operations() -> None:
 def test_compile_named_fixed_rotations(*, symbolic: bool) -> None:
     """Compilation exports executable target names with exact gate phases."""
     source = Target(num_qubits=2)
+    source.add_instruction(Measure())
     source.add_instruction(RXGate(pi / 2), name="quarter_turn")
     source.add_instruction(RXGate(pi), name="half_turn")
     source.add_instruction(RZGate(Parameter("angle")))
@@ -608,6 +609,7 @@ def test_backend_bases_compile(basis: list[str]) -> None:
 def test_unsupported_controlled_gate_does_not_add_routing_edges(gate: Gate) -> None:
     """Circuit import support must not create unusable native routing edges."""
     source = Target(num_qubits=3)
+    source.add_instruction(Measure())
     theta = Parameter("theta")
     source.add_instruction(UGate(theta, theta, theta))
     source.add_instruction(CXGate(), {(0, 1): None, (1, 2): None})
@@ -655,6 +657,7 @@ def test_native_r_capabilities(name: str, *, symbolic: bool) -> None:
     gate = Gate(name, 1, [phi])
     gate.definition = definition
     source = Target(num_qubits=2)
+    source.add_instruction(Measure())
     source.add_instruction(gate)
     unrestricted = UGate(*map(Parameter, ("theta", "lambda", "beta")))
     source.add_instruction(unrestricted)
@@ -675,6 +678,7 @@ def test_native_r_capabilities(name: str, *, symbolic: bool) -> None:
         assert exported.data[0].operation.params == [phi]
         assert source.instruction_supported(name, (0,), parameters=exported.data[0].operation.params)
         rebound = Target(num_qubits=2)
+        rebound.add_instruction(Measure())
         rebound.add_instruction(exported.data[0].operation)
         rebound.add_instruction(unrestricted)
         rebound.add_instruction(CXGate())
@@ -698,6 +702,7 @@ def test_gpi_target_preserves_phase(*, runtime: bool) -> None:
     """Fixed pulses synthesize gates and retain the native GPI phase convention."""
     phi = Parameter("phi")
     source = Target(num_qubits=1)
+    source.add_instruction(Measure())
     for name, theta in (("gpi", pi), ("gpi2", pi / 2)):
         gate = Gate(name, 1, [phi])
         gate.definition = QuantumCircuit(1, global_phase=pi / 2 if name == "gpi" else 0)
@@ -748,6 +753,7 @@ def test_native_r_export_rejects_incompatible_target(angle: float | Parameter) -
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("gpi", 1, 2, canonical_name="r"),
         ]),
     )
@@ -763,9 +769,10 @@ def test_native_r_export_rejects_incompatible_target(angle: float | Parameter) -
 def test_native_cy_preserves_capability_without_synthesis_entangler(name: str) -> None:
     """Native CY remains available without claiming a general two-qubit basis."""
     source = Target(num_qubits=2)
+    source.add_instruction(Measure())
     source.add_instruction(UGate(*map(Parameter, ("theta", "phi", "lambda"))))
     source.add_instruction(CYGate(), {(0, 1): None}, name=name)
-    target = CompilerTarget.from_qiskit(source, operation_names=["u", name])
+    target = CompilerTarget.from_qiskit(source, operation_names=["u", name, "measure"])
     assert target.supports_operation("cy", 2, 0, [0, 1])
     assert not target.supports_operation("cy", 2, 0, [1, 0])
     assert target.synthesis_basis is not None

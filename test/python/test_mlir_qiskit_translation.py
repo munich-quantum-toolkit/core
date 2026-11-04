@@ -287,6 +287,7 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("u", 1, 3),
             CompilerTarget.OperationCapability("cx", 2, 0),
         ]),
@@ -4690,6 +4691,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str) 
             else CompilerTarget.Connectivity.all_to_all()
         ),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             *operations,
             CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
