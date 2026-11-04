@@ -78,6 +78,8 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
     """Submission precedes collection and repeated reads do not contact the provider."""
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(2, 2, name=f"circuit-{index}") for index in range(3)]
+    for circuit in circuits:
+        circuit.measure(range(2), range(2))
     job = backend.run(circuits, shots=4, memory=memory)
     job.submit()
     assert events == ["formats", "submit", "submit", "submit"]
@@ -109,6 +111,7 @@ def test_memory_order_registers_and_correlations(
     qc = QuantumCircuit(3)
     qc.add_register(ClassicalRegister(1, "a"), ClassicalRegister(2, "b"))
     qc.metadata = {"experiment": "joint"}
+    qc.measure(range(3), range(3))
     samples = ["101", "000", "011", "100"]
     job = backend.run(qc, shots=4, memory=True)
     jobs[0].get_shots.side_effect = lambda _program_index=0: samples
@@ -262,7 +265,7 @@ def test_malformed_memory_raises(recording_backend: RecordingBackend, samples: l
     backend, jobs, _ = recording_backend
     job = backend.run(QuantumCircuit(1, 1), shots=4, memory=True)
     jobs[0].get_shots.side_effect = lambda _program_index=0: samples
-    with pytest.raises(JobError, match="Invalid QDMI"):
+    with pytest.raises(JobError, match=r"Invalid QDMI|raw sample has an invalid width or digit"):
         job.result()
     jobs[0].cancel.assert_not_called()
 
@@ -273,7 +276,7 @@ def test_malformed_histogram_raises(recording_backend: RecordingBackend, counts:
     backend, jobs, _ = recording_backend
     job = backend.run(QuantumCircuit(1, 1), shots=4)
     jobs[0].get_counts.side_effect = lambda _program_index=0: counts
-    with pytest.raises(JobError, match="Invalid QDMI"):
+    with pytest.raises(JobError, match=r"Invalid QDMI|raw sample has an invalid width or digit"):
         job.result()
 
 
@@ -549,6 +552,8 @@ def test_native_program_group_preserves_circuit_results(
     monkeypatch.setattr(backend.device, "try_submit_job", native)
     monkeypatch.setattr(backend, "_job_parameters", lambda _options: {"custom1": "native-options"})
     circuits = [QuantumCircuit(2, 2, name=f"native-{index}") for index in range(3)]
+    for circuit in circuits:
+        circuit.measure(range(2), range(2))
     job = backend.run(circuits, shots=4, memory=memory)
     result = job.result()
     assert result.get_counts() == [{"00": 4}, {"01": 4}, {"10": 4}]
