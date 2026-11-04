@@ -851,6 +851,44 @@ TEST(OpenQASM3EmissionTest, ReusesMeasurementBitForControlFlow) {
   expectOneSample(*restored, "11");
 }
 
+TEST(OpenQASM3EmissionTest, OmitsOnlyOverwrittenRegisterInitialization) {
+  for (const auto mode : {0, 1, 2}) {
+    SCOPED_TRACE(mode);
+    std::string source = R"mlir(module {
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %q = qc.static 0 : !qc.qubit
+        %bits = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+            : !cbit.reg<2>
+    )mlir";
+    if (mode == 2) {
+      source += R"mlir(
+        %initial = cbit.load %bits[%one] : !cbit.reg<2>
+        scf.if %initial { qc.x %q : !qc.qubit }
+      )mlir";
+    }
+    source += R"mlir(
+        %measured = qc.measure %q : !qc.qubit -> i1
+        cbit.store %measured, %bits[%zero] : !cbit.reg<2>
+    )mlir";
+    if (mode != 1) {
+      source += "cbit.store %measured, %bits[%one] : !cbit.reg<2>";
+    }
+    source += "return %bits : !cbit.reg<2> } }";
+    MLIRContext context(emissionDialects());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+    ASSERT_TRUE(succeeded(emitted));
+    EXPECT_EQ(emitted->find("c = \"00\";") == std::string::npos, mode == 0)
+        << *emitted;
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+    ASSERT_TRUE(restored) << *emitted;
+    expectOneSample(*restored, "00");
+  }
+}
+
 TEST(OpenQASM3EmissionTest, InlinesAdjacentRegisterConditions) {
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(
@@ -864,6 +902,7 @@ TEST(OpenQASM3EmissionTest, InlinesAdjacentRegisterConditions) {
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_EQ(emitted->find("output "), std::string::npos) << *emitted;
   EXPECT_EQ(emitted->find("_mqt_v"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("flag == 2"), std::string::npos) << *emitted;
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   expectOneSample(*restored, "0110");

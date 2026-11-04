@@ -966,6 +966,41 @@ private:
     return success();
   }
 
+  [[nodiscard]] static bool initializationIsOverwritten(cbit::AllocOp alloc) {
+    auto* block = alloc->getBlock();
+    SmallVector<Operation*> users;
+    for (auto* user : alloc.getResult().getUsers()) {
+      auto* ancestor = block->findAncestorOpInBlock(*user);
+      if (ancestor == nullptr) {
+        return false;
+      }
+      users.push_back(ancestor);
+    }
+    llvm::sort(users, [](Operation* lhs, Operation* rhs) {
+      return lhs->isBeforeInBlock(rhs);
+    });
+    llvm::SmallBitVector written(alloc.getResult().getType().getWidth());
+    for (auto* user : users) {
+      if (isa<cbit::WriteOp>(user)) {
+        return true;
+      }
+      auto store = dyn_cast<cbit::StoreOp>(user);
+      if (!store || store.getReg() != alloc.getResult()) {
+        return false;
+      }
+      const auto index = getConstantIntValue(store.getIndex());
+      if (!index || *index < 0 ||
+          std::cmp_greater_equal(*index, written.size())) {
+        return false;
+      }
+      written.set(static_cast<size_t>(*index));
+      if (written.all()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   [[nodiscard]] LogicalResult collectClassicalResource(cbit::AllocOp alloc) {
     const auto type = alloc.getResult().getType();
     const auto width = type.getWidth();
@@ -992,7 +1027,11 @@ private:
             isOutput ? outputName(requested) : classicalRegisterName(requested),
         .width = width,
         .output = isOutput,
-        .initialization = alloc.getInitialization(),
+        .initialization =
+            alloc.getInitialization() == cbit::Initialization::Zero &&
+                    initializationIsOverwritten(alloc)
+                ? cbit::Initialization::Undefined
+                : alloc.getInitialization(),
     };
     resources.try_emplace(alloc.getResult(), std::move(resource));
     return success();
@@ -1953,6 +1992,25 @@ private:
           .str();
     };
     if (auto cmp = dyn_cast<arith::CmpIOp>(operation)) {
+      if (cmp.getPredicate() == arith::CmpIPredicate::eq) {
+        auto lhs = cmp.getLhs();
+        auto rhs = cmp.getRhs();
+        if (rhs.getDefiningOp<cbit::ReadOp>()) {
+          std::swap(lhs, rhs);
+        }
+        auto read = lhs.getDefiningOp<cbit::ReadOp>();
+        auto constant = rhs.getDefiningOp<arith::ConstantOp>();
+        if (read && constant && !valueNames.contains(lhs) &&
+            inlineConsumer(*read.getOperation()) == expressionConsumer) {
+          auto reg = emitExpression(lhs, ExpressionContext::BitVector);
+          auto value =
+              emitConstant(constant.getValue(), constant.getLoc(), true);
+          if (failed(reg) || failed(value)) {
+            return failure();
+          }
+          return "(" + *reg + " == " + *value + ")";
+        }
+      }
       const bool isSigned =
           mqt::unsignedPredicate(cmp.getPredicate()) != cmp.getPredicate();
       auto lhs = integer(cmp.getLhs(), isSigned);
