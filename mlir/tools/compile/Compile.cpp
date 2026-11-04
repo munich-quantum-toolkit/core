@@ -27,6 +27,9 @@
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
+#include "qdmi/QDMI.hpp"
+
+#include "NativeCommands.h"
 
 #include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
@@ -44,13 +47,14 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -64,109 +68,9 @@
 
 using namespace mlir;
 
-// Command-line options
-static llvm::cl::opt<std::string>
-    inputFilename(llvm::cl::Positional,
-                  llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
-                  llvm::cl::init("-"));
-
-static llvm::cl::opt<std::string> inputFormat(
-    "input-format",
-    llvm::cl::desc(
-        "Input format: auto, jeff, mlir, or openqasm (default: auto)"),
-    llvm::cl::value_desc("format"), llvm::cl::init("auto"));
-
-static llvm::cl::opt<std::string> outputFilename(
-    "o",
-    llvm::cl::desc("Output filename (for untargeted QIR, - and .ll write "
-                   "textual LLVM IR; .bc and other names write LLVM "
-                   "bitcode)"),
-    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
-
-static llvm::cl::opt<std::string>
-    outputFormat("emit",
-                 llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
-                                "qco, qco-optimized, qir-base, "
-                                "qir-adaptive, openqasm2, openqasm3, or jeff"),
-                 llvm::cl::value_desc("format"), llvm::cl::init("qc"));
-
-static llvm::cl::opt<std::string> passPipeline(
-    "pass-pipeline",
-    llvm::cl::desc("Module pipeline replacing the default QCO optimizations "
-                   "(e.g. builtin.module(canonicalize,cse))"));
-static llvm::cl::alias passesAlias("passes", llvm::cl::aliasopt(passPipeline),
-                                   llvm::cl::desc("Alias for --pass-pipeline"));
-static llvm::cl::opt<bool> runIsolatedPipeline(
-    "run-pipeline",
-    llvm::cl::desc("Run only --pass-pipeline on MLIR input and write MLIR"));
-static llvm::cl::opt<bool> runReproducer(
-    "run-reproducer",
-    llvm::cl::desc("Replay an MLIR file's recorded pipeline and verification "
-                   "settings, then write MLIR"));
-
-static llvm::cl::opt<bool>
-    qdmiListDevices("qdmi-list-devices",
-                    llvm::cl::desc("List configured QDMI device IDs and exit"),
-                    llvm::cl::init(false));
-
-static llvm::cl::opt<std::string> qdmiDevice(
-    "qdmi-device",
-    llvm::cl::desc("Compile for the QDMI device with this stable ID"),
-    llvm::cl::value_desc("id"), llvm::cl::init(""));
-
-static llvm::cl::opt<std::string> payloadSpecification(
-    "payload-spec",
-    llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
-    llvm::cl::value_desc("attribute"), llvm::cl::init(""));
-
-static llvm::cl::opt<std::string>
-    explicitTarget("target",
-                   llvm::cl::desc("Explicit #mqt.compilation_target attribute"),
-                   llvm::cl::value_desc("attribute"), llvm::cl::init(""));
-
-static llvm::cl::opt<uint64_t>
-    compilationSeedOption("seed",
-                          llvm::cl::desc("Override all compiler random seeds"));
-static llvm::cl::opt<size_t> mappingTrials(
-    "mapping-trials",
-    llvm::cl::desc(
-        "Positive native mapping trial count (default: max(8, logical CPUs))"));
-static llvm::cl::opt<size_t> mappingIterations(
-    "mapping-iterations",
-    llvm::cl::desc(
-        "Forward/backward layout refinement rounds; zero skips refinement"),
-    llvm::cl::init(MappingOptions{}.iterations));
-static llvm::cl::opt<size_t>
-    mappingLookahead("mapping-lookahead",
-                     llvm::cl::desc("Additional two-qubit gates considered "
-                                    "during routing (zero disables lookahead)"),
-                     llvm::cl::init(MappingOptions{}.lookahead));
-static llvm::cl::opt<size_t> mappingSearchMemoryLimit(
-    "mapping-search-memory-limit",
-    llvm::cl::desc("Estimated node and layout bytes per routing search, per "
-                   "concurrent trial (zero disables node expansion)"),
-    llvm::cl::init(MappingOptions{}.searchMemoryLimit));
-
-static llvm::cl::opt<std::string> qdmiConfig(
-    "qdmi-config",
-    llvm::cl::desc("Use an explicit QDMI registry configuration file"),
-    llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
-
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, OpenQASM, Jeff };
 enum class InputDialect : std::uint8_t { QC, QCO };
-enum class OutputFormat : std::uint8_t {
-  QCImport,
-  QC,
-  QCO,
-  QCOOptimized,
-  OpenQASM3,
-  OpenQASM2,
-  IQMJSON,
-  QIRBase,
-  QIRAdaptive,
-  Jeff,
-};
 
 struct ParsedProgram {
   OwningOpRef<ModuleOp> mod;
@@ -208,36 +112,19 @@ parseInputFormat(const StringRef format, const StringRef filename) {
 }
 
 /// Parse an output format.
-[[nodiscard]] static std::optional<OutputFormat>
+[[nodiscard]] static std::optional<ProgramFormat>
 parseOutputFormat(const StringRef format) {
-  if (format == "qc-import") {
-    return OutputFormat::QCImport;
-  }
-  if (format == "qc") {
-    return OutputFormat::QC;
-  }
-  if (format == "qco") {
-    return OutputFormat::QCO;
-  }
-  if (format == "qco-optimized") {
-    return OutputFormat::QCOOptimized;
-  }
-  if (format == "openqasm2") {
-    return OutputFormat::OpenQASM2;
-  }
-  if (format == "openqasm3") {
-    return OutputFormat::OpenQASM3;
-  }
-  if (format == "qir-base") {
-    return OutputFormat::QIRBase;
-  }
-  if (format == "qir-adaptive") {
-    return OutputFormat::QIRAdaptive;
-  }
-  if (format == "jeff") {
-    return OutputFormat::Jeff;
-  }
-  return std::nullopt;
+  return llvm::StringSwitch<std::optional<ProgramFormat>>(format)
+      .Case("qc-import", ProgramFormat::QCImport)
+      .Case("qc", ProgramFormat::QC)
+      .Case("qco", ProgramFormat::QCO)
+      .Case("qco-optimized", ProgramFormat::QCOOptimized)
+      .Case("openqasm2", ProgramFormat::OpenQASM2)
+      .Case("openqasm3", ProgramFormat::OpenQASM3)
+      .Case("qir-base", ProgramFormat::QIRBase)
+      .Case("qir-adaptive", ProgramFormat::QIRAdaptive)
+      .Case("jeff", ProgramFormat::Jeff)
+      .Default(std::nullopt);
 }
 
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
@@ -365,8 +252,8 @@ writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
     llvm::raw_string_ostream stream(qirOutput);
     const auto result =
         *qirEncoding == PayloadEncoding::Text
-            ? qir::translateQIRToLLVMIR(std::move(mod), stream)
-            : qir::translateQIRToBitcode(std::move(mod), stream);
+            ? mlir::qir::translateQIRToLLVMIR(std::move(mod), stream)
+            : mlir::qir::translateQIRToBitcode(std::move(mod), stream);
     if (failed(result)) {
       return failure();
     }
@@ -399,8 +286,94 @@ writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
   return success();
 }
 
-static int runCompiler(int argc, char** argv) {
-  const llvm::InitLLVM y(argc, argv);
+int mqtCoreRunCompiler(int argc, char** argv) {
+
+  // Command-line options
+  llvm::cl::opt<std::string> inputFilename(
+      llvm::cl::Positional, llvm::cl::desc("<input .jeff/.mlir/.qasm file>"),
+      llvm::cl::init("-"));
+
+  llvm::cl::opt<std::string> inputFormat(
+      "input-format",
+      llvm::cl::desc(
+          "Input format: auto, jeff, mlir, or openqasm (default: auto)"),
+      llvm::cl::value_desc("format"), llvm::cl::init("auto"));
+
+  llvm::cl::opt<std::string> outputFilename(
+      "o",
+      llvm::cl::desc("Output filename (for untargeted QIR, - and .ll write "
+                     "textual LLVM IR; .bc and other names write LLVM "
+                     "bitcode)"),
+      llvm::cl::value_desc("filename"), llvm::cl::init("-"));
+
+  llvm::cl::opt<std::string> outputFormat(
+      "emit",
+      llvm::cl::desc("Output checkpoint (default: infer from -o, otherwise "
+                     "qc): qc-import, qc, "
+                     "qco, qco-optimized, qir-base, "
+                     "qir-adaptive, openqasm2, openqasm3, or jeff "
+                     "(Python launcher also supports qpy with Qiskit)"),
+      llvm::cl::value_desc("format"), llvm::cl::init("qc"));
+
+  llvm::cl::opt<std::string> passPipeline(
+      "pass-pipeline",
+      llvm::cl::desc("Module pipeline replacing the default QCO optimizations "
+                     "(e.g. builtin.module(canonicalize,cse))"));
+  llvm::cl::alias passesAlias("passes", llvm::cl::aliasopt(passPipeline),
+                              llvm::cl::desc("Alias for --pass-pipeline"));
+  llvm::cl::opt<bool> runIsolatedPipeline(
+      "run-pipeline",
+      llvm::cl::desc("Run only --pass-pipeline on MLIR input and write MLIR"));
+  llvm::cl::opt<bool> runReproducer(
+      "run-reproducer",
+      llvm::cl::desc("Replay an MLIR file's recorded pipeline and verification "
+                     "settings, then write MLIR"));
+
+  llvm::cl::opt<bool> qdmiListDevices(
+      "qdmi-list-devices",
+      llvm::cl::desc("List configured QDMI device IDs and exit"),
+      llvm::cl::init(false));
+
+  llvm::cl::opt<std::string> qdmiDevice(
+      "qdmi-device",
+      llvm::cl::desc("Compile for the QDMI device with this stable ID"),
+      llvm::cl::value_desc("id"), llvm::cl::init(""));
+
+  llvm::cl::opt<std::string> payloadSpecification(
+      "payload-spec",
+      llvm::cl::desc("Payload as #mqt.payload_spec (default: selected from the "
+                     "QDMI device)"),
+      llvm::cl::value_desc("attribute"), llvm::cl::init(""));
+
+  llvm::cl::opt<std::string> explicitTarget(
+      "target", llvm::cl::desc("Explicit #mqt.compilation_target attribute"),
+      llvm::cl::value_desc("attribute"), llvm::cl::init(""));
+
+  llvm::cl::opt<uint64_t> compilationSeedOption(
+      "seed", llvm::cl::desc("Override all compiler random seeds"));
+  llvm::cl::opt<size_t> mappingTrials(
+      "mapping-trials", llvm::cl::desc("Positive native mapping trial count "
+                                       "(default: max(8, logical CPUs))"));
+  llvm::cl::opt<size_t> mappingIterations(
+      "mapping-iterations",
+      llvm::cl::desc(
+          "Forward/backward layout refinement rounds; zero skips refinement"),
+      llvm::cl::init(MappingOptions{}.iterations));
+  llvm::cl::opt<size_t> mappingLookahead(
+      "mapping-lookahead",
+      llvm::cl::desc("Additional two-qubit gates considered "
+                     "during routing (zero disables lookahead)"),
+      llvm::cl::init(MappingOptions{}.lookahead));
+  llvm::cl::opt<size_t> mappingSearchMemoryLimit(
+      "mapping-search-memory-limit",
+      llvm::cl::desc("Estimated node and layout bytes per routing search, per "
+                     "concurrent trial (zero disables node expansion)"),
+      llvm::cl::init(MappingOptions{}.searchMemoryLimit));
+
+  llvm::cl::opt<std::string> qdmiConfig(
+      "qdmi-config",
+      llvm::cl::desc("Use an explicit QDMI registry configuration file"),
+      llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
   registerMQTCompilerPasses();
   // Driver-owned conversion stages must also be available for replay.
@@ -469,7 +442,8 @@ static int runCompiler(int argc, char** argv) {
           qdmiListDevices && hasTarget,
           "--qdmi-list-devices cannot be combined with target compilation.")
           .failed() ||
-      reportQDMIErrorIf(hasTarget == payloadSpecification.empty(),
+      reportQDMIErrorIf((hasExplicitTarget && payloadSpecification.empty()) ||
+                            (!hasTarget && !payloadSpecification.empty()),
                         "--qdmi-device or --target and --payload-spec must be "
                         "provided together.")
           .failed() ||
@@ -486,7 +460,7 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
   if (qdmiListDevices) {
-    auto deviceIds = registeredQDMIDeviceIds();
+    auto deviceIds = qdmi::builtin_driver::registeredDeviceIds();
     if (!deviceIds) {
       llvm::errs() << "Failed to list configured QDMI devices: "
                    << llvm::toString(deviceIds.takeError()) << '\n';
@@ -508,13 +482,32 @@ static int runCompiler(int argc, char** argv) {
     llvm::errs() << "Isolated pipeline execution requires MLIR input.\n";
     return 1;
   }
-  auto parsedOutputFormat = parseOutputFormat(outputFormat);
+  if (outputFormat == "qpy" ||
+      (outputFormat.getNumOccurrences() == 0 &&
+       llvm::sys::path::extension(outputFilename) == ".qpy")) {
+    llvm::errs() << "QPY export requires the Python mqt-core command with the "
+                    "qiskit extra.\n";
+    return 1;
+  }
+  const auto extension = llvm::sys::path::extension(outputFilename);
+  const auto inferredOutput =
+      llvm::StringSwitch<std::optional<ProgramFormat>>(extension)
+          .Case(".jeff", ProgramFormat::Jeff)
+          .Case(".qasm", ProgramFormat::OpenQASM3)
+          .Cases({".bc", ".ll"}, ProgramFormat::QIRAdaptive)
+          .Case(".json", ProgramFormat::IQMJSON)
+          .Default(std::nullopt);
+  auto parsedOutputFormat =
+      outputFormat.getNumOccurrences() == 0 && inferredOutput
+          ? inferredOutput
+          : parseOutputFormat(outputFormat);
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
   }
 
   std::optional<CompilerTarget> compilerTarget;
+  std::optional<PayloadSpecification> selectedPayload;
   if (hasTarget) {
     if (reportQDMIErrorIf(
             passPipeline.getNumOccurrences() != 0,
@@ -530,7 +523,51 @@ static int runCompiler(int argc, char** argv) {
     }
   }
   if (!qdmiDevice.empty()) {
-    auto target = compilerTargetFromDeviceId(qdmiDevice.getValue());
+    auto target = [&]() -> llvm::Expected<CompilerTarget> {
+      auto device = qdmi::builtin_driver::openDevice(qdmiDevice.getValue());
+      if (!device) {
+        return device.takeError();
+      }
+      if (!payloadSpecification.empty()) {
+        return compilerTargetFromDevice(*device);
+      }
+      std::optional<QDMI_Program_Format> format;
+      if (outputFormat.getNumOccurrences() == 0 && inferredOutput) {
+        switch (*inferredOutput) {
+        case ProgramFormat::QIRAdaptive: {
+          auto supported = device->getSupportedProgramFormats();
+          if (!supported) {
+            return supported.takeError();
+          }
+          const auto adaptive = extension == ".bc"
+                                    ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                                    : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+          const auto base = extension == ".bc"
+                                ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                                : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+          format = llvm::is_contained(*supported, adaptive) ? adaptive : base;
+          break;
+        }
+        case ProgramFormat::OpenQASM3:
+          format = QDMI_PROGRAM_FORMAT_QASM3;
+          break;
+        case ProgramFormat::IQMJSON:
+          format = QDMI_PROGRAM_FORMAT_IQMJSON;
+          break;
+        case ProgramFormat::Jeff:
+          return llvm::createStringError(
+              "jeff export cannot be combined with a QDMI device target");
+        default:
+          llvm_unreachable("Unexpected inferred output format");
+        }
+      }
+      auto environment = targetEnvironmentFromDevice(*device, format);
+      if (!environment) {
+        return environment.takeError();
+      }
+      selectedPayload = environment->payloadSpecification();
+      return environment->target();
+    }();
     if (!target) {
       llvm::errs() << "Failed to create compiler target from QDMI device '"
                    << qdmiDevice << "': " << llvm::toString(target.takeError())
@@ -555,7 +592,7 @@ static int runCompiler(int argc, char** argv) {
                                ? Attribute{}
                                : parseAttribute(targetText, context.get());
     const auto targetAttr =
-        dyn_cast_if_present<mqt::CompilationTargetAttr>(attribute);
+        dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(attribute);
     if (!targetAttr) {
       llvm::errs()
           << "--target must be a valid #mqt.compilation_target attribute.\n";
@@ -570,11 +607,10 @@ static int runCompiler(int argc, char** argv) {
     compilerTarget.emplace(std::move(*target));
   }
 
-  std::optional<PayloadSpecification> selectedPayload;
   if (!payloadSpecification.empty()) {
     const auto attribute = parseAttribute(payloadSpecification, context.get());
     const auto payloadAttr =
-        dyn_cast_if_present<mqt::PayloadSpecAttr>(attribute);
+        dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(attribute);
     if (!payloadAttr) {
       llvm::errs()
           << "--payload-spec must be a valid #mqt.payload_spec attribute.\n";
@@ -597,33 +633,16 @@ static int runCompiler(int argc, char** argv) {
       return 1;
     }
     if (outputFormat.getNumOccurrences() == 0) {
-      switch (*compilerOutput) {
-      case ProgramFormat::OpenQASM2:
-        parsedOutputFormat = OutputFormat::OpenQASM2;
-        break;
-      case ProgramFormat::OpenQASM3:
-        parsedOutputFormat = OutputFormat::OpenQASM3;
-        break;
-      case ProgramFormat::IQMJSON:
-        parsedOutputFormat = OutputFormat::IQMJSON;
-        break;
-      case ProgramFormat::QIRBase:
-        parsedOutputFormat = OutputFormat::QIRBase;
-        break;
-      case ProgramFormat::QIRAdaptive:
-        parsedOutputFormat = OutputFormat::QIRAdaptive;
-        break;
-      default:
-        llvm_unreachable("Unsupported target compiler output");
-      }
+      parsedOutputFormat = *compilerOutput;
     }
     targetEnvironment.emplace(std::move(*compilerTarget),
                               std::move(*selectedPayload));
   }
 
-  if (*parsedOutputFormat == OutputFormat::IQMJSON &&
-      targetEnvironment->target().nativeOperationsKind() ==
-          CompilerTarget::NativeOperations::Kind::Unrestricted) {
+  if (*parsedOutputFormat == ProgramFormat::IQMJSON &&
+      (!targetEnvironment ||
+       targetEnvironment->target().nativeOperationsKind() ==
+           CompilerTarget::NativeOperations::Kind::Unrestricted)) {
     llvm::errs() << "IQM JSON requires explicit native IQM operations.\n";
     return 1;
   }
@@ -696,14 +715,14 @@ static int runCompiler(int argc, char** argv) {
     return failed(writeOutput(std::move(program.mod), outputFilename)) ? 1 : 0;
   }
 
-  if (*parsedOutputFormat == OutputFormat::QCImport &&
+  if (*parsedOutputFormat == ProgramFormat::QCImport &&
       program.dialect != InputDialect::QC) {
     llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
     return 1;
   }
   if (passPipeline.getNumOccurrences() != 0 &&
-      (*parsedOutputFormat == OutputFormat::QCImport ||
-       *parsedOutputFormat == OutputFormat::QCO)) {
+      (*parsedOutputFormat == ProgramFormat::QCImport ||
+       *parsedOutputFormat == ProgramFormat::QCO)) {
     llvm::errs() << "--pass-pipeline requires an output that passes through "
                     "QCO optimization.\n";
     return 1;
@@ -717,7 +736,7 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat != OutputFormat::QCImport &&
+  if (*parsedOutputFormat != ProgramFormat::QCImport &&
       program.dialect == InputDialect::QC &&
       failed(runPasses(
           [](OpPassManager& pm) {
@@ -727,14 +746,14 @@ static int runCompiler(int argc, char** argv) {
           true))) {
     return 1;
   }
-  if (*parsedOutputFormat != OutputFormat::QCImport &&
+  if (*parsedOutputFormat != ProgramFormat::QCImport &&
       failed(qco::verifyLinearity(*program.mod))) {
     return 1;
   }
 
   const bool requiresPostQcoPasses =
-      *parsedOutputFormat != OutputFormat::QCImport &&
-      *parsedOutputFormat != OutputFormat::QCO;
+      *parsedOutputFormat != ProgramFormat::QCImport &&
+      *parsedOutputFormat != ProgramFormat::QCO;
   if (targetEnvironment) {
     if (failed(runPasses(
             [&](OpPassManager& pm) {
@@ -747,8 +766,8 @@ static int runCompiler(int argc, char** argv) {
       return 1;
     }
   } else if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-               if (*parsedOutputFormat == OutputFormat::QIRBase ||
-                   *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+               if (*parsedOutputFormat == ProgramFormat::QIRBase ||
+                   *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
                  pm.addPass(createInlinerPass());
                }
                populateQCOCleanupPipeline(pm);
@@ -769,9 +788,9 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat == OutputFormat::Jeff &&
+  if (*parsedOutputFormat == ProgramFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        pm.addPass(mlir::mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -779,12 +798,12 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if ((*parsedOutputFormat == OutputFormat::QC ||
-       *parsedOutputFormat == OutputFormat::OpenQASM2 ||
-       *parsedOutputFormat == OutputFormat::OpenQASM3 ||
-       *parsedOutputFormat == OutputFormat::IQMJSON ||
-       *parsedOutputFormat == OutputFormat::QIRBase ||
-       *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
+  if ((*parsedOutputFormat == ProgramFormat::QC ||
+       *parsedOutputFormat == ProgramFormat::OpenQASM2 ||
+       *parsedOutputFormat == ProgramFormat::OpenQASM3 ||
+       *parsedOutputFormat == ProgramFormat::IQMJSON ||
+       *parsedOutputFormat == ProgramFormat::QIRBase ||
+       *parsedOutputFormat == ProgramFormat::QIRAdaptive) &&
       failed(runPasses([](OpPassManager& pm) {
         pm.addPass(createQCOToQC());
         populateQCCleanupPipeline(pm);
@@ -793,11 +812,11 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if ((*parsedOutputFormat == OutputFormat::QIRBase ||
-       *parsedOutputFormat == OutputFormat::QIRAdaptive ||
-       *parsedOutputFormat == OutputFormat::IQMJSON) &&
+  if ((*parsedOutputFormat == ProgramFormat::QIRBase ||
+       *parsedOutputFormat == ProgramFormat::QIRAdaptive ||
+       *parsedOutputFormat == ProgramFormat::IQMJSON) &&
       failed(runPasses([&](OpPassManager& pm) {
-        const bool adaptive = *parsedOutputFormat == OutputFormat::QIRAdaptive;
+        const bool adaptive = *parsedOutputFormat == ProgramFormat::QIRAdaptive;
         const auto payload =
             llvm::cantFail(PayloadSpecification::forProgramFormat(
                 adaptive ? ProgramFormat::QIRAdaptive
@@ -810,7 +829,7 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat == OutputFormat::OpenQASM2 &&
+  if (*parsedOutputFormat == ProgramFormat::OpenQASM2 &&
       failed(runPasses([&](OpPassManager& pm) {
         const auto payload = llvm::cantFail(
             PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM2));
@@ -821,17 +840,18 @@ static int runCompiler(int argc, char** argv) {
   }
 
   // Write the output
-  if (*parsedOutputFormat == OutputFormat::Jeff) {
+  if (*parsedOutputFormat == ProgramFormat::Jeff) {
     if (failed(writeJeffOutput(*program.mod, outputFilename))) {
       return 1;
     }
-  } else if (*parsedOutputFormat == OutputFormat::IQMJSON) {
+  } else if (*parsedOutputFormat == ProgramFormat::IQMJSON) {
     llvm::LLVMContext llvmContext;
-    auto llvmModule = qir::translateQIRToLLVM(*program.mod, llvmContext);
+    auto llvmModule = mlir::qir::translateQIRToLLVM(*program.mod, llvmContext);
     if (!llvmModule) {
       return 1;
     }
-    auto source = qir::exportIQMJSON(*llvmModule, targetEnvironment->target());
+    auto source =
+        mlir::qir::exportIQMJSON(*llvmModule, targetEnvironment->target());
     if (!source) {
       llvm::errs() << llvm::toString(source.takeError()) << '\n';
       return 1;
@@ -845,8 +865,8 @@ static int runCompiler(int argc, char** argv) {
     }
     output->os() << *source;
     output->keep();
-  } else if (*parsedOutputFormat == OutputFormat::OpenQASM3 ||
-             *parsedOutputFormat == OutputFormat::OpenQASM2) {
+  } else if (*parsedOutputFormat == ProgramFormat::OpenQASM3 ||
+             *parsedOutputFormat == ProgramFormat::OpenQASM2) {
     std::string errorMessage;
     auto output = openOutputFile(outputFilename, &errorMessage);
     if (!output) {
@@ -854,7 +874,7 @@ static int runCompiler(int argc, char** argv) {
                    << "': " << errorMessage << "\n";
       return 1;
     }
-    auto source = *parsedOutputFormat == OutputFormat::OpenQASM2
+    auto source = *parsedOutputFormat == ProgramFormat::OpenQASM2
                       ? qc::translateQCToOpenQASM2(std::move(program.mod))
                       : qc::translateQCToOpenQASM3(std::move(program.mod));
     if (failed(source)) {
@@ -862,8 +882,8 @@ static int runCompiler(int argc, char** argv) {
     }
     output->os() << *source;
     output->keep();
-  } else if (*parsedOutputFormat == OutputFormat::QIRBase ||
-             *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+  } else if (*parsedOutputFormat == ProgramFormat::QIRBase ||
+             *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
     const auto qirEncoding =
         targetEnvironment
             ? targetEnvironment->payloadSpecification().format().encoding
@@ -881,5 +901,3 @@ static int runCompiler(int argc, char** argv) {
 
   return 0;
 }
-
-int main(int argc, char** argv) { return runCompiler(argc, argv); }

@@ -76,13 +76,10 @@ if(TARGET MQT::CoreQDMIDriver)
   set(configured_devices
       "      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"}")
   set(test_device_libraries "std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}")
-  if(TARGET MQT::CoreQDMI_DDSIM_Device)
-    string(APPEND configured_devices
-           ",\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"}")
-    string(APPEND test_device_libraries
-           ", std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"}")
-    target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_HAS_DDSIM_DEVICE)
-  endif()
+  string(APPEND configured_devices
+         ",\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"}")
+  string(APPEND test_device_libraries
+         ", std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"}")
 
   file(READ "${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json" custom_sc_json)
   string(REPLACE "MQT SC Default QDMI Device" "Custom SC Driver Device" custom_sc_json

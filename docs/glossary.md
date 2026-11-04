@@ -107,7 +107,7 @@ Munich Quantum Toolkit
 MQT Compiler Collection
   **Preferred term:** MQT Compiler Collection. **Accepted aliases:** none.
   MQT Core's framework for compiling, optimizing, and exchanging quantum
-  programs through Python, C++, and the `mqt-cc` command-line driver.
+  programs through Python, C++, and the `mqt-core` command-line driver.
 
 MQV
 Munich Quantum Valley

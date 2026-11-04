@@ -154,9 +154,9 @@ constraints; the {doc}`QIR guide <qir/index>` covers LLVM text and bitcode.
 The command-line driver also reads and writes jeff:
 
 ```console
-mqt-cc input.qasm --emit=jeff -o exchange.jeff
-mqt-cc exchange.jeff --emit=openqasm3 -o output.qasm
-mqt-cc exchange.jeff --emit=qir-adaptive -o output.bc
+mqt-core compile input.qasm --emit=jeff -o exchange.jeff
+mqt-core compile exchange.jeff --emit=openqasm3 -o output.qasm
+mqt-core compile exchange.jeff --emit=qir-adaptive -o output.bc
 ```
 
 ## Supported conversion boundary

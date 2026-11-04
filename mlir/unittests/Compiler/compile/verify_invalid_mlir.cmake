@@ -17,6 +17,6 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(input_file "${OUTPUT_DIR}/invalid.mlir")
 file(WRITE "${input_file}" "module {\n")
 
-require_failure("invalid MLIR" "expected operation name" "${MQT_CC}" "${input_file}")
-require_failure("nonlinear QCO" "expected linear QCO value to have exactly one use" "${MQT_CC}"
-                "${NONLINEAR_QCO_INPUT}" "--emit=qco")
+require_failure("invalid MLIR" "expected operation name" "${MQT_CORE_CLI}" "${input_file}")
+require_failure("nonlinear QCO" "expected linear QCO value to have exactly one use"
+                "${MQT_CORE_CLI}" "${NONLINEAR_QCO_INPUT}" "--emit=qco")

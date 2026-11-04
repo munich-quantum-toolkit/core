@@ -64,7 +64,7 @@ Core emits closed `move; cz; move` sandwiches before readout. Use
 Qiskit `transpile` does not support these targets. Native circuits that already
 contain MOVE use `serialize_program` instead. QCO and Jeff compiler checkpoints
 retain virtual CZs; MOVE insertion happens when producing QC and executable
-payloads. The `mqt-cc` target pass pipeline does not provide this placement
+payloads. The command-line target pass pipeline does not provide this placement
 reduction or MOVE insertion.
 
 IQM execution requires its default
@@ -244,8 +244,8 @@ columns to QDMI bitstrings.
 ## Command line from a source build
 
 ```console
-mqt-cc --qdmi-list-devices
-mqt-cc --qdmi-device=mqt.sc.iqm.garnet \
+mqt-core compile --qdmi-list-devices
+mqt-core compile --qdmi-device=mqt.sc.iqm.garnet \
   --payload-spec='#mqt.payload_spec<format = <id = "iqm-json", version = "", profile = "", encoding = text>, capabilities = [], optional_capabilities_known = false>' \
   -o circuit.json input.qasm
 ```

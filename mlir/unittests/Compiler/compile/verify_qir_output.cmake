@@ -65,18 +65,18 @@ set(binary_payload_specification
 set(text_payload_specification
     "#mqt.payload_spec<format = <id = \"qir\", version = \"2.1.0\", profile = \"base\", encoding = text>, capabilities = [], optional_capabilities_known = false>"
 )
-run_command_expect_failure("mqt-cc target without payload specification"
-                           "--qdmi-device or --target and --payload-spec must be provided together"
-                           "${MQT_CC}" "${INPUT_FILE}" "--qdmi-device=mqt.sc.iqm.garnet")
+run_command("mqt-core automatic device payload" "${MQT_CORE_CLI}" "${INPUT_FILE}"
+            "--qdmi-device=mqt.ddsim.default" "-o" "${OUTPUT_DIR}/automatic.bc")
+require_bitcode("${OUTPUT_DIR}/automatic.bc")
 run_command_expect_failure(
-  "mqt-cc invalid payload specification"
-  "--payload-spec must be a valid #mqt.payload_spec attribute" "${MQT_CC}" "${INPUT_FILE}"
+  "mqt-core invalid payload specification"
+  "--payload-spec must be a valid #mqt.payload_spec attribute" "${MQT_CORE_CLI}" "${INPUT_FILE}"
   "--qdmi-device=mqt.sc.iqm.garnet" "--payload-spec=#mqt.payload_spec<>"
 )
 run_command_expect_failure(
-  "mqt-cc target with explicit output"
+  "mqt-core target with explicit output"
   "Only --emit=qco-optimized can be combined with target compilation"
-  "${MQT_CC}"
+  "${MQT_CORE_CLI}"
   "${INPUT_FILE}"
   "--qdmi-device=mqt.sc.iqm.garnet"
   "--payload-spec=${binary_payload_specification}"
@@ -84,7 +84,7 @@ run_command_expect_failure(
 
 execute_process(
   COMMAND
-    "${MQT_CC}"
+    "${MQT_CORE_CLI}"
     "${INPUT_FILE}"
     "--qdmi-device=mqt.sc.iqm.garnet"
     "--payload-spec=${binary_payload_specification}"
@@ -95,14 +95,14 @@ execute_process(
   OUTPUT_VARIABLE mapped_qco
   ERROR_VARIABLE error)
 if(NOT result EQUAL 0 OR NOT mapped_qco MATCHES "mqt\\.layout =")
-  message(FATAL_ERROR "mqt-cc did not emit mapped QCO with layout metadata: ${error}")
+  message(FATAL_ERROR "mqt-core did not emit mapped QCO with layout metadata: ${error}")
 endif()
 
 set(target_bitcode_file "${OUTPUT_DIR}/target-binary.ll")
 set(target_disassembled_file "${OUTPUT_DIR}/target-binary-disassembled.ll")
 run_command(
-  "mqt-cc binary payload target compilation"
-  "${MQT_CC}"
+  "mqt-core binary payload target compilation"
+  "${MQT_CORE_CLI}"
   "${INPUT_FILE}"
   "--qdmi-device=mqt.sc.iqm.garnet"
   "--payload-spec=${binary_payload_specification}"
@@ -116,8 +116,8 @@ require_profile("${target_disassembled_file}" "base_profile")
 set(target_text_file "${OUTPUT_DIR}/target-text.bc")
 set(target_assembled_file "${OUTPUT_DIR}/target-text-assembled.bc")
 run_command(
-  "mqt-cc text payload target compilation"
-  "${MQT_CC}"
+  "mqt-core text payload target compilation"
+  "${MQT_CORE_CLI}"
   "${INPUT_FILE}"
   "--qdmi-device=mqt.sc.iqm.garnet"
   "--payload-spec=${text_payload_specification}"
@@ -135,14 +135,14 @@ foreach(profile IN ITEMS base adaptive)
   set(bitcode_file "${OUTPUT_DIR}/${profile}.bc")
   set(disassembled_file "${OUTPUT_DIR}/${profile}-from-bitcode.ll")
 
-  run_command("mqt-cc ${profile} textual QIR generation" "${MQT_CC}" "${INPUT_FILE}"
+  run_command("mqt-core ${profile} textual QIR generation" "${MQT_CORE_CLI}" "${INPUT_FILE}"
               "--emit=qir-${profile}" -o "${text_file}")
   require_textual_llvm_ir("${text_file}")
   run_command("llvm-as ${profile} textual QIR validation" "${LLVM_AS}" "${text_file}" -o
               "${text_bitcode_file}")
   require_profile("${text_file}" "${expected_profile}")
 
-  run_command("mqt-cc ${profile} bitcode generation" "${MQT_CC}" "${INPUT_FILE}"
+  run_command("mqt-core ${profile} bitcode generation" "${MQT_CORE_CLI}" "${INPUT_FILE}"
               "--emit=qir-${profile}" -o "${bitcode_file}")
   require_bitcode("${bitcode_file}")
   run_command("llvm-dis ${profile} bitcode validation" "${LLVM_DIS}" "${bitcode_file}" -o

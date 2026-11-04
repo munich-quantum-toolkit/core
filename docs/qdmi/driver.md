@@ -74,6 +74,13 @@ Use {py:func}`mqt.core.qdmi.builtin_driver.registered_device_ids` to list
 enabled configured IDs without loading device libraries or contacting devices.
 Register manifests before the first enumeration or device opening.
 
+The Python `mqt-core` command forwards installed providers' advertised manifests
+to the native executable without importing provider modules. Its
+`compile --qdmi-list-devices` command enumerates these IDs without contacting
+the devices. `run source.qasm --qdmi-device=<id>` opens only the selected device
+and shares its session between compilation and submission. See the
+[CLI guide](../installation.md#run-on-a-qdmi-device).
+
 The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
 `qml.device("mqt.ddsim.default", wires=4)` use this opening API. Python
 {py:class}`mqt.core.typing.QDMISessionParameters` describes the supported
@@ -107,28 +114,21 @@ handle.
 
 ## Building the Bundled Devices
 
-Standalone MQT Core builds include the DDSIM and superconducting QDMI device
-libraries by default. When MQT Core is embedded in another CMake project using
-{code}`FetchContent` or {code}`add_subdirectory`, these device libraries are
-disabled by default so the consumer does not build implementations it may not
-use. They can be selected independently before making MQT Core available:
+All builds include the DDSIM QDMI device and require LLVM/MLIR. DDSIM uses
+`mqt-core simulate --worker-socket <socket>` in a separate process for OpenQASM
+and QIR programs.
 
-- {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
-- {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
-
-All source builds require LLVM/MLIR. The DDSIM device uses the compiler for both
-OpenQASM and QIR programs.
-
-For example, an embedded simulator consumer can enable only the DDSIM device,
-while CUDA-Q can enable the DDSIM and superconducting devices used by its
-integration tests.
+The superconducting device is controlled by
+{code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`. It is enabled by default in standalone
+builds and disabled by default when MQT Core is embedded through
+{code}`FetchContent` or {code}`add_subdirectory`. C++ test builds require it to
+be enabled.
 
 The driver is a shared library. The C++ QDMI library follows the project’s
-static/shared build setting and is shared in Python wheels. Device-free builds
-can use another QDMI driver through `driver_path` or `MQT_CORE_QDMI_DRIVER`. The
-builtin MQT Core QDMI driver can load external device libraries through
-[QDMI device configuration](configuration.md). C++ test builds require both
-bundled devices.
+static/shared build setting and is shared in Python wheels. Applications can use
+another QDMI driver through `driver_path` or `MQT_CORE_QDMI_DRIVER`. The builtin
+MQT Core QDMI driver can load external device libraries through
+[QDMI device configuration](configuration.md).
 
 ## Python Bindings
 

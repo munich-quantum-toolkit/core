@@ -8,12 +8,12 @@
 
 function(run_compiler expected_result)
   execute_process(
-    COMMAND "${MQT_CC}" ${ARGN}
+    COMMAND "${MQT_CORE_CLI}" ${ARGN}
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error)
   if(NOT "${result}" STREQUAL "${expected_result}")
-    message(FATAL_ERROR "mqt-cc ${ARGN}: expected ${expected_result}, got ${result}:\n${error}")
+    message(FATAL_ERROR "mqt-core ${ARGN}: expected ${expected_result}, got ${result}:\n${error}")
   endif()
   set(output "${output}" PARENT_SCOPE)
   set(error "${error}" PARENT_SCOPE)
@@ -197,7 +197,7 @@ endif()
 
 # Retain stdin's source buffer through the later conversion failure as well.
 execute_process(
-  COMMAND "${MQT_CC}" - --input-format=mlir --mlir-print-op-on-diagnostic
+  COMMAND "${MQT_CORE_CLI}" - --input-format=mlir --mlir-print-op-on-diagnostic
   INPUT_FILE "${unsupported}"
   RESULT_VARIABLE result
   OUTPUT_VARIABLE output

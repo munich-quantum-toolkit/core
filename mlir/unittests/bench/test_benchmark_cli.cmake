@@ -36,18 +36,18 @@ endif()
 file(REMOVE_RECURSE "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
-run_success("top-level help" help_output "${CLI}" --help)
+run_success("top-level help" help_output "${CLI}" bench --help)
 if(help_output MATCHES "cfg-hide-cold-paths")
   message(FATAL_ERROR "help exposed unrelated LLVM options")
 endif()
 
-run_success("benchmark listing" list_output "${CLI}" list)
+run_success("benchmark listing" list_output "${CLI}" bench list)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
 if(NOT benchmark_count EQUAL 16)
   message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 16")
 endif()
 
-run_success("multiplexer description" describe_output "${CLI}" describe multiplexer)
+run_success("multiplexer description" describe_output "${CLI}" bench describe multiplexer)
 string(JSON schema GET "${describe_output}" "$schema")
 if(NOT schema STREQUAL "https://json-schema.org/draft/2020-12/schema")
   message(FATAL_ERROR "describe did not return a JSON Schema")
@@ -65,6 +65,7 @@ run_success(
   "QC generation"
   generate_output
   "${CLI}"
+  bench
   generate
   --instance-specification
   "${instance_specification}"
@@ -97,6 +98,7 @@ file(COPY_FILE "${manifest_path}" "${manifest_only_path}")
 run_failure(
   "generation beside an existing manifest"
   "${CLI}"
+  bench
   generate
   --instance-specification
   "${instance_specification}"
@@ -113,6 +115,7 @@ endif()
 run_failure(
   "generation beside existing outputs"
   "${CLI}"
+  bench
   generate
   --instance-specification
   "${instance_specification}"
@@ -136,6 +139,7 @@ run_success(
   "generation in a path containing a percent sign"
   percent_output
   "${CLI}"
+  bench
   generate
   --instance-specification
   "${instance_specification}"
@@ -152,7 +156,14 @@ endif()
 set(counts "${OUTPUT_DIR}/counts.json")
 file(WRITE "${counts}" "{\"schema_version\":1,\"counts\":{\"00\":2,\"10\":1,\"11\":1}}\n")
 execute_process(
-  COMMAND "${CLI}" evaluate --manifest "${manifest_path}" --counts -
+  COMMAND
+    "${CLI}"
+    bench
+    evaluate
+    --manifest
+    "${manifest_path}"
+    --counts
+    -
   INPUT_FILE "${counts}"
   RESULT_VARIABLE evaluation_result
   OUTPUT_VARIABLE evaluation_output
@@ -171,6 +182,7 @@ endif()
 execute_process(
   COMMAND
     "${CLI}"
+    bench
     generate
     --instance-specification
     -
@@ -206,6 +218,7 @@ set(invalid_format_directory "${OUTPUT_DIR}/invalid-format")
 run_failure(
   "invalid output format"
   "${CLI}"
+  bench
   generate
   --instance-specification
   "${instance_specification}"
@@ -224,6 +237,7 @@ file(WRITE "${invalid_instance_specification}"
 run_failure(
   "invalid instance specification"
   "${CLI}"
+  bench
   generate
   --instance-specification
   "${invalid_instance_specification}"

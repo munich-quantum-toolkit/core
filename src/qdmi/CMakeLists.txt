@@ -33,7 +33,6 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE "MQT_CORE_QDMI_DEFAULT_DRIVER_FILENAME=\"$<TARGET_FILE_NAME:MQT::CoreQDMIDriver>\"")
-  add_dependencies(${TARGET_NAME} ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
